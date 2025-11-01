@@ -1,6 +1,7 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { databaseConfigured } from './env';
 import logger from './logger';
+import { shuffleWithSeed } from './seeded-random';
 
 // Declare global type for PrismaClient to prevent multiple instances in development
 declare global {
@@ -462,25 +463,28 @@ export async function vectorSearch(
   options?: {
     limit?: number;
     threshold?: number;
+    shuffleSeed?: number;
   }
 ) {
   if (!prisma) {
     return [];
   }
 
-  const { limit = 30, threshold } = options || {};
+  const { limit = 30, threshold, shuffleSeed } = options || {};
 
   // Convert embedding array to pgvector format
   const vectorSql = Prisma.sql`ARRAY[${Prisma.join(queryEmbedding)}]::vector`;
 
-  // Fetch more candidates when thresholding so we can filter in application code
-  const fetchLimit =
-    typeof threshold === 'number' && threshold > 0
-      ? Math.min(limit * 3, 120)
-      : limit;
+  // Fetch more candidates when shuffling or thresholding for better pool
+  const fetchLimit = shuffleSeed !== undefined
+    ? Math.min(limit * 3, 120) // Fetch 3x for better shuffle pool
+    : (typeof threshold === 'number' && threshold > 0
+        ? Math.min(limit * 3, 120)
+        : limit);
 
   try {
-    // Execute vector similarity search with cosine distance
+    // ALWAYS order by similarity (preserve semantic ranking)
+    // Shuffle happens in application code after fetching top results
     const results = await prisma.$queryRaw<
       Array<{
         id: string;
@@ -515,12 +519,18 @@ export async function vectorSearch(
       LIMIT ${fetchLimit}
     `);
 
-    const filtered =
-      typeof threshold === 'number'
+    // Filter by threshold if provided
+    const filteredResults =
+      typeof threshold === 'number' && threshold > 0
         ? results.filter(result => result.distance >= threshold)
         : results;
 
-    return filtered.slice(0, limit);
+    // Shuffle top results if seed provided (preserves semantic relevance)
+    const finalResults = shuffleSeed !== undefined
+      ? shuffleWithSeed(filteredResults, shuffleSeed).slice(0, limit)
+      : filteredResults.slice(0, limit);
+
+    return finalResults;
   } catch (error) {
     logger.error('Vector search query failed', {
       userId,

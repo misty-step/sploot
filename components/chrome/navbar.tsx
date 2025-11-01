@@ -1,7 +1,8 @@
 'use client';
 
 import { ReactNode } from 'react';
-import { LogoWordmark } from './logo-wordmark';
+import Link from 'next/link';
+import { OverlappingCircles } from '@/components/landing/overlapping-circles';
 import { UserAvatar } from './user-avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { cn } from '@/lib/utils';
@@ -16,7 +17,7 @@ interface NavbarProps {
 
 /**
  * Fixed navbar component for the new architecture
- * Height: 56px (14 * 4px base unit)
+ * Height: 64px (16 * 4px base unit)
  * Position: Fixed top
  * Z-index: 50 (stays above main content)
  */
@@ -36,8 +37,8 @@ export function Navbar({
         'fixed top-0 left-0 right-0',
         // Z-index to stay above content
         'z-50',
-        // Height: 56px
-        'h-14',
+        // Height: 64px
+        'h-16',
         // iOS PWA safe area support - push navbar below status bar/notch
         'pt-[env(safe-area-inset-top)]',
         'pl-[env(safe-area-inset-left)]',
@@ -54,14 +55,13 @@ export function Navbar({
     >
       {/* Container for navbar content - max-width for ultra-wide screens */}
       <div className="flex items-center justify-between w-full max-w-screen-2xl 2xl:max-w-[1920px] mx-auto">
-        {/* Left section: Logo/Wordmark */}
-        <div className="flex items-center gap-4">
-          {/* Mobile variant (compact, sm) - hidden on md and up */}
-          <LogoWordmark variant="compact" size="sm" className="md:hidden" />
-
-          {/* Desktop variant (default, md) - hidden below md */}
-          <LogoWordmark variant="default" size="md" className="hidden md:inline-flex" />
-        </div>
+        {/* Left section: Logo */}
+        <Link href="/app" aria-label="Sploot - Home" className="flex items-center group">
+          <OverlappingCircles
+            strokeWidth={6}
+            className="w-12 h-12 transition-all duration-200 ease-out hover:scale-110"
+          />
+        </Link>
 
         {/* Spacer to push user menu to the right */}
         <div className="flex-1" />
@@ -96,8 +96,8 @@ export function Navbar({
 /**
  * Spacer component to push content below the fixed navbar
  * Use this in layouts to prevent content from going under the navbar
- * Accounts for both navbar height (56px/3.5rem) and iOS safe area inset
+ * Accounts for both navbar height (64px/4rem) and iOS safe area inset
  */
 export function NavbarSpacer() {
-  return <div className="h-[calc(3.5rem+env(safe-area-inset-top))]" />;
+  return <div className="h-[calc(4rem+env(safe-area-inset-top))]" />;
 }

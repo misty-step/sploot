@@ -12,6 +12,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
     filterFavorites,
     autoLoad = true,
     tagId,
+    shuffleSeed,
   } = options;
 
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -56,10 +57,34 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
       try {
         const currentOffset = reset ? 0 : offset;
+
+        // Map UI sort values to API/database column names
+        // Handles both UI values ('recent', 'name') and database values ('createdAt', 'size')
+        let apiSortBy: string;
+        switch (sortBy) {
+          case 'recent':
+          case 'date':
+            apiSortBy = 'createdAt';
+            break;
+          case 'name':
+            apiSortBy = 'pathname';
+            break;
+          case 'shuffle':
+            apiSortBy = 'shuffle'; // Keep as-is for API shuffle detection
+            break;
+          case 'size':
+          case 'favorite':
+          case 'createdAt':
+            apiSortBy = sortBy; // Already database column names
+            break;
+          default:
+            apiSortBy = 'createdAt';
+        }
+
         const params = new URLSearchParams({
           limit: initialLimit.toString(),
           offset: currentOffset.toString(),
-          sortBy,
+          sortBy: apiSortBy,
           sortOrder,
         });
 
@@ -82,6 +107,10 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
         if (tagId) {
           params.set('tagId', tagId);
+        }
+
+        if (shuffleSeed !== undefined && sortBy === 'shuffle') {
+          params.set('shuffleSeed', shuffleSeed.toString());
         }
 
         const response = await fetch(`/api/assets?${params}`, {
@@ -205,7 +234,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
         }
       }
     },
-    [offset, initialLimit, sortBy, sortOrder, filterFavorites, tagId] // Removed loading and hasMore from dependencies
+    [offset, initialLimit, sortBy, sortOrder, filterFavorites, tagId, shuffleSeed] // Removed loading and hasMore from dependencies
   );
 
   const updateAsset = useCallback((id: string, updates: Partial<Asset>) => {
@@ -326,8 +355,8 @@ interface SearchMetadata {
   latencyMs?: number;
 }
 
-export function useSearchAssets(query: string, options: { limit?: number; threshold?: number; enabled?: boolean } = {}) {
-  const { limit = 50, threshold = 0.2, enabled = true } = options;
+export function useSearchAssets(query: string, options: { limit?: number; threshold?: number; enabled?: boolean; shuffleSeed?: number } = {}) {
+  const { limit = 50, threshold = 0.2, enabled = true, shuffleSeed } = options;
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(false);
@@ -367,6 +396,7 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
           query: query.trim(),
           limit,
           threshold,
+          ...(shuffleSeed !== undefined && { shuffleSeed }),
         }),
         signal: controller.signal,
       });
@@ -435,7 +465,7 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
         setLoading(false);
       }
     }
-  }, [query, limit, threshold]);
+  }, [query, limit, threshold, shuffleSeed]);
 
   const updateAsset = useCallback((id: string, updates: Partial<Asset>) => {
     setAssets((prev) =>

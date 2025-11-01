@@ -230,13 +230,13 @@ select:focus-visible {
 .masonry-grid {
   display: flex;
   width: 100%;
-  gap: 8px; /* Horizontal gap between columns */
+  gap: 24px; /* Horizontal gap between columns - increased for breathing room */
 }
 
 .masonry-grid-column {
   display: flex;
   flex-direction: column;
-  gap: 8px; /* Vertical gap between tiles within a column */
+  gap: 24px; /* Vertical gap between tiles within a column - increased for breathing room */
 }
 
 .masonry-item {

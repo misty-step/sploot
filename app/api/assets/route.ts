@@ -6,9 +6,14 @@ import crypto from 'crypto';
 import { getCacheService } from '@/lib/cache';
 import { getAuthWithUser, requireUserIdWithSync } from '@/lib/auth/server';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
+import { Prisma } from '@prisma/client';
 import logger from '@/lib/logger';
 import { logError } from '@/lib/vercel-logger';
 import { createErrorResponse } from '@/lib/error-response';
+
+// Shuffle seed range: 0-1000000 for user-friendly integer values
+// Normalized to 0.0-1.0 for PostgreSQL setseed() in shuffle queries
+const MAX_SHUFFLE_SEED = 1000000;
 
 export async function POST(req: NextRequest) {
   const requestId = crypto.randomUUID();
@@ -177,6 +182,7 @@ export async function GET(req: NextRequest) {
   let sortOrder: 'asc' | 'desc' = 'desc';
   let favorite: string | null = null;
   let tagId: string | null = null;
+  let shuffleSeed: number | undefined = undefined;
 
   try {
     // Parse query params INSIDE try block to catch URL parsing errors
@@ -184,16 +190,32 @@ export async function GET(req: NextRequest) {
     limit = parseInt(searchParams.get('limit') || '50', 10);
     offset = parseInt(searchParams.get('offset') || '0', 10);
 
-    // Validate and type-cast sortBy to valid Prisma field names
+    // Validate and type-cast sortBy to valid field names
+    // Accept both database columns and special modes like 'shuffle'
     const sortByParam = searchParams.get('sortBy') || 'createdAt';
-    const validSortFields = ['createdAt', 'updatedAt'] as const;
-    sortBy = validSortFields.includes(sortByParam as any)
-      ? (sortByParam as 'createdAt' | 'updatedAt')
+    const validSortFields = ['createdAt', 'updatedAt', 'shuffle', 'pathname', 'size', 'favorite'] as const;
+    // For non-shuffle queries, only createdAt and updatedAt are supported
+    // (shuffle mode uses raw SQL, size/pathname/favorite need ORM implementation)
+    sortBy = (sortByParam === 'createdAt' || sortByParam === 'updatedAt')
+      ? sortByParam
       : 'createdAt';
 
     // Validate and type-cast sortOrder to Prisma's expected literal type
     const sortOrderParam = searchParams.get('sortOrder') || 'desc';
     sortOrder = sortOrderParam === 'asc' ? 'asc' : 'desc';
+
+    // Parse and validate shuffleSeed
+    const shuffleSeedParam = searchParams.get('shuffleSeed');
+    if (shuffleSeedParam) {
+      const parsed = parseInt(shuffleSeedParam, 10);
+      if (isNaN(parsed) || parsed < 0 || parsed > MAX_SHUFFLE_SEED) {
+        return NextResponse.json(
+          { error: `Invalid shuffleSeed parameter. Must be integer 0-${MAX_SHUFFLE_SEED}.` },
+          { status: 400 }
+        );
+      }
+      shuffleSeed = parsed;
+    }
 
     favorite = searchParams.get('favorite');
     tagId = searchParams.get('tagId');
@@ -226,23 +248,89 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Normalize seed to 0-1 range for PostgreSQL setseed()
+    // PostgreSQL setseed() requires seed in range [0.0, 1.0]
+    // Client generates seeds 0-MAX_SHUFFLE_SEED for user-friendly integers (no decimals)
+    // Normalize: 0 → 0.0, 500000 → 0.5, MAX_SHUFFLE_SEED → 1.0
+    const normalizedSeed = shuffleSeed !== undefined ? shuffleSeed / MAX_SHUFFLE_SEED : null;
+
     const [assets, total] = await Promise.all([
-      prisma.asset.findMany({
-        where,
-        take: limit,
-        skip: offset,
-        orderBy: sortBy === 'createdAt'
-          ? { createdAt: sortOrder }
-          : { updatedAt: sortOrder },
-        include: {
-          embedding: true,
-          tags: {
+      shuffleSeed !== undefined
+        ? // Use transaction to ensure setseed() and query run on same connection
+          // Field selection: Includes embedding data via LEFT JOIN
+          // Tag data excluded since shuffle uses raw SQL
+          prisma.$transaction(async (tx) => {
+            // Set the random seed first
+            await tx.$executeRaw`SELECT setseed(${normalizedSeed})`;
+
+            // Then execute the shuffle query on the same connection
+            const results = await tx.$queryRaw<Array<{
+              id: string;
+              blobUrl: string;
+              pathname: string;
+              mime: string;
+              width: number | null;
+              height: number | null;
+              favorite: boolean;
+              size: number;
+              createdAt: Date;
+              updatedAt: Date;
+              embeddingId: string | null;
+              embeddingModelName: string | null;
+              embeddingModelVersion: string | null;
+              embeddingStatus: string | null;
+              embeddingCreatedAt: Date | null;
+            }>>`
+              SELECT
+                a.id,
+                a.blob_url as "blobUrl",
+                a.pathname,
+                a.mime,
+                a.width,
+                a.height,
+                a.favorite,
+                a.size,
+                a."createdAt",
+                a."updatedAt",
+                ae.asset_id as "embeddingId",
+                ae.model_name as "embeddingModelName",
+                ae.model_version as "embeddingModelVersion",
+                ae.status as "embeddingStatus",
+                ae."createdAt" as "embeddingCreatedAt"
+              FROM "assets" a
+              LEFT JOIN "asset_embeddings" ae ON ae.asset_id = a.id
+              WHERE
+                a.owner_user_id = ${userId}
+                AND a.deleted_at IS NULL
+                ${favorite !== null ? Prisma.sql`AND a.favorite = ${favorite === 'true'}` : Prisma.empty}
+                ${tagId ? Prisma.sql`AND EXISTS (
+                  SELECT 1 FROM "asset_tags" at
+                  WHERE at.asset_id = a.id AND at.tag_id = ${tagId}
+                )` : Prisma.empty}
+              ORDER BY RANDOM()
+              LIMIT ${limit}
+              OFFSET ${offset}
+            `;
+
+            return results;
+          })
+        : // Normal query with Prisma ORM
+          prisma.asset.findMany({
+            where,
+            take: limit,
+            skip: offset,
+            orderBy: sortBy === 'createdAt'
+              ? { createdAt: sortOrder }
+              : { updatedAt: sortOrder },
             include: {
-              tag: true,
+              embedding: true,
+              tags: {
+                include: {
+                  tag: true,
+                },
+              },
             },
-          },
-        },
-      }),
+          }),
       prisma.asset.count({ where }),
     ]);
 
@@ -257,11 +345,18 @@ export async function GET(req: NextRequest) {
       height: asset.height,
       favorite: asset.favorite,
       createdAt: asset.createdAt,
-      embedding: asset.embedding,
-      tags: asset.tags.map((at: any) => ({
+      // Format embedding data for both shuffle and normal queries
+      embedding: asset.embedding || (asset.embeddingId ? {
+        assetId: asset.embeddingId,
+        modelName: asset.embeddingModelName,
+        modelVersion: asset.embeddingModelVersion,
+        createdAt: asset.embeddingCreatedAt,
+      } : undefined),
+      embeddingStatus: asset.embeddingStatus || asset.embedding?.status,
+      tags: asset.tags ? asset.tags.map((at: any) => ({
         id: at.tag.id,
         name: at.tag.name,
-      })),
+      })) : [],
     }));
 
     return NextResponse.json({

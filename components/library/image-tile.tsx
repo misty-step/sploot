@@ -310,19 +310,19 @@ function ImageTileComponent({
     return 'border-border shadow-[0_0_0_2px_hsl(var(--border))]';
   }, [showSimilarityScore, asset]);
 
-  // Get embedding status icon and label
+  // Get embedding status icon and label (minimalist aesthetic)
   const getEmbeddingStatusIcon = () => {
     switch (embeddingStatus) {
       case 'ready':
-        return { icon: null, label: '[✓] EMBEDDED', color: 'text-green-500' };
+        return null; // Hide embedded status (default state)
       case 'processing':
-        return { icon: Loader2, label: '[⏳] PROCESSING', color: 'text-yellow-500' };
+        return { icon: Loader2, label: 'processing', color: 'text-muted-foreground' };
       case 'pending':
-        return { icon: Clock, label: '[⏳] QUEUED', color: 'text-yellow-500' };
+        return { icon: Clock, label: 'pending', color: 'text-muted-foreground' };
       case 'failed':
-        return { icon: AlertCircle, label: '[✗] FAILED', color: 'text-red-500' };
+        return { icon: AlertCircle, label: 'failed', color: 'text-destructive' };
       default:
-        return { icon: null, label: '', color: '' };
+        return null;
     }
   };
 
@@ -332,7 +332,7 @@ function ImageTileComponent({
     <>
       <div
         onClick={onClick || (() => onSelect?.(asset))}
-        className="group overflow-hidden cursor-pointer hover:opacity-90 transition-opacity border-2 rounded-md border-white/30 dark:border-white/30 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
+        className="group overflow-hidden cursor-pointer hover:opacity-95 transition-all border border-border hover:shadow-lg hover:shadow-black/5"
       >
         <div className="relative">
           {/* Image container */}
@@ -416,47 +416,10 @@ function ImageTileComponent({
                 </div>
               </div>
             )}
-
-
-            {/* Embedding status indicator */}
-            {embeddingStatus !== 'ready' && (
-              <div className="absolute bottom-1 left-1 z-10">
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  className={cn(
-                    'h-5 w-5 backdrop-blur-sm',
-                    embeddingStatus === 'pending' && 'bg-yellow-500/70 hover:bg-yellow-500/90 cursor-default',
-                    embeddingStatus === 'processing' && 'bg-blue-500/70 hover:bg-blue-500/90 cursor-wait',
-                    embeddingStatus === 'failed' && 'bg-red-500/70 hover:bg-red-500/90 cursor-pointer'
-                  )}
-                  onClick={embeddingStatus === 'failed' ? handleGenerateEmbedding : undefined}
-                  disabled={embeddingStatus === 'processing'}
-                  title={
-                    embeddingStatus === 'pending'
-                      ? 'Embedding pending'
-                      : embeddingStatus === 'processing'
-                        ? 'Generating embedding...'
-                        : embeddingStatus === 'failed'
-                          ? 'Click to retry'
-                          : ''
-                  }
-                >
-                  {embeddingStatus === 'pending' && (
-                    <div className="relative">
-                      <div className="w-1.5 h-1.5 bg-yellow-200 animate-ping absolute inset-0" />
-                      <div className="w-1.5 h-1.5 bg-yellow-300 relative" />
-                    </div>
-                  )}
-                  {embeddingStatus === 'processing' && <Loader2 className="w-3 h-3 text-white animate-spin" />}
-                  {embeddingStatus === 'failed' && <AlertCircle className="w-3 h-3 text-white" />}
-                </Button>
-              </div>
-            )}
           </div>
 
           {/* Action bar below image */}
-          <div className="flex items-center justify-between gap-2 px-2 py-1.5 bg-card dark:bg-muted border-t border-border dark:border-white/20">
+          <div className="flex items-center justify-between gap-2 px-2 py-1.5 bg-card dark:bg-muted border-t border-border">
             {/* Left: Actions */}
             <div className="flex items-center gap-1">
               {/* Banger button - always visible */}
@@ -480,7 +443,7 @@ function ImageTileComponent({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>{asset.favorite ? 'drop from bangers' : 'crown as banger'}</p>
+                    <p>{asset.favorite ? 'unfavorite' : 'favorite'}</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -520,40 +483,43 @@ function ImageTileComponent({
                   handleDelete(e);
                 }}
                 disabled={isLoading}
-                title="rage delete"
+                title="delete"
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
 
             {/* Right: Metadata */}
-            <div className="flex flex-col items-end gap-0.5 min-w-0 flex-1">
-              <div className="flex items-center gap-2 w-full justify-end">
-                <span className="font-mono text-xs text-muted-foreground/90 truncate">
-                  {asset.filename}
-                </span>
-                {/* Embedding status indicator */}
-                {embeddingStatus !== 'ready' && (
-                  <span className={cn('text-xs font-mono shrink-0', embeddingStatusInfo.color)}>
-                    {embeddingStatusInfo.label}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-xs text-muted-foreground/70 whitespace-nowrap">
-                  {asset.width}×{asset.height} | {formatFileSize(asset.size || 0)}
-                </span>
-                {typeof asset.relevance === 'number' && (
+            <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
+              {/* Dimensions and size - monospace for technical data */}
+              <span className="font-mono text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+                {asset.width}×{asset.height} {formatFileSize(asset.size || 0)}
+              </span>
+
+              {/* Relevance score - search results only */}
+              {typeof asset.relevance === 'number' && (
+                <>
+                  <span className="text-muted-foreground/30">|</span>
                   <span
                     className={cn(
-                      'font-mono text-xs font-semibold tabular-nums',
+                      'font-mono text-xs tabular-nums',
                       asset.belowThreshold ? 'text-orange-400' : 'text-green-400'
                     )}
                   >
                     {Math.round(asset.relevance)}%
                   </span>
-                )}
-              </div>
+                </>
+              )}
+
+              {/* Embedding status - only show if not ready */}
+              {embeddingStatusInfo && (
+                <>
+                  <span className="text-muted-foreground/30">|</span>
+                  <span className={cn('text-xs shrink-0', embeddingStatusInfo.color)}>
+                    {embeddingStatusInfo.label}
+                  </span>
+                </>
+              )}
             </div>
           </div>
 

@@ -7,6 +7,60 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 
 ## Now (Sprint-Ready, <2 weeks)
 
+### [UX] Improve Share Experience and Attribution
+**Files**: `/app/share/[slug]/page.tsx`, `/components/share-page.tsx`
+**Perspectives**: user-experience-advocate, product-visionary
+**Context**: Current share page is functional but lacks polish. Better styling, clear attribution, and improved mobile experience will increase viral sharing.
+**Implementation**: Polish share page design, add creator attribution, optimize for mobile viewing, improve OpenGraph metadata
+**Effort**: 1-2 days | **Priority**: MEDIUM
+**Impact**: Better viral growth and user acquisition through improved sharing
+
+### [Feature] Add "Add to Sploot" Quick Save
+**Files**: Browser extension (new), mobile app integration (future)
+**Perspectives**: product-visionary, user-experience-advocate
+**Context**: Users want frictionless way to save memes from web/mobile to their Sploot library without manual upload flow
+**Options**: Browser extension (Chrome/Firefox), mobile share sheet integration, bookmarklet
+**Effort**: 1-2 weeks (browser extension) | **Priority**: HIGH
+**Impact**: Major improvement to capture workflow, reduces friction for power users
+
+### [Feature] Meme Detail Page with Semantic Recommendations
+**Files**: `/app/meme/[id]/page.tsx` (new), `/components/related-memes.tsx` (new)
+**Perspectives**: product-visionary, user-experience-advocate, performance-pathfinder
+**Context**: Convert fullscreen modal to dedicated meme detail page. Show semantically similar memes using existing embedding infrastructure for improved discovery.
+**Implementation**: Create detail page route, add related memes section using vector similarity search (reuse existing search infrastructure), improve fullscreen UX
+**Effort**: 3-4 days | **Priority**: HIGH
+**Impact**: Better discovery, increased engagement, viral loop potential
+
+### [Performance] Optimize Search Performance
+**Files**: `/app/api/search/route.ts`, `/lib/db.ts`, embedding service
+**Perspectives**: performance-pathfinder, architecture-guardian
+**Context**: Search latency varies based on embedding generation and vector search complexity
+**Investigation Needed**: Profile bottlenecks (embedding API vs pgvector query), add query optimization, implement better caching
+**Effort**: 2-3 days | **Priority**: HIGH
+**Impact**: Faster search improves core user experience
+
+### [Testing] Add Integration Tests for Shuffle Feature
+**Source**: PR #11 review feedback (Claude Code + Codex)
+**Files**: `__tests__/api/shuffle-integration.test.ts` (new), `__tests__/lib/shuffle-pagination.test.ts` (new)
+**Context**: PR #11 implemented server-side seeded shuffle with comprehensive unit tests for hooks. Integration tests needed to validate full data flow (API → DB → response) and catch regressions in connection pooling, transaction handling, and query construction.
+**Test Scenarios**:
+1. Asset shuffle pagination stability - same seed produces identical order across multiple page requests
+2. Search shuffle relevance + randomization - results semantically relevant AND randomized
+3. Shuffle with filters - favorites-only and tag filters work with shuffle
+4. Edge cases - empty library, single asset, invalid seed handling
+**Why Important**: Unit tests cover individual components but don't validate end-to-end shuffle correctness. Connection pooling bugs (fixed in PR #11) could regress without integration tests.
+**Effort**: 4-6h | **Priority**: HIGH (next sprint after PR #11 merge)
+**Acceptance**: Integration tests pass, cover critical shuffle flows, catch connection pooling regressions
+
+### [Performance] Add Shuffle Query Performance Monitoring
+**Source**: PR #11 review feedback (Claude Code)
+**Files**: `app/api/assets/route.ts`, `lib/db.ts`, `app/api/search/route.ts`
+**Context**: Shuffle queries use PostgreSQL `ORDER BY RANDOM()` which has O(n log n) complexity. Performance SLO: <500ms P95 for 1000 asset libraries. Need production data to validate assumptions and identify optimization triggers.
+**Implementation**: Add timing instrumentation to shuffle queries, log to Vercel with structured data (requestId, shuffleSeed, assetCount, durationMs). Alert if >500ms SLO violated.
+**Why Important**: Manual testing shows acceptable performance for 1000 assets, but need real-world data on P95/P99 latency with diverse library sizes (100-10,000 assets). Monitoring enables data-driven optimization decisions (e.g., TABLESAMPLE for large libraries).
+**Effort**: 2h | **Priority**: MEDIUM
+**Acceptance**: Shuffle query timing logged to Vercel, alerts configured for SLO violations, dashboard showing P95/P99 latency by library size
+
 ### [Monitoring] Implement Usage Analytics & Abuse Detection
 **Files**: `/app/api/upload/route.ts`, `/app/api/search/route.ts`
 **Perspectives**: security-sentinel
@@ -136,6 +190,8 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 - **[Workflow] Smart Collections & Auto-Tagging** - AI-powered tag suggestions using CLIP embeddings, smart collections (auto-generated "Screenshots", "Text Memes"), duplicate detection via pHash. Power users can manage 1000+ assets. Premium feature for Pro tier. (8-12 weeks)
 
 - **[Testing] Test Coverage for Critical Paths** - Integration tests for upload route (concurrency, duplicate detection, blob cleanup), search route, auth flows. Current coverage: 0% on financial/data integrity code. Enables safe refactoring. (6h initial, ongoing)
+
+- **[Performance] Optimize Shuffle for Large Libraries (10k+ assets)** - Add TABLESAMPLE optimization for shuffle queries when P95 latency exceeds 500ms SLO. Current `ORDER BY RANDOM()` scans all assets; TABLESAMPLE pre-filters to ~1000 candidates before sorting. Trade-off: slightly less uniform distribution (imperceptible to users). **Trigger**: Production monitoring shows P95 shuffle latency >500ms. **Source**: PR #11 review feedback. **Why Deferred**: No evidence of performance issue yet - current implementation handles 1000 assets <200ms. Premature optimization without data. Monitor first (see "Add Shuffle Query Performance Monitoring" above), optimize only if needed. (3-4h)
 
 - **[Architecture] Repository Pattern for Database Layer** - Split `lib/db.ts` (559 lines, low cohesion) into domain repositories: `AssetRepository`, `EmbeddingRepository`, `TagRepository`. Testable via dependency injection. (3-4h)
 

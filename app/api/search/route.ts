@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
   let query: string = '';
   let limit: number = 30;
   let threshold: number = 0.2;
+  let shuffleSeed: number | undefined = undefined;
 
   try {
     const { userId } = await getAuthWithUser();
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    ({ query, limit = 30, threshold = 0.2 } = body);
+    ({ query, limit = 30, threshold = 0.2, shuffleSeed } = body);
 
     if (!query || typeof query !== 'string') {
       return NextResponse.json(
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
     const cachedResults = await cache.getSearchResults(
       userId,
       query,
-      { limit: effectiveLimit, threshold }
+      { limit: effectiveLimit, threshold, shuffleSeed }
     );
 
     if (cachedResults) {
@@ -106,7 +107,7 @@ export async function POST(req: NextRequest) {
     let searchResults = await vectorSearch(
       userId,
       embeddingResult.embedding,
-      { limit: effectiveLimit, threshold: appliedThreshold }
+      { limit: effectiveLimit, threshold: appliedThreshold, shuffleSeed }
     );
 
     if ((searchResults.length === 0 || searchResults.length < MIN_SIMILAR_RESULTS) && appliedThreshold > 0) {
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest) {
       const fallbackResults = await vectorSearch(
         userId,
         embeddingResult.embedding,
-        { limit: fallbackLimit, threshold: 0 }
+        { limit: fallbackLimit, threshold: 0, shuffleSeed }
       );
 
       const mergedResults: typeof searchResults = [];
@@ -184,7 +185,7 @@ export async function POST(req: NextRequest) {
       await cache.setSearchResults(
         userId,
         query,
-        { limit: effectiveLimit, threshold },
+        { limit: effectiveLimit, threshold, shuffleSeed },
         formattedResults
       );
     }

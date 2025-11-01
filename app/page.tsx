@@ -37,9 +37,8 @@ export default async function Home() {
         <div className="w-full max-w-4xl mx-auto flex flex-col items-center space-y-12 text-center">
           {/* Overlapping circles logo */}
           <OverlappingCircles
-            size={224}
             strokeWidth={3}
-            className="opacity-0 animate-[fadeIn_1s_ease-out_forwards]"
+            className="w-28 h-28 md:w-56 md:h-56 opacity-0 animate-[fadeIn_1s_ease-out_forwards]"
           />
 
           {/* Heading */}

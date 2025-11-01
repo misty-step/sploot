@@ -36,7 +36,7 @@ export function UploadButton({
 
   return (
     <Button
-      variant={isActive ? 'outline' : 'upload'}
+      variant="outline"
       size={buttonSize}
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}
@@ -52,9 +52,8 @@ export function UploadButton({
         transform: `scale(${scale})`,
       }}
       className={cn(
-        'relative touch-manipulation',
-        showLabel && 'w-[100px]',
-        isActive && 'bg-green-600/20 text-green-600 ring-1 ring-green-600/40',
+        'relative touch-manipulation font-mono text-sm',
+        showLabel && 'px-6',
         className
       )}
       aria-label={showLabel ? undefined : 'Upload'}
@@ -62,11 +61,6 @@ export function UploadButton({
     >
       <Upload className="h-4 w-4" strokeWidth={2} />
       {showLabel && 'upload'}
-
-      {/* Pulse animation when active */}
-      {isActive && (
-        <div className="absolute inset-0 bg-green-600/10 animate-pulse rounded-md" />
-      )}
     </Button>
   );
 }
@@ -94,7 +88,7 @@ export function UploadButtonFloating({
 
   return (
     <Button
-      variant="upload"
+      variant="outline"
       size="icon-lg"
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}
