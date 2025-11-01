@@ -256,37 +256,64 @@ export async function GET(req: NextRequest) {
 
     const [assets, total] = await Promise.all([
       shuffleSeed !== undefined
-        ? // FIXED: Combined setseed() and query in single statement
-          // Guarantees both execute on same connection for deterministic shuffle
-          // Field selection: Excludes embedding/tag data since shuffle query cannot JOIN
-          // (Raw SQL for determinism, not ORM). Client formats response with empty arrays.
-          prisma.$queryRaw<Array<any>>`
-            SELECT setseed(${normalizedSeed});
+        ? // Use transaction to ensure setseed() and query run on same connection
+          // Field selection: Includes embedding data via LEFT JOIN
+          // Tag data excluded since shuffle uses raw SQL
+          prisma.$transaction(async (tx) => {
+            // Set the random seed first
+            await tx.$executeRaw`SELECT setseed(${normalizedSeed})`;
 
-            SELECT
-              a.id,
-              a.blob_url as "blobUrl",
-              a.pathname,
-              a.mime,
-              a.width,
-              a.height,
-              a.favorite,
-              a.size,
-              a."createdAt",
-              a."updatedAt"
-            FROM "assets" a
-            WHERE
-              a.owner_user_id = ${userId}
-              AND a.deleted_at IS NULL
-              ${favorite !== null ? Prisma.sql`AND a.favorite = ${favorite === 'true'}` : Prisma.empty}
-              ${tagId ? Prisma.sql`AND EXISTS (
-                SELECT 1 FROM "asset_tags" at
-                WHERE at.asset_id = a.id AND at.tag_id = ${tagId}
-              )` : Prisma.empty}
-            ORDER BY RANDOM()
-            LIMIT ${limit}
-            OFFSET ${offset}
-          `
+            // Then execute the shuffle query on the same connection
+            const results = await tx.$queryRaw<Array<{
+              id: string;
+              blobUrl: string;
+              pathname: string;
+              mime: string;
+              width: number | null;
+              height: number | null;
+              favorite: boolean;
+              size: number;
+              createdAt: Date;
+              updatedAt: Date;
+              embeddingId: string | null;
+              embeddingModelName: string | null;
+              embeddingModelVersion: string | null;
+              embeddingStatus: string | null;
+              embeddingCreatedAt: Date | null;
+            }>>`
+              SELECT
+                a.id,
+                a.blob_url as "blobUrl",
+                a.pathname,
+                a.mime,
+                a.width,
+                a.height,
+                a.favorite,
+                a.size,
+                a."createdAt",
+                a."updatedAt",
+                ae.asset_id as "embeddingId",
+                ae.model_name as "embeddingModelName",
+                ae.model_version as "embeddingModelVersion",
+                ae.status as "embeddingStatus",
+                ae."createdAt" as "embeddingCreatedAt"
+              FROM "assets" a
+              LEFT JOIN "asset_embeddings" ae ON ae.asset_id = a.id
+              WHERE
+                a.owner_user_id = ${userId}
+                AND a.deleted_at IS NULL
+                ${favorite !== null ? Prisma.sql`AND a.favorite = ${favorite === 'true'}` : Prisma.empty}
+                ${tagId ? Prisma.sql`AND EXISTS (
+                  SELECT 1 FROM "asset_tags" at
+                  WHERE at.asset_id = a.id AND at.tag_id = ${tagId}
+                )` : Prisma.empty}
+              ORDER BY RANDOM()
+              LIMIT ${limit}
+              OFFSET ${offset}
+            `;
+
+            return results;
+          })
         : // Normal query with Prisma ORM
           prisma.asset.findMany({
             where,
@@ -318,7 +345,14 @@ export async function GET(req: NextRequest) {
       height: asset.height,
       favorite: asset.favorite,
       createdAt: asset.createdAt,
-      embedding: asset.embedding || undefined,
+      // Format embedding data for both shuffle and normal queries
+      embedding: asset.embedding || (asset.embeddingId ? {
+        assetId: asset.embeddingId,
+        modelName: asset.embeddingModelName,
+        modelVersion: asset.embeddingModelVersion,
+        createdAt: asset.embeddingCreatedAt,
+      } : undefined),
+      embeddingStatus: asset.embeddingStatus || asset.embedding?.status,
       tags: asset.tags ? asset.tags.map((at: any) => ({
         id: at.tag.id,
         name: at.tag.name,

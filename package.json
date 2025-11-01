@@ -68,6 +68,7 @@
   },
   "devDependencies": {
     "@ducanh2912/next-pwa": "^10.2.9",
+    "@eslint/eslintrc": "^3.3.1",
     "@next/bundle-analyzer": "^15.5.3",
     "@tailwindcss/postcss": "^4.1.13",
     "@testing-library/jest-dom": "^6.8.0",

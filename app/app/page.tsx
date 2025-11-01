@@ -540,18 +540,18 @@ function AppPageClient() {
         <div className="mx-auto w-full max-w-7xl 2xl:max-w-[1920px]">
           <header className="flex flex-col gap-4">
             {/* Title bar with inline stats */}
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <h1 className="font-mono text-2xl text-foreground">your library</h1>
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <h1 className="text-4xl font-light tracking-tight text-foreground">your library</h1>
               {stats.total > 0 && (
-                <span className="text-sm text-muted-foreground font-mono flex items-center gap-2">
-                  <span>{stats.total} <span className="text-muted-foreground/70">assets</span></span>
+                <span className="text-sm text-muted-foreground font-light flex items-center gap-2">
+                  <span>{stats.total.toLocaleString()} assets</span>
                   {stats.favorites > 0 && (
                     <>
-                      <span className="text-border">|</span>
-                      <span>{stats.favorites} <span className="text-muted-foreground/70">bangers</span></span>
+                      <span className="text-muted-foreground/30">•</span>
+                      <span>{stats.favorites.toLocaleString()} favorites</span>
                     </>
                   )}
-                  <span className="text-border">|</span>
+                  <span className="text-muted-foreground/30">•</span>
                   <span className="lowercase">{stats.sizeFormatted}</span>
                 </span>
               )}

@@ -4,9 +4,11 @@ import { Navbar, NavbarSpacer } from '@/components/chrome/navbar';
 import React from 'react';
 
 // Mock child components
-vi.mock('@/components/chrome/logo-wordmark', () => ({
-  LogoWordmark: ({ variant, size }: { variant: string; size: string }) => (
-    <div data-testid={`logo-${variant}-${size}`}>Logo {variant} {size}</div>
+vi.mock('@/components/landing/overlapping-circles', () => ({
+  OverlappingCircles: ({ strokeWidth, className }: { strokeWidth?: number; className?: string }) => (
+    <div data-testid="overlapping-circles" data-stroke-width={strokeWidth} className={className}>
+      Overlapping Circles Logo
+    </div>
   ),
 }));
 
@@ -32,14 +34,12 @@ describe('Navbar', () => {
       expect(nav.tagName).toBe('NAV');
     });
 
-    it('should render LogoWordmark in mobile and desktop variants', () => {
+    it('should render OverlappingCircles logo', () => {
       render(<Navbar />);
 
-      // Mobile variant (compact, sm)
-      expect(screen.getByTestId('logo-compact-sm')).toBeInTheDocument();
-
-      // Desktop variant (default, md)
-      expect(screen.getByTestId('logo-default-md')).toBeInTheDocument();
+      const logo = screen.getByTestId('overlapping-circles');
+      expect(logo).toBeInTheDocument();
+      expect(logo).toHaveAttribute('data-stroke-width', '6');
     });
 
     it('should render UserAvatar when showUserAvatar is true (default)', () => {
@@ -73,11 +73,11 @@ describe('Navbar', () => {
       expect(nav).toHaveClass('fixed', 'top-0', 'left-0', 'right-0');
     });
 
-    it('should have correct height (56px / h-14)', () => {
+    it('should have correct height (64px / h-16)', () => {
       render(<Navbar />);
 
       const nav = screen.getByRole('navigation');
-      expect(nav).toHaveClass('h-14');
+      expect(nav).toHaveClass('h-16');
     });
 
     it('should have correct z-index for layering', () => {
@@ -128,18 +128,18 @@ describe('NavbarSpacer', () => {
 
     const spacer = container.firstChild as HTMLElement;
     expect(spacer).toBeInTheDocument();
-    expect(spacer).toHaveClass('h-[calc(3.5rem+env(safe-area-inset-top))]');
+    expect(spacer).toHaveClass('h-[calc(4rem+env(safe-area-inset-top))]');
   });
 
-  it('should match navbar height (56px / h-14)', () => {
+  it('should match navbar height (64px / h-16)', () => {
     const { container: navbarContainer } = render(<Navbar />);
     const { container: spacerContainer } = render(<NavbarSpacer />);
 
     const navbar = navbarContainer.querySelector('nav');
     const spacer = spacerContainer.firstChild as HTMLElement;
 
-    // Navbar has h-14 class, spacer includes safe area inset
-    expect(navbar).toHaveClass('h-14');
-    expect(spacer).toHaveClass('h-[calc(3.5rem+env(safe-area-inset-top))]');
+    // Navbar has h-16 class, spacer includes safe area inset
+    expect(navbar).toHaveClass('h-16');
+    expect(spacer).toHaveClass('h-[calc(4rem+env(safe-area-inset-top))]');
   });
 });

@@ -142,7 +142,7 @@ export function ImageGrid({
       <div className="h-full">
         <div
           ref={setContainerRef}
-          className={cn('h-full overflow-auto p-4', containerClassName)}
+          className={cn('h-full overflow-auto p-6', containerClassName)}
           style={{ scrollbarGutter: 'stable' }}
         >
           <ImageGridSkeleton count={20} variant="tile" className="animate-fade-in" />
@@ -158,7 +158,7 @@ export function ImageGrid({
       <div className="h-full">
         <div
           ref={setContainerRef}
-          className={cn('h-full overflow-auto p-4', containerClassName)}
+          className={cn('h-full overflow-auto p-6', containerClassName)}
           style={{ scrollbarGutter: 'stable' }}
         >
           <ImageGridSkeleton
@@ -188,7 +188,7 @@ export function ImageGrid({
     <div className="h-full">
       <div
         ref={setContainerRef}
-        className={cn('h-full overflow-auto p-4', containerClassName)}
+        className={cn('h-full overflow-auto p-6', containerClassName)}
         style={{ scrollbarGutter: 'stable' }}
       >
         <Masonry
