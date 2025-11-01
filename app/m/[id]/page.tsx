@@ -16,35 +16,45 @@ export async function generateMetadata({ params }: PublicMemePageProps): Promise
 
   const asset = await prisma.asset.findFirst({
     where: { id, deletedAt: null },
-    select: { id: true, blobUrl: true, mime: true, width: true, height: true },
+    select: { id: true, blobUrl: true, mime: true, width: true, height: true, createdAt: true, size: true },
   });
 
   if (!asset) {
     return { title: 'Meme not found' };
   }
 
+  // Compelling brand-attributed copy
+  const title = 'From Sploot - Your personal meme library';
+  const description = 'Discover and curate your meme collection with lightning-fast semantic search. Save, organize, and share memes that matter.';
+
+  // Construct canonical URL
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://sploot.vercel.app';
+  const canonicalUrl = `${baseUrl}/m/${id}`;
+
   return {
-    title: 'Check out this meme',
-    description: 'Shared via Sploot',
+    title,
+    description,
     openGraph: {
-      title: 'Check out this meme',
-      description: 'Shared via Sploot',
+      title,
+      description,
+      url: canonicalUrl,
+      siteName: 'Sploot',
+      type: 'website',
       images: [
         {
           url: asset.blobUrl,
           width: asset.width || 1200,
           height: asset.height || 630,
-          alt: 'Meme',
+          alt: 'Shared meme from Sploot',
         },
       ],
-      siteName: 'Sploot',
-      type: 'website',
     },
     twitter: {
       card: 'summary_large_image',
-      title: 'Check out this meme',
-      description: 'Shared via Sploot',
+      title,
+      description,
       images: [asset.blobUrl],
+      site: '@sploot',
     },
   };
 }
