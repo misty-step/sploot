@@ -2,6 +2,10 @@ import { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { prisma } from '@/lib/db';
+import { SharePageLayout } from '@/components/share/share-page-layout';
+import { SharePageCTA } from '@/components/share/share-page-cta';
+import { SharePageMetadata } from '@/components/share/share-page-metadata';
+import { OverlappingCircles } from '@/components/landing/overlapping-circles';
 
 interface PublicMemePageProps {
   params: Promise<{ id: string }>;
@@ -75,7 +79,7 @@ export default async function PublicMemePage({ params }: PublicMemePageProps) {
 
   const asset = await prisma.asset.findFirst({
     where: { id, deletedAt: null },
-    select: { id: true, blobUrl: true, mime: true, width: true, height: true },
+    select: { id: true, blobUrl: true, mime: true, width: true, height: true, size: true },
   });
 
   if (!asset) {
@@ -90,20 +94,32 @@ export default async function PublicMemePage({ params }: PublicMemePageProps) {
   }
 
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4">
-      <Image
-        src={asset.blobUrl}
-        alt="Shared meme"
-        width={asset.width || 1200}
-        height={asset.height || 630}
-        className="max-w-full max-h-[90vh] object-contain"
-        priority
-      />
-      <footer className="mt-8 text-sm text-gray-500">
-        <Link href="/" className="hover:text-gray-400">
-          Shared via Sploot
-        </Link>
-      </footer>
-    </div>
+    <SharePageLayout
+      logo={
+        <div className="flex items-center gap-2">
+          <OverlappingCircles className="w-8 h-8" strokeWidth={2} />
+          <span className="text-white font-medium text-sm sm:text-base">Sploot</span>
+        </div>
+      }
+      cta={<SharePageCTA assetId={id} />}
+      image={
+        <Image
+          src={asset.blobUrl}
+          alt="Shared meme from Sploot"
+          width={asset.width || 1200}
+          height={asset.height || 630}
+          className="max-w-full max-h-[85vh] sm:max-h-[90vh] object-contain"
+          priority
+        />
+      }
+      metadata={
+        <SharePageMetadata
+          size={asset.size}
+          width={asset.width || undefined}
+          height={asset.height || undefined}
+          mime={asset.mime}
+        />
+      }
+    />
   );
 }
