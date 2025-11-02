@@ -243,3 +243,9 @@ select:focus-visible {
   /* Items flow naturally within columns */
   break-inside: avoid;
 }
+
+/* Mobile touch optimizations for share pages */
+.touch-pinch-zoom {
+  /* Enable pinch-to-zoom gesture on touch devices */
+  touch-action: pinch-zoom;
+}

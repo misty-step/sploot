@@ -29,11 +29,15 @@ export function SharePageCTA({ assetId, className }: SharePageCTAProps) {
         // Subtle glow effect on hover
         'hover:shadow-lg hover:shadow-primary/20',
         'transition-all duration-200',
+        // Touch feedback: scale down on tap (active state)
+        'active:scale-95',
         // Touch-optimized sizing (48px minimum on mobile)
         'h-12 px-4 text-sm',
         'sm:h-10 sm:px-6',
         // Accessibility
         'focus-visible:ring-2 focus-visible:ring-primary',
+        // Prevent text selection on tap
+        'select-none',
         className
       )}
       aria-label="Create your collection on Sploot"
