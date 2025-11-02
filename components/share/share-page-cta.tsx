@@ -1,6 +1,9 @@
+'use client';
+
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { track } from '@vercel/analytics';
 
 interface SharePageCTAProps {
   assetId: string;
@@ -17,6 +20,14 @@ interface SharePageCTAProps {
 export function SharePageCTA({ assetId, className }: SharePageCTAProps) {
   // Construct sign-up URL with UTM parameters for tracking
   const signUpUrl = `/sign-up?ref=share&id=${assetId}`;
+
+  const handleClick = () => {
+    track('share_cta_click', {
+      assetId,
+      referrer: typeof window !== 'undefined' ? document.referrer || 'direct' : 'unknown',
+      timestamp: Date.now(),
+    });
+  };
 
   return (
     <Button
@@ -42,7 +53,7 @@ export function SharePageCTA({ assetId, className }: SharePageCTAProps) {
       )}
       aria-label="Create your collection on Sploot"
     >
-      <Link href={signUpUrl}>
+      <Link href={signUpUrl} onClick={handleClick}>
         Create your collection
       </Link>
     </Button>

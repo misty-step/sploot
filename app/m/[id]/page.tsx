@@ -6,6 +6,7 @@ import { SharePageLayout } from '@/components/share/share-page-layout';
 import { SharePageCTA } from '@/components/share/share-page-cta';
 import { SharePageMetadata } from '@/components/share/share-page-metadata';
 import { SharePageErrorBoundary } from '@/components/share/share-page-error-boundary';
+import { SharePageAnalytics } from '@/components/share/share-page-analytics';
 import { OverlappingCircles } from '@/components/landing/overlapping-circles';
 
 interface PublicMemePageProps {
@@ -114,39 +115,42 @@ export default async function PublicMemePage({ params }: PublicMemePageProps) {
   }
 
   return (
-    <SharePageLayout
-      logo={
-        <div className="flex items-center gap-2">
-          <OverlappingCircles className="w-8 h-8" strokeWidth={2} />
-          <span className="text-white font-medium text-sm sm:text-base">Sploot</span>
-        </div>
-      }
-      cta={<SharePageCTA assetId={id} />}
-      image={
-        <SharePageErrorBoundary>
-          <div className="touch-pinch-zoom">
-            <Image
-              src={asset.blobUrl}
-              alt="Shared meme from Sploot"
-              width={asset.width || 1200}
-              height={asset.height || 630}
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 1200px"
-              className="max-w-full max-h-[85vh] sm:max-h-[90vh] object-contain select-none"
-              priority
-              quality={90}
-              draggable={false}
-            />
+    <>
+      <SharePageAnalytics assetId={id} />
+      <SharePageLayout
+        logo={
+          <div className="flex items-center gap-2">
+            <OverlappingCircles className="w-8 h-8" strokeWidth={2} />
+            <span className="text-white font-medium text-sm sm:text-base">Sploot</span>
           </div>
-        </SharePageErrorBoundary>
-      }
-      metadata={
-        <SharePageMetadata
-          size={asset.size}
-          width={asset.width || undefined}
-          height={asset.height || undefined}
-          mime={asset.mime}
-        />
-      }
-    />
+        }
+        cta={<SharePageCTA assetId={id} />}
+        image={
+          <SharePageErrorBoundary>
+            <div className="touch-pinch-zoom">
+              <Image
+                src={asset.blobUrl}
+                alt="Shared meme from Sploot"
+                width={asset.width || 1200}
+                height={asset.height || 630}
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 1200px"
+                className="max-w-full max-h-[85vh] sm:max-h-[90vh] object-contain select-none"
+                priority
+                quality={90}
+                draggable={false}
+              />
+            </div>
+          </SharePageErrorBoundary>
+        }
+        metadata={
+          <SharePageMetadata
+            size={asset.size}
+            width={asset.width || undefined}
+            height={asset.height || undefined}
+            mime={asset.mime}
+          />
+        }
+      />
+    </>
   );
 }
