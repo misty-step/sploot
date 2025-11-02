@@ -108,8 +108,10 @@ export default async function PublicMemePage({ params }: PublicMemePageProps) {
           alt="Shared meme from Sploot"
           width={asset.width || 1200}
           height={asset.height || 630}
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 1200px"
           className="max-w-full max-h-[85vh] sm:max-h-[90vh] object-contain"
           priority
+          quality={90}
         />
       }
       metadata={
