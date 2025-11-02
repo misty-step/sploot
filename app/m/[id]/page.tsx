@@ -36,6 +36,22 @@ export async function generateMetadata({ params }: PublicMemePageProps): Promise
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://sploot.vercel.app';
   const canonicalUrl = `${baseUrl}/m/${id}`;
 
+  // Schema.org structured data for SEO
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'ImageObject',
+    contentUrl: asset.blobUrl,
+    width: asset.width || 1200,
+    height: asset.height || 630,
+    datePublished: asset.createdAt.toISOString(),
+    author: {
+      '@type': 'Organization',
+      name: 'Sploot',
+      url: baseUrl,
+    },
+    description: 'Shared meme from Sploot - Your personal meme library',
+  };
+
   return {
     title,
     description,
@@ -60,6 +76,9 @@ export async function generateMetadata({ params }: PublicMemePageProps): Promise
       description,
       images: [asset.blobUrl],
       site: '@sploot',
+    },
+    other: {
+      'application/ld+json': JSON.stringify(structuredData),
     },
   };
 }
