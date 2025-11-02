@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { SharePageLayout } from '@/components/share/share-page-layout';
 import { SharePageCTA } from '@/components/share/share-page-cta';
 import { SharePageMetadata } from '@/components/share/share-page-metadata';
+import { SharePageErrorBoundary } from '@/components/share/share-page-error-boundary';
 import { OverlappingCircles } from '@/components/landing/overlapping-circles';
 
 interface PublicMemePageProps {
@@ -103,16 +104,18 @@ export default async function PublicMemePage({ params }: PublicMemePageProps) {
       }
       cta={<SharePageCTA assetId={id} />}
       image={
-        <Image
-          src={asset.blobUrl}
-          alt="Shared meme from Sploot"
-          width={asset.width || 1200}
-          height={asset.height || 630}
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 1200px"
-          className="max-w-full max-h-[85vh] sm:max-h-[90vh] object-contain"
-          priority
-          quality={90}
-        />
+        <SharePageErrorBoundary>
+          <Image
+            src={asset.blobUrl}
+            alt="Shared meme from Sploot"
+            width={asset.width || 1200}
+            height={asset.height || 630}
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 1200px"
+            className="max-w-full max-h-[85vh] sm:max-h-[90vh] object-contain"
+            priority
+            quality={90}
+          />
+        </SharePageErrorBoundary>
       }
       metadata={
         <SharePageMetadata
