@@ -35,8 +35,8 @@ describe('SharePageAnalytics', () => {
     });
   });
 
-  it('should use document.referrer when available', () => {
-    const mockReferrer = 'https://twitter.com/user/status/123';
+  it('should sanitize referrer to remove query params', () => {
+    const mockReferrer = 'https://twitter.com/user/status/123?token=secret&utm_source=email';
     Object.defineProperty(document, 'referrer', {
       value: mockReferrer,
       writable: true,
@@ -47,7 +47,83 @@ describe('SharePageAnalytics', () => {
 
     expect(track).toHaveBeenCalledWith('share_page_view', {
       assetId: mockAssetId,
-      referrer: mockReferrer,
+      // Query params stripped - only origin + pathname
+      referrer: 'https://twitter.com/user/status/123',
+      timestamp: expect.any(Number),
+    });
+
+    // Cleanup
+    Object.defineProperty(document, 'referrer', {
+      value: '',
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  it('should sanitize referrer to remove fragments', () => {
+    const mockReferrer = 'https://example.com/page#section';
+    Object.defineProperty(document, 'referrer', {
+      value: mockReferrer,
+      writable: true,
+      configurable: true,
+    });
+
+    render(<SharePageAnalytics assetId={mockAssetId} />);
+
+    expect(track).toHaveBeenCalledWith('share_page_view', {
+      assetId: mockAssetId,
+      // Fragment stripped
+      referrer: 'https://example.com/page',
+      timestamp: expect.any(Number),
+    });
+
+    // Cleanup
+    Object.defineProperty(document, 'referrer', {
+      value: '',
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  it('should sanitize referrer with both query params and fragments', () => {
+    const mockReferrer = 'https://x.com/share?via=user&text=hello#top';
+    Object.defineProperty(document, 'referrer', {
+      value: mockReferrer,
+      writable: true,
+      configurable: true,
+    });
+
+    render(<SharePageAnalytics assetId={mockAssetId} />);
+
+    expect(track).toHaveBeenCalledWith('share_page_view', {
+      assetId: mockAssetId,
+      // Both query params and fragment stripped
+      referrer: 'https://x.com/share',
+      timestamp: expect.any(Number),
+    });
+
+    // Cleanup
+    Object.defineProperty(document, 'referrer', {
+      value: '',
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  it('should handle invalid referrer URLs gracefully', () => {
+    const invalidReferrer = 'not-a-valid-url';
+    Object.defineProperty(document, 'referrer', {
+      value: invalidReferrer,
+      writable: true,
+      configurable: true,
+    });
+
+    render(<SharePageAnalytics assetId={mockAssetId} />);
+
+    expect(track).toHaveBeenCalledWith('share_page_view', {
+      assetId: mockAssetId,
+      // Invalid URL defaults to 'direct'
+      referrer: 'direct',
       timestamp: expect.any(Number),
     });
 

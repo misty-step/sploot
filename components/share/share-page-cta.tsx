@@ -11,6 +11,25 @@ interface SharePageCTAProps {
 }
 
 /**
+ * Sanitize referrer URL to remove PII (query params and fragments).
+ *
+ * Returns only origin + pathname to prevent leaking sensitive data.
+ *
+ * @param referrer - Raw document.referrer value
+ * @returns Sanitized referrer (origin + pathname) or 'direct' if unavailable
+ */
+function sanitizeReferrer(referrer: string): string {
+  if (!referrer) return 'direct';
+
+  try {
+    const url = new URL(referrer);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return 'direct';
+  }
+}
+
+/**
  * Branded CTA button for share pages.
  *
  * Links to sign-up with UTM tracking for conversion attribution.
@@ -23,9 +42,12 @@ export function SharePageCTA({ assetId, className }: SharePageCTAProps) {
   const signUpUrl = `/sign-up?ref=share&id=${encodeURIComponent(assetId)}`;
 
   const handleClick = () => {
+    const rawReferrer =
+      typeof window !== 'undefined' ? document.referrer : '';
+
     track('share_cta_click', {
       assetId,
-      referrer: typeof window !== 'undefined' ? document.referrer || 'direct' : 'unknown',
+      referrer: sanitizeReferrer(rawReferrer),
       timestamp: Date.now(),
     });
   };
