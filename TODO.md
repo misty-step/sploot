@@ -18,7 +18,7 @@
 
 ### Setup & Dependencies
 
-- [ ] Install @vercel/speed-insights and configure Sentry
+- [x] Install @vercel/speed-insights and configure Sentry
   ```
   Commands:
     pnpm add @vercel/speed-insights
@@ -43,7 +43,7 @@
   Time: 30min
   ```
 
-- [ ] Add SpeedInsights to app/layout.tsx
+- [x] Add SpeedInsights to app/layout.tsx
   ```
   File: app/layout.tsx
   Architecture: Client component import, render after {children}
@@ -60,7 +60,7 @@
   Time: 10min
   ```
 
-- [ ] Update .gitignore with Sentry files
+- [x] Update .gitignore with Sentry files
   ```
   File: .gitignore
   Lines to Add:
@@ -74,7 +74,7 @@
 
 ### Module 1: Analytics Service
 
-- [ ] Implement lib/analytics.ts with type-safe event tracking
+- [x] Implement lib/analytics.ts with type-safe event tracking
   ```
   File: lib/analytics.ts (NEW)
   Architecture: Implements Module 1 interface from DESIGN.md section "Module 1: Analytics Service"
@@ -117,7 +117,7 @@
   Time: 2hr
   ```
 
-- [ ] Write unit tests for lib/analytics.ts
+- [x] Write unit tests for lib/analytics.ts
   ```
   File: __tests__/lib/analytics.test.ts (NEW)
   Pattern: Follow __tests__/lib/metrics-collector.test.ts structure
