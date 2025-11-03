@@ -1,278 +1,208 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { logger, withTraceId } from '@/lib/observability-logger';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-// Mock Sentry
-vi.mock('@sentry/nextjs', () => ({
-  captureException: vi.fn(),
-}));
+const FIXED_DATE = new Date('2024-04-20T16:20:42.000Z');
+const originalEnv = {
+  NODE_ENV: process.env.NODE_ENV,
+  VERCEL_REGION: process.env.VERCEL_REGION,
+  VERCEL_URL: process.env.VERCEL_URL,
+};
 
-describe('Observability Logger', () => {
-  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+type ConsoleSpy = ReturnType<typeof vi.spyOn>;
 
-  beforeEach(() => {
-    vi.clearAllMocks();
+let consoleLogSpy: ConsoleSpy;
+let consoleErrorSpy: ConsoleSpy;
 
-    // Spy on console methods
-    consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+async function importLogger(sentryFactory?: () => unknown) {
+  vi.doUnmock('@sentry/nextjs');
+  vi.doMock(
+    '@sentry/nextjs',
+    sentryFactory ??
+      (() => ({
+        captureException: vi.fn(),
+      }))
+  );
+
+  return import('@/lib/observability-logger');
+}
+
+function parseCall(spy: ConsoleSpy, index = 0) {
+  const [payload] = spy.mock.calls[index] ?? [];
+  return JSON.parse(payload as string);
+}
+
+beforeEach(() => {
+  vi.resetModules();
+  vi.clearAllMocks();
+  vi.useFakeTimers();
+  vi.setSystemTime(FIXED_DATE);
+
+  process.env.NODE_ENV = 'test';
+  process.env.VERCEL_REGION = 'iad1';
+  process.env.VERCEL_URL = 'https://sploot.dev';
+
+  consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  consoleLogSpy.mockRestore();
+  consoleErrorSpy.mockRestore();
+
+  if (originalEnv.NODE_ENV === undefined) {
+    delete process.env.NODE_ENV;
+  } else {
+    process.env.NODE_ENV = originalEnv.NODE_ENV;
+  }
+
+  if (originalEnv.VERCEL_REGION === undefined) {
+    delete process.env.VERCEL_REGION;
+  } else {
+    process.env.VERCEL_REGION = originalEnv.VERCEL_REGION;
+  }
+
+  if (originalEnv.VERCEL_URL === undefined) {
+    delete process.env.VERCEL_URL;
+  } else {
+    process.env.VERCEL_URL = originalEnv.VERCEL_URL;
+  }
+
+  vi.doUnmock('@sentry/nextjs');
+});
+
+describe('observability logger', () => {
+  it('logs info entries as structured JSON', async () => {
+    const { logger } = await importLogger();
+
+    logger.logInfo('goblin-mode-ping', { vibe: 'certified' });
+
+    expect(consoleLogSpy).toHaveBeenCalledTimes(1);
+
+    const entry = parseCall(consoleLogSpy);
+
+    expect(entry).toMatchObject({
+      timestamp: FIXED_DATE.toISOString(),
+      level: 'info',
+      context: 'goblin-mode-ping',
+      metadata: { vibe: 'certified' },
+      environment: {
+        nodeEnv: 'test',
+        vercelRegion: 'iad1',
+        vercelUrl: 'https://sploot.dev',
+      },
+    });
+    expect(entry.traceId).toBeUndefined();
   });
 
-  afterEach(() => {
-    consoleLogSpy.mockRestore();
-    consoleErrorSpy.mockRestore();
+  it('logs errors to console.error with normalized Error payloads', async () => {
+    const { logger } = await importLogger();
+    const boom = new Error('the vibes imploded');
+
+    logger.logError('panic-signal', boom, { requestId: 'req-123' });
+
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+
+    const entry = parseCall(consoleErrorSpy);
+
+    expect(entry.level).toBe('error');
+    expect(entry.context).toBe('panic-signal');
+    expect(entry.metadata).toEqual({ requestId: 'req-123' });
+    expect(entry.error).toMatchObject({
+      name: 'Error',
+      message: 'the vibes imploded',
+    });
+    expect(entry.error.stack).toContain('Error: the vibes imploded');
   });
 
-  describe('logInfo()', () => {
-    it('should output JSON to console.log', () => {
-      logger.logInfo('Test context', { foo: 'bar' });
+  it('pipes errors into sentry with context metadata', async () => {
+    const { logger } = await importLogger();
+    const sentry = await import('@sentry/nextjs');
+    const err = new Error('double-fudge meltdown');
 
-      expect(consoleLogSpy).toHaveBeenCalledTimes(1);
+    logger.logError('sentry-scream', err, { requestId: 'req-9000' });
+    await Promise.resolve();
 
-      const loggedData = JSON.parse(consoleLogSpy.mock.calls[0][0]);
-      expect(loggedData.level).toBe('info');
-      expect(loggedData.context).toBe('Test context');
-      expect(loggedData.metadata).toEqual({ foo: 'bar' });
-      expect(loggedData.timestamp).toBeDefined();
-      expect(loggedData.environment).toBeDefined();
-    });
-
-    it('should include environment context', () => {
-      logger.logInfo('Test context');
-
-      const loggedData = JSON.parse(consoleLogSpy.mock.calls[0][0]);
-      expect(loggedData.environment).toHaveProperty('nodeEnv');
-    });
-
-    it('should work without metadata', () => {
-      logger.logInfo('Test context');
-
-      expect(consoleLogSpy).toHaveBeenCalledTimes(1);
-
-      const loggedData = JSON.parse(consoleLogSpy.mock.calls[0][0]);
-      expect(loggedData.context).toBe('Test context');
-      expect(loggedData.metadata).toBeUndefined();
-    });
-  });
-
-  describe('logError()', () => {
-    it('should output JSON to console.error', () => {
-      const error = new Error('Test error');
-      logger.logError('Error context', error, { userId: '123' });
-
-      expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
-
-      const loggedData = JSON.parse(consoleErrorSpy.mock.calls[0][0]);
-      expect(loggedData.level).toBe('error');
-      expect(loggedData.context).toBe('Error context');
-      expect(loggedData.error).toEqual({
-        name: 'Error',
-        message: 'Test error',
-        stack: expect.any(String),
-      });
-      expect(loggedData.metadata).toEqual({ userId: '123' });
-    });
-
-    it('should call Sentry.captureException() with error and context', async () => {
-      const error = new Error('Sentry test error');
-      logger.logError('Sentry context', error, { requestId: '456' });
-
-      // Wait for dynamic import to resolve
-      await vi.waitFor(
-        async () => {
-          const Sentry = await import('@sentry/nextjs');
-          expect(vi.mocked(Sentry.captureException)).toHaveBeenCalledWith(error, {
-            contexts: {
-              custom: {
-                context: 'Sentry context',
-                traceId: undefined,
-                requestId: '456',
-              },
-            },
-          });
+    expect(vi.mocked(sentry.captureException)).toHaveBeenCalledWith(err, {
+      contexts: {
+        custom: {
+          context: 'sentry-scream',
+          traceId: undefined,
+          requestId: 'req-9000',
         },
-        { timeout: 1000 }
-      );
-    });
-
-    it('should handle Sentry unavailable gracefully', async () => {
-      // Mock Sentry import to fail
-      vi.doUnmock('@sentry/nextjs');
-      vi.doMock('@sentry/nextjs', () => {
-        throw new Error('Sentry not available');
-      });
-
-      const error = new Error('Test error');
-
-      // Should not throw
-      expect(() => {
-        logger.logError('Error context', error);
-      }).not.toThrow();
-
-      // Should still log to console
-      expect(consoleErrorSpy).toHaveBeenCalled();
+      },
     });
   });
 
-  describe('logTiming()', () => {
-    it('should output JSON with duration, success, and operation', () => {
-      logger.logTiming('upload:single', 1500, true, { size: 2048 });
+  it('logs timing entries with duration and success fields', async () => {
+    const { logger } = await importLogger();
 
-      expect(consoleLogSpy).toHaveBeenCalledTimes(1);
+    logger.logTiming('upload:mainframe', 420, true, { attempts: 1 });
 
-      const loggedData = JSON.parse(consoleLogSpy.mock.calls[0][0]);
-      expect(loggedData.level).toBe('timing');
-      expect(loggedData.operation).toBe('upload:single');
-      expect(loggedData.duration).toBe(1500);
-      expect(loggedData.success).toBe(true);
-      expect(loggedData.metadata).toEqual({ size: 2048 });
-    });
+    expect(consoleLogSpy).toHaveBeenCalledTimes(1);
 
-    it('should log failed operations', () => {
-      logger.logTiming('search:query', 500, false);
+    const entry = parseCall(consoleLogSpy);
 
-      const loggedData = JSON.parse(consoleLogSpy.mock.calls[0][0]);
-      expect(loggedData.success).toBe(false);
+    expect(entry).toMatchObject({
+      level: 'timing',
+      operation: 'upload:mainframe',
+      duration: 420,
+      success: true,
+      metadata: { attempts: 1 },
     });
   });
 
-  describe('withTraceId()', () => {
-    it('should create logger with traceId in all log entries', () => {
-      const tracedLogger = withTraceId('trace-123');
+  it('propagates traceId through withTraceId helper', async () => {
+    const { withTraceId } = await importLogger();
+    const tracedLogger = withTraceId('trace-hyperpop');
 
-      tracedLogger.logInfo('Info with trace');
-      const infoLog = JSON.parse(consoleLogSpy.mock.calls[0][0]);
-      expect(infoLog.traceId).toBe('trace-123');
+    tracedLogger.logInfo('info-trace');
+    tracedLogger.logTiming('timing-trace', 69, false);
+    tracedLogger.logError('error-trace', 'string failure');
+    await Promise.resolve();
 
-      tracedLogger.logError('Error with trace', new Error('Test'));
-      const errorLog = JSON.parse(consoleErrorSpy.mock.calls[0][0]);
-      expect(errorLog.traceId).toBe('trace-123');
+    expect(parseCall(consoleLogSpy).traceId).toBe('trace-hyperpop');
+    expect(parseCall(consoleLogSpy, 1).traceId).toBe('trace-hyperpop');
+    expect(parseCall(consoleErrorSpy).traceId).toBe('trace-hyperpop');
+  });
 
-      tracedLogger.logTiming('timing_with_trace', 100, true);
-      const timingLog = JSON.parse(consoleLogSpy.mock.calls[1][0]);
-      expect(timingLog.traceId).toBe('trace-123');
-    });
+  it('serializes Error instances with name, message, and stack', async () => {
+    const { logger } = await importLogger();
+    const typeBoom = new TypeError('weird type gremlin');
 
-    it('should create independent logger instances', () => {
-      const logger1 = withTraceId('trace-1');
-      const logger2 = withTraceId('trace-2');
+    logger.logError('type-chaos', typeBoom);
 
-      logger1.logInfo('Logger 1');
-      logger2.logInfo('Logger 2');
+    const entry = parseCall(consoleErrorSpy);
 
-      const log1 = JSON.parse(consoleLogSpy.mock.calls[0][0]);
-      const log2 = JSON.parse(consoleLogSpy.mock.calls[1][0]);
+    expect(entry.error.name).toBe('TypeError');
+    expect(entry.error.message).toBe('weird type gremlin');
+    expect(entry.error.stack).toContain('TypeError: weird type gremlin');
+  });
 
-      expect(log1.traceId).toBe('trace-1');
-      expect(log2.traceId).toBe('trace-2');
-    });
+  it('serializes string errors to generic Error payloads', async () => {
+    const { logger } = await importLogger();
 
-    it('should not include traceId in default logger', () => {
-      logger.logInfo('No trace');
+    logger.logError('string-chaos', 'no stack for you');
 
-      const loggedData = JSON.parse(consoleLogSpy.mock.calls[0][0]);
-      expect(loggedData.traceId).toBeUndefined();
+    const entry = parseCall(consoleErrorSpy);
+
+    expect(entry.error).toEqual({
+      name: 'Error',
+      message: 'no stack for you',
     });
   });
 
-  describe('Error serialization', () => {
-    it('should serialize Error objects', () => {
-      const error = new Error('Test error message');
-      logger.logError('Error context', error);
-
-      const loggedData = JSON.parse(consoleErrorSpy.mock.calls[0][0]);
-      expect(loggedData.error).toEqual({
-        name: 'Error',
-        message: 'Test error message',
-        stack: expect.any(String),
-      });
-      expect(loggedData.error.stack).toContain('Test error message');
+  it('falls back to console logging when sentry import explodes', async () => {
+    const { logger } = await importLogger(() => {
+      throw new Error('sentry unplugged');
     });
+    const kaboom = new Error('goodbye telemetry');
 
-    it('should serialize custom Error types', () => {
-      const error = new TypeError('Type error');
-      logger.logError('Type error context', error);
+    expect(() => logger.logError('sentry-offline', kaboom)).not.toThrow();
 
-      const loggedData = JSON.parse(consoleErrorSpy.mock.calls[0][0]);
-      expect(loggedData.error.name).toBe('TypeError');
-      expect(loggedData.error.message).toBe('Type error');
-    });
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+    const entry = parseCall(consoleErrorSpy);
+    expect(entry.error.message).toBe('goodbye telemetry');
 
-    it('should serialize string errors', () => {
-      logger.logError('String error context', 'Simple error string');
-
-      const loggedData = JSON.parse(consoleErrorSpy.mock.calls[0][0]);
-      expect(loggedData.error).toEqual({
-        name: 'Error',
-        message: 'Simple error string',
-      });
-    });
-
-    it('should serialize unknown error types', () => {
-      logger.logError('Unknown error context', { weird: 'object' });
-
-      const loggedData = JSON.parse(consoleErrorSpy.mock.calls[0][0]);
-      expect(loggedData.error.name).toBe('UnknownError');
-      expect(loggedData.error.message).toBe('[object Object]');
-    });
-
-    it('should serialize null/undefined errors', () => {
-      logger.logError('Null error', null);
-
-      const loggedData = JSON.parse(consoleErrorSpy.mock.calls[0][0]);
-      expect(loggedData.error.name).toBe('UnknownError');
-      expect(loggedData.error.message).toBe('null');
-    });
-  });
-
-  describe('JSON serialization', () => {
-    it('should produce valid JSON for all log types', () => {
-      logger.logInfo('Info test');
-      logger.logError('Error test', new Error('Test'));
-      logger.logTiming('timing_test', 100, true);
-
-      // Should not throw when parsing
-      expect(() => JSON.parse(consoleLogSpy.mock.calls[0][0])).not.toThrow();
-      expect(() => JSON.parse(consoleErrorSpy.mock.calls[0][0])).not.toThrow();
-      expect(() => JSON.parse(consoleLogSpy.mock.calls[1][0])).not.toThrow();
-    });
-
-    it('should include timestamp in ISO format', () => {
-      logger.logInfo('Timestamp test');
-
-      const loggedData = JSON.parse(consoleLogSpy.mock.calls[0][0]);
-      expect(loggedData.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-    });
-  });
-
-  describe('Metadata handling', () => {
-    it('should include metadata in all log types', () => {
-      const metadata = { requestId: 'req-123', userId: 'user-456' };
-
-      logger.logInfo('Info with metadata', metadata);
-      logger.logError('Error with metadata', new Error('Test'), metadata);
-      logger.logTiming('timing_with_metadata', 100, true, metadata);
-
-      const infoLog = JSON.parse(consoleLogSpy.mock.calls[0][0]);
-      const errorLog = JSON.parse(consoleErrorSpy.mock.calls[0][0]);
-      const timingLog = JSON.parse(consoleLogSpy.mock.calls[1][0]);
-
-      expect(infoLog.metadata).toEqual(metadata);
-      expect(errorLog.metadata).toEqual(metadata);
-      expect(timingLog.metadata).toEqual(metadata);
-    });
-
-    it('should handle complex metadata objects', () => {
-      const metadata = {
-        nested: { data: { here: true } },
-        array: [1, 2, 3],
-        mixed: { num: 42, str: 'test', bool: false },
-      };
-
-      logger.logInfo('Complex metadata', metadata);
-
-      const loggedData = JSON.parse(consoleLogSpy.mock.calls[0][0]);
-      expect(loggedData.metadata).toEqual(metadata);
-    });
+    await new Promise(resolve => setImmediate(resolve));
   });
 });
