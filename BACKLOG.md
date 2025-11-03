@@ -7,8 +7,6 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 
 ## Now (Sprint-Ready, <2 weeks)
 
-### [INFRA] Vercel Analytics and Observability
-
 ### [Feature] Add "Add to Sploot" Quick Save
 **Files**: Browser extension (new), mobile app integration (future)
 **Perspectives**: product-visionary, user-experience-advocate
