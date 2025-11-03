@@ -144,6 +144,7 @@ describe('observability logger', () => {
 
     expect(entry).toMatchObject({
       level: 'timing',
+      context: 'upload:mainframe',
       operation: 'upload:mainframe',
       duration: 420,
       success: true,
@@ -163,6 +164,15 @@ describe('observability logger', () => {
     expect(parseCall(consoleLogSpy).traceId).toBe('trace-hyperpop');
     expect(parseCall(consoleLogSpy, 1).traceId).toBe('trace-hyperpop');
     expect(parseCall(consoleErrorSpy).traceId).toBe('trace-hyperpop');
+  });
+
+  it('exposes trace ids via getTraceId', async () => {
+    const { logger, withTraceId } = await importLogger();
+
+    expect(logger.getTraceId()).toBeUndefined();
+
+    const tracedLogger = withTraceId('trace-sparkle');
+    expect(tracedLogger.getTraceId()).toBe('trace-sparkle');
   });
 
   it('serializes Error instances with name, message, and stack', async () => {
@@ -204,5 +214,38 @@ describe('observability logger', () => {
     expect(entry.error.message).toBe('goodbye telemetry');
 
     await new Promise(resolve => setImmediate(resolve));
+  });
+
+  it('falls back to minimal payload when metadata serialization fails', async () => {
+    const { logger } = await importLogger();
+    const loopy: Record<string, unknown> = {};
+    loopy.self = loopy;
+
+    logger.logInfo('loop-chaos', loopy);
+
+    const entry = parseCall(consoleLogSpy);
+    expect(entry.level).toBe('info');
+    expect(entry.context).toBe('loop-chaos');
+    expect(entry.metadata).toBeUndefined();
+    expect(entry.serializationError).toMatchObject({
+      name: 'TypeError',
+    });
+  });
+
+  it('top-level helpers proxy to the default logger instance', async () => {
+    const { logInfo, logError, logTiming } = await importLogger();
+
+    logInfo('helper-info', { blitz: true });
+    expect(parseCall(consoleLogSpy).context).toBe('helper-info');
+
+    const boom = new Error('helper kaboom');
+    logError('helper-error', boom);
+    expect(parseCall(consoleErrorSpy).context).toBe('helper-error');
+
+    logTiming('helper-timing', 1337, true);
+    expect(parseCall(consoleLogSpy, 1)).toMatchObject({
+      operation: 'helper-timing',
+      success: true,
+    });
   });
 });
