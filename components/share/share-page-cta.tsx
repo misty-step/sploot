@@ -19,7 +19,8 @@ interface SharePageCTAProps {
  */
 export function SharePageCTA({ assetId, className }: SharePageCTAProps) {
   // Construct sign-up URL with UTM parameters for tracking
-  const signUpUrl = `/sign-up?ref=share&id=${assetId}`;
+  // Encode assetId to handle special characters (&, ?, #, spaces)
+  const signUpUrl = `/sign-up?ref=share&id=${encodeURIComponent(assetId)}`;
 
   const handleClick = () => {
     track('share_cta_click', {

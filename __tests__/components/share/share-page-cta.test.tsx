@@ -75,6 +75,51 @@ describe('SharePageCTA', () => {
       const link = screen.getByText('Create your collection').closest('a');
       expect(link?.getAttribute('href')).toContain('ref=share');
     });
+
+    it('should URL-encode asset IDs with ampersands', () => {
+      const assetIdWithAmpersand = 'id&foo=bar';
+      render(<SharePageCTA assetId={assetIdWithAmpersand} />);
+
+      const link = screen.getByText('Create your collection').closest('a');
+      // & should be encoded as %26
+      expect(link).toHaveAttribute('href', '/sign-up?ref=share&id=id%26foo%3Dbar');
+    });
+
+    it('should URL-encode asset IDs with question marks', () => {
+      const assetIdWithQuestion = 'asset?query=test';
+      render(<SharePageCTA assetId={assetIdWithQuestion} />);
+
+      const link = screen.getByText('Create your collection').closest('a');
+      // ? should be encoded as %3F
+      expect(link).toHaveAttribute('href', '/sign-up?ref=share&id=asset%3Fquery%3Dtest');
+    });
+
+    it('should URL-encode asset IDs with spaces', () => {
+      const assetIdWithSpace = 'asset with spaces';
+      render(<SharePageCTA assetId={assetIdWithSpace} />);
+
+      const link = screen.getByText('Create your collection').closest('a');
+      // Spaces should be encoded as %20
+      expect(link).toHaveAttribute('href', '/sign-up?ref=share&id=asset%20with%20spaces');
+    });
+
+    it('should URL-encode asset IDs with hash symbols', () => {
+      const assetIdWithHash = 'asset#fragment';
+      render(<SharePageCTA assetId={assetIdWithHash} />);
+
+      const link = screen.getByText('Create your collection').closest('a');
+      // # should be encoded as %23
+      expect(link).toHaveAttribute('href', '/sign-up?ref=share&id=asset%23fragment');
+    });
+
+    it('should handle simple asset IDs without double-encoding', () => {
+      // Simple IDs without special chars should work as before
+      const simpleId = 'simple-asset-id-123';
+      render(<SharePageCTA assetId={simpleId} />);
+
+      const link = screen.getByText('Create your collection').closest('a');
+      expect(link).toHaveAttribute('href', `/sign-up?ref=share&id=${simpleId}`);
+    });
   });
 
   describe('Styling', () => {
@@ -183,12 +228,13 @@ describe('SharePageCTA', () => {
       expect(link?.getAttribute('href')).toContain(`id=${specialId}`);
     });
 
-    it('should not double-encode asset ID in URL', () => {
-      const idWithSpace = 'asset 123'; // Should be preserved as-is in URL construction
+    it('should properly encode asset ID with spaces in URL', () => {
+      const idWithSpace = 'asset 123';
       render(<SharePageCTA assetId={idWithSpace} />);
 
       const link = screen.getByText('Create your collection').closest('a');
-      expect(link?.getAttribute('href')).toBe(`/sign-up?ref=share&id=${idWithSpace}`);
+      // Spaces should be encoded as %20
+      expect(link?.getAttribute('href')).toBe('/sign-up?ref=share&id=asset%20123');
     });
   });
 });
