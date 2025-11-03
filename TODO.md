@@ -142,7 +142,7 @@
 
 ### Module 2: Performance Monitor
 
-- [ ] Implement lib/performance-monitor.ts with timing and percentiles
+- [x] Implement lib/performance-monitor.ts with timing and percentiles
   ```
   File: lib/performance-monitor.ts (NEW)
   Architecture: Implements Module 2 interface from DESIGN.md "Module 2: Performance Monitor"
@@ -195,7 +195,7 @@
   Time: 1.5hr
   ```
 
-- [ ] Write unit tests for lib/performance-monitor.ts
+- [x] Write unit tests for lib/performance-monitor.ts
   ```
   File: __tests__/lib/performance-monitor.test.ts (NEW)
   Pattern: Follow __tests__/lib/seeded-random.test.ts structure (pure functions)
