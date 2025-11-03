@@ -31,43 +31,17 @@ export function ShareButton({
   const isMobile = useIsMobile();
 
   /**
-   * Handles native Web Share API sharing with image file.
-   * Fetches the image blob, converts to File, and opens native share sheet.
+   * Handles native Web Share API sharing with URL only.
+   * Shares the share page URL which includes rich OG metadata preview.
+   * This avoids "double image" issue on social platforms.
    */
   const handleNativeShare = async (shareUrl: string): Promise<boolean> => {
-    // Can't use native share without blob URL
-    if (!blobUrl) {
-      return false;
-    }
-
     try {
-      // Fetch the image blob
-      const response = await fetch(blobUrl);
-      if (!response.ok) {
-        console.error(`[ShareButton] Failed to fetch blob for asset ${assetId}: ${response.status}`);
-        toast.error("Couldn't load image for sharing");
-        return false;
-      }
-
-      const blob = await response.blob();
-
-      // Determine filename and MIME type
-      const shareFilename = filename || `sploot-meme-${assetId.slice(0, 8)}.jpg`;
-      const shareMimeType = mimeType || blob.type || 'image/jpeg';
-
-      // Convert blob to File object
-      const file = new File([blob], shareFilename, { type: shareMimeType });
-
-      // Prepare share data
+      // Prepare share data - URL only for clean single preview
       const shareData: ShareData = {
-        title: shareFilename,
+        title: filename || 'Check out this meme from sploot',
         url: shareUrl,
       };
-
-      // Add files if supported
-      if (canShareFiles) {
-        shareData.files = [file];
-      }
 
       // Open native share sheet
       await navigator.share(shareData);
@@ -85,19 +59,6 @@ export function ShareButton({
         console.error(`[ShareButton] Share not allowed for asset ${assetId}:`, error);
         toast.error('Share permission denied');
         return false;
-      }
-
-      // If blob conversion or file creation failed, try sharing just the URL
-      if (!canShareFiles) {
-        try {
-          await navigator.share({ url: shareUrl, title: filename || 'Check out this meme' });
-          toast.success('Share sheet opened');
-          return true;
-        } catch (fallbackError) {
-          // Fallback also failed
-          console.error(`[ShareButton] Native share failed for asset ${assetId}:`, fallbackError);
-          return false;
-        }
       }
 
       console.error(`[ShareButton] Native share failed for asset ${assetId}:`, error);

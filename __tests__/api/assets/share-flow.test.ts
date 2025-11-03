@@ -170,31 +170,33 @@ describe('Share flow', () => {
         mime: 'image/jpeg',
         width: 1200,
         height: 630,
+        createdAt: new Date('2025-01-01T00:00:00.000Z'),
+        size: 1024000,
       });
 
       const metadata = await generateMetadata({
         params: Promise.resolve({ id: mockAssetId }),
       });
 
-      expect(metadata.title).toBe('Check out this meme');
-      expect(metadata.description).toBe('Shared via Sploot');
+      expect(metadata.title).toBe('From Sploot - Your personal meme library');
+      expect(metadata.description).toBe('Discover and curate your meme collection with lightning-fast semantic search. Save, organize, and share memes that matter.');
       expect(metadata.openGraph).toBeDefined();
-      expect(metadata.openGraph?.title).toBe('Check out this meme');
-      expect(metadata.openGraph?.description).toBe('Shared via Sploot');
+      expect(metadata.openGraph?.title).toBe('From Sploot - Your personal meme library');
+      expect(metadata.openGraph?.description).toBe('Discover and curate your meme collection with lightning-fast semantic search. Save, organize, and share memes that matter.');
       expect(metadata.openGraph?.images).toHaveLength(1);
       expect(metadata.openGraph?.images?.[0]).toMatchObject({
         url: mockBlobUrl,
         width: 1200,
         height: 630,
-        alt: 'Meme',
+        alt: 'Shared meme from Sploot',
       });
       expect(metadata.openGraph?.siteName).toBe('Sploot');
       expect(metadata.openGraph?.type).toBe('website');
 
       expect(metadata.twitter).toBeDefined();
       expect(metadata.twitter?.card).toBe('summary_large_image');
-      expect(metadata.twitter?.title).toBe('Check out this meme');
-      expect(metadata.twitter?.description).toBe('Shared via Sploot');
+      expect(metadata.twitter?.title).toBe('From Sploot - Your personal meme library');
+      expect(metadata.twitter?.description).toBe('Discover and curate your meme collection with lightning-fast semantic search. Save, organize, and share memes that matter.');
       expect(metadata.twitter?.images).toEqual([mockBlobUrl]);
     });
 
@@ -228,6 +230,8 @@ describe('Share flow', () => {
         mime: 'image/jpeg',
         width: null,
         height: null,
+        createdAt: new Date('2025-01-01T00:00:00.000Z'),
+        size: 512000,
       });
 
       const metadata = await generateMetadata({
