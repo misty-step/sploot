@@ -2,7 +2,7 @@
 
 ## Context
 
-**Approach:** Enhanced Static Share Page - refine `/m/[id]/page.tsx` with dynamic metadata, mobile-first UI, Bloomberg Terminal aesthetic
+**Approach:** Enhanced Static Share Page - refine `/m/[id]/page.tsx` with dynamic metadata, mobile-first UI, minimal technical aesthetic
 **Key Files:**
 - `app/m/[id]/page.tsx` (existing share page - 100 lines)
 - `components/share/` (new directory for share-specific components)
@@ -60,7 +60,7 @@ Time: 45min
 
 - [x] **Create SharePageLayout Component**
 
-Build mobile-first layout container with Bloomberg Terminal aesthetic.
+Build mobile-first layout container with minimal technical aesthetic.
 
 ```
 Files: components/share/share-page-layout.tsx (new)
@@ -127,7 +127,7 @@ interface SharePageCTAProps {
 
 - [x] **Create SharePageMetadata Component**
 
-Display technical file info in monospace (Bloomberg Terminal style).
+Display technical file info in monospace (terminal style).
 
 ```
 Files: components/share/share-page-metadata.tsx (new)
@@ -239,7 +239,7 @@ Success:
   - Shows branded error message: "Couldn't load this meme"
   - CTA to homepage: "Explore Sploot"
   - Logs error to console (structured format)
-  - Maintains Bloomberg Terminal aesthetic (black bg, terminal colors)
+  - Maintains minimal design aesthetic (black bg, terminal colors)
 Test: Component test with error simulation
   - Boundary catches errors from children
   - Fallback UI renders correctly

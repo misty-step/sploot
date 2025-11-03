@@ -70,7 +70,7 @@ pnpm test:e2e            # Run end-to-end tests
 
 ## Design System
 
-### Theme Configuration - Bloomberg Terminal × Linear Aesthetic
+### Theme Configuration - Minimal × Technical Aesthetic
 - **Primary**: Neon Violet (#7C5CFF) - used sparingly for interactive elements
 - **Background**: Pure Black (#000000) - terminal aesthetic foundation
 - **Terminal Colors**:
@@ -84,7 +84,7 @@ pnpm test:e2e            # Run end-to-end tests
 - **Spacing**: 4px base unit system
 
 ### Component Patterns
-- Bloomberg Terminal-inspired information density
+- High information density with technical precision
 - Linear's minimal visual language
 - Corner brackets for viewport framing
 - Monospace typography for all technical/metadata displays

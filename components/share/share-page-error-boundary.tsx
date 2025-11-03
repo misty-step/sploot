@@ -16,7 +16,7 @@ interface SharePageErrorBoundaryState {
  * Error boundary for share page to handle image load failures gracefully.
  *
  * Catches errors during image rendering and displays a branded fallback UI
- * with Bloomberg Terminal aesthetic. Logs errors to console for debugging.
+ * with minimal design aesthetic. Logs errors to console for debugging.
  */
 export class SharePageErrorBoundary extends Component<
   SharePageErrorBoundaryProps,

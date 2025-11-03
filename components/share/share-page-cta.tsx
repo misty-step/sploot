@@ -14,7 +14,7 @@ interface SharePageCTAProps {
  * Branded CTA button for share pages.
  *
  * Links to sign-up with UTM tracking for conversion attribution.
- * Neon violet styling with glow hover effect (Bloomberg Terminal aesthetic).
+ * Neon violet styling with glow hover effect.
  * Touch-optimized with 48px minimum target size.
  */
 export function SharePageCTA({ assetId, className }: SharePageCTAProps) {

@@ -8,7 +8,7 @@ interface CornerBracketsProps {
 
 /**
  * Terminal-style corner brackets for viewport framing
- * Creates a tactical/technical aesthetic reminiscent of Bloomberg Terminal
+ * Creates a tactical/technical aesthetic
  *
  * Each bracket: 24px × 24px, 2px stroke, positioned absolutely in corners
  * Fixed positioning with 8px inset from viewport edges

@@ -10,7 +10,7 @@ interface SharePageLayoutProps {
 }
 
 /**
- * Mobile-first layout container for share pages with Bloomberg Terminal aesthetic.
+ * Mobile-first layout container for share pages with minimal, technical aesthetic.
  *
  * Provides responsive three-section layout:
  * - Header: Logo and CTA bar

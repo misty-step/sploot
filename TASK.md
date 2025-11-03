@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Transform the current generic share page (`/m/[id]`) into a polished, mobile-first gateway that drives viral growth through compelling brand attribution. Focus: enhanced OpenGraph metadata, refined visual design aligned with Sploot's Bloomberg Terminal aesthetic, and strategic CTAs that convert viewers to users. Ship static-first approach for reliability, deferring dynamic OG generation complexity.
+Transform the current generic share page (`/m/[id]`) into a polished, mobile-first gateway that drives viral growth through compelling brand attribution. Focus: enhanced OpenGraph metadata, refined visual design aligned with Sploot's minimal technical aesthetic, and strategic CTAs that convert viewers to users. Ship static-first approach for reliability, deferring dynamic OG generation complexity.
 
 **User Value:** Shared memes look professional on social platforms (Twitter/X, Discord, iMessage), creating trust and curiosity that drives click-throughs and sign-ups.
 
@@ -41,7 +41,7 @@ Transform the current generic share page (`/m/[id]`) into a polished, mobile-fir
 2. **Enhanced Share Page UI**
    - Mobile-first responsive layout (320px - 428px primary viewport)
    - Center-aligned meme with max-width constraints
-   - Bloomberg Terminal-inspired "landing bar" with:
+   - Technical/minimal "landing bar" with:
      - Sploot logo/wordmark
      - Primary CTA: "Create your collection"
      - Secondary: App Store badge (PWA install)
@@ -155,7 +155,7 @@ Each layer transforms concepts: UI components don't know about routes, routes do
 **Team Constraints:**
 - Solo developer (phaedrus) - avoid operational complexity
 - Time budget: 1-2 days (8-16 hours)
-- No design resources: Use existing Bloomberg Terminal design tokens
+- No design resources: Use existing minimal/technical design tokens
 
 **Environment Requirements:**
 - Next.js 15 App Router (current version)
@@ -186,7 +186,7 @@ Each layer transforms concepts: UI components don't know about routes, routes do
 
 2. Redesign share page component
    - Create `components/share/share-page-layout.tsx`
-   - Bloomberg Terminal aesthetic: black bg, neon violet accents
+   - Minimal technical aesthetic: black bg, neon violet accents
    - Mobile-first responsive grid
    - Landing bar: logo + CTA
    - Centered meme with responsive sizing

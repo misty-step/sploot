@@ -121,7 +121,7 @@ export default async function PublicMemePage({ params }: PublicMemePageProps) {
         logo={
           <div className="flex items-center gap-2">
             <OverlappingCircles className="w-8 h-8" strokeWidth={2} />
-            <span className="text-white font-medium text-sm sm:text-base">Sploot</span>
+            <span className="text-white font-medium text-sm sm:text-base">sploot</span>
           </div>
         }
         cta={<SharePageCTA assetId={id} />}

@@ -18,7 +18,7 @@ function formatFileSize(bytes: number): string {
 }
 
 /**
- * Display technical file metadata in monospace (Bloomberg Terminal style).
+ * Display technical file metadata in monospace (terminal style).
  *
  * Shows:
  * - File size (human-readable: KB/MB)
