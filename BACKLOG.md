@@ -7,6 +7,8 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 
 ## Now (Sprint-Ready, <2 weeks)
 
+### [INFRA] Vercel Analytics and Observability
+
 ### [Feature] Add "Add to Sploot" Quick Save
 **Files**: Browser extension (new), mobile app integration (future)
 **Perspectives**: product-visionary, user-experience-advocate
@@ -143,6 +145,16 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 **Effort**: 5-7 weeks | **Value**: Creates recurring revenue stream
 **Acceptance**: Users can sign up for free, upgrade to Pro, billing works, limits enforced
 
+### [Performance] Add ISR to Share Page
+**File**: `/app/m/[id]/page.tsx`
+**Perspectives**: performance-pathfinder
+**Source**: PR #12 review (Claude)
+**Context**: Share pages regenerated on every request. Architecture docs (TASK.md) specify ISR but missing from implementation.
+**Implementation**: Add `export const revalidate = 3600` (1 hour cache). Monitor P95 response time improvement via Vercel Analytics.
+**Trigger**: After 1 week production data on share page traffic patterns (validate cache hit ratio worthwhile)
+**Effort**: 5min | **Priority**: MEDIUM
+**Impact**: Edge caching reduces share page load time 200ms → 50ms (4x improvement)
+
 ### [Performance] Move Client-Side Filtering to Server
 **File**: `/app/app/page.tsx:288-297`
 **Perspectives**: performance-pathfinder
@@ -168,6 +180,14 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 ---
 
 ## Soon (Exploring, 3-6 months)
+
+- **[Hardening] Add Image Load Error Handling to Share Page** - Add `onError` handler to Next.js Image component on share page. React Error Boundaries don't catch image load failures (404, network issues). Show branded fallback UI matching SharePageErrorBoundary aesthetic. **Trigger**: If production monitoring shows >1% image load failure rate on share pages. **Source**: PR #12 review (Claude). **Why Deferred**: Vercel Blob URLs highly stable, no production evidence of failures, adds complexity for rare edge case. (1h)
+
+- **[Testing] Add Tests for Share Page Metadata Generation** - Create `__tests__/app/m/[id]/metadata.test.ts` to test server-side `generateMetadata()` function. Mock Next.js metadata API, test OG tags, Twitter Card, Schema.org JSON-LD generation with various asset states (normal, missing dimensions, deleted). Currently indirectly covered by API share-flow tests. **Source**: PR #12 review (Claude). **Why Deferred**: Low-risk code (simple Prisma query + metadata object), indirect test coverage sufficient for MVP. (2h)
+
+- **[Maintainability] Consolidate Duplicate formatFileSize Functions** - Two implementations in `components/share/share-page-metadata.tsx:14-18` and `lib/upload-errors.ts:219-223` with slight formatting differences (spaces: "10.5 KB" vs "10.5KB"). **Options**: Import from lib/upload-errors + `.replace(' ', '')`, add `compact: boolean` param to shared utility, or document intentional difference. **Source**: PR #12 review (CodeRabbitAI). **Why Deferred**: Code quality issue, not user-facing. Low maintenance risk (stable code). (15min)
+
+- **[Documentation] Add Security Comment for Structured Data** - Add trust boundary comment to Schema.org JSON-LD block in `app/m/[id]/page.tsx`: "Safe: structured data sourced from database only, no user-provided content". **Source**: PR #12 review (Claude). **Why Deferred**: No functional impact, code clarity improvement for future security reviews. (2min)
 
 - **[Product] Team Workspaces & Collaboration** - Multi-user library access with permissions, shared upload/search/tagging, real-time updates. Opens B2B market (agencies, brands, creators). 10x TAM expansion. Team pricing $40-100/mo vs $10/mo individual. Requires implementing user-scoped cache invalidation (spec in old BACKLOG lines 257-328). (6-10 weeks)
 
