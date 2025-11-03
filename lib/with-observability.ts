@@ -1,0 +1,144 @@
+import { nanoid } from 'nanoid';
+import { unstable_rethrow } from 'next/navigation';
+import type { NextRequest, NextResponse } from 'next/server';
+
+import { withTraceId } from './observability-logger';
+import { getPerformanceMonitor } from './performance-monitor';
+
+export type RouteHandler<T = unknown> = (
+  req: NextRequest,
+  context?: RouteContext
+) => Promise<NextResponse<T>>;
+
+export interface RouteContext {
+  params?: Promise<Record<string, string>>;
+}
+
+export interface ObservabilityOptions {
+  operation?: string;
+  skipTiming?: boolean;
+  skipLogging?: boolean;
+  metadata?: Record<string, any>;
+}
+
+interface RequestMetadata {
+  method: string;
+  pathname: string;
+  traceId: string;
+  query?: Record<string, string>;
+  statusCode?: number;
+  duration?: number;
+  success?: boolean;
+}
+
+const TRACE_ID_LENGTH = 12;
+
+export function withObservability<T>(
+  handler: RouteHandler<T>,
+  options: ObservabilityOptions = {}
+): RouteHandler<T> {
+  return async function wrappedHandler(
+    req: NextRequest,
+    context?: RouteContext
+  ): Promise<NextResponse<T>> {
+    const traceId = generateTraceId();
+    const operation = resolveOperation(options.operation, req);
+    const startTime = Date.now();
+    const logger = withTraceId(traceId);
+    const query = extractQuery(req);
+    const metadata = createBaseMetadata(req, traceId, query, options.metadata);
+    const shouldLog = options.skipLogging !== true;
+    const perfMonitor = options.skipTiming ? null : getPerformanceMonitor();
+
+    if (shouldLog) {
+      logger.logInfo('request:start', {
+        ...metadata,
+        operation,
+      });
+    }
+
+    try {
+      const response = perfMonitor
+        ? await perfMonitor.measureAsync(operation, () => handler(req, context))
+        : await handler(req, context);
+      const duration = Date.now() - startTime;
+      const statusCode = response.status;
+      const success = statusCode >= 200 && statusCode < 400;
+
+      if (shouldLog) {
+        logger.logTiming(operation, duration, success, {
+          ...metadata,
+          statusCode,
+          duration,
+          success,
+        });
+      }
+
+      return response;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      unstable_rethrow(error);
+
+      logger.logError('request:error', error, {
+        ...metadata,
+        operation,
+        duration,
+        success: false,
+      });
+
+      throw error;
+    }
+  };
+}
+
+function generateTraceId(): string {
+  try {
+    return nanoid(TRACE_ID_LENGTH);
+  } catch (error) {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto
+        .randomUUID()
+        .replace(/-/g, '')
+        .slice(0, TRACE_ID_LENGTH);
+    }
+
+    return Math.random().toString(36).slice(2, 2 + TRACE_ID_LENGTH);
+  }
+}
+
+function resolveOperation(operation: string | undefined, req: NextRequest): string {
+  if (operation) {
+    return operation;
+  }
+
+  try {
+    return req.nextUrl.pathname;
+  } catch {
+    return 'unknown-operation';
+  }
+}
+
+function extractQuery(req: NextRequest): Record<string, string> | undefined {
+  const entries = Array.from(req.nextUrl.searchParams.entries());
+  if (entries.length === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(entries);
+}
+
+function createBaseMetadata(
+  req: NextRequest,
+  traceId: string,
+  query: Record<string, string> | undefined,
+  extra?: Record<string, any>
+): RequestMetadata & Record<string, any> {
+  return {
+    method: req.method,
+    pathname: req.nextUrl.pathname,
+    traceId,
+    ...(query ? { query } : {}),
+    ...(extra ?? {}),
+  };
+}

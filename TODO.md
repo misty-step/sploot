@@ -293,7 +293,7 @@
 
 ### Module 4: Route Middleware
 
-- [ ] Implement lib/with-observability.ts HOF wrapper
+- [x] Implement lib/with-observability.ts HOF wrapper
   ```
   File: lib/with-observability.ts (NEW)
   Architecture: Implements Module 4 interface from DESIGN.md "Module 4: API Route Middleware"
