@@ -806,7 +806,7 @@
   Time: 15min
   ```
 
-- [ ] Create app/global-error.tsx for root-level errors
+- [x] Create app/global-error.tsx for root-level errors
   ```
   File: app/global-error.tsx (NEW)
   Architecture: Next.js root error boundary from DESIGN.md "Integration Points"
