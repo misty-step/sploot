@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
 import { getAuth } from '@/lib/auth/server';
+import { withObservability } from '@/lib/with-observability';
 
 interface SearchFilters {
   favorites?: boolean;
@@ -15,7 +16,7 @@ interface SearchFilters {
   minHeight?: number;
 }
 
-export async function POST(req: NextRequest) {
+async function postHandler(req: NextRequest) {
   const startTime = Date.now();
   let query: string = '';
   let filters: SearchFilters = {};
@@ -323,6 +324,8 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const POST = withObservability(postHandler, { operation: 'search:advanced' });
 
 // Fallback metadata search when embeddings are unavailable
 async function performMetadataSearch(

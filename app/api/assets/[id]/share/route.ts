@@ -4,6 +4,7 @@ import { getAuth } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
 import { getOrCreateShareSlug, AssetNotFoundError } from '@/lib/share';
 import { apiError } from '@/lib/api-error';
+import { withObservability } from '@/lib/with-observability';
 
 /**
  * Generate a share link for an asset
@@ -19,7 +20,7 @@ import { apiError } from '@/lib/api-error';
  * - 404: Asset is soft-deleted (not shareable)
  * - 500: Internal server error
  */
-export async function POST(
+async function postHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -83,3 +84,5 @@ export async function POST(
     return apiError('INTERNAL_ERROR', 'Failed to generate share link');
   }
 }
+
+export const POST = withObservability(postHandler, { operation: 'assets:share' });

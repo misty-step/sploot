@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { requireUserIdWithSync } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
+import { withObservability } from '@/lib/with-observability';
 
 /**
  * GET /api/assets/[id]/tags - Get tags for a specific asset
  */
-export async function GET(
+async function getHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -65,7 +66,7 @@ export async function GET(
 /**
  * POST /api/assets/[id]/tags - Add tags to an asset
  */
-export async function POST(
+async function postHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -199,7 +200,7 @@ export async function POST(
 /**
  * DELETE /api/assets/[id]/tags - Remove tags from an asset
  */
-export async function DELETE(
+async function deleteHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -261,3 +262,7 @@ export async function DELETE(
     );
   }
 }
+
+export const GET = withObservability(getHandler, { operation: 'assets:tags:list' });
+export const POST = withObservability(postHandler, { operation: 'assets:tags:add' });
+export const DELETE = withObservability(deleteHandler, { operation: 'assets:tags:remove' });

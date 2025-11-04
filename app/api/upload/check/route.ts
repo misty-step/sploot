@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUserIdWithSync } from '@/lib/auth/server';
 import { prisma, assetExists } from '@/lib/db';
+import { withObservability } from '@/lib/with-observability';
 
 /**
  * Upload Preflight Check Endpoint
@@ -53,7 +54,7 @@ import { prisma, assetExists } from '@/lib/db';
  *   await uploadFile(file);
  * }
  */
-export async function POST(req: NextRequest) {
+async function postHandler(req: NextRequest) {
   try {
     // Check authentication and ensure user exists in database
     const userId = await requireUserIdWithSync();
@@ -139,7 +140,7 @@ export async function POST(req: NextRequest) {
 /**
  * OPTIONS handler for CORS preflight requests
  */
-export async function OPTIONS(req: NextRequest) {
+async function optionsHandler(req: NextRequest) {
   return new NextResponse(null, {
     status: 200,
     headers: {
@@ -148,3 +149,10 @@ export async function OPTIONS(req: NextRequest) {
     },
   });
 }
+
+export const POST = withObservability(postHandler, { operation: 'upload:check' });
+export const OPTIONS = withObservability(optionsHandler, {
+  operation: 'upload:check-options',
+  skipTiming: true,
+  skipLogging: true,
+});

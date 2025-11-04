@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { del as deleteBlob } from '@vercel/blob';
 import { headers } from 'next/headers';
+import { withObservability } from '@/lib/with-observability';
 
 interface PurgeStats {
   totalFound: number;
@@ -25,7 +26,7 @@ interface PurgeStats {
  * Authorization: Uses Bearer token from CRON_SECRET environment variable
  * Schedule: Daily via Vercel Cron (configured in vercel.json)
  */
-export async function GET(request: NextRequest) {
+async function getHandler(request: NextRequest) {
   const startTime = Date.now();
   const stats: PurgeStats = {
     totalFound: 0,
@@ -174,3 +175,7 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export const GET = withObservability(getHandler, {
+  operation: 'cron:purge-deleted-assets',
+});

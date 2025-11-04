@@ -4,6 +4,7 @@ import { captureException } from '@sentry/nextjs';
 import { getAuth } from '@/lib/auth/server';
 import { trackTiming } from '@/lib/analytics';
 import { logger } from '@/lib/observability-logger';
+import { withObservability } from '@/lib/with-observability';
 
 type TelemetryRequest =
   | { type: 'error'; payload: ErrorPayload }
@@ -39,7 +40,7 @@ interface TelemetryResponse {
   message?: string;
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse<TelemetryResponse>> {
+async function postHandler(request: NextRequest): Promise<NextResponse<TelemetryResponse>> {
   try {
     const { userId } = await getAuth();
     if (!userId) {
@@ -202,3 +203,5 @@ function isUsagePayload(value: unknown): value is UsagePayload {
     typeof payload.timestamp === 'number'
   );
 }
+
+export const POST = withObservability(postHandler, { operation: 'telemetry:ingest' });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { headers } from 'next/headers';
+import { withObservability } from '@/lib/with-observability';
 
 interface AuditStats {
   totalAssets: number;
@@ -30,7 +31,7 @@ interface UserAuditResult {
  * Authorization: Uses Bearer token from CRON_SECRET environment variable
  * Schedule: Daily via Vercel Cron (configured in vercel.json)
  */
-export async function GET(request: NextRequest) {
+async function getHandler(request: NextRequest) {
   const startTime = Date.now();
   const stats: AuditStats = {
     totalAssets: 0,
@@ -202,3 +203,7 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export const GET = withObservability(getHandler, {
+  operation: 'cron:audit-assets',
+});

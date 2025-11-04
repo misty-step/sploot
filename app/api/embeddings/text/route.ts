@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getAuth } from '@/lib/auth/server';
+import { withObservability } from '@/lib/with-observability';
 
-export async function POST(req: NextRequest) {
+async function postHandler(req: NextRequest) {
   try {
     const { userId } = await getAuth();
     if (!userId) {
@@ -69,3 +70,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const POST = withObservability(postHandler, { operation: 'embeddings:text' });

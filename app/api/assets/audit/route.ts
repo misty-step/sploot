@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUserIdWithSync } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
+import { withObservability } from '@/lib/with-observability';
 
 interface AuditResult {
   id: string;
@@ -33,7 +34,7 @@ interface AuditSummary {
  * Returns JSON with lists of valid, broken (404/403), and error assets
  * Uses HEAD requests to minimize bandwidth usage
  */
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   try {
     const userId = await requireUserIdWithSync();
 
@@ -133,3 +134,5 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export const GET = withObservability(getHandler, { operation: 'assets:audit' });

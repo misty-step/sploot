@@ -3,8 +3,9 @@ import { unstable_rethrow } from 'next/navigation';
 import { getCacheService } from '@/lib/cache';
 import { getAuth } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
+import { withObservability } from '@/lib/with-observability';
 
-export async function GET(
+async function getHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -79,7 +80,7 @@ export async function GET(
   }
 }
 
-export async function PATCH(
+async function patchHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -216,7 +217,7 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
+async function deleteHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -307,3 +308,7 @@ export async function DELETE(
     );
   }
 }
+
+export const GET = withObservability(getHandler, { operation: 'assets:detail' });
+export const PATCH = withObservability(patchHandler, { operation: 'assets:update' });
+export const DELETE = withObservability(deleteHandler, { operation: 'assets:delete' });

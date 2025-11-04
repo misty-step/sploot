@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUserIdWithSync } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
+import { withObservability } from '@/lib/with-observability';
 
 /**
  * PATCH /api/tags/[tagId] - Update a tag
  */
-export async function PATCH(
+async function patchHandler(
   req: NextRequest,
   { params }: { params: Promise<{ tagId: string }> }
 ) {
@@ -87,7 +88,7 @@ export async function PATCH(
 /**
  * DELETE /api/tags/[tagId] - Delete a tag
  */
-export async function DELETE(
+async function deleteHandler(
   req: NextRequest,
   { params }: { params: Promise<{ tagId: string }> }
 ) {
@@ -136,3 +137,6 @@ export async function DELETE(
     );
   }
 }
+
+export const PATCH = withObservability(patchHandler, { operation: 'tags:update' });
+export const DELETE = withObservability(deleteHandler, { operation: 'tags:delete' });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { headers } from 'next/headers';
+import { withObservability } from '@/lib/with-observability';
 
 // Performance tracking
 interface ProcessingStats {
@@ -20,7 +21,7 @@ interface ProcessingStats {
  *
  * Authorization: Uses Bearer token from CRON_SECRET environment variable
  */
-export async function GET(request: NextRequest) {
+async function getHandler(request: NextRequest) {
   const startTime = Date.now();
   const stats: ProcessingStats = {
     totalProcessed: 0,
@@ -191,12 +192,20 @@ export async function GET(request: NextRequest) {
  *
  * Manual trigger for processing embeddings with specific options.
  */
-export async function POST(request: NextRequest) {
+async function postHandler(request: NextRequest) {
   // For manual triggering with specific parameters
   const body = await request.json();
   const { batchSize = 10, includeRecent = false } = body;
 
   // Similar processing logic but with configurable parameters
   // This allows for manual testing and different processing strategies
-  return GET(request);
+  return getHandler(request);
 }
+
+export const GET = withObservability(getHandler, {
+  operation: 'cron:process-embeddings',
+});
+
+export const POST = withObservability(postHandler, {
+  operation: 'cron:process-embeddings',
+});

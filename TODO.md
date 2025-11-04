@@ -558,7 +558,7 @@
 
 ### Remaining API Routes Instrumentation
 
-- [ ] Wrap remaining 22 API routes with withObservability
+- [x] Wrap remaining 22 API routes with withObservability
   ```
   Files (25 total routes, 3 done in Phase 1, 22 remaining):
     app/api/embeddings/image/route.ts

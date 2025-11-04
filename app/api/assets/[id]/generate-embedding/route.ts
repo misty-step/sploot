@@ -4,6 +4,7 @@ import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getAuth } from '@/lib/auth/server';
 import { broadcastEmbeddingUpdate } from '@/lib/sse-broadcaster';
+import { withObservability } from '@/lib/with-observability';
 
 // Request deduplication: Track in-flight requests
 const inFlightRequests = new Map<string, Promise<any>>();
@@ -37,7 +38,7 @@ const performanceMetrics: {
   totalProcessingTime: 0,
 };
 
-export async function POST(
+async function postHandler(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -250,3 +251,7 @@ export async function POST(
     );
   }
 }
+
+export const POST = withObservability(postHandler, {
+  operation: 'assets:generate-embedding',
+});

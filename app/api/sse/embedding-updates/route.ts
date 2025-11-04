@@ -6,10 +6,11 @@
  * for embedding status updates.
  */
 
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { addConnection, removeConnection } from '@/lib/sse-broadcaster';
+import { withObservability } from '@/lib/with-observability';
 
 // Connection configuration
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
@@ -22,7 +23,7 @@ export const dynamic = 'force-dynamic'; // Disable caching
  * SSE endpoint for embedding updates
  * GET /api/sse/embedding-updates?assetIds=id1,id2,id3
  */
-export async function GET(request: NextRequest) {
+async function getHandler(request: NextRequest) {
   // Authenticate user
   const { userId } = await auth();
   if (!userId) {
@@ -171,7 +172,7 @@ export async function GET(request: NextRequest) {
   });
 
   // Return SSE response with proper headers
-  return new Response(customReadable, {
+  return new NextResponse(customReadable, {
     headers: {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
@@ -181,6 +182,12 @@ export async function GET(request: NextRequest) {
     },
   });
 }
+
+export const GET = withObservability(getHandler, {
+  operation: 'sse:embedding-updates',
+  skipTiming: true,
+  skipLogging: true,
+});
 
 // broadcastEmbeddingUpdate function has been moved to @/lib/sse-broadcaster
 // to comply with Next.js 15 route export constraints
