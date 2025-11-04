@@ -431,7 +431,7 @@
   Time: 1hr
   ```
 
-- [ ] Write integration tests for app/api/telemetry/route.ts
+- [x] Write integration tests for app/api/telemetry/route.ts
   ```
   File: __tests__/api/telemetry.integration.test.ts (NEW)
   Pattern: Follow __tests__/api/* integration test structure
