@@ -7,6 +7,7 @@ import { trackEmptyStateRender } from '@/lib/performance-metrics';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Image as ImageIcon, Plus } from 'lucide-react';
+import { logger } from '@/lib/observability-logger';
 
 export type EmptyStateVariant = 'first-use' | 'filtered' | 'search';
 
@@ -44,7 +45,9 @@ export function EmptyState({
     trackEmptyStateRender(mountTimeRef.current);
 
     if (process.env.NODE_ENV === 'development') {
-      console.log(`[perf] EmptyState rendered in ${renderTime.toFixed(2)}ms`);
+      logger.logInfo('library-empty-state.render-timing', {
+        renderTimeMs: Number(renderTime.toFixed(2)),
+      });
     }
   }, []);
 

@@ -31,6 +31,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { RotateCcw, X, Trash2 } from 'lucide-react';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
 import { track } from '@/lib/analytics';
+import { logger } from '@/lib/observability-logger';
 
 function AppPageClient() {
   const router = useRouter();
@@ -155,7 +156,9 @@ function AppPageClient() {
   // Listen for asset upload events and refresh the library
   useEffect(() => {
     const handleAssetUploaded = (event: CustomEvent) => {
-      console.log('[Library] Asset uploaded, refreshing...', event.detail);
+      logger.logInfo('library.asset-uploaded-refresh', {
+        detail: event.detail,
+      });
 
       // Refresh the asset list
       refresh();

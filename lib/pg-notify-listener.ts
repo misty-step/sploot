@@ -1,3 +1,5 @@
+import { logger } from '@/lib/observability-logger';
+
 /**
  * PostgreSQL LISTEN/NOTIFY Listener
  *
@@ -52,7 +54,7 @@ export class PgNotifyListener {
    */
   async start(): Promise<void> {
     if (this.isListening) {
-      console.log('[PgNotifyListener] Already listening');
+      logger.logInfo('pg-notify-listener.already-listening');
       return;
     }
 
@@ -60,7 +62,7 @@ export class PgNotifyListener {
       await this.connect();
       await this.listen();
       this.isListening = true;
-      console.log('[PgNotifyListener] Started successfully');
+      logger.logInfo('pg-notify-listener.started');
     } catch (error) {
       console.error('[PgNotifyListener] Failed to start:', error);
       this.scheduleReconnect();
@@ -88,7 +90,7 @@ export class PgNotifyListener {
       this.client = null;
     }
 
-    console.log('[PgNotifyListener] Stopped');
+    logger.logInfo('pg-notify-listener.stopped');
   }
 
   /**
@@ -112,7 +114,7 @@ export class PgNotifyListener {
     this.client.on('end', this.handleDisconnect.bind(this));
 
     await this.client.connect();
-    console.log('[PgNotifyListener] Connected to PostgreSQL');
+    logger.logInfo('pg-notify-listener.connected');
   }
 
   /**
@@ -125,7 +127,7 @@ export class PgNotifyListener {
 
     for (const channel of this.channels) {
       await this.client.query(`LISTEN ${channel}`);
-      console.log(`[PgNotifyListener] Listening to channel: ${channel}`);
+      logger.logInfo('pg-notify-listener.subscribed', { channel });
     }
   }
 
@@ -148,7 +150,10 @@ export class PgNotifyListener {
    * Handle incoming notifications
    */
   private async handleNotification(msg: any): Promise<void> {
-    console.log(`[PgNotifyListener] Received notification on ${msg.channel}:`, msg.payload);
+    logger.logInfo('pg-notify-listener.notification', {
+      channel: msg.channel,
+      payload: msg.payload,
+    });
 
     try {
       const notification: PgNotification = {
@@ -206,7 +211,10 @@ export class PgNotifyListener {
         }
       );
 
-      console.log(`[PgNotifyListener] Broadcasted ${status} update for asset ${assetId}`);
+      logger.logInfo('pg-notify-listener.broadcast', {
+        assetId,
+        status,
+      });
     } catch (error) {
       console.error('[PgNotifyListener] Error broadcasting update:', error);
     }
@@ -227,7 +235,7 @@ export class PgNotifyListener {
    * Handle disconnection
    */
   private handleDisconnect(): void {
-    console.log('[PgNotifyListener] Disconnected from PostgreSQL');
+    logger.logInfo('pg-notify-listener.disconnected');
 
     if (this.isListening) {
       this.scheduleReconnect();
@@ -249,7 +257,11 @@ export class PgNotifyListener {
     }
 
     this.reconnectAttempts++;
-    console.log(`[PgNotifyListener] Scheduling reconnection attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS} in ${this.RECONNECT_DELAY}ms`);
+    logger.logInfo('pg-notify-listener.reconnect-scheduled', {
+      attempts: this.reconnectAttempts,
+      maxAttempts: this.MAX_RECONNECT_ATTEMPTS,
+      delayMs: this.RECONNECT_DELAY,
+    });
 
     this.reconnectTimer = setTimeout(async () => {
       try {
@@ -288,13 +300,13 @@ export async function initializePgListener(): Promise<void> {
 
   // Handle graceful shutdown
   process.on('SIGINT', async () => {
-    console.log('[PgNotifyListener] Received SIGINT, shutting down...');
+    logger.logInfo('pg-notify-listener.shutdown-sigint');
     await listener.stop();
     process.exit(0);
   });
 
   process.on('SIGTERM', async () => {
-    console.log('[PgNotifyListener] Received SIGTERM, shutting down...');
+    logger.logInfo('pg-notify-listener.shutdown-sigterm');
     await listener.stop();
     process.exit(0);
   });

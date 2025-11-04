@@ -1,3 +1,5 @@
+import { logger } from '@/lib/observability-logger';
+
 /**
  * Connection Pool Manager
  *
@@ -266,10 +268,14 @@ class ConnectionPool {
   private handleVisibilityChange(): void {
     if (document.hidden) {
       // Page is hidden, might want to pause non-critical requests
-      console.log('[ConnectionPool] Page hidden, queue has', this.queue.length, 'pending requests');
+      logger.logInfo('connection-pool.page-hidden', {
+        pendingRequests: this.queue.length,
+      });
     } else {
       // Page is visible again, process queue
-      console.log('[ConnectionPool] Page visible, processing queue');
+      logger.logInfo('connection-pool.page-visible', {
+        pendingRequests: this.queue.length,
+      });
       this.processQueue();
     }
   }
@@ -278,7 +284,7 @@ class ConnectionPool {
    * Handle online status
    */
   private handleOnline(): void {
-    console.log('[ConnectionPool] Connection restored, processing queue');
+    logger.logInfo('connection-pool.online');
     this.processQueue();
   }
 
@@ -286,7 +292,7 @@ class ConnectionPool {
    * Handle offline status
    */
   private handleOffline(): void {
-    console.log('[ConnectionPool] Connection lost, pausing requests');
+    logger.logInfo('connection-pool.offline');
     // Could implement logic to pause/fail requests when offline
   }
 
@@ -360,4 +366,3 @@ export function useConnectionPoolStats() {
 
 // Prevent direct instantiation
 export type { PoolStats };
-

@@ -35,6 +35,7 @@ import { withObservability } from '@/lib/with-observability';
  *
  * @example
  * // Client-side usage
+ * import { logger } from '@/lib/observability-logger';
  * const checksum = await calculateSHA256(file);
  * const response = await fetch('/api/upload/check', {
  *   method: 'POST',
@@ -48,7 +49,7 @@ import { withObservability } from '@/lib/with-observability';
  *
  * if (exists) {
  *   // Skip upload and use existing asset
- *   console.log('Asset already exists:', asset);
+ *   logger.logInfo('upload-check.asset-exists', { asset });
  * } else {
  *   // Proceed with upload
  *   await uploadFile(file);

@@ -970,7 +970,7 @@
   Time: 2min
   ```
 
-- [ ] Audit and remove raw console.log calls in favor of structured logger
+- [x] Audit and remove raw console.log calls in favor of structured logger
   ```
   Files: All application files (lib/, app/, components/, hooks/)
   Pattern: Find console.log calls, replace with logger.logInfo

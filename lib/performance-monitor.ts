@@ -5,6 +5,7 @@
  * Integrates with Analytics Service for visualization.
  */
 
+import { logger } from '@/lib/observability-logger';
 import { trackTiming } from './analytics';
 
 export interface PerformanceSummary {
@@ -138,7 +139,10 @@ export class PerformanceMonitor {
     }
 
     if (typeof window !== 'undefined' && localStorage.getItem('debug_performance') === 'true') {
-      console.log(`[perf] ${operation}: ${duration}ms`);
+      logger.logInfo('performance-monitor.debug', {
+        operation,
+        durationMs: duration,
+      });
     }
   }
 

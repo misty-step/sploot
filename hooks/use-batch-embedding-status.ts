@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { logger } from '@/lib/observability-logger';
 
 interface AssetEmbeddingStatus {
   hasEmbedding: boolean;
@@ -179,7 +180,10 @@ export function useBatchEmbeddingStatus({
 
     const retryCount = retryCountsRef.current.get(assetId) || 0;
     if (retryCount >= maxRetries) {
-      console.log(`Max retries (${maxRetries}) reached for asset ${assetId}`);
+      logger.logInfo('batch-embedding-status.max-retries', {
+        assetId,
+        maxRetries,
+      });
       return;
     }
 
@@ -187,7 +191,11 @@ export function useBatchEmbeddingStatus({
     const timer = setTimeout(async () => {
       if (!isActiveRef.current) return;
 
-      console.log(`Retrying embedding generation for asset ${assetId} (attempt ${retryCount + 1}/${maxRetries})`);
+      logger.logInfo('batch-embedding-status.retrying', {
+        assetId,
+        attempt: retryCount + 1,
+        maxRetries,
+      });
       retryCountsRef.current.set(assetId, retryCount + 1);
 
       try {

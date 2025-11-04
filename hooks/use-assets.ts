@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { error as logError } from '@/lib/logger';
 import { track } from '@/lib/analytics';
+import { logger } from '@/lib/observability-logger';
 import type { Asset, UseAssetsOptions } from '@/lib/types';
 
 export function useAssets(options: UseAssetsOptions = {}) {
@@ -91,7 +92,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
         // Debug logging in development
         if (process.env.NODE_ENV === 'development') {
-          console.log('[useAssets] Loading assets:', {
+          logger.logInfo('use-assets.loading', {
             reset,
             offset: currentOffset,
             limit: initialLimit,
@@ -161,7 +162,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
         // Debug logging in development
         if (process.env.NODE_ENV === 'development') {
-          console.log('[useAssets] API response:', {
+          logger.logInfo('use-assets.api-response', {
             assetCount: data.assets?.length || 0,
             total: data.pagination?.total,
             hasMore: data.pagination?.hasMore,
@@ -210,7 +211,11 @@ export function useAssets(options: UseAssetsOptions = {}) {
               const retryDelay = 500 * authRetryCountRef.current; // Exponential backoff: 500ms, 1s, 1.5s
 
               if (process.env.NODE_ENV === 'development') {
-                console.log(`[useAssets] Auth not ready, retrying in ${retryDelay}ms (attempt ${authRetryCountRef.current}/3)`);
+                logger.logInfo('use-assets.auth-retry', {
+                  retryDelayMs: retryDelay,
+                  attempt: authRetryCountRef.current,
+                  maxAttempts: 3,
+                });
               }
 
               // Clear any existing retry timeout

@@ -11,8 +11,8 @@
  *
  * @example
  * const rng = createSeededRandom(12345);
- * console.log(rng()); // 0.6011037230491638
- * console.log(rng()); // 0.6764709055423737
+ * rng(); // 0.6011037230491638
+ * rng(); // 0.6764709055423737
  *
  * @see https://stackoverflow.com/a/47593316 - Mulberry32 algorithm
  */

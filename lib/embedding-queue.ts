@@ -1,8 +1,9 @@
+import { logger } from '@/lib/observability-logger';
+
 /**
  * Embedding Queue Manager
  * Manages background embedding generation with retry logic and persistence
  */
-
 export interface EmbeddingQueueItem {
   assetId: string;
   blobUrl: string;
@@ -66,7 +67,7 @@ export class EmbeddingQueueManager {
 
     // Check if already in queue or processing
     if (this.isInQueue(item.assetId) || this.processing.has(item.assetId)) {
-      console.log(`[EmbeddingQueue] Asset ${item.assetId} already queued or processing`);
+      logger.logInfo('embedding-queue.duplicate', { assetId: item.assetId });
       return;
     }
 
@@ -182,7 +183,7 @@ export class EmbeddingQueueManager {
   private async processItem(item: EmbeddingQueueItem): Promise<void> {
     // Skip if permanently failed
     if (item.permanentlyFailed) {
-      console.log(`[EmbeddingQueue] Skipping permanently failed item ${item.assetId}`);
+      logger.logInfo('embedding-queue.skip-permanently-failed', { assetId: item.assetId });
       this.notifyListeners({ type: 'failed', item, timestamp: Date.now() });
       return;
     }
@@ -212,7 +213,7 @@ export class EmbeddingQueueManager {
 
       // Success! Notify listeners
       this.notifyListeners({ type: 'completed', item, timestamp: Date.now() });
-      console.log(`[EmbeddingQueue] Successfully generated embedding for ${item.assetId}`);
+      logger.logInfo('embedding-queue.success', { assetId: item.assetId });
 
     } catch (error: any) {
       console.error(`[EmbeddingQueue] Failed to generate embedding for ${item.assetId}:`, error);
@@ -229,7 +230,13 @@ export class EmbeddingQueueManager {
         const delay = this.calculateRetryDelay(item, errorType);
         const maxRetries = item.isUserTriggered ? this.MAX_RETRIES_USER : this.MAX_RETRIES_BACKGROUND;
 
-        console.log(`[EmbeddingQueue] Will retry ${item.assetId} in ${delay}ms (attempt ${item.retryCount}/${maxRetries}, type: ${errorType})`);
+        logger.logInfo('embedding-queue.retry-scheduled', {
+          assetId: item.assetId,
+          delayMs: delay,
+          attempt: item.retryCount,
+          maxRetries,
+          errorType,
+        });
 
         // Re-add to queue after delay
         setTimeout(() => {
@@ -405,7 +412,9 @@ export class EmbeddingQueueManager {
           // Only restore queue if it's less than 1 hour old
           if (parsed.timestamp && Date.now() - parsed.timestamp < 3600000) {
             this.queue = parsed.queue || [];
-            console.log(`[EmbeddingQueue] Restored ${this.queue.length} items from storage`);
+            logger.logInfo('embedding-queue.restored', {
+              restoredCount: this.queue.length,
+            });
           } else {
             // Clear old data
             localStorage.removeItem(this.persistKey);

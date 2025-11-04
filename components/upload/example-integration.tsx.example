@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { UploadZone } from './upload-zone';
 import { UploadProgressHeader, useUploadProgress } from './upload-progress-header';
 import { useBatchEmbeddingStatus } from '@/hooks/use-batch-embedding-status';
+import { logger } from '@/lib/observability-logger';
 
 export function UploadPageWithProgress() {
   const progressTracker = useUploadProgress();
@@ -56,8 +57,8 @@ export function UploadPageWithProgress() {
       {/* Progress header - shows when files are being processed */}
       <UploadProgressHeader
         stats={progressTracker.stats}
-        onMinimize={() => console.log('Minimized')}
-        onExpand={() => console.log('Expanded')}
+        onMinimize={() => logger.logInfo('upload-example.minimized')}
+        onExpand={() => logger.logInfo('upload-example.expanded')}
       />
 
       {/* Upload zone with callbacks */}

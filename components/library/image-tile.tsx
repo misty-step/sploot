@@ -14,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Heart, Trash2, ImageOff, Loader2, AlertCircle, Clock } from 'lucide-react';
 import type { Asset } from '@/lib/types';
 import { ShareButton } from './share-button';
+import { logger } from '@/lib/observability-logger';
 
 interface ImageTileProps {
   asset: Asset;
@@ -83,7 +84,10 @@ function ImageTileComponent({
     if (isDebugMode && embeddingStatus === 'processing' && !debugInfo.queuePosition) {
       const simulatedPosition = Math.floor(Math.random() * 5) + 1;
       setDebugInfo((prev) => ({ ...prev, queuePosition: simulatedPosition }));
-      console.log(`[debug_embeddings] Asset ${asset.id}: Simulated queue position - #${simulatedPosition}`);
+      logger.logInfo('image-tile.debug.queue-position', {
+        assetId: asset.id,
+        simulatedPosition,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDebugMode, embeddingStatus, asset.id]);
@@ -92,8 +96,10 @@ function ImageTileComponent({
     embedding?: { modelName: string; dimension: number; createdAt: string };
   }) => {
     if (isDebugMode) {
-      console.log(`[debug_embeddings] Asset ${asset.id}: Embedding generation succeeded`);
-      console.log('[debug_embeddings] Result:', result);
+      logger.logInfo('image-tile.debug.embedding-success', {
+        assetId: asset.id,
+        result,
+      });
       setDebugInfo((prev) => ({ ...prev, lastTransition: 'processing → ready' }));
     }
     setHasEmbedding(true);
@@ -128,8 +134,11 @@ function ImageTileComponent({
   useEffect(() => {
     if (isRetrying && embeddingStatus !== 'processing') {
       if (isDebugMode) {
-        console.log(`[debug_embeddings] Asset ${asset.id}: Auto-retry initiated`);
-        console.log(`[debug_embeddings] Retry count: ${asset.embeddingRetryCount || 0}`);
+        logger.logInfo('image-tile.debug.auto-retry', {
+          assetId: asset.id,
+          retryCount: asset.embeddingRetryCount || 0,
+          previousStatus: embeddingStatus,
+        });
         setDebugInfo((prev) => ({
           ...prev,
           lastTransition: `${embeddingStatus} → processing (auto-retry)`,
@@ -142,16 +151,13 @@ function ImageTileComponent({
   // Log initial status and transitions in debug mode
   useEffect(() => {
     if (isDebugMode) {
-      console.log(`[debug_embeddings] Asset ${asset.id}: Initial status - ${embeddingStatus}`);
-      if (asset.embeddingError) {
-        console.log(`[debug_embeddings] Asset ${asset.id}: Error - ${asset.embeddingError}`);
-      }
-      if (asset.embeddingRetryCount) {
-        console.log(`[debug_embeddings] Asset ${asset.id}: Retry count - ${asset.embeddingRetryCount}`);
-      }
-      if (asset.embeddingLastAttempt) {
-        console.log(`[debug_embeddings] Asset ${asset.id}: Last attempt - ${asset.embeddingLastAttempt}`);
-      }
+      logger.logInfo('image-tile.debug.initial-status', {
+        assetId: asset.id,
+        status: embeddingStatus,
+        error: asset.embeddingError,
+        retryCount: asset.embeddingRetryCount,
+        lastAttempt: asset.embeddingLastAttempt,
+      });
     }
   }, [
     isDebugMode,
@@ -165,7 +171,10 @@ function ImageTileComponent({
   // Log status changes in debug mode
   useEffect(() => {
     if (isDebugMode) {
-      console.log(`[debug_embeddings] Asset ${asset.id}: Status changed to ${embeddingStatus}`);
+      logger.logInfo('image-tile.debug.status-change', {
+        assetId: asset.id,
+        status: embeddingStatus,
+      });
     }
   }, [embeddingStatus, isDebugMode, asset.id]);
 
@@ -206,7 +215,10 @@ function ImageTileComponent({
 
     const startTime = Date.now();
     if (isDebugMode) {
-      console.log(`[debug_embeddings] Asset ${asset.id}: Manual embedding generation triggered`);
+      logger.logInfo('image-tile.debug.manual-trigger', {
+        assetId: asset.id,
+        previousStatus: embeddingStatus,
+      });
       setDebugInfo((prev) => ({ ...prev, lastTransition: `${embeddingStatus} → processing (manual)` }));
     }
 
@@ -219,14 +231,20 @@ function ImageTileComponent({
 
       const apiResponseTime = Date.now() - startTime;
       if (isDebugMode) {
-        console.log(`[debug_embeddings] Asset ${asset.id}: API response time - ${apiResponseTime}ms`);
+        logger.logInfo('image-tile.debug.api-response', {
+          assetId: asset.id,
+          durationMs: apiResponseTime,
+        });
         setDebugInfo((prev) => ({ ...prev, apiResponseTime }));
       }
 
       if (response.ok) {
         const result = await response.json();
         if (isDebugMode) {
-          console.log(`[debug_embeddings] Asset ${asset.id}: Embedding generated successfully`, result);
+          logger.logInfo('image-tile.debug.manual-success', {
+            assetId: asset.id,
+            result,
+          });
         }
         handleEmbeddingSuccess(result);
       } else {
@@ -378,7 +396,9 @@ function ImageTileComponent({
                   onError={(e) => {
                     // If thumbnail failed and we haven't tried the main blob yet
                     if (imageSrc === asset.thumbnailUrl && asset.blobUrl && !hasTriedFallback) {
-                      console.log(`[image-fallback] Thumbnail failed for ${asset.id}, falling back to main blob`);
+                      logger.logInfo('image-tile.thumbnail-fallback', {
+                        assetId: asset.id,
+                      });
                       setHasTriedFallback(true);
                       setImageSrc(asset.blobUrl);
                       // Don't set imageError yet - give the fallback a chance
