@@ -947,7 +947,7 @@
 
 ### Code Cleanup
 
-- [ ] Delete unused lib/performance.ts
+- [x] Delete unused lib/performance.ts
   ```
   File: lib/performance.ts (DELETE)
   Reason: Replaced by lib/performance-monitor.ts (0 imports, 309 unused lines)
