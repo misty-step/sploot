@@ -19,6 +19,50 @@ if (databaseConfigured) {
   if (process.env.NODE_ENV !== 'production') {
     global.prisma = prismaClient;
   }
+
+  try {
+    const { getPerformanceMonitor } = require('./performance-monitor') as typeof import('./performance-monitor');
+    const { logger: observabilityLogger } = require('./observability-logger') as typeof import('./observability-logger');
+
+    prismaClient.$use(async (params, next) => {
+      const model = params.model ?? 'raw';
+      const action = params.action ?? 'query';
+      const operation = `db:${model}:${action}`;
+      const startTime = Date.now();
+      const perfMonitor = getPerformanceMonitor();
+
+      perfMonitor.startTiming(operation);
+
+      try {
+        const result = await next(params);
+        const duration = Date.now() - startTime;
+        perfMonitor.endTiming(operation);
+
+        if (duration > 100) {
+          observabilityLogger.logInfo('db:slow-query', {
+            model,
+            action,
+            duration,
+          });
+        }
+
+        return result;
+      } catch (error) {
+        const duration = Date.now() - startTime;
+        perfMonitor.endTiming(operation);
+
+        observabilityLogger.logError('db:query-failed', error, {
+          model,
+          action,
+          duration,
+        });
+
+        throw error;
+      }
+    });
+  } catch (middlewareError) {
+    logger.error('Failed to initialize Prisma observability middleware', middlewareError as Error);
+  }
 }
 
 export const prisma = prismaClient;
