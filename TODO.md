@@ -456,7 +456,7 @@
 
 ### Critical Routes Instrumentation
 
-- [ ] Wrap 3 critical routes with withObservability
+- [x] Wrap 3 critical routes with withObservability
   ```
   Files:
     - app/api/upload/route.ts (line 42, export async function POST)
