@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { error as logError } from '@/lib/logger';
+import { track } from '@/lib/analytics';
 import type { Asset, UseAssetsOptions } from '@/lib/types';
 
 export function useAssets(options: UseAssetsOptions = {}) {
@@ -242,6 +243,28 @@ export function useAssets(options: UseAssetsOptions = {}) {
       prev.map((asset) => {
         if (asset.id !== id) return asset;
 
+        const favoriteChanged =
+          typeof updates.favorite === 'boolean' && updates.favorite !== asset.favorite;
+
+        let addedTags: string[] = [];
+        let removedTags: string[] = [];
+
+        if (updates.tags) {
+          const existingTags = asset.tags ?? [];
+          const updatedTags = updates.tags ?? [];
+
+          const existingNames = new Set(existingTags.map((tag) => tag.name));
+          const updatedNames = new Set(updatedTags.map((tag) => tag.name));
+
+          addedTags = updatedTags
+            .filter((tag) => tag.name && !existingNames.has(tag.name))
+            .map((tag) => tag.name);
+
+          removedTags = existingTags
+            .filter((tag) => tag.name && !updatedNames.has(tag.name))
+            .map((tag) => tag.name);
+        }
+
         // Check if any values actually changed to avoid creating new reference
         let hasChanges = false;
         for (const key in updates) {
@@ -254,14 +277,57 @@ export function useAssets(options: UseAssetsOptions = {}) {
         // Return same reference if nothing changed (prevents unnecessary re-renders)
         if (!hasChanges) return asset;
 
+        const updatedAsset = { ...asset, ...updates };
+
+        if (favoriteChanged) {
+          track({
+            name: updates.favorite ? 'asset_favorited' : 'asset_unfavorited',
+            properties: {
+              assetId: asset.id,
+            },
+          });
+        }
+
+        addedTags.forEach((tagName) => {
+          track({
+            name: 'tag_added',
+            properties: {
+              assetId: asset.id,
+              tagName,
+            },
+          });
+        });
+
+        removedTags.forEach((tagName) => {
+          track({
+            name: 'tag_removed',
+            properties: {
+              assetId: asset.id,
+              tagName,
+            },
+          });
+        });
+
         // Only create new object if values actually changed
-        return { ...asset, ...updates };
+        return updatedAsset;
       })
     );
   }, []);
 
   const deleteAsset = useCallback((id: string) => {
-    setAssets((prev) => prev.filter((asset) => asset.id !== id));
+    setAssets((prev) => {
+      const assetToRemove = prev.find((asset) => asset.id === id);
+      if (assetToRemove) {
+        track({
+          name: 'asset_deleted',
+          properties: {
+            assetId: assetToRemove.id,
+            hadTags: Boolean(assetToRemove.tags && assetToRemove.tags.length > 0),
+          },
+        });
+      }
+      return prev.filter((asset) => asset.id !== id);
+    });
     setTotal((prev) => Math.max(0, prev - 1));
   }, []);
 
