@@ -716,7 +716,7 @@
 
 ### Error Boundaries Telemetry Integration
 
-- [ ] Update error boundaries to send telemetry
+- [x] Update error boundaries to send telemetry
   ```
   Files:
     - components/image-tile-error-boundary.tsx (MODIFY)

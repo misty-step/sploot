@@ -3,6 +3,48 @@
 import { Component, ReactNode } from 'react';
 import Link from 'next/link';
 
+function sendErrorTelemetry(error: Error, errorInfo: React.ErrorInfo) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    const payload = {
+      type: 'error',
+      payload: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        componentStack: errorInfo.componentStack,
+        boundary: 'share-page-error-boundary',
+        url: window.location.href,
+        timestamp: Date.now(),
+      },
+    };
+
+    const body = JSON.stringify(payload);
+
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      const blob = new Blob([body], { type: 'application/json' });
+      navigator.sendBeacon('/api/telemetry', blob);
+    } else {
+      void fetch('/api/telemetry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch(() => {
+        /* ignore */
+      });
+    }
+  } catch (telemetryError) {
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.error('[SharePageErrorBoundary] Telemetry failed:', telemetryError);
+    }
+  }
+}
+
 interface SharePageErrorBoundaryProps {
   children: ReactNode;
 }
@@ -32,6 +74,8 @@ export class SharePageErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    sendErrorTelemetry(error, errorInfo);
+
     // Log error details for debugging (structured format)
     console.error('[SharePageErrorBoundary] Error caught:', {
       error: error.message,

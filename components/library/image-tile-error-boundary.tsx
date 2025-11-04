@@ -14,6 +14,56 @@ interface State {
   error?: Error;
 }
 
+function sendErrorTelemetry(
+  error: Error,
+  errorInfo: React.ErrorInfo,
+  asset: Asset
+) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    const payload = {
+      type: 'error',
+      payload: {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        componentStack: errorInfo.componentStack,
+        boundary: 'image-tile-error-boundary',
+        url: window.location.href,
+        timestamp: Date.now(),
+        metadata: {
+          assetId: asset.id,
+          filename: asset.filename ?? asset.pathname,
+        },
+      },
+    };
+
+    const body = JSON.stringify(payload);
+
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      const blob = new Blob([body], { type: 'application/json' });
+      navigator.sendBeacon('/api/telemetry', blob);
+    } else {
+      void fetch('/api/telemetry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch(() => {
+        /* ignore */
+      });
+    }
+  } catch (telemetryError) {
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.error('[ImageTileErrorBoundary] Telemetry failed:', telemetryError);
+    }
+  }
+}
+
 /**
  * Error boundary for ImageTile component.
  * Catches blob load failures and renders a tombstone tile with retry button.
@@ -29,6 +79,8 @@ export class ImageTileErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    sendErrorTelemetry(error, errorInfo, this.props.asset);
+
     // Log to console in development
     if (process.env.NODE_ENV === 'development') {
       console.error('ImageTile error boundary caught:', error, errorInfo);
