@@ -765,7 +765,7 @@
 
 ### Next.js Error Boundaries
 
-- [ ] Create app/error.tsx with Sentry integration
+- [x] Create app/error.tsx with Sentry integration
   ```
   File: app/error.tsx (NEW)
   Architecture: Next.js App Router error boundary from DESIGN.md "Integration Points"
