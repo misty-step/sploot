@@ -352,7 +352,7 @@
   Time: 2hr
   ```
 
-- [ ] Write unit tests for lib/with-observability.ts
+- [x] Write unit tests for lib/with-observability.ts
   ```
   File: __tests__/lib/with-observability.test.ts (NEW)
   Pattern: Follow __tests__/hooks/use-file-validation.test.ts (function testing)
