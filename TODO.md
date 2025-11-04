@@ -960,7 +960,7 @@
   Time: 5min
   ```
 
-- [ ] Remove TODO comment from app/api/telemetry/route.ts
+- [x] Remove TODO comment from app/api/telemetry/route.ts
   ```
   File: app/api/telemetry/route.ts
   Line: 38-39
