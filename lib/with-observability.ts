@@ -5,15 +5,30 @@ import type { NextRequest, NextResponse } from 'next/server';
 import { withTraceId } from './observability-logger';
 import { getPerformanceMonitor } from './performance-monitor';
 
+/**
+ * Next.js route handler signature extended with optional context param.
+ *
+ * @public
+ */
 export type RouteHandler<T = unknown> = (
   req: NextRequest,
   context?: RouteContext
 ) => Promise<NextResponse<T>>;
 
+/**
+ * Additional context provided by the App Router when invoking a route handler.
+ *
+ * @public
+ */
 export interface RouteContext {
   params?: Promise<Record<string, string>>;
 }
 
+/**
+ * Options that tune how {@link withObservability} instruments a request handler.
+ *
+ * @public
+ */
 export interface ObservabilityOptions {
   operation?: string;
   skipTiming?: boolean;
@@ -33,6 +48,13 @@ interface RequestMetadata {
 
 const TRACE_ID_LENGTH = 12;
 
+/**
+ * Wrap a Next.js route handler with logging, timing, and trace enrichment.
+ *
+ * @param handler - Route handler to instrument.
+ * @param options - Observability configuration for the route.
+ * @returns Instrumented route handler.
+ */
 export function withObservability<T>(
   handler: RouteHandler<T>,
   options: ObservabilityOptions = {}

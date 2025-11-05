@@ -1039,7 +1039,7 @@
   Time: 30min
   ```
 
-- [ ] Add JSDoc comments to all observability modules
+- [x] Add JSDoc comments to all observability modules
   ```
   Files:
     - lib/analytics.ts

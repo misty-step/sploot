@@ -43,6 +43,11 @@ interface SentryModule {
   captureException: (error: unknown, context?: Record<string, unknown>) => void;
 }
 
+/**
+ * Structured logger that writes JSON logs, forwards errors to Sentry, and preserves trace context.
+ *
+ * @public
+ */
 export interface ObservabilityLogger {
   logInfo(context: string, metadata?: Record<string, any>): void;
   logError(context: string, error: unknown, metadata?: Record<string, any>): void;
@@ -212,16 +217,42 @@ function createLogger(traceId?: string): ObservabilityLogger {
   return new ObservabilityLoggerImpl(traceId);
 }
 
+/**
+ * Shared logger instance without an explicit trace id.
+ *
+ * @public
+ */
 export const logger = createLogger();
 
+/**
+ * Log an informational message with optional metadata.
+ *
+ * @param context - Short description of the event.
+ * @param metadata - Optional structured payload.
+ */
 export function logInfo(context: string, metadata?: Record<string, any>): void {
   logger.logInfo(context, metadata);
 }
 
+/**
+ * Log an error, serialize it for JSON output, and forward it to Sentry.
+ *
+ * @param context - Short description of the failure.
+ * @param error - Error object or primitive describing the failure.
+ * @param metadata - Optional structured payload.
+ */
 export function logError(context: string, error: unknown, metadata?: Record<string, any>): void {
   logger.logError(context, error, metadata);
 }
 
+/**
+ * Log a timing measurement for an operation.
+ *
+ * @param operation - Operation identifier (usually matches analytics naming).
+ * @param duration - Duration in milliseconds.
+ * @param success - Whether the operation succeeded.
+ * @param metadata - Optional contextual data to append.
+ */
 export function logTiming(
   operation: string,
   duration: number,
@@ -231,6 +262,12 @@ export function logTiming(
   logger.logTiming(operation, duration, success, metadata);
 }
 
+/**
+ * Create a logger bound to a specific trace id for request-scoped logging.
+ *
+ * @param traceId - Stable identifier shared across telemetry.
+ * @returns Logger instance namespaced to the provided trace id.
+ */
 export function withTraceId(traceId: string): ObservabilityLogger {
   return createLogger(traceId);
 }

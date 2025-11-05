@@ -14,8 +14,9 @@ import { track as vercelTrack } from '@vercel/analytics';
 // ============================================================================
 
 /**
- * Discriminated union of all possible analytics events.
- * Each event has a unique name and typed properties for type safety.
+ * Analytics event payload with a discriminated union of supported event names and properties.
+ *
+ * @public
  */
 export type AnalyticsEvent =
   | { name: 'upload_file_selected'; properties: { count: number; totalSize: number } }
@@ -43,8 +44,11 @@ type SanitizedProperties = Record<string, string | number | boolean>;
 // ============================================================================
 
 /**
- * Track an analytics event (client-side).
- * Respects Do Not Track, sanitizes PII, never throws.
+ * Track an analytics event on the client.
+ *
+ * Respects the browser's Do Not Track setting, sanitizes PII, and never throws.
+ *
+ * @param event - Structured analytics event payload.
  */
 export function track(event: AnalyticsEvent): void {
   try {
@@ -60,8 +64,10 @@ export function track(event: AnalyticsEvent): void {
 }
 
 /**
- * Track an analytics event (server-side).
- * Uses server-side Vercel Analytics API with dynamic import.
+ * Track an analytics event on the server via the Vercel Analytics API.
+ *
+ * @param event - Structured analytics event payload.
+ * @returns Promise that resolves once the analytics call completes.
  */
 export async function trackServer(event: AnalyticsEvent): Promise<void> {
   try {
@@ -74,7 +80,11 @@ export async function trackServer(event: AnalyticsEvent): Promise<void> {
 }
 
 /**
- * Track a multi-step flow for funnel analysis.
+ * Track a funnel step for multi-step flows.
+ *
+ * @param flowName - Identifier for the flow (e.g. `upload_wizard`).
+ * @param step - Descriptive step name within the flow.
+ * @param metadata - Optional contextual data for the step.
  */
 export function trackFlow(
   flowName: string,
@@ -90,7 +100,12 @@ export function trackFlow(
 }
 
 /**
- * Track operation timing for performance monitoring.
+ * Track timing metrics for a named operation.
+ *
+ * @param operation - Unique operation identifier.
+ * @param duration - Duration in milliseconds.
+ * @param success - Whether the operation completed successfully.
+ * @param metadata - Optional contextual data to attach.
  */
 export function trackTiming(
   operation: string,

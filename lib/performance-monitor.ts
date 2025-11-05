@@ -8,6 +8,11 @@
 import { logger } from '@/lib/observability-logger';
 import { trackTiming } from './analytics';
 
+/**
+ * Aggregated timing statistics for a monitored operation.
+ *
+ * @public
+ */
 export interface PerformanceSummary {
   operation: string;
   samples: number;
@@ -19,7 +24,11 @@ export interface PerformanceSummary {
   p99: number;
 }
 
-// Operation name constants (mirrors existing PERF_OPERATIONS)
+/**
+ * Canonical operation identifiers used when tracking performance.
+ *
+ * @public
+ */
 export const PERF_OPERATIONS = {
   // Upload operations
   UPLOAD_SINGLE: 'upload:single',
@@ -53,18 +62,39 @@ export const PERF_OPERATIONS = {
   DB_TRANSACTION: 'db:transaction',
 } as const;
 
+/**
+ * Union of valid performance operation strings.
+ *
+ * @public
+ */
 export type PerfOperation = typeof PERF_OPERATIONS[keyof typeof PERF_OPERATIONS];
 
 const MAX_SAMPLES = 100;
 
+/**
+ * Records timing metrics, calculates percentiles, and relays timing events to analytics.
+ *
+ * @public
+ */
 export class PerformanceMonitor {
   private metrics: Map<string, number[]> = new Map();
   private startTimes: Map<string, number> = new Map();
 
+  /**
+   * Mark the beginning of an operation timing window.
+   *
+   * @param operation - Operation identifier to start tracking.
+   */
   startTiming(operation: string): void {
     this.startTimes.set(operation, Date.now());
   }
 
+  /**
+   * Finish timing for an operation started via {@link startTiming}.
+   *
+   * @param operation - Operation identifier to end.
+   * @returns Duration in milliseconds or `undefined` if no start was recorded.
+   */
   endTiming(operation: string): number | undefined {
     const startTime = this.startTimes.get(operation);
     if (startTime === undefined) {
@@ -86,6 +116,13 @@ export class PerformanceMonitor {
     return duration;
   }
 
+  /**
+   * Measure an async function, automatically tracking timing and failures.
+   *
+   * @param operation - Operation identifier to record.
+   * @param fn - Async work to execute.
+   * @returns Result of the async function.
+   */
   async measureAsync<T>(operation: string, fn: () => Promise<T>): Promise<T> {
     this.startTiming(operation);
     try {
@@ -98,6 +135,12 @@ export class PerformanceMonitor {
     }
   }
 
+  /**
+   * Retrieve summary statistics for an operation.
+   *
+   * @param operation - Operation identifier to summarize.
+   * @returns Performance summary or `null` if no samples captured.
+   */
   getSummary(operation: string): PerformanceSummary | null {
     const samples = this.metrics.get(operation);
     if (!samples || samples.length === 0) {
@@ -121,6 +164,9 @@ export class PerformanceMonitor {
     };
   }
 
+  /**
+   * Clear all recorded timings and start markers.
+   */
   reset(): void {
     this.metrics.clear();
     this.startTimes.clear();
@@ -160,6 +206,11 @@ export class PerformanceMonitor {
 
 let globalMonitor: PerformanceMonitor | null = null;
 
+/**
+ * Return the shared singleton {@link PerformanceMonitor} instance.
+ *
+ * @returns Global performance monitor.
+ */
 export function getPerformanceMonitor(): PerformanceMonitor {
   if (!globalMonitor) {
     globalMonitor = new PerformanceMonitor();
