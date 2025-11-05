@@ -122,12 +122,16 @@ describe('Performance Monitor', () => {
         })
       ).rejects.toThrow('Test error');
 
-      // Should have called trackTiming with success=false
-      expect(vi.mocked(trackTiming)).toHaveBeenCalledWith(
-        'failing_op',
-        expect.any(Number),
-        false
-      );
+      expect(vi.mocked(trackTiming)).toHaveBeenCalledTimes(1);
+      const [operation, duration, success] = vi.mocked(trackTiming).mock.calls[0];
+      expect(operation).toBe('failing_op');
+      expect(typeof duration).toBe('number');
+      expect(duration).toBeGreaterThanOrEqual(0);
+      expect(success).toBe(false);
+
+      const summary = monitor.getSummary('failing_op');
+      expect(summary).not.toBeNull();
+      expect(summary!.samples).toBe(1);
     });
 
     it('should rethrow errors from async operations', async () => {

@@ -14,6 +14,53 @@
 4. Route Middleware (`lib/with-observability.ts`) - HOF wrapper for automatic instrumentation
 5. Telemetry API (`app/api/telemetry/route.ts`) - Client-side error/performance collection
 
+## review triage - 2025-11-05
+
+- [x] patch performance-monitor failure path  
+  **files**: `lib/performance-monitor.ts`, `__tests__/lib/performance-monitor.test.ts`  
+  **eta**: 1.5h  
+  **acceptance**: failures no longer emit success timings; new unit coverage asserts `trackFailure` skips `endTiming` and only fires a single analytics event.
+
+- [ ] make withObservability catch blocks actually log + support plain `Request`  
+  **files**: `lib/with-observability.ts`, `__tests__/lib/with-observability.test.ts`  
+  **eta**: 2h  
+  **acceptance**: error branches log before rethrow, wrappers work when `nextUrl` is missing, regression suite covers both scenarios.
+
+- [ ] hoist vitest mocks to kill `ReferenceError`  
+  **files**: `__tests__/lib/with-observability.test.ts`  
+  **eta**: 45m  
+  **acceptance**: tests pass under fake timers with `vi.hoisted`, no TDZ explosions in CI.
+
+- [ ] sanitize client error telemetry payload  
+  **files**: `components/error-boundary.tsx`, `app/global-error.tsx`, `components/share/share-page-error-boundary.tsx`  
+  **eta**: 1.5h  
+  **acceptance**: telemetry strips stack traces + full URLs before POST; manual smoke shows scrubbed payload; docs updated to describe scope.
+
+- [ ] import hygiene + type compliance pass  
+  **files**: `lib/distributed-queue.ts`, `app/api/sse/embedding-updates/route.ts`, `lib/upload-queue.ts`  
+  **eta**: 1h  
+  **acceptance**: missing logger import restored, unauthorized SSE branch returns `NextResponse`, stray React import relocated to top; type-check passes.
+
+- [ ] calibrate sentry tracing sample rate  
+  **files**: `sentry.edge.config.ts`, `sentry.server.config.ts`  
+  **eta**: 45m  
+  **acceptance**: production sampling <=10%, local/dev keeps full sampling; configuration toggled via env override, docs updated to note rationale.
+
+- [ ] yank analytics side-effects out of state setters  
+  **files**: `hooks/use-assets.ts`, `__tests__/hooks/use-assets.test.ts` (add)  
+  **eta**: 2h  
+  **acceptance**: update/delete helpers collect events during setState then emit afterward; tests prove single emission even under double-invocation.
+
+- [ ] respect do-not-track everywhere  
+  **files**: `lib/analytics.ts`, `__tests__/lib/analytics.test.ts`  
+  **eta**: 1h  
+  **acceptance**: `trackFlow` + `trackTiming` short-circuit when DNT is enabled; coverage updated for both helpers.
+
+- [ ] sync docs with actual sanitization behavior  
+  **files**: `TODO.md`, `CLAUDE.md`  
+  **eta**: 30m  
+  **acceptance**: documentation states user IDs are redacted (not hashed) and cross-references privacy rationale.
+
 ## Phase 1: Foundation & Core Modules (Days 1-2)
 
 ### Setup & Dependencies

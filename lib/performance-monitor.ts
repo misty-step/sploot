@@ -96,15 +96,12 @@ export class PerformanceMonitor {
    * @returns Duration in milliseconds or `undefined` if no start was recorded.
    */
   endTiming(operation: string): number | undefined {
-    const startTime = this.startTimes.get(operation);
-    if (startTime === undefined) {
-      console.warn(`[perf] endTiming() called for '${operation}' without matching startTiming()`);
+    const duration = this.takeDuration(operation, 'endTiming');
+    if (duration === undefined) {
       return undefined;
     }
 
-    const duration = Date.now() - startTime;
     this.track(operation, duration);
-    this.startTimes.delete(operation);
 
     // Send to Analytics Service
     try {
@@ -193,14 +190,33 @@ export class PerformanceMonitor {
   }
 
   private trackFailure(operation: string): void {
-    const duration = this.endTiming(operation);
-    if (duration !== undefined) {
-      try {
-        trackTiming(operation, duration, false);
-      } catch (error) {
-        console.error('[perf] Failed to track failure timing:', error);
-      }
+    const duration = this.takeDuration(operation, 'trackFailure');
+    if (duration === undefined) {
+      return;
     }
+
+    this.track(operation, duration);
+
+    try {
+      trackTiming(operation, duration, false);
+    } catch (error) {
+      console.error('[perf] Failed to track failure timing:', error);
+    }
+  }
+
+  private takeDuration(
+    operation: string,
+    context: 'endTiming' | 'trackFailure'
+  ): number | undefined {
+    const startTime = this.startTimes.get(operation);
+    if (startTime === undefined) {
+      const source = context === 'endTiming' ? 'endTiming()' : 'trackFailure()';
+      console.warn(`[perf] ${source} called for '${operation}' without matching startTiming()`);
+      return undefined;
+    }
+
+    this.startTimes.delete(operation);
+    return Date.now() - startTime;
   }
 }
 
