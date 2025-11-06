@@ -99,16 +99,18 @@ export function withObservability<T>(
       return response;
     } catch (error) {
       const duration = Date.now() - startTime;
-
-      unstable_rethrow(error);
-
-      logger.logError('request:error', error, {
+      const logPayload = {
         ...metadata,
         operation,
         duration,
         success: false,
-      });
+      };
 
+      if (shouldLog) {
+        logger.logError('request:error', error, logPayload);
+      }
+
+      unstable_rethrow(error);
       throw error;
     }
   };
@@ -129,20 +131,16 @@ function generateTraceId(): string {
   }
 }
 
-function resolveOperation(operation: string | undefined, req: NextRequest): string {
+function resolveOperation(operation: string | undefined, req: NextRequest | Request): string {
   if (operation) {
     return operation;
   }
 
-  try {
-    return req.nextUrl.pathname;
-  } catch {
-    return 'unknown-operation';
-  }
+  return resolvePathname(req) ?? 'unknown-operation';
 }
 
-function extractQuery(req: NextRequest): Record<string, string> | undefined {
-  const entries = Array.from(req.nextUrl.searchParams.entries());
+function extractQuery(req: NextRequest | Request): Record<string, string> | undefined {
+  const entries = Array.from(getSearchParams(req));
   if (entries.length === 0) {
     return undefined;
   }
@@ -151,16 +149,50 @@ function extractQuery(req: NextRequest): Record<string, string> | undefined {
 }
 
 function createBaseMetadata(
-  req: NextRequest,
+  req: NextRequest | Request,
   traceId: string,
   query: Record<string, string> | undefined,
   extra?: Record<string, any>
 ): RequestMetadata & Record<string, any> {
   return {
-    method: req.method,
-    pathname: req.nextUrl.pathname,
+    method: req.method ?? 'GET',
+    pathname: resolvePathname(req) ?? 'unknown-pathname',
     traceId,
     ...(query ? { query } : {}),
     ...(extra ?? {}),
   };
+}
+
+function resolvePathname(req: NextRequest | Request): string | undefined {
+  if (hasNextUrl(req)) {
+    return req.nextUrl.pathname;
+  }
+
+  const url = getRequestUrl(req);
+  return url?.pathname;
+}
+
+function getSearchParams(req: NextRequest | Request): Iterable<[string, string]> {
+  if (hasNextUrl(req)) {
+    return req.nextUrl.searchParams.entries();
+  }
+
+  const url = getRequestUrl(req);
+  return url ? url.searchParams.entries() : [];
+}
+
+function hasNextUrl(req: NextRequest | Request): req is NextRequest {
+  return typeof (req as NextRequest).nextUrl !== 'undefined';
+}
+
+function getRequestUrl(req: Request | NextRequest): URL | null {
+  if ('url' in req && typeof req.url === 'string') {
+    try {
+      return new URL(req.url);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
 }

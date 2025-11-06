@@ -75,6 +75,7 @@ function createRequest(url: string, method = 'GET'): NextRequest {
   return {
     method,
     nextUrl,
+    url: nextUrl.toString(),
   } as unknown as NextRequest;
 }
 
@@ -211,10 +212,10 @@ describe('withObservability', () => {
     );
     expect(record?.logger.logTiming).not.toHaveBeenCalled();
 
-    const rethrowOrder = unstableRethrowMock.mock.invocationCallOrder[0] ?? 0;
     const logOrder = record?.logger.logError.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER;
-    expect(rethrowOrder).toBeGreaterThan(0);
-    expect(rethrowOrder).toBeLessThan(logOrder);
+    const rethrowOrder = unstableRethrowMock.mock.invocationCallOrder[0] ?? 0;
+    expect(logOrder).toBeGreaterThan(0);
+    expect(logOrder).toBeLessThan(rethrowOrder);
   });
 
   it('skips logging when skipLogging is true', async () => {
@@ -300,5 +301,31 @@ describe('withObservability', () => {
       true,
       expect.objectContaining(metadata)
     );
+  });
+
+  it('falls back to Request.url when nextUrl is missing', async () => {
+    const handler = vi.fn(async () => {
+      vi.setSystemTime(new Date(BASE_TIME + 120));
+      return createResponse(204);
+    });
+
+    const wrapped = withObservability(handler);
+
+    const plainRequest = new Request('https://sploot.dev/api/plain?gremlin=yes', {
+      method: 'PATCH',
+    });
+
+    await wrapped(plainRequest as unknown as NextRequest);
+
+    const record = loggerRecords[0];
+    expect(record?.logger.logInfo).toHaveBeenCalledWith(
+      'request:start',
+      expect.objectContaining({
+        method: 'PATCH',
+        pathname: '/api/plain',
+        query: { gremlin: 'yes' },
+      })
+    );
+    expect(handler).toHaveBeenCalledWith(plainRequest, undefined);
   });
 });

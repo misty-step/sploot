@@ -21,7 +21,7 @@
   **eta**: 1.5h  
   **acceptance**: failures no longer emit success timings; new unit coverage asserts `trackFailure` skips `endTiming` and only fires a single analytics event.
 
-- [ ] make withObservability catch blocks actually log + support plain `Request`  
+- [x] make withObservability catch blocks actually log + support plain `Request`  
   **files**: `lib/with-observability.ts`, `__tests__/lib/with-observability.test.ts`  
   **eta**: 2h  
   **acceptance**: error branches log before rethrow, wrappers work when `nextUrl` is missing, regression suite covers both scenarios.
