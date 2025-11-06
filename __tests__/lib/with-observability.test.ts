@@ -12,14 +12,26 @@ interface LoggerRecord {
 
 const loggerRecords: LoggerRecord[] = [];
 
-const withTraceIdMock = vi.fn();
-const measureAsyncMock = vi.fn<
-  [string, () => Promise<NextResponse<unknown>>],
-  Promise<NextResponse<unknown>>
->();
-const getPerformanceMonitorMock = vi.fn();
-const unstableRethrowMock = vi.fn();
-const nanoidMock = vi.fn();
+const {
+  withTraceIdMock,
+  measureAsyncMock,
+  getPerformanceMonitorMock,
+  unstableRethrowMock,
+  nanoidMock,
+} = vi.hoisted(() => {
+  const measureAsync = vi.fn<
+    [string, () => Promise<NextResponse<unknown>>],
+    Promise<NextResponse<unknown>>
+  >();
+
+  return {
+    withTraceIdMock: vi.fn(),
+    measureAsyncMock: measureAsync,
+    getPerformanceMonitorMock: vi.fn(),
+    unstableRethrowMock: vi.fn(),
+    nanoidMock: vi.fn(),
+  };
+});
 
 vi.mock('@/lib/observability-logger', () => ({
   withTraceId: withTraceIdMock,

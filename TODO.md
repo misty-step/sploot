@@ -26,7 +26,7 @@
   **eta**: 2h  
   **acceptance**: error branches log before rethrow, wrappers work when `nextUrl` is missing, regression suite covers both scenarios.
 
-- [ ] hoist vitest mocks to kill `ReferenceError`  
+- [x] hoist vitest mocks to kill `ReferenceError`  
   **files**: `__tests__/lib/with-observability.test.ts`  
   **eta**: 45m  
   **acceptance**: tests pass under fake timers with `vi.hoisted`, no TDZ explosions in CI.
