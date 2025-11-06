@@ -61,6 +61,11 @@ Use these to calibrate alerts in Vercel or external tooling:
 - `context:"request:error"` – isolate our failure logs emitted by `withObservability`.
 - `boundary:"image-tile-error-boundary"` – catch client rendering blowups.
 
+### Client Error Telemetry Hygiene
+- Client-side error boundaries ship only sanitized payloads: no stack traces, no `componentStack`, no query strings.
+- Expect `location.origin` + `location.pathname`, `hasStack`, and a `boundary` tag, plus whitelisted metadata like `assetId`.
+- If you need deeper debugging, pivot to Sentry traces (full stack) using the shared `digest` or `traceId`.
+
 ## Using Sentry Effectively
 
 ### Finding Fresh Errors

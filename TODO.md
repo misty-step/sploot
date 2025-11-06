@@ -31,7 +31,7 @@
   **eta**: 45m  
   **acceptance**: tests pass under fake timers with `vi.hoisted`, no TDZ explosions in CI.
 
-- [ ] sanitize client error telemetry payload  
+- [x] sanitize client error telemetry payload  
   **files**: `components/error-boundary.tsx`, `app/global-error.tsx`, `components/share/share-page-error-boundary.tsx`  
   **eta**: 1.5h  
   **acceptance**: telemetry strips stack traces + full URLs before POST; manual smoke shows scrubbed payload; docs updated to describe scope.

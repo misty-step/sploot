@@ -1,62 +1,7 @@
 'use client';
 
 import React, { Component, ReactNode } from 'react';
-
-type TelemetryMetadata = Record<string, unknown> | undefined;
-
-function sendErrorTelemetry(
-  boundary: string,
-  error: Error,
-  errorInfo?: React.ErrorInfo,
-  metadata?: TelemetryMetadata
-) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  try {
-    const payload: {
-      type: 'error';
-      payload: Record<string, unknown>;
-    } = {
-      type: 'error',
-      payload: {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-        componentStack: errorInfo?.componentStack,
-        boundary,
-        url: window.location.href,
-        timestamp: Date.now(),
-      },
-    };
-
-    if (metadata && Object.keys(metadata).length > 0) {
-      payload.payload.metadata = metadata;
-    }
-
-    const body = JSON.stringify(payload);
-
-    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-      const blob = new Blob([body], { type: 'application/json' });
-      navigator.sendBeacon('/api/telemetry', blob);
-    } else {
-      void fetch('/api/telemetry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        keepalive: true,
-      }).catch(() => {
-        /* ignore */
-      });
-    }
-  } catch (telemetryError) {
-    if (process.env.NODE_ENV === 'development') {
-      // eslint-disable-next-line no-console
-      console.error('[ErrorBoundary] Failed to send telemetry', telemetryError);
-    }
-  }
-}
+import { sendClientErrorTelemetry } from '@/lib/client-error-telemetry';
 
 interface Props {
   children: ReactNode;
@@ -84,7 +29,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    sendErrorTelemetry('global-error-boundary', error, errorInfo);
+    sendClientErrorTelemetry('global-error-boundary', error, { errorInfo });
 
     if (process.env.NODE_ENV === 'development') {
       // eslint-disable-next-line no-console
