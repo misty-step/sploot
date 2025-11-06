@@ -95,20 +95,22 @@ function createResponse(status: number): NextResponse {
   return { status } as unknown as NextResponse;
 }
 
+const defaultContext = { params: Promise.resolve({}) };
+
 describe('withObservability', () => {
   it('wraps handler and logs request lifecycle on success', async () => {
     const response = createResponse(201);
-    const handler = vi.fn(async () => {
+    const handler = vi.fn(async (req: NextRequest, context: any) => {
       vi.setSystemTime(new Date(BASE_TIME + 1_000));
       return response;
     });
 
     const req = createRequest('https://sploot.dev/api/gremlin?foo=bar', 'POST');
     const wrapped = withObservability(handler);
-    const result = await wrapped(req);
+    const result = await wrapped(req, defaultContext);
 
     expect(result).toBe(response);
-    expect(handler).toHaveBeenCalledWith(req, undefined);
+    expect(handler).toHaveBeenCalledWith(req, defaultContext);
     expect(nanoidMock).toHaveBeenCalledTimes(1);
     expect(getPerformanceMonitorMock).toHaveBeenCalledTimes(1);
     expect(measureAsyncMock).toHaveBeenCalledWith('/api/gremlin', expect.any(Function));
@@ -151,7 +153,7 @@ describe('withObservability', () => {
     });
 
     const wrapped = withObservability(handler, { operation: 'upload:gremlin' });
-    await wrapped(createRequest('https://sploot.dev/api/gremlin', 'PUT'));
+    await wrapped(createRequest('https://sploot.dev/api/gremlin', 'PUT'), defaultContext);
 
     expect(getPerformanceMonitorMock).toHaveBeenCalledTimes(1);
     expect(measureAsyncMock).toHaveBeenCalledWith('upload:gremlin', expect.any(Function));
@@ -181,7 +183,7 @@ describe('withObservability', () => {
     });
 
     const wrapped = withObservability(handler);
-    await wrapped(createRequest('https://sploot.dev/api/chaos'));
+    await wrapped(createRequest('https://sploot.dev/api/chaos'), defaultContext);
 
     const record = loggerRecords[0];
     expect(record?.logger.logTiming).toHaveBeenCalledWith(
@@ -203,7 +205,9 @@ describe('withObservability', () => {
     });
 
     const wrapped = withObservability(handler);
-    await expect(wrapped(createRequest('https://sploot.dev/api/error', 'DELETE'))).rejects.toThrow(
+    await expect(
+      wrapped(createRequest('https://sploot.dev/api/error', 'DELETE'), defaultContext)
+    ).rejects.toThrow(
       boom
     );
 
@@ -237,7 +241,7 @@ describe('withObservability', () => {
     });
 
     const wrapped = withObservability(handler, { skipLogging: true });
-    await wrapped(createRequest('https://sploot.dev/api/nolog'));
+    await wrapped(createRequest('https://sploot.dev/api/nolog'), defaultContext);
 
     const record = loggerRecords[0];
     expect(record?.logger.logInfo).not.toHaveBeenCalled();
@@ -252,7 +256,7 @@ describe('withObservability', () => {
     });
 
     const wrapped = withObservability(handler, { skipTiming: true });
-    await wrapped(createRequest('https://sploot.dev/api/notiming'));
+    await wrapped(createRequest('https://sploot.dev/api/notiming'), defaultContext);
 
     expect(getPerformanceMonitorMock).not.toHaveBeenCalled();
     expect(measureAsyncMock).not.toHaveBeenCalled();
@@ -284,10 +288,10 @@ describe('withObservability', () => {
     const req = createRequest('https://sploot.dev/api/twins');
 
     vi.setSystemTime(new Date(BASE_TIME));
-    await wrapped(req);
+    await wrapped(req, defaultContext);
 
     vi.setSystemTime(new Date(BASE_TIME));
-    await wrapped(req);
+    await wrapped(req, defaultContext);
 
     expect(loggerRecords.map(record => record.traceId)).toEqual(['trace-one', 'trace-two']);
   });
@@ -300,7 +304,7 @@ describe('withObservability', () => {
 
     const metadata = { userId: 'user_123', featureFlag: 'goblin-mode' };
     const wrapped = withObservability(handler, { metadata });
-    await wrapped(createRequest('https://sploot.dev/api/meta'));
+    await wrapped(createRequest('https://sploot.dev/api/meta'), defaultContext);
 
     const record = loggerRecords[0];
     expect(record?.logger.logInfo).toHaveBeenCalledWith(
@@ -316,7 +320,7 @@ describe('withObservability', () => {
   });
 
   it('falls back to Request.url when nextUrl is missing', async () => {
-    const handler = vi.fn(async () => {
+    const handler = vi.fn(async (req: NextRequest, context: any) => {
       vi.setSystemTime(new Date(BASE_TIME + 120));
       return createResponse(204);
     });
@@ -327,7 +331,7 @@ describe('withObservability', () => {
       method: 'PATCH',
     });
 
-    await wrapped(plainRequest as unknown as NextRequest);
+    await wrapped(plainRequest as unknown as NextRequest, defaultContext);
 
     const record = loggerRecords[0];
     expect(record?.logger.logInfo).toHaveBeenCalledWith(
@@ -338,6 +342,6 @@ describe('withObservability', () => {
         query: { gremlin: 'yes' },
       })
     );
-    expect(handler).toHaveBeenCalledWith(plainRequest, undefined);
+    expect(handler).toHaveBeenCalledWith(plainRequest, defaultContext);
   });
 });

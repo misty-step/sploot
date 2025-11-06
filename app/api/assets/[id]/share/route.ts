@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { getOrCreateShareSlug, AssetNotFoundError } from '@/lib/share';
 import { apiError } from '@/lib/api-error';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 
 /**
  * Generate a share link for an asset
@@ -22,7 +23,7 @@ import { withObservability } from '@/lib/with-observability';
  */
 async function postHandler(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ) {
   try {
     // 1. Extract and verify auth
@@ -32,7 +33,12 @@ async function postHandler(
     }
 
     // 2. Extract asset ID from params
-    const { id } = await params;
+    const params = await context.params;
+    const id = params?.id;
+
+    if (!id) {
+      return apiError('NOT_FOUND', 'Asset not found');
+    }
 
     // 3. Verify database is configured
     if (!prisma) {

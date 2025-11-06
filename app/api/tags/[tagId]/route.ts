@@ -2,16 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireUserIdWithSync } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 
 /**
  * PATCH /api/tags/[tagId] - Update a tag
  */
 async function patchHandler(
   req: NextRequest,
-  { params }: { params: Promise<{ tagId: string }> }
+  context: RouteContext
 ) {
   try {
-    const { tagId } = await params;
+    const params = await context.params;
+    const tagId = params?.tagId;
+
+    if (!tagId) {
+      return NextResponse.json(
+        { error: 'Tag not found' },
+        { status: 404 }
+      );
+    }
     const userId = await requireUserIdWithSync();
     const { name, color } = await req.json();
 
@@ -90,10 +99,18 @@ async function patchHandler(
  */
 async function deleteHandler(
   req: NextRequest,
-  { params }: { params: Promise<{ tagId: string }> }
+  context: RouteContext
 ) {
   try {
-    const { tagId } = await params;
+    const params = await context.params;
+    const tagId = params?.tagId;
+
+    if (!tagId) {
+      return NextResponse.json(
+        { error: 'Tag not found' },
+        { status: 404 }
+      );
+    }
     const userId = await requireUserIdWithSync();
 
     if ( !prisma) {

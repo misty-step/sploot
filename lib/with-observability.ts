@@ -10,10 +10,21 @@ import { getPerformanceMonitor } from './performance-monitor';
  *
  * @public
  */
-export type RouteHandler<T = unknown> = (
+type HandlerWithContext = (
   req: NextRequest,
-  context?: RouteContext
-) => Promise<NextResponse<T>>;
+  context: RouteContext
+) => Promise<Response | NextResponse<any>>;
+
+type HandlerWithoutContext = (
+  req: NextRequest
+) => Promise<Response | NextResponse<any>>;
+
+export type RouteHandler = HandlerWithContext | HandlerWithoutContext;
+
+export type InstrumentedRouteHandler = (
+  req: NextRequest,
+  context: RouteContext
+) => Promise<Response | NextResponse<any>>;
 
 /**
  * Additional context provided by the App Router when invoking a route handler.
@@ -21,7 +32,7 @@ export type RouteHandler<T = unknown> = (
  * @public
  */
 export interface RouteContext {
-  params?: Promise<Record<string, string>>;
+  params: Promise<Record<string, string>>;
 }
 
 /**
@@ -47,6 +58,7 @@ interface RequestMetadata {
 }
 
 const TRACE_ID_LENGTH = 12;
+const DEFAULT_ROUTE_CONTEXT: RouteContext = Object.freeze({ params: Promise.resolve({}) });
 
 /**
  * Wrap a Next.js route handler with logging, timing, and trace enrichment.
@@ -55,14 +67,15 @@ const TRACE_ID_LENGTH = 12;
  * @param options - Observability configuration for the route.
  * @returns Instrumented route handler.
  */
-export function withObservability<T>(
-  handler: RouteHandler<T>,
+export function withObservability(
+  handler: RouteHandler,
   options: ObservabilityOptions = {}
-): RouteHandler<T> {
+): InstrumentedRouteHandler {
   return async function wrappedHandler(
     req: NextRequest,
-    context?: RouteContext
-  ): Promise<NextResponse<T>> {
+    context: RouteContext
+  ): Promise<Response | NextResponse<any>> {
+    const handlerContext = context ?? DEFAULT_ROUTE_CONTEXT;
     const traceId = generateTraceId();
     const operation = resolveOperation(options.operation, req);
     const startTime = Date.now();
@@ -73,27 +86,35 @@ export function withObservability<T>(
     const perfMonitor = options.skipTiming ? null : getPerformanceMonitor();
 
     if (shouldLog) {
-      logger.logInfo('request:start', {
-        ...metadata,
-        operation,
-      });
+      try {
+        logger.logInfo('request:start', {
+          ...metadata,
+          operation,
+        });
+      } catch {
+        // Silently ignore logging failures
+      }
     }
 
     try {
       const response = perfMonitor
-        ? await perfMonitor.measureAsync(operation, () => handler(req, context))
-        : await handler(req, context);
+        ? await perfMonitor.measureAsync(operation, () => callRouteHandler(handler, req, handlerContext))
+        : await callRouteHandler(handler, req, handlerContext);
       const duration = Date.now() - startTime;
       const statusCode = response.status;
       const success = statusCode >= 200 && statusCode < 400;
 
       if (shouldLog) {
-        logger.logTiming(operation, duration, success, {
-          ...metadata,
-          statusCode,
-          duration,
-          success,
-        });
+        try {
+          logger.logTiming(operation, duration, success, {
+            ...metadata,
+            statusCode,
+            duration,
+            success,
+          });
+        } catch {
+          // Silently ignore logging failures
+        }
       }
 
       return response;
@@ -107,13 +128,29 @@ export function withObservability<T>(
       };
 
       if (shouldLog) {
-        logger.logError('request:error', error, logPayload);
+        try {
+          logger.logError('request:error', error, logPayload);
+        } catch {
+          // Silently ignore logging failures
+        }
       }
 
       unstable_rethrow(error);
       throw error;
     }
   };
+}
+
+function callRouteHandler(
+  handler: RouteHandler,
+  req: NextRequest,
+  context: RouteContext
+): Promise<Response | NextResponse<any>> {
+  if (handler.length >= 2) {
+    return (handler as HandlerWithContext)(req, context);
+  }
+
+  return (handler as HandlerWithoutContext)(req);
 }
 
 function generateTraceId(): string {

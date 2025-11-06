@@ -4,10 +4,11 @@ import { getCacheService } from '@/lib/cache';
 import { getAuth } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 
 async function getHandler(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ) {
   try {
     const { userId } = await getAuth();
@@ -18,7 +19,15 @@ async function getHandler(
       );
     }
 
-    const { id } = await params;
+    const params = await context.params;
+    const id = params?.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Asset not found' },
+        { status: 404 }
+      );
+    }
 
     if (!prisma) {
       return NextResponse.json(
@@ -82,7 +91,7 @@ async function getHandler(
 
 async function patchHandler(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ) {
   try {
     const { userId } = await getAuth();
@@ -93,7 +102,15 @@ async function patchHandler(
       );
     }
 
-    const { id } = await params;
+    const params = await context.params;
+    const id = params?.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Asset not found' },
+        { status: 404 }
+      );
+    }
     const body = await req.json();
     const { favorite, tags } = body;
 
@@ -219,7 +236,7 @@ async function patchHandler(
 
 async function deleteHandler(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ) {
   try {
     const { userId } = await getAuth();
@@ -230,7 +247,15 @@ async function deleteHandler(
       );
     }
 
-    const { id } = await params;
+    const params = await context.params;
+    const id = params?.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Asset not found' },
+        { status: 404 }
+      );
+    }
     const { searchParams } = new URL(req.url);
     const permanent = searchParams.get('permanent') === 'true';
 

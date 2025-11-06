@@ -3,17 +3,26 @@ import { unstable_rethrow } from 'next/navigation';
 import { requireUserIdWithSync } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 
 /**
  * GET /api/assets/[id]/tags - Get tags for a specific asset
  */
 async function getHandler(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ) {
   try {
     const userId = await requireUserIdWithSync();
-    const { id } = await params;
+    const params = await context.params;
+    const id = params?.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Asset not found' },
+        { status: 404 }
+      );
+    }
 
     if ( !prisma) {
       return NextResponse.json(
@@ -68,11 +77,19 @@ async function getHandler(
  */
 async function postHandler(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ) {
   try {
     const userId = await requireUserIdWithSync();
-    const { id } = await params;
+    const params = await context.params;
+    const id = params?.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Asset not found' },
+        { status: 404 }
+      );
+    }
     const { tagIds, tagNames } = await req.json();
 
     if ( !prisma) {
@@ -202,11 +219,19 @@ async function postHandler(
  */
 async function deleteHandler(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ) {
   try {
     const userId = await requireUserIdWithSync();
-    const { id } = await params;
+    const params = await context.params;
+    const id = params?.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Asset not found' },
+        { status: 404 }
+      );
+    }
     const { tagIds } = await req.json();
 
     if (!tagIds || !Array.isArray(tagIds) || tagIds.length === 0) {

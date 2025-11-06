@@ -30,6 +30,13 @@ function parseCall(spy: ConsoleSpy, index = 0) {
   return JSON.parse(payload as string);
 }
 
+async function flushAsync() {
+  await Promise.resolve();
+  if (typeof vi.advanceTimersByTimeAsync === 'function') {
+    await vi.advanceTimersByTimeAsync(0);
+  }
+}
+
 beforeEach(() => {
   vi.resetModules();
   vi.clearAllMocks();
@@ -120,7 +127,7 @@ describe('observability logger', () => {
     const err = new Error('double-fudge meltdown');
 
     logger.logError('sentry-scream', err, { requestId: 'req-9000' });
-    await Promise.resolve();
+    await flushAsync();
 
     expect(vi.mocked(sentry.captureException)).toHaveBeenCalledWith(err, {
       contexts: {
@@ -159,7 +166,7 @@ describe('observability logger', () => {
     tracedLogger.logInfo('info-trace');
     tracedLogger.logTiming('timing-trace', 69, false);
     tracedLogger.logError('error-trace', 'string failure');
-    await Promise.resolve();
+    await flushAsync();
 
     expect(parseCall(consoleLogSpy).traceId).toBe('trace-hyperpop');
     expect(parseCall(consoleLogSpy, 1).traceId).toBe('trace-hyperpop');
@@ -213,7 +220,7 @@ describe('observability logger', () => {
     const entry = parseCall(consoleErrorSpy);
     expect(entry.error.message).toBe('goodbye telemetry');
 
-    await new Promise(resolve => setImmediate(resolve));
+    await flushAsync();
   });
 
   it('falls back to minimal payload when metadata serialization fails', async () => {

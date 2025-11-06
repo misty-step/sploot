@@ -14,7 +14,11 @@ interface PublicMemePageProps {
 }
 
 export async function generateMetadata({ params }: PublicMemePageProps): Promise<Metadata> {
-  const { id } = await params;
+  const { id } = (await params) ?? {};
+
+  if (!id) {
+    return { title: 'Meme not found' };
+  }
 
   if (!prisma) {
     return { title: 'Meme not found' };
@@ -85,7 +89,18 @@ export async function generateMetadata({ params }: PublicMemePageProps): Promise
 }
 
 export default async function PublicMemePage({ params }: PublicMemePageProps) {
-  const { id } = await params;
+  const { id } = (await params) ?? {};
+
+  if (!id) {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4">
+        <h1 className="text-white text-2xl mb-4">Meme not found</h1>
+        <Link href="/" className="text-gray-500 hover:text-gray-400">
+          Go to Sploot
+        </Link>
+      </div>
+    );
+  }
 
   if (!prisma) {
     return (

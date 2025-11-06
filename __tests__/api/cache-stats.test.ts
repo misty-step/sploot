@@ -10,6 +10,7 @@ vi.mock('@/lib/cache');
 
 const mockGetAuth = vi.mocked(getAuth);
 const mockGetCacheService = vi.mocked(getCacheService);
+const defaultContext = { params: Promise.resolve({}) };
 
 // Helper to create mock cache service
 function createMockCache(stats?: Partial<CacheStats>) {
@@ -39,7 +40,7 @@ describe('/api/cache/stats', () => {
       mockGetAuth.mockResolvedValue({ userId: null, sessionId: null, async getToken() { return null; } });
 
       const request = createMockRequest('GET');
-      const response = await GET(request);
+      const response = await GET(request, defaultContext);
       const data = await response.json();
 
       expect(response.status).toBe(401);
@@ -59,7 +60,7 @@ describe('/api/cache/stats', () => {
       mockGetCacheService.mockReturnValue(mockCache as any);
 
       const request = createMockRequest('GET');
-      const response = await GET(request);
+      const response = await GET(request, defaultContext);
       const data = await response.json();
 
       expect(response.status).toBe(200);
@@ -86,7 +87,7 @@ describe('/api/cache/stats', () => {
       mockGetCacheService.mockReturnValue(mockCache as any);
 
       const request = createMockRequest('GET');
-      const response = await GET(request);
+      const response = await GET(request, defaultContext);
       const data = await response.json();
 
       expect(response.status).toBe(200);
@@ -103,7 +104,7 @@ describe('/api/cache/stats', () => {
         action: 'reset-stats',
       });
 
-      const response = await POST(request);
+      const response = await POST(request, defaultContext);
       const data = await response.json();
 
       expect(response.status).toBe(401);
@@ -120,7 +121,7 @@ describe('/api/cache/stats', () => {
         action: 'reset-stats',
       });
 
-      const response = await POST(request);
+      const response = await POST(request, defaultContext);
       const data = await response.json();
 
       expect(response.status).toBe(200);
@@ -138,7 +139,7 @@ describe('/api/cache/stats', () => {
         action: 'clear-all',
       });
 
-      const response = await POST(request);
+      const response = await POST(request, defaultContext);
       const data = await response.json();
 
       expect(response.status).toBe(200);
@@ -156,7 +157,7 @@ describe('/api/cache/stats', () => {
         action: 'invalidate',
       });
 
-      const response = await POST(request);
+      const response = await POST(request, defaultContext);
       const data = await response.json();
 
       expect(response.status).toBe(200);
@@ -174,7 +175,7 @@ describe('/api/cache/stats', () => {
         action: 'warm',
       });
 
-      const response = await POST(request);
+      const response = await POST(request, defaultContext);
       const data = await response.json();
 
       expect(response.status).toBe(501);
@@ -191,7 +192,7 @@ describe('/api/cache/stats', () => {
         action: 'invalid-action',
       });
 
-      const response = await POST(request);
+      const response = await POST(request, defaultContext);
       const data = await response.json();
 
       expect(response.status).toBe(400);

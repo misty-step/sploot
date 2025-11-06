@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 
 /**
  * GET /api/assets/[id]/embedding-status
@@ -9,11 +10,19 @@ import { withObservability } from '@/lib/with-observability';
  */
 async function getHandler(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ) {
   try {
     const { userId } = await auth();
-    const { id } = await params;
+    const params = await context.params;
+    const id = params?.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Asset not found' },
+        { status: 404 }
+      );
+    }
 
     if (!userId) {
       return NextResponse.json(

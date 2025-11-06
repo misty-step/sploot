@@ -5,6 +5,7 @@ import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getAuth } from '@/lib/auth/server';
 import { broadcastEmbeddingUpdate } from '@/lib/sse-broadcaster';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
 
 // Request deduplication: Track in-flight requests
@@ -41,7 +42,7 @@ const performanceMetrics: {
 
 async function postHandler(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ) {
   const startTime = Date.now();
   performanceMetrics.totalRequests++;
@@ -55,7 +56,15 @@ async function postHandler(
       );
     }
 
-    const { id } = await params;
+    const params = await context.params;
+    const id = params?.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Asset not found' },
+        { status: 404 }
+      );
+    }
 
     // Check circuit breaker
     if (circuitBreakerState.isOpen) {

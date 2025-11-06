@@ -2,10 +2,11 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { databaseConfigured } from './env';
 import logger from './logger';
 import { shuffleWithSeed } from './seeded-random';
+import { getPerformanceMonitor } from './performance-monitor';
+import { logger as observabilityLogger } from './observability-logger';
 
 // Declare global type for PrismaClient to prevent multiple instances in development
 declare global {
-  // eslint-disable-next-line no-var
   var prisma: PrismaClient | undefined;
 }
 
@@ -21,10 +22,15 @@ if (databaseConfigured) {
   }
 
   try {
-    const { getPerformanceMonitor } = require('./performance-monitor') as typeof import('./performance-monitor');
-    const { logger: observabilityLogger } = require('./observability-logger') as typeof import('./observability-logger');
+    if (!prismaClient) {
+      throw new Error('Prisma client unavailable');
+    }
 
-    prismaClient.$use(async (params, next) => {
+    const client = prismaClient as unknown as {
+      $use: (middleware: (params: any, next: (params: any) => Promise<unknown>) => Promise<unknown>) => void;
+    };
+
+    client.$use(async (params: any, next: (params: any) => Promise<unknown>) => {
       const model = params.model ?? 'raw';
       const action = params.action ?? 'query';
       const operation = `db:${model}:${action}`;

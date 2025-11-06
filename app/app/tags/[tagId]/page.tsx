@@ -32,10 +32,12 @@ interface Asset {
   } | null;
 }
 
+type TagPageParams = { tagId: string };
+
 export default function TagPage({
   params,
 }: {
-  params: Promise<{ tagId: string }>;
+  params: Promise<TagPageParams>;
 }) {
   const resolvedParams = use(params);
   const [tag, setTag] = useState<Tag | null>(null);

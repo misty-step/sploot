@@ -11,6 +11,8 @@
  * - dead: Permanent failures for analysis
  */
 
+import { logger } from './observability-logger';
+
 export type QueuePriority = 'urgent' | 'normal' | 'background';
 export type ErrorType = 'rate_limit' | 'network' | 'server' | 'invalid' | 'unknown';
 
