@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { getPerformanceMonitor, PERF_OPERATIONS } from '@/lib/performance-monitor';
 import { trackTiming } from '@/lib/analytics';
+import { logger } from '@/lib/observability-logger';
 
 // Mock Analytics
 vi.mock('@/lib/analytics', () => ({
@@ -11,6 +12,7 @@ describe('Performance Monitor', () => {
   let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  let logInfoSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -24,6 +26,9 @@ describe('Performance Monitor', () => {
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
+    // Spy on logger methods
+    logInfoSpy = vi.spyOn(logger, 'logInfo').mockImplementation(() => {});
+
     // Clear localStorage
     if (typeof window !== 'undefined') {
       localStorage.removeItem('debug_performance');
@@ -34,6 +39,7 @@ describe('Performance Monitor', () => {
     consoleWarnSpy.mockRestore();
     consoleLogSpy.mockRestore();
     consoleErrorSpy.mockRestore();
+    logInfoSpy.mockRestore();
   });
 
   describe('startTiming() + endTiming()', () => {
@@ -356,8 +362,12 @@ describe('Performance Monitor', () => {
       monitor.startTiming('debug_test');
       monitor.endTiming('debug_test');
 
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[perf] debug_test:')
+      expect(logInfoSpy).toHaveBeenCalledWith(
+        'performance-monitor.debug',
+        expect.objectContaining({
+          operation: 'debug_test',
+          durationMs: expect.any(Number),
+        })
       );
     });
 
@@ -372,7 +382,7 @@ describe('Performance Monitor', () => {
       monitor.startTiming('no_debug_test');
       monitor.endTiming('no_debug_test');
 
-      expect(consoleLogSpy).not.toHaveBeenCalled();
+      expect(logInfoSpy).not.toHaveBeenCalled();
     });
   });
 
