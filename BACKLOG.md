@@ -124,6 +124,20 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 **Approach**: Create `lib/api-response.ts` with `errorResponse()` helper. Single `ApiErrorResponse` interface. Update 15 routes to use standard pattern.
 **Effort**: 4h | **Impact**: Consistent error UX, easier frontend error boundaries
 
+### [Testing] Concurrency + edge coverage for observability stack
+**Source**: PR #13 review (Claude) — https://github.com/phrazzld/sploot/pull/13#issuecomment-3492708426  
+**Files**: `__tests__/lib/performance-monitor.test.ts`, new edge-runtime spec, load test harness  
+**Context**: Reviewer asked for optional stress cases (concurrent `measureAsync`, edge runtime smoke, circular buffer saturation) to lock down new instrumentation. Valuable once core bugs are fixed.  
+**Effort**: 1 day | **Priority**: MEDIUM  
+**Acceptance**: Add concurrency test that runs 50 parallel timings without race conditions, edge-runtime mock confirms wrapper works without `nextUrl`, load test fixture exercises buffer rollover without perf hits.
+
+### [DX] Audit logger import paths after observability rollout
+**Source**: PR #13 review (Claude) — https://github.com/phrazzld/sploot/pull/13#issuecomment-3492708426  
+**Files**: `/app/api/**/route.ts`, `lib/logger.ts`, `lib/observability-logger.ts`  
+**Context**: Claude flagged possible mismatch between legacy `@/lib/logger` and new observability logger usage. Needs repo-wide sweep once current PR lands.  
+**Effort**: 4h | **Priority**: MEDIUM  
+**Acceptance**: Inventory all route/component imports, ensure unified `observability-logger` usage, document migration pattern in CLAUDE.md.
+
 ### [Maintainability] Enforce Logger Usage via ESLint
 **Files**: 510+ raw `console.*` calls across 71 files vs well-designed `lib/logger.ts` being ignored
 **Perspectives**: maintainability-maven (production logs lack structured data)
