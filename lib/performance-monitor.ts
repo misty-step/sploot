@@ -5,6 +5,7 @@
  * Integrates with Analytics Service for visualization.
  */
 
+import { nanoid } from 'nanoid';
 import { logger } from '@/lib/observability-logger';
 import { trackTiming } from './analytics';
 
@@ -116,18 +117,46 @@ export class PerformanceMonitor {
   /**
    * Measure an async function, automatically tracking timing and failures.
    *
+   * Uses a unique timing key per invocation to avoid conflicts when the same
+   * operation is measured concurrently across multiple requests.
+   *
    * @param operation - Operation identifier to record.
    * @param fn - Async work to execute.
    * @returns Result of the async function.
    */
   async measureAsync<T>(operation: string, fn: () => Promise<T>): Promise<T> {
-    this.startTiming(operation);
+    // Generate unique timing key to support concurrent measurements of the same operation
+    const timingKey = `${operation}:${nanoid(6)}`;
+    this.startTiming(timingKey);
+
     try {
       const result = await fn();
-      this.endTiming(operation);
+      const duration = this.takeDuration(timingKey, 'endTiming');
+
+      if (duration !== undefined) {
+        this.track(operation, duration);
+
+        try {
+          trackTiming(operation, duration, true);
+        } catch (error) {
+          console.error('[perf] Failed to send timing to analytics:', error);
+        }
+      }
+
       return result;
     } catch (error) {
-      this.trackFailure(operation);
+      const duration = this.takeDuration(timingKey, 'trackFailure');
+
+      if (duration !== undefined) {
+        this.track(operation, duration);
+
+        try {
+          trackTiming(operation, duration, false);
+        } catch (err) {
+          console.error('[perf] Failed to track failure timing:', err);
+        }
+      }
+
       throw error;
     }
   }

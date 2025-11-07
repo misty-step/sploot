@@ -244,6 +244,9 @@ export function useAssets(options: UseAssetsOptions = {}) {
   );
 
   const updateAsset = useCallback((id: string, updates: Partial<Asset>) => {
+    // Collect analytics events to emit after state update completes
+    const events: Array<{ name: string; properties: Record<string, any> }> = [];
+
     setAssets((prev) =>
       prev.map((asset) => {
         if (asset.id !== id) return asset;
@@ -284,8 +287,9 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
         const updatedAsset = { ...asset, ...updates };
 
+        // Collect analytics events (don't emit inside updater function)
         if (favoriteChanged) {
-          track({
+          events.push({
             name: updates.favorite ? 'asset_favorited' : 'asset_unfavorited',
             properties: {
               assetId: asset.id,
@@ -294,7 +298,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
         }
 
         addedTags.forEach((tagName) => {
-          track({
+          events.push({
             name: 'tag_added',
             properties: {
               assetId: asset.id,
@@ -304,7 +308,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
         });
 
         removedTags.forEach((tagName) => {
-          track({
+          events.push({
             name: 'tag_removed',
             properties: {
               assetId: asset.id,
@@ -317,6 +321,9 @@ export function useAssets(options: UseAssetsOptions = {}) {
         return updatedAsset;
       })
     );
+
+    // Emit collected analytics events after state update completes
+    events.forEach((event) => track(event as any));
   }, []);
 
   const deleteAsset = useCallback((id: string) => {

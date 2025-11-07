@@ -102,6 +102,10 @@ export function trackFlow(
 /**
  * Track timing metrics for a named operation.
  *
+ * Automatically detects the environment (client vs server) and uses the appropriate
+ * Vercel Analytics API. Client-side calls are synchronous, server-side calls are
+ * async but fire-and-forget to avoid blocking.
+ *
  * @param operation - Unique operation identifier.
  * @param duration - Duration in milliseconds.
  * @param success - Whether the operation completed successfully.
@@ -115,11 +119,27 @@ export function trackTiming(
 ): void {
   try {
     const sanitized = metadata ? sanitizeEventProperties(metadata) : {};
-    vercelTrack(`timing:${operation}`, {
+    const eventName = `timing:${operation}`;
+    const properties = {
       duration,
       success,
       ...sanitized,
-    });
+    };
+
+    // Client-side: use synchronous client API
+    if (typeof window !== 'undefined') {
+      vercelTrack(eventName, properties);
+    } else {
+      // Server-side: use async server API (fire and forget)
+      (async () => {
+        try {
+          const { track: vercelTrackServer } = await import('@vercel/analytics/server');
+          await vercelTrackServer(eventName, properties);
+        } catch (err) {
+          console.error('[Analytics] Server timing tracking failed:', err);
+        }
+      })();
+    }
   } catch (error) {
     console.error('[Analytics] Timing tracking failed:', error);
   }
