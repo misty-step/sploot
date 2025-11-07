@@ -32,6 +32,7 @@ import { RotateCcw, X, Trash2 } from 'lucide-react';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
 import { track } from '@/lib/analytics';
 import { logger } from '@/lib/observability-logger';
+import { haveFiltersChanged, type LibraryFilterSnapshot } from '@/lib/filter-change';
 
 function AppPageClient() {
   const router = useRouter();
@@ -86,12 +87,7 @@ function AppPageClient() {
   const [showUploadPanel, setShowUploadPanel] = useState(false);
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollTopRef = useRef<number | null>(null);
-  const filtersRef = useRef<{
-    tagId: string | null;
-    favorites: boolean;
-    sortBy: string;
-    sortDirection: string;
-  } | undefined>(undefined);
+  const filtersRef = useRef<LibraryFilterSnapshot | undefined>(undefined);
   const pendingRefreshRef = useRef<boolean>(false);
 
   // Get the actual database column for sorting
@@ -584,11 +580,13 @@ function AppPageClient() {
   // Trigger refresh when filters or sort preferences change
   useEffect(() => {
     const prev = filtersRef.current;
-    const current = {
+    const current: LibraryFilterSnapshot = {
       tagId: tagIdParam ?? null,
       favorites: bangersOnly,
       sortBy: actualSortBy,
-      sortDirection: actualSortOrder as 'asc' | 'desc',
+      sortDirection: actualSortOrder,
+      uiSortBy: sortBy,
+      shuffleSeed: sortBy === 'shuffle' ? shuffleSeed : undefined,
     };
 
     if (!prev) {
@@ -596,11 +594,7 @@ function AppPageClient() {
       return;
     }
 
-    const filtersChanged =
-      prev.tagId !== current.tagId ||
-      prev.favorites !== current.favorites ||
-      prev.sortBy !== current.sortBy ||
-      prev.sortDirection !== current.sortDirection;
+    const filtersChanged = haveFiltersChanged(prev, current);
 
     if (filtersChanged) {
       if (isSearching) {
@@ -615,7 +609,7 @@ function AppPageClient() {
     }
 
     filtersRef.current = current;
-  }, [tagIdParam, bangersOnly, actualSortBy, actualSortOrder, isSearching, refresh]);
+  }, [tagIdParam, bangersOnly, actualSortBy, actualSortOrder, sortBy, shuffleSeed, isSearching, refresh]);
 
   useEffect(() => {
     if (!trimmedLibraryQuery) {
