@@ -49,3 +49,7 @@ next-env.d.ts
 /public/workbox-*.js
 
 /lib/generated/prisma
+
+# Sentry
+.sentryclirc
+sentry.properties

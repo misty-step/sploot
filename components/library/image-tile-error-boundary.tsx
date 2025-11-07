@@ -1,6 +1,7 @@
 'use client';
 
 import { Component, type ReactNode } from 'react';
+import { sendClientErrorTelemetry } from '@/lib/client-error-telemetry';
 import type { Asset } from '@/lib/types';
 
 interface Props {
@@ -29,6 +30,14 @@ export class ImageTileErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    sendClientErrorTelemetry('image-tile-error-boundary', error, {
+      errorInfo,
+      metadata: {
+        assetId: this.props.asset.id,
+        filename: this.props.asset.filename ?? this.props.asset.pathname,
+      },
+    });
+
     // Log to console in development
     if (process.env.NODE_ENV === 'development') {
       console.error('ImageTile error boundary caught:', error, errorInfo);

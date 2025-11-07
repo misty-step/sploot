@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Component, ReactNode } from 'react';
+import { sendClientErrorTelemetry } from '@/lib/client-error-telemetry';
 
 interface Props {
   children: ReactNode;
@@ -28,8 +29,12 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // You can log the error to an error reporting service here
-    console.error('Error caught by boundary:', error, errorInfo);
+    sendClientErrorTelemetry('global-error-boundary', error, { errorInfo });
+
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.error('Error caught by boundary:', error, errorInfo);
+    }
   }
 
   reset = () => {

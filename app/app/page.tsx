@@ -30,6 +30,8 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { RotateCcw, X, Trash2 } from 'lucide-react';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
+import { track } from '@/lib/analytics';
+import { logger } from '@/lib/observability-logger';
 
 function AppPageClient() {
   const router = useRouter();
@@ -154,7 +156,9 @@ function AppPageClient() {
   // Listen for asset upload events and refresh the library
   useEffect(() => {
     const handleAssetUploaded = (event: CustomEvent) => {
-      console.log('[Library] Asset uploaded, refreshing...', event.detail);
+      logger.logInfo('library.asset-uploaded-refresh', {
+        detail: event.detail,
+      });
 
       // Refresh the asset list
       refresh();
@@ -324,6 +328,9 @@ function AppPageClient() {
 
   const activeTagName = contextTagName;
 
+  const lastResultsTrackedRef = useRef<string | null>(null);
+  const lastNoResultsTrackedRef = useRef<string | null>(null);
+
   const handleInlineSearch = useCallback((searchCommand: { query: string; timestamp: number; updateUrl?: boolean }) => {
     const query = searchCommand.query;
 
@@ -339,8 +346,18 @@ function AppPageClient() {
     // Update URL only when explicitly requested (on Enter key)
     if (searchCommand.updateUrl === true) {
       updateUrlParams({ q: query ? query : null });
+      const trimmed = query.trim();
+      if (trimmed.length > 0) {
+        track({
+          name: 'search_query_submitted',
+          properties: {
+            queryLength: trimmed.length,
+            hasFilters: Boolean(bangersOnly || tagIdParam),
+          },
+        });
+      }
     }
-  }, [updateUrlParams]);
+  }, [updateUrlParams, bangersOnly, tagIdParam]);
 
   // Use filter actions from context (they handle URL updates internally)
   const toggleBangersOnly = toggleBangers;
@@ -451,6 +468,85 @@ function AppPageClient() {
       deleteSearchAsset(id);
     },
     [deleteAsset, deleteSearchAsset]
+  );
+
+  useEffect(() => {
+    if (!isSearching) {
+      lastResultsTrackedRef.current = null;
+      lastNoResultsTrackedRef.current = null;
+      return;
+    }
+
+    if (searchLoading || searchError) {
+      return;
+    }
+
+    const query = trimmedLibraryQuery;
+    if (!query) {
+      return;
+    }
+
+    const hasFilters = Boolean(bangersOnly || tagIdParam);
+
+    if (filteredSearchAssets.length > 0) {
+      const key = `${query}|${filteredSearchAssets.map((asset) => asset.id).join(',')}`;
+      if (lastResultsTrackedRef.current !== key) {
+        track({
+          name: 'search_results_shown',
+          properties: {
+            count: filteredSearchAssets.length,
+            latency: searchMetadata?.latencyMs ?? 0,
+            hasFilters,
+          },
+        });
+        lastResultsTrackedRef.current = key;
+        lastNoResultsTrackedRef.current = null;
+      }
+    } else {
+      if (lastNoResultsTrackedRef.current !== query) {
+        track({
+          name: 'search_no_results',
+          properties: {
+            query,
+          },
+        });
+        lastNoResultsTrackedRef.current = query;
+        lastResultsTrackedRef.current = null;
+      }
+    }
+  }, [
+    isSearching,
+    searchLoading,
+    searchError,
+    filteredSearchAssets,
+    trimmedLibraryQuery,
+    searchMetadata?.latencyMs,
+    bangersOnly,
+    tagIdParam,
+  ]);
+
+  const handleAssetSelect = useCallback(
+    (asset: any) => {
+      if (isSearching) {
+        const index = filteredSearchAssets.findIndex((candidate) => candidate.id === asset.id);
+        const score =
+          Number(
+            (asset as any)?.similarity ??
+              (index >= 0 ? filteredSearchAssets[index]?.similarity : 0)
+          ) || 0;
+        track({
+          name: 'search_result_clicked',
+          properties: {
+            position: index >= 0 ? index + 1 : 0,
+            score,
+            assetId: asset.id,
+          },
+        });
+      }
+
+      setSelectedAsset(asset);
+    },
+    [filteredSearchAssets, isSearching]
   );
 
   // Handler for performing the actual delete with modal integration
@@ -754,7 +850,7 @@ function AppPageClient() {
                   onLoadMore={handleLoadMore}
                   onAssetUpdate={handleAssetUpdate}
                   onAssetDelete={handleAssetDelete}
-                  onAssetSelect={setSelectedAsset}
+                  onAssetSelect={handleAssetSelect}
                   containerClassName={cn(gridContainerClassName, 'w-full')}
                   onScrollContainerReady={handleScrollContainerReady}
                   onUploadClick={() => setShowUploadPanel(true)}

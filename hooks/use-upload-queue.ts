@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useOffline } from './use-offline';
 import { error as logError } from '@/lib/logger';
+import { track } from '@/lib/analytics';
 
 export interface QueuedUpload {
   id: string;
@@ -53,6 +54,14 @@ export function useUploadQueue() {
 
   // Add file to queue
   const addToQueue = useCallback((file: File) => {
+    track({
+      name: 'upload_file_selected',
+      properties: {
+        count: 1,
+        totalSize: file.size,
+      },
+    });
+
     const queuedUpload: QueuedUpload = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       file: {
@@ -117,6 +126,13 @@ export function useUploadQueue() {
     for (const item of pendingItems) {
       try {
         updateQueueItem(item.id, { status: 'uploading' });
+        track({
+          name: 'upload_started',
+          properties: {
+            assetId: item.id,
+            size: item.file.size,
+          },
+        });
 
         // Convert base64 back to File if needed
         let file: File;
@@ -132,10 +148,20 @@ export function useUploadQueue() {
 
         // Here you would call your actual upload function
         // For now, we'll simulate with a timeout
+        const uploadStart = performance.now();
         await new Promise((resolve) => setTimeout(resolve, 1000));
+        const duration = performance.now() - uploadStart;
 
         // Mark as successful and remove from queue
         updateQueueItem(item.id, { status: 'success' });
+        track({
+          name: 'upload_completed',
+          properties: {
+            assetId: item.id,
+            duration: Math.round(duration),
+            size: item.file.size,
+          },
+        });
         setTimeout(() => removeFromQueue(item.id), 2000);
       } catch (error) {
         const newRetryCount = item.retryCount + 1;
@@ -143,6 +169,13 @@ export function useUploadQueue() {
           status: newRetryCount >= MAX_RETRIES ? 'error' : 'queued',
           error: error instanceof Error ? error.message : 'Upload failed',
           retryCount: newRetryCount,
+        });
+        track({
+          name: 'upload_failed',
+          properties: {
+            reason: error instanceof Error ? error.message : 'unknown',
+            size: item.file.size,
+          },
         });
       }
     }

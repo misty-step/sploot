@@ -1,6 +1,7 @@
 'use client';
 
 import { pooledFetch } from '@/lib/connection-pool';
+import { logger } from '@/lib/observability-logger';
 
 /**
  * Centralized manager for embedding status checks.
@@ -303,12 +304,19 @@ class EmbeddingStatusManager {
 
     const retryCount = this.retryCounts.get(assetId) || 0;
     if (retryCount >= this.MAX_RETRIES) {
-      console.log(`Max retries (${this.MAX_RETRIES}) reached for asset ${assetId}`);
+      logger.logInfo('embedding-status-manager.max-retries', {
+        assetId,
+        maxRetries: this.MAX_RETRIES,
+      });
       return;
     }
 
     const timer = setTimeout(async () => {
-      console.log(`Retrying embedding generation for asset ${assetId} (attempt ${retryCount + 1}/${this.MAX_RETRIES})`);
+      logger.logInfo('embedding-status-manager.retrying', {
+        assetId,
+        attempt: retryCount + 1,
+        maxRetries: this.MAX_RETRIES,
+      });
       this.retryCounts.set(assetId, retryCount + 1);
 
       try {

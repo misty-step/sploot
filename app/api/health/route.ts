@@ -1,6 +1,7 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { withObservability } from '@/lib/with-observability';
 
-export async function GET() {
+async function getHandler(_req: NextRequest) {
   return NextResponse.json(
     {
       status: 'ok',
@@ -15,7 +16,7 @@ export async function GET() {
   );
 }
 
-export async function HEAD() {
+async function headHandler(_req: NextRequest) {
   return new NextResponse(null, {
     status: 200,
     headers: {
@@ -23,3 +24,14 @@ export async function HEAD() {
     }
   });
 }
+
+export const GET = withObservability(getHandler, {
+  operation: 'health:ping',
+  skipTiming: true,
+});
+
+export const HEAD = withObservability(headHandler, {
+  operation: 'health:ping-head',
+  skipTiming: true,
+  skipLogging: true,
+});

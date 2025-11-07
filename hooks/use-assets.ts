@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { error as logError } from '@/lib/logger';
+import { track } from '@/lib/analytics';
+import { logger } from '@/lib/observability-logger';
 import type { Asset, UseAssetsOptions } from '@/lib/types';
 
 export function useAssets(options: UseAssetsOptions = {}) {
@@ -90,7 +92,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
         // Debug logging in development
         if (process.env.NODE_ENV === 'development') {
-          console.log('[useAssets] Loading assets:', {
+          logger.logInfo('use-assets.loading', {
             reset,
             offset: currentOffset,
             limit: initialLimit,
@@ -160,7 +162,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
         // Debug logging in development
         if (process.env.NODE_ENV === 'development') {
-          console.log('[useAssets] API response:', {
+          logger.logInfo('use-assets.api-response', {
             assetCount: data.assets?.length || 0,
             total: data.pagination?.total,
             hasMore: data.pagination?.hasMore,
@@ -209,7 +211,11 @@ export function useAssets(options: UseAssetsOptions = {}) {
               const retryDelay = 500 * authRetryCountRef.current; // Exponential backoff: 500ms, 1s, 1.5s
 
               if (process.env.NODE_ENV === 'development') {
-                console.log(`[useAssets] Auth not ready, retrying in ${retryDelay}ms (attempt ${authRetryCountRef.current}/3)`);
+                logger.logInfo('use-assets.auth-retry', {
+                  retryDelayMs: retryDelay,
+                  attempt: authRetryCountRef.current,
+                  maxAttempts: 3,
+                });
               }
 
               // Clear any existing retry timeout
@@ -238,9 +244,34 @@ export function useAssets(options: UseAssetsOptions = {}) {
   );
 
   const updateAsset = useCallback((id: string, updates: Partial<Asset>) => {
+    // Collect analytics events to emit after state update completes
+    const events: Array<{ name: string; properties: Record<string, any> }> = [];
+
     setAssets((prev) =>
       prev.map((asset) => {
         if (asset.id !== id) return asset;
+
+        const favoriteChanged =
+          typeof updates.favorite === 'boolean' && updates.favorite !== asset.favorite;
+
+        let addedTags: string[] = [];
+        let removedTags: string[] = [];
+
+        if (updates.tags) {
+          const existingTags = asset.tags ?? [];
+          const updatedTags = updates.tags ?? [];
+
+          const existingNames = new Set(existingTags.map((tag) => tag.name));
+          const updatedNames = new Set(updatedTags.map((tag) => tag.name));
+
+          addedTags = updatedTags
+            .filter((tag) => tag.name && !existingNames.has(tag.name))
+            .map((tag) => tag.name);
+
+          removedTags = existingTags
+            .filter((tag) => tag.name && !updatedNames.has(tag.name))
+            .map((tag) => tag.name);
+        }
 
         // Check if any values actually changed to avoid creating new reference
         let hasChanges = false;
@@ -254,14 +285,61 @@ export function useAssets(options: UseAssetsOptions = {}) {
         // Return same reference if nothing changed (prevents unnecessary re-renders)
         if (!hasChanges) return asset;
 
+        const updatedAsset = { ...asset, ...updates };
+
+        // Collect analytics events (don't emit inside updater function)
+        if (favoriteChanged) {
+          events.push({
+            name: updates.favorite ? 'asset_favorited' : 'asset_unfavorited',
+            properties: {
+              assetId: asset.id,
+            },
+          });
+        }
+
+        addedTags.forEach((tagName) => {
+          events.push({
+            name: 'tag_added',
+            properties: {
+              assetId: asset.id,
+              tagName,
+            },
+          });
+        });
+
+        removedTags.forEach((tagName) => {
+          events.push({
+            name: 'tag_removed',
+            properties: {
+              assetId: asset.id,
+              tagName,
+            },
+          });
+        });
+
         // Only create new object if values actually changed
-        return { ...asset, ...updates };
+        return updatedAsset;
       })
     );
+
+    // Emit collected analytics events after state update completes
+    events.forEach((event) => track(event as any));
   }, []);
 
   const deleteAsset = useCallback((id: string) => {
-    setAssets((prev) => prev.filter((asset) => asset.id !== id));
+    setAssets((prev) => {
+      const assetToRemove = prev.find((asset) => asset.id === id);
+      if (assetToRemove) {
+        track({
+          name: 'asset_deleted',
+          properties: {
+            assetId: assetToRemove.id,
+            hadTags: Boolean(assetToRemove.tags && assetToRemove.tags.length > 0),
+          },
+        });
+      }
+      return prev.filter((asset) => asset.id !== id);
+    });
     setTotal((prev) => Math.max(0, prev - 1));
   }, []);
 

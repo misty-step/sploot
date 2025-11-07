@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, AlertCircle, ChevronDown } from 'lucide-react';
+import { logger } from '@/lib/observability-logger';
 
 export interface ProgressStats {
   totalFiles: number;
@@ -267,7 +268,7 @@ export function UploadProgressHeader({
                   className="flex-1"
                   onClick={() => {
                     // Trigger retry for failed items
-                    console.log('Retrying failed uploads...');
+                    logger.logInfo('upload-progress.retry-failed');
                   }}
                 >
                   Retry Failed

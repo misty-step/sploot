@@ -3,8 +3,9 @@ import { generateUniqueFilename, isValidFileType, isValidFileSize } from '@/lib/
 import { getAuth } from '@/lib/auth/server';
 import { put } from '@vercel/blob';
 import { blobConfigured } from '@/lib/env';
+import { withObservability } from '@/lib/with-observability';
 
-export async function POST(req: NextRequest) {
+async function postHandler(req: NextRequest) {
   try {
     // Check authentication
     const { userId } = await getAuth();
@@ -120,3 +121,5 @@ async function generateUploadUrl(pathname: string): Promise<{ uploadUrl: string;
     throw new Error('Failed to generate upload URL. Please check your Vercel Blob configuration.');
   }
 }
+
+export const POST = withObservability(postHandler, { operation: 'upload:generate-url' });

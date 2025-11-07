@@ -68,6 +68,39 @@ pnpm test:e2e            # Run end-to-end tests
 - `/api/assets` - CRUD operations for user's images
 - `/api/embeddings` - Generate embeddings for text/images
 
+## Observability Patterns
+
+**Analytics Tracking**: Use `lib/analytics.ts` for all event tracking
+- Import: `import { track, ANALYTICS_EVENTS } from '@/lib/analytics'`
+- Client-side: `track({ name: 'upload_completed', properties: { assetId, size } })`
+- Server-side: Use `trackServer()` with await
+
+**Performance Monitoring**: Use `lib/performance-monitor.ts` for timing
+- Import: `import { getPerformanceMonitor, PERF_OPERATIONS } from '@/lib/performance-monitor'`
+- Usage: `perfMonitor.measureAsync(PERF_OPERATIONS.UPLOAD_SINGLE, async () => { ... })`
+
+**Structured Logging**: Use `lib/observability-logger.ts`, NOT console.log
+- Import: `import { logger } from '@/lib/observability-logger'`
+- Info: `logger.logInfo('Operation completed', { assetId, duration })`
+- Error: `logger.logError('Operation failed', error, { assetId })`
+- Timing: `logger.logTiming('upload', duration, true, { size })`
+
+**API Route Instrumentation**: Wrap all new routes with `withObservability`
+- Template:
+  ```typescript
+  import { withObservability } from '@/lib/with-observability';
+
+  async function handler(req: NextRequest) {
+    // route logic
+  }
+
+  export const POST = withObservability(handler, { operation: 'my-route' });
+  ```
+
+**Error Handling**: All telemetry wrapped in try-catch, never throws
+- Telemetry failures logged to console, execution continues
+- User flows never blocked by observability failures
+
 ## Design System
 
 ### Theme Configuration - Minimal × Technical Aesthetic

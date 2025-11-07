@@ -1,0 +1,129 @@
+'use client';
+
+import type { ErrorInfo } from 'react';
+
+type TelemetryMetadata = Record<string, unknown>;
+
+interface TelemetryOptions {
+  errorInfo?: ErrorInfo;
+  metadata?: TelemetryMetadata;
+}
+
+const MAX_MESSAGE_LENGTH = 500;
+const MAX_METADATA_STRING_LENGTH = 500;
+
+export function sendClientErrorTelemetry(
+  boundary: string,
+  error: Error,
+  options: TelemetryOptions = {}
+): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    const payload = buildPayload(boundary, error, options);
+    const body = JSON.stringify({ type: 'error', payload });
+
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+      const blob = new Blob([body], { type: 'application/json' });
+      navigator.sendBeacon('/api/telemetry', blob);
+    } else {
+      void fetch('/api/telemetry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true,
+      }).catch(() => {
+        /* ignore */
+      });
+    }
+  } catch (telemetryError) {
+    if (process.env.NODE_ENV === 'development') {
+      // eslint-disable-next-line no-console
+      console.error('[ClientErrorTelemetry] Failed to send telemetry', telemetryError);
+    }
+  }
+}
+
+function buildPayload(
+  boundary: string,
+  error: Error,
+  { errorInfo, metadata }: TelemetryOptions
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    boundary,
+    name: error.name || 'Error',
+    message: sanitizeMessage(error.message),
+    timestamp: Date.now(),
+    hasStack: Boolean(error.stack),
+  };
+
+  const location = getLocation();
+  if (location) {
+    payload.location = location;
+  }
+
+  if ('digest' in error && typeof (error as { digest?: unknown }).digest === 'string') {
+    payload.digest = (error as { digest?: string }).digest;
+  }
+
+  if (errorInfo?.componentStack) {
+    payload.hasComponentStack = true;
+  }
+
+  const sanitizedMetadata = sanitizeMetadata(metadata);
+  if (sanitizedMetadata) {
+    payload.metadata = sanitizedMetadata;
+  }
+
+  return payload;
+}
+
+function sanitizeMessage(message: unknown): string {
+  if (typeof message !== 'string') {
+    return 'Unknown error';
+  }
+
+  return message.length > MAX_MESSAGE_LENGTH
+    ? `${message.slice(0, MAX_MESSAGE_LENGTH)}...`
+    : message;
+}
+
+function getLocation(): { origin: string; pathname: string } | null {
+  try {
+    const { origin, pathname } = window.location;
+    return { origin, pathname };
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeMetadata(metadata?: TelemetryMetadata): Record<string, unknown> | undefined {
+  if (!metadata) {
+    return undefined;
+  }
+
+  const sanitized: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(metadata)) {
+    if (value === undefined || key.toLowerCase().includes('stack')) {
+      continue;
+    }
+
+    if (typeof value === 'string') {
+      sanitized[key] =
+        value.length > MAX_METADATA_STRING_LENGTH
+          ? `${value.slice(0, MAX_METADATA_STRING_LENGTH)}...`
+          : value;
+      continue;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
+      sanitized[key] = value;
+      continue;
+    }
+  }
+
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+}

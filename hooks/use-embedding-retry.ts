@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { logger } from '@/lib/observability-logger';
 
 interface EmbeddingResponse {
   success?: boolean;
@@ -49,7 +50,11 @@ export function useEmbeddingRetry({
       setError(null);
 
       try {
-        console.log(`[Auto-retry] Attempting to generate embedding for asset ${assetId} (attempt ${retryCount + 1}/${maxRetries})`);
+        logger.logInfo('embedding-retry.auto-attempt', {
+          assetId,
+          attempt: retryCount + 1,
+          maxRetries,
+        });
 
         const response = await fetch(`/api/assets/${assetId}/generate-embedding`, {
           method: 'POST',
@@ -57,7 +62,10 @@ export function useEmbeddingRetry({
 
         if (response.ok) {
           const result: EmbeddingResponse = await response.json();
-          console.log(`[Auto-retry] Successfully generated embedding for asset ${assetId}`, result);
+          logger.logInfo('embedding-retry.auto-success', {
+            assetId,
+            result,
+          });
 
           if (onEmbeddingGenerated) {
             onEmbeddingGenerated(result);
@@ -111,7 +119,10 @@ export function useEmbeddingRetry({
 
       if (response.ok) {
         const result: EmbeddingResponse = await response.json();
-        console.log(`[Manual retry] Successfully generated embedding for asset ${assetId}`, result);
+        logger.logInfo('embedding-retry.manual-success', {
+          assetId,
+          result,
+        });
 
         if (onEmbeddingGenerated) {
           onEmbeddingGenerated(result);

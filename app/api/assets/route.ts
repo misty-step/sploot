@@ -10,12 +10,13 @@ import { Prisma } from '@prisma/client';
 import logger from '@/lib/logger';
 import { logError } from '@/lib/vercel-logger';
 import { createErrorResponse } from '@/lib/error-response';
+import { withObservability } from '@/lib/with-observability';
 
 // Shuffle seed range: 0-1000000 for user-friendly integer values
 // Normalized to 0.0-1.0 for PostgreSQL setseed() in shuffle queries
 const MAX_SHUFFLE_SEED = 1000000;
 
-export async function POST(req: NextRequest) {
+async function postHandler(req: NextRequest) {
   const requestId = crypto.randomUUID();
 
   try {
@@ -172,7 +173,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   const requestId = crypto.randomUUID();
 
   // Declare params outside try block so they're accessible in catch for logging
@@ -382,6 +383,10 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export const POST = withObservability(postHandler, { operation: 'assets:create' });
+
+export const GET = withObservability(getHandler, { operation: 'assets:list' });
 
 // Async function to generate embeddings without blocking the upload
 async function generateEmbeddingAsync(

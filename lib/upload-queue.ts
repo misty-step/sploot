@@ -1,3 +1,5 @@
+import { logger } from '@/lib/observability-logger';
+
 /**
  * Upload Queue Persistence Manager
  * Persists pending uploads to IndexedDB for recovery after interruptions
@@ -64,7 +66,7 @@ export class UploadQueueManager {
 
       request.onsuccess = () => {
         this.db = request.result;
-        console.log('[UploadQueue] IndexedDB initialized');
+        logger.logInfo('upload-queue.db-initialized');
         resolve();
       };
 
@@ -113,7 +115,10 @@ export class UploadQueueManager {
       const request = store.add(upload);
 
       request.onsuccess = () => {
-        console.log(`[UploadQueue] Persisted upload: ${file.name}`);
+        logger.logInfo('upload-queue.persisted', {
+          filename: file.name,
+          size: file.size,
+        });
         resolve(id);
       };
 
@@ -171,7 +176,7 @@ export class UploadQueueManager {
       const request = store.delete(id);
 
       request.onsuccess = () => {
-        console.log(`[UploadQueue] Removed persisted upload: ${id}`);
+        logger.logInfo('upload-queue.removed', { id });
         resolve();
       };
 
@@ -248,7 +253,10 @@ export class UploadQueueManager {
 
     toDelete.forEach(upload => {
       store.delete(upload.id);
-      console.log(`[UploadQueue] Cleaned up old upload: ${upload.filename}`);
+      logger.logInfo('upload-queue.cleanup', {
+        id: upload.id,
+        filename: upload.filename,
+      });
     });
   }
 
@@ -264,7 +272,7 @@ export class UploadQueueManager {
       const request = store.clear();
 
       request.onsuccess = () => {
-        console.log('[UploadQueue] Cleared all persisted uploads');
+        logger.logInfo('upload-queue.cleared');
         resolve();
       };
 
@@ -293,7 +301,9 @@ export class UploadQueueManager {
       return [];
     }
 
-    console.log(`[UploadQueue] Found ${pendingUploads.length} interrupted uploads`);
+    logger.logInfo('upload-queue.interrupted-found', {
+      count: pendingUploads.length,
+    });
 
     // If there's a custom prompt handler, use it
     if (onResumePrompt) {
@@ -336,7 +346,10 @@ export class UploadQueueManager {
    */
   private showRecoveryNotification(count: number, autoResumeMs: number): void {
     // This would integrate with your toast/notification system
-    console.log(`[UploadQueue] Resuming ${count} interrupted uploads in ${autoResumeMs/1000}s...`);
+    logger.logInfo('upload-queue.auto-resume-scheduled', {
+      count,
+      delaySeconds: autoResumeMs / 1000,
+    });
 
     // If you have a toast system available, use it:
     // showToast(

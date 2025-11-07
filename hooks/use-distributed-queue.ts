@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { logger } from '@/lib/observability-logger';
 import {
   DistributedQueue,
   QueueItem,
@@ -240,7 +241,10 @@ export function useDistributedQueue<T>(
     // Initial processing
     processLoop();
 
-    console.log(`[useDistributedQueue] Started processing with concurrency ${concurrency}`);
+    logger.logInfo('distributed-queue.processing-start', {
+      concurrency,
+      pollingInterval,
+    });
   }, [isProcessing, concurrency, pollingInterval]);
 
   /**
@@ -254,7 +258,7 @@ export function useDistributedQueue<T>(
       processingIntervalRef.current = null;
     }
 
-    console.log('[useDistributedQueue] Stopped processing');
+    logger.logInfo('distributed-queue.processing-stop');
   }, []);
 
   /**

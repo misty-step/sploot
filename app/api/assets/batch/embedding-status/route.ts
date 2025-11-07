@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
+import { withObservability } from '@/lib/with-observability';
 
 interface BatchEmbeddingStatusRequest {
   assetIds: string[];
@@ -25,7 +26,7 @@ interface BatchEmbeddingStatusResponse {
  * Request body: { assetIds: string[] }
  * Response: { statuses: { [assetId]: { hasEmbedding, status, error? } } }
  */
-export async function POST(request: NextRequest) {
+async function postHandler(request: NextRequest) {
   const startTime = Date.now();
 
   try {
@@ -147,3 +148,7 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const POST = withObservability(postHandler, {
+  operation: 'assets:batch-embedding-status',
+});

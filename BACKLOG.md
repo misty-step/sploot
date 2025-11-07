@@ -7,8 +7,6 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 
 ## Now (Sprint-Ready, <2 weeks)
 
-### [INFRA] Vercel Analytics and Observability
-
 ### [Feature] Add "Add to Sploot" Quick Save
 **Files**: Browser extension (new), mobile app integration (future)
 **Perspectives**: product-visionary, user-experience-advocate
@@ -126,6 +124,20 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 **Approach**: Create `lib/api-response.ts` with `errorResponse()` helper. Single `ApiErrorResponse` interface. Update 15 routes to use standard pattern.
 **Effort**: 4h | **Impact**: Consistent error UX, easier frontend error boundaries
 
+### [Testing] Concurrency + edge coverage for observability stack
+**Source**: PR #13 review (Claude) — https://github.com/phrazzld/sploot/pull/13#issuecomment-3492708426  
+**Files**: `__tests__/lib/performance-monitor.test.ts`, new edge-runtime spec, load test harness  
+**Context**: Reviewer asked for optional stress cases (concurrent `measureAsync`, edge runtime smoke, circular buffer saturation) to lock down new instrumentation. Valuable once core bugs are fixed.  
+**Effort**: 1 day | **Priority**: MEDIUM  
+**Acceptance**: Add concurrency test that runs 50 parallel timings without race conditions, edge-runtime mock confirms wrapper works without `nextUrl`, load test fixture exercises buffer rollover without perf hits.
+
+### [DX] Audit logger import paths after observability rollout
+**Source**: PR #13 review (Claude) — https://github.com/phrazzld/sploot/pull/13#issuecomment-3492708426  
+**Files**: `/app/api/**/route.ts`, `lib/logger.ts`, `lib/observability-logger.ts`  
+**Context**: Claude flagged possible mismatch between legacy `@/lib/logger` and new observability logger usage. Needs repo-wide sweep once current PR lands.  
+**Effort**: 4h | **Priority**: MEDIUM  
+**Acceptance**: Inventory all route/component imports, ensure unified `observability-logger` usage, document migration pattern in CLAUDE.md.
+
 ### [Maintainability] Enforce Logger Usage via ESLint
 **Files**: 510+ raw `console.*` calls across 71 files vs well-designed `lib/logger.ts` being ignored
 **Perspectives**: maintainability-maven (production logs lack structured data)
@@ -214,6 +226,59 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 ---
 
 ## Later (Someday/Maybe, 6+ months)
+
+### [Observability] Migrate Console Logging to Structured Logger
+**Source**: PR #13 review feedback (CodeRabbit, Codex)
+**Files**: `instrumentation.ts`, `lib/websocket-manager.ts`, `lib/embedding-queue.ts`, `app/api/cron/**/*.ts`
+**Context**: Multiple files still use `console.error`/`console.warn` instead of the centralized `logger.logError`/`logger.logInfo` from `lib/observability-logger.ts`. This creates inconsistency and loses traceId correlation.
+**Scope**:
+- `instrumentation.ts:28-36` - onRequestError handler uses console.error
+- `lib/websocket-manager.ts:98, 202, 271, 280, 327` - 5 error paths use console.error
+- `lib/embedding-queue.ts:219, 259, 381, 399, 425` - 5 console.error calls
+- `app/api/cron/purge-deleted-assets/route.ts:125-146, 175-177` - console.warn/console.error
+- `app/api/upload/check/route.ts:123-136` - console.error
+**Effort**: 2-3h (find-replace + test) | **Priority**: LOW (cosmetic, non-blocking)
+**Impact**: Better log correlation, consistent structured logging across codebase
+
+### [Observability] Optimize Sentry Trace Sampling for Production
+**Source**: PR #13 review feedback (CodeRabbit)
+**Files**: `sentry.client.config.ts:6-7`, `sentry.server.config.ts:3-14`, `sentry.edge.config.ts:4-4`
+**Context**: All Sentry configurations use 100% trace sampling (`tracesSampleRate: 1.0`). While appropriate for initial deployment, this becomes expensive as traffic grows.
+**Recommended**: Reduce to 10% sampling in production once baseline metrics are established:
+```typescript
+tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+```
+**Alternative**: Implement dynamic sampling based on error rates or specific routes.
+**When**: After 1 month of production data to establish baselines
+**Effort**: 30min | **Priority**: LOW (optimization, not urgent)
+**Impact**: Reduced Sentry costs, maintained observability coverage
+
+### [Observability] Add Sentry DSN Validation
+**Source**: PR #13 review feedback (CodeRabbit)
+**Files**: `sentry.edge.config.ts:4-4`
+**Context**: Current implementation silently fails if `SENTRY_DSN` is missing. Explicit validation would provide clearer feedback during setup.
+**Implementation**:
+```typescript
+if (process.env.NODE_ENV === 'production' && !process.env.SENTRY_DSN) {
+  console.warn('[Sentry] SENTRY_DSN environment variable is not set');
+}
+```
+**Effort**: 10min | **Priority**: VERY LOW (nice-to-have warning)
+**Impact**: Easier debugging during Sentry setup
+
+### [Documentation] Update PR Description Consistency
+**Source**: PR #13 review feedback (CodeRabbit)
+**Context**: Minor PR description inconsistencies flagged during review. Not blocking, but good practice for future PRs.
+**Effort**: 5min per PR | **Priority**: VERY LOW
+**Impact**: Clearer PR documentation
+
+### [Testing] Add Request Handling Fallback Tests
+**Source**: PR #13 review feedback (CodeRabbit)
+**Files**: `lib/with-observability.ts:166`, `__tests__/lib/with-observability.test.ts:322-346`
+**Context**: Code reviewer flagged concern about `req.nextUrl` guard, but tests on lines 322-346 already confirm fallback to `Request.url` works correctly. No action needed, documented for reference.
+**Status**: ✅ Already tested | **Priority**: N/A
+
+---
 
 - **[Social] Public Profiles & Sharing** - `sploot.com/@username` public profiles, follow/follower system, trending page, embed widgets. Viral growth potential but conflicts with "private by design" positioning.
 

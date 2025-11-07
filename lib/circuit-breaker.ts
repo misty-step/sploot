@@ -1,3 +1,5 @@
+import { logger } from '@/lib/observability-logger';
+
 /**
  * Circuit Breaker Pattern Implementation
  *
@@ -5,7 +7,6 @@
  * When failures exceed threshold, circuit "opens" and blocks all requests.
  * After cooldown, circuit enters "half-open" state for testing recovery.
  */
-
 export type CircuitState = 'closed' | 'open' | 'half-open';
 
 interface CircuitBreakerOptions {
@@ -95,7 +96,10 @@ export class CircuitBreaker {
     if (!canProceed) {
       // Circuit is open - use fallback or throw
       if (options?.fallback) {
-        console.log('[CircuitBreaker] Circuit OPEN - using fallback');
+        logger.logInfo('circuit-breaker.open-using-fallback', {
+          failures: this.failures,
+          threshold: this.threshold,
+        });
         return options.fallback();
       }
 
@@ -159,7 +163,9 @@ export class CircuitBreaker {
     switch (this.state) {
       case 'half-open':
         // Success in half-open state means service recovered
-        console.log('[CircuitBreaker] Recovery detected - closing circuit');
+        logger.logInfo('circuit-breaker.recovery', {
+          consecutiveSuccesses: this.consecutiveSuccesses,
+        });
         this.failures = 0;
         this.transitionTo('closed');
         break;
@@ -167,7 +173,9 @@ export class CircuitBreaker {
       case 'closed':
         // Reset failure count if enough time passed without errors
         if (this.failures > 0 && Date.now() - this.lastFailureTime > this.resetTimeout) {
-          console.log('[CircuitBreaker] Resetting failure count after stable period');
+          logger.logInfo('circuit-breaker.reset-after-stable', {
+            lastFailureTime: this.lastFailureTime,
+          });
           this.failures = 0;
         }
         break;
@@ -203,7 +211,7 @@ export class CircuitBreaker {
 
       case 'half-open':
         // Failure in half-open means service is still down
-        console.log('[CircuitBreaker] Test request failed - reopening circuit');
+        logger.logInfo('circuit-breaker.test-failed');
         this.transitionTo('open');
         break;
     }
@@ -256,10 +264,12 @@ export class CircuitBreaker {
 
     this.state = newState;
 
-    console.log(
-      `[CircuitBreaker] State transition: ${oldState} → ${newState}`,
-      `(failures: ${this.failures}, threshold: ${this.threshold})`
-    );
+    logger.logInfo('circuit-breaker.state-transition', {
+      oldState,
+      newState,
+      failures: this.failures,
+      threshold: this.threshold,
+    });
 
     // Notify listener
     this.onStateChange?.(newState, oldState);
@@ -275,11 +285,11 @@ export class CircuitBreaker {
         break;
 
       case 'half-open':
-        console.log('[CircuitBreaker] Circuit HALF-OPEN - testing recovery');
+        logger.logInfo('circuit-breaker.half-open');
         break;
 
       case 'closed':
-        console.log('[CircuitBreaker] Circuit CLOSED - normal operation resumed');
+        logger.logInfo('circuit-breaker.closed');
         break;
     }
   }
@@ -304,7 +314,9 @@ export class CircuitBreaker {
         const timeSinceFailure = Date.now() - this.lastFailureTime;
         if (timeSinceFailure >= this.resetTimeout) {
           this.failures = 0;
-          console.log('[CircuitBreaker] Failure count reset after stable period');
+          logger.logInfo('circuit-breaker.monitoring-reset', {
+            resetTimeout: this.resetTimeout,
+          });
         }
       }
     }, this.monitorInterval);
@@ -328,7 +340,7 @@ export class CircuitBreaker {
     this.failures = 0;
     this.consecutiveFailures = 0;
     this.consecutiveSuccesses = 0;
-    console.log('[CircuitBreaker] Manual reset - circuit closed');
+    logger.logInfo('circuit-breaker.manual-reset');
   }
 
   /**
@@ -393,7 +405,10 @@ export function getGlobalCircuitBreaker(): CircuitBreaker {
       timeout: 30000, // 30 seconds
       resetTimeout: 60000, // 1 minute
       onStateChange: (newState, oldState) => {
-        console.log(`[GlobalCircuitBreaker] State changed: ${oldState} → ${newState}`);
+        logger.logInfo('global-circuit-breaker.state-change', {
+          oldState,
+          newState,
+        });
 
         // Could emit events or update UI here
         if (typeof window !== 'undefined') {

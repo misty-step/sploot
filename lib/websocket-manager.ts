@@ -1,3 +1,5 @@
+import { logger } from '@/lib/observability-logger';
+
 /**
  * WebSocket Manager for Real-time Updates
  *
@@ -76,7 +78,9 @@ export class WebSocketManager {
    */
   connect(): void {
     if (this.connectionState === 'connecting' || this.connectionState === 'connected') {
-      console.log('[WebSocket] Already connected or connecting');
+      logger.logInfo('websocket-manager.already-connected', {
+        state: this.connectionState,
+      });
       return;
     }
 
@@ -86,7 +90,7 @@ export class WebSocketManager {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}${this.WS_ENDPOINT}`;
 
-      console.log(`[WebSocket] Connecting to ${wsUrl}`);
+      logger.logInfo('websocket-manager.connecting', { url: wsUrl });
       this.ws = new WebSocket(wsUrl);
 
       this.setupEventHandlers();
@@ -243,7 +247,7 @@ export class WebSocketManager {
     if (!this.ws) return;
 
     this.ws.onopen = () => {
-      console.log('[WebSocket] Connected');
+      logger.logInfo('websocket-manager.connected');
       this.setConnectionState('connected');
       this.reconnectAttempts = 0;
       this.flushMessageQueue();
@@ -252,7 +256,10 @@ export class WebSocketManager {
     };
 
     this.ws.onclose = (event) => {
-      console.log(`[WebSocket] Disconnected (code: ${event.code}, reason: ${event.reason})`);
+      logger.logInfo('websocket-manager.disconnected', {
+        code: event.code,
+        reason: event.reason,
+      });
       this.clearTimers();
 
       if (this.connectionState !== 'disconnected') {
@@ -324,7 +331,11 @@ export class WebSocketManager {
     }
 
     const delay = this.RECONNECT_DELAYS[this.reconnectAttempts] || 16000;
-    console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.MAX_RECONNECT_ATTEMPTS})`);
+    logger.logInfo('websocket-manager.reconnect-scheduled', {
+      delayMs: delay,
+      attempt: this.reconnectAttempts + 1,
+      maxAttempts: this.MAX_RECONNECT_ATTEMPTS,
+    });
 
     this.setConnectionState('reconnecting');
 
@@ -352,7 +363,7 @@ export class WebSocketManager {
    * Enable polling fallback when WebSocket fails
    */
   private enablePollingFallback(): void {
-    console.log('[WebSocket] Enabling polling fallback');
+    logger.logInfo('websocket-manager.polling-fallback');
 
     if (this.pollingFallback) {
       this.pollingFallback();
@@ -376,7 +387,9 @@ export class WebSocketManager {
   private flushMessageQueue(): void {
     if (!this.isConnected()) return;
 
-    console.log(`[WebSocket] Flushing ${this.messageQueue.length} queued messages`);
+    logger.logInfo('websocket-manager.flush-queue', {
+      messageCount: this.messageQueue.length,
+    });
 
     while (this.messageQueue.length > 0) {
       const message = this.messageQueue.shift();
@@ -390,7 +403,9 @@ export class WebSocketManager {
    * Resubscribe to all topics after reconnection
    */
   private resubscribeAll(): void {
-    console.log(`[WebSocket] Resubscribing to ${this.subscriptions.size} topics`);
+    logger.logInfo('websocket-manager.resubscribe', {
+      topics: this.subscriptions.size,
+    });
 
     for (const [topic] of this.subscriptions) {
       if (topic.startsWith('assets:')) {
@@ -468,7 +483,7 @@ export class WebSocketManager {
 
     // Handle online/offline events
     window.addEventListener('online', () => {
-      console.log('[WebSocket] Network online');
+      logger.logInfo('websocket-manager.network-online');
       if (this.connectionState === 'failed' || this.connectionState === 'disconnected') {
         this.reconnectAttempts = 0;
         this.connect();
@@ -476,7 +491,7 @@ export class WebSocketManager {
     });
 
     window.addEventListener('offline', () => {
-      console.log('[WebSocket] Network offline');
+      logger.logInfo('websocket-manager.network-offline');
       this.disconnect();
     });
   }

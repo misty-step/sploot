@@ -2,10 +2,11 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { databaseConfigured } from './env';
 import logger from './logger';
 import { shuffleWithSeed } from './seeded-random';
+import { getPerformanceMonitor } from './performance-monitor';
+import { logger as observabilityLogger } from './observability-logger';
 
 // Declare global type for PrismaClient to prevent multiple instances in development
 declare global {
-  // eslint-disable-next-line no-var
   var prisma: PrismaClient | undefined;
 }
 
@@ -18,6 +19,55 @@ if (databaseConfigured) {
 
   if (process.env.NODE_ENV !== 'production') {
     global.prisma = prismaClient;
+  }
+
+  try {
+    if (!prismaClient) {
+      throw new Error('Prisma client unavailable');
+    }
+
+    const client = prismaClient as unknown as {
+      $use: (middleware: (params: any, next: (params: any) => Promise<unknown>) => Promise<unknown>) => void;
+    };
+
+    client.$use(async (params: any, next: (params: any) => Promise<unknown>) => {
+      const model = params.model ?? 'raw';
+      const action = params.action ?? 'query';
+      const operation = `db:${model}:${action}`;
+      const startTime = Date.now();
+      const perfMonitor = getPerformanceMonitor();
+
+      perfMonitor.startTiming(operation);
+
+      try {
+        const result = await next(params);
+        const duration = Date.now() - startTime;
+        perfMonitor.endTiming(operation);
+
+        if (duration > 100) {
+          observabilityLogger.logInfo('db:slow-query', {
+            model,
+            action,
+            duration,
+          });
+        }
+
+        return result;
+      } catch (error) {
+        const duration = Date.now() - startTime;
+        perfMonitor.endTiming(operation);
+
+        observabilityLogger.logError('db:query-failed', error, {
+          model,
+          action,
+          duration,
+        });
+
+        throw error;
+      }
+    });
+  } catch (middlewareError) {
+    logger.error('Failed to initialize Prisma observability middleware', middlewareError as Error);
   }
 }
 

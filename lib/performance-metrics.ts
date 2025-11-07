@@ -1,10 +1,11 @@
+import { logger } from '@/lib/observability-logger';
+
 /**
  * Performance Metrics Tracking
  *
  * Centralized utility for tracking and reporting performance metrics
  * to the telemetry API and browser console.
  */
-
 interface PerformanceMetric {
   name: string;
   value: number;
@@ -30,10 +31,13 @@ export function trackMetric(metric: PerformanceMetric): void {
 
   // Always log in development
   if (process.env.NODE_ENV === 'development') {
-    console.log(
-      `[metrics] ${metric.name}: ${formattedValue}`,
-      metric.tags ? metric.tags : ''
-    );
+    logger.logInfo('performance-metrics.metric', {
+      name: metric.name,
+      value: metric.value,
+      unit: metric.unit,
+      tags: metric.tags,
+      formattedValue,
+    });
   }
 
   // Send to telemetry endpoint (fire and forget)

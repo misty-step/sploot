@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { del as deleteBlob } from '@vercel/blob';
 import { headers } from 'next/headers';
+import { withObservability } from '@/lib/with-observability';
+import { logger } from '@/lib/observability-logger';
 
 interface PurgeStats {
   totalFound: number;
@@ -25,7 +27,7 @@ interface PurgeStats {
  * Authorization: Uses Bearer token from CRON_SECRET environment variable
  * Schedule: Daily via Vercel Cron (configured in vercel.json)
  */
-export async function GET(request: NextRequest) {
+async function getHandler(request: NextRequest) {
   const startTime = Date.now();
   const stats: PurgeStats = {
     totalFound: 0,
@@ -83,7 +85,10 @@ export async function GET(request: NextRequest) {
     });
 
     stats.totalFound = assetsToDelete.length;
-    console.log(`[cron] Found ${stats.totalFound} assets to purge (deleted >${thirtyDaysAgo.toISOString()})`);
+    logger.logInfo('cron.purge-deleted-assets.start', {
+      totalFound: stats.totalFound,
+      cutoffIso: thirtyDaysAgo.toISOString(),
+    });
 
     if (stats.totalFound === 0) {
       return NextResponse.json({
@@ -96,7 +101,10 @@ export async function GET(request: NextRequest) {
     // Process each asset
     for (const asset of assetsToDelete) {
       try {
-        console.log(`[cron] Purging asset ${asset.id} (deleted ${asset.deletedAt})`);
+        logger.logInfo('cron.purge-deleted-assets.asset-start', {
+          assetId: asset.id,
+          deletedAt: asset.deletedAt,
+        });
 
         // Delete blobs from Vercel Blob storage
         const blobUrls = [asset.blobUrl];
@@ -108,7 +116,10 @@ export async function GET(request: NextRequest) {
           try {
             await deleteBlob(blobUrl);
             stats.blobsDeleted++;
-            console.log(`[cron]   Deleted blob: ${blobUrl}`);
+            logger.logInfo('cron.purge-deleted-assets.blob-deleted', {
+              assetId: asset.id,
+              blobUrl,
+            });
           } catch (blobError) {
             // Log but continue - blob might already be deleted
             console.warn(`[cron]   Failed to delete blob ${blobUrl}:`, blobError);
@@ -121,7 +132,9 @@ export async function GET(request: NextRequest) {
         });
 
         stats.purgedCount++;
-        console.log(`[cron]   Successfully purged asset ${asset.id}`);
+        logger.logInfo('cron.purge-deleted-assets.asset-success', {
+          assetId: asset.id,
+        });
       } catch (error) {
         stats.failedCount++;
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -141,13 +154,13 @@ export async function GET(request: NextRequest) {
       ? Math.round((stats.purgedCount / stats.totalFound) * 100)
       : 0;
 
-    console.log(`[cron] Purge complete:`, {
-      totalTime: `${totalTime}ms`,
+    logger.logInfo('cron.purge-deleted-assets.complete', {
+      totalTimeMs: totalTime,
       found: stats.totalFound,
       purged: stats.purgedCount,
       failed: stats.failedCount,
       blobsDeleted: stats.blobsDeleted,
-      successRate: `${successRate}%`,
+      successRate,
     });
 
     return NextResponse.json({
@@ -174,3 +187,7 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export const GET = withObservability(getHandler, {
+  operation: 'cron:purge-deleted-assets',
+});

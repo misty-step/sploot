@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { headers } from 'next/headers';
+import { withObservability } from '@/lib/with-observability';
+import { logger } from '@/lib/observability-logger';
 
 // Performance tracking
 interface ProcessingStats {
@@ -20,7 +22,7 @@ interface ProcessingStats {
  *
  * Authorization: Uses Bearer token from CRON_SECRET environment variable
  */
-export async function GET(request: NextRequest) {
+async function getHandler(request: NextRequest) {
   const startTime = Date.now();
   const stats: ProcessingStats = {
     totalProcessed: 0,
@@ -82,7 +84,9 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    console.log(`[cron] Found ${assetsNeedingEmbeddings.length} assets needing embeddings`);
+    logger.logInfo('cron.process-embeddings.queue', {
+      assets: assetsNeedingEmbeddings.length,
+    });
 
     if (assetsNeedingEmbeddings.length === 0) {
       return NextResponse.json({
@@ -112,7 +116,10 @@ export async function GET(request: NextRequest) {
       stats.totalProcessed++;
 
       try {
-        console.log(`[cron] Processing asset ${asset.id} (created ${asset.createdAt})`);
+        logger.logInfo('cron.process-embeddings.asset-start', {
+          assetId: asset.id,
+          createdAt: asset.createdAt,
+        });
 
         // Generate embedding
         const result = await embeddingService.embedImage(asset.blobUrl, asset.checksumSha256);
@@ -130,7 +137,10 @@ export async function GET(request: NextRequest) {
           stats.successCount++;
           const assetProcessingTime = Date.now() - assetStartTime;
           stats.totalProcessingTime += assetProcessingTime;
-          console.log(`[cron] Successfully generated embedding for asset ${asset.id} (${assetProcessingTime}ms)`);
+          logger.logInfo('cron.process-embeddings.asset-success', {
+            assetId: asset.id,
+            processingTimeMs: assetProcessingTime,
+          });
         } else {
           throw new Error('Failed to persist embedding');
         }
@@ -156,13 +166,13 @@ export async function GET(request: NextRequest) {
       ? Math.round((stats.successCount / stats.totalProcessed) * 100)
       : 0;
 
-    console.log(`[cron] Processing complete:`, {
-      totalTime: `${totalTime}ms`,
+    logger.logInfo('cron.process-embeddings.complete', {
+      totalTimeMs: totalTime,
       processed: stats.totalProcessed,
       successful: stats.successCount,
       failed: stats.failureCount,
-      successRate: `${successRate}%`,
-      avgProcessingTime: `${avgProcessingTime}ms`,
+      successRate,
+      avgProcessingTimeMs: avgProcessingTime,
     });
 
     return NextResponse.json({
@@ -191,12 +201,20 @@ export async function GET(request: NextRequest) {
  *
  * Manual trigger for processing embeddings with specific options.
  */
-export async function POST(request: NextRequest) {
+async function postHandler(request: NextRequest) {
   // For manual triggering with specific parameters
   const body = await request.json();
   const { batchSize = 10, includeRecent = false } = body;
 
   // Similar processing logic but with configurable parameters
   // This allows for manual testing and different processing strategies
-  return GET(request);
+  return getHandler(request);
 }
+
+export const GET = withObservability(getHandler, {
+  operation: 'cron:process-embeddings',
+});
+
+export const POST = withObservability(postHandler, {
+  operation: 'cron:process-embeddings',
+});

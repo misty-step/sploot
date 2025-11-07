@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { headers } from 'next/headers';
+import { withObservability } from '@/lib/with-observability';
+import { logger } from '@/lib/observability-logger';
 
 interface AuditStats {
   totalAssets: number;
@@ -30,7 +32,7 @@ interface UserAuditResult {
  * Authorization: Uses Bearer token from CRON_SECRET environment variable
  * Schedule: Daily via Vercel Cron (configured in vercel.json)
  */
-export async function GET(request: NextRequest) {
+async function getHandler(request: NextRequest) {
   const startTime = Date.now();
   const stats: AuditStats = {
     totalAssets: 0,
@@ -84,7 +86,9 @@ export async function GET(request: NextRequest) {
     });
 
     stats.totalAssets = assets.length;
-    console.log(`[cron] Auditing ${assets.length} assets across all users...`);
+    logger.logInfo('cron.audit-assets.start', {
+      totalAssets: assets.length,
+    });
 
     if (assets.length === 0) {
       return NextResponse.json({
@@ -145,13 +149,13 @@ export async function GET(request: NextRequest) {
       ? ((stats.brokenCount / stats.totalAssets) * 100).toFixed(2)
       : '0.00';
 
-    console.log(`[cron] Audit complete:`, {
-      totalTime: `${totalTime}ms`,
+    logger.logInfo('cron.audit-assets.complete', {
+      totalTimeMs: totalTime,
       totalAssets: stats.totalAssets,
       valid: stats.validCount,
       broken: stats.brokenCount,
       errors: stats.errorCount,
-      percentBroken: `${percentBroken}%`,
+      percentBroken,
       usersAffected: stats.usersAffected,
     });
 
@@ -202,3 +206,7 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export const GET = withObservability(getHandler, {
+  operation: 'cron:audit-assets',
+});

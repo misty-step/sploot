@@ -3,9 +3,10 @@ import { resolveShareSlug } from '@/lib/slug-cache'
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ slug: string }> }
+  { params }: { params: Promise<Record<string, string>> }
 ) {
-  const { slug } = await params
+  const record = await params
+  const slug = record?.slug
 
   if (!slug) {
     return new NextResponse('Not found', { status: 404 })

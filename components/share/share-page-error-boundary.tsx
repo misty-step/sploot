@@ -2,6 +2,7 @@
 
 import { Component, ReactNode } from 'react';
 import Link from 'next/link';
+import { sendClientErrorTelemetry } from '@/lib/client-error-telemetry';
 
 interface SharePageErrorBoundaryProps {
   children: ReactNode;
@@ -32,6 +33,8 @@ export class SharePageErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    sendClientErrorTelemetry('share-page-error-boundary', error, { errorInfo });
+
     // Log error details for debugging (structured format)
     console.error('[SharePageErrorBoundary] Error caught:', {
       error: error.message,

@@ -4,6 +4,9 @@ import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getAuth } from '@/lib/auth/server';
 import { broadcastEmbeddingUpdate } from '@/lib/sse-broadcaster';
+import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
+import { logger } from '@/lib/observability-logger';
 
 // Request deduplication: Track in-flight requests
 const inFlightRequests = new Map<string, Promise<any>>();
@@ -37,9 +40,9 @@ const performanceMetrics: {
   totalProcessingTime: 0,
 };
 
-export async function POST(
+async function postHandler(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  context: RouteContext
 ) {
   const startTime = Date.now();
   performanceMetrics.totalRequests++;
@@ -53,12 +56,20 @@ export async function POST(
       );
     }
 
-    const { id } = await params;
+    const params = await context.params;
+    const id = params?.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Asset not found' },
+        { status: 404 }
+      );
+    }
 
     // Check circuit breaker
     if (circuitBreakerState.isOpen) {
       if (Date.now() < circuitBreakerState.resetTime) {
-        console.log(`[circuit-breaker] Open - rejecting request for asset ${id}`);
+        logger.logInfo('generate-embedding.circuit-open', { assetId: id });
         return NextResponse.json(
           {
             error: 'Service temporarily unavailable',
@@ -68,7 +79,7 @@ export async function POST(
         );
       } else {
         // Reset circuit breaker after timeout
-        console.log('[circuit-breaker] Resetting after timeout');
+        logger.logInfo('generate-embedding.circuit-reset');
         circuitBreakerState.isOpen = false;
         circuitBreakerState.failureCount = 0;
       }
@@ -78,7 +89,7 @@ export async function POST(
     const requestKey = `${userId}-${id}`;
     const existingRequest = inFlightRequests.get(requestKey);
     if (existingRequest) {
-      console.log(`[dedup] Reusing in-flight request for asset ${id}`);
+      logger.logInfo('generate-embedding.dedup-hit', { assetId: id });
       const result = await existingRequest;
       return NextResponse.json(result);
     }
@@ -111,7 +122,10 @@ export async function POST(
     // Check if embedding already exists
     if (asset.embedding) {
       const processingTime = Date.now() - startTime;
-      console.log(`[perf] Embedding already exists for asset ${id} (${processingTime}ms)`);
+      logger.logInfo('generate-embedding.already-exists', {
+        assetId: id,
+        processingTimeMs: processingTime,
+      });
       return NextResponse.json({
         message: 'Embedding already exists',
         embedding: {
@@ -137,7 +151,10 @@ export async function POST(
         const apiStartTime = Date.now();
         const result = await embeddingService.embedImage(asset.blobUrl, asset.checksumSha256);
         const apiTime = Date.now() - apiStartTime;
-        console.log(`[perf] Replicate API took ${apiTime}ms for asset ${id}`);
+        logger.logInfo('generate-embedding.api-duration', {
+          assetId: id,
+          durationMs: apiTime,
+        });
 
         // Store embedding in database
         const dbStartTime = Date.now();
@@ -149,7 +166,10 @@ export async function POST(
           embedding: result.embedding,
         });
         const dbTime = Date.now() - dbStartTime;
-        console.log(`[perf] Database write took ${dbTime}ms for asset ${id}`);
+        logger.logInfo('generate-embedding.db-duration', {
+          assetId: id,
+          durationMs: dbTime,
+        });
 
         if (!embedding) {
           throw new Error('Failed to persist embedding record');
@@ -158,10 +178,15 @@ export async function POST(
         // Success - reset circuit breaker failure count
         circuitBreakerState.failureCount = 0;
         performanceMetrics.successCount++;
-        performanceMetrics.totalProcessingTime += (Date.now() - startTime);
+        const totalProcessingTime = Date.now() - startTime;
+        performanceMetrics.totalProcessingTime += totalProcessingTime;
 
         const avgProcessingTime = Math.round(performanceMetrics.totalProcessingTime / performanceMetrics.successCount);
-        console.log(`[perf] Embedding generated successfully for asset ${id} (total: ${Date.now() - startTime}ms, avg: ${avgProcessingTime}ms)`);
+        logger.logInfo('generate-embedding.success', {
+          assetId: id,
+          totalTimeMs: totalProcessingTime,
+          avgProcessingTimeMs: avgProcessingTime,
+        });
 
         // Broadcast SSE update that embedding is ready
         try {
@@ -174,7 +199,9 @@ export async function POST(
               hasEmbedding: true
             }
           );
-          console.log(`[SSE] Broadcasted embedding ready for asset ${id}`);
+          logger.logInfo('generate-embedding.sse-broadcast', {
+            assetId: id,
+          });
         } catch (sseError) {
           // Don't fail the request if SSE broadcast fails
           console.error('[SSE] Failed to broadcast embedding update:', sseError);
@@ -250,3 +277,7 @@ export async function POST(
     );
   }
 }
+
+export const POST = withObservability(postHandler, {
+  operation: 'assets:generate-embedding',
+});

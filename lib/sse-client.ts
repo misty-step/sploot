@@ -1,3 +1,5 @@
+import { logger } from '@/lib/observability-logger';
+
 /**
  * Server-Sent Events (SSE) Client
  *
@@ -40,7 +42,9 @@ export class SSEClient {
    */
   connect(assetIds?: string[]): void {
     if (this.connectionState === 'connecting' || this.connectionState === 'connected') {
-      console.log('[SSE] Already connected or connecting');
+      logger.logInfo('sse-client.already-connected', {
+        state: this.connectionState,
+      });
       return;
     }
 
@@ -61,7 +65,7 @@ export class SSEClient {
       this.SSE_ENDPOINT;
 
     try {
-      console.log(`[SSE] Connecting to ${url}`);
+      logger.logInfo('sse-client.connecting', { url });
       this.eventSource = new EventSource(url);
 
       this.setupEventHandlers();
@@ -185,7 +189,7 @@ export class SSEClient {
     if (!this.eventSource) return;
 
     this.eventSource.onopen = () => {
-      console.log('[SSE] Connected');
+      logger.logInfo('sse-client.connected');
       this.setConnectionState('connected');
       this.reconnectAttempts = 0;
     };
@@ -201,7 +205,7 @@ export class SSEClient {
     // Handle custom events
     this.eventSource.addEventListener('connected', (event) => {
       const data = JSON.parse(event.data) as SSEMessage;
-      console.log('[SSE] Connection confirmed:', data);
+      logger.logInfo('sse-client.connection-confirmed', { data });
     });
 
     this.eventSource.addEventListener('embedding-update', (event) => {
@@ -269,7 +273,11 @@ export class SSEClient {
     }
 
     const delay = this.RECONNECT_DELAYS[this.reconnectAttempts] || 16000;
-    console.log(`[SSE] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.MAX_RECONNECT_ATTEMPTS})`);
+    logger.logInfo('sse-client.reconnect-scheduled', {
+      delayMs: delay,
+      attempt: this.reconnectAttempts + 1,
+      maxAttempts: this.MAX_RECONNECT_ATTEMPTS,
+    });
 
     this.setConnectionState('reconnecting');
 

@@ -9,6 +9,7 @@ import { DeduplicationService } from '@/lib/upload/deduplication-service';
 import { BlobUploaderService } from '@/lib/upload/blob-uploader-service';
 import { AssetRecorderService } from '@/lib/upload/asset-recorder-service';
 import { EmbeddingSchedulerService } from '@/lib/upload/embedding-scheduler-service';
+import { withObservability } from '@/lib/with-observability';
 
 /**
  * Configure route segment options
@@ -39,7 +40,7 @@ export const maxDuration = 60;
  *
  * All business logic resides in services - this handler only orchestrates.
  */
-export async function POST(req: NextRequest) {
+async function postHandler(req: NextRequest) {
   const startTime = Date.now();
 
   try {
@@ -303,7 +304,7 @@ export async function POST(req: NextRequest) {
 /**
  * GET endpoint for checking upload service status
  */
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   try {
     await requireUserIdWithSync();
   } catch (error) {
@@ -320,3 +321,10 @@ export async function GET(req: NextRequest) {
     },
   });
 }
+
+export const POST = withObservability(postHandler, { operation: 'upload:direct' });
+
+export const GET = withObservability(getHandler, {
+  operation: 'upload:status',
+  skipTiming: true,
+});

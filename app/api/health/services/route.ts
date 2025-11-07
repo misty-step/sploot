@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { clerkConfigured, blobConfigured, databaseConfigured, replicateConfigured } from '@/lib/env';
 import { prisma } from '@/lib/db';
 import { currentUser } from '@clerk/nextjs/server';
+import { withObservability } from '@/lib/with-observability';
 
 /**
  * Service health check endpoint
  * Provides detailed status of all external services
  */
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   const services: Record<string, {
     name: string;
     status: 'healthy' | 'degraded' | 'unavailable' | 'not_configured';
@@ -174,7 +175,7 @@ export async function GET(req: NextRequest) {
 }
 
 // OPTIONS for CORS preflight
-export async function OPTIONS(req: NextRequest) {
+async function optionsHandler(req: NextRequest) {
   return new NextResponse(null, {
     status: 200,
     headers: {
@@ -184,3 +185,11 @@ export async function OPTIONS(req: NextRequest) {
     },
   });
 }
+
+export const GET = withObservability(getHandler, { operation: 'health:services' });
+
+export const OPTIONS = withObservability(optionsHandler, {
+  operation: 'health:services-options',
+  skipTiming: true,
+  skipLogging: true,
+});

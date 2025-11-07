@@ -1,3 +1,5 @@
+import { logger } from '@/lib/observability-logger';
+
 /**
  * Performance Metrics Collection
  *
@@ -5,7 +7,6 @@
  * API latencies, memory usage, and error rates for comprehensive
  * monitoring and debugging at scale.
  */
-
 export interface UploadMetrics {
   startTime: number;
   bytesUploaded: number;
@@ -132,12 +133,13 @@ class MetricsCollector {
       const elapsed = performance.now() - metric.startTime;
       metric.throughput = metric.bytesUploaded / (elapsed / 1000);
 
-      console.log(`[Metrics] Upload ${id} completed:`, {
-        duration: `${(elapsed / 1000).toFixed(2)}s`,
-        size: `${(metric.bytesUploaded / 1024 / 1024).toFixed(2)}MB`,
-        throughput: `${(metric.throughput / 1024 / 1024).toFixed(2)}MB/s`,
+      logger.logInfo('metrics.upload-complete', {
+        uploadId: id,
+        durationSeconds: Number((elapsed / 1000).toFixed(2)),
+        sizeMb: Number((metric.bytesUploaded / 1024 / 1024).toFixed(2)),
+        throughputMbPerSec: Number((metric.throughput / 1024 / 1024).toFixed(2)),
         chunks: metric.chunks,
-        retries: metric.retries
+        retries: metric.retries,
       });
     }
   }

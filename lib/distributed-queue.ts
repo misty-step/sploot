@@ -11,6 +11,8 @@
  * - dead: Permanent failures for analysis
  */
 
+import { logger } from './observability-logger';
+
 export type QueuePriority = 'urgent' | 'normal' | 'background';
 export type ErrorType = 'rate_limit' | 'network' | 'server' | 'invalid' | 'unknown';
 
@@ -290,7 +292,12 @@ export class DistributedQueue<T = any> {
       // Calculate backoff and requeue
       const backoff = this.calculateBackoff(item.retryCount, errorType);
 
-      console.log(`[DistributedQueue] Retrying item ${item.id} (attempt ${item.retryCount}) after ${backoff}ms`);
+      logger.logInfo('distributed-queue.retry', {
+        itemId: item.id,
+        attempt: item.retryCount,
+        delayMs: backoff,
+        errorType,
+      });
 
       // Schedule requeue after backoff
       setTimeout(() => {

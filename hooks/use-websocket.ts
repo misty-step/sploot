@@ -3,6 +3,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { logger } from '@/lib/observability-logger';
 import {
   getWebSocketManager,
   ConnectionState,
@@ -165,7 +166,9 @@ export function useWebSocketWithFallback(
   useEffect(() => {
     // Start or stop polling based on connection state and polling flag
     if (isPolling && connectionState === 'failed') {
-      console.log('[WebSocket] Starting polling fallback');
+      logger.logInfo('websocket.polling-fallback-start', {
+        pollingIntervalMs: pollingInterval,
+      });
 
       // Clear any existing timer
       if (pollingTimerRef.current) {
@@ -176,7 +179,7 @@ export function useWebSocketWithFallback(
       pollingFunction(); // Initial poll
       pollingTimerRef.current = setInterval(pollingFunction, pollingInterval);
     } else if (isConnected && pollingTimerRef.current) {
-      console.log('[WebSocket] Stopping polling (WebSocket connected)');
+      logger.logInfo('websocket.polling-fallback-stop');
       clearInterval(pollingTimerRef.current);
       pollingTimerRef.current = null;
       setIsPolling(false);

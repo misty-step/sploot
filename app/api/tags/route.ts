@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUserIdWithSync } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
+import { withObservability } from '@/lib/with-observability';
 
 /**
  * GET /api/tags - Get all tags for the current user
  */
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   try {
     const userId = await requireUserIdWithSync();
 
@@ -55,7 +56,7 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/tags - Create a new tag
  */
-export async function POST(req: NextRequest) {
+async function postHandler(req: NextRequest) {
   try {
     const userId = await requireUserIdWithSync();
     const { name, color } = await req.json();
@@ -115,3 +116,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const GET = withObservability(getHandler, { operation: 'tags:list' });
+export const POST = withObservability(postHandler, { operation: 'tags:create' });
