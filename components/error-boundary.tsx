@@ -32,7 +32,6 @@ export class ErrorBoundary extends Component<Props, State> {
     sendClientErrorTelemetry('global-error-boundary', error, { errorInfo });
 
     if (process.env.NODE_ENV === 'development') {
-      // eslint-disable-next-line no-console
       console.error('Error caught by boundary:', error, errorInfo);
     }
   }

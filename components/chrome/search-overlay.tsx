@@ -142,7 +142,7 @@ export function SearchOverlay({
                 className="flex items-center gap-2 cursor-pointer"
               >
                 <Search className="size-4" />
-                <span className="font-mono">Search for "{query}"</span>
+                <span className="font-mono">Search for &quot;{query}&quot;</span>
               </CommandItem>
             )}
           </CommandList>

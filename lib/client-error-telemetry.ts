@@ -40,7 +40,6 @@ export function sendClientErrorTelemetry(
     }
   } catch (telemetryError) {
     if (process.env.NODE_ENV === 'development') {
-      // eslint-disable-next-line no-console
       console.error('[ClientErrorTelemetry] Failed to send telemetry', telemetryError);
     }
   }

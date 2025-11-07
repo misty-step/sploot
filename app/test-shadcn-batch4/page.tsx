@@ -152,7 +152,7 @@ export default function TestShadcnBatch4Page() {
           <CardContent>
             <p className="text-sm text-muted-foreground">
               The custom toast component at components/ui/toast.tsx will be replaced
-              with shadcn's Sonner integration during Phase 4 of the migration.
+              with shadcn&apos;s Sonner integration during Phase 4 of the migration.
             </p>
           </CardContent>
         </Card>

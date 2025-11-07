@@ -59,7 +59,7 @@ export class SharePageErrorBoundary extends Component<
             {/* Error message */}
             <div className="space-y-2">
               <h1 className="text-white text-2xl font-medium">
-                Couldn't load this meme
+                Couldn&apos;t load this meme
               </h1>
               <p className="text-gray-400 text-sm">
                 The image failed to load. It may have been removed or the link is invalid.
