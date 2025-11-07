@@ -11,22 +11,6 @@ const compat = new FlatCompat({
 
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals"),
-  {
-    rules: {
-      // Terminal aesthetic enforcement: No rounded corners allowed
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: 'Literal[value=/rounded-/]',
-          message: 'Terminal aesthetic violation: Use square corners only (no rounded- classes). All border-radius values are set to 0px in @theme config.',
-        },
-        {
-          selector: 'TemplateElement[value.raw=/rounded-/]',
-          message: 'Terminal aesthetic violation: Use square corners only (no rounded- classes). All border-radius values are set to 0px in @theme config.',
-        },
-      ],
-    },
-  },
 ];
 
 export default eslintConfig;
