@@ -61,10 +61,12 @@ NEW_ERROR_ALERT=$(cat <<EOF
   "conditions": [
     {
       "id": "sentry.rules.conditions.first_seen_event.FirstSeenEventCondition"
-    },
+    }
+  ],
+  "filters": [
     {
-      "id": "sentry.rules.conditions.event_attribute.EventAttributeCondition",
-      "attribute": "environment",
+      "id": "sentry.rules.filters.tagged_event.TaggedEventFilter",
+      "key": "environment",
       "match": "eq",
       "value": "production"
     }
