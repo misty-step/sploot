@@ -1,1288 +1,804 @@
-# TODO: Comprehensive Observability & Analytics Implementation
+# TODO: Add to Sploot - Chrome Extension Quick Save
 
 ## Context
 
-**Architecture**: Layered Observability Modules with HOF Middleware Pattern (see DESIGN.md)
-**PRD**: TASK.md - Comprehensive observability covering analytics, performance, errors
-**Key Pattern**: Reuses upload service orchestration pattern (thin coordinator, specialized services)
-**Test Pattern**: `__tests__/lib/[module].test.ts` (following existing convention)
-
-**Core Modules** (5 independent implementations):
-1. Analytics Service (`lib/analytics.ts`) - Type-safe event tracking
-2. Performance Monitor (`lib/performance-monitor.ts`) - Timing with percentiles
-3. Observability Logger (`lib/observability-logger.ts`) - Structured logging + Sentry
-4. Route Middleware (`lib/with-observability.ts`) - HOF wrapper for automatic instrumentation
-5. Telemetry API (`app/api/telemetry/route.ts`) - Client-side error/performance collection
-
-## review triage - 2025-11-05
-
-- [x] patch performance-monitor failure path  
-  **files**: `lib/performance-monitor.ts`, `__tests__/lib/performance-monitor.test.ts`  
-  **eta**: 1.5h  
-  **acceptance**: failures no longer emit success timings; new unit coverage asserts `trackFailure` skips `endTiming` and only fires a single analytics event.
-
-- [x] make withObservability catch blocks actually log + support plain `Request`  
-  **files**: `lib/with-observability.ts`, `__tests__/lib/with-observability.test.ts`  
-  **eta**: 2h  
-  **acceptance**: error branches log before rethrow, wrappers work when `nextUrl` is missing, regression suite covers both scenarios.
-
-- [x] hoist vitest mocks to kill `ReferenceError`  
-  **files**: `__tests__/lib/with-observability.test.ts`  
-  **eta**: 45m  
-  **acceptance**: tests pass under fake timers with `vi.hoisted`, no TDZ explosions in CI.
-
-- [x] sanitize client error telemetry payload  
-  **files**: `components/error-boundary.tsx`, `app/global-error.tsx`, `components/share/share-page-error-boundary.tsx`  
-  **eta**: 1.5h  
-  **acceptance**: telemetry strips stack traces + full URLs before POST; manual smoke shows scrubbed payload; docs updated to describe scope.
-
-- [ ] import hygiene + type compliance pass  
-  **files**: `lib/distributed-queue.ts`, `app/api/sse/embedding-updates/route.ts`, `lib/upload-queue.ts`  
-  **eta**: 1h  
-  **acceptance**: missing logger import restored, unauthorized SSE branch returns `NextResponse`, stray React import relocated to top; type-check passes.
-
-- [ ] calibrate sentry tracing sample rate  
-  **files**: `sentry.edge.config.ts`, `sentry.server.config.ts`  
-  **eta**: 45m  
-  **acceptance**: production sampling <=10%, local/dev keeps full sampling; configuration toggled via env override, docs updated to note rationale.
-
-- [ ] yank analytics side-effects out of state setters  
-  **files**: `hooks/use-assets.ts`, `__tests__/hooks/use-assets.test.ts` (add)  
-  **eta**: 2h  
-  **acceptance**: update/delete helpers collect events during setState then emit afterward; tests prove single emission even under double-invocation.
-
-- [ ] respect do-not-track everywhere  
-  **files**: `lib/analytics.ts`, `__tests__/lib/analytics.test.ts`  
-  **eta**: 1h  
-  **acceptance**: `trackFlow` + `trackTiming` short-circuit when DNT is enabled; coverage updated for both helpers.
-
-- [ ] sync docs with actual sanitization behavior  
-  **files**: `TODO.md`, `CLAUDE.md`  
-  **eta**: 30m  
-  **acceptance**: documentation states user IDs are redacted (not hashed) and cross-references privacy rationale.
-
-## Phase 1: Foundation & Core Modules (Days 1-2)
-
-### Setup & Dependencies
-
-- [x] Install @vercel/speed-insights and configure Sentry
-  ```
-  Commands:
-    pnpm add @vercel/speed-insights
-    npx @sentry/wizard@latest -i nextjs
-
-  Files Created by Wizard:
-    - instrumentation.ts
-    - sentry.client.config.ts
-    - sentry.server.config.ts
-    - sentry.edge.config.ts
-    - .sentryclirc (gitignored)
-    - sentry.properties (gitignored)
-    - Updates: next.config.ts, package.json
-
-  Success:
-    - pnpm install completes without errors
-    - Sentry wizard completes, test error captured in dashboard
-    - Build succeeds with new packages
-
-  Test: Run `pnpm build`, verify no errors. Visit Sentry dashboard, throw test error, confirm capture.
-
-  Time: 30min
-  ```
-
-- [x] Add SpeedInsights to app/layout.tsx
-  ```
-  File: app/layout.tsx
-  Architecture: Client component import, render after {children}
-  Pattern: Follow existing Analytics component integration (line 134)
-
-  Code:
-    import { SpeedInsights } from '@vercel/speed-insights/next';
-
-    // In return statement, after <Analytics />:
-    <SpeedInsights />
-
-  Success: Component renders, no console errors, Vercel dashboard shows Web Vitals
-  Test: Manual - Deploy to preview, check Vercel dashboard for Speed Insights data
-  Time: 10min
-  ```
-
-- [x] Update .gitignore with Sentry files
-  ```
-  File: .gitignore
-  Lines to Add:
-    # Sentry
-    .sentryclirc
-    sentry.properties
-
-  Success: Files added, `git status` doesn't show Sentry config files
-  Time: 5min
-  ```
-
-### Module 1: Analytics Service
-
-- [x] Implement lib/analytics.ts with type-safe event tracking
-  ```
-  File: lib/analytics.ts (NEW)
-  Architecture: Implements Module 1 interface from DESIGN.md section "Module 1: Analytics Service"
-  Pseudocode: See DESIGN.md "Algorithm 2: Analytics Event Tracking with PII Sanitization"
-  Pattern: Similar to lib/share.ts (utility functions with error handling)
-
-  Public Interface (from DESIGN.md):
-    - type AnalyticsEvent (discriminated union - 13 event types)
-    - export const ANALYTICS_EVENTS (event name constants)
-    - export function track(event: AnalyticsEvent): void
-    - export function trackServer(event: AnalyticsEvent): Promise<void>
-    - export function trackFlow(flowName, step, metadata): void
-    - export function trackTiming(operation, duration, success, metadata): void
-
-  Internal Functions (hidden complexity):
-    - sanitizeEventProperties(props): Redact emails, redact user IDs (no hashing for privacy compliance), strip query params
-    - isValidAnalyticsEvent(event): Runtime validation against type union
-    - checkDoNotTrack(): Client-side only, return navigator.doNotTrack === '1'
-
-  Dependencies:
-    - @vercel/analytics (client)
-    - @vercel/analytics/server (server)
-    - crypto (for SHA-256 hashing)
-
-  Success:
-    - All 13 AnalyticsEvent types defined with properties
-    - track() validates events, sanitizes PII, calls Vercel API
-    - trackServer() uses waitUntil pattern (non-blocking)
-    - Do Not Track respected (client-side only)
-    - All functions wrapped in try-catch (never throw)
-
-  Test Strategy:
-    Unit tests in __tests__/lib/analytics.test.ts:
-      - Event validation (valid events pass, invalid rejected)
-      - PII sanitization (emails redacted, user IDs redacted, URLs stripped)
-      - Do Not Track (tracking skipped when enabled)
-      - Server vs client detection (calls correct API)
-    Mock: @vercel/analytics, navigator.sendBeacon
-
-  Time: 2hr
-  ```
-
-- [x] Write unit tests for lib/analytics.ts
-  ```
-  File: __tests__/lib/analytics.test.ts (NEW)
-  Pattern: Follow __tests__/lib/metrics-collector.test.ts structure
-
-  Test Cases:
-    1. Valid events pass validation
-    2. Invalid events rejected with console.warn
-    3. PII sanitization: emails → '[REDACTED]', user IDs → '[REDACTED]' (no hashing)
-    4. URL sanitization: query params stripped
-    5. Do Not Track: tracking skipped when navigator.doNotTrack === '1'
-    6. Server vs client: calls correct Vercel API based on environment
-    7. Error handling: Vercel API failure caught, logged, doesn't throw
-
-  Mocks:
-    - jest.mock('@vercel/analytics')
-    - jest.mock('@vercel/analytics/server')
-    - jest.spyOn(console, 'warn')
-
-  Success: All tests pass, coverage >90%
-  Time: 1hr
-  ```
-
-### Module 2: Performance Monitor
-
-- [x] Implement lib/performance-monitor.ts with timing and percentiles
-  ```
-  File: lib/performance-monitor.ts (NEW)
-  Architecture: Implements Module 2 interface from DESIGN.md "Module 2: Performance Monitor"
-  Pseudocode: Copy PerformanceTracker class from lib/performance.ts, add Analytics integration
-  Pattern: Singleton pattern like existing (getGlobalPerformanceTracker)
-
-  Public Interface (from DESIGN.md):
-    - export function getPerformanceMonitor(): PerformanceMonitor
-    - class PerformanceMonitor {
-        startTiming(operation: string): void
-        endTiming(operation: string): number | undefined
-        measureAsync<T>(operation: string, fn: () => Promise<T>): Promise<T>
-        measureSync<T>(operation: string, fn: () => T): T
-        getSummary(operation: string): PerformanceSummary | null
-        getAllSummaries(): PerformanceSummary[]
-        reset(operation?: string): void
-      }
-    - export const PERF_OPERATIONS (operation name constants)
-
-  Internal Implementation (from lib/performance.ts):
-    - Circular buffer: Map<string, number[]> (last 100 samples)
-    - Percentile calculations: sort samples, index at Math.ceil(length * percentile)
-    - Debug mode: localStorage.getItem('debug_performance') === 'true' → console.log
-
-  New: Analytics Integration
-    - Call trackTiming() from lib/analytics.ts on endTiming() and measureAsync()
-    - Include operation name, duration, success (always true for perf metrics)
-
-  Dependencies:
-    - lib/analytics.ts (trackTiming function)
-
-  Success:
-    - PerformanceMonitor class with all methods implemented
-    - Circular buffer limits samples to 100 per operation
-    - Percentile calculations (P50, P95, P99) correct
-    - measureAsync() times async operations accurately
-    - Analytics integration: trackTiming() called on completion
-    - Debug mode works (localStorage flag enables console.log)
-
-  Test Strategy:
-    Unit tests in __tests__/lib/performance-monitor.test.ts:
-      - startTiming() + endTiming() calculates correct duration
-      - measureAsync() times async function correctly
-      - Circular buffer keeps last 100 samples, discards oldest
-      - Percentile calculations match expected values (P50, P95, P99)
-      - getSummary() returns correct statistics
-      - Analytics integration: trackTiming() called with correct data
-    Mock: lib/analytics.ts (trackTiming)
-
-  Time: 1.5hr
-  ```
-
-- [x] Write unit tests for lib/performance-monitor.ts
-  ```
-  File: __tests__/lib/performance-monitor.test.ts (NEW)
-  Pattern: Follow __tests__/lib/seeded-random.test.ts structure (pure functions)
-
-  Test Cases:
-    1. startTiming() + endTiming() measures duration correctly
-    2. endTiming() without startTiming() logs warning, returns undefined
-    3. measureAsync() times async operations (use setTimeout mock)
-    4. Circular buffer limits to 100 samples
-    5. Percentile calculations (P50, P95, P99) correct for known datasets
-    6. getSummary() returns all statistics
-    7. Analytics integration: trackTiming() called on endTiming()
-    8. Debug mode: localStorage flag enables console logging
-
-  Mocks:
-    - jest.mock('lib/analytics', () => ({ trackTiming: jest.fn() }))
-    - jest.spyOn(console, 'log')
-
-  Success: All tests pass, coverage >90%
-  Time: 1hr
-  ```
-
-### Module 3: Observability Logger
-
-- [x] Implement lib/observability-logger.ts with traceId and Sentry
-  ```
-  File: lib/observability-logger.ts (NEW)
-  Architecture: Implements Module 3 interface from DESIGN.md "Module 3: Structured Logger"
-  Base: Copy lib/vercel-logger.ts, enhance with traceId and timing methods
-  Pattern: Class-based logger with factory function (withTraceId)
-
-  Public Interface (from DESIGN.md):
-    - export function logInfo(context: string, metadata?): void
-    - export function logError(context: string, error: unknown, metadata?): void
-    - export function logTiming(operation, duration, success, metadata?): void
-    - export function withTraceId(traceId: string): ObservabilityLogger
-    - export interface ObservabilityLogger { /* same methods */ }
-    - export const logger: ObservabilityLogger (default instance, no traceId)
-
-  Internal Implementation:
-    - Class ObservabilityLoggerImpl implements ObservabilityLogger
-    - private traceId?: string (instance variable)
-    - JSON serialization: JSON.stringify() for all log entries
-    - Error normalization: Handle Error, string, unknown → { name, message, stack }
-    - Environment context: Add nodeEnv, vercelRegion, vercelUrl from process.env
-    - Sentry integration: Conditional import, call Sentry.captureException() in logError()
-    - Console routing: logInfo → console.log, logError → console.error
-
-  Dependencies:
-    - @sentry/nextjs (conditional import, graceful if missing)
-
-  Success:
-    - All log methods output structured JSON
-    - traceId included in log entries when set (via withTraceId)
-    - Sentry.captureException() called on logError() (if Sentry available)
-    - Error serialization handles Error objects, strings, unknown types
-    - Graceful degradation if Sentry unavailable
-
-  Test Strategy:
-    Unit tests in __tests__/lib/observability-logger.test.ts:
-      - logInfo() outputs JSON to console.log with correct structure
-      - logError() outputs JSON to console.error + calls Sentry
-      - logTiming() outputs JSON with duration and success fields
-      - withTraceId() creates logger with traceId in all log entries
-      - Error serialization: Error object → { name, message, stack }
-      - Sentry unavailable: logs locally only, doesn't throw
-    Mock: @sentry/nextjs, console.log, console.error
-
-  Time: 1.5hr
-  ```
-
-- [x] Write unit tests for lib/observability-logger.ts
-  ```
-  File: __tests__/lib/observability-logger.test.ts (NEW)
-  Pattern: Follow __tests__/lib/upload/deduplication-service.test.ts (service with external deps)
-
-  Test Cases:
-    1. logInfo() outputs JSON to console.log
-    2. logError() outputs JSON to console.error
-    3. logError() calls Sentry.captureException() with error + context
-    4. logTiming() outputs JSON with duration, success, operation
-    5. withTraceId() creates logger with traceId in all entries
-    6. Error serialization: Error → { name, message, stack }
-    7. Error serialization: string → { name: 'Error', message: string }
-    8. Sentry unavailable: catches import error, logs locally
-
-  Mocks:
-    - jest.mock('@sentry/nextjs', () => ({ captureException: jest.fn() }))
-    - jest.spyOn(console, 'log')
-    - jest.spyOn(console, 'error')
-
-  Success: All tests pass, coverage >90%
-  Time: 1hr
-  ```
-
-### Module 4: Route Middleware
-
-- [x] Implement lib/with-observability.ts HOF wrapper
-  ```
-  File: lib/with-observability.ts (NEW)
-  Architecture: Implements Module 4 interface from DESIGN.md "Module 4: API Route Middleware"
-  Pseudocode: See DESIGN.md "Algorithm 1: withObservability HOF Wrapper"
-  Pattern: HOF like hooks (e.g., hooks pattern wrapping functions)
-
-  Public Interface (from DESIGN.md):
-    - export function withObservability<T>(
-        handler: RouteHandler<T>,
-        options?: ObservabilityOptions
-      ): RouteHandler<T>
-    - type RouteHandler = (req: NextRequest, context?) => Promise<NextResponse>
-    - interface ObservabilityOptions {
-        operation?: string
-        skipTiming?: boolean
-        skipLogging?: boolean
-        metadata?: Record<string, any>
-      }
-
-  Internal Implementation (from DESIGN.md Algorithm 1):
-    1. Generate traceId: nanoid() (12 chars, URL-safe)
-    2. Extract operation: options.operation || pathname from req.url
-    3. Create logger: withTraceId(traceId)
-    4. Log request start (unless skipLogging)
-    5. Start performance timing (unless skipTiming)
-    6. Execute handler (try-catch)
-    7. Calculate duration, extract status code from response
-    8. Log timing and result
-    9. On error: Call unstable_rethrow(), log error with traceId, rethrow
-
-  Dependencies:
-    - nanoid (for traceId generation)
-    - lib/observability-logger.ts (withTraceId, logger)
-    - lib/performance-monitor.ts (getPerformanceMonitor)
-    - next/navigation (unstable_rethrow)
-
-  Success:
-    - Returns wrapped handler with same signature
-    - Generates unique traceId per request
-    - Logs request start, timing, result
-    - Errors logged with traceId, then rethrown (preserves Next.js error handling)
-    - unstable_rethrow() called before catch (allows Next.js redirects/not-found)
-    - Options (skipTiming, skipLogging) respected
-
-  Test Strategy:
-    Unit tests in __tests__/lib/with-observability.test.ts:
-      - Wrapped handler returns same result as original
-      - traceId generated (unique per call)
-      - Timing calculated correctly (startTime to endTime)
-      - Success determination: 200-399 = success, 400-599 = failure
-      - Error handling: logs error with traceId, then rethrows
-      - unstable_rethrow() called for Next.js errors
-      - Options: skipTiming and skipLogging work
-    Mock: NextRequest, NextResponse, nanoid, logger, perfMonitor
-
-  Time: 2hr
-  ```
-
-- [x] Write unit tests for lib/with-observability.ts
-  ```
-  File: __tests__/lib/with-observability.test.ts (NEW)
-  Pattern: Follow __tests__/hooks/use-file-validation.test.ts (function testing)
-
-  Test Cases:
-    1. Wrapped handler returns original handler's response
-    2. traceId generated (verify logger.withTraceId called)
-    3. Timing calculated: duration = endTime - startTime
-    4. Status code 200 → logged as success
-    5. Status code 500 → logged as failure
-    6. Error thrown → logged with traceId, then rethrown
-    7. unstable_rethrow() called before catch
-    8. Options.skipTiming: timing skipped
-    9. Options.skipLogging: logging skipped
-    10. Options.operation: custom operation name used
-
-  Mocks:
-    - jest.mock('nanoid', () => ({ nanoid: jest.fn(() => 'test-trace-id') }))
-    - jest.mock('lib/observability-logger')
-    - jest.mock('lib/performance-monitor')
-    - Mock NextRequest and NextResponse
-
-  Success: All tests pass, coverage >90%
-  Time: 1.5hr
-  ```
-
-### Module 5: Telemetry API Enhancement
-
-- [x] Enhance app/api/telemetry/route.ts with forwarding logic
-  ```
-  File: app/api/telemetry/route.ts (MODIFY)
-  Architecture: Implements Module 5 interface from DESIGN.md "Module 5: Telemetry API Endpoint"
-  Current: Stubbed with TODO comment (line 38)
-  Pattern: Follow app/api/upload/route.ts (service orchestration with validation)
-
-  Interface (HTTP API from DESIGN.md):
-    POST /api/telemetry
-    Body: { type: 'error' | 'performance' | 'usage', payload: <type-specific> }
-
-    Error payload: { name, message, stack, componentStack, url, timestamp }
-    Performance payload: { operation, duration, success, metadata }
-    Usage payload: { userId, action, count, timestamp, metadata }
-
-  Implementation:
-    1. Auth: Use existing getAuth(), require userId (return 401 if missing)
-    2. Validation: Type guards for error/performance/usage payloads (return 400 if invalid)
-    3. Error forwarding: Call Sentry.captureException() with error + user context
-    4. Performance forwarding: Call trackTiming() from lib/analytics.ts
-    5. Usage forwarding: Call logger.logInfo() with "usage_metric" tag
-    6. Non-blocking: Wrap all forwarding in try-catch, return 200 even on partial failure
-
-  Dependencies:
-    - @sentry/nextjs (captureException)
-    - lib/analytics.ts (trackTiming)
-    - lib/observability-logger.ts (logger)
-    - @/lib/auth/server (getAuth)
-
-  Success:
-    - POST with valid error payload → Forwarded to Sentry, returns 200
-    - POST with valid performance payload → Tracked in Analytics, returns 200
-    - POST with valid usage payload → Logged with "usage_metric", returns 200
-    - POST without auth → Returns 401
-    - POST with invalid payload → Returns 400
-    - Sentry failure → Logs error, returns 200 (non-blocking)
-
-  Test Strategy:
-    Integration tests in __tests__/api/telemetry.integration.test.ts:
-      - Error payload forwarded to Sentry
-      - Performance payload tracked in Analytics
-      - Usage payload logged with tag
-      - Auth required (401 without token)
-      - Invalid payload rejected (400)
-      - Sentry unavailable → returns 200 (graceful degradation)
-    Mock: Sentry, Analytics, Auth
-
-  Time: 1hr
-  ```
-
-- [x] Write integration tests for app/api/telemetry/route.ts
-  ```
-  File: __tests__/api/telemetry.integration.test.ts (NEW)
-  Pattern: Follow __tests__/api/* integration test structure
-
-  Test Cases:
-    1. POST /api/telemetry with error payload → Sentry.captureException called
-    2. POST /api/telemetry with performance payload → trackTiming called
-    3. POST /api/telemetry with usage payload → logger.logInfo called
-    4. POST without auth token → Returns 401
-    5. POST with invalid payload (missing fields) → Returns 400
-    6. POST with unknown type → Returns 400
-    7. Sentry API failure → Logs error, returns 200 (non-blocking)
-
-  Mocks:
-    - jest.mock('@sentry/nextjs')
-    - jest.mock('lib/analytics')
-    - jest.mock('@/lib/auth/server', () => ({ getAuth: jest.fn() }))
-
-  Success: All tests pass, coverage >90%
-  Time: 1hr
-  ```
-
-### Critical Routes Instrumentation
-
-- [x] Wrap 3 critical routes with withObservability
-  ```
-  Files:
-    - app/api/upload/route.ts (line 42, export async function POST)
-    - app/api/search/route.ts (line ~20, export async function POST)
-    - app/api/assets/route.ts (line ~15, export async function GET)
-
-  Architecture: Wrap existing handlers with withObservability HOF
-  Pattern:
-    // Before:
-    export async function POST(req: NextRequest) { ... }
-
-    // After:
-    import { withObservability } from '@/lib/with-observability';
-
-    async function handler(req: NextRequest) { ... }
-    export const POST = withObservability(handler, { operation: 'upload' });
-
-  Success:
-    - All 3 routes wrapped
-    - Build succeeds (no TypeScript errors)
-    - Routes function identically (no behavior change)
-    - Logs appear in Vercel with traceId (verify in preview deployment)
-
-  Test Strategy:
-    Manual verification:
-      - Deploy to preview
-      - Call each route (upload, search, get assets)
-      - Check Vercel logs for structured JSON with traceId
-      - Verify timing appears in logs
-
-  Time: 30min
-  ```
-
-### Prisma Middleware Integration
-
-- [x] Add Prisma middleware for database query timing
-  ```
-  File: lib/db.ts (MODIFY)
-  Architecture: Integration from DESIGN.md "Database: Prisma Middleware" section
-  Pseudocode: See DESIGN.md "Algorithm 3: Prisma Middleware for Query Timing"
-  Location: After PrismaClient initialization (line 24, after export const prisma)
-
-  Implementation (from DESIGN.md):
-    if (prismaClient) {
-      const { getPerformanceMonitor } = require('./performance-monitor');
-      const { logger } = require('./observability-logger');
-
-      prismaClient.$use(async (params, next) => {
-        const operation = `db:${params.model}:${params.action}`;
-        const startTime = Date.now();
-        const perfMonitor = getPerformanceMonitor();
-
-        perfMonitor.startTiming(operation);
-
-        try {
-          const result = await next(params);
-          const duration = Date.now() - startTime;
-          perfMonitor.endTiming(operation);
-
-          if (duration > 100) {
-            logger.logInfo('Slow query detected', { model: params.model, action: params.action, duration });
-          }
-
-          return result;
-        } catch (error) {
-          const duration = Date.now() - startTime;
-          perfMonitor.endTiming(operation);
-          logger.logError('Query failed', error, { model: params.model, action: params.action, duration });
-          throw error;
-        }
-      });
-    }
-
-  Dependencies:
-    - lib/performance-monitor.ts (getPerformanceMonitor)
-    - lib/observability-logger.ts (logger)
-
-  Success:
-    - Middleware registered (prismaClient.$use called)
-    - All queries timed automatically
-    - Slow queries (>100ms) logged
-    - Query failures logged with error details
-    - Build succeeds, no TypeScript errors
-
-  Test Strategy:
-    Integration test in __tests__/lib/db.integration.test.ts:
-      - Execute slow query (add setTimeout in middleware test)
-      - Verify logger.logInfo called with "Slow query detected"
-      - Execute failing query
-      - Verify logger.logError called with query details
-    Mock: logger, perfMonitor
-
-  Time: 30min
-  ```
+**Architecture**: WXT Framework + Clerk WebSSO + Reuse Existing `/api/upload` endpoint
+**Location**: Separate repository/directory `sploot-extension/` (not in main Next.js app)
+**Key Pattern**: Extension is thin capture UI—reuses 100% of server upload infrastructure
+**Existing Code to Reuse**: `lib/upload-queue.ts` (IndexedDB pattern), Clerk auth patterns from `lib/auth/client.tsx`
+
+**Timeline**: 3 weeks (15-18 days)
+- Phase 1 (Days 1-5): WXT scaffold + right-click save + auth
+- Phase 2 (Days 6-10): Crop tool + offline queue
+- Phase 3 (Days 11-15): Polish + Chrome Web Store
 
 ---
 
-## Phase 2: Comprehensive Coverage (Days 3-4)
+## Phase 1: MVP Foundation (Week 1)
 
-### Remaining API Routes Instrumentation
+### Core Infrastructure
 
-- [x] Wrap remaining 22 API routes with withObservability
+- [ ] Initialize WXT extension project
   ```
-  Files (25 total routes, 3 done in Phase 1, 22 remaining):
-    app/api/embeddings/image/route.ts
-    app/api/embeddings/text/route.ts
-    app/api/tags/route.ts
-    app/api/tags/[tagId]/route.ts
-    app/api/assets/[id]/route.ts
-    app/api/assets/[id]/share/route.ts
-    app/api/assets/[id]/tags/route.ts
-    app/api/assets/[id]/generate-embedding/route.ts
-    app/api/assets/[id]/embedding-status/route.ts
-    app/api/assets/batch/embedding-status/route.ts
-    app/api/assets/audit/route.ts
-    app/api/cron/purge-deleted-assets/route.ts
-    app/api/cron/process-embeddings/route.ts
-    app/api/cron/audit-assets/route.ts
-    app/api/search/advanced/route.ts
-    app/api/health/route.ts
-    app/api/health/services/route.ts
-    app/api/cache/stats/route.ts
-    app/api/upload-url/route.ts
-    app/api/upload/check/route.ts
-    app/api/sse/embedding-updates/route.ts
-    app/api/telemetry/route.ts (already done in Phase 1)
-
-  Pattern (same as Phase 1):
-    // Before:
-    export async function POST(req: NextRequest) { ... }
-
-    // After:
-    import { withObservability } from '@/lib/with-observability';
-
-    async function handler(req: NextRequest, context?) { ... }
-    export const POST = withObservability(handler, {
-      operation: 'embeddings:image' // or appropriate name
-    });
+  Command: pnpm create wxt@latest sploot-extension
+  Location: /Users/phaedrus/Development/sploot-extension/
+  Config: TypeScript + React module (@wxt-dev/module-react)
 
   Success:
-    - All 22 remaining routes wrapped
-    - Build succeeds
-    - Routes function identically
-    - Logs appear in Vercel with traceId for all routes
+  - wxt.config.ts configured with React module
+  - package.json has @clerk/chrome-extension dependency
+  - tsconfig.json extends .wxt/tsconfig.json
+  - pnpm dev starts extension dev server
+  - Extension loads in chrome://extensions
 
-  Test: Deploy to preview, call each route, verify logs
-  Time: 2hr (5min per route × 22 routes + buffer)
+  Test: Load unpacked extension, verify manifest v3, check console for errors
+
+  Dependencies: None (bootstrapping)
+
+  Time: 1-2h
   ```
 
-### Client-Side Analytics: Upload Flow
-
-- [x] Add analytics tracking to upload flow (hooks/use-upload-queue.ts)
+- [ ] Configure manifest.json via WXT
   ```
-  File: hooks/use-upload-queue.ts (MODIFY)
-  Architecture: Client-side flow tracking from DESIGN.md "FR1: User Behavior Analytics"
-  Events to Track:
-    - upload_file_selected: When user selects files (count, total size)
-    - upload_started: When upload begins (assetId, size)
-    - upload_completed: When upload finishes (assetId, duration, size)
-    - upload_failed: When upload fails (reason, size)
+  File: wxt.config.ts
 
-  Implementation Locations:
-    - File selection: In handleFileSelect or wherever files are added to queue
-    - Upload start: In uploadFile function, before API call
-    - Upload complete: In uploadFile function, after successful API response
-    - Upload fail: In uploadFile function, catch block
-
-  Dependencies:
-    - lib/analytics.ts (track function)
+  Manifest Config:
+  - permissions: ["storage", "tabs", "contextMenus", "notifications"]
+  - host_permissions: ["*://*/*"] (for image fetch)
+  - action: { default_popup: "popup.html" }
+  - commands: { "capture-screenshot": { suggested_key: "Ctrl+Shift+S" } }
+  - background: { service_worker: "background.ts", type: "module" }
 
   Success:
-    - All 4 upload events tracked
-    - Events include correct metadata (size, duration, etc.)
-    - No errors in console
-    - Events visible in Vercel Analytics dashboard
+  - Manifest v3 valid per Chrome validator
+  - Permissions minimal (no debugger, enterprise)
+  - CSP strict (script-src 'self', no eval)
 
-  Test Strategy:
-    Manual verification:
-      - Upload file in dev/preview
-      - Open browser DevTools Network tab
-      - Verify sendBeacon requests to Vercel Analytics
-      - Check Vercel Analytics dashboard for events
+  Test: chrome.permissions.getAll() shows only declared permissions
 
-  Time: 45min
-  ```
-
-### Client-Side Analytics: Search Flow
-
-- [x] Add analytics tracking to search flow (app/app/page.tsx or hooks)
-  ```
-  File: app/app/page.tsx (MODIFY) or hooks/use-search.ts if exists
-  Architecture: Client-side flow tracking from DESIGN.md "FR1: User Behavior Analytics"
-  Events to Track:
-    - search_query_submitted: When search initiated (query length, has filters)
-    - search_results_shown: When results displayed (count, latency, has filters)
-    - search_result_clicked: When user clicks result (position, score, assetId)
-    - search_no_results: When search returns 0 results (query)
-
-  Implementation Locations:
-    - Query submitted: In search input onChange or onSubmit
-    - Results shown: After successful API response
-    - Result clicked: In image grid onClick handler
-    - No results: In API response handler, if count === 0
-
-  Dependencies:
-    - lib/analytics.ts (track function)
-
-  Success:
-    - All 4 search events tracked
-    - Events include correct metadata
-    - No errors in console
-    - Events visible in Vercel Analytics dashboard
-
-  Test Strategy:
-    Manual verification:
-      - Search in dev/preview
-      - Click result
-      - Verify events in Vercel Analytics
-
-  Time: 45min
-  ```
-
-### Client-Side Analytics: Library Interactions
-
-- [x] Add analytics tracking to library interactions (hooks/use-assets.ts)
-  ```
-  File: hooks/use-assets.ts (MODIFY)
-  Architecture: Client-side flow tracking from DESIGN.md "FR1: User Behavior Analytics"
-  Events to Track:
-    - asset_favorited: When user favorites asset (assetId)
-    - asset_unfavorited: When user unfavorites (assetId)
-    - asset_deleted: When user deletes (assetId, had tags)
-    - tag_added: When tag added to asset (assetId, tagName)
-    - tag_removed: When tag removed (assetId, tagName)
-
-  Implementation Locations:
-    - Favorite: In toggleFavorite mutation, after successful API response
-    - Delete: In deleteAsset mutation, after successful API response
-    - Tags: In addTag/removeTag mutations, after successful API responses
-
-  Dependencies:
-    - lib/analytics.ts (track function)
-
-  Success:
-    - All 5 library interaction events tracked
-    - Events include correct metadata (assetId, tagName, hadTags)
-    - No errors in console
-    - Events visible in Vercel Analytics dashboard
-
-  Test Strategy:
-    Manual verification:
-      - Favorite, delete, add/remove tags in dev/preview
-      - Verify events in Vercel Analytics dashboard
-
-  Time: 45min
-  ```
-
-### Error Boundaries Telemetry Integration
-
-- [x] Update error boundaries to send telemetry
-  ```
-  Files:
-    - components/image-tile-error-boundary.tsx (MODIFY)
-    - components/share/share-page-error-boundary.tsx (MODIFY)
-
-  Architecture: React error boundaries from DESIGN.md "Algorithm 4: Client Error Boundary with Telemetry"
-  Pattern: Add componentDidCatch method if missing, send to /api/telemetry via sendBeacon
-
-  Implementation (from DESIGN.md):
-    componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-      // Send to telemetry endpoint (non-blocking)
-      if (navigator.sendBeacon) {
-        const blob = new Blob([JSON.stringify({
-          type: 'error',
-          payload: {
-            name: error.name,
-            message: error.message,
-            stack: error.stack,
-            componentStack: errorInfo.componentStack,
-            url: window.location.href,
-            timestamp: Date.now(),
-          },
-        })], { type: 'application/json' });
-
-        navigator.sendBeacon('/api/telemetry', blob);
-      }
-
-      console.error('Error boundary caught error:', error, errorInfo);
-      this.setState({ hasError: true });
-    }
-
-  Success:
-    - Both error boundaries send telemetry on error
-    - Uses sendBeacon with Blob (correct content-type)
-    - Non-blocking (wrapped in if check, no throw)
-    - Errors appear in Sentry dashboard
-
-  Test Strategy:
-    Manual verification:
-      - Trigger component error (throw in child component)
-      - Check Network tab for sendBeacon request
-      - Verify error in Sentry dashboard
+  Dependencies: WXT project initialized
 
   Time: 30min
   ```
 
-### Next.js Error Boundaries
+### Authentication Module
 
-- [x] Create app/error.tsx with Sentry integration
+- [ ] Implement auth-manager.ts (Background Service Worker)
   ```
-  File: app/error.tsx (NEW)
-  Architecture: Next.js App Router error boundary from DESIGN.md "Integration Points"
-  Pattern: Follow Next.js App Router error.tsx convention
+  File: sploot-extension/entrypoints/background/auth-manager.ts
 
-  Implementation:
-    'use client';
+  Interface (Deep Module):
+  export async function getAuthToken(): Promise<string | null>
+  export async function isAuthenticated(): Promise<boolean>
+  export async function login(): Promise<void>
+  export async function logout(): Promise<void>
 
-    import { useEffect } from 'react';
-    import * as Sentry from '@sentry/nextjs';
+  Hidden Implementation:
+  - @clerk/chrome-extension createClerkClient() in background
+  - syncHost: process.env.PLASMO_PUBLIC_CLERK_SYNC_HOST (sploot.app)
+  - Token storage: chrome.storage.session.set({ accessToken, expiresAt })
+  - Token refresh: Automatic via Clerk session.getToken()
+  - Fallback OAuth: browser.identity.launchWebAuthFlow()
 
-    export default function Error({
-      error,
-      reset,
-    }: {
-      error: Error & { digest?: string };
-      reset: () => void;
-    }) {
-      useEffect(() => {
-        Sentry.captureException(error);
-      }, [error]);
-
-      return (
-        <div>
-          <h2>Something went wrong!</h2>
-          <button onClick={() => reset()}>Try again</button>
-        </div>
-      );
-    }
+  Pattern: Follow @clerk/chrome-extension docs service-worker.md
+  Research: Exa code context shows createClerkClient() + getToken() pattern
 
   Success:
-    - Error boundary catches route errors
-    - Errors sent to Sentry
-    - User sees friendly error UI
-    - Reset button works
+  - isAuthenticated() returns true if sploot.app session exists
+  - getAuthToken() returns JWT from Clerk
+  - login() opens OAuth popup if no session
+  - Tokens stored in chrome.storage.session (not local)
 
-  Test: Throw error in route, verify Sentry capture, check error UI
+  Test:
+  - Manual: Login to sploot.app, install extension, verify auto-auth
+  - Unit: Mock chrome.storage, test token refresh logic
+
+  Dependencies: Clerk publishable key in .env
+
+  Time: 4-6h (includes Clerk WebSSO research/setup)
+  ```
+
+- [ ] Configure Clerk dashboard for chrome-extension:// origin
+  ```
+  Steps:
+  1. Login to Clerk dashboard (dashboard.clerk.com)
+  2. Navigate to Application → API Keys → Allowed Origins
+  3. Add: chrome-extension://  (wildcard for dev extensions)
+  4. Production: Add specific extension ID after Chrome Web Store publish
+
+  Success: WebSSO sync works without CORS errors
+
+  Test: Background service worker logs show "Session synced" from sploot.app
+
+  Dependencies: Clerk account access
+
   Time: 15min
   ```
 
-- [x] Create app/global-error.tsx for root-level errors
+### Right-Click Image Save
+
+- [ ] Implement context menu handler (Background Service Worker)
   ```
-  File: app/global-error.tsx (NEW)
-  Architecture: Next.js root error boundary from DESIGN.md "Integration Points"
-  Pattern: Similar to error.tsx but wraps entire app (including root layout)
+  File: sploot-extension/entrypoints/background/context-menu.ts
 
   Implementation:
-    'use client';
+  - chrome.contextMenus.create() on install
+  - Menu item: "Save to Sploot" on contexts: ["image"]
+  - onClick: Get info.srcUrl → call image-fetcher → queue upload
 
-    import * as Sentry from '@sentry/nextjs';
-    import NextError from 'next/error';
-    import { useEffect } from 'react';
+  Pattern:
+  ```typescript
+  chrome.runtime.onInstalled.addListener(() => {
+    chrome.contextMenus.create({
+      id: 'save-to-sploot',
+      title: 'Save to Sploot',
+      contexts: ['image']
+    });
+  });
 
-    export default function GlobalError({
-      error,
-    }: {
-      error: Error & { digest?: string };
-    }) {
-      useEffect(() => {
-        Sentry.captureException(error);
-      }, [error]);
-
-      return (
-        <html>
-          <body>
-            <NextError statusCode={500} />
-          </body>
-        </html>
-      );
+  chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId === 'save-to-sploot') {
+      const imageUrl = info.srcUrl;
+      await handleImageSave(imageUrl);
     }
+  });
+  ```
 
   Success:
-    - Global error boundary catches root layout errors
-    - Errors sent to Sentry
-    - User sees error page
+  - Right-click any image shows "Save to Sploot"
+  - Click triggers handleImageSave()
+  - Works on Twitter, Reddit, Discord
 
-  Test: Throw error in root layout, verify Sentry capture
-  Time: 10min
+  Test: Right-click images on 10+ sites, verify menu appears
+
+  Dependencies: Background service worker configured
+
+  Time: 1h
   ```
 
----
-
-## Phase 3: Abuse Detection & Monitoring (Days 5-6)
-
-### Usage Analytics Endpoint
-
-- [x] Create app/api/analytics/usage endpoint for abuse detection
+- [ ] Implement image-fetcher.ts (Background Service Worker)
   ```
-  File: app/api/analytics/usage/route.ts (NEW)
-  Architecture: From TASK.md "Phase 3: Abuse Detection & SLO Monitoring"
-  Pattern: Follow app/api/cache/stats/route.ts (query aggregation endpoint)
+  File: sploot-extension/entrypoints/background/image-fetcher.ts
 
   Interface:
-    GET /api/analytics/usage
-    Response: {
-      uploadsLastHour: number
-      uploadsLastDay: number
-      uploadsLast7Days: number
-      estimatedCost: number
-      isSustainedHighRate: boolean
-    }
+  export async function fetchImage(url: string): Promise<Blob>
+
+  Hidden Implementation:
+  - fetch(url) using background context (bypasses CORS via host_permissions)
+  - Validate Content-Type is image/*
+  - Max size check: 10MB (match server MAX_FILE_SIZE)
+  - Fallback: Try <img crossOrigin="anonymous"> + canvas if fetch fails
+  - Error handling: Invalid URL, network errors, non-image content
+
+  Pattern: Use existing upload validation from lib/upload/upload-validation-service.ts
+
+  Success:
+  - Fetches images from any origin (Twitter CDN, Reddit, etc.)
+  - Returns Blob with correct MIME type
+  - Rejects non-images and oversized files
+
+  Test:
+  - Unit: Mock fetch, test CORS scenarios, size limits
+  - Integration: Fetch real images from Twitter, Reddit
+
+  Dependencies: host_permissions in manifest
+
+  Time: 2-3h
+  ```
+
+- [ ] Implement api-client.ts (Shared Module)
+  ```
+  File: sploot-extension/shared/api-client.ts
+
+  Interface (Simple):
+  export async function uploadImage(blob: Blob, filename?: string): Promise<UploadResult>
+
+  interface UploadResult {
+    assetId: string;
+    blobUrl: string;
+    thumbnailUrl: string;
+  }
+
+  Hidden Implementation:
+  - POST https://sploot.app/api/upload (existing endpoint)
+  - FormData: file, metadata: { source: 'chrome-extension' }
+  - Authorization: Bearer ${await getAuthToken()}
+  - Timeout: 10s (abort if slower)
+  - Error parsing: Match existing API error format
+  - Progress: Not needed for Phase 1 (add in Phase 2)
+
+  Pattern: Reuse FormData construction from components/upload/upload-zone.tsx
+
+  Success:
+  - Upload completes in <3s for 2MB image
+  - Server deduplication works (duplicate returns existing asset)
+  - 401 error triggers re-auth
+
+  Test:
+  - Integration: Upload real image, verify appears in sploot.app library
+  - Unit: Mock fetch, test error handling (401, 500, network)
+
+  Dependencies: auth-manager.ts, existing /api/upload endpoint
+
+  Time: 2h
+  ```
+
+- [ ] Implement notification feedback (Background Service Worker)
+  ```
+  File: sploot-extension/entrypoints/background/notifications.ts
+
+  Interface:
+  export function showSuccessNotification(filename: string): void
+  export function showErrorNotification(error: string): void
 
   Implementation:
-    1. Auth: Require userId
-    2. Query Prisma:
-       - Count assets created in last hour (createdAt > now - 1 hour)
-       - Count assets created in last 24 hours
-       - Count assets created in last 7 days
-    3. Calculate cost: uploadCount × $0.00022
-    4. Detect sustained pattern:
-       - Query uploads by hour for last 2 hours
-       - If both hours > 200 uploads: isSustainedHighRate = true
-    5. Return JSON
+  - chrome.notifications.create() with icon, title, message
+  - Success: "Saved to Sploot" with thumbnail preview
+  - Error: Clear message + "Retry" button (Phase 2)
 
-  Dependencies:
-    - @/lib/auth/server (getAuth)
-    - @prisma/client (prisma)
-
-  Success:
-    - GET /api/analytics/usage returns correct counts
-    - Cost calculated correctly ($0.00022 per upload)
-    - Sustained pattern detection works (>200/hour for 2 consecutive hours)
-    - Auth required (401 without token)
-
-  Test Strategy:
-    Integration test:
-      - Seed database with test uploads (different timestamps)
-      - Call endpoint, verify counts match expected
-      - Test sustained pattern detection (seed >200 uploads in 2 consecutive hours)
-
-  Time: 1hr
+  Pattern:
+  ```typescript
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icon-128.png'),
+    title: 'Saved to Sploot',
+    message: filename,
+    priority: 1
+  });
   ```
 
-### SLO Monitoring Documentation
+  Success:
+  - Notification appears immediately after upload
+  - Auto-dismisses after 5s
+  - Works on all platforms (Mac, Windows, Linux)
 
-- [x] Document Vercel log queries for SLO monitoring in OBSERVABILITY.md
+  Test: Manual testing, verify notification UX
+
+  Dependencies: notifications permission in manifest
+
+  Time: 1h
   ```
-  File: OBSERVABILITY.md (NEW)
-  Architecture: From TASK.md "Phase 3: Abuse Detection & SLO Monitoring"
-  Pattern: Operational playbook with queries and troubleshooting
 
-  Sections:
-    1. Introduction: What this playbook covers
-    2. SLO Monitoring Queries:
-       - Search P95 latency: Query logs for operation="search", calculate P95 of duration
-       - Upload P95 latency: Query logs for operation="upload", calculate P95 of duration
-       - Error rate: Query logs for level="error", group by route
-    3. Cost Monitoring Queries:
-       - Daily burn rate: Query logs for "usage_metric" tag, sum cost field per user
-       - Monthly projection: Daily burn × 30
-    4. Alert Thresholds (Phase 2 implementation):
-       - 100 uploads/hour (supports bulk imports)
-       - 500 uploads/day (weekend collection import)
-       - Sustained >200/hour for >2 hours (likely abuse)
-    5. How to Query Vercel Logs:
-       - Access logs: Vercel Dashboard → Project → Logs
-       - Filter by operation, level, traceId
-       - Export logs for analysis
-    6. How to Use Sentry:
-       - Finding errors: Sentry Dashboard → Issues
-       - Setting alerts: Sentry Dashboard → Alerts
-       - Error grouping and deduplication
-    7. Troubleshooting Guide:
-       - "No logs appearing": Check traceId, verify instrumentation
-       - "Missing events": Check Do Not Track, verify Analytics installed
-       - "Sentry not capturing": Check SENTRY_DSN env var, verify initialization
+### Integration & Testing
+
+- [ ] End-to-end flow testing (Phase 1 acceptance)
+  ```
+  Test Scenarios:
+  1. Fresh install → Login → Right-click image → Upload → Success notification
+  2. Existing sploot.app session → Install extension → Auto-authenticated
+  3. Right-click on Twitter image → Save → Appears in sploot.app library
+  4. Duplicate image → Server returns existing asset (no duplicate upload)
+  5. Network error → Error notification shown
+  6. 401 error (expired token) → Re-auth triggered
+
+  Sites to Test (CORS + CSP variety):
+  - Twitter (twitter.com, x.com)
+  - Reddit (reddit.com)
+  - Discord (discord.com - requires login)
+  - Imgur (imgur.com)
+  - GitHub (github.com)
+  - Wikipedia (wikipedia.org)
 
   Success:
-    - Document created with all sections
-    - Queries are copy-paste ready (with placeholders for project-specific values)
-    - Troubleshooting guide covers common issues
+  - Upload completes <3s on all sites
+  - No CORS errors in console
+  - Duplicate detection works
 
-  Time: 2hr
+  Test Strategy: Manual testing checklist, no automated tests yet
+
+  Time: 3-4h (iterative debugging)
   ```
 
 ---
 
-## Phase 4: Cleanup & Documentation (Day 7)
+## Phase 2: Crop Tool + Offline Queue (Week 2)
 
-### Code Cleanup
+### Visual Crop Overlay
 
-- [x] Delete unused lib/performance.ts
+- [ ] Implement crop-overlay.tsx (Content Script)
   ```
-  File: lib/performance.ts (DELETE)
-  Reason: Replaced by lib/performance-monitor.ts (0 imports, 309 unused lines)
+  File: sploot-extension/entrypoints/content/crop-overlay.tsx
 
-  Verification:
-    - grep -r "from.*performance'" --include="*.ts" --include="*.tsx"
-    - Should return 0 matches (except performance-monitor.ts)
+  Interface (React Component):
+  export function CropOverlay({ onCapture, onCancel }: Props)
 
-  Success: File deleted, no import errors, build succeeds
-  Time: 5min
-  ```
+  Props:
+  - onCapture: (blob: Blob) => void
+  - onCancel: () => void
 
-- [x] Remove TODO comment from app/api/telemetry/route.ts
-  ```
-  File: app/api/telemetry/route.ts
-  Line: 38-39
-  Change: Delete "// TODO: Send to external monitoring service" comment
+  Hidden Implementation:
+  - Semi-transparent overlay (rgba(0,0,0,0.5))
+  - Draggable selection rectangle (mouse down → drag → mouse up)
+  - Coordinate math: Account for page scroll (window.scrollY)
+  - ESC key → onCancel(), Enter key → onCapture()
+  - chrome.tabs.captureVisibleTab() → Crop canvas to selection
+  - Shadow DOM for CSS isolation (prevent site styles from breaking overlay)
 
-  Success: Comment removed (already implemented in Phase 1)
-  Time: 2min
-  ```
+  Pattern: Similar to existing screenshot extensions (Awesome Screenshot)
+  Research: Web search found "Crop It!" extension pattern
 
-- [x] Audit and remove raw console.log calls in favor of structured logger
-  ```
-  Files: All application files (lib/, app/, components/, hooks/)
-  Pattern: Find console.log calls, replace with logger.logInfo
+  UI State Machine:
+  1. Idle → Mouse down → Dragging
+  2. Dragging → Mouse up → Selection Ready
+  3. Selection Ready → Enter → Capturing → Done
+  4. Any state → ESC → Cancelled
 
-  Commands:
-    grep -r "console\\.log" --include="*.ts" --include="*.tsx" lib/ app/ components/ hooks/
+  Success:
+  - Overlay appears in <100ms
+  - Drag creates visible rectangle
+  - Enter captures selection and uploads
+  - Works on complex sites (Twitter, Reddit)
 
-  Exclusions (keep console.log):
-    - lib/logger.ts (dev logger, intentional)
-    - __tests__/** (test files, debugging okay)
+  Test:
+  - Manual: Activate on various sites, test drag UX
+  - Unit: Mock canvas operations, test coordinate math
 
-  Replacements:
-    // Before:
-    console.log('Upload completed', { assetId, size });
+  Dependencies: tabs permission, React in content script
 
-    // After:
-    import { logger } from '@/lib/observability-logger';
-    logger.logInfo('Upload completed', { assetId, size });
-
-  Success: All production console.log replaced, build succeeds
-  Time: 1hr (depends on number of occurrences)
+  Time: 6-8h (includes UX iteration)
   ```
 
-### Documentation Updates
-
-- [x] Update CLAUDE.md with observability patterns section
+- [ ] Register keyboard shortcut (Background Service Worker)
   ```
-  File: /Users/phaedrus/Development/sploot/CLAUDE.md (MODIFY)
-  Location: Add new section after "## Architecture" or similar
+  File: sploot-extension/entrypoints/background/commands.ts
 
-  Content to Add:
-    ## Observability Patterns
+  Implementation:
+  - chrome.commands.onCommand listener for "capture-screenshot"
+  - Inject crop-overlay.tsx into active tab
+  - Pass message to content script: { type: 'SHOW_CROP_OVERLAY' }
 
-    **Analytics Tracking**: Use lib/analytics.ts for all event tracking
-    - Import: `import { track, ANALYTICS_EVENTS } from '@/lib/analytics'`
-    - Client-side: `track({ name: 'upload_completed', properties: { assetId, size } })`
-    - Server-side: Use `trackServer()` with await
+  Pattern:
+  ```typescript
+  chrome.commands.onCommand.addListener(async (command) => {
+    if (command === 'capture-screenshot') {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      await chrome.tabs.sendMessage(tab.id, { type: 'SHOW_CROP_OVERLAY' });
+    }
+  });
+  ```
 
-    **Performance Monitoring**: Use lib/performance-monitor.ts for timing
-    - Import: `import { getPerformanceMonitor, PERF_OPERATIONS } from '@/lib/performance-monitor'`
-    - Usage: `perfMonitor.measureAsync(PERF_OPERATIONS.UPLOAD_SINGLE, async () => { ... })`
+  Success:
+  - Cmd+Shift+S (Mac) / Ctrl+Shift+S (Windows) shows overlay
+  - Works on any tab
+  - Doesn't conflict with browser shortcuts
 
-    **Structured Logging**: Use lib/observability-logger.ts, NOT console.log
-    - Import: `import { logger } from '@/lib/observability-logger'`
-    - Info: `logger.logInfo('Operation completed', { assetId, duration })`
-    - Error: `logger.logError('Operation failed', error, { assetId })`
-    - Timing: `logger.logTiming('upload', duration, true, { size })`
+  Test: Manual testing on Mac + Windows
 
-    **API Route Instrumentation**: Wrap all new routes with withObservability
-    - Template:
-      ```typescript
-      import { withObservability } from '@/lib/with-observability';
+  Dependencies: crop-overlay.tsx implemented
 
-      async function handler(req: NextRequest) {
-        // route logic
-      }
+  Time: 1-2h
+  ```
 
-      export const POST = withObservability(handler, { operation: 'my-route' });
-      ```
+- [ ] Implement screenshot capture and crop logic
+  ```
+  File: sploot-extension/shared/screenshot.ts
 
-    **Error Handling**: All telemetry wrapped in try-catch, never throws
-    - Telemetry failures logged to console, execution continues
-    - User flows never blocked by observability failures
+  Interface:
+  export async function captureAndCrop(bounds: SelectionBounds): Promise<Blob>
 
-  Success: Section added, examples clear, patterns documented
+  interface SelectionBounds {
+    x: number; y: number; width: number; height: number;
+  }
+
+  Hidden Implementation:
+  - chrome.tabs.captureVisibleTab({ format: 'png' }) → dataUrl
+  - Load dataUrl into Image element
+  - Create canvas with selection dimensions
+  - ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height)
+  - canvas.toBlob() → Blob with type 'image/png'
+
+  Success:
+  - Cropped image matches user selection
+  - Image quality good (no pixelation)
+  - Works on high-DPI displays (devicePixelRatio)
+
+  Test:
+  - Integration: Capture various selections, verify crop accuracy
+  - Unit: Mock canvas operations
+
+  Dependencies: tabs permission (activeTab)
+
+  Time: 3-4h
+  ```
+
+### Offline Upload Queue
+
+- [ ] Implement upload-queue.ts (Background Service Worker)
+  ```
+  File: sploot-extension/entrypoints/background/upload-queue.ts
+
+  Interface:
+  export async function queueUpload(blob: Blob, metadata: ImageMetadata): Promise<string>
+  export async function getPendingCount(): Promise<number>
+  export async function processQueue(): Promise<void>
+
+  Hidden Implementation:
+  - IndexedDB schema (reuse pattern from lib/upload-queue.ts):
+    - id, blob, filename, mimeType, size, addedAt, status, retryCount, error
+  - Auto-retry: Exponential backoff (1s, 2s, 4s), max 3 attempts
+  - Network detection: navigator.onLine event listener
+  - Background Sync API: self.registration.sync.register('upload-queue')
+  - Storage quota: Warn at 80%, auto-cleanup >7 days old
+
+  Pattern: Directly port lib/upload-queue.ts logic to extension context
+
+  Success:
+  - Failed upload automatically queues
+  - Offline → online transition triggers retry
+  - Badge shows pending count
+  - Old uploads auto-cleaned
+
+  Test:
+  - Integration: Disconnect network, save image, reconnect, verify auto-upload
+  - Unit: Mock IndexedDB, test retry logic
+
+  Dependencies: idb library (pnpm add idb)
+
+  Time: 4-5h
+  ```
+
+- [ ] Implement badge counter (Background Service Worker)
+  ```
+  File: sploot-extension/entrypoints/background/badge.ts
+
+  Interface:
+  export function updateBadge(count: number): void
+
+  Implementation:
+  - chrome.action.setBadgeText({ text: count > 0 ? String(count) : '' })
+  - chrome.action.setBadgeBackgroundColor({ color: '#7C5CFF' }) (Sploot violet)
+  - Update on queue changes: after queueUpload(), after processQueue()
+
+  Success:
+  - Badge shows "3" when 3 uploads pending
+  - Badge clears when queue empty
+  - Color matches Sploot brand
+
+  Test: Manual testing, queue uploads while offline
+
+  Dependencies: upload-queue.ts
+
   Time: 30min
   ```
 
-- [x] Add JSDoc comments to all observability modules
+- [ ] Background Sync API integration
   ```
-  Files:
-    - lib/analytics.ts
-    - lib/performance-monitor.ts
-    - lib/observability-logger.ts
-    - lib/with-observability.ts
+  File: sploot-extension/entrypoints/background/sync.ts
 
-  Pattern: Add JSDoc for all exported functions and types
-  Example:
-    /**
-     * Track a custom analytics event with type-safe validation.
-     *
-     * Events are sent to Vercel Analytics via sendBeacon (client) or
-     * server-side track API. All PII is automatically sanitized.
-     *
-     * @param event - Typed analytics event with name and properties
-     * @throws Never - Errors caught internally and logged to console
-     *
-     * @example
-     * ```typescript
-     * track({
-     *   name: 'upload_completed',
-     *   properties: { assetId: '123', duration: 1500 }
-     * });
-     * ```
-     */
-    export function track(event: AnalyticsEvent): void { ... }
+  Implementation:
+  - Register sync tag: await self.registration.sync.register('upload-queue')
+  - Sync event listener: self.addEventListener('sync', handleSync)
+  - handleSync: Call processQueue() if tag matches
 
-  Success: All exported APIs documented, examples provided
-  Time: 1hr
+  Pattern:
+  ```typescript
+  self.addEventListener('sync', (event) => {
+    if (event.tag === 'upload-queue') {
+      event.waitUntil(processQueue());
+    }
+  });
   ```
 
-### Validation & Testing
+  Success:
+  - Offline uploads sync when browser detects network
+  - Works even if extension popup closed
 
-- [ ] Run full test suite and validate coverage
-  ```
-  Commands:
-    pnpm test:coverage
+  Test: Offline → queue uploads → close extension → go online → verify uploads
 
-  Acceptance:
-    - All unit tests pass
-    - Coverage >80% for new modules:
-      - lib/analytics.ts
-      - lib/performance-monitor.ts
-      - lib/observability-logger.ts
-      - lib/with-observability.ts
-    - Integration tests pass (telemetry, Prisma middleware)
+  Dependencies: Service worker registration
 
-  Success: All tests pass, coverage meets target
-  Time: 15min (test execution)
+  Time: 2h
   ```
 
-- [ ] Validate 100% API route coverage
+---
+
+## Phase 3: Polish + Chrome Web Store (Week 3)
+
+### Popup UI
+
+- [ ] Build popup.tsx (React)
   ```
-  Method: Manual audit of all route files
+  File: sploot-extension/entrypoints/popup/App.tsx
 
-  Check:
-    - All 25 routes use withObservability or manual instrumentation
-    - No routes missing traceId logging
-    - Build succeeds without TypeScript errors
+  Components:
+  - AuthButton: Login/logout + user avatar
+  - UploadStatus: Recent uploads list + pending queue
+  - QuickActions: Capture screenshot button, settings link
 
-  Audit Command:
-    grep -r "export.*function (GET|POST|PUT|DELETE|PATCH)" app/api --include="*.ts" | \
-    grep -v "withObservability"
+  UI Layout:
+  - Header: Logo + user avatar
+  - Body: Upload history (last 10) with thumbnails
+  - Footer: Pending queue count + "View Library" link
 
-    # Output should be empty or only routes with manual instrumentation
+  Design: Reuse Sploot design tokens (--color-primary-violet, etc.)
 
-  Success: All routes instrumented, audit command returns empty or documented exceptions
-  Time: 30min
-  ```
+  Success:
+  - Shows authenticated user
+  - Lists recent uploads (cached in chrome.storage.local)
+  - Shows pending queue count with "View Queue" link
+  - Opens sploot.app/app on "View Library" click
 
-- [ ] Test error scenarios (Sentry down, network offline, etc.)
-  ```
-  Scenarios:
-    1. Sentry API unavailable:
-       - Mock Sentry.captureException to throw error
-       - Trigger error boundary
-       - Verify: Error logged locally, app continues
+  Test: Manual testing, verify all UI states (logged in/out, empty/populated)
 
-    2. Network offline (client):
-       - Disconnect network
-       - Trigger analytics event
-       - Verify: sendBeacon queues, no console errors
+  Dependencies: React, Tailwind CSS via WXT
 
-    3. Analytics blocked by ad blocker:
-       - Install ad blocker, block Vercel Analytics domain
-       - Trigger analytics event
-       - Verify: No console errors, app continues
-
-    4. Prisma middleware failure:
-       - Mock getPerformanceMonitor to throw
-       - Execute database query
-       - Verify: Query succeeds, error logged
-
-  Success: All scenarios gracefully degraded, no user-facing errors
-  Time: 1hr
+  Time: 4-5h
   ```
 
-### Production Validation
+- [ ] Implement upload history cache
+  ```
+  File: sploot-extension/shared/upload-cache.ts
 
-- [ ] Deploy to preview and validate observability
+  Interface:
+  export async function cacheUpload(upload: CachedUpload): Promise<void>
+  export async function getRecentUploads(limit: number): Promise<CachedUpload[]>
+
+  interface CachedUpload {
+    assetId: string;
+    filename: string;
+    thumbnailUrl: string;
+    uploadedAt: number;
+  }
+
+  Implementation:
+  - chrome.storage.local.set/get
+  - Max 50 cached uploads (LRU eviction)
+  - Used by popup to show recent uploads without API call
+
+  Success:
+  - Popup loads instantly (no API delay)
+  - Shows last 10 uploads
+
+  Test: Upload multiple images, verify cache population
+
+  Dependencies: None
+
+  Time: 1-2h
+  ```
+
+### Extension Icons & Branding
+
+- [ ] Design extension icons
+  ```
+  Icons Needed:
+  - icon-16.png (toolbar)
+  - icon-32.png (chrome://extensions)
+  - icon-48.png (extensions manager)
+  - icon-128.png (Chrome Web Store)
+
+  Design:
+  - Violet gradient (Sploot brand color #7C5CFF)
+  - Simple "S" logomark or sploot icon
+  - SVG → PNG export at multiple sizes
+
+  Tool: Figma or script (scripts/generate-icons.js pattern)
+
+  Success:
+  - Icons look crisp on retina displays
+  - Match Sploot web app branding
+  - Recognizable at 16px
+
+  Test: Load extension, verify icons in toolbar + extensions page
+
+  Dependencies: Design assets or generation script
+
+  Time: 2-3h (design iteration)
+  ```
+
+### Error Handling & Sentry
+
+- [ ] Add Sentry integration
+  ```
+  File: sploot-extension/shared/sentry.ts
+
+  Setup:
+  - @sentry/browser for content scripts + popup
+  - @sentry/browser (service worker context) for background
+  - Sentry.init() in each context with existing SENTRY_DSN
+  - User context: setUser({ id: clerkUserId, email })
+  - Custom context: source: 'chrome-extension'
+
+  Pattern: Match existing sentry.client.config.ts patterns
+
+  Success:
+  - Errors from extension appear in Sentry dashboard
+  - Tagged with chrome-extension source
+  - User context includes Clerk user ID
+
+  Test: Trigger error, verify appears in Sentry
+
+  Dependencies: @sentry/browser, SENTRY_DSN env var
+
+  Time: 2-3h
+  ```
+
+- [ ] Improve error messages and recovery
+  ```
+  Error Scenarios:
+  1. Network error → "Upload failed. Added to queue, will retry when online"
+  2. 401 Unauthorized → "Session expired. Click to login again" (trigger re-auth)
+  3. 413 Payload Too Large → "Image too large (max 10MB). Try a smaller image"
+  4. Unknown error → "Something went wrong. Retry?" (with retry button)
+
+  Implementation:
+  - Map API error codes to user-friendly messages
+  - Add retry buttons to error notifications
+  - Log full error to Sentry, show friendly message to user
+
+  Success:
+  - All errors have clear recovery path
+  - No raw error messages shown (no "NetworkError: CORS")
+
+  Test: Trigger each error scenario, verify message + recovery
+
+  Dependencies: notifications.ts
+
+  Time: 2-3h
+  ```
+
+### Chrome Web Store Submission
+
+- [ ] Create Chrome Web Store listing
+  ```
+  Assets Needed:
+  - Screenshots (1280x800): Show right-click save + crop tool
+  - Promotional tile (440x280): Sploot branding
+  - Description (max 132 chars): "Save memes from any website to your Sploot library with one click"
+  - Detailed description: Feature list, privacy policy link
+  - Privacy policy URL: sploot.app/privacy
+
+  Category: Productivity
+
+  Success:
+  - Listing looks professional
+  - Screenshots show key features
+  - Description clear and compelling
+
+  Test: Preview listing in Chrome Web Store Developer Dashboard
+
+  Dependencies: Chrome Web Store developer account ($5 one-time)
+
+  Time: 3-4h (writing + screenshot creation)
+  ```
+
+- [ ] Production build and submission
   ```
   Steps:
-    1. Deploy branch to Vercel preview
-    2. Execute all flows:
-       - Upload file
-       - Search
-       - Favorite/delete asset
-       - Add/remove tag
-       - Trigger error boundary (throw in component)
-    3. Check dashboards:
-       - Vercel Analytics: Verify custom events appear
-       - Vercel Speed Insights: Verify Web Vitals captured
-       - Vercel Logs: Verify structured JSON logs with traceId
-       - Sentry: Verify errors captured with context
-    4. Query logs:
-       - Find request by traceId
-       - Verify timing logged correctly
-       - Verify error correlation (same traceId across services)
+  1. Update version in wxt.config.ts (1.0.0)
+  2. Build production: pnpm build
+  3. Test production build locally (load .output/chrome-mv3/)
+  4. Create zip: pnpm zip
+  5. Upload to Chrome Web Store Developer Dashboard
+  6. Submit for review (1-3 days)
 
-  Acceptance:
-    - All events visible in Vercel Analytics
-    - Logs queryable by traceId in Vercel
-    - Errors grouped in Sentry
-    - Web Vitals data in Speed Insights
+  Pre-submission Checklist:
+  - All permissions justified in description
+  - Privacy policy published at sploot.app/privacy
+  - No console errors or warnings
+  - Tested on Mac + Windows Chrome
+  - Sentry configured for production
 
-  Time: 1hr
+  Success:
+  - Extension approved by Chrome Web Store
+  - Published and installable via chrome.google.com/webstore
+
+  Test: Install from store, verify functionality identical to dev build
+
+  Dependencies: All features complete
+
+  Time: 2-3h (submission process + waiting)
+  ```
+
+- [ ] Create demo video
+  ```
+  Script (30 seconds):
+  1. Browse Twitter/Reddit (3s)
+  2. Right-click image → "Save to Sploot" (3s)
+  3. Notification "Saved to Sploot" (2s)
+  4. Open sploot.app → image appears in library (4s)
+  5. Press Cmd+Shift+S → crop overlay (3s)
+  6. Drag selection → capture (3s)
+  7. Search for saved meme → results (3s)
+  8. End card: "Add to Sploot" logo + install link (4s)
+
+  Tool: ScreenFlow, QuickTime + iMovie, or Loom
+
+  Success:
+  - Shows both capture methods (right-click + crop)
+  - Demonstrates key value prop (<2s save time)
+  - Professional quality (no stutters)
+
+  Test: Share with 3-5 people, get feedback
+
+  Dependencies: Extension working in production
+
+  Time: 3-4h (recording + editing)
   ```
 
 ---
 
 ## Design Iteration Checkpoints
 
-**After Phase 1 (Core Modules Complete)**:
-- Review module boundaries: Are interfaces simple enough? Too simple (shallow)?
-- Identify emerging patterns: Common code to extract? Duplication across modules?
-- Check dependencies: Circular imports? Too many dependencies per module?
-- Refactor opportunity: Before adding 22 more routes, polish the pattern
+### After Phase 1 (Day 5)
+- Review: Is Clerk WebSSO working smoothly? Fallback needed?
+- Review: Are CORS issues handled on all tested sites?
+- Review: Does upload flow feel <2s? Where's latency?
+- Decision: Proceed to Phase 2 or iterate on auth/upload
 
-**After Phase 2 (Comprehensive Coverage)**:
-- Review instrumentation consistency: All routes follow same pattern? Outliers?
-- Identify coupling: Routes tightly coupled to observability? Easy to remove?
-- Test coverage: Integration tests catching real issues? False positives?
-- Performance impact: Measure actual overhead (<5ms target). Optimize if needed.
+### After Phase 2 (Day 10)
+- Review: Is crop tool UX intuitive? Do users discover it?
+- Review: Does offline queue handle all failure modes?
+- Review: Is badge counter useful or distracting?
+- Decision: Proceed to Phase 3 or iterate on crop/queue
 
-**After Phase 3 (Monitoring)**:
-- Usage analytics: Queries returning useful data? Missing metrics?
-- SLO monitoring: Alerts firing correctly? False positives? Missing alerts?
-- Documentation: OBSERVABILITY.md clear? Missing troubleshooting steps?
-- Refactor opportunity: Repeated query patterns → extract to utility functions
+### After Phase 3 (Day 15)
+- Review: Does extension feel like "native Sploot"?
+- Review: Are error messages clear? Recovery paths obvious?
+- Review: Is Chrome Web Store listing compelling?
+- Decision: Submit or iterate on polish
+
+---
+
+## Out of Scope (Defer to Post-Launch)
+
+**These are valuable but not needed for MVP:**
+
+- Firefox/Safari ports (WXT makes this easy post-launch)
+- Bulk selection (select multiple images at once)
+- Tag input during save (conflicts with quick-save philosophy)
+- Custom keyboard shortcuts (use browser default Ctrl+Shift+S)
+- Progress indicators for uploads (most complete <2s)
+- Full-page screenshot (crop tool covers this use case)
+- In-app tutorial overlay (Chrome Web Store video sufficient)
+- Analytics events in extension (rely on server-side upload tracking)
+- Settings page (no settings needed for MVP)
+
+Move to BACKLOG.md if requested by users post-launch.
 
 ---
 
 ## Automation Opportunities
 
-**After Implementation Complete**:
-1. **ESLint Rule**: Enforce structured logger usage (no raw console.log in production)
-   - Custom rule: "no-console" with exceptions for lib/logger.ts and __tests__
-   - Auto-fix: Replace console.log with logger.logInfo (future enhancement)
+**Repetitive tasks to script:**
+1. Extension packaging: `pnpm zip` already exists via WXT
+2. Icon generation: Could create script similar to `scripts/generate-icons.js`
+3. Screenshot automation: Playwright could capture demo screenshots
+4. Version bumping: Script to update wxt.config.ts + package.json versions
 
-2. **Route Template**: Generate withObservability wrapper boilerplate
-   - Script: `pnpm generate:route --name=my-route` creates instrumented template
-   - Template includes: withObservability wrapper, operation name, basic error handling
-
-3. **Analytics Event Generator**: Generate TypeScript types from event schema
-   - Define events in JSON schema or YAML
-   - Generate AnalyticsEvent discriminated union automatically
-   - Ensures event definitions stay in sync with tracking code
-
-4. **Test Coverage Report**: Automated check for observability module coverage
-   - CI fails if coverage <80% on lib/analytics.ts, lib/performance-monitor.ts, etc.
-   - Report missing tests to PR comments
+**Not worth automating for 3-week project:**
+- Chrome Web Store upload (manual process, 1-time)
+- Demo video recording (too creative, manual better)
+- E2E testing (manual sufficient for MVP, add post-launch)
 
 ---
 
-## Notes
+## Success Metrics
 
-**Phase 1 Critical Path**:
-Must complete in order: Install deps → Analytics → Logger → Middleware → Telemetry
-Reason: Dependencies flow Analytics ← Logger ← Middleware
+**Phase 1 Acceptance**:
+- [ ] Right-click any image on Twitter → "Save to Sploot" → Upload completes <3s
+- [ ] Duplicate image returns existing asset (no re-upload)
+- [ ] Works on 10+ sites (Twitter, Reddit, Discord, Imgur, GitHub, etc.)
+- [ ] Logged into sploot.app → Extension auto-authenticates
 
-**Parallelization Opportunities**:
-- Phase 1: Performance Monitor + Prisma middleware can be done in parallel with other modules (no dependencies)
-- Phase 2: All 22 route instrumentations can be done in parallel (independent)
-- Phase 2: Client analytics (upload, search, library) can be done in parallel
-- Phase 3: Usage endpoint + OBSERVABILITY.md can be done in parallel
+**Phase 2 Acceptance**:
+- [ ] Cmd+Shift+S → Overlay appears <100ms → Drag selection → Upload completes
+- [ ] Offline save → queues → online → auto-uploads
+- [ ] Badge shows pending count, clears when queue empty
 
-**Testing Philosophy** (from DESIGN.md):
-- Minimize mocking (heavy mocking = design smell)
-- Test behavior, not implementation
-- Mock external services (Vercel Analytics, Sentry) - network calls expensive
-- Use real Prisma for integration tests - validates actual SQL queries
+**Phase 3 Acceptance**:
+- [ ] Popup shows last 10 uploads with thumbnails
+- [ ] All errors have clear recovery (retry, re-auth)
+- [ ] Chrome Web Store review approved
+- [ ] <5 error reports in first 50 installs (via Sentry)
 
-**Time Estimate Summary**:
-- Phase 1: 13hr (core modules, critical routes, Prisma middleware)
-- Phase 2: 8hr (remaining routes, client analytics, error boundaries)
-- Phase 3: 3hr (usage endpoint, monitoring documentation)
-- Phase 4: 5hr (cleanup, documentation, validation)
-- **Total: 29hr (~1 week at 4-5hr/day or 3-4 full days)**
+**Overall Success** (30 days post-launch):
+- [ ] 60%+ of weekly active users install extension
+- [ ] Extension uploads represent 40%+ of total uploads
+- [ ] Average save time <2s (P95)
+- [ ] <2% error rate on uploads
+
+---
+
+**Total Estimated Time**: 60-75 hours (15-18 days @ 4-5 hours/day)
+
+**Next Step**: Create feature branch `git checkout -b feat/chrome-extension`
