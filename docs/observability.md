@@ -41,8 +41,14 @@ Comprehensive guide to monitoring, debugging, and maintaining Sploot in producti
 ## Health Checks
 
 ### Production Health Endpoint
+
+**CLI Verification:**
 ```bash
-curl https://sploot.app/api/health | jq
+# Production (custom domain - no auth required)
+curl -L https://sploot.app/api/health | jq
+
+# Preview deployments (*.vercel.app URLs have deployment protection)
+# These require Vercel authentication or bypass token
 ```
 
 **Expected Response:**
@@ -206,10 +212,27 @@ Monitor in Neon console:
 
 ### Configure Alerts Script
 
+**Fully CLI-Based Approach:**
+
 ```bash
-export SENTRY_AUTH_TOKEN="your_token_here"
+# Pull SENTRY_AUTH_TOKEN from Vercel environment
+vercel env pull .env.sentry.local --environment production
+
+# Extract and use the token
+export SENTRY_AUTH_TOKEN=$(grep SENTRY_AUTH_TOKEN .env.sentry.local | cut -d'=' -f2 | tr -d '"')
+
+# Run the alert configuration script
 bash scripts/configure-sentry-alerts.sh
+
+# Clean up temporary file
+rm .env.sentry.local
 ```
+
+**Configured Alerts:**
+- ✅ Production: New Error Type (ID: 16434801)
+  - Triggers on first occurrence of new errors in production
+  - Sends email to issue owners
+  - Throttle: 30 minutes between notifications
 
 ## Troubleshooting
 
