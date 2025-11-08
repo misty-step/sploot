@@ -1,4 +1,5 @@
 import { setupAuthListeners } from './background/auth-manager';
+import { setupContextMenu } from './background/context-menu';
 
 export default defineBackground(() => {
   console.log('Sploot extension background worker started');
@@ -6,5 +7,8 @@ export default defineBackground(() => {
   // Initialize authentication manager
   setupAuthListeners();
 
-  // Context menu and other background handlers will be registered here
+  // Initialize context menu
+  setupContextMenu();
+
+  console.log('Sploot extension initialized successfully');
 });
