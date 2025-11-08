@@ -219,3 +219,107 @@ EMBEDDINGS_API_URL=
 - Validate file types and sizes on upload
 - Sanitize filenames and metadata
 - Use signed URLs for blob storage access
+
+## Observability & Monitoring
+
+### Dashboard Links
+
+**Sentry (Error Tracking):**
+- Production Issues: https://sentry.io/organizations/misty-step/issues/?project=sploot
+- Performance: https://sentry.io/organizations/misty-step/performance/?project=sploot
+- Alerts: https://sentry.io/organizations/misty-step/alerts/sploot/
+
+**Vercel (Hosting & Analytics):**
+- Deployments: https://vercel.com/moomooskycow/sploot
+- Analytics: https://vercel.com/moomooskycow/sploot/analytics
+- Environment Variables: https://vercel.com/moomooskycow/sploot/settings/environment-variables
+
+**Neon (Database):**
+- Console: https://console.neon.tech/
+- Project: lively-lake-63852609 (neon-amber-lamp)
+- Branches: main (production), development (dev), preview/* (auto-created)
+
+**Clerk (Authentication):**
+- Dashboard: https://dashboard.clerk.com/
+
+### Health Checks
+
+**Production Health Endpoint:**
+```bash
+curl https://sploot.app/api/health | jq
+```
+
+Returns database connectivity, Sentry configuration, and response times.
+
+**Deployment Validation:**
+```bash
+pnpm validate:deployment
+```
+
+Checks environment variables, database, Sentry, TypeScript compilation, and performance.
+
+### Database Environment Separation
+
+| Environment | Branch | Endpoint |
+|-------------|--------|----------|
+| Production | `main` | `ep-broad-credit-adnne0ox-pooler` |
+| Development | `development` | `ep-round-unit-adq9jm2y-pooler` |
+| Preview | Auto-created | Unique per PR |
+
+**Neon Integration:** Installed - automatically creates database branches for preview deployments.
+
+### Error Tracking
+
+**Sentry Configuration:**
+- Server-side: Captures via `instrumentation.ts` and `lib/auth/server.ts`
+- Client-side: Error boundaries in `app/error.tsx` and `app/app/error.tsx`
+- Session replay: 0% routine, 100% error sessions
+- PII scrubbing: Emails, tokens, sensitive headers automatically redacted
+
+**Auth Error Handling:**
+- Database sync failures don't block authentication
+- Errors logged and reported to Sentry
+- Graceful degradation allows users to continue
+
+### Analytics
+
+**Vercel Analytics:** Configured in `app/layout.tsx`
+- Custom events: Upload, search, asset actions, tag operations
+- Web Vitals: CLS, LCP, FCP, FID, TTFB
+- Type-safe event tracking via `lib/analytics.ts`
+
+### Alert Configuration
+
+**Sentry Alerts:**
+```bash
+export SENTRY_AUTH_TOKEN="your_token"
+bash scripts/configure-sentry-alerts.sh
+```
+
+Configured:
+- New error types in production (email notification)
+
+Manual configuration required (Sentry UI):
+- High error rate (>10/hour)
+- Crash-free sessions (<98%)
+
+### Troubleshooting
+
+See `docs/observability.md` for comprehensive troubleshooting guide covering:
+- Deployment failures
+- Database connection issues
+- Sentry not capturing errors
+- Performance degradation
+
+### Maintenance Scripts
+
+```bash
+# Validate deployment readiness
+pnpm validate:deployment
+
+# Configure Sentry alerts
+bash scripts/configure-sentry-alerts.sh
+
+# List Neon branches
+neonctl branches list --project-id "lively-lake-63852609" --api-key "$NEON_API_KEY"
+```
