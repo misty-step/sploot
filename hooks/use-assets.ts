@@ -327,20 +327,30 @@ export function useAssets(options: UseAssetsOptions = {}) {
   }, []);
 
   const deleteAsset = useCallback((id: string) => {
+    // Collect analytics event before state update
+    let eventToTrack: { name: string; properties: Record<string, any> } | null = null;
+
     setAssets((prev) => {
       const assetToRemove = prev.find((asset) => asset.id === id);
       if (assetToRemove) {
-        track({
+        // Collect event data (don't emit inside updater function)
+        eventToTrack = {
           name: 'asset_deleted',
           properties: {
             assetId: assetToRemove.id,
             hadTags: Boolean(assetToRemove.tags && assetToRemove.tags.length > 0),
           },
-        });
+        };
       }
       return prev.filter((asset) => asset.id !== id);
     });
+
     setTotal((prev) => Math.max(0, prev - 1));
+
+    // Emit collected analytics event after state update completes
+    if (eventToTrack) {
+      track(eventToTrack as any);
+    }
   }, []);
 
   const refresh = useCallback(() => {

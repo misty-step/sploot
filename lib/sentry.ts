@@ -198,9 +198,19 @@ function resolveRelease(): string | undefined {
 export function createSentryOptions(target: SentryTarget): SentryInitOptions {
   const dsn = resolveDsn(target);
   const enabled = shouldEnableSentry(dsn);
+
+  // Environment-aware sampling rates:
+  // - Production: 10% (cost-effective, sufficient for monitoring)
+  // - Preview: 10% (same as production for consistency)
+  // - Development/local: 100% (full tracing for debugging)
+  const environment = resolveEnvironment();
+  const defaultSampleRate = (environment === 'development' || process.env.NODE_ENV === 'development')
+    ? 1.0  // Full sampling in development
+    : DEFAULT_TRACES_SAMPLE_RATE;  // 10% in production/preview
+
   const tracesSampleRate = parseSampleRate(
     process.env.SENTRY_TRACES_SAMPLE_RATE,
-    DEFAULT_TRACES_SAMPLE_RATE
+    defaultSampleRate
   );
 
   const options: SentryInitOptions = {

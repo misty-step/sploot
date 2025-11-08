@@ -82,6 +82,8 @@ export async function trackServer(event: AnalyticsEvent): Promise<void> {
 /**
  * Track a funnel step for multi-step flows.
  *
+ * Respects the browser's Do Not Track setting and never throws.
+ *
  * @param flowName - Identifier for the flow (e.g. `upload_wizard`).
  * @param step - Descriptive step name within the flow.
  * @param metadata - Optional contextual data for the step.
@@ -92,6 +94,11 @@ export function trackFlow(
   metadata?: Record<string, any>
 ): void {
   try {
+    // Respect Do Not Track (client-side only)
+    if (typeof window !== 'undefined' && navigator.doNotTrack === '1') {
+      return;
+    }
+
     const sanitized = metadata ? sanitizeEventProperties(metadata) : {};
     vercelTrack(`flow:${flowName}:${step}`, sanitized);
   } catch (error) {
@@ -106,6 +113,8 @@ export function trackFlow(
  * Vercel Analytics API. Client-side calls are synchronous, server-side calls are
  * async but fire-and-forget to avoid blocking.
  *
+ * Respects the browser's Do Not Track setting (client-side only) and never throws.
+ *
  * @param operation - Unique operation identifier.
  * @param duration - Duration in milliseconds.
  * @param success - Whether the operation completed successfully.
@@ -118,6 +127,11 @@ export function trackTiming(
   metadata?: Record<string, any>
 ): void {
   try {
+    // Respect Do Not Track (client-side only)
+    if (typeof window !== 'undefined' && navigator.doNotTrack === '1') {
+      return;
+    }
+
     const sanitized = metadata ? sanitizeEventProperties(metadata) : {};
     const eventName = `timing:${operation}`;
     const properties = {

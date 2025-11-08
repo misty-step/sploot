@@ -27,7 +27,7 @@ async function getHandler(request: NextRequest) {
   // Authenticate user
   const { userId } = await auth();
   if (!userId) {
-    return new Response('Unauthorized', { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   // Get asset IDs from query params

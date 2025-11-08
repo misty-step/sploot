@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { logger } from '@/lib/observability-logger';
 
 /**
@@ -436,6 +437,3 @@ export function useUploadRecovery(
 
   return { checking, recoveredCount };
 }
-
-// React import for hooks
-import { useState, useEffect } from 'react';
