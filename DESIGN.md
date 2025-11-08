@@ -81,11 +81,12 @@ export function trackTiming(operation: string, duration: number, success: boolea
 - Client: Use `@vercel/analytics` `track()` with `navigator.sendBeacon` for reliability
 - Server: Use `@vercel/analytics/server` `track()` with Next.js `waitUntil` for non-blocking
 - Do Not Track: Check `navigator.doNotTrack === '1'`, skip tracking if enabled
-- PII Sanitization: Redact email regex matches, hash user IDs (SHA-256), strip URL query params
+- PII Sanitization: Redact email regex matches, redact user IDs (no hashing for simpler privacy compliance), strip URL query params
 - Event Validation: Runtime check against AnalyticsEvent union, log validation errors to console
+- Privacy Rationale: Complete redaction (not hashing) prevents any potential PII leakage via rainbow tables or hash reversal
 
 **Dependencies**:
-- Requires: `@vercel/analytics`, `@vercel/analytics/server`, `crypto` (for hashing)
+- Requires: `@vercel/analytics`, `@vercel/analytics/server`
 - Used by: All client components (hooks), API routes (via withObservability)
 
 **Data Structures**:

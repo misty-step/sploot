@@ -137,7 +137,7 @@
     - export function trackTiming(operation, duration, success, metadata): void
 
   Internal Functions (hidden complexity):
-    - sanitizeEventProperties(props): Redact emails, hash user IDs, strip query params
+    - sanitizeEventProperties(props): Redact emails, redact user IDs (no hashing for privacy compliance), strip query params
     - isValidAnalyticsEvent(event): Runtime validation against type union
     - checkDoNotTrack(): Client-side only, return navigator.doNotTrack === '1'
 
@@ -156,7 +156,7 @@
   Test Strategy:
     Unit tests in __tests__/lib/analytics.test.ts:
       - Event validation (valid events pass, invalid rejected)
-      - PII sanitization (emails redacted, user IDs hashed, URLs stripped)
+      - PII sanitization (emails redacted, user IDs redacted, URLs stripped)
       - Do Not Track (tracking skipped when enabled)
       - Server vs client detection (calls correct API)
     Mock: @vercel/analytics, navigator.sendBeacon
@@ -172,7 +172,7 @@
   Test Cases:
     1. Valid events pass validation
     2. Invalid events rejected with console.warn
-    3. PII sanitization: emails → '[REDACTED]', user IDs → hashed
+    3. PII sanitization: emails → '[REDACTED]', user IDs → '[REDACTED]' (no hashing)
     4. URL sanitization: query params stripped
     5. Do Not Track: tracking skipped when navigator.doNotTrack === '1'
     6. Server vs client: calls correct Vercel API based on environment
