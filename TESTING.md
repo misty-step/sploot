@@ -2,26 +2,78 @@
 
 ## Prerequisites
 
-1. **Clerk Configuration**
-   - Login to [Clerk Dashboard](https://dashboard.clerk.com)
-   - Navigate to: Application → API Keys → Allowed Origins
-   - Add: `chrome-extension://` (wildcard for development)
-   - After first install, add specific extension ID
+### 1. Environment Setup
 
-2. **Environment Setup**
-   - Copy `.env.example` to `.env`
-   - Get Clerk publishable key from dashboard
-   - Update `.env`:
-     ```
-     VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
-     VITE_CLERK_SYNC_HOST=https://sploot.app
-     ```
+Copy `.env.example` to `.env` and configure:
 
-3. **Build Extension**
-   ```bash
-   pnpm install
-   pnpm build
-   ```
+```bash
+cp .env.example .env
+```
+
+Get credentials from [Clerk Dashboard](https://dashboard.clerk.com/last-active?path=api-keys):
+
+```env
+# Chrome Extension CRX ID (auto-generated in next step)
+CRX_PUBLIC_KEY=
+
+# Clerk Configuration
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+VITE_CLERK_SYNC_HOST=https://sploot.app
+CLERK_SECRET_KEY=sk_test_...
+```
+
+**Note**: You need both **Publishable Key** (for the extension) and **Secret Key** (for automated Clerk configuration).
+
+### 2. Generate Consistent Extension ID
+
+Generate a stable extension ID that won't change between builds:
+
+```bash
+pnpm install
+pnpm generate:crx-key
+```
+
+This creates:
+- `.crx-key.pem` - Private key (gitignored, keep secure)
+- Updates `.env` with `CRX_PUBLIC_KEY`
+- Outputs your extension ID
+
+**Output example**:
+```
+✅ CRX Key Generation Complete
+
+Extension ID: abcdefghijklmnopqrstuvwxyz123456
+Origin: chrome-extension://abcdefghijklmnopqrstuvwxyz123456
+```
+
+### 3. Configure Clerk (Automated)
+
+Add your extension ID to Clerk's allowed origins via API:
+
+```bash
+pnpm setup:clerk
+```
+
+This automatically:
+- Fetches current Clerk instance settings
+- Adds `chrome-extension://<YOUR_ID>` to allowed origins
+- Preserves existing web app origins
+
+**Output example**:
+```
+✅ Clerk Configuration Complete
+
+Updated allowed_origins:
+  - https://sploot.app
+  - http://localhost:3000
+  - chrome-extension://abcdefghijklmnopqrstuvwxyz123456
+```
+
+### 4. Build Extension
+
+```bash
+pnpm build
+```
 
 ## Loading Extension in Chrome
 
@@ -30,8 +82,9 @@
 3. Enable "Developer mode" (top right toggle)
 4. Click "Load unpacked"
 5. Select `.output/chrome-mv3` directory
-6. Note the Extension ID (shown under extension name)
-7. Add Extension ID to Clerk allowed origins (format: `chrome-extension://EXTENSION_ID`)
+6. Verify Extension ID matches the one from `pnpm generate:crx-key`
+
+**Note**: No manual Clerk configuration needed - `pnpm setup:clerk` already configured the extension origin.
 
 ## Test Scenarios
 
@@ -151,7 +204,8 @@ Open background service worker console:
 ### "Please login to sploot.app first" error
 1. Ensure you're logged into sploot.app in any Chrome tab
 2. Refresh extension popup
-3. Check Clerk dashboard: chrome-extension:// in allowed origins
+3. Verify Clerk configuration: `pnpm setup:clerk` (re-run if needed)
+4. Check extension ID matches: Compare output from `pnpm generate:crx-key` with `chrome://extensions`
 
 ### Extension not appearing in toolbar
 1. Check `chrome://extensions` → Extension is enabled

@@ -5,3 +5,4 @@ dist
 *.zip
 .env
 .env.local
+.crx-key.pem
