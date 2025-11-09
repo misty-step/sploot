@@ -65,8 +65,15 @@ if echo "$INSTANCE_RESPONSE" | grep -q '"errors"'; then
   exit 1
 fi
 
-# Extract current allowed_origins
-CURRENT_ORIGINS=$(echo "$INSTANCE_RESPONSE" | grep -o '"allowed_origins":\[[^]]*\]' || echo '[]')
+# Extract current allowed_origins (handle null case)
+if echo "$INSTANCE_RESPONSE" | grep -q '"allowed_origins":null'; then
+  # allowed_origins is null, treat as empty
+  CURRENT_ORIGINS="[]"
+  ORIGINS_JSON=""
+else
+  CURRENT_ORIGINS=$(echo "$INSTANCE_RESPONSE" | grep -o '"allowed_origins":\[[^]]*\]' || echo '[]')
+  ORIGINS_JSON=$(echo "$CURRENT_ORIGINS" | sed 's/"allowed_origins"://' || echo '')
+fi
 
 # Check if extension origin already exists
 if echo "$CURRENT_ORIGINS" | grep -q "$EXTENSION_ORIGIN"; then
@@ -79,12 +86,11 @@ if echo "$CURRENT_ORIGINS" | grep -q "$EXTENSION_ORIGIN"; then
   exit 0
 fi
 
-# Parse current origins and add extension origin
-# This preserves existing web app origins
-ORIGINS_JSON=$(echo "$INSTANCE_RESPONSE" | grep -o '"allowed_origins":\[[^]]*\]' | sed 's/"allowed_origins"://')
-
-# Add extension origin to array
-if [ "$ORIGINS_JSON" = "[]" ]; then
+# Handle null or empty allowed_origins
+if [ -z "$ORIGINS_JSON" ] || [ "$ORIGINS_JSON" = "null" ]; then
+  # null or missing - treat as empty array
+  NEW_ORIGINS='["'"$EXTENSION_ORIGIN"'"]'
+elif [ "$ORIGINS_JSON" = "[]" ]; then
   # Empty array - just add extension origin
   NEW_ORIGINS='["'"$EXTENSION_ORIGIN"'"]'
 else
