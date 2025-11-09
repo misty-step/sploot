@@ -32,15 +32,22 @@ Build: 203KB, TypeScript strict mode, ~1,000 LOC
 
 ## Phase 1: Validation Required (User Action)
 
-### Prerequisites
-- [ ] Configure Clerk dashboard
-  - Add `chrome-extension://` to allowed origins
-  - Add specific extension ID after first load
-  - **Time**: 15 minutes
-  - **Owner**: User (requires Clerk dashboard access)
+### Prerequisites (Automated Setup)
+- [ ] Configure environment
+  - Get Clerk keys from dashboard.clerk.com/last-active?path=api-keys
+  - Add to `sploot-extension/.env`: `VITE_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`
+  - **Time**: 5 minutes
+
+- [ ] Run automated setup
+  - `cd sploot-extension && pnpm generate:crx-key` (generates stable extension ID)
+  - `pnpm setup:clerk` (adds extension to Clerk via Backend API)
+  - `pnpm build` (build with consistent ID)
+  - **Time**: 2 minutes
+  - **No manual dashboard configuration required**
 
 ### Testing Checklist
-- [ ] Load extension in Chrome (`chrome://extensions` → Load unpacked)
+- [ ] Load extension in Chrome (`chrome://extensions` → Load unpacked → `.output/chrome-mv3`)
+- [ ] Verify extension ID matches output from `pnpm generate:crx-key`
 - [ ] Verify no console errors in background service worker
 - [ ] Test authentication flow (login to sploot.app → extension auto-authenticates)
 - [ ] Right-click save on 10+ sites (Twitter, Reddit, Discord, Imgur, GitHub, Wikipedia, Medium, LinkedIn, Instagram, Slack)
@@ -50,7 +57,7 @@ Build: 203KB, TypeScript strict mode, ~1,000 LOC
 
 **Acceptance**: All tests pass per `sploot-extension/TESTING.md`
 **Time**: 30-45 minutes
-**Blockers**: Clerk configuration must complete first
+**Blockers**: Environment configuration (Clerk keys)
 
 **Decision Point**: Proceed to Phase 2 only after Phase 1 validation succeeds
 

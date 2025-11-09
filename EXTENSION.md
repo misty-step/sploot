@@ -32,15 +32,25 @@ See extension repo for:
 ```bash
 cd /Users/phaedrus/Development/sploot-extension
 
-# Build extension
+# 1. Setup environment
 pnpm install
+cp .env.example .env
+# Add VITE_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY to .env
+
+# 2. Generate consistent extension ID
+pnpm generate:crx-key
+
+# 3. Configure Clerk (automated via API)
+pnpm setup:clerk
+
+# 4. Build extension
 pnpm build
 
-# Load in Chrome
-# 1. Open chrome://extensions
-# 2. Enable "Developer mode"
-# 3. Click "Load unpacked"
-# 4. Select .output/chrome-mv3 directory
+# 5. Load in Chrome
+# - Open chrome://extensions
+# - Enable "Developer mode"
+# - Click "Load unpacked"
+# - Select .output/chrome-mv3 directory
 ```
 
 ## Architecture Decision
@@ -74,10 +84,11 @@ Uses `@clerk/chrome-extension` for WebSSO:
 
 ### User Action Required
 
-1. **Configure Clerk**
-   - Login to dashboard.clerk.com
-   - Add `chrome-extension://` to allowed origins
-   - Add specific extension ID after first install
+1. **Configure Clerk** (Automated)
+   - Get Secret Key from dashboard.clerk.com (API Keys section)
+   - Add to `.env`: `CLERK_SECRET_KEY=sk_test_...`
+   - Run: `pnpm generate:crx-key && pnpm setup:clerk`
+   - No manual dashboard configuration needed
 
 2. **Run Tests**
    - Follow `sploot-extension/TESTING.md`
