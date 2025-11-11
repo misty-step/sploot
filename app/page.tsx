@@ -7,7 +7,7 @@ import { SearchInput } from "@/components/landing/search-input";
 import { ScrollIndicator } from "@/components/landing/scroll-indicator";
 import { AnimatedCircles } from "@/components/landing/animated-circles";
 import { CollectionGrid } from "@/components/landing/collection-grid";
-import { BenefitIcons } from "@/components/landing/benefit-icons";
+import { BenefitGrid } from "@/components/landing/benefit-grid";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ScrollChevron } from "@/components/landing/scroll-chevron";
 
@@ -131,7 +131,7 @@ export default async function Home() {
             <br />
             works everywhere.
           </h2>
-          <BenefitIcons />
+          <BenefitGrid />
           <Button
             asChild
             size="lg"

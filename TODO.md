@@ -51,7 +51,7 @@
   3. Globe icon: "Works Everywhere" / "Install as PWA. Works offline. Always accessible on any device."
   **success criteria**: Cards render in responsive grid, hover states work, typography hierarchy clear (headline > description), maintains 4px spacing system
 
-- [ ] Update landing page to use BenefitGrid
+- [x] Update landing page to use BenefitGrid
   **file**: `app/page.tsx`
   **line**: 134 (current BenefitIcons import)
   **changes**:
