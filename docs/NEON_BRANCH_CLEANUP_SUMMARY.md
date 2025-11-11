@@ -12,7 +12,7 @@ We've set up **automated cleanup** that deletes Neon database branches when Git 
 
 ### 1. Add GitHub Secrets
 
-Go to: https://github.com/phrazzld/sploot/settings/secrets/actions
+Go to: https://github.com/misty-step/sploot/settings/secrets/actions
 
 Add these two secrets:
 
@@ -76,7 +76,7 @@ It will automatically run when:
 
 1. Create a test PR
 2. Merge it
-3. Go to: https://github.com/phrazzld/sploot/actions
+3. Go to: https://github.com/misty-step/sploot/actions
 4. Check the "Cleanup Neon Database Branches" workflow ran
 5. Verify in Neon Console that the branch was deleted
 
@@ -101,7 +101,7 @@ Run the cleanup script to remove old branches:
 Check:
 1. Are GitHub secrets set? `gh secret list`
 2. Was the PR merged (not just closed)?
-3. Check workflow logs: https://github.com/phrazzld/sploot/actions
+3. Check workflow logs: https://github.com/misty-step/sploot/actions
 
 ### Branch Name Doesn't Match?
 
@@ -135,7 +135,7 @@ Or set this via the Neon API when creating branches programmatically.
 ## Resources
 
 - **Detailed Setup Guide**: `docs/NEON_BRANCH_CLEANUP_SETUP.md`
-- **GitHub Actions Logs**: https://github.com/phrazzld/sploot/actions
+- **GitHub Actions Logs**: https://github.com/misty-step/sploot/actions
 - **Neon Console**: https://console.neon.tech
 - **Neon Documentation**: https://neon.tech/guides/neon-github-actions-authomated-branching
 

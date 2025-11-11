@@ -147,7 +147,7 @@ export default async function Home() {
         <div className="max-w-6xl mx-auto text-center">
           <p className="font-mono text-xs text-muted-foreground">
             <a
-              href="https://github.com/phrazzld/sploot"
+              href="https://github.com/misty-step/sploot"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-foreground transition-colors"
