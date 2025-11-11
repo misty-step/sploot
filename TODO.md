@@ -1,1288 +1,611 @@
-# TODO: Comprehensive Observability & Analytics Implementation
+# TODO: Landing Page Conversion Optimization
 
 ## Context
 
-**Architecture**: Layered Observability Modules with HOF Middleware Pattern (see DESIGN.md)
-**PRD**: TASK.md - Comprehensive observability covering analytics, performance, errors
-**Key Pattern**: Reuses upload service orchestration pattern (thin coordinator, specialized services)
-**Test Pattern**: `__tests__/lib/[module].test.ts` (following existing convention)
-
-**Core Modules** (5 independent implementations):
-1. Analytics Service (`lib/analytics.ts`) - Type-safe event tracking
-2. Performance Monitor (`lib/performance-monitor.ts`) - Timing with percentiles
-3. Observability Logger (`lib/observability-logger.ts`) - Structured logging + Sentry
-4. Route Middleware (`lib/with-observability.ts`) - HOF wrapper for automatic instrumentation
-5. Telemetry API (`app/api/telemetry/route.ts`) - Client-side error/performance collection
-
-## review triage - 2025-11-05
-
-- [x] patch performance-monitor failure path  
-  **files**: `lib/performance-monitor.ts`, `__tests__/lib/performance-monitor.test.ts`  
-  **eta**: 1.5h  
-  **acceptance**: failures no longer emit success timings; new unit coverage asserts `trackFailure` skips `endTiming` and only fires a single analytics event.
-
-- [x] make withObservability catch blocks actually log + support plain `Request`  
-  **files**: `lib/with-observability.ts`, `__tests__/lib/with-observability.test.ts`  
-  **eta**: 2h  
-  **acceptance**: error branches log before rethrow, wrappers work when `nextUrl` is missing, regression suite covers both scenarios.
-
-- [x] hoist vitest mocks to kill `ReferenceError`  
-  **files**: `__tests__/lib/with-observability.test.ts`  
-  **eta**: 45m  
-  **acceptance**: tests pass under fake timers with `vi.hoisted`, no TDZ explosions in CI.
-
-- [x] sanitize client error telemetry payload  
-  **files**: `components/error-boundary.tsx`, `app/global-error.tsx`, `components/share/share-page-error-boundary.tsx`  
-  **eta**: 1.5h  
-  **acceptance**: telemetry strips stack traces + full URLs before POST; manual smoke shows scrubbed payload; docs updated to describe scope.
-
-- [ ] import hygiene + type compliance pass  
-  **files**: `lib/distributed-queue.ts`, `app/api/sse/embedding-updates/route.ts`, `lib/upload-queue.ts`  
-  **eta**: 1h  
-  **acceptance**: missing logger import restored, unauthorized SSE branch returns `NextResponse`, stray React import relocated to top; type-check passes.
-
-- [ ] calibrate sentry tracing sample rate  
-  **files**: `sentry.edge.config.ts`, `sentry.server.config.ts`  
-  **eta**: 45m  
-  **acceptance**: production sampling <=10%, local/dev keeps full sampling; configuration toggled via env override, docs updated to note rationale.
-
-- [ ] yank analytics side-effects out of state setters  
-  **files**: `hooks/use-assets.ts`, `__tests__/hooks/use-assets.test.ts` (add)  
-  **eta**: 2h  
-  **acceptance**: update/delete helpers collect events during setState then emit afterward; tests prove single emission even under double-invocation.
-
-- [ ] respect do-not-track everywhere  
-  **files**: `lib/analytics.ts`, `__tests__/lib/analytics.test.ts`  
-  **eta**: 1h  
-  **acceptance**: `trackFlow` + `trackTiming` short-circuit when DNT is enabled; coverage updated for both helpers.
-
-- [ ] sync docs with actual sanitization behavior  
-  **files**: `TODO.md`, `CLAUDE.md`  
-  **eta**: 30m  
-  **acceptance**: documentation states user IDs are redacted (not hashed) and cross-references privacy rationale.
-
-## Phase 1: Foundation & Core Modules (Days 1-2)
-
-### Setup & Dependencies
-
-- [x] Install @vercel/speed-insights and configure Sentry
-  ```
-  Commands:
-    pnpm add @vercel/speed-insights
-    npx @sentry/wizard@latest -i nextjs
-
-  Files Created by Wizard:
-    - instrumentation.ts
-    - sentry.client.config.ts
-    - sentry.server.config.ts
-    - sentry.edge.config.ts
-    - .sentryclirc (gitignored)
-    - sentry.properties (gitignored)
-    - Updates: next.config.ts, package.json
-
-  Success:
-    - pnpm install completes without errors
-    - Sentry wizard completes, test error captured in dashboard
-    - Build succeeds with new packages
-
-  Test: Run `pnpm build`, verify no errors. Visit Sentry dashboard, throw test error, confirm capture.
-
-  Time: 30min
-  ```
-
-- [x] Add SpeedInsights to app/layout.tsx
-  ```
-  File: app/layout.tsx
-  Architecture: Client component import, render after {children}
-  Pattern: Follow existing Analytics component integration (line 134)
-
-  Code:
-    import { SpeedInsights } from '@vercel/speed-insights/next';
-
-    // In return statement, after <Analytics />:
-    <SpeedInsights />
-
-  Success: Component renders, no console errors, Vercel dashboard shows Web Vitals
-  Test: Manual - Deploy to preview, check Vercel dashboard for Speed Insights data
-  Time: 10min
-  ```
-
-- [x] Update .gitignore with Sentry files
-  ```
-  File: .gitignore
-  Lines to Add:
-    # Sentry
-    .sentryclirc
-    sentry.properties
-
-  Success: Files added, `git status` doesn't show Sentry config files
-  Time: 5min
-  ```
-
-### Module 1: Analytics Service
-
-- [x] Implement lib/analytics.ts with type-safe event tracking
-  ```
-  File: lib/analytics.ts (NEW)
-  Architecture: Implements Module 1 interface from DESIGN.md section "Module 1: Analytics Service"
-  Pseudocode: See DESIGN.md "Algorithm 2: Analytics Event Tracking with PII Sanitization"
-  Pattern: Similar to lib/share.ts (utility functions with error handling)
-
-  Public Interface (from DESIGN.md):
-    - type AnalyticsEvent (discriminated union - 13 event types)
-    - export const ANALYTICS_EVENTS (event name constants)
-    - export function track(event: AnalyticsEvent): void
-    - export function trackServer(event: AnalyticsEvent): Promise<void>
-    - export function trackFlow(flowName, step, metadata): void
-    - export function trackTiming(operation, duration, success, metadata): void
-
-  Internal Functions (hidden complexity):
-    - sanitizeEventProperties(props): Redact emails, redact user IDs (no hashing for privacy compliance), strip query params
-    - isValidAnalyticsEvent(event): Runtime validation against type union
-    - checkDoNotTrack(): Client-side only, return navigator.doNotTrack === '1'
-
-  Dependencies:
-    - @vercel/analytics (client)
-    - @vercel/analytics/server (server)
-    - crypto (for SHA-256 hashing)
-
-  Success:
-    - All 13 AnalyticsEvent types defined with properties
-    - track() validates events, sanitizes PII, calls Vercel API
-    - trackServer() uses waitUntil pattern (non-blocking)
-    - Do Not Track respected (client-side only)
-    - All functions wrapped in try-catch (never throw)
-
-  Test Strategy:
-    Unit tests in __tests__/lib/analytics.test.ts:
-      - Event validation (valid events pass, invalid rejected)
-      - PII sanitization (emails redacted, user IDs redacted, URLs stripped)
-      - Do Not Track (tracking skipped when enabled)
-      - Server vs client detection (calls correct API)
-    Mock: @vercel/analytics, navigator.sendBeacon
-
-  Time: 2hr
-  ```
-
-- [x] Write unit tests for lib/analytics.ts
-  ```
-  File: __tests__/lib/analytics.test.ts (NEW)
-  Pattern: Follow __tests__/lib/metrics-collector.test.ts structure
-
-  Test Cases:
-    1. Valid events pass validation
-    2. Invalid events rejected with console.warn
-    3. PII sanitization: emails → '[REDACTED]', user IDs → '[REDACTED]' (no hashing)
-    4. URL sanitization: query params stripped
-    5. Do Not Track: tracking skipped when navigator.doNotTrack === '1'
-    6. Server vs client: calls correct Vercel API based on environment
-    7. Error handling: Vercel API failure caught, logged, doesn't throw
-
-  Mocks:
-    - jest.mock('@vercel/analytics')
-    - jest.mock('@vercel/analytics/server')
-    - jest.spyOn(console, 'warn')
-
-  Success: All tests pass, coverage >90%
-  Time: 1hr
-  ```
-
-### Module 2: Performance Monitor
-
-- [x] Implement lib/performance-monitor.ts with timing and percentiles
-  ```
-  File: lib/performance-monitor.ts (NEW)
-  Architecture: Implements Module 2 interface from DESIGN.md "Module 2: Performance Monitor"
-  Pseudocode: Copy PerformanceTracker class from lib/performance.ts, add Analytics integration
-  Pattern: Singleton pattern like existing (getGlobalPerformanceTracker)
-
-  Public Interface (from DESIGN.md):
-    - export function getPerformanceMonitor(): PerformanceMonitor
-    - class PerformanceMonitor {
-        startTiming(operation: string): void
-        endTiming(operation: string): number | undefined
-        measureAsync<T>(operation: string, fn: () => Promise<T>): Promise<T>
-        measureSync<T>(operation: string, fn: () => T): T
-        getSummary(operation: string): PerformanceSummary | null
-        getAllSummaries(): PerformanceSummary[]
-        reset(operation?: string): void
-      }
-    - export const PERF_OPERATIONS (operation name constants)
-
-  Internal Implementation (from lib/performance.ts):
-    - Circular buffer: Map<string, number[]> (last 100 samples)
-    - Percentile calculations: sort samples, index at Math.ceil(length * percentile)
-    - Debug mode: localStorage.getItem('debug_performance') === 'true' → console.log
-
-  New: Analytics Integration
-    - Call trackTiming() from lib/analytics.ts on endTiming() and measureAsync()
-    - Include operation name, duration, success (always true for perf metrics)
-
-  Dependencies:
-    - lib/analytics.ts (trackTiming function)
-
-  Success:
-    - PerformanceMonitor class with all methods implemented
-    - Circular buffer limits samples to 100 per operation
-    - Percentile calculations (P50, P95, P99) correct
-    - measureAsync() times async operations accurately
-    - Analytics integration: trackTiming() called on completion
-    - Debug mode works (localStorage flag enables console.log)
-
-  Test Strategy:
-    Unit tests in __tests__/lib/performance-monitor.test.ts:
-      - startTiming() + endTiming() calculates correct duration
-      - measureAsync() times async function correctly
-      - Circular buffer keeps last 100 samples, discards oldest
-      - Percentile calculations match expected values (P50, P95, P99)
-      - getSummary() returns correct statistics
-      - Analytics integration: trackTiming() called with correct data
-    Mock: lib/analytics.ts (trackTiming)
-
-  Time: 1.5hr
-  ```
-
-- [x] Write unit tests for lib/performance-monitor.ts
-  ```
-  File: __tests__/lib/performance-monitor.test.ts (NEW)
-  Pattern: Follow __tests__/lib/seeded-random.test.ts structure (pure functions)
-
-  Test Cases:
-    1. startTiming() + endTiming() measures duration correctly
-    2. endTiming() without startTiming() logs warning, returns undefined
-    3. measureAsync() times async operations (use setTimeout mock)
-    4. Circular buffer limits to 100 samples
-    5. Percentile calculations (P50, P95, P99) correct for known datasets
-    6. getSummary() returns all statistics
-    7. Analytics integration: trackTiming() called on endTiming()
-    8. Debug mode: localStorage flag enables console logging
-
-  Mocks:
-    - jest.mock('lib/analytics', () => ({ trackTiming: jest.fn() }))
-    - jest.spyOn(console, 'log')
-
-  Success: All tests pass, coverage >90%
-  Time: 1hr
-  ```
-
-### Module 3: Observability Logger
-
-- [x] Implement lib/observability-logger.ts with traceId and Sentry
-  ```
-  File: lib/observability-logger.ts (NEW)
-  Architecture: Implements Module 3 interface from DESIGN.md "Module 3: Structured Logger"
-  Base: Copy lib/vercel-logger.ts, enhance with traceId and timing methods
-  Pattern: Class-based logger with factory function (withTraceId)
-
-  Public Interface (from DESIGN.md):
-    - export function logInfo(context: string, metadata?): void
-    - export function logError(context: string, error: unknown, metadata?): void
-    - export function logTiming(operation, duration, success, metadata?): void
-    - export function withTraceId(traceId: string): ObservabilityLogger
-    - export interface ObservabilityLogger { /* same methods */ }
-    - export const logger: ObservabilityLogger (default instance, no traceId)
-
-  Internal Implementation:
-    - Class ObservabilityLoggerImpl implements ObservabilityLogger
-    - private traceId?: string (instance variable)
-    - JSON serialization: JSON.stringify() for all log entries
-    - Error normalization: Handle Error, string, unknown → { name, message, stack }
-    - Environment context: Add nodeEnv, vercelRegion, vercelUrl from process.env
-    - Sentry integration: Conditional import, call Sentry.captureException() in logError()
-    - Console routing: logInfo → console.log, logError → console.error
-
-  Dependencies:
-    - @sentry/nextjs (conditional import, graceful if missing)
-
-  Success:
-    - All log methods output structured JSON
-    - traceId included in log entries when set (via withTraceId)
-    - Sentry.captureException() called on logError() (if Sentry available)
-    - Error serialization handles Error objects, strings, unknown types
-    - Graceful degradation if Sentry unavailable
-
-  Test Strategy:
-    Unit tests in __tests__/lib/observability-logger.test.ts:
-      - logInfo() outputs JSON to console.log with correct structure
-      - logError() outputs JSON to console.error + calls Sentry
-      - logTiming() outputs JSON with duration and success fields
-      - withTraceId() creates logger with traceId in all log entries
-      - Error serialization: Error object → { name, message, stack }
-      - Sentry unavailable: logs locally only, doesn't throw
-    Mock: @sentry/nextjs, console.log, console.error
-
-  Time: 1.5hr
-  ```
-
-- [x] Write unit tests for lib/observability-logger.ts
-  ```
-  File: __tests__/lib/observability-logger.test.ts (NEW)
-  Pattern: Follow __tests__/lib/upload/deduplication-service.test.ts (service with external deps)
-
-  Test Cases:
-    1. logInfo() outputs JSON to console.log
-    2. logError() outputs JSON to console.error
-    3. logError() calls Sentry.captureException() with error + context
-    4. logTiming() outputs JSON with duration, success, operation
-    5. withTraceId() creates logger with traceId in all entries
-    6. Error serialization: Error → { name, message, stack }
-    7. Error serialization: string → { name: 'Error', message: string }
-    8. Sentry unavailable: catches import error, logs locally
-
-  Mocks:
-    - jest.mock('@sentry/nextjs', () => ({ captureException: jest.fn() }))
-    - jest.spyOn(console, 'log')
-    - jest.spyOn(console, 'error')
-
-  Success: All tests pass, coverage >90%
-  Time: 1hr
-  ```
-
-### Module 4: Route Middleware
-
-- [x] Implement lib/with-observability.ts HOF wrapper
-  ```
-  File: lib/with-observability.ts (NEW)
-  Architecture: Implements Module 4 interface from DESIGN.md "Module 4: API Route Middleware"
-  Pseudocode: See DESIGN.md "Algorithm 1: withObservability HOF Wrapper"
-  Pattern: HOF like hooks (e.g., hooks pattern wrapping functions)
-
-  Public Interface (from DESIGN.md):
-    - export function withObservability<T>(
-        handler: RouteHandler<T>,
-        options?: ObservabilityOptions
-      ): RouteHandler<T>
-    - type RouteHandler = (req: NextRequest, context?) => Promise<NextResponse>
-    - interface ObservabilityOptions {
-        operation?: string
-        skipTiming?: boolean
-        skipLogging?: boolean
-        metadata?: Record<string, any>
-      }
-
-  Internal Implementation (from DESIGN.md Algorithm 1):
-    1. Generate traceId: nanoid() (12 chars, URL-safe)
-    2. Extract operation: options.operation || pathname from req.url
-    3. Create logger: withTraceId(traceId)
-    4. Log request start (unless skipLogging)
-    5. Start performance timing (unless skipTiming)
-    6. Execute handler (try-catch)
-    7. Calculate duration, extract status code from response
-    8. Log timing and result
-    9. On error: Call unstable_rethrow(), log error with traceId, rethrow
-
-  Dependencies:
-    - nanoid (for traceId generation)
-    - lib/observability-logger.ts (withTraceId, logger)
-    - lib/performance-monitor.ts (getPerformanceMonitor)
-    - next/navigation (unstable_rethrow)
-
-  Success:
-    - Returns wrapped handler with same signature
-    - Generates unique traceId per request
-    - Logs request start, timing, result
-    - Errors logged with traceId, then rethrown (preserves Next.js error handling)
-    - unstable_rethrow() called before catch (allows Next.js redirects/not-found)
-    - Options (skipTiming, skipLogging) respected
-
-  Test Strategy:
-    Unit tests in __tests__/lib/with-observability.test.ts:
-      - Wrapped handler returns same result as original
-      - traceId generated (unique per call)
-      - Timing calculated correctly (startTime to endTime)
-      - Success determination: 200-399 = success, 400-599 = failure
-      - Error handling: logs error with traceId, then rethrows
-      - unstable_rethrow() called for Next.js errors
-      - Options: skipTiming and skipLogging work
-    Mock: NextRequest, NextResponse, nanoid, logger, perfMonitor
-
-  Time: 2hr
-  ```
-
-- [x] Write unit tests for lib/with-observability.ts
-  ```
-  File: __tests__/lib/with-observability.test.ts (NEW)
-  Pattern: Follow __tests__/hooks/use-file-validation.test.ts (function testing)
-
-  Test Cases:
-    1. Wrapped handler returns original handler's response
-    2. traceId generated (verify logger.withTraceId called)
-    3. Timing calculated: duration = endTime - startTime
-    4. Status code 200 → logged as success
-    5. Status code 500 → logged as failure
-    6. Error thrown → logged with traceId, then rethrown
-    7. unstable_rethrow() called before catch
-    8. Options.skipTiming: timing skipped
-    9. Options.skipLogging: logging skipped
-    10. Options.operation: custom operation name used
-
-  Mocks:
-    - jest.mock('nanoid', () => ({ nanoid: jest.fn(() => 'test-trace-id') }))
-    - jest.mock('lib/observability-logger')
-    - jest.mock('lib/performance-monitor')
-    - Mock NextRequest and NextResponse
-
-  Success: All tests pass, coverage >90%
-  Time: 1.5hr
-  ```
-
-### Module 5: Telemetry API Enhancement
-
-- [x] Enhance app/api/telemetry/route.ts with forwarding logic
-  ```
-  File: app/api/telemetry/route.ts (MODIFY)
-  Architecture: Implements Module 5 interface from DESIGN.md "Module 5: Telemetry API Endpoint"
-  Current: Stubbed with TODO comment (line 38)
-  Pattern: Follow app/api/upload/route.ts (service orchestration with validation)
-
-  Interface (HTTP API from DESIGN.md):
-    POST /api/telemetry
-    Body: { type: 'error' | 'performance' | 'usage', payload: <type-specific> }
-
-    Error payload: { name, message, stack, componentStack, url, timestamp }
-    Performance payload: { operation, duration, success, metadata }
-    Usage payload: { userId, action, count, timestamp, metadata }
-
-  Implementation:
-    1. Auth: Use existing getAuth(), require userId (return 401 if missing)
-    2. Validation: Type guards for error/performance/usage payloads (return 400 if invalid)
-    3. Error forwarding: Call Sentry.captureException() with error + user context
-    4. Performance forwarding: Call trackTiming() from lib/analytics.ts
-    5. Usage forwarding: Call logger.logInfo() with "usage_metric" tag
-    6. Non-blocking: Wrap all forwarding in try-catch, return 200 even on partial failure
-
-  Dependencies:
-    - @sentry/nextjs (captureException)
-    - lib/analytics.ts (trackTiming)
-    - lib/observability-logger.ts (logger)
-    - @/lib/auth/server (getAuth)
-
-  Success:
-    - POST with valid error payload → Forwarded to Sentry, returns 200
-    - POST with valid performance payload → Tracked in Analytics, returns 200
-    - POST with valid usage payload → Logged with "usage_metric", returns 200
-    - POST without auth → Returns 401
-    - POST with invalid payload → Returns 400
-    - Sentry failure → Logs error, returns 200 (non-blocking)
-
-  Test Strategy:
-    Integration tests in __tests__/api/telemetry.integration.test.ts:
-      - Error payload forwarded to Sentry
-      - Performance payload tracked in Analytics
-      - Usage payload logged with tag
-      - Auth required (401 without token)
-      - Invalid payload rejected (400)
-      - Sentry unavailable → returns 200 (graceful degradation)
-    Mock: Sentry, Analytics, Auth
-
-  Time: 1hr
-  ```
-
-- [x] Write integration tests for app/api/telemetry/route.ts
-  ```
-  File: __tests__/api/telemetry.integration.test.ts (NEW)
-  Pattern: Follow __tests__/api/* integration test structure
-
-  Test Cases:
-    1. POST /api/telemetry with error payload → Sentry.captureException called
-    2. POST /api/telemetry with performance payload → trackTiming called
-    3. POST /api/telemetry with usage payload → logger.logInfo called
-    4. POST without auth token → Returns 401
-    5. POST with invalid payload (missing fields) → Returns 400
-    6. POST with unknown type → Returns 400
-    7. Sentry API failure → Logs error, returns 200 (non-blocking)
-
-  Mocks:
-    - jest.mock('@sentry/nextjs')
-    - jest.mock('lib/analytics')
-    - jest.mock('@/lib/auth/server', () => ({ getAuth: jest.fn() }))
-
-  Success: All tests pass, coverage >90%
-  Time: 1hr
-  ```
-
-### Critical Routes Instrumentation
-
-- [x] Wrap 3 critical routes with withObservability
-  ```
-  Files:
-    - app/api/upload/route.ts (line 42, export async function POST)
-    - app/api/search/route.ts (line ~20, export async function POST)
-    - app/api/assets/route.ts (line ~15, export async function GET)
-
-  Architecture: Wrap existing handlers with withObservability HOF
-  Pattern:
-    // Before:
-    export async function POST(req: NextRequest) { ... }
-
-    // After:
-    import { withObservability } from '@/lib/with-observability';
-
-    async function handler(req: NextRequest) { ... }
-    export const POST = withObservability(handler, { operation: 'upload' });
-
-  Success:
-    - All 3 routes wrapped
-    - Build succeeds (no TypeScript errors)
-    - Routes function identically (no behavior change)
-    - Logs appear in Vercel with traceId (verify in preview deployment)
-
-  Test Strategy:
-    Manual verification:
-      - Deploy to preview
-      - Call each route (upload, search, get assets)
-      - Check Vercel logs for structured JSON with traceId
-      - Verify timing appears in logs
-
-  Time: 30min
-  ```
-
-### Prisma Middleware Integration
-
-- [x] Add Prisma middleware for database query timing
-  ```
-  File: lib/db.ts (MODIFY)
-  Architecture: Integration from DESIGN.md "Database: Prisma Middleware" section
-  Pseudocode: See DESIGN.md "Algorithm 3: Prisma Middleware for Query Timing"
-  Location: After PrismaClient initialization (line 24, after export const prisma)
-
-  Implementation (from DESIGN.md):
-    if (prismaClient) {
-      const { getPerformanceMonitor } = require('./performance-monitor');
-      const { logger } = require('./observability-logger');
-
-      prismaClient.$use(async (params, next) => {
-        const operation = `db:${params.model}:${params.action}`;
-        const startTime = Date.now();
-        const perfMonitor = getPerformanceMonitor();
-
-        perfMonitor.startTiming(operation);
-
-        try {
-          const result = await next(params);
-          const duration = Date.now() - startTime;
-          perfMonitor.endTiming(operation);
-
-          if (duration > 100) {
-            logger.logInfo('Slow query detected', { model: params.model, action: params.action, duration });
-          }
-
-          return result;
-        } catch (error) {
-          const duration = Date.now() - startTime;
-          perfMonitor.endTiming(operation);
-          logger.logError('Query failed', error, { model: params.model, action: params.action, duration });
-          throw error;
-        }
-      });
-    }
-
-  Dependencies:
-    - lib/performance-monitor.ts (getPerformanceMonitor)
-    - lib/observability-logger.ts (logger)
-
-  Success:
-    - Middleware registered (prismaClient.$use called)
-    - All queries timed automatically
-    - Slow queries (>100ms) logged
-    - Query failures logged with error details
-    - Build succeeds, no TypeScript errors
-
-  Test Strategy:
-    Integration test in __tests__/lib/db.integration.test.ts:
-      - Execute slow query (add setTimeout in middleware test)
-      - Verify logger.logInfo called with "Slow query detected"
-      - Execute failing query
-      - Verify logger.logError called with query details
-    Mock: logger, perfMonitor
-
-  Time: 30min
-  ```
+**Objective**: Evolve current minimalist landing page toward high-converting SaaS structure while preserving elegant aesthetic
+
+**Current State**:
+- Hero with logo, headline, search demo, single CTA
+- 2 feature sections (semantic search, personal library)
+- Benefits section with 3 icons
+- Minimal footer
+
+**Target State**: Add proven conversion elements:
+- Enhanced benefits grid (4 cards with descriptions)
+- "How it works" process timeline (3 steps)
+- Demo animation in hero
+- Social proof (testimonials or usage stats)
+- FAQ accordion
+- Strengthened final CTA section
+
+**Design Constraints**:
+- Maintain pure black background (#000000)
+- Keep Geist Sans + JetBrains Mono typography
+- Preserve light font weights (300-400)
+- Use neon violet (#7C5CFF) sparingly
+- 4px spacing system
+- Subtle animations (200-300ms)
+
+**Asset Strategy**:
+- Demo: Screen recording → optimized GIF
+- Icons: Lucide library (maintains consistency)
+- Process visuals: Custom SVG matching overlapping circles style
+- Social proof: Text-only testimonials or usage stats
 
 ---
 
-## Phase 2: Comprehensive Coverage (Days 3-4)
+## Phase 1: Benefits Grid Enhancement
 
-### Remaining API Routes Instrumentation
+### Core Implementation
 
-- [x] Wrap remaining 22 API routes with withObservability
+- [ ] Expand BenefitIcons component into full BenefitGrid
+  **file**: `components/landing/benefit-icons.tsx` → rename to `benefit-grid.tsx`
+  **changes**:
+  - Transform from 3 icons in row to 3-4 cards in responsive grid
+  - Add card structure: icon (Lucide) + headline (text-xl) + description (2 lines, text-muted-foreground)
+  - Grid: `grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12`
+  - Card styling: Minimal border, subtle hover effect, no background
+  **content**:
+  1. Lock icon: "Private & Secure" / "Your memes stay yours. Zero tracking, zero sharing."
+  2. Zap icon: "Lightning Fast" / "Search thousands of memes in milliseconds with AI-powered semantic search."
+  3. Globe icon: "Works Everywhere" / "Install as PWA. Works offline. Always accessible on any device."
+  **success criteria**: Cards render in responsive grid, hover states work, typography hierarchy clear (headline > description), maintains 4px spacing system
+
+- [ ] Update landing page to use BenefitGrid
+  **file**: `app/page.tsx`
+  **line**: 134 (current BenefitIcons import)
+  **changes**:
+  - Replace `<BenefitIcons />` with `<BenefitGrid />`
+  - Update import statement
+  - Adjust surrounding spacing if needed (maintain section padding)
+  **success criteria**: Benefits section renders correctly, responsive behavior works mobile→desktop, no layout shifts
+
+- [ ] Add unit tests for BenefitGrid component
+  **file**: `__tests__/components/landing/benefit-grid.test.tsx` (new)
+  **test cases**:
+  1. Renders 3 benefit cards with correct content
+  2. Icons render from lucide-react
+  3. Responsive grid classes applied
+  4. Hover states trigger (test className changes)
+  **success criteria**: All tests pass, coverage >80%
+
+---
+
+## Phase 2: "How It Works" Section
+
+### Visual Assets
+
+- [ ] Design 3 custom SVG illustrations for process steps
+  **files**: Create in `components/landing/process-icons/`
+  - `upload-icon.tsx`: Upward arrow + document (matches overlapping circles stroke style)
+  - `analyze-icon.tsx`: Circle with nodes/connections (AI processing visual)
+  - `search-icon.tsx`: Magnifying glass + results grid
+  **style constraints**:
+  - Stroke width: 2.5px (matches existing AnimatedCircles)
+  - Color: `className="stroke-primary"`
+  - Size: 120x120px viewBox
+  - Minimal, geometric style matching logo
+  **success criteria**: 3 SVG components export, render without errors, style matches overlapping circles aesthetic
+
+### Component Implementation
+
+- [ ] Create ProcessTimeline component
+  **file**: `components/landing/process-timeline.tsx` (new)
+  **structure**:
+  - Horizontal layout on desktop (flex-row)
+  - Vertical layout on mobile (flex-col)
+  - 3 steps with: Number badge → Icon → Headline → Description
+  **content**:
+  1. "Upload" / "Drag and drop your memes. We'll handle the rest."
+  2. "AI Analyzes" / "CLIP embeddings capture semantic meaning of every image."
+  3. "Search & Find" / "Type what you remember, get what you need instantly."
+  **styling**:
+  - Step numbers: Circular badge, monospace font, text-sm
+  - Icons: 120x120px, centered above text on mobile
+  - Headlines: text-2xl md:text-3xl, font-light
+  - Descriptions: text-lg, text-muted-foreground
+  - Connecting lines between steps (desktop only): 1px border, muted color
+  **success criteria**: Component renders responsively, animations on scroll (fade-in sequence), connecting lines hidden on mobile
+
+- [ ] Add ProcessTimeline section to landing page
+  **file**: `app/page.tsx`
+  **location**: Insert after section-personal-library (before section-benefits)
+  **structure**:
+  ```tsx
+  <section id="section-how-it-works" className="relative min-h-screen flex items-center border-t border-border px-6 py-12 md:py-20">
+    <div className="max-w-6xl mx-auto w-full text-center space-y-12">
+      <h2 className="text-4xl md:text-5xl lg:text-6xl font-light">
+        how it works
+      </h2>
+      <ProcessTimeline />
+    </div>
+  </section>
   ```
-  Files (25 total routes, 3 done in Phase 1, 22 remaining):
-    app/api/embeddings/image/route.ts
-    app/api/embeddings/text/route.ts
-    app/api/tags/route.ts
-    app/api/tags/[tagId]/route.ts
-    app/api/assets/[id]/route.ts
-    app/api/assets/[id]/share/route.ts
-    app/api/assets/[id]/tags/route.ts
-    app/api/assets/[id]/generate-embedding/route.ts
-    app/api/assets/[id]/embedding-status/route.ts
-    app/api/assets/batch/embedding-status/route.ts
-    app/api/assets/audit/route.ts
-    app/api/cron/purge-deleted-assets/route.ts
-    app/api/cron/process-embeddings/route.ts
-    app/api/cron/audit-assets/route.ts
-    app/api/search/advanced/route.ts
-    app/api/health/route.ts
-    app/api/health/services/route.ts
-    app/api/cache/stats/route.ts
-    app/api/upload-url/route.ts
-    app/api/upload/check/route.ts
-    app/api/sse/embedding-updates/route.ts
-    app/api/telemetry/route.ts (already done in Phase 1)
+  **success criteria**: Section renders between personal library and benefits, scroll indicator updated, section ID added for navigation
 
-  Pattern (same as Phase 1):
-    // Before:
-    export async function POST(req: NextRequest) { ... }
+- [ ] Update scroll indicators to include new section
+  **file**: `components/landing/scroll-chevron.tsx`
+  **changes**: Update scroll chain: semantic-search → personal-library → how-it-works → benefits
+  **success criteria**: Chevron navigation works through all 4 sections
 
-    // After:
-    import { withObservability } from '@/lib/with-observability';
+### Testing
 
-    async function handler(req: NextRequest, context?) { ... }
-    export const POST = withObservability(handler, {
-      operation: 'embeddings:image' // or appropriate name
-    });
+- [ ] Add unit tests for ProcessTimeline component
+  **file**: `__tests__/components/landing/process-timeline.test.tsx` (new)
+  **test cases**:
+  1. Renders 3 process steps with correct content
+  2. Icons import and render correctly
+  3. Responsive layout classes applied (flex-row desktop, flex-col mobile)
+  4. Connecting lines visible only on desktop (test media query classes)
+  **success criteria**: All tests pass, coverage >80%
 
-  Success:
-    - All 22 remaining routes wrapped
-    - Build succeeds
-    - Routes function identically
-    - Logs appear in Vercel with traceId for all routes
+---
 
-  Test: Deploy to preview, call each route, verify logs
-  Time: 2hr (5min per route × 22 routes + buffer)
+## Phase 3: Hero Demo Animation
+
+### Asset Creation
+
+- [ ] Record search interaction demo
+  **method**: Manual screen recording
+  **steps**:
+  1. Start local dev server (`pnpm dev`)
+  2. Populate library with 10-15 sample memes
+  3. Record 15-second clip: Type query → Results appear → Click result
+  4. Example query: "disappointed drake" or "success kid"
+  **output**: `demo-recording.mov` in project root (gitignored)
+  **success criteria**: Recording shows clear search interaction, 1920x1080 resolution, <15 seconds duration
+
+- [ ] Convert recording to optimized GIF
+  **tool**: ffmpeg
+  **command**:
+  ```bash
+  ffmpeg -i demo-recording.mov -vf "fps=15,scale=800:-1:flags=lanczos" -c:v gif -f gif public/demo/search-demo.gif
   ```
+  **optimization**: Reduce colors, 15fps, max width 800px
+  **target size**: <2MB
+  **success criteria**: GIF loops smoothly, file size <2MB, visually clear at small sizes
 
-### Client-Side Analytics: Upload Flow
+### Component Implementation
 
-- [x] Add analytics tracking to upload flow (hooks/use-upload-queue.ts)
-  ```
-  File: hooks/use-upload-queue.ts (MODIFY)
-  Architecture: Client-side flow tracking from DESIGN.md "FR1: User Behavior Analytics"
-  Events to Track:
-    - upload_file_selected: When user selects files (count, total size)
-    - upload_started: When upload begins (assetId, size)
-    - upload_completed: When upload finishes (assetId, duration, size)
-    - upload_failed: When upload fails (reason, size)
-
-  Implementation Locations:
-    - File selection: In handleFileSelect or wherever files are added to queue
-    - Upload start: In uploadFile function, before API call
-    - Upload complete: In uploadFile function, after successful API response
-    - Upload fail: In uploadFile function, catch block
-
-  Dependencies:
-    - lib/analytics.ts (track function)
-
-  Success:
-    - All 4 upload events tracked
-    - Events include correct metadata (size, duration, etc.)
-    - No errors in console
-    - Events visible in Vercel Analytics dashboard
-
-  Test Strategy:
-    Manual verification:
-      - Upload file in dev/preview
-      - Open browser DevTools Network tab
-      - Verify sendBeacon requests to Vercel Analytics
-      - Check Vercel Analytics dashboard for events
-
-  Time: 45min
-  ```
-
-### Client-Side Analytics: Search Flow
-
-- [x] Add analytics tracking to search flow (app/app/page.tsx or hooks)
-  ```
-  File: app/app/page.tsx (MODIFY) or hooks/use-search.ts if exists
-  Architecture: Client-side flow tracking from DESIGN.md "FR1: User Behavior Analytics"
-  Events to Track:
-    - search_query_submitted: When search initiated (query length, has filters)
-    - search_results_shown: When results displayed (count, latency, has filters)
-    - search_result_clicked: When user clicks result (position, score, assetId)
-    - search_no_results: When search returns 0 results (query)
-
-  Implementation Locations:
-    - Query submitted: In search input onChange or onSubmit
-    - Results shown: After successful API response
-    - Result clicked: In image grid onClick handler
-    - No results: In API response handler, if count === 0
-
-  Dependencies:
-    - lib/analytics.ts (track function)
-
-  Success:
-    - All 4 search events tracked
-    - Events include correct metadata
-    - No errors in console
-    - Events visible in Vercel Analytics dashboard
-
-  Test Strategy:
-    Manual verification:
-      - Search in dev/preview
-      - Click result
-      - Verify events in Vercel Analytics
-
-  Time: 45min
-  ```
-
-### Client-Side Analytics: Library Interactions
-
-- [x] Add analytics tracking to library interactions (hooks/use-assets.ts)
-  ```
-  File: hooks/use-assets.ts (MODIFY)
-  Architecture: Client-side flow tracking from DESIGN.md "FR1: User Behavior Analytics"
-  Events to Track:
-    - asset_favorited: When user favorites asset (assetId)
-    - asset_unfavorited: When user unfavorites (assetId)
-    - asset_deleted: When user deletes (assetId, had tags)
-    - tag_added: When tag added to asset (assetId, tagName)
-    - tag_removed: When tag removed (assetId, tagName)
-
-  Implementation Locations:
-    - Favorite: In toggleFavorite mutation, after successful API response
-    - Delete: In deleteAsset mutation, after successful API response
-    - Tags: In addTag/removeTag mutations, after successful API responses
-
-  Dependencies:
-    - lib/analytics.ts (track function)
-
-  Success:
-    - All 5 library interaction events tracked
-    - Events include correct metadata (assetId, tagName, hadTags)
-    - No errors in console
-    - Events visible in Vercel Analytics dashboard
-
-  Test Strategy:
-    Manual verification:
-      - Favorite, delete, add/remove tags in dev/preview
-      - Verify events in Vercel Analytics dashboard
-
-  Time: 45min
-  ```
-
-### Error Boundaries Telemetry Integration
-
-- [x] Update error boundaries to send telemetry
-  ```
-  Files:
-    - components/image-tile-error-boundary.tsx (MODIFY)
-    - components/share/share-page-error-boundary.tsx (MODIFY)
-
-  Architecture: React error boundaries from DESIGN.md "Algorithm 4: Client Error Boundary with Telemetry"
-  Pattern: Add componentDidCatch method if missing, send to /api/telemetry via sendBeacon
-
-  Implementation (from DESIGN.md):
-    componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-      // Send to telemetry endpoint (non-blocking)
-      if (navigator.sendBeacon) {
-        const blob = new Blob([JSON.stringify({
-          type: 'error',
-          payload: {
-            name: error.name,
-            message: error.message,
-            stack: error.stack,
-            componentStack: errorInfo.componentStack,
-            url: window.location.href,
-            timestamp: Date.now(),
-          },
-        })], { type: 'application/json' });
-
-        navigator.sendBeacon('/api/telemetry', blob);
-      }
-
-      console.error('Error boundary caught error:', error, errorInfo);
-      this.setState({ hasError: true });
-    }
-
-  Success:
-    - Both error boundaries send telemetry on error
-    - Uses sendBeacon with Blob (correct content-type)
-    - Non-blocking (wrapped in if check, no throw)
-    - Errors appear in Sentry dashboard
-
-  Test Strategy:
-    Manual verification:
-      - Trigger component error (throw in child component)
-      - Check Network tab for sendBeacon request
-      - Verify error in Sentry dashboard
-
-  Time: 30min
-  ```
-
-### Next.js Error Boundaries
-
-- [x] Create app/error.tsx with Sentry integration
-  ```
-  File: app/error.tsx (NEW)
-  Architecture: Next.js App Router error boundary from DESIGN.md "Integration Points"
-  Pattern: Follow Next.js App Router error.tsx convention
-
-  Implementation:
-    'use client';
-
-    import { useEffect } from 'react';
-    import * as Sentry from '@sentry/nextjs';
-
-    export default function Error({
-      error,
-      reset,
-    }: {
-      error: Error & { digest?: string };
-      reset: () => void;
-    }) {
-      useEffect(() => {
-        Sentry.captureException(error);
-      }, [error]);
-
-      return (
-        <div>
-          <h2>Something went wrong!</h2>
-          <button onClick={() => reset()}>Try again</button>
+- [ ] Create DemoAnimation component
+  **file**: `components/landing/demo-animation.tsx` (new)
+  **implementation**:
+  ```tsx
+  export function DemoAnimation() {
+    return (
+      <div className="relative w-full max-w-2xl mx-auto rounded-lg border border-border overflow-hidden">
+        <Image
+          src="/demo/search-demo.gif"
+          alt="Search demo showing semantic meme search"
+          width={800}
+          height={450}
+          className="w-full h-auto"
+          priority
+        />
+        <div className="absolute bottom-4 right-4 font-mono text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded">
+          live demo
         </div>
-      );
+      </div>
+    );
+  }
+  ```
+  **styling**: Minimal border, rounded corners, subtle shadow, "live demo" badge overlay
+  **success criteria**: Component renders GIF, maintains aspect ratio, priority loads (hero visible)
+
+- [ ] Add demo animation to hero section
+  **file**: `app/page.tsx`
+  **location**: Line ~56 (after SearchInput, before CTA button)
+  **changes**:
+  - Import DemoAnimation component
+  - Insert between SearchInput and Button with opacity fade-in animation
+  - Stagger animation timing: `opacity-0 animate-[fadeIn_1s_ease-out_0.35s_forwards]`
+  **success criteria**: Demo appears in hero, animation sequence flows naturally, doesn't delay CTA visibility
+
+### Testing
+
+- [ ] Add visual regression test for hero section
+  **file**: `__tests__/components/landing/demo-animation.test.tsx` (new)
+  **test cases**:
+  1. Renders Image component with correct src
+  2. Priority prop set (eager loading)
+  3. Alt text provided (accessibility)
+  4. Badge overlay renders with correct text
+  **success criteria**: All tests pass, component exports correctly
+
+---
+
+## Phase 4: Social Proof Section
+
+### Content Creation
+
+- [ ] Write 3 testimonial quotes
+  **format**: Quote (2-3 sentences) + Attribution (Name, Role)
+  **content strategy**:
+  - Testimonial 1: Search effectiveness ("Finally found that meme I saw 3 months ago in seconds")
+  - Testimonial 2: Organization value ("No more endless scrolling through camera roll")
+  - Testimonial 3: Speed/reliability ("Blazing fast even with 500+ memes")
+  **tone**: Genuine, specific, benefit-focused (not generic praise)
+  **success criteria**: 3 testimonials written, each 20-40 words, attribution includes role context
+
+### Component Implementation
+
+- [ ] Create TestimonialCard component
+  **file**: `components/landing/testimonial-card.tsx` (new)
+  **structure**:
+  ```tsx
+  interface TestimonialCardProps {
+    quote: string;
+    author: string;
+    role: string;
+  }
+  ```
+  **styling**:
+  - Quote: text-lg md:text-xl, font-light, leading-relaxed
+  - Attribution: text-sm, font-mono, text-muted-foreground
+  - Card: Minimal border, subtle padding, no background
+  - Opening quote: Large decorative quote mark (text-6xl, text-primary/20)
+  **success criteria**: Component renders quote with attribution, typography hierarchy clear, accessible
+
+- [ ] Create Testimonials section component
+  **file**: `components/landing/testimonials.tsx` (new)
+  **implementation**: Grid of 3 TestimonialCard components
+  **layout**: `grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12`
+  **success criteria**: 3 testimonials render in responsive grid, equal height cards on desktop
+
+- [ ] Add Testimonials section to landing page
+  **file**: `app/page.tsx`
+  **location**: After section-how-it-works (before section-benefits)
+  **structure**:
+  ```tsx
+  <section className="relative min-h-screen flex items-center border-t border-border px-6 py-12 md:py-20">
+    <div className="max-w-6xl mx-auto w-full space-y-12">
+      <h2 className="text-4xl md:text-5xl lg:text-6xl font-light text-center">
+        loved by meme enthusiasts
+      </h2>
+      <Testimonials />
+    </div>
+  </section>
+  ```
+  **success criteria**: Section renders with centered headline, testimonials grid below
+
+### Testing
+
+- [ ] Add unit tests for testimonial components
+  **file**: `__tests__/components/landing/testimonials.test.tsx` (new)
+  **test cases**:
+  1. TestimonialCard renders quote and attribution
+  2. Testimonials grid renders 3 cards
+  3. Responsive grid classes applied
+  **success criteria**: All tests pass, coverage >80%
+
+---
+
+## Phase 5: FAQ Accordion
+
+### Content Creation
+
+- [ ] Write 6 FAQ entries
+  **file**: Create `content/landing-faq.ts` for content management
+  **questions**:
+  1. "Is Sploot really free?" → "Yes, completely free..."
+  2. "How does semantic search work?" → "We use CLIP embeddings..."
+  3. "Where are my memes stored?" → "Securely in Vercel Blob..."
+  4. "Can I export my library?" → "Yes, bulk download..."
+  5. "Does it work offline?" → "Yes, PWA capabilities..."
+  6. "What image formats are supported?" → "JPEG, PNG, WebP, GIF..."
+  **content strategy**: Short questions (5-8 words), detailed answers (2-3 sentences), technical but accessible
+  **success criteria**: 6 Q&A pairs written, answers address common user concerns, exported from central content file
+
+### Component Implementation
+
+- [ ] Create FAQAccordion component
+  **file**: `components/landing/faq-accordion.tsx` (new)
+  **features**:
+  - Controlled accordion (only one open at a time)
+  - Smooth expand/collapse animation (height transition 300ms)
+  - Chevron rotation indicator
+  - Keyboard accessible (arrow keys, enter to toggle)
+  **styling**:
+  - Question: text-lg md:text-xl, font-normal, interactive hover state
+  - Answer: text-base, text-muted-foreground, padding-top when expanded
+  - Dividers: 1px border-border between items
+  - Chevron: Custom SVG or Lucide ChevronDown icon, rotates 180deg when open
+  **state management**: useState for activeIndex
+  **success criteria**: Accordion opens/closes smoothly, only one item open at a time, keyboard navigation works, animations feel native
+
+- [ ] Add FAQ section to landing page
+  **file**: `app/page.tsx`
+  **location**: After testimonials section (before final benefits/CTA section)
+  **structure**:
+  ```tsx
+  <section className="relative min-h-screen flex items-center border-t border-border px-6 py-12 md:py-20">
+    <div className="max-w-3xl mx-auto w-full space-y-12">
+      <h2 className="text-4xl md:text-5xl lg:text-6xl font-light text-center">
+        frequently asked questions
+      </h2>
+      <FAQAccordion />
+    </div>
+  </section>
+  ```
+  **success criteria**: FAQ section renders with centered headline, accordion below, max-width constrains line length for readability
+
+### Testing
+
+- [ ] Add unit tests for FAQAccordion component
+  **file**: `__tests__/components/landing/faq-accordion.test.tsx` (new)
+  **test cases**:
+  1. Renders all 6 FAQ items
+  2. Clicking question opens answer panel
+  3. Opening one item closes previously open item
+  4. Chevron icon rotates on open/close
+  5. Keyboard navigation works (Enter toggles, Arrow keys navigate)
+  **mocks**: Mock faq content from content/landing-faq.ts
+  **success criteria**: All tests pass, coverage >80%, accessibility tests included
+
+---
+
+## Phase 6: Final CTA Enhancement
+
+### Component Updates
+
+- [ ] Create enhanced CTASection component
+  **file**: `components/landing/cta-section.tsx` (new)
+  **structure**:
+  - Large headline: "Start building your library"
+  - Subheadline: "Free forever. No credit card required."
+  - Primary CTA button: "Create free account" (larger, more prominent)
+  - Secondary link: "View demo" (subtle, text link)
+  - Optional: Small trust indicator ("Join 1,000+ meme enthusiasts")
+  **styling**:
+  - Headline: text-5xl md:text-6xl lg:text-7xl, font-light, tracking-tight
+  - Subheadline: text-xl md:text-2xl, text-muted-foreground, font-mono
+  - Primary button: size="xl", prominent shadow, slight hover lift effect
+  - Secondary link: text-sm, monospace, muted, underline on hover
+  - Centered layout with generous spacing (space-y-8)
+  **success criteria**: Component renders with clear hierarchy, buttons accessible, hover states work
+
+- [ ] Replace current benefits section with enhanced CTA
+  **file**: `app/page.tsx`
+  **location**: Line ~127 (current section-benefits)
+  **changes**:
+  - Keep benefits grid from Phase 1 but move earlier in page flow
+  - Replace final section with new CTASection component
+  - Maintain border-t, padding, full viewport height
+  **success criteria**: CTA section is final section before footer, visually strongest call-to-action on page
+
+### Testing
+
+- [ ] Add unit tests for CTASection component
+  **file**: `__tests__/components/landing/cta-section.test.tsx` (new)
+  **test cases**:
+  1. Renders headline and subheadline with correct text
+  2. Primary button links to /sign-up
+  3. Secondary link present (if included)
+  4. Button hover states work
+  **success criteria**: All tests pass, coverage >80%
+
+---
+
+## Phase 7: Footer Enhancement
+
+### Component Updates
+
+- [ ] Enhance footer with sitemap structure
+  **file**: `app/page.tsx`
+  **location**: Line ~146 (current footer)
+  **changes**:
+  - Add 3 columns: Product, Company, Resources
+  - Product: Features, Pricing, Changelog, Roadmap
+  - Company: About, Blog, Contact
+  - Resources: Docs, API, Status, GitHub
+  - Keep centered copyright and GitHub link at bottom
+  **styling**:
+  - Column headers: text-sm, font-mono, uppercase, tracking-wide
+  - Links: text-sm, text-muted-foreground, hover:text-foreground
+  - Grid: `grid grid-cols-2 md:grid-cols-4 gap-8` (mobile 2 cols, desktop 4)
+  - Monospace for all text (maintains technical aesthetic)
+  **success criteria**: Footer has clear sitemap structure, all links work, responsive on mobile
+
+- [ ] Create placeholder pages for footer links
+  **files**: Create basic pages for new routes (can be simple coming soon pages)
+  - `app/features/page.tsx`
+  - `app/pricing/page.tsx`
+  - `app/about/page.tsx`
+  **content**: Simple centered layout with headline "Coming Soon" and link back to home
+  **success criteria**: All footer links resolve (no 404s), basic pages render
+
+---
+
+## Phase 8: Typography & Polish
+
+### Typography Refinement
+
+- [ ] Audit and refine font weights across landing page
+  **file**: `app/page.tsx` and all landing components
+  **changes**:
+  - Section headlines: Increase from font-light (300) to font-normal (400) for improved hierarchy
+  - Body copy: Keep font-light (300) for descriptions
+  - CTAs: Use font-medium (500) for button text
+  - Monospace elements: All metadata, secondary CTAs, badges use JetBrains Mono
+  **success criteria**: Clear typographic hierarchy, headlines stand out, body text readable
+
+- [ ] Add custom animation keyframes for scroll-triggered fades
+  **file**: `app/globals.css`
+  **keyframes**: Define reusable fadeIn, fadeInUp, fadeInDown animations
+  **implementation**:
+  ```css
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
     }
-
-  Success:
-    - Error boundary catches route errors
-    - Errors sent to Sentry
-    - User sees friendly error UI
-    - Reset button works
-
-  Test: Throw error in route, verify Sentry capture, check error UI
-  Time: 15min
-  ```
-
-- [x] Create app/global-error.tsx for root-level errors
-  ```
-  File: app/global-error.tsx (NEW)
-  Architecture: Next.js root error boundary from DESIGN.md "Integration Points"
-  Pattern: Similar to error.tsx but wraps entire app (including root layout)
-
-  Implementation:
-    'use client';
-
-    import * as Sentry from '@sentry/nextjs';
-    import NextError from 'next/error';
-    import { useEffect } from 'react';
-
-    export default function GlobalError({
-      error,
-    }: {
-      error: Error & { digest?: string };
-    }) {
-      useEffect(() => {
-        Sentry.captureException(error);
-      }, [error]);
-
-      return (
-        <html>
-          <body>
-            <NextError statusCode={500} />
-          </body>
-        </html>
-      );
+    to {
+      opacity: 1;
+      transform: translateY(0);
     }
-
-  Success:
-    - Global error boundary catches root layout errors
-    - Errors sent to Sentry
-    - User sees error page
-
-  Test: Throw error in root layout, verify Sentry capture
-  Time: 10min
+  }
   ```
+  **usage**: Apply to new sections (testimonials, FAQ, process timeline) with IntersectionObserver
+  **success criteria**: Smooth stagger animations on scroll, no performance impact, reduced motion respected
+
+### Spacing & Layout
+
+- [ ] Audit spacing consistency across sections
+  **files**: All landing page sections in `app/page.tsx`
+  **check**: Verify all sections use consistent padding (px-6 py-12 md:py-20)
+  **fix**: Standardize any inconsistencies
+  **success criteria**: Visual rhythm consistent, no jarring spacing jumps between sections
 
 ---
 
-## Phase 3: Abuse Detection & Monitoring (Days 5-6)
+## Phase 9: Accessibility & Performance
 
-### Usage Analytics Endpoint
+### Accessibility
 
-- [x] Create app/api/analytics/usage endpoint for abuse detection
-  ```
-  File: app/api/analytics/usage/route.ts (NEW)
-  Architecture: From TASK.md "Phase 3: Abuse Detection & SLO Monitoring"
-  Pattern: Follow app/api/cache/stats/route.ts (query aggregation endpoint)
+- [ ] Add descriptive alt text to all images
+  **files**: All landing components with images (DemoAnimation, ProcessTimeline icons, etc.)
+  **requirements**: Alt text describes content/function, not "image of X"
+  **success criteria**: No missing alt attributes, all images have meaningful descriptions
 
-  Interface:
-    GET /api/analytics/usage
-    Response: {
-      uploadsLastHour: number
-      uploadsLastDay: number
-      uploadsLast7Days: number
-      estimatedCost: number
-      isSustainedHighRate: boolean
-    }
+- [ ] Verify keyboard navigation works across all interactive elements
+  **test**: Tab through entire landing page
+  **check**:
+  - All buttons reachable via keyboard
+  - Focus indicators visible (outline)
+  - FAQ accordion navigable with arrow keys
+  - Skip to main content link (if needed)
+  **success criteria**: Full keyboard navigation works, focus always visible
 
-  Implementation:
-    1. Auth: Require userId
-    2. Query Prisma:
-       - Count assets created in last hour (createdAt > now - 1 hour)
-       - Count assets created in last 24 hours
-       - Count assets created in last 7 days
-    3. Calculate cost: uploadCount × $0.00022
-    4. Detect sustained pattern:
-       - Query uploads by hour for last 2 hours
-       - If both hours > 200 uploads: isSustainedHighRate = true
-    5. Return JSON
+- [ ] Add ARIA labels where needed
+  **files**: FAQAccordion (accordion pattern), scroll chevrons (navigation), demo animation
+  **requirements**:
+  - Accordion: aria-expanded, aria-controls
+  - Navigation: aria-label for chevrons
+  - Sections: aria-labelledby for headlines
+  **success criteria**: Screen reader navigation works, no accessibility warnings in DevTools
 
-  Dependencies:
-    - @/lib/auth/server (getAuth)
-    - @prisma/client (prisma)
+### Performance
 
-  Success:
-    - GET /api/analytics/usage returns correct counts
-    - Cost calculated correctly ($0.00022 per upload)
-    - Sustained pattern detection works (>200/hour for 2 consecutive hours)
-    - Auth required (401 without token)
+- [ ] Optimize demo GIF with lazy loading
+  **file**: `components/landing/demo-animation.tsx`
+  **change**: Remove priority prop if demo is below fold after layout changes
+  **consideration**: Keep priority if demo stays in hero, remove if moved down page
+  **success criteria**: Lighthouse performance score >90, LCP <2.5s
 
-  Test Strategy:
-    Integration test:
-      - Seed database with test uploads (different timestamps)
-      - Call endpoint, verify counts match expected
-      - Test sustained pattern detection (seed >200 uploads in 2 consecutive hours)
+- [ ] Add image optimization for any new assets
+  **files**: Check all new images use Next.js Image component with appropriate sizing
+  **verify**: width/height props set, responsive srcset generated
+  **success criteria**: All images optimized, no layout shift (CLS <0.1)
 
-  Time: 1hr
-  ```
-
-### SLO Monitoring Documentation
-
-- [x] Document Vercel log queries for SLO monitoring in OBSERVABILITY.md
-  ```
-  File: OBSERVABILITY.md (NEW)
-  Architecture: From TASK.md "Phase 3: Abuse Detection & SLO Monitoring"
-  Pattern: Operational playbook with queries and troubleshooting
-
-  Sections:
-    1. Introduction: What this playbook covers
-    2. SLO Monitoring Queries:
-       - Search P95 latency: Query logs for operation="search", calculate P95 of duration
-       - Upload P95 latency: Query logs for operation="upload", calculate P95 of duration
-       - Error rate: Query logs for level="error", group by route
-    3. Cost Monitoring Queries:
-       - Daily burn rate: Query logs for "usage_metric" tag, sum cost field per user
-       - Monthly projection: Daily burn × 30
-    4. Alert Thresholds (Phase 2 implementation):
-       - 100 uploads/hour (supports bulk imports)
-       - 500 uploads/day (weekend collection import)
-       - Sustained >200/hour for >2 hours (likely abuse)
-    5. How to Query Vercel Logs:
-       - Access logs: Vercel Dashboard → Project → Logs
-       - Filter by operation, level, traceId
-       - Export logs for analysis
-    6. How to Use Sentry:
-       - Finding errors: Sentry Dashboard → Issues
-       - Setting alerts: Sentry Dashboard → Alerts
-       - Error grouping and deduplication
-    7. Troubleshooting Guide:
-       - "No logs appearing": Check traceId, verify instrumentation
-       - "Missing events": Check Do Not Track, verify Analytics installed
-       - "Sentry not capturing": Check SENTRY_DSN env var, verify initialization
-
-  Success:
-    - Document created with all sections
-    - Queries are copy-paste ready (with placeholders for project-specific values)
-    - Troubleshooting guide covers common issues
-
-  Time: 2hr
-  ```
+- [ ] Test page performance
+  **tool**: Lighthouse (Chrome DevTools)
+  **targets**:
+  - Performance: >90
+  - Accessibility: >95
+  - Best Practices: >90
+  - SEO: >90
+  **success criteria**: All scores meet targets, identify and fix any major issues
 
 ---
 
-## Phase 4: Cleanup & Documentation (Day 7)
+## Phase 10: Testing & Validation
 
-### Code Cleanup
+### Component Testing
 
-- [x] Delete unused lib/performance.ts
-  ```
-  File: lib/performance.ts (DELETE)
-  Reason: Replaced by lib/performance-monitor.ts (0 imports, 309 unused lines)
+- [ ] Run full test suite
+  **command**: `pnpm test`
+  **verify**: All new component tests pass
+  **coverage target**: >80% for new landing components
+  **success criteria**: Zero test failures, coverage meets target
 
-  Verification:
-    - grep -r "from.*performance'" --include="*.ts" --include="*.tsx"
-    - Should return 0 matches (except performance-monitor.ts)
+### Visual Regression
 
-  Success: File deleted, no import errors, build succeeds
-  Time: 5min
-  ```
+- [ ] Manual visual testing across breakpoints
+  **breakpoints**: Mobile (375px), Tablet (768px), Desktop (1440px), Wide (1920px)
+  **browsers**: Chrome, Firefox, Safari
+  **checks**:
+  - Layout doesn't break at any width
+  - Images scale properly
+  - Typography readable at all sizes
+  - Animations smooth (60fps)
+  **success criteria**: No visual bugs, responsive behavior works across all tested devices/browsers
 
-- [x] Remove TODO comment from app/api/telemetry/route.ts
-  ```
-  File: app/api/telemetry/route.ts
-  Line: 38-39
-  Change: Delete "// TODO: Send to external monitoring service" comment
+### User Flow Testing
 
-  Success: Comment removed (already implemented in Phase 1)
-  Time: 2min
-  ```
+- [ ] Test complete user journey
+  **flow**: Land on page → Scroll through all sections → Read FAQ → Click CTA → Sign up
+  **verify**:
+  - Scroll indicators work
+  - All links functional
+  - CTAs lead to correct destinations
+  - No console errors
+  **success criteria**: Complete flow works without errors, intuitive navigation
 
-- [x] Audit and remove raw console.log calls in favor of structured logger
-  ```
-  Files: All application files (lib/, app/, components/, hooks/)
-  Pattern: Find console.log calls, replace with logger.logInfo
+### Analytics Setup
 
-  Commands:
-    grep -r "console\\.log" --include="*.ts" --include="*.tsx" lib/ app/ components/ hooks/
-
-  Exclusions (keep console.log):
-    - lib/logger.ts (dev logger, intentional)
-    - __tests__/** (test files, debugging okay)
-
-  Replacements:
-    // Before:
-    console.log('Upload completed', { assetId, size });
-
-    // After:
-    import { logger } from '@/lib/observability-logger';
-    logger.logInfo('Upload completed', { assetId, size });
-
-  Success: All production console.log replaced, build succeeds
-  Time: 1hr (depends on number of occurrences)
-  ```
-
-### Documentation Updates
-
-- [x] Update CLAUDE.md with observability patterns section
-  ```
-  File: /Users/phaedrus/Development/sploot/CLAUDE.md (MODIFY)
-  Location: Add new section after "## Architecture" or similar
-
-  Content to Add:
-    ## Observability Patterns
-
-    **Analytics Tracking**: Use lib/analytics.ts for all event tracking
-    - Import: `import { track, ANALYTICS_EVENTS } from '@/lib/analytics'`
-    - Client-side: `track({ name: 'upload_completed', properties: { assetId, size } })`
-    - Server-side: Use `trackServer()` with await
-
-    **Performance Monitoring**: Use lib/performance-monitor.ts for timing
-    - Import: `import { getPerformanceMonitor, PERF_OPERATIONS } from '@/lib/performance-monitor'`
-    - Usage: `perfMonitor.measureAsync(PERF_OPERATIONS.UPLOAD_SINGLE, async () => { ... })`
-
-    **Structured Logging**: Use lib/observability-logger.ts, NOT console.log
-    - Import: `import { logger } from '@/lib/observability-logger'`
-    - Info: `logger.logInfo('Operation completed', { assetId, duration })`
-    - Error: `logger.logError('Operation failed', error, { assetId })`
-    - Timing: `logger.logTiming('upload', duration, true, { size })`
-
-    **API Route Instrumentation**: Wrap all new routes with withObservability
-    - Template:
-      ```typescript
-      import { withObservability } from '@/lib/with-observability';
-
-      async function handler(req: NextRequest) {
-        // route logic
-      }
-
-      export const POST = withObservability(handler, { operation: 'my-route' });
-      ```
-
-    **Error Handling**: All telemetry wrapped in try-catch, never throws
-    - Telemetry failures logged to console, execution continues
-    - User flows never blocked by observability failures
-
-  Success: Section added, examples clear, patterns documented
-  Time: 30min
-  ```
-
-- [x] Add JSDoc comments to all observability modules
-  ```
-  Files:
-    - lib/analytics.ts
-    - lib/performance-monitor.ts
-    - lib/observability-logger.ts
-    - lib/with-observability.ts
-
-  Pattern: Add JSDoc for all exported functions and types
-  Example:
-    /**
-     * Track a custom analytics event with type-safe validation.
-     *
-     * Events are sent to Vercel Analytics via sendBeacon (client) or
-     * server-side track API. All PII is automatically sanitized.
-     *
-     * @param event - Typed analytics event with name and properties
-     * @throws Never - Errors caught internally and logged to console
-     *
-     * @example
-     * ```typescript
-     * track({
-     *   name: 'upload_completed',
-     *   properties: { assetId: '123', duration: 1500 }
-     * });
-     * ```
-     */
-    export function track(event: AnalyticsEvent): void { ... }
-
-  Success: All exported APIs documented, examples provided
-  Time: 1hr
-  ```
-
-### Validation & Testing
-
-- [ ] Run full test suite and validate coverage
-  ```
-  Commands:
-    pnpm test:coverage
-
-  Acceptance:
-    - All unit tests pass
-    - Coverage >80% for new modules:
-      - lib/analytics.ts
-      - lib/performance-monitor.ts
-      - lib/observability-logger.ts
-      - lib/with-observability.ts
-    - Integration tests pass (telemetry, Prisma middleware)
-
-  Success: All tests pass, coverage meets target
-  Time: 15min (test execution)
-  ```
-
-- [ ] Validate 100% API route coverage
-  ```
-  Method: Manual audit of all route files
-
-  Check:
-    - All 25 routes use withObservability or manual instrumentation
-    - No routes missing traceId logging
-    - Build succeeds without TypeScript errors
-
-  Audit Command:
-    grep -r "export.*function (GET|POST|PUT|DELETE|PATCH)" app/api --include="*.ts" | \
-    grep -v "withObservability"
-
-    # Output should be empty or only routes with manual instrumentation
-
-  Success: All routes instrumented, audit command returns empty or documented exceptions
-  Time: 30min
-  ```
-
-- [ ] Test error scenarios (Sentry down, network offline, etc.)
-  ```
-  Scenarios:
-    1. Sentry API unavailable:
-       - Mock Sentry.captureException to throw error
-       - Trigger error boundary
-       - Verify: Error logged locally, app continues
-
-    2. Network offline (client):
-       - Disconnect network
-       - Trigger analytics event
-       - Verify: sendBeacon queues, no console errors
-
-    3. Analytics blocked by ad blocker:
-       - Install ad blocker, block Vercel Analytics domain
-       - Trigger analytics event
-       - Verify: No console errors, app continues
-
-    4. Prisma middleware failure:
-       - Mock getPerformanceMonitor to throw
-       - Execute database query
-       - Verify: Query succeeds, error logged
-
-  Success: All scenarios gracefully degraded, no user-facing errors
-  Time: 1hr
-  ```
-
-### Production Validation
-
-- [ ] Deploy to preview and validate observability
-  ```
-  Steps:
-    1. Deploy branch to Vercel preview
-    2. Execute all flows:
-       - Upload file
-       - Search
-       - Favorite/delete asset
-       - Add/remove tag
-       - Trigger error boundary (throw in component)
-    3. Check dashboards:
-       - Vercel Analytics: Verify custom events appear
-       - Vercel Speed Insights: Verify Web Vitals captured
-       - Vercel Logs: Verify structured JSON logs with traceId
-       - Sentry: Verify errors captured with context
-    4. Query logs:
-       - Find request by traceId
-       - Verify timing logged correctly
-       - Verify error correlation (same traceId across services)
-
-  Acceptance:
-    - All events visible in Vercel Analytics
-    - Logs queryable by traceId in Vercel
-    - Errors grouped in Sentry
-    - Web Vitals data in Speed Insights
-
-  Time: 1hr
-  ```
+- [ ] Add analytics tracking to new CTAs
+  **file**: Update analytics tracking in Button components
+  **events**:
+  - "landing_demo_viewed" (hero demo visible)
+  - "landing_faq_opened" (accordion item clicked)
+  - "landing_cta_clicked" (final CTA button)
+  **implementation**: Use existing `track()` function from `lib/analytics.ts`
+  **success criteria**: Events fire correctly, visible in Vercel Analytics dashboard
 
 ---
 
-## Design Iteration Checkpoints
+## Documentation
 
-**After Phase 1 (Core Modules Complete)**:
-- Review module boundaries: Are interfaces simple enough? Too simple (shallow)?
-- Identify emerging patterns: Common code to extract? Duplication across modules?
-- Check dependencies: Circular imports? Too many dependencies per module?
-- Refactor opportunity: Before adding 22 more routes, polish the pattern
+- [ ] Update CLAUDE.md with landing page patterns
+  **file**: `/Users/phaedrus/Development/sploot/CLAUDE.md`
+  **section**: Add "Landing Page Component Patterns" section
+  **content**:
+  - Document component structure (benefits grid, process timeline, testimonials, FAQ)
+  - Note animation patterns (scroll-triggered fades, stagger delays)
+  - Typography system (when to use font-light vs font-normal vs font-medium)
+  - How to add new sections (follow existing section pattern)
+  **success criteria**: Future landing page modifications have clear guidance
 
-**After Phase 2 (Comprehensive Coverage)**:
-- Review instrumentation consistency: All routes follow same pattern? Outliers?
-- Identify coupling: Routes tightly coupled to observability? Easy to remove?
-- Test coverage: Integration tests catching real issues? False positives?
-- Performance impact: Measure actual overhead (<5ms target). Optimize if needed.
-
-**After Phase 3 (Monitoring)**:
-- Usage analytics: Queries returning useful data? Missing metrics?
-- SLO monitoring: Alerts firing correctly? False positives? Missing alerts?
-- Documentation: OBSERVABILITY.md clear? Missing troubleshooting steps?
-- Refactor opportunity: Repeated query patterns → extract to utility functions
-
----
-
-## Automation Opportunities
-
-**After Implementation Complete**:
-1. **ESLint Rule**: Enforce structured logger usage (no raw console.log in production)
-   - Custom rule: "no-console" with exceptions for lib/logger.ts and __tests__
-   - Auto-fix: Replace console.log with logger.logInfo (future enhancement)
-
-2. **Route Template**: Generate withObservability wrapper boilerplate
-   - Script: `pnpm generate:route --name=my-route` creates instrumented template
-   - Template includes: withObservability wrapper, operation name, basic error handling
-
-3. **Analytics Event Generator**: Generate TypeScript types from event schema
-   - Define events in JSON schema or YAML
-   - Generate AnalyticsEvent discriminated union automatically
-   - Ensures event definitions stay in sync with tracking code
-
-4. **Test Coverage Report**: Automated check for observability module coverage
-   - CI fails if coverage <80% on lib/analytics.ts, lib/performance-monitor.ts, etc.
-   - Report missing tests to PR comments
+- [ ] Add JSDoc comments to all new landing components
+  **files**: All components in `components/landing/`
+  **format**: Document props, usage examples, styling constraints
+  **success criteria**: All exported components have JSDoc, examples provided
 
 ---
 
 ## Notes
 
-**Phase 1 Critical Path**:
-Must complete in order: Install deps → Analytics → Logger → Middleware → Telemetry
-Reason: Dependencies flow Analytics ← Logger ← Middleware
+**Implementation Order Rationale**:
+1. **Benefits first**: Quickest win, enhances existing section
+2. **Process timeline**: Builds on benefits structure, reuses grid patterns
+3. **Hero demo**: High-impact visual, requires asset creation first
+4. **Social proof**: Depends on content creation, can parallelize
+5. **FAQ**: More complex component (accordion state), later in page flow
+6. **CTA enhancement**: Pulls together all conversion elements
+7. **Footer**: Low priority, informational
+8. **Polish & testing**: Final pass after all elements in place
 
 **Parallelization Opportunities**:
-- Phase 1: Performance Monitor + Prisma middleware can be done in parallel with other modules (no dependencies)
-- Phase 2: All 22 route instrumentations can be done in parallel (independent)
-- Phase 2: Client analytics (upload, search, library) can be done in parallel
-- Phase 3: Usage endpoint + OBSERVABILITY.md can be done in parallel
+- Asset creation (demo GIF, SVG icons) can happen in parallel with component work
+- Content writing (testimonials, FAQ) independent of component implementation
+- Testing can start as soon as individual components complete
 
-**Testing Philosophy** (from DESIGN.md):
-- Minimize mocking (heavy mocking = design smell)
-- Test behavior, not implementation
-- Mock external services (Vercel Analytics, Sentry) - network calls expensive
-- Use real Prisma for integration tests - validates actual SQL queries
+**Design Consistency Checks**:
+- All components use 4px spacing system (p-4, gap-4, space-y-4, etc.)
+- Color palette limited to: background (#000000), foreground (white), primary (#7C5CFF), muted-foreground
+- All animations use 200-300ms duration
+- All interactive elements have hover states
+- Typography: Geist Sans for UI, JetBrains Mono for technical/metadata
 
-**Time Estimate Summary**:
-- Phase 1: 13hr (core modules, critical routes, Prisma middleware)
-- Phase 2: 8hr (remaining routes, client analytics, error boundaries)
-- Phase 3: 3hr (usage endpoint, monitoring documentation)
-- Phase 4: 5hr (cleanup, documentation, validation)
-- **Total: 29hr (~1 week at 4-5hr/day or 3-4 full days)**
+**Time Estimates**:
+- Phase 1 (Benefits): 2-3h
+- Phase 2 (Process): 4-5h (includes SVG creation)
+- Phase 3 (Demo): 2-3h (includes recording/optimization)
+- Phase 4 (Testimonials): 2-3h
+- Phase 5 (FAQ): 3-4h (accordion complexity)
+- Phase 6 (CTA): 1-2h
+- Phase 7 (Footer): 1-2h
+- Phase 8 (Typography): 2-3h
+- Phase 9 (A11y/Perf): 3-4h
+- Phase 10 (Testing): 2-3h
+- **Total: 22-32 hours (3-4 full days or 1 week part-time)**
