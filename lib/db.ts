@@ -98,36 +98,6 @@ export async function syncUser(clerkUserId: string, email: string) {
   });
 }
 
-/**
- * Atomic operation to get existing user or create new one.
- * Prevents race conditions.
- */
-export async function getOrCreateUser(clerkUserId: string, email: string) {
-  if (!prisma) {
-    return {
-      id: clerkUserId,
-      email,
-      role: 'user',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    } as any;
-  }
-
-  let user = await prisma.user.findUnique({
-    where: { id: clerkUserId },
-  });
-
-  if (!user) {
-    user = await prisma.user.create({
-      data: {
-        id: clerkUserId,
-        email,
-      },
-    });
-  }
-
-  return user;
-}
 
 /**
  * Metadata returned for existing assets during duplicate detection
