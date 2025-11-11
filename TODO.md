@@ -38,7 +38,7 @@
 
 ### Core Implementation
 
-- [ ] Expand BenefitIcons component into full BenefitGrid
+- [x] Expand BenefitIcons component into full BenefitGrid
   **file**: `components/landing/benefit-icons.tsx` → rename to `benefit-grid.tsx`
   **changes**:
   - Transform from 3 icons in row to 3-4 cards in responsive grid
