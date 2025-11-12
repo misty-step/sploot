@@ -75,7 +75,7 @@
 
 ### Visual Assets
 
-- [ ] Design 3 custom SVG illustrations for process steps
+- [x] Design 3 custom SVG illustrations for process steps
   **files**: Create in `components/landing/process-icons/`
   - `upload-icon.tsx`: Upward arrow + document (matches overlapping circles stroke style)
   - `analyze-icon.tsx`: Circle with nodes/connections (AI processing visual)
@@ -89,7 +89,7 @@
 
 ### Component Implementation
 
-- [ ] Create ProcessTimeline component
+- [x] Create ProcessTimeline component
   **file**: `components/landing/process-timeline.tsx` (new)
   **structure**:
   - Horizontal layout on desktop (flex-row)
