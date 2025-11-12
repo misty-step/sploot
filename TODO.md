@@ -107,7 +107,7 @@
   - Connecting lines between steps (desktop only): 1px border, muted color
   **success criteria**: Component renders responsively, animations on scroll (fade-in sequence), connecting lines hidden on mobile
 
-- [ ] Add ProcessTimeline section to landing page
+- [x] Add ProcessTimeline section to landing page
   **file**: `app/page.tsx`
   **location**: Insert after section-personal-library (before section-benefits)
   **structure**:

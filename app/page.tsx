@@ -10,6 +10,7 @@ import { CollectionGrid } from "@/components/landing/collection-grid";
 import { BenefitGrid } from "@/components/landing/benefit-grid";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ScrollChevron } from "@/components/landing/scroll-chevron";
+import { ProcessTimeline } from "@/components/landing/process-timeline";
 
 export default async function Home() {
   const { userId } = await getAuth();
@@ -120,10 +121,21 @@ export default async function Home() {
             </div>
           </div>
         </div>
+        <ScrollChevron targetId="section-how-it-works" />
+      </section>
+
+      {/* Section 3: How it Works - Timeline */}
+      <section id="section-how-it-works" className="relative min-h-screen flex items-center border-t border-border px-6 py-12 md:py-20">
+        <div className="max-w-6xl mx-auto w-full text-center space-y-12">
+          <h2 className="text-4xl md:text-5xl lg:text-6xl font-light leading-tight tracking-tight">
+            how it works
+          </h2>
+          <ProcessTimeline />
+        </div>
         <ScrollChevron targetId="section-benefits" />
       </section>
 
-      {/* Section 3: Benefits - Center text with icons and CTA */}
+      {/* Section 4: Benefits - Center text with icons and CTA */}
       <section id="section-benefits" className="relative min-h-screen flex items-center border-t border-border px-6 py-12 md:py-20">
         <div className="max-w-4xl mx-auto w-full text-center space-y-12">
           <h2 className="text-4xl md:text-5xl lg:text-6xl font-light leading-tight tracking-tight">
