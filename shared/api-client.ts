@@ -6,9 +6,15 @@
  */
 
 import { getAuthToken } from '../entrypoints/background/auth-manager';
+import { CLERK_ENVIRONMENT, SPLOOT_API_BASE_URL } from './env';
 
-const API_BASE_URL = 'https://sploot.app';
+const API_BASE_URL = SPLOOT_API_BASE_URL;
 const UPLOAD_TIMEOUT_MS = 10000; // 10 seconds
+
+console.log('[ApiClient] Initialized', {
+  apiBaseUrl: API_BASE_URL,
+  environment: CLERK_ENVIRONMENT,
+});
 
 export interface UploadResult {
   assetId: string;
@@ -54,6 +60,12 @@ export async function uploadImage(
   const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
 
   try {
+    console.log('[ApiClient] Upload starting', {
+      filename: file.name,
+      size: file.size,
+      apiBaseUrl: API_BASE_URL,
+    });
+
     const response = await fetch(`${API_BASE_URL}/api/upload`, {
       method: 'POST',
       headers: {
@@ -96,6 +108,11 @@ export async function uploadImage(
     // Parse successful response
     const data = await response.json();
 
+    console.log('[ApiClient] Upload success', {
+      assetId: data.id || data.assetId,
+      blobUrl: data.blobUrl,
+    });
+
     return {
       assetId: data.id || data.assetId,
       blobUrl: data.blobUrl,
@@ -106,6 +123,10 @@ export async function uploadImage(
 
     // Handle network errors
     if (error instanceof Error) {
+      console.error('[ApiClient] Upload failed', {
+        message: error.message,
+        name: error.name,
+      });
       if (error.name === 'AbortError') {
         throw new Error('Upload timeout. Please try again.');
       }

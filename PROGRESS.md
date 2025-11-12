@@ -5,8 +5,8 @@
 ### Implemented Modules
 
 **1. Authentication Manager** (`entrypoints/background/auth-manager.ts`)
-- ✅ Clerk WebSSO integration with sploot.app session sync
-- ✅ Token caching in chrome.storage.session (secure, ephemeral)
+- ✅ Inline Clerk sign-in bridge (popup ↔ background)
+- ✅ Token retrieval on demand via Clerk client
 - ✅ Simple interface: getAuthToken(), isAuthenticated(), getUserId()
 - ✅ Message passing for cross-context communication
 
@@ -34,9 +34,9 @@
 - ✅ Click → opens library
 
 **6. Popup UI** (`entrypoints/popup/App.tsx`)
-- ✅ Auth status check on load
-- ✅ Login prompt if not authenticated
-- ✅ "View Library" button when authenticated
+- ✅ Embedded `<SignIn/>` experience
+- ✅ Broadcasts auth state changes to background
+- ✅ Quick links for diagnostics + library access
 
 ### Build Status
 
@@ -73,7 +73,7 @@ Module boundaries:
 2. ⏳ Verify extension loads without errors
 3. ⏳ Right-click image → verify "Save to Sploot" appears
 4. ⏳ Test unauthenticated: should prompt login
-5. ⏳ Login to sploot.app
+5. ⏳ Sign in via extension popup
 6. ⏳ Right-click image → save → verify notification
 7. ⏳ Check sploot.app/app → verify image appears
 8. ⏳ Test on 10+ sites (Twitter, Reddit, Discord, etc.)
@@ -102,7 +102,7 @@ Module boundaries:
 ## Architecture Decisions
 
 ✅ **WXT Framework**: Fast HMR, Vite-based, cross-browser ready
-✅ **Clerk WebSSO**: Seamless auth without separate login
+✅ **Inline Clerk auth**: Seamless sign-in without relying on web cookies
 ✅ **Reuse /api/upload**: Zero server-side changes needed
 ✅ **Deep modules**: Simple interfaces, powerful implementations
 ✅ **TypeScript strict**: Full type safety throughout

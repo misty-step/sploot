@@ -7,7 +7,7 @@ Chrome extension for saving memes from any website to your Sploot library with o
 - Right-click any image to save to Sploot
 - Screenshot crop tool (Cmd/Ctrl+Shift+S)
 - Offline upload queue
-- Seamless authentication with Clerk WebSSO
+- Inline authentication via Clerk popup sign-in
 
 ## Development
 
@@ -18,8 +18,11 @@ pnpm install
 # Start development server
 pnpm dev
 
-# Build for production
+# Build against test Clerk instance (local/dev)
 pnpm build
+
+# Build against production Clerk instance (uses .env.production)
+pnpm build:prod
 
 # Create distribution zip
 pnpm zip
@@ -27,26 +30,26 @@ pnpm zip
 
 ## Loading in Chrome
 
-1. Run `pnpm build`
+1. Run `pnpm build:prod` when targeting https://www.sploot.app (use `pnpm build` only with local/test Clerk)
 2. Open `chrome://extensions`
 3. Enable "Developer mode"
 4. Click "Load unpacked"
-5. Select `.output/chrome-mv3` directory
+5. Select `dist/chrome-mv3` directory
 
 ## Configuration
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `.env` for local/test runs, then create `.env.production` with your `pk_live_*` values. Production builds automatically read `.env.production`. Override `VITE_API_BASE_URL` only if the Sploot API is not running at the default host.
 
 ```
 VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
-VITE_CLERK_SYNC_HOST=https://sploot.app
+# Optional: VITE_API_BASE_URL=http://localhost:3000
 ```
 
 ## Architecture
 
 - **WXT Framework**: Modern extension development with HMR
 - **React + TypeScript**: Type-safe UI components
-- **Clerk**: Authentication with WebSSO session sync
+- **Clerk**: Inline authentication entirely inside the extension
 - **IndexedDB**: Offline upload queue with retry logic
 
 ## Project Structure

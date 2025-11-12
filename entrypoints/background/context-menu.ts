@@ -5,10 +5,13 @@
  * Handles image capture and upload coordination.
  */
 
-import { getAuthToken, isAuthenticated } from './auth-manager';
+import { isAuthenticated, promptUserSignIn, runAuthDiagnostics } from './auth-manager';
 import { fetchImage } from './image-fetcher';
 import { uploadImage } from '../../shared/api-client';
 import { showSuccessNotification, showErrorNotification } from './notifications';
+
+const MENU_ID_SAVE = 'save-to-sploot';
+const MENU_ID_DIAGNOSTICS = 'sploot-debug-auth';
 
 /**
  * Initialize context menu
@@ -17,18 +20,31 @@ export function setupContextMenu() {
   // Create context menu on extension install/update
   chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({
-      id: 'save-to-sploot',
+      id: MENU_ID_SAVE,
       title: 'Save to Sploot',
       contexts: ['image'],
     });
 
     console.log('[ContextMenu] Registered "Save to Sploot" menu item');
+
+    chrome.contextMenus.create({
+      id: MENU_ID_DIAGNOSTICS,
+      title: 'Sploot Debug: Dump Auth State',
+      contexts: ['action'],
+    });
+
+    console.log('[ContextMenu] Registered "Sploot Debug" menu item');
   });
 
   // Handle context menu clicks
   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId === 'save-to-sploot') {
+    if (info.menuItemId === MENU_ID_SAVE) {
       await handleImageSave(info.srcUrl, tab);
+      return;
+    }
+
+    if (info.menuItemId === MENU_ID_DIAGNOSTICS) {
+      await handleDiagnostics();
     }
   });
 }
@@ -40,6 +56,12 @@ async function handleImageSave(
   imageUrl: string | undefined,
   tab: chrome.tabs.Tab | undefined
 ): Promise<void> {
+  console.log('[ContextMenu] handleImageSave invoked', {
+    imageUrl,
+    tabId: tab?.id,
+    tabTitle: tab?.title,
+  });
+
   if (!imageUrl) {
     showErrorNotification('No image URL found');
     return;
@@ -49,10 +71,12 @@ async function handleImageSave(
     // Check authentication
     const authenticated = await isAuthenticated();
     if (!authenticated) {
-      showErrorNotification('Please login to sploot.app first');
-      // Open sploot.app in new tab
-      chrome.tabs.create({ url: 'https://sploot.app' });
-      return;
+      showErrorNotification('Please sign in via the Sploot extension popup');
+      const signedIn = await promptUserSignIn();
+      if (!signedIn) {
+        showErrorNotification('Sign-in was not completed. Try again.');
+        return;
+      }
     }
 
     // Fetch image (handles CORS)
@@ -76,6 +100,17 @@ async function handleImageSave(
     const errorMessage =
       error instanceof Error ? error.message : 'Failed to save image';
     showErrorNotification(errorMessage);
+  }
+}
+
+async function handleDiagnostics(): Promise<void> {
+  console.log('[ContextMenu] Running manual auth diagnostics');
+  try {
+    const snapshot = await runAuthDiagnostics();
+    console.log('[ContextMenu] Diagnostics snapshot', snapshot);
+  } catch (error) {
+    console.error('[ContextMenu] Diagnostics failed', error);
+    showErrorNotification('Diagnostics failed. Check console.');
   }
 }
 

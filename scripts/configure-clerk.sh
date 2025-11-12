@@ -7,12 +7,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Load environment variables
-if [ -f "$ROOT_DIR/.env" ]; then
-  source "$ROOT_DIR/.env"
+# Load environment variables (default .env, override with ENV_FILE=.env.production)
+ENV_FILE="${ENV_FILE:-.env}"
+ENV_PATH="$ROOT_DIR/$ENV_FILE"
+
+if [ -f "$ENV_PATH" ]; then
+  source "$ENV_PATH"
 else
-  echo "❌ Error: .env file not found"
-  echo "Run 'pnpm generate:crx-key' first to create .env"
+  echo "❌ Error: $ENV_FILE file not found"
+  echo "Set ENV_FILE=.env.production for production keys or run 'pnpm generate:crx-key' to create .env"
   exit 1
 fi
 
@@ -95,7 +98,7 @@ elif [ "$ORIGINS_JSON" = "[]" ]; then
   NEW_ORIGINS='["'"$EXTENSION_ORIGIN"'"]'
 else
   # Append to existing origins
-  NEW_ORIGINS=$(echo "$ORIGINS_JSON" | sed 's/\]$/,"'"$EXTENSION_ORIGIN"'"]}/')
+  NEW_ORIGINS=$(echo "$ORIGINS_JSON" | sed 's/\]$/,"'"$EXTENSION_ORIGIN"'"]/')
 fi
 
 echo "→ Updating Clerk instance..."
@@ -121,7 +124,7 @@ echo "Updated allowed_origins:"
 echo "$NEW_ORIGINS" | sed 's/,/\n/g' | sed 's/\[//g' | sed 's/\]//g' | sed 's/"//g' | sed 's/^/  - /'
 echo ""
 echo "📝 Next Steps:"
-echo "1. Build extension: pnpm build"
-echo "2. Load in Chrome: chrome://extensions → Load unpacked → .output/chrome-mv3"
+echo "1. Build extension: pnpm build (dev) or pnpm build:prod (production)"
+echo "2. Load in Chrome: chrome://extensions → Load unpacked → dist/chrome-mv3"
 echo "3. Test authentication with sploot.app"
 echo ""

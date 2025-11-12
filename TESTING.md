@@ -10,16 +10,19 @@ Copy `.env.example` to `.env` and configure:
 cp .env.example .env
 ```
 
+> **Important:** When testing against https://www.sploot.app run `pnpm build:prod` so the extension picks up `.env.production` (pk\_live + https://www.sploot.app). Use `pnpm build` only when pairing with a local Sploot instance that also uses the `pk_test_*` Clerk keys.
+
 Get credentials from [Clerk Dashboard](https://dashboard.clerk.com/last-active?path=api-keys):
 
 ```env
 # Chrome Extension CRX ID (auto-generated in next step)
 CRX_PUBLIC_KEY=
 
-# Clerk Configuration
+# Clerk Configuration (local/test)
 VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
-VITE_CLERK_SYNC_HOST=https://sploot.app
 CLERK_SECRET_KEY=sk_test_...
+# Optional API host override (defaults to http://localhost:3000 in dev)
+# VITE_API_BASE_URL=http://localhost:3000
 ```
 
 **Note**: You need both **Publishable Key** (for the extension) and **Secret Key** (for automated Clerk configuration).
@@ -72,7 +75,11 @@ Updated allowed_origins:
 ### 4. Build Extension
 
 ```bash
+# Local/test (pk_test)
 pnpm build
+
+# Production (pk_live + https://www.sploot.app)
+pnpm build:prod
 ```
 
 ## Loading Extension in Chrome
@@ -81,7 +88,7 @@ pnpm build
 2. Navigate to `chrome://extensions`
 3. Enable "Developer mode" (top right toggle)
 4. Click "Load unpacked"
-5. Select `.output/chrome-mv3` directory
+5. Select `dist/chrome-mv3` directory
 6. Verify Extension ID matches the one from `pnpm generate:crx-key`
 
 **Note**: No manual Clerk configuration needed - `pnpm setup:clerk` already configured the extension origin.
@@ -220,7 +227,7 @@ Open background service worker console:
 ### Build errors
 ```bash
 # Clean rebuild
-rm -rf .output .wxt node_modules
+rm -rf dist .wxt node_modules
 pnpm install
 pnpm build
 ```

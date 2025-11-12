@@ -61,10 +61,11 @@ else
 # Chrome Extension CRX ID (auto-generated)
 CRX_PUBLIC_KEY="$PUBLIC_KEY"
 
-# Clerk Configuration
+# Clerk Configuration (local/test)
 VITE_CLERK_PUBLISHABLE_KEY=
-VITE_CLERK_SYNC_HOST=https://sploot.app
 CLERK_SECRET_KEY=
+# Optional API override
+# VITE_API_BASE_URL=http://localhost:3000
 EOF
   echo "✓ Created $ENV_FILE with CRX_PUBLIC_KEY"
 fi
@@ -72,6 +73,6 @@ fi
 echo ""
 echo "📝 Next Steps:"
 echo "1. Extension ID will remain stable across builds"
-echo "2. Run 'pnpm build' to build extension with consistent ID"
+echo "2. Run 'pnpm build' for local/test or 'pnpm build:prod' for chrome-store builds"
 echo "3. Add extension ID to Clerk: pnpm setup:clerk"
 echo ""

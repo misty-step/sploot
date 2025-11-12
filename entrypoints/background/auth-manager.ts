@@ -1,215 +1,173 @@
-/**
- * Authentication Manager
- *
- * Deep module that hides Clerk WebSSO complexity behind simple interface.
- * Handles session sync with sploot.app, token refresh, and OAuth fallback.
- */
+import { createClerkClient } from '@clerk/chrome-extension/background'
+import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
+import { CLERK_ENVIRONMENT, CLERK_PUBLISHABLE_KEY } from '../../shared/env'
 
-import { createClerkClient } from '@clerk/chrome-extension/background';
+const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
+const SIGN_IN_TIMEOUT_MS = 60000
 
-// Clerk configuration from environment
-const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-const SYNC_HOST = import.meta.env.VITE_CLERK_SYNC_HOST;
+let cachedState: AuthState = { status: 'unknown' }
+const waiters = new Set<(state: AuthState) => void>()
 
-// Session storage keys
-const STORAGE_KEY_TOKEN = 'auth_token';
-const STORAGE_KEY_EXPIRES = 'auth_expires';
-const STORAGE_KEY_USER_ID = 'auth_user_id';
-
-let clerkClient: Awaited<ReturnType<typeof createClerkClient>> | null = null;
-
-/**
- * Initialize Clerk client (lazy initialization)
- */
-async function getClerkClient() {
-  if (clerkClient) return clerkClient;
-
-  if (!PUBLISHABLE_KEY) {
-    throw new Error('VITE_CLERK_PUBLISHABLE_KEY not configured');
+function notifyWaiters(state: AuthState) {
+  for (const listener of waiters) {
+    listener(state)
   }
-
-  clerkClient = await createClerkClient({
-    publishableKey: PUBLISHABLE_KEY,
-    syncHost: SYNC_HOST, // Sync with sploot.app session
-  });
-
-  return clerkClient;
 }
 
-/**
- * Check if user is authenticated
- *
- * Returns true if valid session exists (either from WebSSO or local storage)
- */
+function updateCachedState(next: AuthState) {
+  cachedState = next
+  console.log('[Auth] State updated', next)
+  notifyWaiters(next)
+}
+
+async function createFreshClerkClient() {
+  return await createClerkClient({
+    publishableKey: PUBLISHABLE_KEY,
+  })
+}
+
 export async function isAuthenticated(): Promise<boolean> {
   try {
-    const clerk = await getClerkClient();
+    const clerk = await createFreshClerkClient()
+    const hasSession = Boolean(clerk.session)
 
-    // Check Clerk session first (WebSSO with sploot.app)
-    if (clerk.session) {
-      return true;
+    console.log('[Auth] isAuthenticated check', {
+      hasSession,
+      userId: clerk.session?.user?.id,
+    })
+
+    if (hasSession) {
+      updateCachedState({
+        status: 'signed-in',
+        userId: clerk.session?.user?.id,
+        sessionId: clerk.session?.id,
+        expiresAt: clerk.session?.expireAt,
+      })
     }
 
-    // Fallback: Check local session storage
-    const result = await chrome.storage.session.get([STORAGE_KEY_TOKEN, STORAGE_KEY_EXPIRES]);
-    if (result[STORAGE_KEY_TOKEN] && result[STORAGE_KEY_EXPIRES]) {
-      const expiresAt = result[STORAGE_KEY_EXPIRES] as number;
-      return Date.now() < expiresAt;
-    }
-
-    return false;
+    return hasSession
   } catch (error) {
-    console.error('[Auth] Failed to check authentication:', error);
-    return false;
+    console.error('[Auth] Failed to check authentication', error)
+    return false
   }
 }
 
-/**
- * Get authentication token
- *
- * Returns JWT token for API requests, or null if not authenticated.
- * Automatically refreshes token if needed via Clerk session.
- */
 export async function getAuthToken(): Promise<string | null> {
   try {
-    const clerk = await getClerkClient();
+    const clerk = await createFreshClerkClient()
 
-    // If no Clerk session, check local storage
     if (!clerk.session) {
-      const result = await chrome.storage.session.get([STORAGE_KEY_TOKEN, STORAGE_KEY_EXPIRES]);
-      if (result[STORAGE_KEY_TOKEN] && result[STORAGE_KEY_EXPIRES]) {
-        const expiresAt = result[STORAGE_KEY_EXPIRES] as number;
-        if (Date.now() < expiresAt) {
-          return result[STORAGE_KEY_TOKEN] as string;
-        }
-      }
-      return null;
+      console.warn('[Auth] No session available for token retrieval')
+      return null
     }
 
-    // Get token from Clerk (automatically refreshes if needed)
-    const token = await clerk.session.getToken();
+    const token = await clerk.session.getToken()
 
-    // Cache token in session storage
+    console.log('[Auth] Token retrieved', {
+      hasToken: Boolean(token),
+      userId: clerk.session.user?.id,
+    })
+
     if (token) {
-      const expiresAt = Date.now() + (30 * 60 * 1000); // 30 minutes
-      await chrome.storage.session.set({
-        [STORAGE_KEY_TOKEN]: token,
-        [STORAGE_KEY_EXPIRES]: expiresAt,
-        [STORAGE_KEY_USER_ID]: clerk.session.user?.id,
-      });
+      updateCachedState({
+        status: 'signed-in',
+        userId: clerk.session.user?.id,
+        sessionId: clerk.session.id,
+        expiresAt: clerk.session.expireAt,
+      })
     }
 
-    return token;
+    return token
   } catch (error) {
-    console.error('[Auth] Failed to get auth token:', error);
-    return null;
+    console.error('[Auth] Failed to get token', error)
+    return null
   }
 }
 
-/**
- * Get current user ID
- *
- * Returns Clerk user ID if authenticated, null otherwise
- */
-export async function getUserId(): Promise<string | null> {
+export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS): Promise<boolean> {
+  return new Promise(resolve => {
+    const timeoutId = setTimeout(() => {
+      waiters.delete(listener)
+      resolve(false)
+    }, timeoutMs)
+
+    const listener = (state: AuthState) => {
+      if (state.status === 'signed-in') {
+        clearTimeout(timeoutId)
+        waiters.delete(listener)
+        resolve(true)
+      }
+    }
+
+    waiters.add(listener)
+  })
+}
+
+export async function promptUserSignIn(): Promise<boolean> {
   try {
-    const clerk = await getClerkClient();
-
-    if (clerk.session?.user?.id) {
-      return clerk.session.user.id;
-    }
-
-    // Fallback to cached user ID
-    const result = await chrome.storage.session.get(STORAGE_KEY_USER_ID);
-    return (result[STORAGE_KEY_USER_ID] as string) || null;
+    await chrome.action.openPopup()
   } catch (error) {
-    console.error('[Auth] Failed to get user ID:', error);
-    return null;
+    console.warn('[Auth] Unable to open popup automatically, opening new tab instead', error)
+    chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') })
   }
+
+  return await waitForSignIn()
 }
 
-/**
- * Trigger login flow
- *
- * Opens OAuth popup for authentication if WebSSO doesn't work.
- * Stores session in chrome.storage.session after successful login.
- */
-export async function login(): Promise<void> {
+export interface AuthDiagnosticsSnapshot {
+  timestamp: number
+  environment: string
+  status: AuthState['status']
+  userId?: string | null
+  sessionId?: string | null
+  expiresAt?: number | null
+  error?: string
+}
+
+export async function runAuthDiagnostics(): Promise<AuthDiagnosticsSnapshot> {
+  const snapshot: AuthDiagnosticsSnapshot = {
+    timestamp: Date.now(),
+    environment: CLERK_ENVIRONMENT,
+    status: cachedState.status,
+    userId: cachedState.userId,
+    sessionId: cachedState.sessionId,
+    expiresAt: cachedState.expiresAt,
+  }
+
   try {
-    const clerk = await getClerkClient();
-
-    // Check if already authenticated via WebSSO
-    if (clerk.session) {
-      console.log('[Auth] Already authenticated via WebSSO');
-      return;
-    }
-
-    // For MVP, we rely on WebSSO with sploot.app
-    // User should login to sploot.app first, then extension auto-authenticates
-    // In future, could add OAuth fallback here with browser.identity.launchWebAuthFlow()
-
-    throw new Error('Please login to sploot.app first to use the extension');
+    const clerk = await createFreshClerkClient()
+    snapshot.status = clerk.session ? 'signed-in' : 'signed-out'
+    snapshot.userId = clerk.session?.user?.id
+    snapshot.sessionId = clerk.session?.id
+    snapshot.expiresAt = clerk.session?.expireAt ?? null
   } catch (error) {
-    console.error('[Auth] Login failed:', error);
-    throw error;
+    snapshot.error = error instanceof Error ? error.message : String(error)
+    console.error('[Auth] Diagnostics failed', error)
   }
+
+  return snapshot
 }
 
-/**
- * Logout current user
- *
- * Clears session storage and Clerk session
- */
-export async function logout(): Promise<void> {
-  try {
-    // Clear session storage
-    await chrome.storage.session.remove([
-      STORAGE_KEY_TOKEN,
-      STORAGE_KEY_EXPIRES,
-      STORAGE_KEY_USER_ID,
-    ]);
-
-    // Note: Clerk session is managed by the web app
-    // Extension logout doesn't sign out of sploot.app (WebSSO)
-
-    console.log('[Auth] Logged out successfully');
-  } catch (error) {
-    console.error('[Auth] Logout failed:', error);
-    throw error;
-  }
-}
-
-/**
- * Listen for auth state changes from content scripts or popup
- */
-export function setupAuthListeners() {
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'GET_AUTH_TOKEN') {
-      getAuthToken()
-        .then(token => sendResponse({ token }))
-        .catch(error => sendResponse({ error: error.message }));
-      return true; // Keep channel open for async response
+export function setupAuthBridge() {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === AUTH_MESSAGES.STATE_UPDATE) {
+      updateCachedState(message.payload)
+      sendResponse({ ok: true })
+      return true
     }
 
-    if (message.type === 'IS_AUTHENTICATED') {
-      isAuthenticated()
-        .then(authenticated => sendResponse({ authenticated }))
-        .catch(error => sendResponse({ error: error.message }));
-      return true;
+    if (message?.type === AUTH_MESSAGES.REQUEST_STATE) {
+      sendResponse({ state: cachedState })
+      return true
     }
 
-    if (message.type === 'GET_USER_ID') {
-      getUserId()
-        .then(userId => sendResponse({ userId }))
-        .catch(error => sendResponse({ error: error.message }));
-      return true;
+    if (message?.type === AUTH_MESSAGES.RUN_DIAGNOSTICS) {
+      runAuthDiagnostics()
+        .then(snapshot => sendResponse({ snapshot }))
+        .catch(error => sendResponse({ error: error instanceof Error ? error.message : String(error) }))
+      return true
     }
 
-    if (message.type === 'LOGOUT') {
-      logout()
-        .then(() => sendResponse({ success: true }))
-        .catch(error => sendResponse({ error: error.message }));
-      return true;
-    }
-  });
+    return false
+  })
 }

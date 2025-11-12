@@ -12,9 +12,9 @@ A **fully functional Chrome extension** that enables one-click image saving from
 - Automatic filename extraction from URL or page title
 
 ✅ **Authentication Integration**
-- Clerk WebSSO session sync with sploot.app
-- No separate login required if already logged into web app
-- Secure token storage in chrome.storage.session
+- Inline Clerk sign-in living entirely inside the popup
+- Background/Context menu auto-sync via auth bridge messages
+- Secure token retrieval via Clerk client (no cookie dependency)
 
 ✅ **Upload Pipeline**
 - Reuses existing `/api/upload` endpoint (zero server changes)
@@ -29,10 +29,9 @@ A **fully functional Chrome extension** that enables one-click image saving from
 - Auto-dismiss (5s success, 10s error)
 
 ✅ **Extension UI**
-- Popup shows auth status
-- Login prompt if not authenticated
-- "View Library" button when ready
-- Loading states
+- Popup hosts Clerk `<SignIn/>`
+- Diagnostics + sign-out actions surfaced for power users
+- "View Library" shortcut once signed in
 
 ### Code Quality Metrics
 
@@ -48,7 +47,7 @@ A **fully functional Chrome extension** that enables one-click image saving from
 ✅ **Separate Repository**: Keeps deployment independent, build systems isolated
 ✅ **WXT Framework**: Modern Vite-based tooling with HMR
 ✅ **Reuse Server API**: No duplication of upload logic
-✅ **Clerk WebSSO**: Seamless auth without separate OAuth flow
+✅ **Inline Clerk Auth**: Seamless sign-in directly inside the extension
 
 ### Git Commit History
 
@@ -60,7 +59,7 @@ git log --oneline --graph
 86a3573 docs: add comprehensive Phase 1 testing guide
 bcbfd02 docs: add implementation progress tracking
 0abb117 feat: implement Phase 1 MVP - right-click image save workflow
-14883e8 feat: implement Clerk WebSSO authentication manager
+14883e8 feat: implement Clerk authentication manager
 3976c83 feat: initialize WXT extension project with React and TypeScript
 ```
 
@@ -73,7 +72,7 @@ bcbfd02 docs: add implementation progress tracking
 
 ### Build Output
 ```
-.output/chrome-mv3/
+dist/chrome-mv3/
 ├── manifest.json      # Chrome extension manifest
 ├── background.js      # Background service worker (7 KB)
 ├── popup.html         # Extension popup
@@ -84,9 +83,9 @@ bcbfd02 docs: add implementation progress tracking
 
 See **TESTING.md** for comprehensive test scenarios. Key tests:
 
-1. **Load Extension**: `chrome://extensions` → Load unpacked → `.output/chrome-mv3`
+1. **Load Extension**: `chrome://extensions` → Load unpacked → `dist/chrome-mv3`
 2. **Configure Clerk**: Add `chrome-extension://` to allowed origins
-3. **Authentication**: Verify WebSSO works when logged into sploot.app
+3. **Authentication**: Verify inline Clerk sign-in succeeds via popup
 4. **Right-Click Save**: Test on 10+ sites (Twitter, Reddit, Discord, etc.)
 5. **Error Handling**: Test unauthenticated, large images, network errors
 6. **Performance**: Upload should complete in <3s (P95)
@@ -147,7 +146,7 @@ Phase 1 is **successful** if:
 
 - ✅ Extension builds without errors (verified)
 - ⏳ Loads in Chrome without console errors
-- ⏳ Authentication works via sploot.app WebSSO
+- ⏳ Authentication works via inline Clerk popup sign-in
 - ⏳ Right-click save works on 10+ diverse sites
 - ⏳ Upload completes in <3s (P95)
 - ⏳ Notifications clearly show success/error
@@ -180,15 +179,15 @@ pnpm zip
 # 1. pnpm build
 # 2. chrome://extensions
 # 3. Enable Developer mode
-# 4. Load unpacked → .output/chrome-mv3
+# 4. Load unpacked → dist/chrome-mv3
 ```
 
 ## Troubleshooting
 
 **Extension won't load:**
 - Check `chrome://extensions` for error messages
-- Verify `.output/chrome-mv3` directory exists
-- Rebuild: `rm -rf .output && pnpm build`
+- Verify `dist/chrome-mv3` directory exists
+- Rebuild: `rm -rf dist && pnpm build`
 
 **Authentication not working:**
 - Ensure logged into sploot.app in any Chrome tab

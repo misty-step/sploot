@@ -6,16 +6,19 @@
 
 /**
  * Show success notification
+ *
+ * Note: Chrome MV3 doesn't support remote URLs for notification icons.
+ * Always use local extension icon.
  */
 export function showSuccessNotification(
   filename: string,
-  thumbnailUrl?: string
+  _thumbnailUrl?: string // Kept for API compatibility but unused
 ): void {
   const notificationId = `success-${Date.now()}`;
 
   chrome.notifications.create(notificationId, {
     type: 'basic',
-    iconUrl: thumbnailUrl || chrome.runtime.getURL('icon-128.png'),
+    iconUrl: chrome.runtime.getURL('icon-128.png'), // Always use local icon
     title: 'Saved to Sploot',
     message: filename,
     priority: 1,

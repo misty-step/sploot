@@ -29,15 +29,21 @@ export async function fetchImage(url: string): Promise<Blob> {
   try {
     urlObj = new URL(url);
   } catch (error) {
+    console.error('[ImageFetcher] Invalid URL', { url, error });
     throw new Error('Invalid image URL');
   }
 
   // Only allow HTTP(S) protocols
   if (!['http:', 'https:'].includes(urlObj.protocol)) {
+    console.warn('[ImageFetcher] Unsupported protocol', {
+      url,
+      protocol: urlObj.protocol,
+    });
     throw new Error('Only HTTP/HTTPS URLs are supported');
   }
 
   try {
+    console.log('[ImageFetcher] Fetching image', { url });
     // Fetch image using background context (bypasses CORS)
     const response = await fetch(url, {
       credentials: 'omit', // Don't send cookies (privacy)
@@ -51,6 +57,10 @@ export async function fetchImage(url: string): Promise<Blob> {
     // Validate content type
     const contentType = response.headers.get('content-type')?.toLowerCase();
     if (!contentType || !isValidImageType(contentType)) {
+      console.warn('[ImageFetcher] Invalid content type', {
+        url,
+        contentType,
+      });
       throw new Error(`Invalid content type: ${contentType || 'unknown'}`);
     }
 
@@ -60,6 +70,7 @@ export async function fetchImage(url: string): Promise<Blob> {
     // Validate size
     if (blob.size > MAX_FILE_SIZE) {
       const sizeMB = (blob.size / 1024 / 1024).toFixed(2);
+      console.warn('[ImageFetcher] Image too large', { url, sizeMB });
       throw new Error(`Image too large: ${sizeMB}MB (max 10MB)`);
     }
 
@@ -85,6 +96,7 @@ export async function fetchImage(url: string): Promise<Blob> {
  */
 async function fetchViaImageElement(url: string): Promise<Blob> {
   return new Promise((resolve, reject) => {
+    console.log('[ImageFetcher] Fallback via Image element', { url });
     const img = new Image();
     img.crossOrigin = 'anonymous'; // Try to request CORS
 
@@ -120,6 +132,7 @@ async function fetchViaImageElement(url: string): Promise<Blob> {
     };
 
     img.onerror = () => {
+      console.error('[ImageFetcher] Fallback image load failed', { url });
       reject(new Error('Failed to load image'));
     };
 
