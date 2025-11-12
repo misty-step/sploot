@@ -30,6 +30,7 @@
     "validate:deployment": "bash scripts/validate-deployment.sh"
   },
   "dependencies": {
+    "@clerk/backend": "^2.21.0",
     "@clerk/nextjs": "^6.32.0",
     "@prisma/client": "^6.16.1",
     "@radix-ui/react-alert-dialog": "^1.1.15",
