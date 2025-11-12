@@ -60,7 +60,7 @@
   - Adjust surrounding spacing if needed (maintain section padding)
   **success criteria**: Benefits section renders correctly, responsive behavior works mobile→desktop, no layout shifts
 
-- [ ] Add unit tests for BenefitGrid component
+- [x] Add unit tests for BenefitGrid component
   **file**: `__tests__/components/landing/benefit-grid.test.tsx` (new)
   **test cases**:
   1. Renders 3 benefit cards with correct content
