@@ -130,7 +130,7 @@
 
 ### Testing
 
-- [ ] Add unit tests for ProcessTimeline component
+- [x] Add unit tests for ProcessTimeline component
   **file**: `__tests__/components/landing/process-timeline.test.tsx` (new)
   **test cases**:
   1. Renders 3 process steps with correct content
