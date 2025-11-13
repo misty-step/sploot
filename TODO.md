@@ -123,7 +123,7 @@
   ```
   **success criteria**: Section renders between personal library and benefits, scroll indicator updated, section ID added for navigation
 
-- [ ] Update scroll indicators to include new section
+- [x] Update scroll indicators to include new section
   **file**: `components/landing/scroll-chevron.tsx`
   **changes**: Update scroll chain: semantic-search → personal-library → how-it-works → benefits
   **success criteria**: Chevron navigation works through all 4 sections

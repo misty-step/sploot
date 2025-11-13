@@ -4,6 +4,12 @@ import { ChevronDown } from "lucide-react";
 
 export function ScrollIndicator() {
   const handleClick = () => {
+    const firstSection = document.getElementById("section-semantic-search");
+    if (firstSection) {
+      firstSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
     window.scrollTo({
       top: window.innerHeight,
       behavior: "smooth",
