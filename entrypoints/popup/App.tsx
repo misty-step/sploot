@@ -9,7 +9,7 @@ import {
   useAuth,
   useSession,
   useUser,
-} from '@clerk/clerk-react'
+} from '@clerk/chrome-extension'
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
 import { CLERK_PUBLISHABLE_KEY } from '../../shared/env'
 import './style.css'
