@@ -26,7 +26,7 @@ export async function verifyBearerOrThrow(req: NextRequest): Promise<string> {
   });
 
   // authenticateRequest() automatically checks both Authorization header and cookies
-  const { isSignedIn, sessionClaims, toAuth } = await clerk.authenticateRequest(req, {
+  const { isSignedIn, toAuth } = await clerk.authenticateRequest(req, {
     // Authorized parties - protect against CSRF by whitelisting origins
     authorizedParties: [
       'https://sploot.app',
@@ -44,8 +44,8 @@ export async function verifyBearerOrThrow(req: NextRequest): Promise<string> {
     throw new Error('Unauthorized');
   }
 
-  // Prefer sessionClaims.sub (from token), fallback to toAuth() (from cookies)
-  const userId = sessionClaims?.sub ?? (await toAuth()).userId;
+  // Get userId from auth
+  const userId = (await toAuth()).userId;
 
   if (!userId) {
     throw new Error('Unauthorized - no user ID found');
