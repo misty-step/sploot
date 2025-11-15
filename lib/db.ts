@@ -76,6 +76,7 @@ export const prisma = prismaClient;
 /**
  * Sync user data from Clerk to database.
  * Creates user if not exists, updates email if changed.
+ * Handles orphaned records by replacing them with current Clerk user.
  */
 export async function syncUser(clerkUserId: string, email: string) {
   if (!prisma) {
@@ -88,14 +89,60 @@ export async function syncUser(clerkUserId: string, email: string) {
     } as any;
   }
 
-  return await prisma.user.upsert({
-    where: { id: clerkUserId },
-    update: { email },
-    create: {
-      id: clerkUserId,
-      email,
-    },
-  });
+  try {
+    // Normal case: user exists with this Clerk ID or doesn't exist at all
+    return await prisma.user.upsert({
+      where: { id: clerkUserId },
+      update: { email },
+      create: {
+        id: clerkUserId,
+        email,
+      },
+    });
+  } catch (error) {
+    // Handle unique constraint violation on email
+    // This occurs when a user with this email exists but has a different Clerk ID (orphaned record)
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      // Check if the unique constraint violation is on the email field
+      const target = (error.meta?.target as string[] | undefined);
+      if (target?.includes('email')) {
+        // Find the existing user with this email
+        const existingUser = await prisma.user.findUnique({
+          where: { email },
+        });
+
+        if (existingUser && existingUser.id !== clerkUserId) {
+          // Orphaned record detected: user with this email has a different Clerk ID
+          // This happens when a Clerk user is deleted/recreated but the DB record remains
+          // Solution: Delete the orphaned record and create the new one
+          logger.warn('Detected orphaned user record, replacing with current Clerk user', {
+            orphanedId: existingUser.id,
+            newClerkUserId: clerkUserId,
+            email,
+          });
+
+          // Use a transaction to safely replace the orphaned record
+          return await prisma.$transaction(async (tx) => {
+            // Delete the orphaned user (cascade will delete their assets/tags)
+            await tx.user.delete({
+              where: { id: existingUser.id },
+            });
+
+            // Create the new user
+            return await tx.user.create({
+              data: {
+                id: clerkUserId,
+                email,
+              },
+            });
+          });
+        }
+      }
+    }
+
+    // Re-throw if it's not a case we can handle
+    throw error;
+  }
 }
 
 
