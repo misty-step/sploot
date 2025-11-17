@@ -626,23 +626,30 @@ function AppPageClient() {
   return (
     <div className="flex h-[calc(100vh-56px)] flex-col">
       {/* Container with ultra-wide support - max-width at 1920px+ */}
-      <div className="px-6 pb-6 pt-6 md:px-10 2xl:px-12 border-b border-border">
+      <div className="px-6 pb-6 pt-6 md:px-10 2xl:px-12 border-b-[6px] border-electric-lime">
         <div className="mx-auto w-full max-w-7xl 2xl:max-w-[1920px]">
           <header className="flex flex-col gap-4">
             {/* Title bar with inline stats */}
             <div className="flex items-baseline gap-3 flex-wrap">
-              <h1 className="text-4xl font-light tracking-tight text-foreground">your library</h1>
+              <h1
+                className="text-6xl md:text-7xl tracking-wider text-electric-lime leading-none"
+                style={{ fontFamily: "var(--font-bebas-neue)" }}
+              >
+                SPLOOT
+              </h1>
               {stats.total > 0 && (
-                <span className="text-sm text-muted-foreground font-light flex items-center gap-2">
-                  <span>{stats.total.toLocaleString()} assets</span>
+                <span className="font-mono text-base text-muted-foreground flex items-center gap-3">
+                  <span className="text-electric-lime font-bold">{stats.total.toLocaleString()}</span>
+                  <span className="uppercase tracking-wider">assets</span>
                   {stats.favorites > 0 && (
                     <>
-                      <span className="text-muted-foreground/30">•</span>
-                      <span>{stats.favorites.toLocaleString()} favorites</span>
+                      <span className="text-hot-pink font-bold">|</span>
+                      <span className="text-hot-pink font-bold">{stats.favorites.toLocaleString()}</span>
+                      <span className="uppercase tracking-wider">favorites</span>
                     </>
                   )}
-                  <span className="text-muted-foreground/30">•</span>
-                  <span className="lowercase">{stats.sizeFormatted}</span>
+                  <span className="text-cyber-blue font-bold">|</span>
+                  <span className="uppercase tracking-wider">{stats.sizeFormatted}</span>
                 </span>
               )}
             </div>
@@ -678,10 +685,10 @@ function AppPageClient() {
                 />
                 {failedEmbeddings.length > 0 && (
                   <Button
-                    variant="outline"
+                    variant="brutalist"
                     size="lg"
                     onClick={handleBulkRetry}
-                    className="gap-2"
+                    className="gap-2 uppercase tracking-wider"
                   >
                     <RotateCcw className="h-4 w-4" />
                     retry ({failedEmbeddings.length})

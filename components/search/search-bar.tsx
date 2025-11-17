@@ -175,14 +175,14 @@ export function SearchBar({
             className={`
               w-full h-[56px] pl-6 pr-12 text-base font-mono
               bg-card text-foreground placeholder-muted-foreground/60
-              border-2 rounded-md
-              focus:outline-none
-              ${searchState === 'typing' ? 'border-green-600' : ''}
-              ${searchState === 'loading' ? 'border-green-600' : ''}
-              ${searchState === 'success' ? 'border-green-600' : ''}
-              ${searchState === 'no-results' ? 'border-orange-500' : ''}
+              brutalist-border brutalist-corners
+              focus:outline-none transition-colors duration-200
+              ${searchState === 'typing' ? 'border-electric-lime' : ''}
+              ${searchState === 'loading' ? 'border-electric-lime' : ''}
+              ${searchState === 'success' ? 'border-electric-lime' : ''}
+              ${searchState === 'no-results' ? 'border-neon-yellow' : ''}
               ${searchState === 'error' ? 'border-destructive' : ''}
-              ${searchState === 'idle' ? 'border-border focus:border-green-600' : ''}
+              ${searchState === 'idle' ? 'border-muted-foreground focus:border-electric-lime' : ''}
             `}
           />
 
@@ -221,12 +221,12 @@ export function SearchBar({
           ref={dropdownRef}
           className="
             absolute top-full mt-2 w-full
-            bg-card border border-border rounded-md
+            bg-card brutalist-border border-electric-lime brutalist-corners
             overflow-hidden z-50
           "
         >
           {/* History header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <div className="flex items-center justify-between px-4 py-3 border-b-2 border-electric-lime">
             <span className="font-mono text-xs text-muted-foreground">recent searches</span>
             <button
               onClick={() => {

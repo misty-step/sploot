@@ -44,7 +44,10 @@ export function FilterChips({
         value="all"
         aria-label="all"
         title="all"
-        className="gap-1.5"
+        className={cn(
+          "gap-1.5 brutalist-border uppercase tracking-wider",
+          activeFilter === 'all' ? 'border-electric-lime' : 'border-muted-foreground'
+        )}
       >
         {showLabels && <span>all</span>}
       </ToggleGroupItem>
@@ -53,7 +56,10 @@ export function FilterChips({
         value="bangers"
         aria-label="bangers"
         title="bangers"
-        className="gap-1.5"
+        className={cn(
+          "gap-1.5 brutalist-border uppercase tracking-wider",
+          activeFilter === 'bangers' ? 'border-hot-pink' : 'border-muted-foreground'
+        )}
       >
         <Heart
           className="h-4 w-4"

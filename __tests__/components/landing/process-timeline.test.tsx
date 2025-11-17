@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import { ProcessTimeline } from "@/components/landing/process-timeline";
 
-const titles = ["upload", "ai analyzes", "search & find"];
+const titles = ["UPLOAD", "AI ANALYZES", "SEARCH & FIND"];
 let intersectionCallback: IntersectionObserverCallback | null = null;
 
 class IntersectionObserverMock implements IntersectionObserver {
@@ -57,13 +57,13 @@ describe("ProcessTimeline", () => {
     });
 
     expect(
-      screen.getByText("drag and drop your memes. we'll handle the rest."),
+      screen.getByText("Drag and drop your memes. We'll handle the rest."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("clip embeddings capture semantic meaning of every image."),
+      screen.getByText("CLIP embeddings capture semantic meaning of every image."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("type what you remember, get what you need instantly."),
+      screen.getByText("Type what you remember, get what you need instantly."),
     ).toBeInTheDocument();
   });
 
@@ -73,7 +73,7 @@ describe("ProcessTimeline", () => {
 
     expect(icons).toHaveLength(3);
     icons.forEach((icon) => {
-      expect(icon.getAttribute("viewBox")).toBe("0 0 120 120");
+      expect(icon.getAttribute("viewBox")).toBe("0 0 24 24");
       expect(icon.getAttribute("aria-hidden")).toBe("true");
     });
   });
@@ -85,18 +85,16 @@ describe("ProcessTimeline", () => {
     expect(wrapper).not.toBeNull();
     expect(wrapper?.className).toContain("flex");
     expect(wrapper?.className).toContain("flex-col");
-    expect(wrapper?.className).toContain("md:flex-row");
+    expect(wrapper?.className).toContain("md:grid");
+    expect(wrapper?.className).toContain("md:grid-cols-3");
   });
 
-  it("only shows connecting lines on desktop breakpoints", () => {
-    const { container } = render(<ProcessTimeline />);
-    const connectors = container.querySelectorAll("[data-connector]");
+  it("renders numbered badges for each step", () => {
+    render(<ProcessTimeline />);
 
-    expect(connectors).toHaveLength(2);
-    connectors.forEach((connector) => {
-      expect(connector.className).toContain("hidden");
-      expect(connector.className).toContain("md:flex");
-    });
+    expect(screen.getByText("01")).toBeInTheDocument();
+    expect(screen.getByText("02")).toBeInTheDocument();
+    expect(screen.getByText("03")).toBeInTheDocument();
   });
 
   it("fades steps into view with staggered delays when intersecting", () => {

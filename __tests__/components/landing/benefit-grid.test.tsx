@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { BenefitGrid } from "@/components/landing/benefit-grid";
 
-const titles = ["private & secure", "lightning fast", "works everywhere"];
+const titles = ["PRIVATE & SECURE", "LIGHTNING FAST", "WORKS EVERYWHERE"];
 
 describe("BenefitGrid", () => {
   it("renders all benefit cards with the correct copy", () => {
@@ -14,16 +14,16 @@ describe("BenefitGrid", () => {
     });
 
     expect(
-      screen.getByText("your memes stay yours. zero tracking, zero sharing."),
+      screen.getByText("Your memes stay yours. Zero tracking, zero sharing."),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "search thousands of memes in milliseconds with ai semantic search.",
+        "Search thousands of memes in milliseconds with AI semantic search.",
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "install as a pwa, works offline, and feels native on any device.",
+        "Install as a PWA, works offline, and feels native on any device.",
       ),
     ).toBeInTheDocument();
   });
@@ -34,8 +34,8 @@ describe("BenefitGrid", () => {
 
     expect(icons).toHaveLength(3);
     icons.forEach((icon) => {
-      expect(icon).toHaveAttribute("stroke-width", "1.5");
-      expect(icon.classList.contains("text-primary")).toBe(true);
+      expect(icon).toHaveAttribute("stroke-width", "2.5");
+      expect(icon.classList.contains("text-foreground")).toBe(true);
     });
   });
 
@@ -47,7 +47,7 @@ describe("BenefitGrid", () => {
     expect(grid?.className).toContain("grid");
     expect(grid?.className).toContain("grid-cols-1");
     expect(grid?.className).toContain("md:grid-cols-3");
-    expect(grid?.className).toContain("md:gap-12");
+    expect(grid?.className).toContain("md:gap-10");
   });
 
   it("includes hover transitions on each card", () => {
@@ -56,8 +56,8 @@ describe("BenefitGrid", () => {
 
     expect(cards).toHaveLength(3);
     cards.forEach((card) => {
-      expect(card.className).toContain("hover:-translate-y-1");
-      expect(card.className).toContain("hover:border-primary/60");
+      expect(card.className).toContain("hover:-translate-y-2");
+      expect(card.className).toContain("hover:shadow-lg");
       expect(card.className).toContain("transition-all");
     });
   });

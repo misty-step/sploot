@@ -36,7 +36,7 @@ export function UploadButton({
 
   return (
     <Button
-      variant="outline"
+      variant="brutalist"
       size={buttonSize}
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}
@@ -52,7 +52,7 @@ export function UploadButton({
         transform: `scale(${scale})`,
       }}
       className={cn(
-        'relative touch-manipulation font-mono text-sm',
+        'relative touch-manipulation font-mono text-sm uppercase tracking-wider',
         showLabel && 'px-6',
         className
       )}
@@ -88,7 +88,7 @@ export function UploadButtonFloating({
 
   return (
     <Button
-      variant="outline"
+      variant="brutalist"
       size="icon-lg"
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}

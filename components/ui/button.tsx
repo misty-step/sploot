@@ -21,6 +21,8 @@ const buttonVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         upload:
           "bg-green-600 text-white hover:bg-green-500 active:bg-green-700 hover:shadow-lg hover:shadow-green-600/20 focus-visible:ring-green-600/20 dark:focus-visible:ring-green-600/40",
+        brutalist:
+          "brutalist-border border-electric-lime bg-hot-pink text-black font-bold tracking-wide hover:bg-electric-lime hover:border-hot-pink hover:scale-105 active:scale-95 transition-all duration-200 shadow-lg",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",

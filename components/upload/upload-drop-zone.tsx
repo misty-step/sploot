@@ -135,22 +135,26 @@ export function UploadDropZone({
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
         className={cn(
-          'relative border-2 border-dashed transition-all duration-200 cursor-pointer',
-          'hover:border-primary hover:bg-primary/5',
+          'relative border-[8px] border-solid brutalist-corners transition-all duration-200 cursor-pointer',
+          'bg-diagonal-stripes',
+          'hover:border-electric-lime hover:bg-black',
           isDragging
-            ? 'border-primary bg-primary/10 scale-[1.02]'
-            : 'border-border',
+            ? 'border-electric-lime bg-black scale-[1.02] neon-glow-lime'
+            : 'border-electric-lime',
           isProcessingPulse && 'animate-pulse'
         )}
       >
         {/* Preparing overlay */}
         {isPreparing && (
-          <div className="absolute inset-0 z-10 bg-background/95 flex flex-col items-center justify-center animate-in fade-in duration-200 rounded-xl">
-            <Loader2 className="size-8 text-primary animate-spin mb-3" />
-            <p className="font-medium mb-1">
-              Preparing {preparingFileCount} {preparingFileCount === 1 ? 'file' : 'files'}...
+          <div className="absolute inset-0 z-10 bg-black/95 flex flex-col items-center justify-center animate-in fade-in duration-200 brutalist-corners">
+            <Loader2 className="size-8 text-electric-lime animate-spin mb-3" />
+            <p
+              className="text-3xl mb-2 tracking-wider text-electric-lime"
+              style={{ fontFamily: "var(--font-bebas-neue)" }}
+            >
+              PREPARING {preparingFileCount} {preparingFileCount === 1 ? 'FILE' : 'FILES'}...
             </p>
-            <p className="text-muted-foreground text-sm">
+            <p className="font-mono text-sm text-muted-foreground uppercase tracking-wider">
               {preparingTotalSize < 1024 * 1024
                 ? `${(preparingTotalSize / 1024).toFixed(0)} KB`
                 : `${(preparingTotalSize / (1024 * 1024)).toFixed(1)} MB`}
@@ -159,19 +163,27 @@ export function UploadDropZone({
         )}
         <CardContent className="flex flex-col items-center justify-center py-12">
           <div className={cn(
-            'size-16 mb-4 rounded-lg flex items-center justify-center transition-all duration-200',
-            isDragging ? 'bg-primary/20 scale-110' : 'bg-muted'
+            'size-20 mb-6 brutalist-corners flex items-center justify-center transition-all duration-200',
+            'brutalist-border',
+            isDragging ? 'border-electric-lime bg-black scale-110' : 'border-muted-foreground bg-black'
           )}>
-            <Upload className={cn('size-8 transition-colors', isDragging ? 'text-primary' : 'text-muted-foreground')} />
+            <Upload className={cn('size-10 transition-colors', isDragging ? 'text-electric-lime' : 'text-muted-foreground')} strokeWidth={3} />
           </div>
 
-          <p className="font-medium mb-1">
-            {isDragging ? 'Drop your images here' : 'Drag & drop images here'}
-          </p>
-          <p className="text-muted-foreground text-sm mb-4">
+          <h2
+            className="text-4xl md:text-5xl mb-3 tracking-wider"
+            style={{ fontFamily: "var(--font-bebas-neue)" }}
+          >
+            {isDragging ? (
+              <span className="text-electric-lime">DROP MEMES HERE</span>
+            ) : (
+              <span className="text-muted-foreground">DRAG & DROP MEMES</span>
+            )}
+          </h2>
+          <p className="font-mono text-sm text-muted-foreground mb-4 uppercase tracking-wider">
             or click to browse • paste from clipboard
           </p>
-          <p className="text-muted-foreground/60 text-xs">
+          <p className="font-mono text-xs text-muted-foreground/60 uppercase tracking-wider">
             JPEG, PNG, WebP, GIF • Max 10MB per file
           </p>
           {enableBackgroundSync && supportsBackgroundSync && (
@@ -180,14 +192,6 @@ export function UploadDropZone({
             </Badge>
           )}
         </CardContent>
-
-        {/* Accent stripe when dragging */}
-        {isDragging && (
-          <div className="absolute inset-0 pointer-events-none rounded-xl">
-            <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-l-xl" />
-            <div className="absolute right-0 top-0 bottom-0 w-1 bg-green-500 rounded-r-xl" />
-          </div>
-        )}
       </Card>
 
       {/* Hidden file input */}
