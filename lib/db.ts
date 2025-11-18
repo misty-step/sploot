@@ -114,27 +114,49 @@ export async function syncUser(clerkUserId: string, email: string) {
         if (existingUser && existingUser.id !== clerkUserId) {
           // Orphaned record detected: user with this email has a different Clerk ID
           // This happens when a Clerk user is deleted/recreated but the DB record remains
-          // Solution: Delete the orphaned record and create the new one
-          logger.warn('Detected orphaned user record, replacing with current Clerk user', {
+          // Solution: Migrate the existing user's ID to the new Clerk ID, preserving all data
+          logger.warn('Detected orphaned user record, migrating to current Clerk user', {
             orphanedId: existingUser.id,
             newClerkUserId: clerkUserId,
             email,
           });
 
-          // Use a transaction to safely replace the orphaned record
+          // Use a transaction to safely migrate the user ID
+          // Since user.id is a primary key, we can't use Prisma's update - must use raw SQL
           return await prisma.$transaction(async (tx) => {
-            // Delete the orphaned user (cascade will delete their assets/tags)
-            await tx.user.delete({
-              where: { id: existingUser.id },
-            });
+            const oldClerkId = existingUser.id;
+            const newClerkId = clerkUserId;
 
-            // Create the new user
-            return await tx.user.create({
-              data: {
-                id: clerkUserId,
-                email,
-              },
-            });
+            // Update all foreign key references first
+            await tx.$executeRaw`
+              UPDATE "assets"
+              SET "owner_user_id" = ${newClerkId}
+              WHERE "owner_user_id" = ${oldClerkId}
+            `;
+
+            await tx.$executeRaw`
+              UPDATE "tags"
+              SET "owner_user_id" = ${newClerkId}
+              WHERE "owner_user_id" = ${oldClerkId}
+            `;
+
+            await tx.$executeRaw`
+              UPDATE "search_logs"
+              SET "user_id" = ${newClerkId}
+              WHERE "user_id" = ${oldClerkId}
+            `;
+
+            // Finally, update the user record itself
+            await tx.$executeRaw`
+              UPDATE "users"
+              SET "id" = ${newClerkId}, "email" = ${email}, "updatedAt" = NOW()
+              WHERE "id" = ${oldClerkId}
+            `;
+
+            // Return the updated user
+            return await tx.user.findUnique({
+              where: { id: newClerkId },
+            }) as any;
           });
         }
       }
