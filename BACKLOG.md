@@ -7,14 +7,6 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 
 ## Now (Sprint-Ready, <2 weeks)
 
-### [Feature] Add "Add to Sploot" Quick Save
-**Files**: Browser extension (new), mobile app integration (future)
-**Perspectives**: product-visionary, user-experience-advocate
-**Context**: Users want frictionless way to save memes from web/mobile to their Sploot library without manual upload flow
-**Options**: Browser extension (Chrome/Firefox), mobile share sheet integration, bookmarklet
-**Effort**: 1-2 weeks (browser extension) | **Priority**: HIGH
-**Impact**: Major improvement to capture workflow, reduces friction for power users
-
 ### [Feature] Meme Detail Page with Semantic Recommendations
 **Files**: `/app/meme/[id]/page.tsx` (new), `/components/related-memes.tsx` (new)
 **Perspectives**: product-visionary, user-experience-advocate, performance-pathfinder
@@ -125,6 +117,7 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 **Effort**: 4h | **Impact**: Consistent error UX, easier frontend error boundaries
 
 ### [Testing] Concurrency + edge coverage for observability stack
+### [Testing] Concurrency + edge coverage for observability stack
 **Source**: PR #13 review (Claude) — https://github.com/misty-step/sploot/pull/13#issuecomment-3492708426  
 **Files**: `__tests__/lib/performance-monitor.test.ts`, new edge-runtime spec, load test harness  
 **Context**: Reviewer asked for optional stress cases (concurrent `measureAsync`, edge runtime smoke, circular buffer saturation) to lock down new instrumentation. Valuable once core bugs are fixed.  
@@ -136,6 +129,7 @@ Analyzed by: 7 specialized perspectives (complexity, architecture, security, per
 **Files**: `/app/api/**/route.ts`, `lib/logger.ts`, `lib/observability-logger.ts`  
 **Context**: Claude flagged possible mismatch between legacy `@/lib/logger` and new observability logger usage. Needs repo-wide sweep once current PR lands.  
 **Effort**: 4h | **Priority**: MEDIUM  
+
 **Acceptance**: Inventory all route/component imports, ensure unified `observability-logger` usage, document migration pattern in CLAUDE.md.
 
 ### [Maintainability] Enforce Logger Usage via ESLint

@@ -433,7 +433,7 @@ export function useUploadRecovery(
     return () => {
       mounted = false;
     };
-  }, []); // Run once on mount
+  }, [onFilesRecovered, options]); // Run once on mount
 
   return { checking, recoveredCount };
 }

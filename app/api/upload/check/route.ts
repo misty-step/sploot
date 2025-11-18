@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireUserIdWithSync } from '@/lib/auth/server';
+import { verifyBearerOrThrow } from '@/lib/auth/verify-bearer';
 import { prisma, assetExists } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 
@@ -57,8 +57,8 @@ import { withObservability } from '@/lib/with-observability';
  */
 async function postHandler(req: NextRequest) {
   try {
-    // Check authentication and ensure user exists in database
-    const userId = await requireUserIdWithSync();
+    // Check authentication (supports both Bearer token and cookies)
+    const userId = await verifyBearerOrThrow(req);
 
     // Parse request body
     const body = await req.json();
