@@ -1,4 +1,4 @@
-import { getOrCreateUser } from '../db';
+import { syncUser } from '../db';
 
 interface AuthResult {
   userId: string | null;
@@ -47,7 +47,7 @@ export async function getAuthWithUser(): Promise<AuthWithUserResult> {
 
       // Ensure user exists in database with error handling
       try {
-        await getOrCreateUser(authResult.userId, email);
+        await syncUser(authResult.userId, email);
       } catch (dbError) {
         // Log database sync error but don't block authentication
         logger.logError('auth:db-sync-failed', dbError as Error, {

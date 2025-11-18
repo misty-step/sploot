@@ -42,7 +42,7 @@ Or get it from the Neon Console:
 
 Add two secrets to your GitHub repository:
 
-1. Go to: https://github.com/phrazzld/sploot/settings/secrets/actions
+1. Go to: https://github.com/misty-step/sploot/settings/secrets/actions
 2. Click "New repository secret"
 
 #### Secret 1: NEON_API_KEY
@@ -138,7 +138,7 @@ If your setup uses a different pattern, update the workflow's `branch:` paramete
 ### Monitor Workflow Runs
 
 View workflow runs at:
-https://github.com/phrazzld/sploot/actions/workflows/cleanup-neon-branches.yml
+https://github.com/misty-step/sploot/actions/workflows/cleanup-neon-branches.yml
 
 ## Troubleshooting
 
@@ -159,7 +159,7 @@ neonctl branches list --project-id YOUR_PROJECT_ID
 ```
 
 **Check**: Look at the workflow logs for errors:
-https://github.com/phrazzld/sploot/actions
+https://github.com/misty-step/sploot/actions
 
 ### "Branch not found" Error
 
