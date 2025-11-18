@@ -26,6 +26,12 @@ export default defineConfig({
       name: 'Add to Sploot',
       description: 'Save memes from any website to your Sploot library with one click',
       version: '1.0.0',
+      icons: {
+        16: 'icon-16.png',
+        32: 'icon-32.png',
+        48: 'icon-48.png',
+        128: 'icon-128.png',
+      },
       permissions: ['storage', 'tabs', 'contextMenus', 'notifications', 'cookies'],
       host_permissions: Array.from(
         new Set([

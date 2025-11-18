@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import {
   ClerkProvider,
@@ -15,19 +15,49 @@ import { CLERK_PUBLISHABLE_KEY } from '../../shared/env'
 import './style.css'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
+
+// Clerk appearance customization to match our theme
+const clerkAppearance = {
+  variables: {
+    colorPrimary: '#7C5CFF',
+    colorTextOnPrimaryBackground: '#FFFFFF',
+    colorBackground: '#FFFFFF',
+    colorInputBackground: '#FAFAFA',
+    colorInputText: '#0A0A0A',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
+    borderRadius: '8px',
+  },
+  elements: {
+    card: 'shadow-md',
+    formButtonPrimary: 'bg-accent-primary hover:bg-accent-hover',
+    formFieldInput: 'border-border-primary',
+    footerActionLink: 'text-accent-primary hover:text-accent-hover',
+  },
+}
+
 function App() {
   return (
     <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
       <AuthStatusReporter />
       <div className="popup-container">
         <header>
-          <h1>Add to Sploot</h1>
+          <h1>
+            <img
+              src={chrome.runtime.getURL('icon-128.png')}
+              alt="Sploot"
+              className="logo-icon"
+            />
+            Sploot
+          </h1>
         </header>
         <main>
           <SignedOut>
             <div className="auth-panel">
-              <p>Sign in to start saving memes.</p>
-              <SignIn routing="hash" />
+              <div className="auth-header">
+                <h2>Welcome to Sploot</h2>
+                <p>Sign in to save images from anywhere on the web</p>
+              </div>
+              <SignIn routing="hash" appearance={clerkAppearance} />
             </div>
           </SignedOut>
           <SignedIn>
@@ -42,8 +72,14 @@ function App() {
 function SignedInPanel() {
   const { user } = useUser()
   const { session } = useSession()
+  const [hasUsedExtension, setHasUsedExtension] = useState(
+    localStorage.getItem('sploot-has-used') === 'true'
+  )
 
   const handleViewLibrary = () => {
+    // Mark as used when opening library
+    localStorage.setItem('sploot-has-used', 'true')
+    setHasUsedExtension(true)
     chrome.tabs.create({ url: 'https://sploot.app/app' })
   }
 
@@ -51,22 +87,48 @@ function SignedInPanel() {
     chrome.runtime.sendMessage({ type: AUTH_MESSAGES.RUN_DIAGNOSTICS })
   }
 
+  const isDev = import.meta.env.DEV
+
+  // Calculate session expiry time remaining
+  const expiresIn = session?.expireAt ? session.expireAt - Date.now() / 1000 : null
+  const hoursLeft = expiresIn ? Math.floor(expiresIn / 3600) : null
+  const showExpiryWarning = hoursLeft !== null && hoursLeft < 24
+
   return (
     <div className="signed-in-panel">
+      {!hasUsedExtension && (
+        <div className="onboarding-tip">
+          <h3>You're all set!</h3>
+          <p>Right-click any image and select "Save to Sploot"</p>
+        </div>
+      )}
       <p>
-        Signed in as <strong>{user?.primaryEmailAddress?.emailAddress || user?.username || 'Sploot user'}</strong>
+        Signed in as{' '}
+        <strong>
+          {user?.primaryEmailAddress?.emailAddress || user?.username || 'Sploot user'}
+        </strong>
       </p>
-      {session?.expireAt && (
-        <p className="meta">Session expires at {new Date(session.expireAt * 1000).toLocaleString()}</p>
+      {showExpiryWarning && (
+        <p className="meta warning">
+          ⚠ Session expires in {hoursLeft} hour{hoursLeft === 1 ? '' : 's'}
+        </p>
       )}
       <div className="actions">
-        <button onClick={handleViewLibrary}>Open Sploot</button>
-        <button onClick={handleDiagnostics}>Dump Auth Diagnostics</button>
-        <SignOutButton signOutCallback={() => chrome.runtime.sendMessage({
-          type: AUTH_MESSAGES.STATE_UPDATE,
-          payload: { status: 'signed-out' },
-        })}>
-          <span>Sign out</span>
+        <button onClick={handleViewLibrary}>View My Library</button>
+        {isDev && (
+          <button className="debug" onClick={handleDiagnostics}>
+            Debug Auth
+          </button>
+        )}
+        <SignOutButton
+          signOutCallback={() =>
+            chrome.runtime.sendMessage({
+              type: AUTH_MESSAGES.STATE_UPDATE,
+              payload: { status: 'signed-out' },
+            })
+          }
+        >
+          <button className="secondary">Sign Out</button>
         </SignOutButton>
       </div>
     </div>
