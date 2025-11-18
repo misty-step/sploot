@@ -127,7 +127,7 @@ function TimelineStep({
           "w-full max-w-xs md:w-72",
           "bg-card border border-border",
           "p-6",
-          cascadeOffset[index],
+          cascadeOffset[index] ?? "md:mt-0",
           "transition-all duration-700 ease-out",
           isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8",
           prefersReducedMotion && "translate-y-0 opacity-100 transition-none"

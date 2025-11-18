@@ -72,6 +72,35 @@
 
 ## Technical Debt Opportunities
 
+### Code Review Feedback (PR #17)
+
+Items deferred from CodeRabbit review for future iterations:
+
+**Accessibility Improvements:**
+- **SearchBar aria-label**: Add `aria-label="Clear search history"` to clear history button for screen readers
+- **BenefitGrid aria-hidden**: Add `aria-hidden="true"` to decorative icons
+- **IntersectionObserver guards**: Add defensive checks and reduced-motion support in LandingFooter (matching ProcessTimeline pattern)
+
+**Component Organization:**
+- **Relocate OverlappingCircles**: Move from `@/components/landing/` to `@/components/ui/` or `@/components/branding/` since used in both landing and app navbar
+- **Extract Bebas Neue font style**: Create `.heading-display { font-family: var(--font-bebas-neue); }` utility class to avoid inline styles
+- **Make ScrollIndicator configurable**: Accept `targetSectionId` prop instead of hardcoding `"section-semantic-search"`
+- **FilterChips class deduplication**: Extract shared active/inactive class variants to helper
+
+**Naming Consistency:**
+- **Color class rename strategy**: `text-electric-lime` etc. map to cyan/coral/violet - consider gradual migration to semantic names with deprecation notices
+- **CSS variable alignment**: `--font-geist-sans` now references DM_Sans - either rename variable or add backward-compatibility comment
+
+**Code Quality:**
+- **Hoist breakpointCols constant**: Move Masonry breakpoints in ImageGridSkeleton to module-level to avoid recreation per render
+- **Tighten OptimizedImageSkeleton props**: Remove unused `delay` from type or implement stagger support
+
+**Testing:**
+- **ProcessTimeline reduced-motion test**: Add test case with `usePrefersReducedMotion` true or `IntersectionObserver` undefined
+
+**SEO:**
+- **Hero h1 tag**: Use `<h1>` instead of `<p>` for primary tagline on landing page
+
 ### Refactoring Candidates
 
 - **Extract section layout component**: Create `<LandingSection>` wrapper with consistent padding, borders, responsive behavior. Low effort (1h), medium maintainability value. Worth doing if landing page expands to 10+ sections.

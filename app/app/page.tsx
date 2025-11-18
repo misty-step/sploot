@@ -650,11 +650,6 @@ function AppPageClient() {
                   <span className="text-muted-foreground uppercase">SIZE:</span>
                   <span className="text-cyber-blue font-bold">{stats.sizeFormatted}</span>
                 </div>
-                <span className="text-border">|</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground uppercase">LAST:</span>
-                  <span className="font-bold">4d</span>
-                </div>
               </div>
             )}
 

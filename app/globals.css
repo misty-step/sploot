@@ -361,6 +361,10 @@ select:focus-visible {
   box-shadow: 0 0 20px var(--accent-cyan);
 }
 
+.neon-glow-lime {
+  box-shadow: 0 0 20px var(--accent-cyan);
+}
+
 /* Corner brackets for framing */
 .corner-bracket::before,
 .corner-bracket::after {
@@ -419,6 +423,14 @@ select:focus-visible {
 
 .text-accent-primary {
   color: var(--accent-cyan);
+}
+
+.text-accent-cyan {
+  color: var(--accent-cyan);
+}
+
+.text-accent-coral {
+  color: var(--accent-coral);
 }
 
 /* Primary accent color (Cyan) - used for first/main sections

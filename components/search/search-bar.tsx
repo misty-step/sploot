@@ -145,7 +145,7 @@ export function SearchBar({
 
   return (
     <div className={`relative ${className}`} data-search-bar>
-      {/* Search bar container with pill shape */}
+      {/* Search bar container */}
       <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="relative">
         <div className="relative flex items-center">
           {/* Input field */}

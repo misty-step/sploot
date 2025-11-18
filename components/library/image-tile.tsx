@@ -466,7 +466,7 @@ function ImageTileComponent({
                 </Tooltip>
               </TooltipProvider>
 
-              {/* Share button - always visible on mobile, hover-only on desktop */}
+              {/* Share button - always visible with hover color transition */}
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
