@@ -94,9 +94,9 @@ export function LandingFooter() {
       <div className="mb-16 opacity-0 animate-[fadeIn_1s_ease-out_0.9s_forwards]">
         <Button
           asChild
-          variant="brutalist"
+          variant="accent"
           size="lg"
-          className="px-16 py-10 text-2xl md:text-3xl shadow-2xl"
+          className="px-16 py-10 text-2xl md:text-3xl"
           style={{ fontFamily: "var(--font-bebas-neue)" }}
         >
           <Link href="/sign-up">START YOUR COLLECTION →</Link>

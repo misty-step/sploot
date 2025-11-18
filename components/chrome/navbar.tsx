@@ -4,6 +4,7 @@ import { ReactNode } from 'react';
 import Link from 'next/link';
 import { UserAvatar } from './user-avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { OverlappingCircles } from '@/components/landing/overlapping-circles';
 import { cn } from '@/lib/utils';
 
 interface NavbarProps {
@@ -54,37 +55,24 @@ export function Navbar({
     >
       {/* Container for navbar content - max-width for ultra-wide screens */}
       <div className="flex items-center justify-between w-full max-w-screen-2xl 2xl:max-w-[1920px] mx-auto">
-        {/* Left section: Compact LOOT branding */}
+        {/* Left section: SPLOOT branding with overlapping circles */}
         <Link
           href="/app"
           aria-label="Sploot - Home"
-          className="flex items-center gap-2 group hover:scale-105 transition-transform duration-200"
+          className="flex items-center gap-2 group hover:opacity-80 transition-opacity duration-150"
         >
-          {/* Compact starburst icon - 24x24 */}
-          <svg
-            viewBox="0 0 24 24"
-            className="w-6 h-6"
-            aria-hidden="true"
-          >
-            {/* Center square */}
-            <rect x="9" y="9" width="6" height="6" fill="var(--electric-lime)" />
-            {/* Radiating lines - simplified for small size */}
-            <rect x="11" y="0" width="2" height="8" fill="var(--electric-lime)" />
-            <rect x="11" y="16" width="2" height="8" fill="var(--electric-lime)" />
-            <rect x="0" y="11" width="8" height="2" fill="var(--electric-lime)" />
-            <rect x="16" y="11" width="8" height="2" fill="var(--electric-lime)" />
-            <rect x="3" y="3" width="5" height="2" fill="var(--hot-pink)" transform="rotate(45 5.5 4)" />
-            <rect x="16" y="3" width="5" height="2" fill="var(--hot-pink)" transform="rotate(-45 18.5 4)" />
-            <rect x="3" y="16" width="5" height="2" fill="var(--hot-pink)" transform="rotate(-45 5.5 17)" />
-            <rect x="16" y="16" width="5" height="2" fill="var(--hot-pink)" transform="rotate(45 18.5 17)" />
-          </svg>
+          {/* Overlapping circles logo */}
+          <OverlappingCircles
+            strokeWidth={3}
+            className="w-8 h-8"
+          />
 
-          {/* LOOT wordmark in Bebas Neue */}
+          {/* SPLOOT wordmark in Bebas Neue */}
           <span
-            className="text-3xl text-electric-lime tracking-wider leading-none"
+            className="text-2xl text-accent-cyan tracking-wider"
             style={{ fontFamily: "var(--font-bebas-neue)" }}
           >
-            LOOT
+            SPLOOT
           </span>
         </Link>
 

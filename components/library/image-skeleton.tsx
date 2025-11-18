@@ -1,34 +1,42 @@
 'use client';
 
+import { useMemo } from 'react';
+import Masonry from 'react-masonry-css';
 import { cn } from '@/lib/utils';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent } from '@/components/ui/card';
 
 interface ImageSkeletonProps {
   className?: string;
   variant?: 'tile' | 'list';
+  aspectRatio?: string;
+  delay?: number;
 }
 
-export function ImageSkeleton({ className, variant = 'tile' }: ImageSkeletonProps) {
+export function ImageSkeleton({ className, variant = 'tile', aspectRatio = 'aspect-square', delay = 0 }: ImageSkeletonProps) {
   if (variant === 'list') {
     return (
       <div className={cn('flex items-center gap-4 p-4', className)}>
-        <Skeleton className="h-16 w-16 flex-shrink-0" />
+        <div className="h-16 w-16 flex-shrink-0 bg-muted animate-pulse" />
         <div className="flex-1 space-y-2">
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-3 w-1/2" />
+          <div className="h-4 w-3/4 bg-muted animate-pulse" />
+          <div className="h-3 w-1/2 bg-muted animate-pulse" />
         </div>
       </div>
     );
   }
 
-  // Default tile variant - matches ImageTile Card structure
+  // Default tile variant - shimmer effect with no border
   return (
-    <Card className={cn('overflow-hidden border', className)}>
-      <CardContent className="p-0">
-        <Skeleton className="aspect-square w-full" />
-      </CardContent>
-    </Card>
+    <div
+      className={cn('overflow-hidden', className)}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <div
+        className={cn(
+          aspectRatio,
+          'w-full bg-gradient-to-r from-muted via-muted-foreground/5 to-muted animate-shimmer'
+        )}
+      />
+    </div>
   );
 }
 
@@ -38,29 +46,60 @@ interface ImageGridSkeletonProps {
   className?: string;
 }
 
-export function ImageGridSkeleton({ count = 12, variant = 'tile', className }: ImageGridSkeletonProps) {
+// Varied aspect ratios for visual interest - mimics real meme content
+const ASPECT_RATIOS = [
+  'aspect-square',      // 1:1
+  'aspect-[3/4]',       // Portrait
+  'aspect-[4/3]',       // Landscape
+  'aspect-[2/3]',       // Tall portrait
+  'aspect-[16/9]',      // Wide
+  'aspect-[9/16]',      // Phone screenshot
+];
+
+export function ImageGridSkeleton({ count = 20, variant = 'tile', className }: ImageGridSkeletonProps) {
+  // Generate deterministic but varied aspect ratios
+  const skeletonConfigs = useMemo(() => {
+    return Array.from({ length: count }).map((_, i) => ({
+      aspectRatio: ASPECT_RATIOS[i % ASPECT_RATIOS.length],
+      delay: i * 50, // Staggered animation
+    }));
+  }, [count]);
+
   if (variant === 'list') {
     return (
       <div className={cn('space-y-1', className)}>
-        {Array.from({ length: count }).map((_, i) => (
-          <ImageSkeleton key={i} variant="list" />
+        {skeletonConfigs.map((config, i) => (
+          <ImageSkeleton key={i} variant="list" delay={config.delay} />
         ))}
       </div>
     );
   }
 
-  // Default grid variant
+  // Masonry layout matching the actual image grid
+  const breakpointCols = {
+    default: 4,
+    1280: 4,
+    1024: 3,
+    768: 2,
+    640: 2,
+  };
+
   return (
-    <div
-      className={cn(
-        'grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6',
-        className
-      )}
+    <Masonry
+      breakpointCols={breakpointCols}
+      className={cn('masonry-grid', className)}
+      columnClassName="masonry-grid-column"
     >
-      {Array.from({ length: count }).map((_, i) => (
-        <ImageSkeleton key={i} variant="tile" />
+      {skeletonConfigs.map((config, i) => (
+        <div key={i} className="masonry-item">
+          <ImageSkeleton
+            variant="tile"
+            aspectRatio={config.aspectRatio}
+            delay={config.delay}
+          />
+        </div>
       ))}
-    </div>
+    </Masonry>
   );
 }
 
@@ -69,6 +108,7 @@ export function OptimizedImageSkeleton({
   className,
   variant = 'tile',
   isExiting = false,
+  aspectRatio = 'aspect-square',
 }: ImageSkeletonProps & { isExiting?: boolean }) {
   const baseClasses = cn(
     'transition-all duration-300 ease-out transform-gpu will-change-transform',
@@ -79,10 +119,10 @@ export function OptimizedImageSkeleton({
   if (variant === 'list') {
     return (
       <div className={cn('flex items-center gap-4 p-4', baseClasses)}>
-        <Skeleton className="h-16 w-16 flex-shrink-0" />
+        <div className="h-16 w-16 flex-shrink-0 bg-muted animate-pulse" />
         <div className="flex-1 space-y-2">
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-3 w-1/2 opacity-70" />
+          <div className="h-4 w-3/4 bg-muted animate-pulse" />
+          <div className="h-3 w-1/2 bg-muted animate-pulse opacity-70" />
         </div>
       </div>
     );
@@ -90,10 +130,13 @@ export function OptimizedImageSkeleton({
 
   // Default tile variant with optimized transitions
   return (
-    <Card className={cn('overflow-hidden border', baseClasses)}>
-      <CardContent className="p-0">
-        <Skeleton className="aspect-square w-full" />
-      </CardContent>
-    </Card>
+    <div className={cn('overflow-hidden', baseClasses)}>
+      <div
+        className={cn(
+          aspectRatio,
+          'w-full bg-gradient-to-r from-muted via-muted-foreground/5 to-muted animate-shimmer'
+        )}
+      />
+    </div>
   );
 }

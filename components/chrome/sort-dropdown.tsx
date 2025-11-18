@@ -35,11 +35,11 @@ export function SortDropdown({
 }: SortDropdownProps) {
   // Sort option configurations
   const sortOptions: Array<{ value: SortOption; label: string }> = [
-    { value: 'recent', label: 'recent' },
-    { value: 'date', label: 'date added' },
-    { value: 'size', label: 'file size' },
-    { value: 'name', label: 'name' },
-    { value: 'shuffle', label: 'shuffle' },
+    { value: 'recent', label: 'RECENT' },
+    { value: 'date', label: 'DATE' },
+    { value: 'size', label: 'SIZE' },
+    { value: 'name', label: 'NAME' },
+    { value: 'shuffle', label: 'SHUFFLE' },
   ];
 
   // Handle sort option selection
@@ -73,7 +73,10 @@ export function SortDropdown({
         <Button
           variant="outline"
           size="lg"
-          className={cn('gap-1', className)}
+          className={cn(
+            'gap-1 border border-border font-mono uppercase tracking-wider hover:border-accent-cyan',
+            className
+          )}
           aria-label="Sort options"
           title={`Sort by ${getCurrentLabel()}`}
         >
@@ -82,7 +85,7 @@ export function SortDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="top" className="w-[160px]">
-        <DropdownMenuLabel>sort by</DropdownMenuLabel>
+        <DropdownMenuLabel className="font-mono uppercase text-xs">SORT BY</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuRadioGroup value={value} onValueChange={handleSortChange}>
           {sortOptions.map((option) => (

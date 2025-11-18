@@ -26,7 +26,7 @@ describe('Navbar', () => {
       expect(nav.tagName).toBe('NAV');
     });
 
-    it('should render starburst logo and LOOT wordmark', () => {
+    it('should render overlapping circles logo and SPLOOT wordmark', () => {
       render(<Navbar />);
 
       // Check for logo link with correct aria-label
@@ -34,8 +34,8 @@ describe('Navbar', () => {
       expect(logoLink).toBeInTheDocument();
       expect(logoLink).toHaveAttribute('href', '/app');
 
-      // Check for LOOT wordmark
-      expect(screen.getByText('LOOT')).toBeInTheDocument();
+      // Check for SPLOOT wordmark
+      expect(screen.getByText('SPLOOT')).toBeInTheDocument();
     });
 
     it('should render UserAvatar when showUserAvatar is true (default)', () => {

@@ -67,11 +67,11 @@ export default async function Home() {
             </div>
           </div>
 
-          {/* CTA - brutalist button */}
+          {/* CTA button */}
           <div className="opacity-0 animate-[fadeIn_1s_ease-out_0.45s_forwards]">
             <Button
               asChild
-              variant="brutalist"
+              variant="accent"
               size="lg"
               className="px-10 py-7 text-base md:text-lg"
               style={{ fontFamily: "var(--font-bebas-neue)" }}
@@ -86,7 +86,7 @@ export default async function Home() {
       </section>
 
       {/* Section Divider */}
-      <SectionDivider color="lime" className="my-16" />
+      <SectionDivider color="lime" />
 
       {/* Section 1: Semantic Search - Left text, Right visual */}
       <section id="section-semantic-search" className="relative min-h-screen flex items-center px-6 py-12 md:py-20 bg-diagonal-stripes">
@@ -121,10 +121,10 @@ export default async function Home() {
       </section>
 
       {/* Section Divider */}
-      <SectionDivider color="pink" className="my-16" />
+      <SectionDivider color="pink" />
 
       {/* Section 2: Personal Library - Right text, Left visual */}
-      <section id="section-personal-library" className="relative min-h-screen flex items-center px-6 py-12 md:py-20">
+      <section id="section-personal-library" className="relative min-h-screen flex items-center px-6 py-12 md:py-20 bg-grid">
         <div className="max-w-7xl mx-auto w-full">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-20 items-center">
             {/* Visual - Left */}
@@ -156,7 +156,7 @@ export default async function Home() {
       </section>
 
       {/* Section Divider */}
-      <SectionDivider color="blue" className="my-16" />
+      <SectionDivider color="blue" />
 
       {/* Section 3: How it Works - Timeline */}
       <section id="section-how-it-works" className="relative min-h-screen flex items-center px-6 py-12 md:py-20 bg-diagonal-stripes">
@@ -178,7 +178,7 @@ export default async function Home() {
       </section>
 
       {/* Section Divider */}
-      <SectionDivider color="lime" className="my-16" />
+      <SectionDivider color="lime" />
 
       {/* Section 4: Benefits - Center text with icons and CTA */}
       <section id="section-benefits" className="relative min-h-screen flex items-center justify-center px-6 py-20 md:py-32 bg-grid">
@@ -202,9 +202,9 @@ export default async function Home() {
           <div className="pt-8">
             <Button
               asChild
-              variant="brutalist"
+              variant="accent"
               size="lg"
-              className="px-12 py-8 text-lg md:text-xl shadow-2xl"
+              className="px-12 py-8 text-lg md:text-xl"
               style={{ fontFamily: "var(--font-bebas-neue)" }}
             >
               <Link href="/sign-up">START FOR FREE →</Link>
@@ -217,7 +217,7 @@ export default async function Home() {
       </section>
 
       {/* Section Divider */}
-      <SectionDivider color="yellow" className="mt-20" />
+      <SectionDivider color="yellow" />
 
       {/* Footer: Full viewport with animated stats */}
       <LandingFooter />

@@ -43,7 +43,7 @@ export function CollectionGrid() {
         return (
           <div
             key={i}
-            className={`aspect-square rounded-lg border-2 ${getBorderColor(i)} transition-all duration-200 opacity-0`}
+            className={`aspect-square border-2 ${getBorderColor(i)} transition-all duration-200 opacity-0`}
             style={{
               animation: prefersReducedMotion
                 ? `cascadeIn 0.3s ease-out ${i * 0.05}s forwards`
