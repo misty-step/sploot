@@ -3,8 +3,9 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Technical Minimalism Design System - Light mode */
-  --radius: 0; /* Sharp corners everywhere */
+  /* Technical Neo-Brutalist Design System - Light mode */
+  /* Sharp corners, bold accents, pattern backgrounds */
+  --radius: 0; /* Sharp corners everywhere - brutalist aesthetic */
   --background: oklch(0.98 0 0); /* Off-white */
   --foreground: oklch(0.1 0 0); /* Near black */
   --card: oklch(1 0 0); /* Pure white */
@@ -349,7 +350,7 @@ select:focus-visible {
   border-style: solid;
 }
 
-/* Legacy brutalist-border for backward compatibility */
+/* Brutalist border - core design element */
 .brutalist-border {
   border-width: 1px;
   border-style: solid;
@@ -416,11 +417,12 @@ select:focus-visible {
   color: black;
 }
 
-/* Legacy aliases for backward compatibility */
 .text-accent-primary {
   color: var(--accent-cyan);
 }
 
+/* Primary accent color (Cyan) - used for first/main sections
+   Named electric-lime historically, maps to cyan for accessibility */
 .text-electric-lime {
   color: var(--accent-cyan);
 }
@@ -434,7 +436,8 @@ select:focus-visible {
   border-color: var(--accent-cyan);
 }
 
-/* Hot pink → Coral (warm accent) */
+/* Warm accent color (Coral) - used for middle sections
+   Named hot-pink historically, maps to coral for accessibility */
 .text-hot-pink {
   color: var(--accent-coral);
 }
@@ -448,7 +451,8 @@ select:focus-visible {
   border-color: var(--accent-coral);
 }
 
-/* Cyber blue → Violet (bridge accent) */
+/* Bridge accent color (Violet) - used for later sections
+   Named cyber-blue historically, maps to violet for accessibility */
 .text-cyber-blue {
   color: var(--accent-violet);
 }
@@ -462,7 +466,7 @@ select:focus-visible {
   border-color: var(--accent-violet);
 }
 
-/* Neon yellow → Coral (warm accent) for consistency */
+/* Additional warm accent mapping */
 .bg-neon-yellow {
   background-color: var(--accent-coral);
   color: black;

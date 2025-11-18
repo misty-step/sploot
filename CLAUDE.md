@@ -103,27 +103,79 @@ pnpm test:e2e            # Run end-to-end tests
 
 ## Design System
 
-### Theme Configuration - Minimal × Technical Aesthetic
-- **Primary**: Neon Violet (#7C5CFF) - used sparingly for interactive elements
-- **Background**: Pure Black (#000000) - terminal aesthetic foundation
-- **Terminal Colors**:
-  - Success/High Confidence: Terminal Green (#4ADE80)
-  - Error/Failed: Terminal Red (#EF4444)
-  - Warning/Medium: Terminal Yellow (#FBBF24)
-  - Metadata/Secondary: Terminal Gray (#888888)
-- **Typography**:
-  - UI Text: Geist Sans
-  - Metadata/Technical: JetBrains Mono (monospace for timestamps, file info, scores)
-- **Spacing**: 4px base unit system
+### Brand Aesthetic: Technical Neo-Brutalist
 
-### Component Patterns
-- High information density with technical precision
-- Linear's minimal visual language
-- Corner brackets for viewport framing
-- Monospace typography for all technical/metadata displays
-- Color-coded data based on confidence/state
-- Dark mode only with pure black backgrounds
-- Subtle animations (200-300ms transitions)
+Sploot's visual identity is **bold, technical, and intentionally rough-edged** - think Swiss grid precision meets punk zine energy. This is NOT minimal terminal aesthetic. It's maximalist technical design with strong opinions.
+
+### Typography
+- **Headlines**: Bebas Neue - ALL-CAPS, wide tracking, bold presence
+  - Use via `style={{ fontFamily: "var(--font-bebas-neue)" }}`
+  - Always uppercase for section headers
+- **Body**: Geist Sans - clean, readable, professional
+- **Technical/Code**: JetBrains Mono - timestamps, metadata, badges, stats
+
+### Color System (Light/Dark Adaptive)
+
+Three accent colors used consistently across sections:
+
+| Class Name | Actual Color | Usage |
+|------------|-------------|-------|
+| `electric-lime` | Cyan (`--accent-cyan`) | Primary accent, first sections |
+| `hot-pink` | Coral (`--accent-coral`) | Warm accent, middle sections |
+| `cyber-blue` | Violet (`--accent-violet`) | Bridge accent, later sections |
+
+**Note**: Class names are legacy but actively used. They map to semantic color variables.
+
+### Visual Patterns
+
+**Backgrounds** (use on sections):
+- `.bg-diagonal-stripes` - 45° stripe pattern
+- `.bg-grid` - 24px grid overlay
+
+**Structural**:
+- `.brutalist-border` - 1px solid borders
+- `.brutalist-corners` - Sharp corners (no radius)
+- `.corner-bracket` - Technical corner framing
+
+**Effects**:
+- `.accent-glow` - Cyan glow effect
+- Gradient classes: `.from-electric-lime`, `.via-hot-pink`, `.to-cyber-blue`
+
+### Landing Page Section Structure
+
+Each section follows this pattern:
+```tsx
+<section className="relative min-h-screen flex items-center px-6 py-12 md:py-20 bg-diagonal-stripes">
+  <div className="max-w-7xl mx-auto w-full">
+    <h2 style={{ fontFamily: "var(--font-bebas-neue)" }}>
+      SECTION TITLE
+    </h2>
+    {/* Content with accent color consistent with section */}
+  </div>
+  <ScrollChevron targetId="next-section" />
+</section>
+```
+
+Sections alternate between `bg-diagonal-stripes` and `bg-grid`, separated by `<SectionDivider color="lime|pink|blue" />`.
+
+### Component Energy
+
+- **Headlines**: Large (text-5xl to text-8xl), ALL-CAPS, Bebas Neue
+- **Subheadlines**: text-xl to text-2xl, muted-foreground
+- **Accent lines**: Colored dividers with monospace labels (e.g., "AI POWERED")
+- **CTAs**: Bold buttons with accent backgrounds, Bebas Neue text
+- **Badges**: Small rotated labels (e.g., "TRY IT!")
+
+### Animation Guidelines
+- Fade-in with stagger delays (150ms between elements)
+- Use `animate-[fadeIn_1s_ease-out_forwards]` pattern
+- Scroll-triggered via IntersectionObserver
+- Respect `prefers-reduced-motion`
+
+### App vs Landing
+
+The **landing page** uses full brutalist treatment (Bebas Neue, patterns, bold colors).
+The **app** (`/app/*`) uses more restrained styling for usability but maintains sharp corners and accent colors.
 
 ## Performance Requirements
 

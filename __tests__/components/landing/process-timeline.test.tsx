@@ -85,8 +85,7 @@ describe("ProcessTimeline", () => {
     expect(wrapper).not.toBeNull();
     expect(wrapper?.className).toContain("flex");
     expect(wrapper?.className).toContain("flex-col");
-    expect(wrapper?.className).toContain("md:grid");
-    expect(wrapper?.className).toContain("md:grid-cols-3");
+    expect(wrapper?.className).toContain("md:flex-row");
   });
 
   it("renders numbered badges for each step", () => {
@@ -103,7 +102,7 @@ describe("ProcessTimeline", () => {
 
     articlesBefore.forEach((article) => {
       expect(article.className).toContain("opacity-0");
-      expect(article.className).toContain("translate-y-6");
+      expect(article.className).toContain("translate-y-8");
     });
 
     triggerIntersection();
