@@ -111,6 +111,11 @@ export async function syncUser(clerkUserId: string, email: string) {
   });
 
   if (existingUserByEmail) {
+    // Sanity check: if somehow the ID matched (race condition), return it
+    if (existingUserByEmail.id === clerkUserId) {
+      return existingUserByEmail;
+    }
+
     // Orphaned record detected: user with this email has a different Clerk ID
     // Migrate the existing user's ID to the new Clerk ID
     logger.warn('Detected orphaned user record, migrating to current Clerk user', {
@@ -122,8 +127,18 @@ export async function syncUser(clerkUserId: string, email: string) {
     return await prisma.$transaction(async (tx) => {
       const oldClerkId = existingUserByEmail.id;
       const newClerkId = clerkUserId;
+      // Use a temp email to avoid unique constraint violation during creation
+      const tempEmail = `migration-${Date.now()}-${Math.random().toString(36).substring(7)}@sploot.local`;
 
-      // Update all foreign key references
+      // 1. Create the new user with the correct ID but temp email
+      await tx.user.create({
+        data: {
+          id: newClerkId,
+          email: tempEmail,
+        },
+      });
+
+      // 2. Re-parent all related records to the new user
       await tx.$executeRaw`
         UPDATE "assets"
         SET "owner_user_id" = ${newClerkId}
@@ -142,16 +157,16 @@ export async function syncUser(clerkUserId: string, email: string) {
         WHERE "user_id" = ${oldClerkId}
       `;
 
-      // Update the user record itself (changing PK)
-      await tx.$executeRaw`
-        UPDATE "users"
-        SET "id" = ${newClerkId}, "email" = ${email}, "updatedAt" = NOW()
-        WHERE "id" = ${oldClerkId}
-      `;
+      // 3. Delete the old user record (cascades/cleans up)
+      await tx.user.delete({
+        where: { id: oldClerkId },
+      });
 
-      return await tx.user.findUnique({
+      // 4. Update the new user with the correct email
+      return await tx.user.update({
         where: { id: newClerkId },
-      }) as any;
+        data: { email: email },
+      });
     });
   }
 
