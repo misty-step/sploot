@@ -69,12 +69,17 @@ export async function getAuthWithUser(): Promise<AuthWithUserResult> {
           },
         });
 
-        // Allow authentication to proceed even if DB sync fails
-        // The user can still access the app, DB sync will be retried later
-        logger.logInfo('auth:proceeding-without-db-sync', {
+        // If DB sync fails, do not proceed with authentication for this request
+        logger.logError('auth:sync-failed-blocking-auth', dbError as Error, {
           userId: authResult.userId,
-          reason: 'Database sync failed but allowing authentication',
+          email,
+          reason: 'Database sync failed, blocking authentication to prevent further errors',
         });
+        return {
+          userId: null,
+          sessionId: null,
+          getToken: authResult.getToken as any,
+        };
       }
 
       return {
