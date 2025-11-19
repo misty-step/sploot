@@ -1,388 +1,896 @@
-# BACKLOG: Landing Page Conversion Optimization
+# BACKLOG: Sploot Strategic Roadmap
 
-## Future Enhancements
-
-### Visual & Animation Polish
-
-- **Parallax scroll effects on hero**: Subtle logo float on scroll (2-3px movement). Low effort (2h), medium impact. Adds depth without sacrificing performance. Wait until core conversion elements proven effective.
-
-- **Animated number counters**: "Join 1,000+ users" could count up on scroll into view. Low effort (1h), low impact. Nice polish but doesn't drive conversions.
-
-- **Interactive demo**: Replace static GIF with interactive Lottie animation or embedded demo iframe. High effort (8-12h), medium impact. Gives users hands-on feel but adds complexity and load time.
-
-- **Dark mode toggle**: Allow users to preview light theme (even if app is dark-only). Medium effort (4h), low impact. Current pure black is intentional aesthetic choice, light mode would dilute brand.
-
-### Advanced Conversion Tactics
-
-- **Exit intent popup**: Catch users leaving with special offer or demo prompt. Low effort (3h), unknown impact. Could feel spammy, test with A/B after initial launch.
-
-- **Social proof widgets**: Live user count, recent signups ticker, trust badges. Medium effort (6h), medium impact. Requires real usage data first (100+ users).
-
-- **Video testimonials**: Replace text testimonials with short video clips. High effort (production time), high impact if done well. Need real users willing to record first.
-
-- **Pricing comparison table**: Even for free product, compare features vs competitors. Medium effort (4h), medium impact. Useful once market positioning solidifies.
-
-- **Feature tour walkthrough**: Interactive product tour on landing page. High effort (10-15h), medium impact. Better as in-app onboarding after signup.
-
-### Content Experiments
-
-- **Multiple headline variants**: A/B test different value propositions ("Find memes instantly" vs "Never lose a meme again"). Low effort per variant (30min), high learning value. Run after initial traffic baseline established.
-
-- **Long-form benefits copy**: Expand benefit cards with detailed explanations, use cases, screenshots. Medium effort (4h), unknown impact. Could dilute minimalist aesthetic.
-
-- **Case studies section**: Detailed user stories with before/after. High effort (content creation), high impact. Need 3-5 power users first.
-
-- **Press/media mentions**: Add "As seen on" section if featured. Low effort (1h), medium impact. Gated by actually getting press coverage.
-
-### Technical Improvements
-
-- **Page speed optimization**: Implement ISR caching for landing page, preload critical assets, optimize font loading. Medium effort (3-4h), medium impact. Current performance likely sufficient (static page).
-
-- **SEO enhancements**: Add structured data (Organization, WebApplication schemas), optimize meta descriptions, add FAQ schema. Low effort (2h), high long-term impact. Should do after core content finalized.
-
-- **Multi-language support**: Translate landing page to Spanish, French, Japanese. High effort (translation + i18n setup 8-12h), medium impact. Only valuable if targeting international markets.
-
-- **Accessibility audit**: WCAG 2.1 AA compliance full audit, screen reader optimization, motion preferences. Medium effort (4-6h), medium impact (should be done, but not blocking MVP).
-
-## Nice-to-Have Improvements
-
-### Design System Formalization
-
-- **Component library documentation**: Storybook setup for all landing components. High effort (6-8h), low immediate value. Useful for design handoff or team scaling.
-
-- **Design tokens file**: Centralize all colors, spacing, typography in `design-tokens.ts`. Low effort (2h), medium maintainability value. Good for consistency but current approach works.
-
-- **Animation library**: Create reusable animation utilities (fadeInUp, staggerChildren, etc.). Medium effort (3h), medium value. Only needed if animations used across site beyond landing page.
-
-### Analytics & Testing
-
-- **Heatmap tracking**: Install Hotjar or similar to see where users click/scroll. Low effort (setup 1h), high learning value. Useful after 1k+ visitors to identify friction points.
-
-- **A/B testing framework**: Set up proper A/B testing for headlines, CTAs, layouts. Medium effort (5h), high long-term value. Premature without traffic (need 1k+ weekly visitors).
-
-- **Conversion funnel analytics**: Track each section scroll, CTA click, signup completion. Low effort (2h), high value. Should add once basic analytics proven working.
-
-### Content Strategy
-
-- **Blog/changelog integration**: Pull latest blog posts or product updates into landing page. Medium effort (4h), low immediate value. Need content pipeline first.
-
-- **Customer logos**: Display logos of companies/communities using Sploot. Low effort (2h), high impact. Need actual customers first (B2B approach).
-
-- **Integration showcase**: If integrations built (Slack, Notion, etc.), showcase on landing page. Medium effort (3h per integration), high value. Depends on product roadmap.
+Last groomed: 2025-11-18
+Analyzed by: 8 specialized perspectives (complexity-archaeologist, architecture-guardian, security-sentinel, performance-pathfinder, maintainability-maven, user-experience-advocate, product-visionary, design-systems-architect)
+Quality gates audit: 2025-11-18
 
 ---
 
 ## Now (Sprint-Ready, <2 weeks)
 
-### Code Review Feedback (PR #17)
-
-Items deferred from CodeRabbit review for future iterations:
-
-**Accessibility Improvements:**
-- **SearchBar aria-label**: Add `aria-label="Clear search history"` to clear history button for screen readers
-- **BenefitGrid aria-hidden**: Add `aria-hidden="true"` to decorative icons
-- **IntersectionObserver guards**: Add defensive checks and reduced-motion support in LandingFooter (matching ProcessTimeline pattern)
-
-**Component Organization:**
-- **Relocate OverlappingCircles**: Move from `@/components/landing/` to `@/components/ui/` or `@/components/branding/` since used in both landing and app navbar
-- **Extract Bebas Neue font style**: Create `.heading-display { font-family: var(--font-bebas-neue); }` utility class to avoid inline styles
-- **Make ScrollIndicator configurable**: Accept `targetSectionId` prop instead of hardcoding `"section-semantic-search"`
-- **FilterChips class deduplication**: Extract shared active/inactive class variants to helper
-
-**Naming Consistency:**
-- **Color class rename strategy**: `text-electric-lime` etc. map to cyan/coral/violet - consider gradual migration to semantic names with deprecation notices
-- **CSS variable alignment**: `--font-geist-sans` now references DM_Sans - either rename variable or add backward-compatibility comment
-
-**Code Quality:**
-- **Hoist breakpointCols constant**: Move Masonry breakpoints in ImageGridSkeleton to module-level to avoid recreation per render
-- **Tighten OptimizedImageSkeleton props**: Remove unused `delay` from type or implement stagger support
-
-**Testing:**
-- **ProcessTimeline reduced-motion test**: Add test case with `usePrefersReducedMotion` true or `IntersectionObserver` undefined
-
-**SEO:**
-- **Hero h1 tag**: Use `<h1>` instead of `<p>` for primary tagline on landing page
-
-### [Feature] Meme Detail Page with Semantic Recommendations
-**Files**: `/app/meme/[id]/page.tsx` (new), `/components/related-memes.tsx` (new)
-**Perspectives**: product-visionary, user-experience-advocate, performance-pathfinder
-**Context**: Convert fullscreen modal to dedicated meme detail page. Show semantically similar memes using existing embedding infrastructure for improved discovery.
-**Implementation**: Create detail page route, add related memes section using vector similarity search (reuse existing search infrastructure), improve fullscreen UX
-**Effort**: 3-4 days | **Priority**: HIGH
-**Impact**: Better discovery, increased engagement, viral loop potential
-
-### [Performance] Optimize Search Performance
-**Files**: `/app/api/search/route.ts`, `/lib/db.ts`, embedding service
-**Perspectives**: performance-pathfinder, architecture-guardian
-**Context**: Search latency varies based on embedding generation and vector search complexity
-**Investigation Needed**: Profile bottlenecks (embedding API vs pgvector query), add query optimization, implement better caching
-**Effort**: 2-3 days | **Priority**: HIGH
-**Impact**: Faster search improves core user experience
-
-### [Testing] Add Integration Tests for Shuffle Feature
-**Source**: PR #11 review feedback (Claude Code + Codex)
-**Files**: `__tests__/api/shuffle-integration.test.ts` (new), `__tests__/lib/shuffle-pagination.test.ts` (new)
-**Context**: PR #11 implemented server-side seeded shuffle with comprehensive unit tests for hooks. Integration tests needed to validate full data flow (API → DB → response) and catch regressions in connection pooling, transaction handling, and query construction.
-**Test Scenarios**:
-1. Asset shuffle pagination stability - same seed produces identical order across multiple page requests
-2. Search shuffle relevance + randomization - results semantically relevant AND randomized
-3. Shuffle with filters - favorites-only and tag filters work with shuffle
-4. Edge cases - empty library, single asset, invalid seed handling
-**Why Important**: Unit tests cover individual components but don't validate end-to-end shuffle correctness. Connection pooling bugs (fixed in PR #11) could regress without integration tests.
-**Effort**: 4-6h | **Priority**: HIGH (next sprint after PR #11 merge)
-**Acceptance**: Integration tests pass, cover critical shuffle flows, catch connection pooling regressions
-
-### [Performance] Add Shuffle Query Performance Monitoring
-**Source**: PR #11 review feedback (Claude Code)
-**Files**: `app/api/assets/route.ts`, `lib/db.ts`, `app/api/search/route.ts`
-**Context**: Shuffle queries use PostgreSQL `ORDER BY RANDOM()` which has O(n log n) complexity. Performance SLO: <500ms P95 for 1000 asset libraries. Need production data to validate assumptions and identify optimization triggers.
-**Implementation**: Add timing instrumentation to shuffle queries, log to Vercel with structured data (requestId, shuffleSeed, assetCount, durationMs). Alert if >500ms SLO violated.
-**Why Important**: Manual testing shows acceptable performance for 1000 assets, but need real-world data on P95/P99 latency with diverse library sizes (100-10,000 assets). Monitoring enables data-driven optimization decisions (e.g., TABLESAMPLE for large libraries).
-**Effort**: 2h | **Priority**: MEDIUM
-**Acceptance**: Shuffle query timing logged to Vercel, alerts configured for SLO violations, dashboard showing P95/P99 latency by library size
-
-### [Monitoring] Implement Usage Analytics & Abuse Detection
-**Files**: `/app/api/upload/route.ts`, `/app/api/search/route.ts`
+### [Security] SSRF Vulnerability in Image Embeddings
+**File**: `app/api/embeddings/image/route.ts:17-65`
 **Perspectives**: security-sentinel
-**Impact**: Understanding real usage patterns before implementing limits; prevent sustained API abuse
-**Reality Check**: 1,000 uploads = $0.22 in embeddings. Hobby plan blocks at 1GB storage automatically (no surprise bills possible). Real power users importing meme collections = legitimate use case we should support.
-**Actual Abuse Scenario**: Sustained 600 req/min for 24 hours = $190 in embeddings (painful but not catastrophic). Detection needed: sustained max-rate usage >2 hours, avg file size >7MB.
-**Phase 1 (Monitor First - 2 weeks)**: Add metrics tracking - uploads/hour per user, daily totals, avg file size, embedding costs. Identify P99 usage patterns. NO rate limits yet - gather real data first.
-**Phase 2 (Protective Limits - After 1 month data)**: Implement soft limits based on real usage: 100 uploads/hour (supports bulk imports), 500/day (weekend collection import). Alert on sustained >200/hour for >2 hours.
-**Why These Limits**: 100/hour allows user to import 500-image collection in 5 hours (legitimate power user). Prevents sustained spam (36k/hour impossible). NOT "10/min" - that's hostile to real users.
-**Effort**: Phase 1: 4h (metrics) | Phase 2: 2h (limits based on data) | **Risk**: MEDIUM (cost manageable, Hobby plan self-protects)
-**Acceptance**: Metrics dashboard showing per-user upload patterns, alert system for sustained abuse (>200/hour sustained), friendly error messaging with upgrade path (not bare 429s)
+**Impact**: User-provided URLs passed to external service without validation - could expose cloud metadata or internal services
+**Attack Scenario**: Attacker provides `http://169.254.169.254/latest/meta-data/` to access AWS metadata
+**Fix**: Validate URL protocol (HTTPS only), block internal IP ranges (localhost, 10.*, 172.16.*, 192.168.*, 169.254.*)
+```typescript
+const allowedProtocols = ['https:'];
+const blockedHosts = ['localhost', '127.0.0.1', '169.254.', '10.', '172.16.', '192.168.'];
+```
+**Effort**: 30m | **Risk**: HIGH
+**Acceptance**: URL validation blocks internal addresses, only HTTPS allowed
+
+---
+
+### [Performance] Fix N+1 Tag Queries in Search Results
+**File**: `app/api/search/route.ts:149-180`
+**Perspectives**: performance-pathfinder, maintainability-maven
+**Impact**: Search SLO violation - 31 queries for 30 results, adds 300-600ms latency
+**Current**: Individual tag query per search result inside `Promise.all(map(...))`
+**Fix**: Batch fetch all tags with single `{ assetId: { in: resultIds } }` query, build lookup map
+```typescript
+const allAssetTags = await prisma!.assetTag.findMany({
+  where: { assetId: { in: resultIds } },
+  include: { tag: true },
+});
+const tagsByAssetId = allAssetTags.reduce((acc, at) => {
+  if (!acc[at.assetId]) acc[at.assetId] = [];
+  acc[at.assetId].push({ id: at.tag.id, name: at.tag.name });
+  return acc;
+}, {} as Record<string, Array<{ id: string; name: string }>>);
+```
+**Effort**: 30m | **Impact**: 31 queries → 2, 600ms → 40ms (15x improvement)
+**Acceptance**: Search <500ms SLO met, ≤2 database queries per search
+
+---
+
+### [Performance] Fix N+1 Tag Queries in Upload
+**File**: `app/api/upload/route.ts:146-180`
+**Perspectives**: performance-pathfinder
+**Impact**: 800ms additional latency with 5 tags - violates 2.5s upload SLO
+**Current**: 4 queries per tag × 5 tags = 20 queries
+**Fix**: Batch `findMany` for existing tags, `createMany` for new tags, `createMany` for associations
+**Effort**: 1h | **Impact**: 800ms → 50ms (16x improvement)
+**Acceptance**: Upload with 5 tags ≤100ms for tag operations, query count ≤3
+
+---
+
+### [Performance] Fix N+1 Tag Queries in Tag Assignment
+**File**: `app/api/assets/[id]/tags/route.ts:121-152`
+**Perspectives**: performance-pathfinder
+**Impact**: 3 sequential queries per tag in loop
+**Current**: Adding 5 tags = 15 queries
+**Fix**: Batch verify ownership, batch check existing, batch create with `skipDuplicates`
+**Effort**: 1h | **Impact**: 15 queries → 3 (5x improvement)
+**Acceptance**: Tag assignment uses ≤3 queries regardless of tag count
+
+---
+
+### [Security] Add Rate Limiting to Critical Endpoints
+**Files**: `app/api/upload/route.ts`, `app/api/search/route.ts`, `app/api/embeddings/text/route.ts`
+**Perspectives**: security-sentinel, product-visionary
+**Impact**: No protection against API abuse - potential financial damage from Replicate costs
+**Attack Scenario**: Attacker floods search endpoint, incurs embedding generation costs
+**Implementation**: Upstash Redis rate limiter
+```typescript
+const ratelimit = new Ratelimit({
+  redis: kv,
+  limiter: Ratelimit.slidingWindow(10, '60 s'),
+});
+```
+**Effort**: 2h | **Risk**: HIGH
+**Acceptance**: Rate limits enforced, friendly error messages with upgrade path
+
+---
+
+### [UX] Add Keyboard Navigation to Image Modal
+**File**: `app/app/page.tsx:858-982`
+**Perspectives**: user-experience-advocate
+**Impact**: WCAG violation - keyboard users cannot close modal with Escape
+**Fix**: Add `useEffect` with keydown listener for Escape key
+**Effort**: 30m | **Value**: All keyboard users can navigate app
+**Acceptance**: Escape closes modal, focus management correct
+
+---
+
+### [UX] Replace Generic Upload Error Messages in Production
+**File**: `app/api/upload/route.ts:291-300`
+**Perspectives**: user-experience-advocate
+**Impact**: All upload errors show "Upload failed" with no actionable guidance
+**Fix**: Use existing `getUploadErrorDetails()` function for all errors - it provides excellent user messages
+**Effort**: 15m | **Value**: Users understand issues and can take action
+**Acceptance**: Production errors show specific, actionable messages
+
+---
+
+### [Maintainability] Fix Type Safety in Database Layer
+**Files**: `lib/db.ts:37,62,116,220,274,317`, `lib/upload/asset-recorder-service.ts:160`, `hooks/use-assets.ts:525`
+**Perspectives**: maintainability-maven, complexity-archaeologist
+**Impact**: 60+ `any` types break TypeScript safety in critical operations
+**Fix**: Define `PrismaTransaction` type, replace `any` with proper types/satisfies assertions
+**Effort**: 4-6h | **Impact**: Compile-time safety for database layer
+**Acceptance**: Zero `any` types in lib/db.ts, all functions have explicit return types
+
+---
 
 ### [Security] Remove Error Details from Client Responses
-**File**: `/app/api/upload/route.ts:519, 556`
+**Files**: `app/api/upload/route.ts:519,556`, `lib/error-response.ts:56-59`
 **Perspectives**: security-sentinel
-**Impact**: Information disclosure - database schema, stack traces leak to client even in production
-**Fix**: Return generic error to client, log full details server-side only via structured logger
+**Impact**: Database schema and stack traces leak to client in production
+**Fix**: Return generic error to client, log full details server-side via structured logger
 **Effort**: 30m | **Risk**: HIGH
 **Acceptance**: Production errors show generic message, full details in Vercel logs only
 
-### [Performance] Fix N+1 Tag Queries in Upload
-**File**: `/app/api/upload/route.ts:146-180`
-**Perspectives**: performance-pathfinder
-**Impact**: 800ms additional latency when uploading with 5 tags (violates 2.5s upload SLO)
-**Current**: 4 queries per tag × 5 tags = 20 queries
-**Fix**: Batch operations - single `findMany` for existing tags, `createMany` for new tags, `createMany` for associations
-**Effort**: 1h | **Impact**: 800ms → 50ms (16x improvement)
-**Acceptance**: Upload with 5 tags completes in <100ms for tag operations, query count ≤3 regardless of tag count
+---
 
-### [Performance] Fix N+1 Tag Queries in Search Results
-**File**: `/app/api/search/route.ts:147-178`
-**Perspectives**: performance-pathfinder
-**Impact**: 450ms search latency with 30 results (violates <500ms search SLO)
-**Current**: 1 vector search + 30 tag queries = 31 queries
-**Fix**: Single `assetTag.findMany` with `{ assetId: { in: assetIds } }`, build lookup map client-side
-**Effort**: 45m | **Impact**: 450ms → 120ms (3.75x improvement)
-**Acceptance**: Search with 30 results uses ≤2 database queries total, <200ms latency
+### [Security] Fix Timing Attack in Cron Authorization
+**Files**: `app/api/cron/process-embeddings/route.ts:47`, `purge-deleted-assets/route.ts:52`, `audit-assets/route.ts:58`
+**Perspectives**: security-sentinel
+**Impact**: String comparison `!==` vulnerable to timing attacks
+**Fix**: Use `crypto.timingSafeEqual()` with Buffer comparison
+**Effort**: 15m | **Risk**: MEDIUM
+**Acceptance**: All cron auth uses timing-safe comparison
 
-### [UX] Replace Native Delete Confirmation with Modal
-**File**: `/app/app/page.tsx:803`
-**Perspectives**: user-experience-advocate
-**Impact**: CRITICAL - Data loss risk from accidental deletes (native `confirm()` too easy to mis-tap on mobile)
-**Fix**: Use existing `DeleteConfirmationModal` component (already in codebase) - shows image preview, clear warning, tap-friendly buttons
-**Effort**: 15m | **Impact**: Prevents accidental deletions
-**Acceptance**: Delete action shows modal with image preview, requires explicit confirmation, works on mobile
+---
 
-### [Maintainability] Fix Type Safety in lib/db.ts
-**File**: `/lib/db.ts:37, 62, 116, 220, 274, 317`
-**Perspectives**: complexity-archaeologist, maintainability-maven
-**Impact**: 6+ `any` types break TypeScript safety in critical database operations - runtime errors slip through
-**Fix**: Define `PrismaTransaction`, `MockUser` types; replace `as any` with `satisfies` type assertions
-**Effort**: 2h | **Impact**: Compile-time safety for database layer
-**Acceptance**: Zero `any` types in lib/db.ts, all functions have explicit return types, tests pass
+### [Design] Add Semantic Status Color Tokens
+**Files**: 44 instances across 12 components (image-tile.tsx, embedding-status-indicator.tsx, upload-progress-header.tsx, etc.)
+**Perspectives**: design-systems-architect
+**Impact**: Hardcoded `text-green-500`, `text-yellow-500` prevents dark mode optimization and global theming
+**Fix**: Define `--color-success`, `--color-warning`, `--color-info` tokens in globals.css with OKLCH colors
+```css
+:root {
+  --color-success: oklch(0.55 0.15 145);
+  --color-warning: oklch(0.65 0.15 85);
+  --color-info: oklch(0.55 0.15 230);
+}
+.dark {
+  --color-success: oklch(0.75 0.18 145);
+  --color-warning: oklch(0.80 0.18 85);
+  --color-info: oklch(0.75 0.18 230);
+}
+```
+**Effort**: 6h (2h tokens + 4h migrate 44 instances) | **Impact**: Dark mode support, consistent theming
+**Acceptance**: All status colors use tokens, dark mode appearance correct
+
+---
+
+### [Design] Migrate Inline Font Styles to Utility Classes
+**Files**: 15 instances across landing page and components
+**Perspectives**: design-systems-architect
+**Impact**: Inline `style={{ fontFamily: "var(--font-bebas-neue)" }}` bypasses Tailwind, requires JS hydration
+**Fix**: Replace with `className="font-display"` (already configured in @theme)
+**Effort**: 30m | **Impact**: Consistent styling, better performance
+**Acceptance**: Zero inline fontFamily styles remaining
+
+---
+
+### [Infrastructure] Add Pre-commit Quality Gates
+**Perspectives**: architecture-guardian
+**Impact**: Quality checks only run in CI after push - broken builds pushed to remote
+**Fix**: Add Lefthook configuration
+```yaml
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.{ts,tsx}"
+      run: pnpm eslint {staged_files}
+    typecheck:
+      run: pnpm type-check
+pre-push:
+  commands:
+    test:
+      run: pnpm test --run
+```
+**Effort**: 1h | **Impact**: Catches 80% of issues before push
+**Acceptance**: Lefthook installed, pre-commit runs lint+typecheck, pre-push runs tests
+
+---
+
+### [Observability] Add Sentry Release Tracking to CI/CD
+**Files**: `.github/workflows/deploy.yml` (new or existing)
+**Perspectives**: architecture-guardian
+**Impact**: Cannot correlate errors with specific deployments - debugging requires guessing which release introduced issues
+**Current State**: No Sentry releases created on deploy, no deployment annotations
+**Implementation**:
+```yaml
+- name: Create Sentry release
+  uses: getsentry/action-release@v1
+  env:
+    SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+    SENTRY_ORG: misty-step
+    SENTRY_PROJECT: sploot
+  with:
+    environment: production
+    version: ${{ github.sha }}
+```
+Alternative: Enable in Vercel → Integrations → Sentry → Releases
+**Effort**: 30m | **Impact**: Error → deployment correlation, automatic release tracking
+**Acceptance**: Sentry shows releases, errors tagged with commit SHA
+
+---
+
+### [Observability] Configure Error Rate Spike Alert
+**Perspectives**: security-sentinel, architecture-guardian
+**Impact**: Only alerted on new error types - production spike goes unnoticed until user reports
+**Current**: One alert (new error types) configured via CLI script
+**Implementation**: Sentry UI → Alerts → Create Alert
+- Type: "Number of Errors"
+- Threshold: >10 events in 1 hour
+- Environment: production
+- Action: Email notification
+**Effort**: 10m | **Risk**: HIGH (silent production incidents)
+**Acceptance**: Alert configured, test by triggering errors
+
+---
+
+### [Observability] Set Up External Uptime Monitoring
+**Perspectives**: architecture-guardian
+**Impact**: Downtime detected only when users report - no synthetic monitoring
+**Current**: Health endpoint exists but no external monitoring
+**Implementation**:
+- Sign up for BetterUptime (free: 1 monitor) or UptimeRobot (free: 50 monitors)
+- Monitor: `https://sploot.app/api/health`
+- Alert: Email/Slack on failure
+- Check interval: 5 minutes
+**Effort**: 15m | **Impact**: Immediate downtime awareness, uptime SLA tracking
+**Acceptance**: Monitor configured, receives alerts, uptime dashboard accessible
+
+---
+
+### [Observability] Enable Sentry Source Map Upload
+**Files**: `next.config.ts`, `.sentryclirc` (new)
+**Perspectives**: maintainability-maven
+**Impact**: Production stack traces may be minified - debugging requires manual source mapping
+**Implementation**:
+```typescript
+// next.config.ts
+const nextConfig = {
+  sentry: {
+    hideSourceMaps: true,
+    widenClientFileUpload: true,
+  },
+}
+```
+```ini
+# .sentryclirc
+[defaults]
+org=misty-step
+project=sploot
+```
+**Effort**: 20m | **Impact**: Readable production stack traces
+**Acceptance**: Sentry errors show original source code, not minified
+
+---
+
+### [Code Review] PR #17 Accessibility Feedback
+**Source**: CodeRabbit review - deferred items
+**Files**: Multiple components
+**Items**:
+- SearchBar: Add `aria-label="Clear search history"` to clear button
+- BenefitGrid: Add `aria-hidden="true"` to decorative icons
+- LandingFooter: Add IntersectionObserver guards and reduced-motion support
+- Hero: Use `<h1>` instead of `<p>` for primary tagline (SEO)
+**Effort**: 2h total | **Impact**: WCAG compliance
+**Acceptance**: Screen reader testing passes
+
+---
+
+### [Code Review] PR #17 Component Organization Feedback
+**Source**: CodeRabbit review - deferred items
+**Items**:
+- Move OverlappingCircles to `@/components/ui/` or `@/components/branding/` (used in landing + navbar)
+- Extract Bebas Neue utility class: `.heading-display { font-family: var(--font-bebas-neue); }`
+- Make ScrollIndicator configurable with `targetSectionId` prop
+- Hoist breakpointCols constant in ImageGridSkeleton to module-level
+**Effort**: 2h total | **Impact**: Code organization, maintainability
+**Acceptance**: Components properly located, no inline font styles
+
+---
+
+### [Testing] Add Integration Tests for Upload Pipeline
+**File**: `app/api/upload/route.ts`
+**Perspectives**: maintainability-maven
+**Impact**: Upload orchestration untested - race conditions and cleanup flow unverified
+**Test Scenarios**:
+1. Happy path: upload → dedupe → blob → db → embedding
+2. Duplicate detection flow
+3. Race condition handling (P2002 unique constraint)
+4. Cleanup on failure (blob deletion)
+**Effort**: 4-6h | **Priority**: CRITICAL
+**Acceptance**: Integration tests pass, cover 6-service pipeline, catch regressions
+
+---
+
+### [Testing] Add Tests for Search Route
+**File**: `app/api/search/route.ts`
+**Perspectives**: maintainability-maven
+**Impact**: Core feature completely untested
+**Test Scenarios**:
+1. Search with valid query
+2. Empty query handling
+3. Cache hit/miss behavior
+4. Threshold fallback logic
+5. Tag fetching for results
+**Effort**: 3-4h | **Priority**: CRITICAL
+**Acceptance**: Tests cover happy path and edge cases
+
+---
+
+### [Testing] Add Integration Tests for Shuffle Feature
+**Source**: PR #11 review feedback
+**Files**: `__tests__/api/shuffle-integration.test.ts` (new)
+**Test Scenarios**:
+1. Pagination stability - same seed produces identical order
+2. Search shuffle - results relevant AND randomized
+3. Shuffle with filters - favorites-only and tag filters work
+4. Edge cases - empty library, single asset, invalid seed
+**Effort**: 4-6h | **Priority**: HIGH
+**Acceptance**: Integration tests pass, catch connection pooling regressions
+
+---
+
+### [Testing] Add Tests for Auth Layer
+**Files**: `lib/auth/server.ts` (11% coverage), `lib/auth/verify-bearer.ts` (0%)
+**Perspectives**: security-sentinel, maintainability-maven
+**Impact**: Authentication layer has 8% test coverage - security-critical code completely unverified
+**Test Scenarios**:
+1. User sync success/failure
+2. Bearer token validation
+3. Database sync error handling
+**Effort**: 3-4h | **Priority**: CRITICAL
+**Acceptance**: Auth modules >80% coverage, all auth flows tested
+
+---
+
+### [Testing] Add Tests for Database Layer
+**Files**: `lib/db.ts` (5% coverage)
+**Perspectives**: maintainability-maven, architecture-guardian
+**Impact**: Core data layer at 5% coverage - data integrity unverified
+**Test Scenarios**:
+1. User creation/retrieval
+2. Asset CRUD operations
+3. Embedding storage/retrieval
+4. Transaction rollback on failure
+**Effort**: 4-6h | **Priority**: CRITICAL
+**Acceptance**: lib/db.ts >60% coverage, critical paths tested
+
+---
+
+### [Infrastructure] Add Type Check and Lint to CI
+**Files**: `.github/workflows/test.yml`
+**Perspectives**: architecture-guardian
+**Impact**: CI only runs tests - type errors and lint violations caught after merge
+**Fix**: Add steps before test:
+- `pnpm type-check`
+- `pnpm lint`
+**Effort**: 15m | **Impact**: Catches 80% of issues in CI
+**Acceptance**: CI fails on type errors and lint violations
+
+---
+
+### [Security] Add Gitleaks Secrets Scanning
+**Perspectives**: security-sentinel
+**Impact**: No automated detection of accidentally committed secrets
+**Implementation**:
+- Add Gitleaks to Lefthook pre-commit (when installed)
+- Add Gitleaks GitHub Action as backup
+**Effort**: 30m | **Risk**: HIGH
+**Acceptance**: Pre-commit blocks commits with secrets, CI alerts on violations
+
+---
+
+### [Security] Configure Dependabot for Dependency Updates
+**Files**: `.github/dependabot.yml` (new)
+**Perspectives**: security-sentinel
+**Impact**: No automated dependency vulnerability alerts or updates
+**Implementation**:
+```yaml
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+```
+**Effort**: 15m | **Impact**: Automated security patches
+**Acceptance**: Dependabot PRs appear for outdated deps
 
 ---
 
 ## Next (This Quarter, <3 months)
 
-### [Architecture] Decompose Library Page Component
-**File**: `/app/app/page.tsx` (972 lines, 7 responsibilities)
+### [Architecture] Decompose UploadZone God Object
+**File**: `components/upload/upload-zone.tsx` (1,408 lines, 15+ state variables, 10+ responsibilities)
+**Perspectives**: complexity-archaeologist, architecture-guardian, design-systems-architect
+**Responsibilities to extract**:
+1. `useUploadOrchestrator.ts` - Queue management logic
+2. `useUploadProgress.ts` - Stats and throttling
+3. `useUploadRetry.ts` - Retry queue with backoff
+4. `UploadProgressCard.tsx` - Progress UI
+5. `UploadRecoveryBanner.tsx` - Recovery notification
+**Why**: Every upload feature change requires understanding 1,400+ lines, bugs must be fixed multiple times
+**Effort**: 12-16h | **Impact**: 1,408 lines → 6-8 focused 150-200 line modules
+**Acceptance**: Each module testable independently, page orchestrates composition
+
+---
+
+### [Architecture] Decompose Library Page God Object
+**File**: `app/app/page.tsx` (1,099 lines, 25+ state variables)
 **Perspectives**: complexity-archaeologist, architecture-guardian
-**Approach**: Extract hooks (`useLibraryState.ts`, `useUrlSync.ts`) and components (`LibraryToolbar.tsx`, `ImageLightboxModal.tsx`, `EmbeddingRetryModal.tsx`). Page.tsx becomes ~150-line orchestrator.
-**Effort**: 10-14h | **Impact**: Second most complex file, unlocks parallel UI development
+**Extract**:
+1. `ImagePreviewModal.tsx` (lines 858-982)
+2. `RetryProgressModal.tsx` (lines 984-1053)
+3. `useLibraryFilters.ts` - Consolidated filter/sort state
+4. `LibraryHeader.tsx` - Status bar and controls
+5. `useEmbeddingRetryManager.ts` - Retry logic
+**Effort**: 12h | **Impact**: Page becomes ~300-line orchestrator
+**Acceptance**: 5 focused modules, parallel UI development enabled
+
+---
+
+### [Architecture] Split lib/db.ts into Repositories
+**File**: `lib/db.ts` (658 lines, 8+ functions, 5 concerns)
+**Perspectives**: complexity-archaeologist, architecture-guardian
+**Split into**:
+- `lib/db/client.ts` - Prisma initialization (50 lines)
+- `lib/db/user-repository.ts` - User sync/migration (100 lines)
+- `lib/db/asset-repository.ts` - Asset CRUD (150 lines)
+- `lib/db/embedding-repository.ts` - Vector operations (200 lines)
+- `lib/db/search-repository.ts` - Search + logging (100 lines)
+**Why**: 29 files depend on this monolith, cannot mock for tests, tight coupling
+**Effort**: 8h | **Impact**: Testable modules, enables caching layer, DB migration path
+**Acceptance**: Repository interfaces defined, existing code migrated
+
+---
+
+### [Architecture] Merge Upload Queue Implementations
+**Files**: `lib/upload/upload-queue-service.ts` (335 lines), `lib/upload-queue.ts` (439 lines), inline in upload-zone.tsx
+**Perspectives**: complexity-archaeologist, architecture-guardian
+**Problem**: Three separate queue implementations with overlapping functionality
+**Fix**: Create unified `UploadOrchestrator` that:
+- Manages all queue logic (from UploadQueueService)
+- Handles persistence (from upload-queue.ts)
+- Exposes simple `enqueue(files)` and `onProgress` interface
+**Effort**: 6h | **Impact**: Eliminates ~200 lines duplication, single source of truth
+**Acceptance**: One queue implementation, upload-zone delegates to it
+
+---
+
+### [Architecture] Consolidate Search Bar Components
+**Files**: 4 implementations totaling 784 lines
+- `SearchBar` (298 lines) - full-featured with history
+- `SearchBarElastic` (236 lines) - expand-on-focus
+- `SearchBarCompact` (147 lines) - icon-to-input
+- `SearchBarWithResults` (103 lines) - wrapper
+**Perspectives**: design-systems-architect, complexity-archaeologist
+**Fix**: Extract shared logic into composition-based system with variants
+**Effort**: 6h | **Impact**: 784 lines → ~300, single source of truth
+**Acceptance**: One SearchBar component with variant prop
+
+---
+
+### [Observability] Migrate to Single Logger
+**Files**: `lib/logger.ts` (145 lines), `lib/observability-logger.ts` (273 lines), 125+ console.* calls
+**Perspectives**: architecture-guardian, maintainability-maven
+**Problem**: Two logging systems, inconsistent structured logging, can't query logs by trace
+**Fix**:
+1. Adopt observability-logger as standard
+2. Replace all logger.ts imports
+3. Replace raw console.* with logger.logInfo/logError
+4. Consider Pino for production-grade structured logging
+**Effort**: 4h | **Impact**: Unified observability, queryable logs
+**Acceptance**: Single logger used throughout, structured metadata on all logs
+
+---
+
+### [Observability] Add Prisma Query Instrumentation
+**Files**: `lib/db.ts`
+**Perspectives**: performance-pathfinder
+**Impact**: Cannot identify slow database queries - optimization requires guessing
+**Current**: Performance monitor tracks operations but not individual Prisma queries
+**Implementation**:
+```typescript
+// lib/db.ts - add middleware
+prisma.$use(async (params, next) => {
+  const before = Date.now();
+  const result = await next(params);
+  const after = Date.now();
+
+  trackTiming(`db:${params.model}.${params.action}`, after - before, true);
+  logger.logTiming(`db:${params.model}.${params.action}`, after - before, true, {
+    model: params.model,
+    action: params.action,
+  });
+
+  return result;
+});
+```
+**Effort**: 1h | **Impact**: Visibility into all database operations, slow query detection
+**Acceptance**: All Prisma queries logged with timing, integrated with existing performance monitor
+
+---
+
+### [Observability] Create SLO Tracking Dashboard
+**Perspectives**: architecture-guardian, performance-pathfinder
+**Impact**: Cannot verify if SLO targets are being met (upload <2.5s, search <500ms)
+**Current**: Performance data collected but not aggregated for SLO compliance
+**Implementation Options**:
+1. Simple: Add `/api/health/slos` endpoint returning compliance percentages
+2. Advanced: Grafana dashboard with query to Vercel Analytics
+**Targets** (from CLAUDE.md):
+- Upload processing: < 2.5 seconds
+- Search response: < 500ms
+- Initial page load: < 1.5 seconds
+- Image grid render: < 300ms for 100 images
+**Effort**: 2h | **Impact**: Proactive performance regression detection
+**Acceptance**: SLO compliance visible, alerts when below threshold
+
+---
+
+### [Observability] Set Up Log Aggregation with Grafana Loki
+**Perspectives**: architecture-guardian, maintainability-maven
+**Impact**: Logs only in Vercel dashboard with 30-day retention - cannot query across services or retain history
+**Current**: Structured JSON logging exists but no centralized aggregation
+**Implementation**:
+- Sign up for Grafana Cloud (free: 50GB logs/month)
+- Add OTLP log exporter to observability-logger
+- Forward structured logs to Loki
+**Benefits**:
+- Query logs by traceId, userId, operation
+- Retention beyond 30 days
+- Correlation with traces (if added later)
+**Effort**: 2h | **Impact**: Queryable log history, cross-service correlation
+**Acceptance**: Logs appear in Grafana, can query by metadata fields
+
+---
 
 ### [Maintainability] Standardize Error Handling Across API Routes
-**Files**: Multiple API routes (`/app/api/upload/route.ts`, `/app/api/search/route.ts`, etc.)
-**Perspectives**: maintainability-maven (3 different error patterns confuse developers)
-**Why**: Pattern 1: Throw exceptions. Pattern 2: Return error objects. Pattern 3: Custom error classes. Frontend must handle 3 different shapes.
-**Approach**: Create `lib/api-response.ts` with `errorResponse()` helper. Single `ApiErrorResponse` interface. Update 15 routes to use standard pattern.
+**Files**: 15+ API routes with 3 different patterns
+**Perspectives**: maintainability-maven
+**Patterns**:
+1. Throw exceptions
+2. Return error objects
+3. Custom error classes with `createErrorResponse()`
+**Fix**: Create `lib/api-response.ts` with standard `errorResponse()` helper, single `ApiErrorResponse` interface
 **Effort**: 4h | **Impact**: Consistent error UX, easier frontend error boundaries
+**Acceptance**: All routes use standard pattern, requestId in all errors
 
-### [Testing] Concurrency + edge coverage for observability stack
-### [Testing] Concurrency + edge coverage for observability stack
-**Source**: PR #13 review (Claude) — https://github.com/misty-step/sploot/pull/13#issuecomment-3492708426  
-**Files**: `__tests__/lib/performance-monitor.test.ts`, new edge-runtime spec, load test harness  
-**Context**: Reviewer asked for optional stress cases (concurrent `measureAsync`, edge runtime smoke, circular buffer saturation) to lock down new instrumentation. Valuable once core bugs are fixed.  
-**Effort**: 1 day | **Priority**: MEDIUM  
-**Acceptance**: Add concurrency test that runs 50 parallel timings without race conditions, edge-runtime mock confirms wrapper works without `nextUrl`, load test fixture exercises buffer rollover without perf hits.
+---
 
-### [DX] Audit logger import paths after observability rollout
-**Source**: PR #13 review (Claude) — https://github.com/misty-step/sploot/pull/13#issuecomment-3492708426  
-**Files**: `/app/api/**/route.ts`, `lib/logger.ts`, `lib/observability-logger.ts`  
-**Context**: Claude flagged possible mismatch between legacy `@/lib/logger` and new observability logger usage. Needs repo-wide sweep once current PR lands.  
-**Effort**: 4h | **Priority**: MEDIUM  
+### [Testing] Configure Meaningful Coverage Thresholds
+**File**: `vitest.config.ts:37-42`
+**Perspectives**: maintainability-maven
+**Current**: lines: 8%, statements: 8% (essentially no floor)
+**Fix**: Set per-module thresholds for critical paths only
+```typescript
+thresholds: {
+  'lib/auth/**': { lines: 80, functions: 80 },
+  'lib/db.ts': { lines: 60, functions: 60 },
+  'lib/upload/**': { lines: 90 }, // maintain existing high coverage
+}
+```
+**Effort**: 1h (after tests added) | **Impact**: Prevents coverage regression
+**Acceptance**: CI fails if critical path coverage drops
 
-**Acceptance**: Inventory all route/component imports, ensure unified `observability-logger` usage, document migration pattern in CLAUDE.md.
+---
 
-### [Maintainability] Enforce Logger Usage via ESLint
-**Files**: 510+ raw `console.*` calls across 71 files vs well-designed `lib/logger.ts` being ignored
-**Perspectives**: maintainability-maven (production logs lack structured data)
-**Why**: Vercel logs missing context (asset ID, user ID, etc.) - impossible to debug production issues. Development vs production logging diverges.
-**Approach**: Add ESLint rule `no-console: error`. Bulk find-replace to structured logger calls. Add context objects to all log statements.
-**Effort**: 8h | **Impact**: Enable production debugging, queryable logs
+### [Infrastructure] Enhance ESLint Configuration
+**File**: `eslint.config.mjs`
+**Perspectives**: maintainability-maven
+**Current**: Only `next/core-web-vitals` - missing TypeScript-specific rules
+**Add**:
+- `@typescript-eslint/recommended`
+- `@typescript-eslint/no-explicit-any` (warning initially)
+- Import ordering
+**Effort**: 1h | **Impact**: Catches type issues before runtime
+**Acceptance**: ESLint runs with TS rules, no new errors introduced
+
+---
 
 ### [Product] Implement Freemium Pricing Tiers
-**Scope**: New feature - monetization model
 **Perspectives**: product-visionary
-**Business Case**:
-- Currently no revenue while incurring Replicate API + Vercel Blob costs
-- Freemium standard for productivity tools ($10-50/mo)
-- 10-15% free → paid conversion typical for similar tools
-**Tiers**: Free (500 assets) → Pro ($12/mo, unlimited) → Team ($49/mo for 5 users)
-**Implementation**: Stripe integration, usage tracking/limits, billing portal, feature gates in API routes
+**Business Case**: No revenue while incurring API costs - existential for sustainability
+**Tiers**:
+- **Free**: 500 assets, basic search
+- **Pro** ($12/mo): Unlimited assets, priority embeddings
+- **Team** ($49/mo): Shared libraries, 5 users
+**Implementation**: Stripe integration, usage tracking, feature gates, billing portal
 **Effort**: 5-7 weeks | **Value**: Creates recurring revenue stream
-**Acceptance**: Users can sign up for free, upgrade to Pro, billing works, limits enforced
+**Acceptance**: Users can sign up free, upgrade to Pro, billing works, limits enforced
 
-### [Performance] Add ISR to Share Page
-**File**: `/app/m/[id]/page.tsx`
+---
+
+### [Product] Add Data Export / Portability
+**Perspectives**: product-visionary
+**Impact**: Users cannot backup library, no GDPR compliance, creates adoption fear
+**Implementation**:
+- ZIP export endpoint with metadata.json
+- Individual image download option
+- Include tags, favorites, timestamps
+**Effort**: 3-4 days | **Value**: Removes major adoption objection
+**Acceptance**: Export works, includes all metadata, GDPR compliant
+
+---
+
+### [Product] Add Bulk Operations
+**Perspectives**: product-visionary, user-experience-advocate
+**Impact**: Deleting 20 images = 40 clicks, power users will churn
+**Implementation**:
+- Checkbox selection mode in ImageGrid
+- Floating action bar for bulk delete/favorite/tag
+- API batch endpoints
+**Effort**: 6h | **Value**: 40 clicks → 3, power user retention
+**Premium Gate**: Free tier limited to 10 items, Pro unlimited
+**Acceptance**: Multi-select works, bulk actions execute correctly
+
+---
+
+### [Product] Add Collections/Folders Organization
+**Perspectives**: product-visionary, user-experience-advocate
+**Impact**: Flat list with tags only - users with 200+ memes cannot find anything
+**Competitive Gap**: Pinterest boards, Google Photos albums, Apple Photos albums
+**Implementation**:
+- Collections model: `id, name, userId, createdAt`
+- CollectionAssets junction table
+- UI: Collection sidebar, drag-to-add
+**Effort**: 5-7 days | **Value**: Unlocks power user segment
+**Acceptance**: Collections CRUD works, assets can belong to multiple collections
+
+---
+
+### [Product] Meme Detail Page with Semantic Recommendations
+**Files**: `/app/meme/[id]/page.tsx` (new), `/components/related-memes.tsx` (new)
+**Perspectives**: product-visionary, user-experience-advocate
+**Impact**: "More like this" using existing embeddings - major retention driver
+**Implementation**: Detail page route, related memes via vector similarity, threshold to avoid duplicates
+**Effort**: 3-4 days | **Value**: Better discovery, increased engagement, viral loop
+**Acceptance**: Detail page shows related memes, uses existing infrastructure
+
+---
+
+### [Security] Update Vulnerable Dependencies
+**Perspectives**: security-sentinel
+**Findings from `pnpm audit`**:
+- `glob@10.4.5` - Command injection (HIGH)
+- `js-yaml@4.1.0` - Prototype pollution (MODERATE)
+- `vite@5.4.20` - Path traversal (MODERATE)
+- `esbuild@0.21.5` - CORS bypass (MODERATE)
+**Fix**: `pnpm update @vitejs/plugin-react @eslint/eslintrc @vitest/coverage-v8`
+**Effort**: 15m + testing | **Risk**: HIGH for glob
+
+---
+
+### [Security] Restrict Public Meme Page Access
+**File**: `app/m/[id]/page.tsx:116-120`
+**Perspectives**: security-sentinel
+**Issue**: Any user can access any meme by ID without authentication - privacy expectation mismatch
+**Fix Options**:
+1. Require shareSlug to be set: `where: { id, deletedAt: null, shareSlug: { not: null } }`
+2. Document clearly to users
+3. Add optional "private mode" flag
+**Effort**: 30m | **Risk**: HIGH (privacy concern)
+**Acceptance**: Only explicitly shared assets accessible via /m/
+
+---
+
+### [Performance] Add Database Indexes for Common Queries
+**File**: prisma/schema.prisma
 **Perspectives**: performance-pathfinder
-**Source**: PR #12 review (Claude)
-**Context**: Share pages regenerated on every request. Architecture docs (TASK.md) specify ISR but missing from implementation.
-**Implementation**: Add `export const revalidate = 3600` (1 hour cache). Monitor P95 response time improvement via Vercel Analytics.
-**Trigger**: After 1 week production data on share page traffic patterns (validate cache hit ratio worthwhile)
-**Effort**: 5min | **Priority**: MEDIUM
-**Impact**: Edge caching reduces share page load time 200ms → 50ms (4x improvement)
+**Missing indexes**:
+- `@@index([ownerUserId, deletedAt, createdAt])` - List with date sort
+- `@@index([ownerUserId, deletedAt, favorite])` - Bangers filter
+**Effort**: 20m + migration | **Impact**: 20-50% improvement on filtered queries
+**Acceptance**: Migration runs successfully, query plans show index usage
+
+---
 
 ### [Performance] Move Client-Side Filtering to Server
-**File**: `/app/app/page.tsx:288-297`
+**File**: `app/app/page.tsx:300-309`
 **Perspectives**: performance-pathfinder
-**Why**: Client-side filtering of search results after fetch wastes bandwidth & CPU. Filtering 100 results with tags takes ~80ms on each search.
-**Approach**: Add `favoriteOnly` and `tagId` query params to `/api/search` route. Move WHERE clauses to SQL. Reduce payload size 50%+.
-**Effort**: 30m | **Impact**: Eliminates client-side filtering lag
+**Problem**: Fetches 50 results, filters client-side - wastes bandwidth, may miss relevant results
+**Fix**: Add `favoriteOnly` and `tagId` params to `/api/search`, apply in SQL
+**Effort**: 1-2h | **Impact**: More accurate results, reduced bandwidth
+**Acceptance**: Filters applied server-side, result counts accurate
 
-### [Performance] Add Database Indexes
-**File**: Database schema
-**Perspectives**: performance-pathfinder
-**Why**: Missing composite index on `assets(owner_user_id, deleted_at)` causes sequential scan before vector search. 80ms additional latency on 10k+ asset libraries.
-**Approach**: `CREATE INDEX idx_assets_user_deleted ON assets(owner_user_id, deleted_at) WHERE deleted_at IS NULL;`
-**Effort**: 10m | **Impact**: 80ms → 5ms for user/deleted filtering
+---
 
-### [UX] Add Bulk Delete & Multi-Select
-**File**: `/app/app/page.tsx` (feature missing)
+### [Performance] Create Stats API Endpoint
+**File**: `hooks/use-status-stats.ts:17-19`
+**Perspectives**: maintainability-maven
+**Problem**: Fetches 1000 assets every 2-10s just for count/sum/max aggregates
+**Fix**: Create `/api/stats` with Prisma aggregates
+```typescript
+const stats = await prisma.asset.aggregate({
+  where: { ownerUserId: userId, deletedAt: null },
+  _count: true,
+  _sum: { size: true },
+  _max: { createdAt: true }
+});
+```
+**Effort**: 2h | **Impact**: Removes continuous DB load
+**Acceptance**: Stats hook uses new endpoint, no full asset fetch
+
+---
+
+### [UX] Add Undo for Deletions
+**File**: `components/ui/delete-confirmation-modal.tsx`
 **Perspectives**: user-experience-advocate
-**Why**: Deleting 20 accidental uploads requires 40 clicks (delete + confirm each). Frustrating, tedious workflow.
-**Approach**: Add multi-select mode with checkboxes in ImageGrid. Batch action bar when items selected. Single API call for bulk delete.
-**Effort**: 6h | **Impact**: 40 clicks → 3 clicks
-**Premium Gate**: Bulk actions limited to 10 assets on free, unlimited on Pro
+**Impact**: "Don't ask again" + no undo = permanent accidental data loss risk
+**Fix Options**:
+- Add 5-second "Undo" toast after deletion
+- Show "Recently Deleted" section (assets have deletedAt field)
+- Remove "Don't ask again" option
+**Effort**: 4h | **Value**: Prevents accidental data loss
+**Acceptance**: Undo available for 5s after delete, or recently deleted visible
+
+---
+
+### [UX] Add Embedding Progress Indicators
+**Perspectives**: user-experience-advocate
+**Impact**: Users don't know if processing is stuck - see "pending" with no queue position
+**Fix**: Show queue position ("3 of 15"), estimated time, active processing animation
+**Effort**: 3h | **Value**: Users understand status and wait patiently
+**Acceptance**: Queue position visible, estimated time shown
+
+---
+
+### [UX] Mobile Touch Target Improvements
+**File**: `app/app/page.tsx:864-950`
+**Perspectives**: user-experience-advocate
+**Impact**: Action buttons 40px - below 44px minimum, accidental taps
+**Fix**: Increase to 44x44px on mobile, add spacing between buttons
+**Effort**: 2h | **Value**: Usable on all devices
+**Acceptance**: Touch targets meet WCAG recommendations
+
+---
+
+### [UX] Search History ARIA Roles
+**File**: `components/search/search-bar.tsx:243-291`
+**Perspectives**: user-experience-advocate
+**Impact**: Dropdown items are divs without proper ARIA roles
+**Fix**: Add `role="option"`, `aria-selected`, `role="listbox"` to container
+**Effort**: 1h | **Value**: Screen reader users can use history
+**Acceptance**: ARIA audit passes
+
+---
+
+### [Testing] Add Shuffle Query Performance Monitoring
+**Source**: PR #11 review feedback
+**Files**: `app/api/assets/route.ts`, `lib/db.ts`, `app/api/search/route.ts`
+**Implementation**: Timing instrumentation, Vercel structured logging, alert if >500ms SLO
+**Effort**: 2h | **Priority**: MEDIUM
+**Acceptance**: Shuffle timing logged, alerts configured, dashboard showing P95/P99
+
+---
+
+### [DX] Audit Logger Import Paths
+**Source**: PR #13 review feedback
+**Files**: All API routes, lib/logger.ts, lib/observability-logger.ts
+**Task**: Inventory imports, ensure unified observability-logger usage, document in CLAUDE.md
+**Effort**: 4h | **Priority**: MEDIUM
+**Acceptance**: Single logger pattern, migration documented
+
+---
+
+### [Infra] Add Changelog Automation
+**Perspectives**: architecture-guardian
+**Problem**: Manual changelog, version bumps not enforced
+**Fix**: Add Changesets
+```bash
+pnpm add -D @changesets/cli
+pnpm changeset init
+```
+**Effort**: 2h | **Impact**: Enforced changelog entries, automated releases
+**Acceptance**: PRs require changeset files
+
+---
+
+### [Design] Fix Card Border Radius
+**File**: `components/ui/card.tsx:10`
+**Perspectives**: design-systems-architect
+**Issue**: `rounded-xl` but design system is brutalist (--radius: 0)
+**Fix**: Change to `rounded-lg` or remove entirely
+**Effort**: 5m | **Impact**: Visual consistency
+**Acceptance**: Cards match brutalist aesthetic
+
+---
+
+### [Testing] Concurrency + Edge Coverage for Observability
+**Source**: PR #13 review feedback
+**Files**: `__tests__/lib/performance-monitor.test.ts`, edge-runtime spec
+**Test Scenarios**: 50 parallel timings, edge runtime smoke, circular buffer saturation
+**Effort**: 1 day | **Priority**: MEDIUM
+**Acceptance**: Concurrency test passes, edge mock works
+
+---
+
+### monorepo consolidation
+- consolidate `sploot` and `sploot-extension` into a monorepo
+  * shared reusable components and design tokens etc
 
 ---
 
 ## Soon (Exploring, 3-6 months)
 
-- **[Hardening] Add Image Load Error Handling to Share Page** - Add `onError` handler to Next.js Image component on share page. React Error Boundaries don't catch image load failures (404, network issues). Show branded fallback UI matching SharePageErrorBoundary aesthetic. **Trigger**: If production monitoring shows >1% image load failure rate on share pages. **Source**: PR #12 review (Claude). **Why Deferred**: Vercel Blob URLs highly stable, no production evidence of failures, adds complexity for rare edge case. (1h)
+- **[Observability] Configure Crash-Free Sessions Alert** - Sentry UI → Alerts → Session → <98% threshold. Tracks reliability over time. (10m)
 
-- **[Testing] Add Tests for Share Page Metadata Generation** - Create `__tests__/app/m/[id]/metadata.test.ts` to test server-side `generateMetadata()` function. Mock Next.js metadata API, test OG tags, Twitter Card, Schema.org JSON-LD generation with various asset states (normal, missing dimensions, deleted). Currently indirectly covered by API share-flow tests. **Source**: PR #12 review (Claude). **Why Deferred**: Low-risk code (simple Prisma query + metadata object), indirect test coverage sufficient for MVP. (2h)
+- **[Observability] Add Sentry Quota Usage Monitoring** - Monthly check of Sentry usage stats against 5k errors/month free tier. Create calendar reminder or simple script. (15m)
 
-- **[Maintainability] Consolidate Duplicate formatFileSize Functions** - Two implementations in `components/share/share-page-metadata.tsx:14-18` and `lib/upload-errors.ts:219-223` with slight formatting differences (spaces: "10.5 KB" vs "10.5KB"). **Options**: Import from lib/upload-errors + `.replace(' ', '')`, add `compact: boolean` param to shared utility, or document intentional difference. **Source**: PR #12 review (CodeRabbitAI). **Why Deferred**: Code quality issue, not user-facing. Low maintenance risk (stable code). (15min)
+- **[Observability] OpenTelemetry Distributed Tracing** - Full request lifecycle visibility with @vercel/otel + Grafana Cloud. Enables trace context propagation to all services. (4h)
 
-- **[Documentation] Add Security Comment for Structured Data** - Add trust boundary comment to Schema.org JSON-LD block in `app/m/[id]/page.tsx`: "Safe: structured data sourced from database only, no user-provided content". **Source**: PR #12 review (Claude). **Why Deferred**: No functional impact, code clarity improvement for future security reviews. (2min)
+- **[Product] OCR Text Extraction for Search** - Tesseract/Cloud Vision at upload, hybrid semantic + full-text. 85% memes contain text - key differentiator. (4-6 weeks)
 
-- **[Product] Team Workspaces & Collaboration** - Multi-user library access with permissions, shared upload/search/tagging, real-time updates. Opens B2B market (agencies, brands, creators). 10x TAM expansion. Team pricing $40-100/mo vs $10/mo individual. Requires implementing user-scoped cache invalidation (spec in old BACKLOG lines 257-328). (6-10 weeks)
+- **[Product] Team Workspaces & Collaboration** - Multi-user access with permissions, shared assets, real-time sync. Opens B2B market (agencies, brands). Team tier $49/mo. (6-10 weeks)
 
-- **[Product] OCR Text Extraction for Search** - Extract text from meme overlays via Tesseract/Google Cloud Vision, enable hybrid search (semantic + full-text). Solves top user frustration: "can't find meme by text". 85% of memes contain text. Key differentiator vs competitors. (4-6 weeks)
+- **[Product] Ship Chrome Extension** - Phase 2-3 remaining: crop tool, offline queue, Chrome Web Store listing, Firefox. Major adoption driver. (2-3 weeks)
 
-- **[Platform] Mobile App (React Native)** - iOS/Android native app with camera integration, "share to Sploot" from other apps, push notifications, true offline mode. 60% of meme consumption is mobile. PWA adoption: 4% vs 96% native install rates. App Store presence = discovery channel. (12-16 weeks, phased)
+- **[Product] Keyboard Shortcuts Enhancement** - J/K navigation, E to edit tags, D delete, F favorite, Shift+Click bulk select. Power user retention. (2 days)
 
-- **[Integration] Public API & Developer Platform** - REST API v1, OAuth 2.0, Zapier integration, webhook system. Platform effects: developers build integrations → more valuable. 80% of enterprise deals require API. Unlocks 5000+ workflow integrations. (11-16 weeks)
+- **[Product] Public API v1** - REST API, API key auth, rate limiting, OpenAPI docs. Opens developer/enterprise segment. (15 days)
 
-- **[Content] Video & GIF Semantic Search** - Support MP4/WebM uploads, FFmpeg processing, extract keyframes, generate embeddings per frame. Search across video content with timestamp results. 45% of meme shares are video/GIF. Unique capability (no competitor has video semantic search). (13-19 weeks, phased: GIF → video → search)
+- **[Product] Saved Searches** - Pin favorite searches with cloud sync, optional notifications. Retention driver. (2-3 days)
 
-- **[Workflow] Smart Collections & Auto-Tagging** - AI-powered tag suggestions using CLIP embeddings, smart collections (auto-generated "Screenshots", "Text Memes"), duplicate detection via pHash. Power users can manage 1000+ assets. Premium feature for Pro tier. (8-12 weeks)
+- **[Product] Smart Suggestions** - "Create 'Cats' collection?", tag suggestions, duplicate detection. AI-native differentiator. (8-12 days)
 
-- **[Testing] Test Coverage for Critical Paths** - Integration tests for upload route (concurrency, duplicate detection, blob cleanup), search route, auth flows. Current coverage: 0% on financial/data integrity code. Enables safe refactoring. (6h initial, ongoing)
+- **[Performance] Add ISR to Share Page** - `export const revalidate = 3600`. Edge caching 200ms → 50ms. Trigger after traffic data. (5min)
 
-- **[Performance] Optimize Shuffle for Large Libraries (10k+ assets)** - Add TABLESAMPLE optimization for shuffle queries when P95 latency exceeds 500ms SLO. Current `ORDER BY RANDOM()` scans all assets; TABLESAMPLE pre-filters to ~1000 candidates before sorting. Trade-off: slightly less uniform distribution (imperceptible to users). **Trigger**: Production monitoring shows P95 shuffle latency >500ms. **Source**: PR #11 review feedback. **Why Deferred**: No evidence of performance issue yet - current implementation handles 1000 assets <200ms. Premature optimization without data. Monitor first (see "Add Shuffle Query Performance Monitoring" above), optimize only if needed. (3-4h)
+- **[Performance] Optimize Shuffle for Large Libraries** - TABLESAMPLE for 10k+ assets when P95 >500ms. Monitor first. (3-4h)
 
-- **[Architecture] Repository Pattern for Database Layer** - Split `lib/db.ts` (559 lines, low cohesion) into domain repositories: `AssetRepository`, `EmbeddingRepository`, `TagRepository`. Testable via dependency injection. (3-4h)
+- **[Architecture] Repository Pattern for Database Layer** - Full abstraction with interfaces, enables caching/testing/migration. (3-4h)
 
-- **[Maintainability] Add Migration Guides for Deprecated Code** - Document how to migrate from `UploadFile` legacy interface to `FileMetadata` + `FileStreamProcessor`. Prevents technical debt accumulation. (1h)
+- **[Testing] Test Coverage for Critical Paths** - Integration tests for financial/data integrity code. Enables safe refactoring. (6h)
 
-- **[UX] Search Empty State Guidance** - Educational empty state when no results: explain semantic search, show example queries, suggest alternatives. Users don't understand semantic search after one failed query. (1h)
+- **[UX] Search Empty State Guidance** - Explain semantic search, show examples, suggest alternatives. (1h)
+
+- **[UX] Clear Filters Button in Empty State** - Add action to filtered empty state. (1h)
+
+- **[Hardening] Image Load Error Handling on Share Page** - Add onError handler, branded fallback. Trigger if >1% failure rate. (1h)
+
+- **[Maintainability] Consolidate Duplicate formatFileSize** - Two implementations with slight differences. (15min)
+
+- **[Design] Extract Shared useDropZone Hook** - DRY drag-drop logic between EmptyState and UploadDropZone. (1.5h)
+
+- **[Design] Move Keyframe Animations to globals.css** - Remove styled-jsx, centralize animations. (1h)
+
+- **[Documentation] Add Component Library (Storybook)** - Document core 20 components, visual regression testing. (16h)
 
 ---
 
 ## Later (Someday/Maybe, 6+ months)
 
+- **[Platform] Mobile App (React Native)** - iOS/Android with camera integration, share sheet, push notifications. 60% meme consumption is mobile.
+
+- **[Platform] GIF/Video Semantic Search** - MP4/WebM uploads, FFmpeg frame extraction, keyframe embeddings. 45% memes are video/GIF. No competitor has this.
+
+- **[Product] Import from Other Services** - Google Photos, iCloud, Pinterest import. Reduces switching friction.
+
+- **[Product] Advanced Video Understanding** - Custom ML for video classification, scene detection.
+
+- **[Enterprise] Self-Hosted Deployment** - Docker/K8s, custom integrations, SLA guarantees.
+
+- **[Social] Public Profiles & Sharing** - @username profiles, follow system, trending. Conflicts with "private by design" positioning.
+
+- **[Analytics] Usage Analytics Dashboard** - Upload trends, search patterns. Team tier feature.
+
+- **[Export] Scheduled Backups to Cloud** - Google Drive/Dropbox sync. Enterprise feature.
+
+- **[Performance] Offline-First PWA Enhancement** - Full IndexedDB cache, background sync. Premium feature.
+
 ### [Observability] Migrate Console Logging to Structured Logger
-**Source**: PR #13 review feedback (CodeRabbit, Codex)
+**Source**: PR #13 review feedback
 **Files**: `instrumentation.ts`, `lib/websocket-manager.ts`, `lib/embedding-queue.ts`, `app/api/cron/**/*.ts`
-**Context**: Multiple files still use `console.error`/`console.warn` instead of the centralized `logger.logError`/`logger.logInfo` from `lib/observability-logger.ts`. This creates inconsistency and loses traceId correlation.
-**Scope**:
-- `instrumentation.ts:28-36` - onRequestError handler uses console.error
-- `lib/websocket-manager.ts:98, 202, 271, 280, 327` - 5 error paths use console.error
-- `lib/embedding-queue.ts:219, 259, 381, 399, 425` - 5 console.error calls
-- `app/api/cron/purge-deleted-assets/route.ts:125-146, 175-177` - console.warn/console.error
-- `app/api/upload/check/route.ts:123-136` - console.error
-**Effort**: 2-3h (find-replace + test) | **Priority**: LOW (cosmetic, non-blocking)
-**Impact**: Better log correlation, consistent structured logging across codebase
+**Scope**: 5 error paths in websocket-manager, 5 in embedding-queue, cron routes
+**Effort**: 2-3h | **Priority**: LOW (cosmetic)
 
-### [Observability] Optimize Sentry Trace Sampling for Production
-**Source**: PR #13 review feedback (CodeRabbit)
-**Files**: `sentry.client.config.ts:6-7`, `sentry.server.config.ts:3-14`, `sentry.edge.config.ts:4-4`
-**Context**: All Sentry configurations use 100% trace sampling (`tracesSampleRate: 1.0`). While appropriate for initial deployment, this becomes expensive as traffic grows.
-**Recommended**: Reduce to 10% sampling in production once baseline metrics are established:
-```typescript
-tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
-```
-**Alternative**: Implement dynamic sampling based on error rates or specific routes.
-**When**: After 1 month of production data to establish baselines
-**Effort**: 30min | **Priority**: LOW (optimization, not urgent)
-**Impact**: Reduced Sentry costs, maintained observability coverage
-
-### [Observability] Add Sentry DSN Validation
-**Source**: PR #13 review feedback (CodeRabbit)
-**Files**: `sentry.edge.config.ts:4-4`
-**Context**: Current implementation silently fails if `SENTRY_DSN` is missing. Explicit validation would provide clearer feedback during setup.
-**Implementation**:
-```typescript
-if (process.env.NODE_ENV === 'production' && !process.env.SENTRY_DSN) {
-  console.warn('[Sentry] SENTRY_DSN environment variable is not set');
-}
-```
-**Effort**: 10min | **Priority**: VERY LOW (nice-to-have warning)
-**Impact**: Easier debugging during Sentry setup
-
-### [Documentation] Update PR Description Consistency
-**Source**: PR #13 review feedback (CodeRabbit)
-**Context**: Minor PR description inconsistencies flagged during review. Not blocking, but good practice for future PRs.
-**Effort**: 5min per PR | **Priority**: VERY LOW
-**Impact**: Clearer PR documentation
-
-### [Testing] Add Request Handling Fallback Tests
-**Source**: PR #13 review feedback (CodeRabbit)
-**Files**: `lib/with-observability.ts:166`, `__tests__/lib/with-observability.test.ts:322-346`
-**Context**: Code reviewer flagged concern about `req.nextUrl` guard, but tests on lines 322-346 already confirm fallback to `Request.url` works correctly. No action needed, documented for reference.
-**Status**: ✅ Already tested | **Priority**: N/A
-
----
-
-- **[Social] Public Profiles & Sharing** - `sploot.com/@username` public profiles, follow/follower system, trending page, embed widgets. Viral growth potential but conflicts with "private by design" positioning.
-
-- **[Analytics] Usage Analytics Dashboard** - Upload trends, search patterns, most-used tags. Export for teams. Team tier differentiator.
-
-- **[Export] Data Portability (GDPR)** - Export to ZIP with metadata.json, scheduled backups to Google Drive/Dropbox. Required for enterprise, trust signal.
-
-- **[Performance] Offline-First PWA Enhancement** - Full offline mode with IndexedDB cache, background sync for uploads when connection restored. Premium feature: 1GB cache vs 100MB free.
-
-- **[Content] Advanced Video Understanding** - Custom ML models for video content classification, scene detection, object recognition in videos.
-
-- **[Enterprise] Self-Hosted Deployment** - Docker/Kubernetes deployment option, custom integrations, SLA guarantees, dedicated support. Enterprise tier: custom pricing.
-
-- **[Platform] Browser Extension** - Right-click "Save to Sploot" from any webpage, quick capture toolbar, search from omnibox.
+### [Observability] Optimize Sentry Trace Sampling
+**Source**: PR #13 review feedback
+**Context**: 100% sampling appropriate for initial deployment, reduce to 10% after baseline established
+**When**: After 1 month production data
+**Effort**: 30min | **Priority**: LOW
 
 ---
 
@@ -390,32 +898,20 @@ if (process.env.NODE_ENV === 'production' && !process.env.SENTRY_DSN) {
 
 **From this grooming session:**
 
-- **God objects accumulate silently:** UploadZone (2001 lines), LibraryPage (972 lines), UploadRoute (669 lines) - all grew iteratively without refactoring triggers. Need size thresholds (500 lines = review checkpoint).
+- **God objects accumulate silently:** UploadZone (1408 lines), LibraryPage (1099 lines), lib/db.ts (658 lines) grew without refactoring triggers. Need size thresholds (500 lines = review checkpoint).
 
-- **N+1 queries hide in loops:** Both critical performance issues (upload tags, search tags) follow same pattern - sequential queries inside `Promise.all(array.map(...))`. Should add ESLint rule to flag database calls inside map/forEach.
+- **N+1 queries hide in loops:** All three critical N+1 issues follow same pattern - sequential queries inside `Promise.all(array.map(...))`. ESLint rule to flag database calls inside map/forEach would catch this.
 
-- **Type safety erosion compounds:** 6 `any` types in lib/db.ts spread to call sites (30+ total). One `any` → cascade of type loss. Strict TSConfig (`noImplicitAny: error`) needed.
+- **Type safety erosion compounds:** 60+ `any` types in production code spread to call sites. One `any` → cascade of type loss. Strict `noImplicitAny: error` needed.
 
-- **Error handling patterns diverge:** 3 different patterns emerged organically (throw, return error object, custom Error class). Need to establish pattern BEFORE building 3rd API route, not after 15th.
+- **Error handling patterns diverge:** 3 different patterns emerged (throw, return error object, custom class). Need to establish pattern BEFORE building 3rd API route.
 
-- **Product-market fit question:** Currently positioned as hobbyist tool (single-user meme library). Market analysis shows B2B opportunity (team workspaces, API, enterprise) is 10x larger. Strategic decision needed: stay niche or expand to professional market?
+- **Security basics missing:** Rate limiting, SSRF protection, timing-safe comparison are all straightforward fixes but were never implemented. Security checklist for new endpoints needed.
 
-- **Monetization blocks growth:** Operating costs (Replicate, Vercel) accumulate without revenue model. Freemium is NOW priority, not future consideration.
+- **Monetization is existential:** Operating costs accumulate without revenue model. Freemium is NOW priority - product cannot sustain development otherwise.
 
-- **UX vs technical debt tradeoff:** 3 CRITICAL UX issues (delete confirmation, search guidance, upload progress) take 2h combined to fix. 3 CRITICAL architecture issues (god objects) take 32-46h. Ship UX wins first for user impact, then tackle architecture for velocity.
+- **Multi-agent convergence = high signal:** Issues flagged by 3+ perspectives (UploadZone god object, N+1 queries, no rate limiting) are fundamental design problems affecting multiple quality dimensions.
+
+- **UX vs architecture tradeoff:** 5 CRITICAL UX fixes take ~2h combined. Architecture fixes take 40+ hours. Ship UX wins first for user impact, tackle architecture for velocity.
 
 ---
-
-## Archive Notes
-
-**Completed work moved to git history:**
-- ✅ PR #9 landing page redesign (merged Oct 2025)
-- ✅ Cache consolidation with strategy pattern (merged Oct 2025)
-- ✅ Mobile share & actions (merged Oct 2025)
-
-**Deferred as low-value:**
-- Landing page error boundaries (nice-to-have defensive programming, no production errors observed)
-- Animation polish (scroll indicators, reduced motion support completed)
-- PWA manifest tweaks (current implementation sufficient)
-
-**Multi-user cache invalidation spec:** Preserved in git history (old BACKLOG.md lines 257-328) for when team workspaces implemented. Design reviewed and approved, just needs execution trigger.
