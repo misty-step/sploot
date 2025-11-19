@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { requireUserIdWithSync } from '@/lib/auth/server';
+import { verifyBearerOrThrow } from '@/lib/auth/verify-bearer';
 import { blobConfigured } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { UploadValidationService } from '@/lib/upload/validation-service';
@@ -48,8 +48,8 @@ async function postHandler(req: NextRequest) {
     const url = new URL(req.url);
     const syncEmbeddings = url.searchParams.get('sync_embeddings') === 'true';
 
-    // Authenticate user
-    const userId = await requireUserIdWithSync();
+    // Authenticate user (supports both Bearer token and cookies)
+    const userId = await verifyBearerOrThrow(req);
 
     // Parse form data
     const formData = await req.formData();
@@ -306,7 +306,7 @@ async function postHandler(req: NextRequest) {
  */
 async function getHandler(req: NextRequest) {
   try {
-    await requireUserIdWithSync();
+    await verifyBearerOrThrow(req);
   } catch (error) {
     unstable_rethrow(error);
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

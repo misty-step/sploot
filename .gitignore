@@ -54,3 +54,6 @@ next-env.d.ts
 # Sentry
 .sentryclirc
 sentry.properties
+
+# clerk configuration (can include secrets)
+/.clerk/

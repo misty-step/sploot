@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, DragEvent, ClipboardEvent, useEffect } from 'react';
+import { useState, useRef, DragEvent, ClipboardEvent, useEffect, useCallback } from 'react';
 import { Upload, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
@@ -90,7 +90,7 @@ export function UploadDropZone({
   };
 
   // Paste handler
-  const handlePaste = (e: ClipboardEvent) => {
+  const handlePaste = useCallback((e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
 
@@ -108,7 +108,7 @@ export function UploadDropZone({
       setTimeout(() => setIsProcessingPulse(false), 1000);
       onFilesAdded(files);
     }
-  };
+  }, [onFilesAdded]);
 
   // File input handler
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,7 +124,7 @@ export function UploadDropZone({
     const pasteListener = (e: Event) => handlePaste(e as unknown as ClipboardEvent);
     document.addEventListener('paste', pasteListener);
     return () => document.removeEventListener('paste', pasteListener);
-  }, [onFilesAdded]);
+  }, [handlePaste]);
 
   return (
     <>
