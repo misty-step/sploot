@@ -1,10 +1,8 @@
 'use client';
 
-import { useState } from 'react';
 import { Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useSpringScale } from '@/hooks/use-spring-animation';
 
 interface UploadButtonProps {
   onClick?: () => void;
@@ -16,7 +14,7 @@ interface UploadButtonProps {
 
 /**
  * Upload button component for the navbar
- * Uses shadcn Button with upload variant
+ * Uses shadcn Button with brutalist variant
  */
 export function UploadButton({
   onClick,
@@ -25,34 +23,16 @@ export function UploadButton({
   showLabel = true,
   size = 'md',
 }: UploadButtonProps) {
-  const [isHovered, setIsHovered] = useState(false);
-  const [isPressed, setIsPressed] = useState(false);
-
-  // Spring physics for scale animation
-  const scale = useSpringScale(isHovered, isPressed);
-
   // Map custom size to Button size
   const buttonSize = size === 'md' ? 'default' : size;
 
   return (
     <Button
-      variant="outline"
+      variant="accent"
       size={buttonSize}
       onClick={onClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => {
-        setIsHovered(false);
-        setIsPressed(false);
-      }}
-      onMouseDown={() => setIsPressed(true)}
-      onMouseUp={() => setIsPressed(false)}
-      onTouchStart={() => setIsPressed(true)}
-      onTouchEnd={() => setIsPressed(false)}
-      style={{
-        transform: `scale(${scale})`,
-      }}
       className={cn(
-        'relative touch-manipulation font-mono text-sm',
+        'font-mono text-sm uppercase tracking-wider',
         showLabel && 'px-6',
         className
       )}
@@ -60,14 +40,14 @@ export function UploadButton({
       title={showLabel ? undefined : 'Upload new meme'}
     >
       <Upload className="h-4 w-4" strokeWidth={2} />
-      {showLabel && 'upload'}
+      {showLabel && 'UPLOAD'}
     </Button>
   );
 }
 
 /**
  * Floating upload button for mobile or alternative layouts
- * Uses shadcn Button with upload variant and icon size
+ * Uses shadcn Button with brutalist variant and icon size
  */
 export function UploadButtonFloating({
   onClick,
@@ -76,37 +56,15 @@ export function UploadButtonFloating({
   onClick?: () => void;
   className?: string;
 }) {
-  const [isHovered, setIsHovered] = useState(false);
-  const [isPressed, setIsPressed] = useState(false);
-
-  // Spring physics with slightly bouncier config for floating button
-  const scale = useSpringScale(isHovered, isPressed, {
-    stiffness: 350,
-    damping: 20,
-    mass: 0.8,
-  });
-
   return (
     <Button
-      variant="outline"
+      variant="accent"
       size="icon-lg"
       onClick={onClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => {
-        setIsHovered(false);
-        setIsPressed(false);
-      }}
-      onMouseDown={() => setIsPressed(true)}
-      onMouseUp={() => setIsPressed(false)}
-      onTouchStart={() => setIsPressed(true)}
-      onTouchEnd={() => setIsPressed(false)}
-      style={{
-        transform: `scale(${scale})`,
-      }}
-      className={cn('shadow-lg hover:shadow-xl group', className)}
+      className={className}
       aria-label="Upload new meme"
     >
-      <Upload className="h-6 w-6 group-hover:scale-110 transition-transform" strokeWidth={2} />
+      <Upload className="h-6 w-6" strokeWidth={2} />
     </Button>
   );
 }

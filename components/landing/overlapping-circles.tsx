@@ -27,14 +27,14 @@ export function OverlappingCircles({
         cx={leftCx}
         cy={centerY}
         r={radius}
-        className="stroke-primary transition-all duration-200 fill-transparent group-hover:fill-primary/5"
+        className="stroke-accent-cyan transition-colors duration-150 fill-transparent"
         strokeWidth={strokeWidth}
       />
       <circle
         cx={rightCx}
         cy={centerY}
         r={radius}
-        className="stroke-primary transition-all duration-200 fill-transparent group-hover:fill-primary/5"
+        className="stroke-accent-cyan transition-colors duration-150 fill-transparent"
         strokeWidth={strokeWidth}
       />
     </svg>

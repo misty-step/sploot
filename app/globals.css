@@ -3,39 +3,50 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* shadcn/ui design tokens */
-  --radius: 0.75rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  /* Technical Neo-Brutalist Design System - Light mode */
+  /* Sharp corners, bold accents, pattern backgrounds */
+  --radius: 0; /* Sharp corners everywhere - brutalist aesthetic */
+  --background: oklch(0.98 0 0); /* Off-white */
+  --foreground: oklch(0.1 0 0); /* Near black */
+  --card: oklch(1 0 0); /* Pure white */
+  --card-foreground: oklch(0.1 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.1 0 0);
+  --primary: oklch(0.55 0.15 200); /* Deep teal for light mode */
+  --primary-foreground: oklch(1 0 0); /* White text on teal */
+  --secondary: oklch(0.95 0 0);
+  --secondary-foreground: oklch(0.1 0 0);
+  --muted: oklch(0.95 0 0);
+  --muted-foreground: oklch(0.4 0 0); /* Medium gray */
+  --accent: oklch(0.55 0.15 200); /* Same as primary */
+  --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.75 0 0); /* Lighter border for 1px */
+  --input: oklch(0.95 0 0);
+  --ring: oklch(0.55 0.15 200); /* Teal ring */
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.98 0 0);
+  --sidebar-foreground: oklch(0.1 0 0);
+  --sidebar-primary: oklch(0.1 0 0);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.95 0 0);
+  --sidebar-accent-foreground: oklch(0.1 0 0);
+  --sidebar-border: oklch(0.75 0 0);
+  --sidebar-ring: oklch(0.55 0.15 200);
+
+  /* Accent color palette - Cyan + Warm/Cool */
+  /* Light mode: WCAG AA compliant colors */
+  --accent-cyan: #0891B2; /* Cool primary - deep teal, ~7:1 contrast */
+  --accent-cyan-muted: #0E7490; /* Slightly darker */
+  --accent-coral: #DC2626; /* Warm accent - darker coral for light mode */
+  --accent-violet: #7C3AED; /* Bridge accent - darker violet for light mode */
+
+  /* Background pattern color */
+  --pattern-color: rgba(0, 0, 0, 0.03);
 }
 
 @theme inline {
@@ -43,6 +54,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-jetbrains-mono);
+  --font-display: var(--font-bebas-neue);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -76,6 +88,9 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-coral: var(--accent-coral);
+  --color-accent-violet: var(--accent-violet);
 }
 
 /* Basic animations - keep for backward compatibility during migration */
@@ -116,6 +131,70 @@
   }
 }
 
+/* Subtle accent animations */
+@keyframes accentPulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px var(--accent-cyan));
+  }
+  50% {
+    filter: drop-shadow(0 0 12px var(--accent-cyan));
+  }
+}
+
+@keyframes accentGlow {
+  0%, 100% {
+    box-shadow: 0 0 8px var(--accent-cyan);
+  }
+  50% {
+    box-shadow: 0 0 16px var(--accent-cyan);
+  }
+}
+
+@keyframes brutalistSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s ease-in-out infinite;
+  background-size: 200% 100%;
+}
+
+@keyframes glitchShake {
+  0%, 100% {
+    transform: translate(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translate(-2px, 1px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translate(2px, -1px);
+  }
+}
+
+.animate-accent-pulse {
+  animation: accentPulse 2s ease-in-out infinite;
+}
+
+.animate-accent-glow {
+  animation: accentGlow 2s ease-in-out infinite;
+}
+
 /* shadcn/ui animations provided by tailwindcss-animate plugin */
 /* Radix UI components use: animate-in, animate-out, fade-in, fade-out, zoom-in, slide-in, etc. */
 
@@ -126,7 +205,7 @@
 }
 
 /* Add focus ring only for keyboard navigation */
-/* 2px offset, accent color (#7C5CFF), visible only on keyboard */
+/* Uses cyan accent color */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
@@ -143,39 +222,39 @@ details:focus-visible,
 [role="menuitem"]:focus-visible,
 [role="option"]:focus-visible,
 [contenteditable]:focus-visible {
-  outline: 2px solid #7C5CFF;
+  outline: 2px solid var(--accent-cyan);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 0;
 }
 
 /* Special handling for inputs and textareas to prevent double borders */
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 2px solid #7C5CFF;
-  outline-offset: 0; /* No offset for form fields to avoid layout shift */
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 0;
 }
 
 .dark {
-  /* Dark mode theme */
-  --background: oklch(0 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0 0 0);
+  /* Technical Minimalism Design System - Dark mode */
+  --background: oklch(0 0 0); /* Pure black */
+  --foreground: oklch(0.985 0 0); /* Pure white */
+  --card: oklch(0.05 0 0); /* Near black */
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.067 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.62 0.25 280);
-  --primary-foreground: oklch(0.067 0 0);
-  --secondary: oklch(0.067 0 0);
+  --primary: oklch(0.85 0.15 195); /* Bright cyan */
+  --primary-foreground: oklch(0 0 0); /* Black text on cyan */
+  --secondary: oklch(0.1 0 0);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.067 0 0);
-  --muted-foreground: oklch(0.533 0 0);
-  --accent: oklch(0.067 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.15 0 0);
+  --muted-foreground: oklch(0.55 0 0); /* Mid gray */
+  --accent: oklch(0.85 0.15 195); /* Same as primary */
+  --accent-foreground: oklch(0 0 0);
   --destructive: oklch(0.628 0.257 29.234);
-  --border: oklch(0.067 0 0);
-  --input: oklch(0.067 0 0);
-  --ring: oklch(0.556 0 0);
+  --border: oklch(0.25 0 0); /* Subtle border */
+  --input: oklch(0.1 0 0);
+  --ring: oklch(0.85 0.15 195); /* Cyan ring */
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -183,12 +262,22 @@ select:focus-visible {
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.067 0 0);
+  --sidebar-primary: oklch(0.85 0.15 195); /* Cyan */
+  --sidebar-primary-foreground: oklch(0 0 0);
+  --sidebar-accent: oklch(0.1 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.067 0 0);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-border: oklch(0.25 0 0);
+  --sidebar-ring: oklch(0.85 0.15 195);
+
+  /* Accent color palette - Cyan + Warm/Cool */
+  /* Dark mode: vibrant colors for high contrast on black */
+  --accent-cyan: #00F0FF; /* Cool primary - bright cyan */
+  --accent-cyan-muted: #22D3EE; /* Slightly muted */
+  --accent-coral: #FF6B6B; /* Warm accent - bright coral */
+  --accent-violet: #A855F7; /* Bridge accent - bright violet */
+
+  /* Background pattern color */
+  --pattern-color: rgba(255, 255, 255, 0.02);
 }
 
 @layer base {
@@ -248,4 +337,182 @@ select:focus-visible {
 .touch-pinch-zoom {
   /* Enable pinch-to-zoom gesture on touch devices */
   touch-action: pinch-zoom;
+}
+
+/* Minimal border utility classes */
+.minimal-border {
+  border-width: 1px;
+  border-style: solid;
+}
+
+.minimal-border-thick {
+  border-width: 2px;
+  border-style: solid;
+}
+
+/* Brutalist border - core design element */
+.brutalist-border {
+  border-width: 1px;
+  border-style: solid;
+}
+
+/* Accent glow effect */
+.accent-glow {
+  box-shadow: 0 0 20px var(--accent-cyan);
+}
+
+.neon-glow-lime {
+  box-shadow: 0 0 20px var(--accent-cyan);
+}
+
+/* Corner brackets for framing */
+.corner-bracket::before,
+.corner-bracket::after {
+  content: '';
+  position: absolute;
+  border-color: var(--accent-cyan);
+  border-style: solid;
+  width: 40px;
+  height: 40px;
+}
+
+.corner-bracket::before {
+  top: 0;
+  left: 0;
+  border-width: 1px 0 0 1px;
+}
+
+.corner-bracket::after {
+  bottom: 0;
+  right: 0;
+  border-width: 0 1px 1px 0;
+}
+
+/* Diagonal stripe background pattern - adaptive for light/dark mode */
+.bg-diagonal-stripes {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    var(--pattern-color) 10px,
+    var(--pattern-color) 20px
+  );
+}
+
+/* Grid background pattern - adaptive for light/dark mode */
+.bg-grid {
+  background-image: linear-gradient(var(--pattern-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--pattern-color) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Sharp corners override */
+.brutalist-corners {
+  border-radius: 0 !important;
+}
+
+/* Semantic color utilities */
+.text-accent {
+  color: var(--accent-cyan);
+}
+
+.bg-accent {
+  background-color: var(--accent-cyan);
+  color: black;
+}
+
+.text-accent-primary {
+  color: var(--accent-cyan);
+}
+
+.text-accent-cyan {
+  color: var(--accent-cyan);
+}
+
+.text-accent-coral {
+  color: var(--accent-coral);
+}
+
+/* Primary accent color (Cyan) - used for first/main sections
+   Named electric-lime historically, maps to cyan for accessibility */
+.text-electric-lime {
+  color: var(--accent-cyan);
+}
+
+.bg-electric-lime {
+  background-color: var(--accent-cyan);
+  color: black;
+}
+
+.border-electric-lime {
+  border-color: var(--accent-cyan);
+}
+
+/* Warm accent color (Coral) - used for middle sections
+   Named hot-pink historically, maps to coral for accessibility */
+.text-hot-pink {
+  color: var(--accent-coral);
+}
+
+.bg-hot-pink {
+  background-color: var(--accent-coral);
+  color: black;
+}
+
+.border-hot-pink {
+  border-color: var(--accent-coral);
+}
+
+/* Bridge accent color (Violet) - used for later sections
+   Named cyber-blue historically, maps to violet for accessibility */
+.text-cyber-blue {
+  color: var(--accent-violet);
+}
+
+.bg-cyber-blue {
+  background-color: var(--accent-violet);
+  color: black;
+}
+
+.border-cyber-blue {
+  border-color: var(--accent-violet);
+}
+
+/* Additional warm accent mapping */
+.bg-neon-yellow {
+  background-color: var(--accent-coral);
+  color: black;
+}
+
+.text-neon-yellow {
+  color: var(--accent-coral);
+}
+
+/* Opacity variants for hover states */
+.bg-electric-lime\/10,
+.hover\:bg-electric-lime\/10:hover {
+  background-color: color-mix(in srgb, var(--accent-cyan) 10%, transparent);
+}
+
+.bg-hot-pink\/10,
+.hover\:bg-hot-pink\/10:hover {
+  background-color: color-mix(in srgb, var(--accent-coral) 10%, transparent);
+}
+
+.bg-cyber-blue\/10,
+.hover\:bg-cyber-blue\/10:hover {
+  background-color: color-mix(in srgb, var(--accent-violet) 10%, transparent);
+}
+
+/* Gradient support for landing footer */
+.from-electric-lime {
+  --tw-gradient-from: var(--accent-cyan) var(--tw-gradient-from-position);
+}
+
+.via-hot-pink {
+  --tw-gradient-via: var(--accent-coral) var(--tw-gradient-via-position);
+}
+
+.to-cyber-blue {
+  --tw-gradient-to: var(--accent-violet) var(--tw-gradient-to-position);
 }

@@ -4,14 +4,6 @@ import { Navbar, NavbarSpacer } from '@/components/chrome/navbar';
 import React from 'react';
 
 // Mock child components
-vi.mock('@/components/landing/overlapping-circles', () => ({
-  OverlappingCircles: ({ strokeWidth, className }: { strokeWidth?: number; className?: string }) => (
-    <div data-testid="overlapping-circles" data-stroke-width={strokeWidth} className={className}>
-      Overlapping Circles Logo
-    </div>
-  ),
-}));
-
 vi.mock('@/components/chrome/user-avatar', () => ({
   UserAvatar: ({ onSignOut }: { onSignOut?: () => void }) => (
     <button data-testid="user-avatar" onClick={onSignOut}>
@@ -34,12 +26,16 @@ describe('Navbar', () => {
       expect(nav.tagName).toBe('NAV');
     });
 
-    it('should render OverlappingCircles logo', () => {
+    it('should render overlapping circles logo and SPLOOT wordmark', () => {
       render(<Navbar />);
 
-      const logo = screen.getByTestId('overlapping-circles');
-      expect(logo).toBeInTheDocument();
-      expect(logo).toHaveAttribute('data-stroke-width', '6');
+      // Check for logo link with correct aria-label
+      const logoLink = screen.getByLabelText('Sploot - Home');
+      expect(logoLink).toBeInTheDocument();
+      expect(logoLink).toHaveAttribute('href', '/app');
+
+      // Check for SPLOOT wordmark
+      expect(screen.getByText('SPLOOT')).toBeInTheDocument();
     });
 
     it('should render UserAvatar when showUserAvatar is true (default)', () => {

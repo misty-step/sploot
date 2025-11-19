@@ -1,11 +1,107 @@
-# BACKLOG
+# BACKLOG: Landing Page Conversion Optimization
 
-Last groomed: 2025-10-27
-Analyzed by: 7 specialized perspectives (complexity, architecture, security, performance, maintainability, UX, product)
+## Future Enhancements
+
+### Visual & Animation Polish
+
+- **Parallax scroll effects on hero**: Subtle logo float on scroll (2-3px movement). Low effort (2h), medium impact. Adds depth without sacrificing performance. Wait until core conversion elements proven effective.
+
+- **Animated number counters**: "Join 1,000+ users" could count up on scroll into view. Low effort (1h), low impact. Nice polish but doesn't drive conversions.
+
+- **Interactive demo**: Replace static GIF with interactive Lottie animation or embedded demo iframe. High effort (8-12h), medium impact. Gives users hands-on feel but adds complexity and load time.
+
+- **Dark mode toggle**: Allow users to preview light theme (even if app is dark-only). Medium effort (4h), low impact. Current pure black is intentional aesthetic choice, light mode would dilute brand.
+
+### Advanced Conversion Tactics
+
+- **Exit intent popup**: Catch users leaving with special offer or demo prompt. Low effort (3h), unknown impact. Could feel spammy, test with A/B after initial launch.
+
+- **Social proof widgets**: Live user count, recent signups ticker, trust badges. Medium effort (6h), medium impact. Requires real usage data first (100+ users).
+
+- **Video testimonials**: Replace text testimonials with short video clips. High effort (production time), high impact if done well. Need real users willing to record first.
+
+- **Pricing comparison table**: Even for free product, compare features vs competitors. Medium effort (4h), medium impact. Useful once market positioning solidifies.
+
+- **Feature tour walkthrough**: Interactive product tour on landing page. High effort (10-15h), medium impact. Better as in-app onboarding after signup.
+
+### Content Experiments
+
+- **Multiple headline variants**: A/B test different value propositions ("Find memes instantly" vs "Never lose a meme again"). Low effort per variant (30min), high learning value. Run after initial traffic baseline established.
+
+- **Long-form benefits copy**: Expand benefit cards with detailed explanations, use cases, screenshots. Medium effort (4h), unknown impact. Could dilute minimalist aesthetic.
+
+- **Case studies section**: Detailed user stories with before/after. High effort (content creation), high impact. Need 3-5 power users first.
+
+- **Press/media mentions**: Add "As seen on" section if featured. Low effort (1h), medium impact. Gated by actually getting press coverage.
+
+### Technical Improvements
+
+- **Page speed optimization**: Implement ISR caching for landing page, preload critical assets, optimize font loading. Medium effort (3-4h), medium impact. Current performance likely sufficient (static page).
+
+- **SEO enhancements**: Add structured data (Organization, WebApplication schemas), optimize meta descriptions, add FAQ schema. Low effort (2h), high long-term impact. Should do after core content finalized.
+
+- **Multi-language support**: Translate landing page to Spanish, French, Japanese. High effort (translation + i18n setup 8-12h), medium impact. Only valuable if targeting international markets.
+
+- **Accessibility audit**: WCAG 2.1 AA compliance full audit, screen reader optimization, motion preferences. Medium effort (4-6h), medium impact (should be done, but not blocking MVP).
+
+## Nice-to-Have Improvements
+
+### Design System Formalization
+
+- **Component library documentation**: Storybook setup for all landing components. High effort (6-8h), low immediate value. Useful for design handoff or team scaling.
+
+- **Design tokens file**: Centralize all colors, spacing, typography in `design-tokens.ts`. Low effort (2h), medium maintainability value. Good for consistency but current approach works.
+
+- **Animation library**: Create reusable animation utilities (fadeInUp, staggerChildren, etc.). Medium effort (3h), medium value. Only needed if animations used across site beyond landing page.
+
+### Analytics & Testing
+
+- **Heatmap tracking**: Install Hotjar or similar to see where users click/scroll. Low effort (setup 1h), high learning value. Useful after 1k+ visitors to identify friction points.
+
+- **A/B testing framework**: Set up proper A/B testing for headlines, CTAs, layouts. Medium effort (5h), high long-term value. Premature without traffic (need 1k+ weekly visitors).
+
+- **Conversion funnel analytics**: Track each section scroll, CTA click, signup completion. Low effort (2h), high value. Should add once basic analytics proven working.
+
+### Content Strategy
+
+- **Blog/changelog integration**: Pull latest blog posts or product updates into landing page. Medium effort (4h), low immediate value. Need content pipeline first.
+
+- **Customer logos**: Display logos of companies/communities using Sploot. Low effort (2h), high impact. Need actual customers first (B2B approach).
+
+- **Integration showcase**: If integrations built (Slack, Notion, etc.), showcase on landing page. Medium effort (3h per integration), high value. Depends on product roadmap.
 
 ---
 
 ## Now (Sprint-Ready, <2 weeks)
+
+### Code Review Feedback (PR #17)
+
+Items deferred from CodeRabbit review for future iterations:
+
+**Accessibility Improvements:**
+- **SearchBar aria-label**: Add `aria-label="Clear search history"` to clear history button for screen readers
+- **BenefitGrid aria-hidden**: Add `aria-hidden="true"` to decorative icons
+- **IntersectionObserver guards**: Add defensive checks and reduced-motion support in LandingFooter (matching ProcessTimeline pattern)
+
+**Component Organization:**
+- **Relocate OverlappingCircles**: Move from `@/components/landing/` to `@/components/ui/` or `@/components/branding/` since used in both landing and app navbar
+- **Extract Bebas Neue font style**: Create `.heading-display { font-family: var(--font-bebas-neue); }` utility class to avoid inline styles
+- **Make ScrollIndicator configurable**: Accept `targetSectionId` prop instead of hardcoding `"section-semantic-search"`
+- **FilterChips class deduplication**: Extract shared active/inactive class variants to helper
+
+**Naming Consistency:**
+- **Color class rename strategy**: `text-electric-lime` etc. map to cyan/coral/violet - consider gradual migration to semantic names with deprecation notices
+- **CSS variable alignment**: `--font-geist-sans` now references DM_Sans - either rename variable or add backward-compatibility comment
+
+**Code Quality:**
+- **Hoist breakpointCols constant**: Move Masonry breakpoints in ImageGridSkeleton to module-level to avoid recreation per render
+- **Tighten OptimizedImageSkeleton props**: Remove unused `delay` from type or implement stagger support
+
+**Testing:**
+- **ProcessTimeline reduced-motion test**: Add test case with `usePrefersReducedMotion` true or `IntersectionObserver` undefined
+
+**SEO:**
+- **Hero h1 tag**: Use `<h1>` instead of `<p>` for primary tagline on landing page
 
 ### [Feature] Meme Detail Page with Semantic Recommendations
 **Files**: `/app/meme/[id]/page.tsx` (new), `/components/related-memes.tsx` (new)

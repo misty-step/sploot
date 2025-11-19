@@ -8,7 +8,6 @@ import { error as logError } from '@/lib/logger';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
 import { useEmbeddingRetry } from '@/hooks/use-embedding-retry';
 import { useBlobCircuitBreaker } from '@/contexts/blob-circuit-breaker-context';
-import { useIsMobile } from '@/hooks/use-is-mobile';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Heart, Trash2, ImageOff, Loader2, AlertCircle, Clock } from 'lucide-react';
@@ -56,7 +55,6 @@ function ImageTileComponent({
   });
   const deleteConfirmation = useDeleteConfirmation();
   const { recordBlobError, recordBlobSuccess } = useBlobCircuitBreaker();
-  const isMobile = useIsMobile();
 
   // Debug mode tracking
   const [debugInfo, setDebugInfo] = useState<{
@@ -452,8 +450,8 @@ function ImageTileComponent({
                       className={cn(
                         'h-7 w-7 transition-colors',
                         asset.favorite
-                          ? 'text-green-500 hover:text-green-400'
-                          : 'text-muted-foreground/80 hover:text-green-500'
+                          ? 'text-accent-coral hover:text-accent-coral/80'
+                          : 'text-muted-foreground/80 hover:text-accent-coral'
                       )}
                       onClick={handleFavoriteToggle}
                       disabled={isLoading}
@@ -468,7 +466,7 @@ function ImageTileComponent({
                 </Tooltip>
               </TooltipProvider>
 
-              {/* Share button - always visible on mobile, hover-only on desktop */}
+              {/* Share button - always visible with hover color transition */}
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -478,10 +476,7 @@ function ImageTileComponent({
                       filename={asset.filename}
                       mimeType={asset.mime}
                       size="icon"
-                      className={cn(
-                        'h-7 w-7 transition-all text-muted-foreground/80 hover:text-primary',
-                        isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                      )}
+                      className="h-7 w-7 transition-colors text-muted-foreground/60 hover:text-accent-cyan"
                     />
                   </TooltipTrigger>
                   <TooltipContent side="top">
@@ -490,14 +485,11 @@ function ImageTileComponent({
                 </Tooltip>
               </TooltipProvider>
 
-              {/* Delete button - always visible on mobile, hover-only on desktop */}
+              {/* Delete button - always visible */}
               <Button
                 variant="ghost"
                 size="icon"
-                className={cn(
-                  'h-7 w-7 transition-all text-muted-foreground/80 hover:text-red-500',
-                  isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                )}
+                className="h-7 w-7 transition-colors text-muted-foreground/60 hover:text-destructive"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDelete(e);

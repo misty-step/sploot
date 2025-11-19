@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export function CollectionGrid() {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -17,19 +17,41 @@ export function CollectionGrid() {
     return () => mediaQuery.removeEventListener("change", handleChange);
   }, []);
 
+  // Generate randomized timing for stochastic animation
+  const timings = useMemo(() =>
+    Array.from({ length: 9 }).map(() => ({
+      delay: Math.random() * 2, // 0-2s random delay
+      duration: 2.5 + Math.random() * 1.5, // 2.5-4s random duration
+    })),
+  []);
+
+  // Rotate through neon colors for brutalist aesthetic
+  const getBorderColor = (index: number) => {
+    const colors = [
+      "border-electric-lime hover:bg-electric-lime/10",
+      "border-hot-pink hover:bg-hot-pink/10",
+      "border-cyber-blue hover:bg-cyber-blue/10",
+    ];
+    return colors[index % 3];
+  };
+
   return (
     <div className="grid grid-cols-3 gap-3 w-64 md:w-72">
-      {Array.from({ length: 9 }).map((_, i) => (
-        <div
-          key={i}
-          className="aspect-square rounded-lg border border-primary/20 bg-primary/5 transition-colors duration-200 hover:border-primary hover:bg-primary/10 opacity-0"
-          style={{
-            animation: prefersReducedMotion
-              ? `cascadeIn 0.3s ease-out ${i * 0.1}s forwards`
-              : `cascadeIn 0.3s ease-out ${i * 0.1}s forwards, cascadeLoop 3s ease-in-out ${1.5 + i * 0.1}s infinite`,
-          }}
-        />
-      ))}
+      {Array.from({ length: 9 }).map((_, i) => {
+        const { delay, duration } = timings[i];
+
+        return (
+          <div
+            key={i}
+            className={`aspect-square border-2 ${getBorderColor(i)} transition-all duration-200 opacity-0`}
+            style={{
+              animation: prefersReducedMotion
+                ? `cascadeIn 0.3s ease-out ${i * 0.05}s forwards`
+                : `cascadeIn 0.3s ease-out ${i * 0.05}s forwards, cascadeLoop ${duration}s ease-in-out ${0.5 + delay}s infinite`,
+            }}
+          />
+        );
+      })}
 
       <style jsx global>{`
         @keyframes cascadeIn {

@@ -22,15 +22,15 @@ describe('FilterChips', () => {
     it('should render with labels by default', () => {
       render(<FilterChips />);
 
-      expect(screen.getByText('all')).toBeInTheDocument();
-      expect(screen.getByText('bangers')).toBeInTheDocument();
+      expect(screen.getByText('ALL')).toBeInTheDocument();
+      expect(screen.getByText('BANGERS')).toBeInTheDocument();
     });
 
     it('should render without labels when showLabels is false', () => {
       render(<FilterChips showLabels={false} />);
 
-      expect(screen.queryByText('all')).not.toBeInTheDocument();
-      expect(screen.queryByText('bangers')).not.toBeInTheDocument();
+      expect(screen.queryByText('ALL')).not.toBeInTheDocument();
+      expect(screen.queryByText('BANGERS')).not.toBeInTheDocument();
 
       // Labels should still exist in aria-label
       expect(screen.getByLabelText('all')).toBeInTheDocument();

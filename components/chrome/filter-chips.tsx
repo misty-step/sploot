@@ -37,30 +37,40 @@ export function FilterChips({
           onFilterChange(value as FilterType);
         }
       }}
-      className={cn('gap-1', className)}
+      className={cn('gap-0', className)}
       size={toggleSize}
     >
       <ToggleGroupItem
         value="all"
         aria-label="all"
         title="all"
-        className="gap-1.5"
+        className={cn(
+          "gap-1.5 border border-r-0 uppercase tracking-wider font-bold font-mono",
+          activeFilter === 'all'
+            ? 'bg-accent-cyan text-black border-accent-cyan'
+            : 'bg-transparent text-foreground border-border hover:bg-muted'
+        )}
       >
-        {showLabels && <span>all</span>}
+        {showLabels && <span>ALL</span>}
       </ToggleGroupItem>
 
       <ToggleGroupItem
         value="bangers"
         aria-label="bangers"
         title="bangers"
-        className="gap-1.5"
+        className={cn(
+          "gap-1.5 border uppercase tracking-wider font-bold font-mono",
+          activeFilter === 'bangers'
+            ? 'bg-accent-cyan text-black border-accent-cyan'
+            : 'bg-transparent text-foreground border-border hover:bg-muted'
+        )}
       >
         <Heart
           className="h-4 w-4"
           fill={activeFilter === 'bangers' ? 'currentColor' : 'none'}
           strokeWidth={2}
         />
-        {showLabels && <span>bangers</span>}
+        {showLabels && <span>BANGERS</span>}
       </ToggleGroupItem>
     </ToggleGroup>
   );

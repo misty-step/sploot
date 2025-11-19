@@ -626,26 +626,32 @@ function AppPageClient() {
   return (
     <div className="flex h-[calc(100vh-56px)] flex-col">
       {/* Container with ultra-wide support - max-width at 1920px+ */}
-      <div className="px-6 pb-6 pt-6 md:px-10 2xl:px-12 border-b border-border">
+      <div className="px-6 pb-8 pt-8 md:px-10 2xl:px-12 border-b-[6px] border-electric-lime">
         <div className="mx-auto w-full max-w-7xl 2xl:max-w-[1920px]">
-          <header className="flex flex-col gap-4">
-            {/* Title bar with inline stats */}
-            <div className="flex items-baseline gap-3 flex-wrap">
-              <h1 className="text-4xl font-light tracking-tight text-foreground">your library</h1>
-              {stats.total > 0 && (
-                <span className="text-sm text-muted-foreground font-light flex items-center gap-2">
-                  <span>{stats.total.toLocaleString()} assets</span>
-                  {stats.favorites > 0 && (
-                    <>
-                      <span className="text-muted-foreground/30">•</span>
-                      <span>{stats.favorites.toLocaleString()} favorites</span>
-                    </>
-                  )}
-                  <span className="text-muted-foreground/30">•</span>
-                  <span className="lowercase">{stats.sizeFormatted}</span>
-                </span>
-              )}
-            </div>
+          <header className="flex flex-col gap-6">
+            {/* Terminal-style status bar */}
+            {stats.total > 0 && (
+              <div className="font-mono text-sm brutalist-border border-border bg-card p-3 flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground uppercase">MEMES:</span>
+                  <span className="text-electric-lime font-bold">{stats.total.toLocaleString()}</span>
+                </div>
+                {stats.favorites > 0 && (
+                  <>
+                    <span className="text-border">|</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground uppercase">BANGERS:</span>
+                      <span className="text-hot-pink font-bold">{stats.favorites.toLocaleString()}</span>
+                    </div>
+                  </>
+                )}
+                <span className="text-border">|</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground uppercase">SIZE:</span>
+                  <span className="text-cyber-blue font-bold">{stats.sizeFormatted}</span>
+                </div>
+              </div>
+            )}
 
             {/* Search bar - hero element */}
             <SearchBar
@@ -678,13 +684,13 @@ function AppPageClient() {
                 />
                 {failedEmbeddings.length > 0 && (
                   <Button
-                    variant="outline"
+                    variant="accent"
                     size="lg"
                     onClick={handleBulkRetry}
-                    className="gap-2"
+                    className="gap-2 uppercase tracking-wider font-mono"
                   >
                     <RotateCcw className="h-4 w-4" />
-                    retry ({failedEmbeddings.length})
+                    RETRY ({failedEmbeddings.length})
                   </Button>
                 )}
                 <FilterChips
@@ -725,19 +731,11 @@ function AppPageClient() {
 
             </div>
 
-            {(!isSearching && (bangersOnly || tagIdParam)) && (
+            {(!isSearching && tagIdParam) && (
               <div className="flex flex-wrap items-center gap-2">
-                {bangersOnly && (
-                  <Badge variant="outline" className="gap-1">
-                    <Heart className="h-3.5 w-3.5" fill="currentColor" strokeWidth={2} />
-                    bangers only
-                  </Badge>
-                )}
-                {tagIdParam && (
-                  <Badge variant="outline" className="gap-2">
-                    filtering tag <span className="font-medium">#{activeTagName ?? tagIdParam.slice(0, 6)}</span>
-                  </Badge>
-                )}
+                <Badge variant="outline" className="gap-2">
+                  filtering tag <span className="font-medium">#{activeTagName ?? tagIdParam.slice(0, 6)}</span>
+                </Badge>
               </div>
             )}
 

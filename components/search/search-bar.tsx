@@ -145,7 +145,7 @@ export function SearchBar({
 
   return (
     <div className={`relative ${className}`} data-search-bar>
-      {/* Search bar container with pill shape */}
+      {/* Search bar container */}
       <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="relative">
         <div className="relative flex items-center">
           {/* Input field */}
@@ -175,14 +175,15 @@ export function SearchBar({
             className={`
               w-full h-[56px] pl-6 pr-12 text-base font-mono
               bg-card text-foreground placeholder-muted-foreground/60
-              border-2 rounded-md
-              focus:outline-none
-              ${searchState === 'typing' ? 'border-green-600' : ''}
-              ${searchState === 'loading' ? 'border-green-600' : ''}
-              ${searchState === 'success' ? 'border-green-600' : ''}
-              ${searchState === 'no-results' ? 'border-orange-500' : ''}
+              border border-border rounded-none
+              focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan focus-visible:ring-offset-2
+              transition-colors duration-150
+              ${searchState === 'typing' ? 'border-accent-cyan' : ''}
+              ${searchState === 'loading' ? 'border-accent-cyan' : ''}
+              ${searchState === 'success' ? 'border-accent-cyan' : ''}
+              ${searchState === 'no-results' ? 'border-muted-foreground' : ''}
               ${searchState === 'error' ? 'border-destructive' : ''}
-              ${searchState === 'idle' ? 'border-border focus:border-green-600' : ''}
+              ${searchState === 'idle' ? 'border-border focus:border-accent-cyan' : ''}
             `}
           />
 
@@ -192,7 +193,7 @@ export function SearchBar({
             {query && (
               <button
                 onClick={handleClear}
-                className="p-1.5 text-muted-foreground/80 hover:text-destructive"
+                className="p-1.5 text-muted-foreground/80 hover:text-destructive cursor-pointer"
                 aria-label="clear search"
                 title="clear search (esc)"
               >
@@ -221,19 +222,19 @@ export function SearchBar({
           ref={dropdownRef}
           className="
             absolute top-full mt-2 w-full
-            bg-card border border-border rounded-md
+            bg-card border border-accent-cyan rounded-none
             overflow-hidden z-50
           "
         >
           {/* History header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-accent-cyan">
             <span className="font-mono text-xs text-muted-foreground">recent searches</span>
             <button
               onClick={() => {
                 clearHistory();
                 setShowHistory(false);
               }}
-              className="font-mono text-xs text-muted-foreground/80 hover:text-destructive"
+              className="font-mono text-xs text-muted-foreground/80 hover:text-destructive cursor-pointer"
             >
               clear history
             </button>
@@ -247,7 +248,7 @@ export function SearchBar({
                 className={`
                   flex items-center justify-between px-4 py-3
                   hover:bg-muted cursor-pointer group
-                  ${selectedIndex === index ? 'bg-muted border-l-2 border-green-600' : ''}
+                  ${selectedIndex === index ? 'bg-muted border-l-2 border-accent-cyan' : ''}
                 `}
                 onClick={() => handleHistorySelect(item.query)}
               >
@@ -269,7 +270,7 @@ export function SearchBar({
                 </div>
                 <button
                   onClick={(e) => handleHistoryRemove(e, item.query)}
-                  className="p-1 text-muted-foreground/80 hover:text-destructive opacity-0 group-hover:opacity-100"
+                  className="p-1 text-muted-foreground/80 hover:text-destructive opacity-0 group-hover:opacity-100 cursor-pointer"
                   aria-label="Remove from history"
                 >
                   <svg

@@ -2,9 +2,9 @@
 
 import { ReactNode } from 'react';
 import Link from 'next/link';
-import { OverlappingCircles } from '@/components/landing/overlapping-circles';
 import { UserAvatar } from './user-avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { OverlappingCircles } from '@/components/landing/overlapping-circles';
 import { cn } from '@/lib/utils';
 
 interface NavbarProps {
@@ -55,12 +55,25 @@ export function Navbar({
     >
       {/* Container for navbar content - max-width for ultra-wide screens */}
       <div className="flex items-center justify-between w-full max-w-screen-2xl 2xl:max-w-[1920px] mx-auto">
-        {/* Left section: Logo */}
-        <Link href="/app" aria-label="Sploot - Home" className="flex items-center group">
+        {/* Left section: SPLOOT branding with overlapping circles */}
+        <Link
+          href="/app"
+          aria-label="Sploot - Home"
+          className="flex items-center gap-2 group hover:opacity-80 transition-opacity duration-150"
+        >
+          {/* Overlapping circles logo */}
           <OverlappingCircles
-            strokeWidth={6}
-            className="w-12 h-12 transition-all duration-200 ease-out hover:scale-110"
+            strokeWidth={3}
+            className="w-8 h-8"
           />
+
+          {/* SPLOOT wordmark in Bebas Neue */}
+          <span
+            className="text-2xl text-accent-cyan tracking-wider"
+            style={{ fontFamily: "var(--font-bebas-neue)" }}
+          >
+            SPLOOT
+          </span>
         </Link>
 
         {/* Spacer to push user menu to the right */}
