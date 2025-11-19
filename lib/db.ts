@@ -89,82 +89,79 @@ export async function syncUser(clerkUserId: string, email: string) {
     } as any;
   }
 
-  try {
-    // Normal case: user exists with this Clerk ID or doesn't exist at all
-    return await prisma.user.upsert({
-      where: { id: clerkUserId },
-      update: { email },
-      create: {
-        id: clerkUserId,
-        email,
-      },
-    });
-  } catch (error) {
-    // Handle unique constraint violation on email
-    // This occurs when a user with this email exists but has a different Clerk ID (orphaned record)
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      // Check if the unique constraint violation is on the email field
-      const target = (error.meta?.target as string[] | undefined);
-      if (target?.includes('email')) {
-        // Find the existing user with this email
-        const existingUser = await prisma.user.findUnique({
-          where: { email },
-        });
+  // 1. Check if user already exists with this ID
+  const existingUserById = await prisma.user.findUnique({
+    where: { id: clerkUserId },
+  });
 
-        if (existingUser && existingUser.id !== clerkUserId) {
-          // Orphaned record detected: user with this email has a different Clerk ID
-          // This happens when a Clerk user is deleted/recreated but the DB record remains
-          // Solution: Migrate the existing user's ID to the new Clerk ID, preserving all data
-          logger.warn('Detected orphaned user record, migrating to current Clerk user', {
-            orphanedId: existingUser.id,
-            newClerkUserId: clerkUserId,
-            email,
-          });
-
-          // Use a transaction to safely migrate the user ID
-          // Since user.id is a primary key, we can't use Prisma's update - must use raw SQL
-          return await prisma.$transaction(async (tx) => {
-            const oldClerkId = existingUser.id;
-            const newClerkId = clerkUserId;
-
-            // Update all foreign key references first
-            await tx.$executeRaw`
-              UPDATE "assets"
-              SET "owner_user_id" = ${newClerkId}
-              WHERE "owner_user_id" = ${oldClerkId}
-            `;
-
-            await tx.$executeRaw`
-              UPDATE "tags"
-              SET "owner_user_id" = ${newClerkId}
-              WHERE "owner_user_id" = ${oldClerkId}
-            `;
-
-            await tx.$executeRaw`
-              UPDATE "search_logs"
-              SET "user_id" = ${newClerkId}
-              WHERE "user_id" = ${oldClerkId}
-            `;
-
-            // Finally, update the user record itself
-            await tx.$executeRaw`
-              UPDATE "users"
-              SET "id" = ${newClerkId}, "email" = ${email}, "updatedAt" = NOW()
-              WHERE "id" = ${oldClerkId}
-            `;
-
-            // Return the updated user
-            return await tx.user.findUnique({
-              where: { id: newClerkId },
-            }) as any;
-          });
-        }
-      }
+  if (existingUserById) {
+    // User exists, just update email if needed
+    if (existingUserById.email !== email) {
+      return await prisma.user.update({
+        where: { id: clerkUserId },
+        data: { email },
+      });
     }
-
-    // Re-throw if it's not a case we can handle
-    throw error;
+    return existingUserById;
   }
+
+  // 2. Check if user exists with this email (orphaned record case)
+  const existingUserByEmail = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (existingUserByEmail) {
+    // Orphaned record detected: user with this email has a different Clerk ID
+    // Migrate the existing user's ID to the new Clerk ID
+    logger.warn('Detected orphaned user record, migrating to current Clerk user', {
+      orphanedId: existingUserByEmail.id,
+      newClerkUserId: clerkUserId,
+      email,
+    });
+
+    return await prisma.$transaction(async (tx) => {
+      const oldClerkId = existingUserByEmail.id;
+      const newClerkId = clerkUserId;
+
+      // Update all foreign key references
+      await tx.$executeRaw`
+        UPDATE "assets"
+        SET "owner_user_id" = ${newClerkId}
+        WHERE "owner_user_id" = ${oldClerkId}
+      `;
+
+      await tx.$executeRaw`
+        UPDATE "tags"
+        SET "owner_user_id" = ${newClerkId}
+        WHERE "owner_user_id" = ${oldClerkId}
+      `;
+
+      await tx.$executeRaw`
+        UPDATE "search_logs"
+        SET "user_id" = ${newClerkId}
+        WHERE "user_id" = ${oldClerkId}
+      `;
+
+      // Update the user record itself (changing PK)
+      await tx.$executeRaw`
+        UPDATE "users"
+        SET "id" = ${newClerkId}, "email" = ${email}, "updatedAt" = NOW()
+        WHERE "id" = ${oldClerkId}
+      `;
+
+      return await tx.user.findUnique({
+        where: { id: newClerkId },
+      }) as any;
+    });
+  }
+
+  // 3. User doesn't exist by ID or Email, create new
+  return await prisma.user.create({
+    data: {
+      id: clerkUserId,
+      email,
+    },
+  });
 }
 
 
