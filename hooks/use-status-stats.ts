@@ -12,11 +12,7 @@ interface StatusStats {
 
 /**
  * Hook to fetch and maintain status line statistics
- * Updates every 2s when queue is active, every 10s when idle
- *
- * TODO: This fetches all assets (limit=1000) to calculate simple aggregates.
- * Should be replaced with dedicated /api/stats endpoint using Prisma aggregates.
- * See BACKLOG.md "Create dedicated /api/stats endpoint" for details.
+ * Default cadence: 5s when queue active, 30s when idle
  */
 export function useStatusStats(): StatusStats {
   const [stats, setStats] = useState<StatusStats>({
@@ -29,31 +25,13 @@ export function useStatusStats(): StatusStats {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        // Fetch assets from API
-        // Note: We fetch first 1000 for storage calculation
-        // Total count comes from pagination.total for accuracy
-        const response = await fetch('/api/assets?limit=1000');
+        const response = await fetch('/api/stats');
         if (!response.ok) return;
 
         const data = await response.json();
-        const assets = data.assets || [];
-
-        // Calculate stats
-        // Use pagination.total for accurate count (not assets.length which is limited to 1000)
-        const assetCount = data.pagination?.total || assets.length;
-        // Storage is approximate for large libraries (calculated from first 1000 assets)
-        const storageUsed = assets.reduce((sum: number, asset: any) => sum + (asset.size || 0), 0);
-
-        // Find most recent upload
-        let lastUploadTime: Date | null = null;
-        if (assets.length > 0) {
-          const sortedByDate = [...assets].sort((a: any, b: any) => {
-            const dateA = new Date(a.createdAt).getTime();
-            const dateB = new Date(b.createdAt).getTime();
-            return dateB - dateA;
-          });
-          lastUploadTime = new Date(sortedByDate[0].createdAt);
-        }
+        const assetCount = data.assetCount ?? 0;
+        const storageUsed = data.storageBytes ?? 0;
+        const lastUploadTime = data.lastUploadAt ? new Date(data.lastUploadAt) : null;
 
         // Get queue depth
         const queueManager = getEmbeddingQueueManager();
@@ -79,9 +57,7 @@ export function useStatusStats(): StatusStats {
       const queueManager = getEmbeddingQueueManager();
       const status = queueManager.getStatus();
       const queueDepth = status.queued + status.processing;
-      // Reduced from 500ms/5s to 2s/10s to ease DB load
-      // Still fetching 1000 assets per poll - see TODO at top for proper fix
-      return queueDepth > 0 ? 2000 : 10000; // 2s when active, 10s when idle
+      return queueDepth > 0 ? 5000 : 30000; // 5s when active, 30s when idle
     };
 
     let intervalId: NodeJS.Timeout;
