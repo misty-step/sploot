@@ -221,7 +221,8 @@ async function getHandler(req: NextRequest) {
 
     favorite = searchParams.get('favorite');
     tagId = searchParams.get('tagId');
-    includeTags = searchParams.get('includeTags') === 'true';
+    // Auto-enable includeTags when filtering by tagId so UI can display tag names
+    includeTags = searchParams.get('includeTags') === 'true' || !!tagId;
 
     const { userId } = await getAuthWithUser();
     if (!userId) {
@@ -344,15 +345,6 @@ async function getHandler(req: NextRequest) {
                   updatedAt: true,
                 },
               },
-              ...(includeTags && {
-                tags: {
-                  select: {
-                    tag: {
-                      select: { id: true, name: true },
-                    },
-                  },
-                },
-              }),
             },
           }),
       prisma.asset.count({ where }),
