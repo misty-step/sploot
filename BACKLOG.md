@@ -189,6 +189,28 @@ pre-push:
 
 ---
 
+### [Communications] Usage Emails Deferred (Resend domain limit)
+**Context**: Usage alerts (welcome + 90% warning) require adding `sploot.app` as a Resend sending domain, which needs the $20/mo plan (current plan limited to one domain already used by mistystep.io).
+**Decision**: Defer implementation until a paid plan or alternate provider is approved; avoid half-wired stubs that don't deliver.
+**Next Step**: When approved, add `mail.sploot.app` (or switch to Postmark/SES) and implement transactional sends.
+**Impact**: MVP launches without proactive usage emails; acceptable risk for freemium.
+
+---
+
+# BACKLOG: neon cost containment
+
+## Future Enhancements
+- [push stats via sse]: stream status-line numbers off `pg_notify`/SSE instead of polling; slashes egress to zero when idle, keeps UI live.
+- [vector quantization]: shrink pgvector storage via ivfflat+quantization or 8-bit compression; could halve index size if recall acceptable.
+
+## Nice-to-Have Improvements
+- [auto-vacuum tuning]: add doc'd VACUUM schedule for `asset_embeddings` and `search_logs` to cap bloat when cron purges run.
+
+## Technical Debt Opportunities
+- [metrics visibility]: add SQL view for per-table size (`pg_total_relation_size`) and expose in an admin endpoint to catch bloat before caps hit.
+
+---
+
 ### [Observability] Add Sentry Release Tracking to CI/CD
 **Files**: `.github/workflows/deploy.yml` (new or existing)
 **Perspectives**: architecture-guardian
