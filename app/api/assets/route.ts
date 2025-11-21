@@ -184,6 +184,7 @@ async function getHandler(req: NextRequest) {
   let favorite: string | null = null;
   let tagId: string | null = null;
   let shuffleSeed: number | undefined = undefined;
+  let includeTags = false;
 
   try {
     // Parse query params INSIDE try block to catch URL parsing errors
@@ -220,6 +221,7 @@ async function getHandler(req: NextRequest) {
 
     favorite = searchParams.get('favorite');
     tagId = searchParams.get('tagId');
+    includeTags = searchParams.get('includeTags') === 'true';
 
     const { userId } = await getAuthWithUser();
     if (!userId) {
@@ -323,17 +325,57 @@ async function getHandler(req: NextRequest) {
             orderBy: sortBy === 'createdAt'
               ? { createdAt: sortOrder }
               : { updatedAt: sortOrder },
-            include: {
-              embedding: true,
-              tags: {
-                include: {
-                  tag: true,
+            select: {
+              id: true,
+              blobUrl: true,
+              pathname: true,
+              mime: true,
+              width: true,
+              height: true,
+              favorite: true,
+              size: true,
+              createdAt: true,
+              embedding: {
+                select: {
+                  status: true,
+                  modelName: true,
+                  modelVersion: true,
+                  createdAt: true,
+                  updatedAt: true,
                 },
               },
+              ...(includeTags && {
+                tags: {
+                  select: {
+                    tag: {
+                      select: { id: true, name: true },
+                    },
+                  },
+                },
+              }),
             },
           }),
       prisma.asset.count({ where }),
     ]);
+
+    let tagsByAssetId: Record<string, Array<{ id: string; name: string }>> = {};
+
+    if (includeTags && assets.length > 0) {
+      const assetIds = assets.map((asset: any) => asset.id);
+      const tagRows = await prisma!.assetTag.findMany({
+        where: { assetId: { in: assetIds } },
+        select: {
+          assetId: true,
+          tag: { select: { id: true, name: true } },
+        },
+      });
+
+      tagsByAssetId = tagRows.reduce((acc: Record<string, Array<{ id: string; name: string }>>, row) => {
+        if (!acc[row.assetId]) acc[row.assetId] = [];
+        acc[row.assetId].push({ id: row.tag.id, name: row.tag.name });
+        return acc;
+      }, {});
+    }
 
     const formattedAssets = assets.map((asset: any) => ({
       id: asset.id,
@@ -346,7 +388,7 @@ async function getHandler(req: NextRequest) {
       height: asset.height,
       favorite: asset.favorite,
       createdAt: asset.createdAt,
-      // Format embedding data for both shuffle and normal queries
+      // Format embedding data for both shuffle and normal queries without vector payload
       embedding: asset.embedding || (asset.embeddingId ? {
         assetId: asset.embeddingId,
         modelName: asset.embeddingModelName,
@@ -354,10 +396,9 @@ async function getHandler(req: NextRequest) {
         createdAt: asset.embeddingCreatedAt,
       } : undefined),
       embeddingStatus: asset.embeddingStatus || asset.embedding?.status,
-      tags: asset.tags ? asset.tags.map((at: any) => ({
-        id: at.tag.id,
-        name: at.tag.name,
-      })) : [],
+      ...(includeTags ? {
+        tags: tagsByAssetId[asset.id] || [],
+      } : {}),
     }));
 
     return NextResponse.json({
