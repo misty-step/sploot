@@ -1,117 +1,120 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { withObservability } from '@/lib/with-observability';
 import { prisma } from '@/lib/db';
-import * as Sentry from '@sentry/nextjs';
+import { kv } from '@vercel/kv';
+import { withObservability } from '@/lib/with-observability';
+import pkg from '@/package.json';
 
-interface HealthCheckResult {
-  status: 'healthy' | 'degraded' | 'unhealthy';
+interface HealthStatus {
+  status: 'ok' | 'error';
   timestamp: string;
-  checks: {
-    database: {
-      status: 'pass' | 'fail';
-      message?: string;
-      responseTime?: number;
-    };
-    sentry: {
-      status: 'pass' | 'fail';
-      message?: string;
-    };
+  dependencies?: {
+    database: 'up' | 'down';
+    redis: 'up' | 'down';
   };
+  version?: string;
+  error?: string;
+}
+
+const TIMEOUT_MS = 5000;
+
+async function checkDatabase(): Promise<boolean> {
+  if (!prisma) return false;
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return true;
+  } catch (e) {
+    console.error('Database health check failed:', e);
+    return false;
+  }
+}
+
+async function checkRedis(): Promise<boolean> {
+  try {
+    await kv.ping();
+    return true;
+  } catch (e) {
+    console.error('Redis health check failed:', e);
+    return false;
+  }
 }
 
 async function getHandler(_req: NextRequest) {
   const timestamp = new Date().toISOString();
-  const result: HealthCheckResult = {
-    status: 'healthy',
-    timestamp,
-    checks: {
-      database: { status: 'fail' },
-      sentry: { status: 'fail' },
-    },
-  };
 
-  // Check database connectivity
-  try {
-    if (!prisma) {
-      result.checks.database = {
-        status: 'fail',
-        message: 'Prisma client not initialized',
-      };
-      result.status = 'unhealthy';
-    } else {
-      const startTime = Date.now();
-      await prisma.$queryRaw`SELECT 1 as health_check`;
-      const responseTime = Date.now() - startTime;
-
-      result.checks.database = {
-        status: 'pass',
-        message: 'Database connection successful',
-        responseTime,
-      };
-    }
-  } catch (error) {
-    result.checks.database = {
-      status: 'fail',
-      message: error instanceof Error ? error.message : 'Database connection failed',
-    };
-    result.status = 'unhealthy';
-  }
-
-  // Check Sentry reporting
-  try {
-    const sentryEnabled = process.env.NODE_ENV === 'production' ||
-                          process.env.SENTRY_ENVIRONMENT === 'production';
-
-    if (sentryEnabled) {
-      // In production, check if DSN is configured
-      const dsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN;
-      if (dsn) {
-        result.checks.sentry = {
-          status: 'pass',
-          message: 'Sentry DSN configured',
-        };
-      } else {
-        result.checks.sentry = {
-          status: 'fail',
-          message: 'Sentry DSN not configured',
-        };
-        result.status = 'degraded';
-      }
-    } else {
-      // In development, verify Sentry is available
-      if (Sentry) {
-        result.checks.sentry = {
-          status: 'pass',
-          message: 'Sentry SDK loaded (disabled in development)',
-        };
-      }
-    }
-  } catch (error) {
-    result.checks.sentry = {
-      status: 'fail',
-      message: error instanceof Error ? error.message : 'Sentry check failed',
-    };
-    result.status = 'degraded';
-  }
-
-  // Return appropriate HTTP status code
-  const statusCode = result.status === 'healthy' ? 200 :
-                      result.status === 'degraded' ? 200 : 503;
-
-  return NextResponse.json(result, {
-    status: statusCode,
-    headers: {
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-    }
+  // Timeout wrapper
+  const timeoutPromise = new Promise<{ db: boolean; redis: boolean }>((_, reject) => {
+    setTimeout(() => reject(new Error('Health check timeout')), TIMEOUT_MS);
   });
+
+  try {
+    const checksPromise = Promise.all([checkDatabase(), checkRedis()]).then(
+      ([db, redis]) => ({ db, redis })
+    );
+
+    const results = await Promise.race([checksPromise, timeoutPromise]);
+
+    const isHealthy = results.db && results.redis;
+    const status = isHealthy ? 200 : 503;
+
+    if (isHealthy) {
+      const payload: HealthStatus = {
+        status: 'ok',
+        timestamp,
+        dependencies: {
+          database: 'up',
+          redis: 'up',
+        },
+        version: pkg.version,
+      };
+
+      return NextResponse.json(payload, {
+        status: 200,
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+      });
+    } else {
+      // Determine which failed
+      const errorMsg = [];
+      if (!results.db) errorMsg.push('Database connection failed');
+      if (!results.redis) errorMsg.push('Redis connection failed');
+
+      const payload: HealthStatus = {
+        status: 'error',
+        timestamp,
+        error: errorMsg.join(', '),
+      };
+
+      return NextResponse.json(payload, {
+        status: 503,
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+      });
+    }
+
+  } catch (error) {
+    // Timeout or other unexpected error
+    const payload: HealthStatus = {
+      status: 'error',
+      timestamp,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+
+    return NextResponse.json(payload, {
+      status: 503,
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+      },
+    });
+  }
 }
 
-async function headHandler(_req: NextRequest) {
+async function headHandler(req: NextRequest) {
+  const res = await getHandler(req);
   return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Cache-Control': 'no-store, no-cache, must-revalidate',
-    }
+    status: res.status,
+    headers: res.headers,
   });
 }
 
@@ -121,7 +124,7 @@ export const GET = withObservability(getHandler, {
 });
 
 export const HEAD = withObservability(headHandler, {
-  operation: 'health:ping-head',
+  operation: 'health:check-head',
   skipTiming: true,
   skipLogging: true,
 });
