@@ -84,6 +84,53 @@ EOF
 )
 create_alert_rule "New Error Type in Production" "$NEW_ERROR_ALERT"
 
+# 2. User Sync Failure Alert (CRITICAL)
+echo "📍 Creating User Sync Failure Alert..."
+USER_SYNC_ALERT=$(cat <<EOF
+{
+  "name": "Production: User Sync Failure (CRITICAL)",
+  "actionMatch": "all",
+  "filterMatch": "all",
+  "conditions": [
+    {
+      "id": "sentry.rules.conditions.event_frequency.EventFrequencyCondition",
+      "interval": "5m",
+      "value": 1
+    }
+  ],
+  "filters": [
+    {
+      "id": "sentry.rules.filters.tagged_event.TaggedEventFilter",
+      "key": "environment",
+      "match": "eq",
+      "value": "production"
+    },
+    {
+      "id": "sentry.rules.filters.tagged_event.TaggedEventFilter",
+      "key": "critical",
+      "match": "eq",
+      "value": "true"
+    },
+    {
+      "id": "sentry.rules.filters.tagged_event.TaggedEventFilter",
+      "key": "auth.action",
+      "match": "eq",
+      "value": "user-sync"
+    }
+  ],
+  "actions": [
+    {
+      "id": "sentry.mail.actions.NotifyEmailAction",
+      "targetType": "IssueOwners",
+      "targetIdentifier": ""
+    }
+  ],
+  "frequency": 5
+}
+EOF
+)
+create_alert_rule "User Sync Failure (CRITICAL)" "$USER_SYNC_ALERT"
+
 echo ""
 echo -e "${GREEN}✅ Alert configuration complete!${NC}"
 echo ""

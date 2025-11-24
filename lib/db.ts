@@ -117,7 +117,7 @@ export async function syncUser(clerkUserId: string, email: string) {
     }
 
     // Orphaned record detected: user with this email has a different Clerk ID
-    // Migrate the existing user's ID to the new Clerk ID
+    // Simplified migration: 3 atomic steps (Ousterhout: reduce complexity)
     logger.warn('Detected orphaned user record, migrating to current Clerk user', {
       orphanedId: existingUserByEmail.id,
       newClerkUserId: clerkUserId,
@@ -125,48 +125,41 @@ export async function syncUser(clerkUserId: string, email: string) {
     });
 
     return await prisma.$transaction(async (tx) => {
-      const oldClerkId = existingUserByEmail.id;
-      const newClerkId = clerkUserId;
-      // Use a temp email to avoid unique constraint violation during creation
-      const tempEmail = `migration-${Date.now()}-${Math.random().toString(36).substring(7)}@sploot.local`;
+      const oldUserId = existingUserByEmail.id;
+      const newUserId = clerkUserId;
 
-      // 1. Create the new user with the correct ID but temp email
-      await tx.user.create({
+      // Step 1: Create new user with correct ID and email
+      // Uses temporary email suffix to avoid unique constraint during migration
+      const tempEmail = `${email}.migrating.${Date.now()}`;
+      const newUser = await tx.user.create({
         data: {
-          id: newClerkId,
+          id: newUserId,
           email: tempEmail,
         },
       });
 
-      // 2. Re-parent all related records to the new user
+      // Step 2: Re-parent all data to new user (single SQL statement per table)
+      // Assets and Tags have CASCADE, but we're moving to NEW user, not deleting
       await tx.$executeRaw`
-        UPDATE "assets"
-        SET "owner_user_id" = ${newClerkId}
-        WHERE "owner_user_id" = ${oldClerkId}
+        UPDATE "assets" SET "owner_user_id" = ${newUserId} WHERE "owner_user_id" = ${oldUserId};
+        UPDATE "tags" SET "owner_user_id" = ${newUserId} WHERE "owner_user_id" = ${oldUserId};
+        UPDATE "search_logs" SET "user_id" = ${newUserId} WHERE "user_id" = ${oldUserId};
       `;
 
-      await tx.$executeRaw`
-        UPDATE "tags"
-        SET "owner_user_id" = ${newClerkId}
-        WHERE "owner_user_id" = ${oldClerkId}
-      `;
+      // Step 3: Delete old user, then fix new user's email
+      // (old user has no more references due to step 2, so DELETE succeeds)
+      await tx.user.delete({ where: { id: oldUserId } });
 
-      await tx.$executeRaw`
-        UPDATE "search_logs"
-        SET "user_id" = ${newClerkId}
-        WHERE "user_id" = ${oldClerkId}
-      `;
-
-      // 3. Delete the old user record (cascades/cleans up)
-      await tx.user.delete({
-        where: { id: oldClerkId },
-      });
-
-      // 4. Update the new user with the correct email
+      // Now we can set the real email (unique constraint is free)
       return await tx.user.update({
-        where: { id: newClerkId },
-        data: { email: email },
+        where: { id: newUserId },
+        data: { email },
       });
+    }, {
+      // Increase timeout for migration transactions (default 5s may be too short)
+      timeout: 15000,
+      // Use SERIALIZABLE isolation to prevent concurrent migrations
+      isolationLevel: 'Serializable',
     });
   }
 

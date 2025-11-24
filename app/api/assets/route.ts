@@ -224,11 +224,28 @@ async function getHandler(req: NextRequest) {
     // Auto-enable includeTags when filtering by tagId so UI can display tag names
     includeTags = searchParams.get('includeTags') === 'true' || !!tagId;
 
-    const { userId } = await getAuthWithUser();
+    // Get auth with explicit sync status (Ousterhout: Expose important information)
+    const { userId, syncStatus, syncError } = await getAuthWithUser();
     if (!userId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
+      );
+    }
+
+    // Check if database sync failed (prevents empty gallery bug)
+    if (syncStatus === 'failed') {
+      return NextResponse.json(
+        {
+          error: 'Account sync in progress. Please refresh in a few seconds.',
+          retry: true,
+          // Include error details in development only
+          ...(process.env.NODE_ENV === 'development' && {
+            details: syncError,
+            syncStatus,
+          }),
+        },
+        { status: 503 }
       );
     }
 
