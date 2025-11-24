@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
+import { getDbFingerprint } from './lib/db-fingerprint'
 
 // Define protected routes that require authentication
 const isProtectedRoute = createRouteMatcher([
@@ -19,6 +20,29 @@ const isPublicRoute = createRouteMatcher([
 ])
 
 export default clerkMiddleware(async (auth, req) => {
+  // Fail fast if DB host drifts from the canonical host (configured via env)
+  if (process.env.NODE_ENV === 'production') {
+    const expectedHost = process.env.DB_FINGERPRINT_HOST || null;
+    const fp = getDbFingerprint();
+    if (expectedHost && fp.host && fp.host !== expectedHost) {
+      return new Response(
+        JSON.stringify({
+          error: 'Service temporarily unavailable',
+          reason: 'db_fingerprint_mismatch',
+          expectedHost,
+          actualHost: fp.host,
+        }),
+        {
+          status: 503,
+          headers: {
+            'content-type': 'application/json',
+            'x-env-fingerprint': `${fp.host || 'unknown'}@${fp.hash}`,
+          },
+        }
+      );
+    }
+  }
+
   if (isProtectedRoute(req)) {
     await auth.protect()
   }

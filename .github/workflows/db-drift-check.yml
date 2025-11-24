@@ -1,0 +1,25 @@
+name: db-drift-check
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Load prod DB URL
+        env:
+          PROD_DB_URL: ${{ secrets.PROD_DB_URL }}
+        run: |
+          if [ -z "$PROD_DB_URL" ]; then
+            echo "PROD_DB_URL secret missing"; exit 1;
+          fi
+          npx prisma migrate status --schema prisma/schema.prisma --url "$PROD_DB_URL"

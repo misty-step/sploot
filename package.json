@@ -27,7 +27,10 @@
     "benchmark:large": "ts-node scripts/benchmark.ts 10000",
     "gc:blobs": "tsx scripts/garbage-collect-blobs.ts",
     "gc:blobs:delete": "tsx scripts/garbage-collect-blobs.ts --delete",
-    "validate:deployment": "bash scripts/validate-deployment.sh"
+    "validate:deployment": "bash scripts/validate-deployment.sh",
+    "db:sync": "./scripts/db-sync-env.sh",
+    "db:fingerprint": "./scripts/db-fingerprint.sh",
+    "db:drift": "./scripts/db-drift-check.sh"
   },
   "dependencies": {
     "@clerk/backend": "^2.21.0",
