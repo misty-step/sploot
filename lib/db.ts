@@ -138,13 +138,22 @@ export async function syncUser(clerkUserId: string, email: string) {
         },
       });
 
-      // Step 2: Re-parent all data to new user (single SQL statement per table)
-      // Assets and Tags have CASCADE, but we're moving to NEW user, not deleting
-      await tx.$executeRaw`
-        UPDATE "assets" SET "owner_user_id" = ${newUserId} WHERE "owner_user_id" = ${oldUserId};
-        UPDATE "tags" SET "owner_user_id" = ${newUserId} WHERE "owner_user_id" = ${oldUserId};
-        UPDATE "search_logs" SET "user_id" = ${newUserId} WHERE "user_id" = ${oldUserId};
-      `;
+      // Step 2: Re-parent data to new user
+      // Prisma rejects multi-statement executeRaw; run explicit updates instead
+      await tx.asset.updateMany({
+        where: { ownerUserId: oldUserId },
+        data: { ownerUserId: newUserId },
+      });
+
+      await tx.tag.updateMany({
+        where: { ownerUserId: oldUserId },
+        data: { ownerUserId: newUserId },
+      });
+
+      await tx.searchLog.updateMany({
+        where: { userId: oldUserId },
+        data: { userId: newUserId },
+      });
 
       // Step 3: Delete old user, then fix new user's email
       // (old user has no more references due to step 2, so DELETE succeeds)
