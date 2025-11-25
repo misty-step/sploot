@@ -18,14 +18,15 @@ interface HealthStatus {
 
 const TIMEOUT_MS = 5000;
 
-async function checkDatabase(): Promise<boolean> {
+async function checkDatabase(): Promise<{ success: boolean; error?: string }> {
   try {
-    if (!prisma) return false;
+    if (!prisma) return { success: false, error: 'Prisma client not initialized' };
     await prisma.$queryRaw`SELECT 1`;
-    return true;
+    return { success: true };
   } catch (e) {
-    logger.logError('health-check-database-failed', e as Error, {});
-    return false;
+    const err = e as Error;
+    logger.logError('health-check-database-failed', err, {});
+    return { success: false, error: err.message };
   }
 }
 
@@ -49,7 +50,7 @@ async function getHandler(_req: NextRequest) {
 
   // Timeout wrapper
   let timeoutId: NodeJS.Timeout | undefined;
-  const timeoutPromise = new Promise<{ db: boolean; redis: boolean }>((_, reject) => {
+  const timeoutPromise = new Promise<{ db: { success: boolean; error?: string }; redis: boolean }>((_, reject) => {
     timeoutId = setTimeout(() => reject(new Error('Health check timeout')), TIMEOUT_MS);
   });
 
@@ -63,7 +64,7 @@ async function getHandler(_req: NextRequest) {
     // Clear timeout on successful completion
     if (timeoutId) clearTimeout(timeoutId);
 
-    const isHealthy = results.db && results.redis;
+    const isHealthy = results.db.success && results.redis;
 
     if (isHealthy) {
       const payload: HealthStatus = {
@@ -85,13 +86,22 @@ async function getHandler(_req: NextRequest) {
     } else {
       // Determine which failed
       const errorMsg = [];
-      if (!results.db) errorMsg.push('Database connection failed');
+      if (!results.db.success) errorMsg.push(`Database connection failed: ${results.db.error}`);
       if (!results.redis) errorMsg.push('Redis connection failed');
+
+      // DEBUG: Inspect if channel_binding is present (redacted)
+      const dbUrl = process.env.POSTGRES_URL || '';
+      const redactedUrl = dbUrl.replace(/:[^:]*@/, ':***@'); // Hide password
 
       const payload: HealthStatus = {
         status: 'error',
         timestamp,
         error: errorMsg.join(', '),
+        // @ts-ignore - debug field
+        debug: {
+          connectionString: redactedUrl,
+          hasChannelBinding: dbUrl.includes('channel_binding'),
+        }
       };
 
       return NextResponse.json(payload, {

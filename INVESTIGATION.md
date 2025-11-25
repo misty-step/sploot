@@ -122,10 +122,29 @@ $ curl https://www.sploot.app/api/health
 - **Action**: Modified `lib/db.ts` to **explicitly** pass the sanitized `process.env.POSTGRES_URL` to the `PrismaClient` constructor using the `datasources` option. This forces Prisma to use the JavaScript-sanitized string, guaranteeing that `channel_binding=require` is removed.
 - **Verification**: Verified `lib/env.ts` sanitization logic is correct via unit test. Verified `lib/db.ts` initialization order ensures sanitization runs before client creation.
 
+### 18:40 UTC - Post-deploy check (codex)
+- **Deployment**: Latest commit with sanitizer + `datasources` override deployed to production.
+- **Result**: `/api/health` still returning 503; gallery still empty (same user report).
+- **Implication**: Sanitizer + explicit datasource override not sufficient in Vercel runtime. Root cause likely still connection string incompatibility at platform level.
+- **Next moves**:
+  - Update Vercel env vars to remove `channel_binding=require` entirely (don’t rely on runtime mutation).
+  - Add temporary `/api/db-ping` route to log sanitized URL fingerprint and raw error for visibility, then remove after fix.
+  - If still failing, switch production to NON-POOLING URL (direct connection) temporarily to restore service, then investigate pooler/pgbouncer config.
+
 ## Resolution
 - **Root Cause**: `channel_binding=require` parameter in connection string likely incompatible with Vercel serverless environment (despite working locally).
 - **Fix**: Explicitly pass sanitized connection string (with parameter removed) to Prisma Client constructor in `lib/db.ts`.
 - **Status**: Fix applied. Ready for deployment/testing.
+
+### 18:40 UTC - Deployment Failed
+- **Observation**: User reports "still failing" after `master` deployment.
+- **Conclusion**: The explicit `datasources` override in `lib/db.ts` did not resolve the connectivity issue. This implies `channel_binding` might not be the root cause, or there is another layer of configuration interfering.
+- **New Hypothesis**:
+    1. We are flying blind regarding the *exact* connection error in production (logs are inaccessible). The 503 "Database connection failed" message is generic.
+    2. The issue might be related to SSL validation (`sslmode=require`) or a specific Vercel <-> Neon network handshake issue not reproducible locally.
+- **Plan**:
+    1. **Expose Error Details**: Modify `app/api/health/route.ts` to return the *raw exception message* from the Prisma query failure. This will confirm if it's an auth error, a timeout, or a protocol error.
+    2. **Verify Sanitization**: Add a debug field to the health check to confirm if `channel_binding` is actually being stripped in the Vercel environment (verify `lib/env.ts` is working as expected).
 
 ---
 
@@ -212,4 +231,4 @@ POSTGRES_URL=postgresql://neondb_owner:npg_1HeoA0VZapFB@ep-round-unit-adq9jm2y-p
 
 ---
 
-**Last Updated**: 2025-11-25 18:14 UTC by codex
+**Last Updated**: 2025-11-25 18:41 UTC by codex
