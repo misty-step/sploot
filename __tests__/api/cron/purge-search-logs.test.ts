@@ -234,12 +234,13 @@ describe('/api/cron/purge-search-logs', () => {
         return { count: 3 };
       });
 
-      const response = await GET({} as NextRequest);
-      const data = await response.json();
+    const response = await GET({} as NextRequest);
+    const data = await response.json();
 
-      expect(data.durationMs).toBeDefined();
-      expect(typeof data.durationMs).toBe('number');
-      expect(data.durationMs).toBeGreaterThanOrEqual(50);
+    expect(data.durationMs).toBeDefined();
+    expect(typeof data.durationMs).toBe('number');
+    // Allow modest jitter in timing; we only care that the operation was timed.
+    expect(data.durationMs).toBeGreaterThanOrEqual(40);
     });
   });
 

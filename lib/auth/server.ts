@@ -1,4 +1,5 @@
 import { syncUser } from '../db';
+import { getUserSyncCircuitBreaker } from '../circuit-breaker';
 
 interface AuthResult {
   userId: string | null;
@@ -8,6 +9,17 @@ interface AuthResult {
 
 interface AuthWithUserResult extends AuthResult {
   userEmail?: string;
+  /**
+   * Database sync status
+   * - 'success': User successfully synced to database
+   * - 'failed': Sync failed, data operations may fail
+   * - 'skipped': No sync attempted (user not authenticated)
+   */
+  syncStatus: 'success' | 'failed' | 'skipped';
+  /**
+   * Error message if sync failed (for debugging/logging only)
+   */
+  syncError?: string;
 }
 
 export async function getAuth(): Promise<AuthResult> {
@@ -36,6 +48,7 @@ export async function getAuthWithUser(): Promise<AuthWithUserResult> {
       userId: authResult.userId,
       sessionId: authResult.sessionId,
       getToken: authResult.getToken as any,
+      syncStatus: 'skipped', // No user to sync
     };
   }
 
@@ -46,20 +59,41 @@ export async function getAuthWithUser(): Promise<AuthWithUserResult> {
       const email = user.emailAddresses[0]?.emailAddress || `${authResult.userId}@clerk.local`;
 
       // Ensure user exists in database with error handling
+      // Ousterhout: Fail Fast - use circuit breaker to avoid repeated failures
       try {
-        await syncUser(authResult.userId, email);
+        const circuitBreaker = getUserSyncCircuitBreaker();
+
+        await circuitBreaker.execute(async () => {
+          await syncUser(authResult.userId, email);
+        });
+
+        // Sync succeeded - return success status
+        return {
+          userId: authResult.userId,
+          sessionId: authResult.sessionId,
+          getToken: authResult.getToken as any,
+          userEmail: email,
+          syncStatus: 'success',
+        };
       } catch (dbError) {
+        // Check if circuit breaker is open (too many failures)
+        const isCircuitOpen = (dbError as Error).message.includes('Circuit breaker is OPEN');
+
         // Log database sync error but don't block authentication
         logger.logError('auth:db-sync-failed', dbError as Error, {
           userId: authResult.userId,
           email,
+          circuitBreakerOpen: isCircuitOpen,
         });
 
-        // Report to Sentry
+        // Report to Sentry with critical tag for alerting
         Sentry.captureException(dbError, {
+          level: 'error',
           tags: {
             'auth.action': 'user-sync',
             'auth.userId': authResult.userId,
+            'critical': 'true', // Tag for alerting
+            'circuit-breaker': isCircuitOpen ? 'open' : 'closed',
           },
           contexts: {
             user: {
@@ -67,28 +101,35 @@ export async function getAuthWithUser(): Promise<AuthWithUserResult> {
               email,
             },
           },
+          fingerprint: ['user-sync-failure', authResult.userId], // Group by user
         });
 
-        // Allow authentication to proceed even if DB sync fails
-        // The user can still access the app, DB sync will be retried later
+        // Allow authentication to proceed but expose sync failure
         logger.logInfo('auth:proceeding-without-db-sync', {
           userId: authResult.userId,
-          reason: 'Database sync failed but allowing authentication',
+          reason: isCircuitOpen
+            ? 'Circuit breaker open - too many sync failures'
+            : 'Database sync failed but allowing authentication',
         });
-      }
 
-      return {
-        userId: authResult.userId,
-        sessionId: authResult.sessionId,
-        getToken: authResult.getToken as any,
-        userEmail: email,
-      };
+        // Sync failed - return failure status with error details
+        return {
+          userId: authResult.userId,
+          sessionId: authResult.sessionId,
+          getToken: authResult.getToken as any,
+          userEmail: email,
+          syncStatus: 'failed',
+          syncError: (dbError as Error).message,
+        };
+      }
     }
 
+    // No user object from Clerk - skip sync
     return {
       userId: authResult.userId,
       sessionId: authResult.sessionId,
       getToken: authResult.getToken as any,
+      syncStatus: 'skipped',
     };
   } catch (error) {
     // Log unexpected error in auth flow
