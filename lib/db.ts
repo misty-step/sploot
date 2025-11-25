@@ -13,11 +13,20 @@ declare global {
 let prismaClient: PrismaClient | null = null;
 
 if (databaseConfigured) {
+  // Prefer non-pooling URL for stability (direct connection)
+  // This bypasses potential PgBouncer configuration issues in Vercel
+  const connectionUrl = process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
+
+  if (process.env.NODE_ENV === 'production') {
+    const redacted = connectionUrl?.replace(/:[^:]*@/, ':***@');
+    console.log(`[DB] Initializing Prisma with URL: ${redacted}`);
+  }
+
   prismaClient = global.prisma || new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
     datasources: {
       db: {
-        url: process.env.POSTGRES_URL,
+        url: connectionUrl,
       },
     },
   });

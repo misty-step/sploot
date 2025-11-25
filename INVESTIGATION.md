@@ -145,6 +145,27 @@ $ curl https://www.sploot.app/api/health
   3) If still failing, temporarily point `POSTGRES_URL` to NON_POOLING url (direct) to restore service while we dig into pooler/pgbouncer.
 - **Note**: git index.lock in repo prevented staging; someone else may need to commit/push. Code changes are in working tree.
 
+### 18:50 UTC - Added pgbouncer=true auto-append + test (codex)
+- **Change**: `lib/env.ts` already strips channel_binding and now ensures `pgbouncer=true` is appended when hostname contains `-pooler`.
+- **Test**: `pnpm vitest run __tests__/unit/env-sanitize.test.ts` ✅ (now 3 tests: strip channel_binding, backfill non-pooling, add pgbouncer=true).
+- **Rationale**: Prisma needs `pgbouncer=true` for Neon pooler (disables prepared statements). Vercel env still carries channel_binding; adding pgbouncer reduces another possible cause.
+- **Still needed**: Update Vercel env vars to remove channel_binding and redeploy; fetch `/api/db-ping` payload to confirm runtime URL and error.
+
+### 18:46 UTC - Confirmed: Vercel env vars still have channel_binding (Claude)
+- **Verification**: `vercel env pull --environment production` confirms:
+  ```
+  POSTGRES_URL="...ep-broad-credit-adnne0ox-pooler...?sslmode=require&channel_binding=require"
+  POSTGRES_URL_NON_POOLING="...ep-broad-credit-adnne0ox...?sslmode=require&channel_binding=require"
+  ```
+- **Finding**: Runtime sanitization code EXISTS (lib/env.ts:39-40, lib/db.ts:18-22) but NOT EFFECTIVE
+- **Root Cause**: Prisma likely reads env vars at build time OR before Node.js process.env mutation
+- **Solution**: Must update Vercel environment variables directly, cannot rely on runtime sanitization
+- **Proposed Clean URLs**:
+  ```
+  POSTGRES_URL="postgresql://neondb_owner:npg_pd2PrV3nuITc@ep-broad-credit-adnne0ox-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require"
+  POSTGRES_URL_NON_POOLING="postgresql://neondb_owner:npg_pd2PrV3nuITc@ep-broad-credit-adnne0ox.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require"
+  ```
+
 ## Resolution
 - **Root Cause**: `channel_binding=require` parameter in connection string likely incompatible with Vercel serverless environment (despite working locally).
 - **Fix**: Explicitly pass sanitized connection string (with parameter removed) to Prisma Client constructor in `lib/db.ts`.
@@ -254,4 +275,4 @@ POSTGRES_URL=postgresql://neondb_owner:npg_1HeoA0VZapFB@ep-round-unit-adq9jm2y-p
 
 ---
 
-**Last Updated**: 2025-11-25 18:45 UTC by codex
+**Last Updated**: 2025-11-25 18:50 UTC by codex
