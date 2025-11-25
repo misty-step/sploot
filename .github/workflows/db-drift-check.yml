@@ -20,4 +20,4 @@ jobs:
           if [ -z "$PROD_DB_URL" ]; then
             echo "PROD_DB_URL secret missing"; exit 1;
           fi
-          npx prisma migrate status --schema prisma/schema.prisma --url "$PROD_DB_URL"
+          DATABASE_URL="$PROD_DB_URL" npx prisma migrate status --schema prisma/schema.prisma

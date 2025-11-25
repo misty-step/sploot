@@ -45,6 +45,7 @@ jobs:
       - name: Run tests with coverage
         id: test
         env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sploot_test
           POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/sploot_test
           POSTGRES_URL_NON_POOLING: postgresql://postgres:postgres@localhost:5432/sploot_test
         run: pnpm test:coverage
