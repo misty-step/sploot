@@ -59,7 +59,6 @@ async function getHandler(_req: NextRequest) {
     if (timeoutId) clearTimeout(timeoutId);
 
     const isHealthy = results.db && results.redis;
-    const status = isHealthy ? 200 : 503;
 
     if (isHealthy) {
       const payload: HealthStatus = {
