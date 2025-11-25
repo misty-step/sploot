@@ -13,7 +13,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - name: Install deps
         run: pnpm install --frozen-lockfile
-      - name: Load prod DB URL
+      - name: Check migration drift
         env:
           PROD_DB_URL: ${{ secrets.PROD_DB_URL }}
         run: |
@@ -22,4 +22,12 @@ jobs:
           fi
           POSTGRES_URL="$PROD_DB_URL" \
           POSTGRES_URL_NON_POOLING="$PROD_DB_URL" \
-          npx prisma migrate status --schema prisma/schema.prisma
+          npx prisma migrate status --schema prisma/schema.prisma || {
+            if [ "$GITHUB_REF" = "refs/heads/master" ]; then
+              echo "::error::Migration drift detected on master!"
+              exit 1
+            else
+              echo "::warning::Migration drift detected (expected on feature branches)"
+              exit 0
+            fi
+          }
