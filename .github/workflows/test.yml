@@ -42,6 +42,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Setup database schema
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sploot_test
+          POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/sploot_test
+          POSTGRES_URL_NON_POOLING: postgresql://postgres:postgres@localhost:5432/sploot_test
+        run: pnpm db:push
+
       - name: Run tests with coverage
         id: test
         env:
