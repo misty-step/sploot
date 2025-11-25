@@ -1,0 +1,23 @@
+# lefthook.yml - Git hooks configuration
+# Docs: https://github.com/evilmartians/lefthook
+
+pre-commit:
+  parallel: true
+  commands:
+    gitleaks:
+      run: gitleaks protect --staged --verbose
+      # Scans staged files for secrets before commit
+
+    lint:
+      glob: "*.{js,ts,jsx,tsx}"
+      run: pnpm eslint {staged_files} --max-warnings=0
+
+    typecheck:
+      glob: "*.{ts,tsx}"
+      run: pnpm type-check
+
+pre-push:
+  commands:
+    test:
+      run: pnpm test
+      # Lightweight - skip coverage, let CI handle build
