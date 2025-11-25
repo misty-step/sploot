@@ -422,6 +422,30 @@ export function getGlobalCircuitBreaker(): CircuitBreaker {
   return globalCircuitBreaker;
 }
 
+// User sync circuit breaker instance
+let userSyncCircuitBreaker: CircuitBreaker | null = null;
+
+/**
+ * Get or create user sync circuit breaker
+ * Ousterhout: Fail Fast - don't retry operations likely to fail
+ */
+export function getUserSyncCircuitBreaker(): CircuitBreaker {
+  if (!userSyncCircuitBreaker) {
+    userSyncCircuitBreaker = new CircuitBreaker({
+      threshold: 3, // Open after 3 failures (more sensitive than global)
+      timeout: 60000, // Wait 1 minute before retry
+      resetTimeout: 120000, // Reset after 2 minutes of stability
+      onStateChange: (newState, oldState) => {
+        logger.logInfo('user-sync-circuit-breaker.state-change', {
+          oldState,
+          newState,
+        });
+      },
+    });
+  }
+  return userSyncCircuitBreaker;
+}
+
 /**
  * React hook for circuit breaker stats
  */

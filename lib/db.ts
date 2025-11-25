@@ -89,35 +89,35 @@ export async function syncUser(clerkUserId: string, email: string) {
     } as any;
   }
 
-  // 1. Check if user already exists with this ID
-  const existingUserById = await prisma.user.findUnique({
-    where: { id: clerkUserId },
-  });
-
-  if (existingUserById) {
-    // User exists, just update email if needed
-    if (existingUserById.email !== email) {
-      return await prisma.user.update({
-        where: { id: clerkUserId },
-        data: { email },
-      });
-    }
-    return existingUserById;
-  }
-
-  // 2. Check if user exists with this email (orphaned record case)
+  // 1. Check if there's an orphaned user with this email but different ID
   const existingUserByEmail = await prisma.user.findUnique({
     where: { email },
   });
 
-  if (existingUserByEmail) {
-    // Sanity check: if somehow the ID matched (race condition), return it
-    if (existingUserByEmail.id === clerkUserId) {
-      return existingUserByEmail;
+  // 2. Normal case: no orphaned record, use upsert for idempotent create/update
+  // This avoids race conditions when concurrent requests try to create the same user
+  if (!existingUserByEmail || existingUserByEmail.id === clerkUserId) {
+    try {
+      return await prisma.user.upsert({
+        where: { id: clerkUserId },
+        update: { email },
+        create: { id: clerkUserId, email },
+      });
+    } catch (e) {
+      // Handle race condition: if unique constraint fails, fetch the user
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const user = await prisma.user.findUnique({ where: { id: clerkUserId } });
+        if (user) return user;
+      }
+      throw e;
     }
+  }
+
+  // 3. Orphaned record detected: user with this email has a different Clerk ID
+  if (existingUserByEmail) {
 
     // Orphaned record detected: user with this email has a different Clerk ID
-    // Migrate the existing user's ID to the new Clerk ID
+    // Simplified migration: 3 atomic steps (Ousterhout: reduce complexity)
     logger.warn('Detected orphaned user record, migrating to current Clerk user', {
       orphanedId: existingUserByEmail.id,
       newClerkUserId: clerkUserId,
@@ -125,58 +125,55 @@ export async function syncUser(clerkUserId: string, email: string) {
     });
 
     return await prisma.$transaction(async (tx) => {
-      const oldClerkId = existingUserByEmail.id;
-      const newClerkId = clerkUserId;
-      // Use a temp email to avoid unique constraint violation during creation
-      const tempEmail = `migration-${Date.now()}-${Math.random().toString(36).substring(7)}@sploot.local`;
+      const oldUserId = existingUserByEmail.id;
+      const newUserId = clerkUserId;
 
-      // 1. Create the new user with the correct ID but temp email
-      await tx.user.create({
+      // Step 1: Create new user with correct ID and email
+      // Uses temporary email suffix to avoid unique constraint during migration
+      const tempEmail = `${email}.migrating.${Date.now()}`;
+      const newUser = await tx.user.create({
         data: {
-          id: newClerkId,
+          id: newUserId,
           email: tempEmail,
         },
       });
 
-      // 2. Re-parent all related records to the new user
-      await tx.$executeRaw`
-        UPDATE "assets"
-        SET "owner_user_id" = ${newClerkId}
-        WHERE "owner_user_id" = ${oldClerkId}
-      `;
-
-      await tx.$executeRaw`
-        UPDATE "tags"
-        SET "owner_user_id" = ${newClerkId}
-        WHERE "owner_user_id" = ${oldClerkId}
-      `;
-
-      await tx.$executeRaw`
-        UPDATE "search_logs"
-        SET "user_id" = ${newClerkId}
-        WHERE "user_id" = ${oldClerkId}
-      `;
-
-      // 3. Delete the old user record (cascades/cleans up)
-      await tx.user.delete({
-        where: { id: oldClerkId },
+      // Step 2: Re-parent data to new user
+      // Prisma rejects multi-statement executeRaw; run explicit updates instead
+      await tx.asset.updateMany({
+        where: { ownerUserId: oldUserId },
+        data: { ownerUserId: newUserId },
       });
 
-      // 4. Update the new user with the correct email
+      await tx.tag.updateMany({
+        where: { ownerUserId: oldUserId },
+        data: { ownerUserId: newUserId },
+      });
+
+      await tx.searchLog.updateMany({
+        where: { userId: oldUserId },
+        data: { userId: newUserId },
+      });
+
+      // Step 3: Delete old user, then fix new user's email
+      // (old user has no more references due to step 2, so DELETE succeeds)
+      await tx.user.delete({ where: { id: oldUserId } });
+
+      // Now we can set the real email (unique constraint is free)
       return await tx.user.update({
-        where: { id: newClerkId },
-        data: { email: email },
+        where: { id: newUserId },
+        data: { email },
       });
+    }, {
+      // Increase timeout for migration transactions (default 5s may be too short)
+      timeout: 15000,
+      // Use SERIALIZABLE isolation to prevent concurrent migrations
+      isolationLevel: 'Serializable',
     });
   }
 
-  // 3. User doesn't exist by ID or Email, create new
-  return await prisma.user.create({
-    data: {
-      id: clerkUserId,
-      email,
-    },
-  });
+  // Unreachable: upsert handles all non-orphaned cases
+  throw new Error('syncUser: unexpected code path');
 }
 
 

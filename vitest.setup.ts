@@ -197,9 +197,19 @@ if (!global.FormData) {
 process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = 'pk_test_mock_12345678901234567890';
 process.env.CLERK_SECRET_KEY = 'sk_test_mock_12345678901234567890';
 process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_test_mock_token_12345678901234567890';
-process.env.POSTGRES_URL = 'postgresql://test:test@localhost:5432/test_db';
-process.env.POSTGRES_URL_NON_POOLING = 'postgresql://test:test@localhost:5432/test_db';
 process.env.REPLICATE_API_TOKEN = 'r8_test_mock_token_12345678901234567890';
+
+// Keep DB config aligned with the CI postgres service unless already provided.
+const defaultTestDbUrl = 'postgresql://postgres:postgres@localhost:5432/sploot_test';
+const setDefaultEnv = (key: string, value: string) => {
+  if (!process.env[key]) {
+    process.env[key] = value;
+  }
+};
+
+setDefaultEnv('POSTGRES_URL', defaultTestDbUrl);
+setDefaultEnv('POSTGRES_URL_NON_POOLING', defaultTestDbUrl);
+setDefaultEnv('DATABASE_URL', defaultTestDbUrl);
 
 // Mock fetch globally
 global.fetch = vi.fn((url: string, options?: RequestInit) => {
