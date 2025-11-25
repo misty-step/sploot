@@ -51,22 +51,25 @@ curl -L https://sploot.app/api/health | jq
 # These require Vercel authentication or bypass token
 ```
 
-**Expected Response:**
+**Expected Response (Healthy):**
 ```json
 {
-  "status": "healthy",
-  "timestamp": "2025-11-08T02:00:00.000Z",
-  "checks": {
-    "database": {
-      "status": "pass",
-      "message": "Database connection successful",
-      "responseTime": 624
-    },
-    "sentry": {
-      "status": "pass",
-      "message": "Sentry DSN configured"
-    }
-  }
+  "status": "ok",
+  "timestamp": "2025-11-25T20:00:00.000Z",
+  "dependencies": {
+    "database": "up",
+    "redis": "up"
+  },
+  "version": "0.1.0"
+}
+```
+
+**Expected Response (Unhealthy):**
+```json
+{
+  "status": "error",
+  "timestamp": "2025-11-25T20:00:00.000Z",
+  "error": "Database connection failed, Redis connection failed"
 }
 ```
 
