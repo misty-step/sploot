@@ -10,16 +10,16 @@ if [ -z "$url" ]; then
   exit 1
 fi
 
-host="$(python3 - <<'PY' "$url"
-import os
+host="$(python3 - "$url" <<'PY'
+import sys
 from urllib.parse import urlparse
-url = os.environ["url"]
+url = sys.argv[1]
 p = urlparse(url)
 print(p.hostname or "")
 PY
 )"
 
-mig_hash="$(find prisma/migrations -maxdepth 1 -type d -not -path '*/.*' -printf '%f\n' 2>/dev/null | LC_ALL=C sort | sha256sum | cut -c1-12)"
+mig_hash="$(find prisma/migrations -maxdepth 1 -type d -not -path '*/.*' 2>/dev/null | xargs -n1 basename | LC_ALL=C sort | shasum -a 256 | cut -c1-12)"
 
 echo "db_host=$host"
 echo "migration_hash=$mig_hash"

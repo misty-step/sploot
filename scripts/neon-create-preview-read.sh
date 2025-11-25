@@ -34,5 +34,7 @@ neonctl connection-string \
   --branch "$NEON_PREVIEW_BRANCH" \
   --role "neondb_owner"
 
-echo "Update config/database.env with the preview branch URL and run: pnpm db:sync preview"
+echo "Add this connection string to Vercel Preview env vars:"
+echo "  vercel env add POSTGRES_URL preview"
+echo "  vercel env add POSTGRES_URL_NON_POOLING preview"
 

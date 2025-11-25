@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import { prisma } from './db';
 
 function migrationHash(): string {
   // hash of migration folder names for quick drift detection

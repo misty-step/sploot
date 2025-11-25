@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - uses: pnpm/action-setup@v4
       - name: Install deps
         run: pnpm install --frozen-lockfile
@@ -22,7 +25,7 @@ jobs:
           fi
           POSTGRES_URL="$PROD_DB_URL" \
           POSTGRES_URL_NON_POOLING="$PROD_DB_URL" \
-          npx prisma migrate status --schema prisma/schema.prisma || {
+          timeout 60 pnpm prisma migrate status --schema prisma/schema.prisma || {
             if [ "$GITHUB_REF" = "refs/heads/master" ]; then
               echo "::error::Migration drift detected on master!"
               exit 1

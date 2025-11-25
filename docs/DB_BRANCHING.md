@@ -3,60 +3,58 @@
 ## tl;dr
 - trunk is `master`. prod DB should always be the `master` Neon branch.
 - previews hit a read-only replica (default) unless you *explicitly* opt-in to a writable preview.
-- one source of truth: `config/database.env`. scripts sync it to Vercel; dashboards are noise.
-- runtime fingerprint guard 503s if the DB host drifts. env header `x-env-fingerprint` shows what you’re really hitting.
+- **Credentials live in GitHub Secrets and Vercel environment variables only** - never committed to repo.
+- CI drift gate runs `prisma migrate status` against prod (uses `PROD_DB_URL` secret).
 
 ## what exists now
-- Canonical URLs live in `config/database.env`.
-- `pnpm db:sync prod|preview` pushes those URLs into Vercel envs (no manual clicks).
-- Middleware checks `DB_FINGERPRINT_HOST` in prod; mismatch → 503 + Sentry tag.
-- CI drift gate (`.github/workflows/db-drift-check.yml`) runs `prisma migrate status` against prod (needs `PROD_DB_URL` secret).
+- **GitHub Secrets**: `PROD_DB_URL` for CI drift checks.
+- **Vercel env vars**: `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING` per environment.
+- CI drift gate (`.github/workflows/db-drift-check.yml`) runs `prisma migrate status` against prod.
 - Scripts:
   - `pnpm db:fingerprint` — prints host + migration hash.
   - `pnpm db:drift` — drift check.
   - `scripts/neon-create-preview-read.sh` — makes a read-only `preview-read` branch from `master`.
 
 ## how to keep us safe
-1) **Pin envs from git**  
-   - Edit `config/database.env`.  
-   - Run `pnpm db:sync prod` and `pnpm db:sync preview`.  
-   - Set `DB_FINGERPRINT_HOST` in Vercel prod to the prod host.
+1) **Store credentials securely**
+   - Production URLs → GitHub Secrets (`PROD_DB_URL`)
+   - All envs → Vercel environment variables (via dashboard or `vercel env`)
+   - Never commit connection strings to the repo.
 
-2) **Preview strategy (recommended)**  
-   - Create `preview-read` from `master` (read-only): `NEON_API_KEY=... NEON_PROJECT_ID=... ./scripts/neon-create-preview-read.sh`.  
-   - Drop its URLs into `config/database.env` → `pnpm db:sync preview`.
+2) **Preview strategy (recommended)**
+   - Create `preview-read` from `master` (read-only): `NEON_API_KEY=... NEON_PROJECT_ID=... ./scripts/neon-create-preview-read.sh`.
+   - Add URLs to Vercel Preview env vars via `vercel env add`.
 
-3) **Clean old branches**  
-   - `scripts/cleanup-old-neon-branches.sh` (needs `neonctl`, `NEON_API_KEY`).  
-   - Automate nightly via GH Action if you’re feeling spicy.
+3) **Clean old branches**
+   - `scripts/cleanup-old-neon-branches.sh` (needs `neonctl`, `NEON_API_KEY`).
+   - Automate nightly via GH Action if you're feeling spicy.
 
-4) **Detect drift fast**  
-   - Runtime: fingerprint guard + `/api/assets` logs zero-count with `db_drift` tag.  
-   - CI: drift gate fails the build if prod schema doesn’t match migrations.
+4) **Detect drift fast**
+   - CI: drift gate fails the build if prod schema doesn't match migrations.
+   - `/api/assets` logs zero-count with `db_drift` tag (potential indicator).
 
 ## recipes
 ### new deploy (prod)
-```
+```bash
 pnpm db:fingerprint   # sanity
 pnpm db:drift         # drift gate
-pnpm db:sync prod     # ensure env matches git
 pnpm build && vercel deploy --prebuilt --prod
 ```
 
 ### set up preview-read once
-```
+```bash
 export NEON_API_KEY=...
 export NEON_PROJECT_ID=...
 ./scripts/neon-create-preview-read.sh
-# paste connection strings into config/database.env
-pnpm db:sync preview
+# Add connection strings to Vercel Preview env vars
+vercel env add POSTGRES_URL preview
+vercel env add POSTGRES_URL_NON_POOLING preview
 ```
 
 ### bust a suspected drift
-- Check `/api/health/user-sync` and `x-env-fingerprint` header.
-- If host mismatch: update `config/database.env`, run `pnpm db:sync prod`, redeploy.
+- Check `/api/health` and look for db_drift Sentry tags.
+- If drift: update Vercel env vars, redeploy.
 
 ## invariants
-- prod DB host == `DB_FINGERPRINT_HOST` == `config/database.env` PROD host.
-- No “quick fixes” via dashboard edits. Change the file, sync, deploy.
-
+- Credentials only in GitHub Secrets + Vercel env vars.
+- No secrets committed to git. No "quick fixes" via dashboard edits without updating secrets.
