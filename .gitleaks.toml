@@ -1,0 +1,20 @@
+# .gitleaks.toml - Secret scanning configuration
+# Docs: https://github.com/gitleaks/gitleaks
+
+title = "sploot gitleaks config"
+
+[allowlist]
+description = "Global allowlist"
+
+# Ignore test files that may contain mock credentials
+paths = [
+  '''\.test\.ts$''',
+  '''\.spec\.ts$''',
+  '''vitest\.setup\.ts$''',
+  '''__tests__/.*''',
+]
+
+# Allow test database credentials (CI-only, ephemeral)
+regexes = [
+  '''postgres:postgres@localhost''',
+]

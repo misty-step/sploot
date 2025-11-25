@@ -11,6 +11,7 @@ import logger from '@/lib/logger';
 import { logError } from '@/lib/vercel-logger';
 import { createErrorResponse } from '@/lib/error-response';
 import { withObservability } from '@/lib/with-observability';
+import { getDbFingerprint } from '@/lib/db-fingerprint';
 
 // Shuffle seed range: 0-1000000 for user-friendly integer values
 // Normalized to 0.0-1.0 for PostgreSQL setseed() in shuffle queries
@@ -175,6 +176,7 @@ async function postHandler(req: NextRequest) {
 
 async function getHandler(req: NextRequest) {
   const requestId = crypto.randomUUID();
+  const fp = getDbFingerprint();
 
   // Declare params outside try block so they're accessible in catch for logging
   let limit = 50;
@@ -410,15 +412,46 @@ async function getHandler(req: NextRequest) {
       } : {}),
     }));
 
-    return NextResponse.json({
-      assets: formattedAssets,
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + limit < total,
+    // Drift detector: zero assets for known user hints at wrong DB branch
+    if (total === 0) {
+      try {
+        const Sentry = await import('@sentry/nextjs');
+        Sentry.captureMessage('zero-assets-for-user', {
+          level: 'warning',
+          tags: {
+            userId,
+            db_host: fp.host || 'unknown',
+            migration_hash: fp.hash,
+            suspect: 'db-drift',
+          },
+        });
+        logger.warn('assets:zero-count', {
+          userId,
+          dbHost: fp.host,
+          migrationHash: fp.hash,
+        });
+      } catch {
+        // best-effort only
+      }
+    }
+
+    const res = NextResponse.json(
+      {
+        assets: formattedAssets,
+        pagination: {
+          total,
+          limit,
+          offset,
+          hasMore: offset + limit < total,
+        },
       },
-    });
+      {
+        headers: {
+          'x-env-fingerprint': `${fp.host || 'unknown'}@${fp.hash}`,
+        },
+      }
+    );
+    return res;
   } catch (error) {
     unstable_rethrow(error);
     logError('GET /api/assets', error, {

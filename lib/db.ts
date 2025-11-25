@@ -89,32 +89,32 @@ export async function syncUser(clerkUserId: string, email: string) {
     } as any;
   }
 
-  // 1. Check if user already exists with this ID
-  const existingUserById = await prisma.user.findUnique({
-    where: { id: clerkUserId },
-  });
-
-  if (existingUserById) {
-    // User exists, just update email if needed
-    if (existingUserById.email !== email) {
-      return await prisma.user.update({
-        where: { id: clerkUserId },
-        data: { email },
-      });
-    }
-    return existingUserById;
-  }
-
-  // 2. Check if user exists with this email (orphaned record case)
+  // 1. Check if there's an orphaned user with this email but different ID
   const existingUserByEmail = await prisma.user.findUnique({
     where: { email },
   });
 
-  if (existingUserByEmail) {
-    // Sanity check: if somehow the ID matched (race condition), return it
-    if (existingUserByEmail.id === clerkUserId) {
-      return existingUserByEmail;
+  // 2. Normal case: no orphaned record, use upsert for idempotent create/update
+  // This avoids race conditions when concurrent requests try to create the same user
+  if (!existingUserByEmail || existingUserByEmail.id === clerkUserId) {
+    try {
+      return await prisma.user.upsert({
+        where: { id: clerkUserId },
+        update: { email },
+        create: { id: clerkUserId, email },
+      });
+    } catch (e) {
+      // Handle race condition: if unique constraint fails, fetch the user
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const user = await prisma.user.findUnique({ where: { id: clerkUserId } });
+        if (user) return user;
+      }
+      throw e;
     }
+  }
+
+  // 3. Orphaned record detected: user with this email has a different Clerk ID
+  if (existingUserByEmail) {
 
     // Orphaned record detected: user with this email has a different Clerk ID
     // Simplified migration: 3 atomic steps (Ousterhout: reduce complexity)
@@ -172,13 +172,8 @@ export async function syncUser(clerkUserId: string, email: string) {
     });
   }
 
-  // 3. User doesn't exist by ID or Email, create new
-  return await prisma.user.create({
-    data: {
-      id: clerkUserId,
-      email,
-    },
-  });
+  // Unreachable: upsert handles all non-orphaned cases
+  throw new Error('syncUser: unexpected code path');
 }
 
 

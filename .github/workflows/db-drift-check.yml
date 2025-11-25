@@ -1,0 +1,36 @@
+name: db-drift-check
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Check migration drift
+        env:
+          PROD_DB_URL: ${{ secrets.PROD_DB_URL }}
+        run: |
+          if [ -z "$PROD_DB_URL" ]; then
+            echo "PROD_DB_URL secret missing"; exit 1;
+          fi
+          POSTGRES_URL="$PROD_DB_URL" \
+          POSTGRES_URL_NON_POOLING="$PROD_DB_URL" \
+          timeout 60 pnpm prisma migrate status --schema prisma/schema.prisma || {
+            if [ "$GITHUB_REF" = "refs/heads/master" ]; then
+              echo "::error::Migration drift detected on master!"
+              exit 1
+            else
+              echo "::warning::Migration drift detected (expected on feature branches)"
+              exit 0
+            fi
+          }

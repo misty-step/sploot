@@ -31,8 +31,15 @@ yarn-error.log*
 .pnpm-debug.log*
 *.log
 
-# env files (can opt-in for committing if needed)
+# env files - catch in all directories
 .env*
+**/*.env
+**/database.env
+*.env.*
+
+# secrets
+*.key
+**/secrets/**
 
 # vercel
 .vercel
