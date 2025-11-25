@@ -14,6 +14,12 @@ function isValueMissing(value: string | undefined | null) {
   return PLACEHOLDER_MARKERS.some(marker => lower.includes(marker));
 }
 
+// Backfill non-pooling URL from standard URL if missing, to allow app to start
+// This prevents "database not configured" errors when only POSTGRES_URL is provided
+if (isValueMissing(process.env.POSTGRES_URL_NON_POOLING) && !isValueMissing(process.env.POSTGRES_URL)) {
+  process.env.POSTGRES_URL_NON_POOLING = process.env.POSTGRES_URL;
+}
+
 const hasClerkConfig = !isValueMissing(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) &&
   !isValueMissing(process.env.CLERK_SECRET_KEY);
 const hasBlobConfig = !isValueMissing(process.env.BLOB_READ_WRITE_TOKEN);
