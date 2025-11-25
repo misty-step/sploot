@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { kv } from '@vercel/kv';
 import { withObservability } from '@/lib/with-observability';
+import { logger } from '@/lib/observability-logger';
 import pkg from '@/package.json';
 
 interface HealthStatus {
@@ -18,12 +19,12 @@ interface HealthStatus {
 const TIMEOUT_MS = 5000;
 
 async function checkDatabase(): Promise<boolean> {
-  if (!prisma) return false;
   try {
+    if (!prisma) return false;
     await prisma.$queryRaw`SELECT 1`;
     return true;
   } catch (e) {
-    console.error('Database health check failed:', e);
+    logger.logError('health-check-database-failed', e as Error, {});
     return false;
   }
 }
@@ -33,7 +34,7 @@ async function checkRedis(): Promise<boolean> {
     await kv.ping();
     return true;
   } catch (e) {
-    console.error('Redis health check failed:', e);
+    logger.logError('health-check-redis-failed', e as Error, {});
     return false;
   }
 }
@@ -42,8 +43,9 @@ async function getHandler(_req: NextRequest) {
   const timestamp = new Date().toISOString();
 
   // Timeout wrapper
+  let timeoutId: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<{ db: boolean; redis: boolean }>((_, reject) => {
-    setTimeout(() => reject(new Error('Health check timeout')), TIMEOUT_MS);
+    timeoutId = setTimeout(() => reject(new Error('Health check timeout')), TIMEOUT_MS);
   });
 
   try {
@@ -52,6 +54,9 @@ async function getHandler(_req: NextRequest) {
     );
 
     const results = await Promise.race([checksPromise, timeoutPromise]);
+
+    // Clear timeout on successful completion
+    if (timeoutId) clearTimeout(timeoutId);
 
     const isHealthy = results.db && results.redis;
     const status = isHealthy ? 200 : 503;
@@ -94,6 +99,9 @@ async function getHandler(_req: NextRequest) {
     }
 
   } catch (error) {
+    // Clear timeout on error
+    if (timeoutId) clearTimeout(timeoutId);
+
     // Timeout or other unexpected error
     const payload: HealthStatus = {
       status: 'error',
@@ -114,7 +122,10 @@ async function headHandler(req: NextRequest) {
   const res = await getHandler(req);
   return new NextResponse(null, {
     status: res.status,
-    headers: res.headers,
+    headers: {
+      'Cache-Control': res.headers.get('Cache-Control') || 'no-cache, no-store, must-revalidate',
+      'Content-Type': res.headers.get('Content-Type') || 'application/json',
+    },
   });
 }
 

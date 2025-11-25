@@ -111,16 +111,6 @@ describe('/api/health', () => {
     expect(text).toBe('');
   });
 
-  it('should fail if prisma is not initialized', async () => {
-      // We need to mock import of @/lib/db to return null prisma
-      // But vitest mocks are hoisted. We can't change the module mock per test easily without some tricks.
-      // Instead, we can simulate checkDatabase returning false by mocking $queryRaw to throw,
-      // but checking "if (!prisma)" line specifically requires prisma to be null/undefined.
-      // Since we mocked prisma as an object, it's not null.
-      // We'll skip this specific branch coverage or accept standard failure.
-
-      // Let's rely on standard failure which we covered.
-  });
 
   it('should timeout if checks take too long', async () => {
     // We can't easily use fake timers with promises that are not using setTimeout inside.

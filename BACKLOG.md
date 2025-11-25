@@ -884,6 +884,8 @@ pnpm changeset init
 
 ## Later (Someday/Maybe, 6+ months)
 
+- **[Observability] Restore Sentry Health Check** - Add Sentry DSN verification to `/api/health` endpoint as non-blocking check. Removed during health check refactor (PR #20). While Sentry isn't critical for runtime like DB/Redis, monitoring teams may want visibility into error tracking status. **Effort**: 1h | **Priority**: Low | **Context**: Check `SENTRY_DSN` environment variable presence, return as optional check field.
+
 - **[Platform] Mobile App (React Native)** - iOS/Android with camera integration, share sheet, push notifications. 60% meme consumption is mobile.
 
 - **[Platform] GIF/Video Semantic Search** - MP4/WebM uploads, FFmpeg frame extraction, keyframe embeddings. 45% memes are video/GIF. No competitor has this.
