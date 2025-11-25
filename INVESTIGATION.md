@@ -131,6 +131,20 @@ $ curl https://www.sploot.app/api/health
   - Add temporary `/api/db-ping` route to log sanitized URL fingerprint and raw error for visibility, then remove after fix.
   - If still failing, switch production to NON-POOLING URL (direct connection) temporarily to restore service, then investigate pooler/pgbouncer config.
 
+### 18:42 UTC - Added `/api/db-ping` (codex)
+- **Change**: New observability endpoint (`app/api/db-ping/route.ts`) returns prisma availability, sanitized URL channel_binding flags, DB fingerprint, and raw query result/error.
+- **Purpose**: Debug Vercel runtime by seeing whether channel_binding is still present and what error Prisma throws without exposing secrets.
+- **Action Needed**: Hit `https://www.sploot.app/api/db-ping` post-deploy and paste payload here; remove route after incident.
+
+### 18:45 UTC - Still failing after deploy (codex)
+- **Status**: Prod still 503 per latest test (user report). Sanitizer+datasource override not sufficient.
+- **Blocker**: Need real payload from `/api/db-ping` on prod to see what Prisma is actually reading (url flags + error).
+- **Proposed immediate steps**:
+  1) Update Vercel prod env vars to remove `&channel_binding=require` for both pooled/non-pooled; redeploy.
+  2) After deploy, capture `/api/db-ping` JSON and add here.
+  3) If still failing, temporarily point `POSTGRES_URL` to NON_POOLING url (direct) to restore service while we dig into pooler/pgbouncer.
+- **Note**: git index.lock in repo prevented staging; someone else may need to commit/push. Code changes are in working tree.
+
 ## Resolution
 - **Root Cause**: `channel_binding=require` parameter in connection string likely incompatible with Vercel serverless environment (despite working locally).
 - **Fix**: Explicitly pass sanitized connection string (with parameter removed) to Prisma Client constructor in `lib/db.ts`.
@@ -145,6 +159,15 @@ $ curl https://www.sploot.app/api/health
 - **Plan**:
     1. **Expose Error Details**: Modify `app/api/health/route.ts` to return the *raw exception message* from the Prisma query failure. This will confirm if it's an auth error, a timeout, or a protocol error.
     2. **Verify Sanitization**: Add a debug field to the health check to confirm if `channel_binding` is actually being stripped in the Vercel environment (verify `lib/env.ts` is working as expected).
+
+### 18:45 UTC - Gemini Analysis of Connection String
+- **Observation**: The `POSTGRES_URL` in `ISSUE.md` contains `-pooler` in the hostname (`ep-broad-credit-adnne0ox-pooler...`) but **lacks** the `pgbouncer=true` query parameter.
+- **Knowledge**: Prisma requires `pgbouncer=true` when connecting to a PgBouncer instance (which Neon's pooler uses) to disable prepared statements. Without this, Prisma attempts to use named prepared statements, which fails in transaction-pooling mode (typical error: "prepared statement ... does not exist" or connection instability).
+- **Local vs Prod**: Local environment might be tolerating this (perhaps lower concurrency or session mode?), but production Vercel environment (high concurrency, serverless) is failing consistently.
+- **New Plan**:
+    1. Update `lib/env.ts` to **automatically append** `pgbouncer=true` if the hostname contains `-pooler` and the parameter is missing.
+    2. Keep the `channel_binding` stripping logic.
+    3. Add `binaryTargets` to `schema.prisma` as a defensive measure for Vercel runtime compatibility.
 
 ---
 
@@ -231,4 +254,4 @@ POSTGRES_URL=postgresql://neondb_owner:npg_1HeoA0VZapFB@ep-round-unit-adq9jm2y-p
 
 ---
 
-**Last Updated**: 2025-11-25 18:41 UTC by codex
+**Last Updated**: 2025-11-25 18:45 UTC by codex

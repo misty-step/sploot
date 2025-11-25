@@ -18,7 +18,11 @@ function sanitizePostgresUrl(raw: string | undefined | null) {
     // Neon pooler (pgbouncer) rejects channel binding; keep users online by stripping it
     if (channelBinding && channelBinding.toLowerCase() === 'require') {
       url.searchParams.delete('channel_binding');
-      return url.toString();
+    }
+
+    // Neon pooler requires pgbouncer=true for Prisma to disable prepared statements
+    if (url.hostname.includes('-pooler') && !url.searchParams.has('pgbouncer')) {
+      url.searchParams.set('pgbouncer', 'true');
     }
 
     return url.toString();
