@@ -289,6 +289,84 @@ project=sploot
 
 ---
 
+## Database Configuration Hardening (Post-Mortem 2025-11-25)
+
+> Strategic improvements identified after 3-hour production outage. Root cause: Prisma native engine couldn't read custom env var names in Vercel serverless.
+
+### Deployment Canary with Health Check
+**Value**: Prevent broken deployments from reaching production
+**Effort**: Medium (requires CI/CD workflow setup)
+**Priority**: HIGH (prevents entire class of deployment failures)
+
+**Description**: Automated health check in CI that validates deployment before promoting to production.
+
+**Implementation**:
+- GitHub Actions workflow step after build
+- Deploy to preview environment
+- Execute `curl https://preview-url.vercel.app/api/health`
+- Parse response, verify `status: "ok"` and `database: "up"`
+- Only proceed with production promotion if checks pass
+- Auto-rollback on failure
+
+**Benefits**:
+- Catches broken builds in preview (2-3 min) instead of production
+- Zero downtime from configuration errors
+- Confidence in deployment process
+
+**Success criteria**: CI blocks deployment if health check fails
+
+---
+
+### Staging Environment with Production Configuration
+**Value**: Test production-like config before deploying
+**Effort**: Low (Vercel native feature)
+**Priority**: MEDIUM
+
+**Why**: Current workflow: develop → preview (dev config) → production. Missing: test with production config.
+
+**Implementation**:
+- Create Vercel staging environment (separate from preview)
+- Mirror all production env vars to staging
+- Use Neon staging database branch (auto-created by integration)
+- Deploy `main` branch to staging automatically
+- Manual promotion to production required
+
+**Workflow**:
+```
+develop → preview (dev DB) → staging (prod config, staging DB) → production
+```
+
+**Success criteria**: Can test DATABASE_URL and other prod config before affecting users
+
+---
+
+### Complexity Audit: "Custom > Standard" Antipattern
+**Value**: Prevent similar issues in other areas
+**Effort**: Medium (4-6h thorough review)
+**Priority**: MEDIUM (strategic debt reduction)
+
+**Description**: Systematic search for places we deviated from framework standards without justification.
+
+**Areas to audit**:
+- ✅ Environment variables (completed - removed custom names)
+- [ ] Vercel configuration vs Next.js defaults
+- [ ] Prisma patterns (schema, migrations, client usage)
+- [ ] Clerk authentication flows
+- [ ] Next.js conventions (middleware, route handlers, data fetching)
+
+**Methodology**:
+1. Read framework documentation for recommended patterns
+2. Compare codebase implementation to docs
+3. Document each deviation with justification
+4. Eliminate unjustified custom patterns
+5. Keep deviations only when measurably beneficial
+
+**Output**: `docs/framework-deviations.md` listing all deviations with rationale
+
+**Success criteria**: Every framework deviation has documented "why" that passes Carmack test
+
+---
+
 ## Next (This Quarter, <3 months)
 
 ### [Architecture] Decompose UploadZone God Object

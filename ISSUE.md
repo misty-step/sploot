@@ -1448,8 +1448,3 @@ iu @ ff7fff48-878ecf240ba87c60.js?dpl=dpl_GyZYVYhap5CgRCqyBrD3CcJyGKjS:1
 iX @ ff7fff48-878ecf240ba87c60.js?dpl=dpl_GyZYVYhap5CgRCqyBrD3CcJyGKjS:1
 A @ 5580-90e6f2eb19f4fc15.js?dpl=dpl_GyZYVYhap5CgRCqyBrD3CcJyGKjS:2
 ```
-
-neon db connection string copied from dashboard
-```
-postgresql://neondb_owner:npg_pd2PrV3nuITc@ep-broad-credit-adnne0ox-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
-```

@@ -151,6 +151,23 @@ $ curl https://www.sploot.app/api/health
 - **Rationale**: Prisma needs `pgbouncer=true` for Neon pooler (disables prepared statements). Vercel env still carries channel_binding; adding pgbouncer reduces another possible cause.
 - **Still needed**: Update Vercel env vars to remove channel_binding and redeploy; fetch `/api/db-ping` payload to confirm runtime URL and error.
 
+### 18:55 UTC - Vercel runtime logs (codex)
+- **Command**: `vercel logs https://www.sploot.app | grep prisma` (runtime logs).
+- **Findings**:
+  - `PrismaClientInitializationError`: "Authentication failed against database server, the provided database credentials for `(not available)` are not valid." for `/api/health`, `/api/stats`, cron endpoints.
+  - Message repeats even after redeploy; suggests Prisma sees **empty or unparsable credentials** in production runtime (username shows `(not available)`).
+  - Circuit breaker opening due to repeated failures (auth sync).
+- **Implication**: Sanitization not the only issue; Prisma may not be receiving env vars at all or Vercel still injecting channel_binding string that Prisma rejects before parsing credentials.
+- **Next**: Need `/api/db-ping` output after redeploy to confirm what env vars look like in runtime; update Vercel env vars to remove channel_binding + include pgbouncer.
+
+### 18:56 UTC - Env correctness check (codex)
+- **Observation**: Prod `POSTGRES_URL_NON_POOLING` (from env pull) still points to `-pooler` host and includes `channel_binding=require`. Non-pooled URL should be *without* `-pooler`.
+- **Risk**: If Prisma prefers `directUrl` internally, using pooler here breaks auth and could explain `(not available)` credentials.
+- **Recommended prod values (please set in Vercel now):**
+  - `POSTGRES_URL=postgresql://neondb_owner:npg_pd2PrV3nuITc@ep-broad-credit-adnne0ox-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&pgbouncer=true`
+  - `POSTGRES_URL_NON_POOLING=postgresql://neondb_owner:npg_pd2PrV3nuITc@ep-broad-credit-adnne0ox.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require`
+  - (Optional) Add `connection_limit=1` to pooled URL for serverless friendliness.
+
 ### 18:46 UTC - Confirmed: Vercel env vars still have channel_binding (Claude)
 - **Verification**: `vercel env pull --environment production` confirms:
   ```
@@ -275,4 +292,4 @@ POSTGRES_URL=postgresql://neondb_owner:npg_1HeoA0VZapFB@ep-round-unit-adq9jm2y-p
 
 ---
 
-**Last Updated**: 2025-11-25 18:50 UTC by codex
+**Last Updated**: 2025-11-25 18:56 UTC by codex
