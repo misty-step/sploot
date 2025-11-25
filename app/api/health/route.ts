@@ -30,6 +30,11 @@ async function checkDatabase(): Promise<boolean> {
 }
 
 async function checkRedis(): Promise<boolean> {
+  // Skip Redis check if not configured (treat as healthy)
+  if (!process.env.KV_REST_API_URL) {
+    return true;
+  }
+
   try {
     await kv.ping();
     return true;
