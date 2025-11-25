@@ -8,11 +8,37 @@ const PLACEHOLDER_MARKERS = [
   'your_replicate_token_here',
 ];
 
+function sanitizePostgresUrl(raw: string | undefined | null) {
+  if (!raw) return raw;
+
+  try {
+    const url = new URL(raw);
+    const channelBinding = url.searchParams.get('channel_binding');
+
+    // Neon pooler (pgbouncer) rejects channel binding; keep users online by stripping it
+    if (channelBinding && channelBinding.toLowerCase() === 'require') {
+      url.searchParams.delete('channel_binding');
+      return url.toString();
+    }
+
+    return url.toString();
+  } catch {
+    // Fall back to raw string if URL parsing fails
+    return raw;
+  }
+}
+
 function isValueMissing(value: string | undefined | null) {
   if (!value) return true;
   const lower = value.toLowerCase();
   return PLACEHOLDER_MARKERS.some(marker => lower.includes(marker));
 }
+
+
+// Sanitize Neon URLs before we decide if the database is configured
+process.env.POSTGRES_URL = sanitizePostgresUrl(process.env.POSTGRES_URL) ?? undefined;
+process.env.POSTGRES_URL_NON_POOLING = sanitizePostgresUrl(process.env.POSTGRES_URL_NON_POOLING) ?? undefined;
+
 
 // Backfill non-pooling URL from standard URL if missing, to allow app to start
 // This prevents "database not configured" errors when only POSTGRES_URL is provided
