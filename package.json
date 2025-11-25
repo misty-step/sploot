@@ -19,7 +19,7 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
-    "prepare": "lefthook install",
+    "prepare": "git rev-parse --git-dir > /dev/null 2>&1 && lefthook install || true",
     "postinstall": "prisma generate",
     "secrets:check": "gitleaks detect --verbose",
     "generate-icons": "node scripts/generate-icons.js",
