@@ -47,6 +47,27 @@ describe('/api/health', () => {
     expect(res.headers.get('Cache-Control')).toBe('no-cache, no-store, must-revalidate');
   });
 
+  it('should return 200 OK when Redis is not configured (optional dependency)', async () => {
+    // Ensure KV_REST_API_URL is not set (Redis optional)
+    delete process.env.KV_REST_API_URL;
+
+    mockPrisma.$queryRaw.mockResolvedValue([1]);
+    // Redis ping shouldn't be called when not configured
+    mockKv.ping.mockResolvedValue('PONG');
+
+    const req = createMockRequest('GET', null);
+    const context = { params: Promise.resolve({}) };
+    const res = await GET(req, context);
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+
+    expect(data.status).toBe('ok');
+    expect(data.dependencies.database).toBe('up');
+    expect(data.dependencies.redis).toBe('up'); // Treated as healthy when not configured
+    expect(mockKv.ping).not.toHaveBeenCalled(); // Shouldn't call ping when not configured
+  });
+
   it('should return 503 Service Unavailable when Database is down', async () => {
     mockPrisma.$queryRaw.mockRejectedValue(new Error('DB Connection Failed'));
     mockKv.ping.mockResolvedValue('PONG');
@@ -63,6 +84,9 @@ describe('/api/health', () => {
   });
 
   it('should return 503 Service Unavailable when Redis is down', async () => {
+    // Set KV_REST_API_URL so Redis check runs
+    process.env.KV_REST_API_URL = 'http://localhost:6379';
+
     mockPrisma.$queryRaw.mockResolvedValue([1]);
     mockKv.ping.mockRejectedValue(new Error('Redis Connection Failed'));
 
@@ -75,9 +99,15 @@ describe('/api/health', () => {
 
     expect(data.status).toBe('error');
     expect(data.error).toContain('Redis connection failed');
+
+    // Clean up
+    delete process.env.KV_REST_API_URL;
   });
 
   it('should return 503 when both services are down', async () => {
+    // Set KV_REST_API_URL so Redis check runs
+    process.env.KV_REST_API_URL = 'http://localhost:6379';
+
     mockPrisma.$queryRaw.mockRejectedValue(new Error('DB Failed'));
     mockKv.ping.mockRejectedValue(new Error('Redis Failed'));
 
@@ -91,6 +121,9 @@ describe('/api/health', () => {
     expect(data.status).toBe('error');
     expect(data.error).toContain('Database connection failed');
     expect(data.error).toContain('Redis connection failed');
+
+    // Clean up
+    delete process.env.KV_REST_API_URL;
   });
 
   it('should handle HEAD requests', async () => {
