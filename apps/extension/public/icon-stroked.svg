@@ -1,0 +1,17 @@
+<svg width="180" height="180" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
+  <!-- White background embedded to prevent transparency optimization -->
+  <rect width="180" height="180" fill="white"/>
+
+  <!-- Overlapping circles with purple STROKES (scaled from original 32x32) -->
+  <!-- Original: cx="12" cy="16" at 32x32 → cx="67.5" cy="90" at 180x180 -->
+  <!-- Original: r="9" at 32x32 → r="50.625" at 180x180 -->
+  <!-- Original: stroke-width="2.5" → stroke-width="14" for better visibility at small sizes -->
+  <circle cx="67.5" cy="90" r="50.625"
+          stroke="#7C5CFF"
+          stroke-width="14"
+          fill="none"/>
+  <circle cx="112.5" cy="90" r="50.625"
+          stroke="#7C5CFF"
+          stroke-width="14"
+          fill="none"/>
+</svg>

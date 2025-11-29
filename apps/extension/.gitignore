@@ -1,0 +1,38 @@
+## Dependencies
+node_modules/
+pnpm-debug.log*
+yarn-debug.log*
+npm-debug.log*
+
+## Build + Framework Artifacts
+dist/
+.output/
+.wxt/
+coverage/
+coverage-*
+.nyc_output/
+*.tsbuildinfo
+
+## Temporary + IDE Files
+.DS_Store
+Thumbs.db
+*.log
+tmp/
+temp/
+.idea/
+.vscode/
+
+## Extension Packages
+*.zip
+*.crx
+*.xpi
+
+## Environment & Secrets
+.env
+.env.*
+!.env.example
+!.env.template
+.crx-key.pem
+
+## Generated Assets
+public/*.generated.*
