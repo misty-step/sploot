@@ -207,8 +207,6 @@ const setDefaultEnv = (key: string, value: string) => {
   }
 };
 
-setDefaultEnv('POSTGRES_URL', defaultTestDbUrl);
-setDefaultEnv('POSTGRES_URL_NON_POOLING', defaultTestDbUrl);
 setDefaultEnv('DATABASE_URL', defaultTestDbUrl);
 
 // Mock fetch globally

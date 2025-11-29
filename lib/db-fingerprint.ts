@@ -15,7 +15,7 @@ function migrationHash(): string {
   }
 }
 
-export function getDbFingerprint(envUrl = process.env.POSTGRES_URL): { host: string | null; hash: string } {
+export function getDbFingerprint(envUrl = process.env.DATABASE_URL): { host: string | null; hash: string } {
   if (!envUrl) return { host: null, hash: migrationHash() };
   try {
     const u = new URL(envUrl);

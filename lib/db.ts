@@ -22,6 +22,49 @@ if (databaseConfigured) {
     global.prisma = prismaClient;
   }
 
+  // Startup logging: Log database configuration (production-safe)
+  try {
+    const databaseUrl = process.env.DATABASE_URL;
+    if (databaseUrl) {
+      // Redact password from URL for logging
+      const redactedUrl = databaseUrl.replace(/:([^@]+)@/, ':****@');
+
+      // Parse URL to extract metadata
+      let hostname = 'unknown';
+      let params = '';
+      try {
+        const url = new URL(databaseUrl);
+        hostname = url.hostname;
+        params = url.search;
+      } catch (e) {
+        // URL parsing failed - still log what we can
+      }
+
+      observabilityLogger.logInfo('db:prisma-initialized', {
+        database_url_configured: true,
+        database_url_redacted: redactedUrl,
+        database_hostname: hostname,
+        database_params: params,
+        is_pooler_endpoint: hostname.includes('-pooler'),
+        has_pgbouncer_param: params.includes('pgbouncer=true'),
+        node_version: process.version,
+        platform: process.platform,
+        vercel_env: process.env.VERCEL_ENV || 'unknown',
+        prisma_version: Prisma.prismaVersion?.client || 'unknown',
+      });
+    } else {
+      observabilityLogger.logInfo('db:prisma-initialized', {
+        database_url_configured: false,
+        node_version: process.version,
+        platform: process.platform,
+        vercel_env: process.env.VERCEL_ENV || 'unknown',
+      });
+    }
+  } catch (logError) {
+    // Never fail app startup due to logging
+    console.error('Failed to log database configuration:', logError);
+  }
+
   try {
     if (!prismaClient) {
       throw new Error('Prisma client unavailable');
@@ -68,7 +111,11 @@ if (databaseConfigured) {
       }
     });
   } catch (middlewareError) {
-    logger.error('Failed to initialize Prisma observability middleware', middlewareError as Error);
+    observabilityLogger.logError(
+      'db:middleware-init-failed',
+      middlewareError as Error,
+      {}
+    );
   }
 }
 

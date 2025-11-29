@@ -8,6 +8,10 @@ pre-commit:
       run: gitleaks protect --staged --verbose
       # Scans staged files for secrets before commit
 
+    validate-env:
+      run: bash scripts/validate-env-vars.sh
+      # Ensure DATABASE_URL is used, not deprecated POSTGRES_URL
+
     lint:
       glob: "*.{js,ts,jsx,tsx}"
       run: pnpm eslint {staged_files} --max-warnings=0

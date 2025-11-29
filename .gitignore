@@ -32,7 +32,13 @@ yarn-error.log*
 *.log
 
 # env files - catch in all directories
+# Ignore ALL .env files
 .env*
+
+# EXCEPT the template
+!.env.example
+
+# Additional env file patterns
 **/*.env
 **/database.env
 *.env.*

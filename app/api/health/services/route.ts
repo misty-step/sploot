@@ -72,7 +72,7 @@ async function getHandler(req: NextRequest) {
         name: 'Database (Postgres)',
         status: 'not_configured',
         configured: false,
-        message: 'Missing POSTGRES_URL',
+        message: 'Missing DATABASE_URL',
       };
     }
   } catch (error) {

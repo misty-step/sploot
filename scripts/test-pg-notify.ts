@@ -20,10 +20,10 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function testPgNotify() {
-  const connectionString = process.env.POSTGRES_URL_NON_POOLING;
+  const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
-    console.error('❌ POSTGRES_URL_NON_POOLING not found in environment');
+    console.error('❌ DATABASE_URL not found in environment');
     process.exit(1);
   }
 

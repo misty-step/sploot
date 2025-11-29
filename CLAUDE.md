@@ -246,9 +246,8 @@ Currently implementing milestone-based development:
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
 CLERK_SECRET_KEY=
 
-# Database
-POSTGRES_URL=
-POSTGRES_URL_NON_POOLING=
+# Database (CRITICAL: Use DATABASE_URL, not POSTGRES_URL)
+DATABASE_URL=postgresql://user:pass@ep-xxx-pooler.neon.tech/db?sslmode=require&pgbouncer=true
 
 # Vercel Blob
 BLOB_READ_WRITE_TOKEN=
@@ -257,6 +256,28 @@ BLOB_READ_WRITE_TOKEN=
 EMBEDDINGS_API_KEY=
 EMBEDDINGS_API_URL=
 ```
+
+### Environment File Structure
+
+**Local Development:**
+- `.env.example` - Template with comprehensive documentation (only file committed to git)
+- `.env.local` - Your local secrets (gitignored, create from .env.example)
+- `e2e/.env.test` - E2E test credentials (gitignored)
+
+**Vercel Deployments:**
+- Production/Preview use Vercel dashboard env vars
+- No local `.env.production` or `.env.preview` files needed
+- Vercel CLI may create temp files (automatically ignored by git)
+
+**First-time Setup:**
+```bash
+cp .env.example .env.local
+# Fill in your actual credentials
+```
+
+**Gitignore Rules:**
+- `.env*` - Ignore ALL .env files
+- `!.env.example` - EXCEPT the template
 
 ### Vercel Configuration
 - Auto-deploy from main branch
@@ -271,6 +292,153 @@ EMBEDDINGS_API_URL=
 - Validate file types and sizes on upload
 - Sanitize filenames and metadata
 - Use signed URLs for blob storage access
+
+## Database Configuration
+
+**CRITICAL: Always use `DATABASE_URL`, never custom environment variable names.**
+
+### Why DATABASE_URL is Non-Negotiable
+
+Prisma uses a **compiled Rust query engine** (native binary) that:
+- Reads `DATABASE_URL` directly from `process.env` **before** Node.js runtime starts
+- Cannot access JavaScript-level environment variable modifications
+- Has special hardcoded handling for `DATABASE_URL` that's battle-tested in serverless
+
+**❌ WRONG - Custom env var names:**
+```typescript
+// This FAILS in Vercel serverless
+process.env.DATABASE_URL = process.env.POSTGRES_URL;  // Too late!
+// Prisma's Rust engine already tried to read DATABASE_URL during initialization
+```
+
+**✅ CORRECT - Use DATABASE_URL everywhere:**
+```env
+# .env.local, Vercel environment variables
+DATABASE_URL="postgresql://user:pass@ep-xxx-pooler.neon.tech/db?sslmode=require&pgbouncer=true"
+```
+
+### Required Connection String Format
+
+**For Vercel serverless (production/preview):**
+```text
+DATABASE_URL="postgresql://user:pass@ep-xxx-pooler.neon.tech/db?sslmode=require&pgbouncer=true"
+                                         ^^^^^^^ pooler endpoint      ^^^^^^^^^^^^^^ REQUIRED
+```
+
+**Checklist:**
+- [ ] Hostname contains `-pooler` suffix (PgBouncer connection pooler)
+- [ ] Query string contains `pgbouncer=true` (disables prepared statements)
+- [ ] Query string contains `sslmode=require` (TLS encryption)
+- [ ] No trailing newline (use `printf '%s'` when setting via CLI)
+
+### Why pgbouncer=true is Required
+
+PgBouncer (Neon's connection pooler) operates in **transaction pooling mode**:
+- Does NOT support prepared statements
+- Prisma uses prepared statements by default
+- Without `pgbouncer=true`, you get: `Error: prepared statement "s0" does not exist`
+
+### Setting Environment Variables in Vercel
+
+**CRITICAL: Avoid trailing newlines** (causes silent parse failures):
+
+```bash
+# ✅ CORRECT - Use printf to avoid trailing newline
+printf '%s' "postgresql://user:pass@host-pooler.neon.tech/db?sslmode=require&pgbouncer=true" | \
+  vercel env add DATABASE_URL production
+
+# ❌ WRONG - echo adds trailing \n
+echo "postgresql://..." | vercel env add DATABASE_URL production
+```
+
+**Verify no trailing newline:**
+```bash
+vercel env pull --environment production .env.check --yes
+cat .env.check | grep "^DATABASE_URL=" | od -c
+# Should NOT see \n before closing quote
+```
+
+### Prisma Schema
+
+**Single source of truth** - trust the schema, don't override in code:
+
+```prisma
+// prisma/schema.prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")  // ← Prisma's Rust engine reads this FIRST
+}
+```
+
+**Don't do this:**
+```typescript
+// ❌ ANTI-PATTERN - Overriding doesn't work in serverless
+const prisma = new PrismaClient({
+  datasources: { db: { url: customUrl } }  // Ignored - connection already established
+});
+
+// ✅ CORRECT - Trust the schema
+export const prisma = new PrismaClient();
+```
+
+### Environment Variable Timing in Serverless
+
+**Vercel function cold start sequence:**
+```text
+1. Platform injects env vars → process.env
+2. Prisma Rust engine starts and reads DATABASE_URL
+3. Prisma parses connection string and establishes connection pool
+4. Node.js runtime starts
+5. Your application code runs (lib/env.ts, lib/db.ts) ← TOO LATE
+```
+
+**Key insight:** JavaScript-level code (step 5) cannot modify what Prisma's native binary read (step 2).
+
+### Common Errors and Fixes
+
+**Error:** `Authentication failed... credentials for '(not available)' are not valid`
+- **Meaning:** Prisma couldn't **parse** the connection string (not an auth failure)
+- **Fix:** Check `DATABASE_URL` exists and has correct format
+- **Not:** Database credentials (check env var first)
+
+**Error:** `prepared statement "s0" does not exist`
+- **Meaning:** PgBouncer doesn't support prepared statements
+- **Fix:** Add `pgbouncer=true` to connection string
+
+**Error:** Database connection works locally but fails in Vercel
+- **Meaning:** Custom env var name not accessible to Prisma's Rust engine
+- **Fix:** Use `DATABASE_URL` (the standard), not `POSTGRES_URL` or custom names
+
+### Validation
+
+**Pre-deployment checks:**
+```bash
+pnpm validate:env       # Validates DATABASE_URL format and presence
+pnpm type-check        # TypeScript compilation
+pnpm test              # Run test suite
+```
+
+**Pre-commit hook automatically validates:**
+- `DATABASE_URL` exists in `.env.example`
+- No references to deprecated `POSTGRES_URL` in TypeScript code
+- Runs on every commit (cannot bypass)
+
+### References
+
+- **Architecture docs:** [docs/architecture/database-connection.md](./docs/architecture/database-connection.md)
+- **Incident runbook:** [docs/runbooks/database-connection-failure.md](./docs/runbooks/database-connection-failure.md)
+- **Prisma docs:** [Datasource configuration](https://www.prisma.io/docs/reference/api-reference/prisma-schema-reference#datasource)
+- **Neon docs:** [Connection pooling](https://neon.tech/docs/connect/connection-pooling)
+
+### Historical Context
+
+On **2025-11-25**, production went down for 20 minutes because:
+1. We used custom `POSTGRES_URL` environment variable name
+2. Prisma's Rust engine couldn't read it in Vercel serverless
+3. Runtime "fixes" in JavaScript ran too late (after Prisma initialization)
+4. Fix: Changed to standard `DATABASE_URL` (3 files, 5 minutes to implement)
+
+**Lesson:** Use framework standards, not custom patterns. Fighting Prisma's conventions adds complexity without benefit.
 
 ## Observability & Monitoring
 

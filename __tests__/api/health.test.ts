@@ -44,6 +44,15 @@ describe('/api/health', () => {
     expect(data.dependencies.redis).toBe('up');
     expect(data.version).toBe('0.1.0');
     expect(data.timestamp).toBeDefined();
+
+    // Check Prisma diagnostics
+    expect(data.diagnostics).toBeDefined();
+    expect(data.diagnostics.prisma_connection_test).toBe(true);
+    expect(data.diagnostics.database_url_configured).toBe(true);
+    expect(data.diagnostics.connection_latency_ms).toBeGreaterThanOrEqual(0);
+    expect(data.diagnostics.env_vars).toBeDefined();
+    expect(data.diagnostics.env_vars.DATABASE_URL).toBe('configured');
+
     expect(res.headers.get('Cache-Control')).toBe('no-cache, no-store, must-revalidate');
   });
 
@@ -81,6 +90,11 @@ describe('/api/health', () => {
 
     expect(data.status).toBe('error');
     expect(data.error).toContain('Database connection failed');
+
+    // Check diagnostics still provided even on failure
+    expect(data.diagnostics).toBeDefined();
+    expect(data.diagnostics.prisma_connection_test).toBe(false);
+    expect(data.diagnostics.connection_latency_ms).toBeGreaterThanOrEqual(0);
   });
 
   it('should return 503 Service Unavailable when Redis is down', async () => {

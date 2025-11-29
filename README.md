@@ -53,11 +53,14 @@ pnpm install
 
 ### 2. Set Up Environment Variables
 
-Copy the example environment file:
+Copy the example environment file and fill in your credentials:
 
 ```bash
 cp .env.example .env.local
+# Edit .env.local with your actual API keys and credentials
 ```
+
+**Note:** Only `.env.example` is committed to git. All other `.env*` files are gitignored for security.
 
 ### 3. Configure External Services
 
@@ -149,9 +152,10 @@ Create a `.env.local` file with these variables:
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...
 
-# Database (Vercel Postgres)
-POSTGRES_URL=postgres://...
-POSTGRES_URL_NON_POOLING=postgres://...
+# Database (CRITICAL: Use DATABASE_URL, not POSTGRES_URL)
+# Must use pooler endpoint (-pooler hostname) with pgbouncer=true parameter
+# See docs/architecture/database-connection.md for details
+DATABASE_URL=postgresql://user:pass@ep-xxx-pooler.neon.tech/db?sslmode=require&pgbouncer=true
 
 # Vercel Blob Storage
 BLOB_READ_WRITE_TOKEN=vercel_blob_...
@@ -166,6 +170,8 @@ UPSTASH_REDIS_REST_TOKEN=...
 # Development Options
 MOCK_MODE=true        # Use mock data (no external services)
 ```
+
+**Important:** Always use `DATABASE_URL` (Prisma standard), not custom env var names like `POSTGRES_URL`. For serverless deployment, the connection string MUST use the pooler endpoint with `pgbouncer=true` parameter. See [Database Connection Architecture](./docs/architecture/database-connection.md) for detailed explanation.
 
 ## 🧪 Testing
 
@@ -210,12 +216,27 @@ Mock mode provides:
 2. **Import to Vercel**:
    - Go to [vercel.com/new](https://vercel.com/new)
    - Import your GitHub repository
-   - Configure environment variables
+   - Configure environment variables (see below)
    - Deploy!
 
-3. **Post-Deployment**:
+3. **Configure Environment Variables in Vercel**:
+   ```bash
+   # CRITICAL: Use printf to avoid trailing newlines
+   # Get DATABASE_URL from Neon Console (pooler endpoint)
+   printf '%s' "postgresql://user:pass@ep-xxx-pooler.neon.tech/db?sslmode=require&pgbouncer=true" | \
+     vercel env add DATABASE_URL production
+
+   # Add other required variables
+   vercel env add CLERK_SECRET_KEY production
+   vercel env add BLOB_READ_WRITE_TOKEN production
+   vercel env add REPLICATE_API_TOKEN production
+   ```
+
+   See [Database Connection Architecture](./docs/architecture/database-connection.md) for DATABASE_URL requirements.
+
+4. **Post-Deployment**:
    - Enable Blob Storage in Vercel Dashboard
-   - Create Postgres database
+   - Create Postgres database (Neon recommended)
    - Run database migrations
    - Test all features
 

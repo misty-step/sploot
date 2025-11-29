@@ -12,21 +12,55 @@ interface HealthStatus {
     database: 'up' | 'down';
     redis: 'up' | 'down';
   };
+  diagnostics?: {
+    prisma_connection_test?: boolean;
+    database_url_configured?: boolean;
+    connection_latency_ms?: number;
+    env_vars?: Record<string, 'configured' | 'missing'>;
+  };
   version?: string;
   error?: string;
 }
 
 const TIMEOUT_MS = 5000;
 
-async function checkDatabase(): Promise<{ success: boolean; error?: string }> {
+async function checkDatabase(): Promise<{
+  success: boolean;
+  error?: string;
+  latency_ms?: number;
+  prisma_test?: boolean;
+}> {
+  const start = Date.now();
+
   try {
-    if (!prisma) return { success: false, error: 'Prisma client not initialized' };
+    if (!prisma) {
+      return {
+        success: false,
+        error: 'Prisma client not initialized',
+        prisma_test: false,
+      };
+    }
+
+    // Prisma-specific connection test
     await prisma.$queryRaw`SELECT 1`;
-    return { success: true };
+    const latency_ms = Date.now() - start;
+
+    return {
+      success: true,
+      latency_ms,
+      prisma_test: true,
+    };
   } catch (e) {
     const err = e as Error;
+    const latency_ms = Date.now() - start;
     logger.logError('health-check-database-failed', err, {});
-    return { success: false, error: err.message };
+
+    return {
+      success: false,
+      error: err.message,
+      latency_ms,
+      prisma_test: false,
+    };
   }
 }
 
@@ -50,7 +84,10 @@ async function getHandler(_req: NextRequest) {
 
   // Timeout wrapper
   let timeoutId: NodeJS.Timeout | undefined;
-  const timeoutPromise = new Promise<{ db: { success: boolean; error?: string }; redis: boolean }>((_, reject) => {
+  const timeoutPromise = new Promise<{
+    db: { success: boolean; error?: string; latency_ms?: number; prisma_test?: boolean };
+    redis: boolean;
+  }>((_, reject) => {
     timeoutId = setTimeout(() => reject(new Error('Health check timeout')), TIMEOUT_MS);
   });
 
@@ -66,6 +103,11 @@ async function getHandler(_req: NextRequest) {
 
     const isHealthy = results.db.success && results.redis;
 
+    // Environment variable visibility (DB-only for reduced information disclosure)
+    const envVars: Record<string, 'configured' | 'missing'> = {
+      DATABASE_URL: process.env.DATABASE_URL ? 'configured' : 'missing',
+    };
+
     if (isHealthy) {
       const payload: HealthStatus = {
         status: 'ok',
@@ -73,6 +115,12 @@ async function getHandler(_req: NextRequest) {
         dependencies: {
           database: 'up',
           redis: 'up',
+        },
+        diagnostics: {
+          prisma_connection_test: results.db.prisma_test,
+          database_url_configured: !!process.env.DATABASE_URL,
+          connection_latency_ms: results.db.latency_ms,
+          env_vars: envVars,
         },
         version: pkg.version,
       };
@@ -89,19 +137,16 @@ async function getHandler(_req: NextRequest) {
       if (!results.db.success) errorMsg.push(`Database connection failed: ${results.db.error}`);
       if (!results.redis) errorMsg.push('Redis connection failed');
 
-      // DEBUG: Inspect if channel_binding is present (redacted)
-      const dbUrl = process.env.POSTGRES_URL || '';
-      const redactedUrl = dbUrl.replace(/:[^:]*@/, ':***@'); // Hide password
-
       const payload: HealthStatus = {
         status: 'error',
         timestamp,
         error: errorMsg.join(', '),
-        // @ts-ignore - debug field
-        debug: {
-          connectionString: redactedUrl,
-          hasChannelBinding: dbUrl.includes('channel_binding'),
-        }
+        diagnostics: {
+          prisma_connection_test: results.db.prisma_test,
+          database_url_configured: !!process.env.DATABASE_URL,
+          connection_latency_ms: results.db.latency_ms,
+          env_vars: envVars,
+        },
       };
 
       return NextResponse.json(payload, {
@@ -121,6 +166,12 @@ async function getHandler(_req: NextRequest) {
       status: 'error',
       timestamp,
       error: error instanceof Error ? error.message : 'Unknown error',
+      diagnostics: {
+        database_url_configured: !!process.env.DATABASE_URL,
+        env_vars: {
+          DATABASE_URL: process.env.DATABASE_URL ? 'configured' : 'missing',
+        },
+      },
     };
 
     return NextResponse.json(payload, {

@@ -46,7 +46,25 @@ export class PgNotifyListener {
   ];
 
   constructor(private connectionString?: string) {
-    this.connectionString = connectionString || process.env.POSTGRES_URL_NON_POOLING;
+    // LISTEN/NOTIFY requires a direct (non-pooled) connection to PostgreSQL
+    // PgBouncer transaction pooling mode does NOT support LISTEN/NOTIFY
+    if (!connectionString) {
+      throw new Error(
+        'PgNotifyListener requires explicit non-pooled connection string. ' +
+        'LISTEN/NOTIFY is incompatible with PgBouncer pooling. ' +
+        'Pass DATABASE_URL_DIRECT or configure a direct database endpoint.'
+      );
+    }
+
+    // Validate that the connection string is not pooled
+    if (connectionString.includes('pgbouncer=true') || connectionString.includes('-pooler')) {
+      throw new Error(
+        'PgNotifyListener cannot use pooled connection (detected pgbouncer=true or -pooler hostname). ' +
+        'Provide a direct database endpoint for LISTEN/NOTIFY support.'
+      );
+    }
+
+    this.connectionString = connectionString;
   }
 
   /**
@@ -280,10 +298,21 @@ let listenerInstance: PgNotifyListener | null = null;
 
 /**
  * Get or create the PgNotifyListener instance
+ *
+ * Requires DATABASE_URL_DIRECT environment variable pointing to a non-pooled
+ * database endpoint. LISTEN/NOTIFY is incompatible with PgBouncer pooling.
  */
 export function getPgNotifyListener(): PgNotifyListener {
   if (!listenerInstance) {
-    listenerInstance = new PgNotifyListener();
+    const directUrl = process.env.DATABASE_URL_DIRECT;
+    if (!directUrl) {
+      throw new Error(
+        'DATABASE_URL_DIRECT environment variable required for PgNotifyListener. ' +
+        'LISTEN/NOTIFY requires a direct (non-pooled) database connection. ' +
+        'Set DATABASE_URL_DIRECT to your Neon direct endpoint (without -pooler in hostname).'
+      );
+    }
+    listenerInstance = new PgNotifyListener(directUrl);
   }
   return listenerInstance;
 }

@@ -17,15 +17,13 @@ function hasChannelBinding(url: string | undefined | null) {
 
 async function handler() {
   const start = Date.now();
-  const envUrl = process.env.POSTGRES_URL;
-  const envNpUrl = process.env.POSTGRES_URL_NON_POOLING;
+  const envUrl = process.env.DATABASE_URL;
 
   const fingerprint = getDbFingerprint(envUrl);
   const response: Record<string, unknown> = {
     databaseConfigured,
     prismaLoaded: Boolean(prisma),
     urlHasChannelBinding: hasChannelBinding(envUrl),
-    nonPoolingHasChannelBinding: hasChannelBinding(envNpUrl),
     fingerprint,
   };
 

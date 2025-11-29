@@ -30,6 +30,7 @@
     "gc:blobs": "tsx scripts/garbage-collect-blobs.ts",
     "gc:blobs:delete": "tsx scripts/garbage-collect-blobs.ts --delete",
     "validate:deployment": "bash scripts/validate-deployment.sh",
+    "validate:env": "tsx scripts/validate-env.ts",
     "db:sync": "./scripts/db-sync-env.sh",
     "db:fingerprint": "./scripts/db-fingerprint.sh",
     "db:drift": "./scripts/db-drift-check.sh"
@@ -98,6 +99,7 @@
     "prisma": "^6.16.1",
     "sharp": "^0.34.3",
     "tailwindcss": "^4",
+    "tsx": "^4.20.6",
     "typescript": "^5",
     "vitest": "^2.1.9",
     "webpack": "^5.101.3"
