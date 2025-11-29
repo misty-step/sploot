@@ -1,6 +1,14 @@
 import { defineConfig } from 'wxt';
+import { resolve } from 'path';
 
 export default defineConfig({
+  vite: () => ({
+    resolve: {
+      alias: {
+        '@sploot/common': resolve(__dirname, '../../packages/common/src'),
+      },
+    },
+  }),
   outDir: 'dist',
   extensionApi: 'chrome',
   manifest: () => {

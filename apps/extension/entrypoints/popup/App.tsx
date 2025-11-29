@@ -89,8 +89,8 @@ function SignedInPanel() {
 
   const isDev = import.meta.env.DEV
 
-  // Calculate session expiry time remaining
-  const expiresIn = session?.expireAt ? session.expireAt - Date.now() / 1000 : null
+  // Calculate session expiry time remaining (in seconds)
+  const expiresIn = session?.expireAt ? (session.expireAt.getTime() - Date.now()) / 1000 : null
   const hoursLeft = expiresIn ? Math.floor(expiresIn / 3600) : null
   const showExpiryWarning = hoursLeft !== null && hoursLeft < 24
 
@@ -120,14 +120,7 @@ function SignedInPanel() {
             Debug Auth
           </button>
         )}
-        <SignOutButton
-          signOutCallback={() =>
-            chrome.runtime.sendMessage({
-              type: AUTH_MESSAGES.STATE_UPDATE,
-              payload: { status: 'signed-out' },
-            })
-          }
-        >
+        <SignOutButton>
           <button className="secondary">Sign Out</button>
         </SignOutButton>
       </div>
@@ -145,7 +138,7 @@ function AuthStatusReporter() {
       status: isSignedIn ? 'signed-in' : 'signed-out',
       userId: user?.id ?? null,
       sessionId: session?.id ?? null,
-      expiresAt: session?.expireAt ?? null,
+      expiresAt: session?.expireAt?.getTime() ?? null,
     }
 
     chrome.runtime

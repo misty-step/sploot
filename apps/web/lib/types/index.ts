@@ -2,6 +2,12 @@
  * Shared TypeScript types and interfaces
  */
 
+// Re-export shared API types from @sploot/common
+export type {
+  SplootApiUploadResponse,
+  SplootApiError,
+} from '@sploot/common';
+
 export type EmbeddingStatus = 'pending' | 'processing' | 'ready' | 'failed';
 
 export interface AssetEmbedding {

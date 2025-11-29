@@ -14,8 +14,20 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "types": ["chrome"]
+    "types": ["chrome"],
+    "baseUrl": ".",
+    "paths": {
+      "@sploot/common": ["../../packages/common/src"],
+      "@sploot/common/*": ["../../packages/common/src/*"]
+    }
   },
-  "include": ["entrypoints", "components", "shared"],
-  "references": [{ "path": "./.wxt/tsconfig.json" }]
+  "include": [
+    "entrypoints/**/*",
+    "components/**/*",
+    "shared/**/*",
+    "lib/**/*",
+    "../../packages/common/src/**/*",
+    ".wxt/wxt.d.ts"
+  ],
+  "exclude": ["node_modules", "dist", ".output"]
 }

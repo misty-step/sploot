@@ -1,5 +1,5 @@
 {
-  "name": "sploot",
+  "name": "web",
   "version": "0.1.0",
   "description": "Vercel-first meme library with text→image semantic search",
   "private": true,
@@ -36,6 +36,7 @@
     "db:drift": "./scripts/db-drift-check.sh"
   },
   "dependencies": {
+    "@sploot/common": "workspace:*",
     "@clerk/backend": "^2.21.0",
     "@clerk/nextjs": "^6.32.0",
     "@prisma/client": "^6.16.1",

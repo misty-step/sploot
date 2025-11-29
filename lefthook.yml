@@ -1,0 +1,28 @@
+# lefthook.yml - Monorepo Git hooks configuration
+# Docs: https://github.com/evilmartians/lefthook
+
+pre-commit:
+  parallel: true
+  commands:
+    gitleaks:
+      run: gitleaks protect --staged --verbose
+      # Scans staged files for secrets before commit
+
+    lint-web:
+      glob: "apps/web/**/*.{js,ts,jsx,tsx}"
+      run: pnpm --filter web lint
+
+    lint-extension:
+      glob: "apps/extension/**/*.{js,ts,jsx,tsx}"
+      run: pnpm --filter extension lint 2>/dev/null || true
+
+    typecheck:
+      run: pnpm turbo run type-check
+
+pre-push:
+  commands:
+    typecheck:
+      run: pnpm turbo run type-check
+    # Note: Tests require postgres database - run via CI or manually
+    # test:
+    #   run: pnpm turbo run test

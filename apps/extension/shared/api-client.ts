@@ -5,11 +5,11 @@
  * Hides FormData construction, auth headers, error handling.
  */
 
+import { UPLOAD } from '@sploot/common';
 import { getAuthToken } from '../entrypoints/background/auth-manager';
 import { CLERK_ENVIRONMENT, SPLOOT_API_BASE_URL } from './env';
 
 const API_BASE_URL = SPLOOT_API_BASE_URL;
-const UPLOAD_TIMEOUT_MS = 10000; // 10 seconds
 
 console.log('[ApiClient] Initialized', {
   apiBaseUrl: API_BASE_URL,
@@ -57,7 +57,7 @@ export async function uploadImage(
 
   // Create abort controller for timeout
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), UPLOAD.timeout);
 
   try {
     console.log('[ApiClient] Upload starting', {
@@ -84,7 +84,7 @@ export async function uploadImage(
       }
 
       if (response.status === 413) {
-        throw new Error('Image too large (max 10MB)');
+        throw new Error(`Image too large (max ${UPLOAD.maxSizeMB}MB)`);
       }
 
       if (response.status === 429) {

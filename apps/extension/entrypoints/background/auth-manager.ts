@@ -41,7 +41,7 @@ export async function isAuthenticated(): Promise<boolean> {
         status: 'signed-in',
         userId: clerk.session?.user?.id,
         sessionId: clerk.session?.id,
-        expiresAt: clerk.session?.expireAt,
+        expiresAt: clerk.session?.expireAt?.getTime(),
       })
     }
 
@@ -73,7 +73,7 @@ export async function getAuthToken(): Promise<string | null> {
         status: 'signed-in',
         userId: clerk.session.user?.id,
         sessionId: clerk.session.id,
-        expiresAt: clerk.session.expireAt,
+        expiresAt: clerk.session.expireAt?.getTime(),
       })
     }
 
@@ -139,7 +139,7 @@ export async function runAuthDiagnostics(): Promise<AuthDiagnosticsSnapshot> {
     snapshot.status = clerk.session ? 'signed-in' : 'signed-out'
     snapshot.userId = clerk.session?.user?.id
     snapshot.sessionId = clerk.session?.id
-    snapshot.expiresAt = clerk.session?.expireAt ?? null
+    snapshot.expiresAt = clerk.session?.expireAt?.getTime() ?? null
   } catch (error) {
     snapshot.error = error instanceof Error ? error.message : String(error)
     console.error('[Auth] Diagnostics failed', error)

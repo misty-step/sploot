@@ -5,15 +5,7 @@
  * Background context has elevated permissions to bypass CORS.
  */
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB (match server limit)
-
-const ALLOWED_MIME_TYPES = [
-  'image/jpeg',
-  'image/jpg',
-  'image/png',
-  'image/webp',
-  'image/gif',
-];
+import { UPLOAD, isValidMimeType } from '@sploot/common';
 
 /**
  * Fetch image from URL
@@ -56,7 +48,7 @@ export async function fetchImage(url: string): Promise<Blob> {
 
     // Validate content type
     const contentType = response.headers.get('content-type')?.toLowerCase();
-    if (!contentType || !isValidImageType(contentType)) {
+    if (!contentType || !isValidMimeType(contentType)) {
       console.warn('[ImageFetcher] Invalid content type', {
         url,
         contentType,
@@ -68,14 +60,14 @@ export async function fetchImage(url: string): Promise<Blob> {
     const blob = await response.blob();
 
     // Validate size
-    if (blob.size > MAX_FILE_SIZE) {
+    if (blob.size > UPLOAD.maxSize) {
       const sizeMB = (blob.size / 1024 / 1024).toFixed(2);
       console.warn('[ImageFetcher] Image too large', { url, sizeMB });
-      throw new Error(`Image too large: ${sizeMB}MB (max 10MB)`);
+      throw new Error(`Image too large: ${sizeMB}MB (max ${UPLOAD.maxSizeMB}MB)`);
     }
 
     // Ensure blob has correct MIME type
-    if (!isValidImageType(blob.type)) {
+    if (!isValidMimeType(blob.type)) {
       // Try to infer from content-type header
       const inferredType = contentType || 'image/jpeg';
       return new Blob([blob], { type: inferredType });
@@ -117,9 +109,9 @@ async function fetchViaImageElement(url: string): Promise<Blob> {
           .convertToBlob({ type: 'image/png', quality: 0.95 })
           .then(blob => {
             // Validate size
-            if (blob.size > MAX_FILE_SIZE) {
+            if (blob.size > UPLOAD.maxSize) {
               const sizeMB = (blob.size / 1024 / 1024).toFixed(2);
-              reject(new Error(`Image too large: ${sizeMB}MB (max 10MB)`));
+              reject(new Error(`Image too large: ${sizeMB}MB (max ${UPLOAD.maxSizeMB}MB)`));
               return;
             }
 
@@ -139,17 +131,9 @@ async function fetchViaImageElement(url: string): Promise<Blob> {
     // Set src to trigger load
     img.src = url;
 
-    // Timeout after 10 seconds
+    // Timeout using shared constant
     setTimeout(() => {
       reject(new Error('Image load timeout'));
-    }, 10000);
+    }, UPLOAD.timeout);
   });
-}
-
-/**
- * Check if MIME type is valid image type
- */
-function isValidImageType(mimeType: string): boolean {
-  const normalized = mimeType.toLowerCase().split(';')[0].trim();
-  return ALLOWED_MIME_TYPES.includes(normalized);
 }

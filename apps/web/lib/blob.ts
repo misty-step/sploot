@@ -1,17 +1,21 @@
 import { put, del, list } from '@vercel/blob';
 
-// Allowed file types for upload
-export const ALLOWED_FILE_TYPES = [
-  'image/jpeg',
-  'image/jpg',
-  'image/png',
-  'image/webp',
-  'image/gif',
-];
+// Re-export shared constants and validation from @sploot/common
+export {
+  UPLOAD,
+  isValidMimeType,
+  isValidFileSize,
+  type AllowedMimeType,
+} from '@sploot/common';
 
-// Max file size: 10MB
-export const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// Backward compatibility aliases
+import { UPLOAD } from '@sploot/common';
+export const ALLOWED_FILE_TYPES: string[] = [...UPLOAD.allowedTypes];
+export const MAX_FILE_SIZE = UPLOAD.maxSize;
 
+/**
+ * Vercel Blob upload result (internal type, not shared)
+ */
 export interface UploadResult {
   url: string;
   downloadUrl: string;
@@ -21,19 +25,10 @@ export interface UploadResult {
 }
 
 /**
- * Validates if the file type is allowed for upload.
- * Supports JPEG, PNG, WebP, and GIF images.
+ * @deprecated Use isValidMimeType from @sploot/common
  */
 export function isValidFileType(mimeType: string): boolean {
-  return ALLOWED_FILE_TYPES.includes(mimeType.toLowerCase());
-}
-
-/**
- * Validates if the file size is within limits.
- * Maximum allowed size is 10MB.
- */
-export function isValidFileSize(size: number): boolean {
-  return size > 0 && size <= MAX_FILE_SIZE;
+  return UPLOAD.allowedTypes.includes(mimeType.toLowerCase() as typeof UPLOAD.allowedTypes[number]);
 }
 
 /**
