@@ -1,0 +1,139 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+  binaryTargets   = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector", schema: "public")]
+}
+
+// User model - synced with Clerk
+model User {
+  id        String   @id // Matches Clerk userId
+  email     String   @unique
+  role      String   @default("user")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  assets Asset[]
+  tags   Tag[]
+
+  @@map("users")
+}
+
+// Asset model - represents uploaded images
+model Asset {
+  id              String    @id @default(cuid())
+  ownerUserId     String    @map("owner_user_id")
+  blobUrl         String    @map("blob_url") // Validated via CHECK constraint: https://[a-z0-9-]+.public.blob.vercel-storage.com/*
+  thumbnailUrl    String?   @map("thumbnail_url") // URL for 256px thumbnail. Validated via CHECK constraint if set
+  pathname        String    // Path in blob storage
+  thumbnailPath   String?   @map("thumbnail_path") // Path for thumbnail in blob storage
+  mime            String
+  width           Int?
+  height          Int?
+  size            Int       // File size in bytes
+  checksumSha256  String    @map("checksum_sha256")
+  phash           String?   // Perceptual hash for near-duplicate detection
+  favorite        Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime? @map("deleted_at")
+  shareSlug       String?   @unique @map("share_slug") // Short ID for public sharing URLs
+
+  // Relations
+  owner     User            @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  embedding AssetEmbedding?
+  tags      AssetTag[]
+
+  // Indexes
+  @@unique([ownerUserId, checksumSha256], name: "unique_user_checksum")
+  @@index([ownerUserId, deletedAt])
+  @@index([createdAt])
+  @@index([favorite])
+  @@index([shareSlug])
+  @@map("assets")
+}
+
+// AssetEmbedding model - stores vector embeddings for semantic search
+model AssetEmbedding {
+  assetId         String                       @id @map("asset_id")
+  modelName       String                       @map("model_name")
+  modelVersion    String                       @map("model_version")
+  dim             Int                          // Embedding dimensions
+  imageEmbedding  Unsupported("vector")?       @map("image_embedding")
+  status          String?                      @default("pending") // pending, processing, ready, failed
+  error           String?                      // Error message if failed
+  completedAt     DateTime?                    @map("completedAt") // When embedding was completed
+  embeddingVector Unsupported("vector")?       @map("embeddingVector") // Alternative vector column
+  createdAt       DateTime                     @default(now())
+  updatedAt       DateTime                     @updatedAt
+
+  // Relations
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  // Indexes will be created in migration SQL for pgvector HNSW
+  @@index([modelName, modelVersion])
+  @@index([status, createdAt])
+  @@map("asset_embeddings")
+}
+
+// Tag model - user-defined tags for organization
+model Tag {
+  id          String   @id @default(cuid())
+  ownerUserId String   @map("owner_user_id")
+  name        String
+  color       String?  // Hex color for UI
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  owner  User       @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  assets AssetTag[]
+
+  // Indexes
+  @@unique([ownerUserId, name], name: "unique_user_tag")
+  @@index([ownerUserId])
+  @@map("tags")
+}
+
+// AssetTag model - many-to-many relationship between assets and tags
+model AssetTag {
+  assetId   String   @map("asset_id")
+  tagId     String   @map("tag_id")
+  createdAt DateTime @default(now())
+
+  // Relations
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  // Composite primary key
+  @@id([assetId, tagId])
+  @@index([tagId])
+  @@map("asset_tags")
+}
+
+// Search log model - for analytics and improving search
+model SearchLog {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  query       String
+  resultCount Int      @map("result_count")
+  queryTime   Int      @map("query_time") // milliseconds
+  createdAt   DateTime @default(now())
+
+  // Indexes
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("search_logs")
+}

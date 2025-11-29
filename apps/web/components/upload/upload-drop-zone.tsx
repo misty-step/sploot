@@ -1,0 +1,208 @@
+'use client';
+
+import { useState, useRef, DragEvent, ClipboardEvent, useEffect, useCallback } from 'react';
+import { Upload, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { showToast } from '@/components/ui/toast';
+import { ALLOWED_FILE_TYPES } from '@/lib/blob';
+
+interface UploadDropZoneProps {
+  /** Callback when files are added (via drop, paste, or file input) */
+  onFilesAdded: (files: File[]) => void;
+
+  /** List of allowed MIME types (defaults to ALLOWED_FILE_TYPES from @/lib/blob) */
+  allowedFileTypes?: string[];
+
+  /** Shows preparing overlay with file count and size */
+  isPreparing?: boolean;
+  preparingFileCount?: number;
+  preparingTotalSize?: number;
+
+  /** Background sync support indicator */
+  enableBackgroundSync?: boolean;
+  supportsBackgroundSync?: boolean;
+}
+
+/**
+ * UploadDropZone - Drag/drop, paste, and click-to-browse file upload zone
+ *
+ * Encapsulates browser event handling for file uploads:
+ * - Drag/drop with visual feedback (drag counter to handle nested elements)
+ * - Paste from clipboard (extracts image files)
+ * - Click to browse (hidden file input)
+ * - Processing pulse animation on file receipt
+ *
+ * Deep module: Hides complex browser event API interactions behind simple callback interface
+ */
+export function UploadDropZone({
+  onFilesAdded,
+  allowedFileTypes = ALLOWED_FILE_TYPES,
+  isPreparing = false,
+  preparingFileCount = 0,
+  preparingTotalSize = 0,
+  enableBackgroundSync = false,
+  supportsBackgroundSync = false,
+}: UploadDropZoneProps) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [isProcessingPulse, setIsProcessingPulse] = useState(false);
+  const dragCounter = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Drag and drop handlers
+  const handleDragEnter = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current === 0) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounter.current = 0;
+
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      const fileCount = e.dataTransfer.files.length;
+      showToast(`Processing ${fileCount} ${fileCount === 1 ? 'file' : 'files'}...`, 'info');
+      setIsProcessingPulse(true);
+      setTimeout(() => setIsProcessingPulse(false), 1000);
+      onFilesAdded(Array.from(e.dataTransfer.files));
+    }
+  };
+
+  // Paste handler
+  const handlePaste = useCallback((e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const files: File[] = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) files.push(file);
+      }
+    }
+
+    if (files.length > 0) {
+      showToast(`Processing ${files.length} ${files.length === 1 ? 'image' : 'images'} from clipboard...`, 'info');
+      setIsProcessingPulse(true);
+      setTimeout(() => setIsProcessingPulse(false), 1000);
+      onFilesAdded(files);
+    }
+  }, [onFilesAdded]);
+
+  // File input handler
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onFilesAdded(Array.from(e.target.files));
+      // Reset input to allow selecting same file again
+      e.target.value = '';
+    }
+  };
+
+  // Attach paste listener to document on mount
+  useEffect(() => {
+    const pasteListener = (e: Event) => handlePaste(e as unknown as ClipboardEvent);
+    document.addEventListener('paste', pasteListener);
+    return () => document.removeEventListener('paste', pasteListener);
+  }, [handlePaste]);
+
+  return (
+    <>
+      <Card
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className={cn(
+          'relative border-[8px] border-solid brutalist-corners transition-all duration-200 cursor-pointer',
+          'bg-diagonal-stripes',
+          'hover:border-electric-lime hover:bg-black',
+          isDragging
+            ? 'border-electric-lime bg-black scale-[1.02] neon-glow-lime'
+            : 'border-electric-lime',
+          isProcessingPulse && 'animate-pulse'
+        )}
+      >
+        {/* Preparing overlay */}
+        {isPreparing && (
+          <div className="absolute inset-0 z-10 bg-black/95 flex flex-col items-center justify-center animate-in fade-in duration-200 brutalist-corners">
+            <Loader2 className="size-8 text-electric-lime animate-spin mb-3" />
+            <p
+              className="text-3xl mb-2 tracking-wider text-electric-lime"
+              style={{ fontFamily: "var(--font-bebas-neue)" }}
+            >
+              PREPARING {preparingFileCount} {preparingFileCount === 1 ? 'FILE' : 'FILES'}...
+            </p>
+            <p className="font-mono text-sm text-muted-foreground uppercase tracking-wider">
+              {preparingTotalSize < 1024 * 1024
+                ? `${(preparingTotalSize / 1024).toFixed(0)} KB`
+                : `${(preparingTotalSize / (1024 * 1024)).toFixed(1)} MB`}
+            </p>
+          </div>
+        )}
+        <CardContent className="flex flex-col items-center justify-center py-12">
+          <div className={cn(
+            'size-20 mb-6 brutalist-corners flex items-center justify-center transition-all duration-200',
+            'brutalist-border',
+            isDragging ? 'border-electric-lime bg-black scale-110' : 'border-muted-foreground bg-black'
+          )}>
+            <Upload className={cn('size-10 transition-colors', isDragging ? 'text-electric-lime' : 'text-muted-foreground')} strokeWidth={3} />
+          </div>
+
+          <h2
+            className="text-4xl md:text-5xl mb-3 tracking-wider"
+            style={{ fontFamily: "var(--font-bebas-neue)" }}
+          >
+            {isDragging ? (
+              <span className="text-electric-lime">DROP MEMES HERE</span>
+            ) : (
+              <span className="text-muted-foreground">DRAG & DROP MEMES</span>
+            )}
+          </h2>
+          <p className="font-mono text-sm text-muted-foreground mb-4 uppercase tracking-wider">
+            or click to browse • paste from clipboard
+          </p>
+          <p className="font-mono text-xs text-muted-foreground/60 uppercase tracking-wider">
+            JPEG, PNG, WebP, GIF • Max 10MB per file
+          </p>
+          {enableBackgroundSync && supportsBackgroundSync && (
+            <Badge variant="outline" className="mt-2 text-xs">
+              Background sync enabled
+            </Badge>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={allowedFileTypes.join(',')}
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+    </>
+  );
+}

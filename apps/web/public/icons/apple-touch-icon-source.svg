@@ -1,0 +1,10 @@
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Black background for iOS home screen -->
+  <rect width="180" height="180" fill="#000000"/>
+
+  <!-- Overlapping circles - scaled from 32x32 to 180x180 -->
+  <!-- Original: circles at cx=12,20 with r=9 on 32x32 canvas -->
+  <!-- Scaled: multiply by 5.625 (180/32) -->
+  <circle cx="67.5" cy="90" r="50.625" stroke="#7C5CFF" stroke-width="3.5" fill="none"/>
+  <circle cx="112.5" cy="90" r="50.625" stroke="#7C5CFF" stroke-width="3.5" fill="none"/>
+</svg>

@@ -1,0 +1,116 @@
+'use client';
+
+/**
+ * Example integration of UploadProgressHeader with UploadZone
+ * This demonstrates how to use the progress header in an upload flow.
+ */
+
+import { useState } from 'react';
+import { UploadZone } from './upload-zone';
+import { UploadProgressHeader, useUploadProgress } from './upload-progress-header';
+import { useBatchEmbeddingStatus } from '@/hooks/use-batch-embedding-status';
+import { logger } from '@/lib/observability-logger';
+
+export function UploadPageWithProgress() {
+  const progressTracker = useUploadProgress();
+  const [uploadedAssetIds, setUploadedAssetIds] = useState<string[]>([]);
+
+  // Monitor embedding status for uploaded assets
+  const embeddingStatus = useBatchEmbeddingStatus({
+    assetIds: uploadedAssetIds,
+    enabled: uploadedAssetIds.length > 0,
+    onSuccess: (assetId) => {
+      progressTracker.markReady(1);
+    },
+    onError: (assetId, error) => {
+      progressTracker.markFailed(1);
+    },
+  });
+
+  const handleUploadStart = (fileCount: number) => {
+    progressTracker.startUpload(fileCount);
+    setUploadedAssetIds([]);
+  };
+
+  const handleFileUploaded = (assetId: string) => {
+    progressTracker.markUploaded(1);
+    setUploadedAssetIds((prev) => [...prev, assetId]);
+  };
+
+  const handleUploadComplete = (stats: {
+    uploaded: number;
+    duplicates: number;
+    failed: number;
+  }) => {
+    // Update final stats
+    if (stats.failed > 0) {
+      progressTracker.markFailed(stats.failed);
+    }
+    // Duplicates are considered as ready
+    if (stats.duplicates > 0) {
+      progressTracker.markReady(stats.duplicates);
+    }
+  };
+
+  return (
+    <div>
+      {/* Progress header - shows when files are being processed */}
+      <UploadProgressHeader
+        stats={progressTracker.stats}
+        onMinimize={() => logger.logInfo('upload-example.minimized')}
+        onExpand={() => logger.logInfo('upload-example.expanded')}
+      />
+
+      {/* Upload zone with callbacks */}
+      <UploadZone
+        onUploadComplete={handleUploadComplete}
+        // Note: UploadZone would need to be extended to support these callbacks:
+        // onUploadStart={handleUploadStart}
+        // onFileUploaded={handleFileUploaded}
+      />
+    </div>
+  );
+}
+
+/**
+ * Alternative: Integrate directly within UploadZone component
+ *
+ * In upload-zone.tsx, you could add:
+ *
+ * import { UploadProgressHeader, useUploadProgress } from './upload-progress-header';
+ * import { useBatchEmbeddingStatus } from '@/hooks/use-batch-embedding-status';
+ *
+ * export function UploadZone({ ... }) {
+ *   const progressTracker = useUploadProgress();
+ *   const [assetIds, setAssetIds] = useState<string[]>([]);
+ *
+ *   // Monitor embeddings
+ *   const embeddingStatus = useBatchEmbeddingStatus({
+ *     assetIds,
+ *     onSuccess: () => progressTracker.markReady(1),
+ *     onError: () => progressTracker.markFailed(1),
+ *   });
+ *
+ *   // When starting uploads
+ *   const handleAddFiles = (newFiles: File[]) => {
+ *     progressTracker.startUpload(newFiles.length);
+ *     // ... existing code
+ *   };
+ *
+ *   // When a file completes upload
+ *   const handleUploadSuccess = (response: any) => {
+ *     progressTracker.markUploaded(1);
+ *     if (response.asset?.id && response.asset?.needsEmbedding) {
+ *       setAssetIds(prev => [...prev, response.asset.id]);
+ *     }
+ *     // ... existing code
+ *   };
+ *
+ *   return (
+ *     <>
+ *       <UploadProgressHeader stats={progressTracker.stats} />
+ *       {/* ... existing upload zone UI */}
+ *     </>
+ *   );
+ * }
+ */
