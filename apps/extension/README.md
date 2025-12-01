@@ -1,65 +1,52 @@
-# Add to Sploot - Chrome Extension
+# Sploot Browser Extension 🧩
 
-Chrome extension for saving memes from any website to your Sploot library with one click.
+> **Right-click to save memes from anywhere.**
 
-## Features
+A Chrome Extension built with WXT and React that integrates seamlessly with the Sploot library.
 
-- Right-click any image to save to Sploot
-- Screenshot crop tool (Cmd/Ctrl+Shift+S)
-- Offline upload queue
-- Inline authentication via Clerk popup sign-in
+## ✨ Key Features
 
-## Development
+- **Context Menu**: Right-click any image → "Save to Sploot".
+- **Popup UI**: View status, sign in/out.
+- **Auth**: Seamless Clerk integration sharing session with web app.
+- **Tech**: WXT (Vite-based), React 19, TypeScript.
+
+## 🚀 Getting Started
+
+### 1. Environment Setup
+
+Create `.env` (dev) or `.env.production` (prod):
+
+```env
+# Must match the Web App's keys
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+VITE_API_BASE_URL=http://localhost:3000 # or https://sploot.app
+```
+
+### 2. Development
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Start development server
 pnpm dev
+```
+This will open a Chrome instance with the extension pre-loaded and hot-reload enabled.
 
-# Build against test Clerk instance (local/dev)
-pnpm build
+### 3. Building for Production
 
-# Build against production Clerk instance (uses .env.production)
+```bash
 pnpm build:prod
-
-# Create distribution zip
-pnpm zip
 ```
 
-## Loading in Chrome
+Output is generated in `.output/chrome-mv3`.
 
-1. Run `pnpm build:prod` when targeting https://www.sploot.app (use `pnpm build` only with local/test Clerk)
-2. Open `chrome://extensions`
-3. Enable "Developer mode"
-4. Click "Load unpacked"
-5. Select `dist/chrome-mv3` directory
+### 4. Installation (Manual)
 
-## Configuration
+1. Go to `chrome://extensions`.
+2. Enable **Developer Mode**.
+3. Click **Load Unpacked**.
+4. Select `apps/extension/.output/chrome-mv3`.
 
-Copy `.env.example` to `.env` for local/test runs, then create `.env.production` with your `pk_live_*` values. Production builds automatically read `.env.production`. Override `VITE_API_BASE_URL` only if the Sploot API is not running at the default host.
+## 🏗️ Architecture
 
-```
-VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
-# Optional: VITE_API_BASE_URL=http://localhost:3000
-```
-
-## Architecture
-
-- **WXT Framework**: Modern extension development with HMR
-- **React + TypeScript**: Type-safe UI components
-- **Clerk**: Inline authentication entirely inside the extension
-- **IndexedDB**: Offline upload queue with retry logic
-
-## Project Structure
-
-```
-sploot-extension/
-├── entrypoints/
-│   ├── background.ts       # Background service worker
-│   └── popup/              # Extension popup UI
-├── components/             # Shared React components
-├── shared/                 # Shared utilities
-└── public/                 # Static assets (icons)
-```
+- **Background Script**: Handles context menu clicks and auth token management.
+- **Popup**: React app for user interaction.
+- **Shared Code**: Imports types and constants from `@sploot/common`.
