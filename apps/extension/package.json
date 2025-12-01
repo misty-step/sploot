@@ -11,7 +11,7 @@
     "build:firefox": "WXT_MODE=development wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
-    "postinstall": "wxt prepare",
+    "postinstall": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001} wxt prepare",
     "type-check": "tsc --noEmit",
     "lint": "echo 'No lint configured for extension'",
     "generate:crx-key": "bash scripts/generate-crx-key.sh",
