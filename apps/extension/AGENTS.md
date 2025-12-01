@@ -32,3 +32,5 @@
 - Never commit `.env`, `.crx-key.pem`, or Clerk keys; reference `.env.example` for required vars.
 - Store generated keys locally and rotate when sharing builds outside the core team.
 - Validate that `scripts/configure-clerk.sh` succeeds before publishing—missing origins will break uploads for everyone.
+- Clerk redirects: allow `chrome-extension://<dev-id>/popup.html` and `chrome-extension://<prod-id>/popup.html` in the Clerk dashboard. Post-auth URLs are centralized in `shared/auth-navigation.ts`; do not hardcode redirect targets elsewhere.
+- API base is explicit: set `VITE_API_BASE_URL` for every build (prod: `https://sploot.app`; local dev: `http://localhost:3001` or your Next port). Builds now fail if it’s missing. WXT dev server runs on 3303 to avoid port clash with Next.

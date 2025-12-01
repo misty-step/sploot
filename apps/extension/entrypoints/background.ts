@@ -1,5 +1,6 @@
 import { setupAuthBridge } from './background/auth-manager';
-import { setupContextMenu } from './background/context-menu';
+import { setupContextMenu, ensureContextMenus } from './background/context-menu';
+import { checkApiHealth } from '../shared/api-health';
 
 export default defineBackground(() => {
   console.log('[Background] ========================================');
@@ -19,6 +20,13 @@ export default defineBackground(() => {
   console.log('[Background] Host permissions:', manifest.host_permissions);
 
   try {
+    // Fire-and-forget health check; don't block startup (Chrome requires sync main)
+    checkApiHealth().then(ok => {
+      if (!ok) {
+        console.warn('[Background] API is unreachable at startup; uploads may fail until API is up.');
+      }
+    });
+
     // Initialize authentication manager
     console.log('[Background] Initializing auth bridge...');
     setupAuthBridge();
@@ -26,6 +34,7 @@ export default defineBackground(() => {
 
     // Initialize context menu
     console.log('[Background] Initializing context menu...');
+    ensureContextMenus(); // idempotent create
     setupContextMenu();
     console.log('[Background] ✅ Context menu initialized');
 

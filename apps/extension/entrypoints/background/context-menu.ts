@@ -14,26 +14,35 @@ const MENU_ID_SAVE = 'save-to-sploot';
 const MENU_ID_DIAGNOSTICS = 'sploot-debug-auth';
 
 /**
- * Initialize context menu
+ * Idempotently create context menus. Safe to call on startup and onInstalled.
  */
-export function setupContextMenu() {
-  // Create context menu on extension install/update
-  chrome.runtime.onInstalled.addListener(() => {
+export function ensureContextMenus() {
+  try {
     chrome.contextMenus.create({
       id: MENU_ID_SAVE,
       title: 'Save to Sploot',
       contexts: ['image'],
-    });
-
-    console.log('[ContextMenu] Registered "Save to Sploot" menu item');
+    }, () => void chrome.runtime.lastError); // ignore duplicate errors
 
     chrome.contextMenus.create({
       id: MENU_ID_DIAGNOSTICS,
       title: 'Sploot Debug: Dump Auth State',
       contexts: ['action'],
-    });
+    }, () => void chrome.runtime.lastError);
 
-    console.log('[ContextMenu] Registered "Sploot Debug" menu item');
+    console.log('[ContextMenu] Ensured context menus exist');
+  } catch (error) {
+    console.error('[ContextMenu] Failed to ensure context menus', error);
+  }
+}
+
+/**
+ * Initialize context menu
+ */
+export function setupContextMenu() {
+  // Create context menu on extension install/update
+  chrome.runtime.onInstalled.addListener(() => {
+    ensureContextMenus();
   });
 
   // Handle context menu clicks

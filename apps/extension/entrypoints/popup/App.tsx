@@ -12,6 +12,7 @@ import {
 } from '@clerk/chrome-extension'
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
 import { CLERK_PUBLISHABLE_KEY } from '../../shared/env'
+import { authNavigation } from '../../shared/auth-navigation'
 import './style.css'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
@@ -39,31 +40,39 @@ function App() {
   return (
     <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
       <AuthStatusReporter />
-      <div className="popup-container">
-        <header>
-          <h1>
-            <img
-              src={chrome.runtime.getURL('icon-128.png')}
-              alt="Sploot"
-              className="logo-icon"
-            />
-            Sploot
-          </h1>
-        </header>
-        <main>
-          <SignedOut>
-            <div className="auth-panel">
-              <div className="auth-header">
-                <h2>Welcome to Sploot</h2>
-                <p>Sign in to save images from anywhere on the web</p>
+      <div className="popup-frame">
+        <div className="popup-container">
+          <header>
+            <h1>
+              <img
+                src={chrome.runtime.getURL('icon-128.png')}
+                alt="Sploot"
+                className="logo-icon"
+              />
+              Sploot
+            </h1>
+          </header>
+          <main>
+            <SignedOut>
+              <div className="auth-panel">
+                <div className="auth-header">
+                  <h2>Welcome to Sploot</h2>
+                  <p>Sign in to save images from anywhere on the web</p>
+                </div>
+                <SignIn
+                  routing="hash"
+                  redirectUrl={authNavigation.redirectUrl}
+                  afterSignInUrl={authNavigation.afterSignInUrl}
+                  afterSignUpUrl={authNavigation.afterSignUpUrl}
+                  appearance={clerkAppearance}
+                />
               </div>
-              <SignIn routing="hash" appearance={clerkAppearance} />
-            </div>
-          </SignedOut>
-          <SignedIn>
-            <SignedInPanel />
-          </SignedIn>
-        </main>
+            </SignedOut>
+            <SignedIn>
+              <SignedInPanel />
+            </SignedIn>
+          </main>
+        </div>
       </div>
     </ClerkProvider>
   )

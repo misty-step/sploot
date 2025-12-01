@@ -90,19 +90,34 @@ body {
   font-weight: var(--weight-normal);
   color: var(--text-primary);
   background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
-  min-width: 360px;
   min-height: 480px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html, body {
+  width: auto;
+  max-width: 100%;
+  min-width: 320px;
+  overflow-x: hidden;  /* Prevent resize loops from horizontal overflow */
 }
 
 /* ============================================
    LAYOUT
    ============================================ */
 
+.popup-frame {
+  width: 360px;
+  max-width: 360px;
+  min-width: 320px;
+  margin: 0 auto;
+  overflow: hidden;
+  contain: layout;
+}
+
 .popup-container {
   position: relative;
-  padding: var(--space-6) var(--space-8) var(--space-5) var(--space-8);
+  padding: var(--space-6) var(--space-5) var(--space-5) var(--space-5);
   min-height: 480px;
   display: flex;
   flex-direction: column;
@@ -366,6 +381,9 @@ button.debug:hover {
 }
 
 .cl-card {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
   border: 1px solid var(--border-primary) !important;
   box-shadow: var(--shadow-md) !important;
   border-radius: var(--radius-lg) !important;

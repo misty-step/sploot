@@ -8,6 +8,10 @@ export default defineConfig({
         '@sploot/common': resolve(__dirname, '../../packages/common/src'),
       },
     },
+    server: {
+      port: 3303,
+      strictPort: true,
+    },
   }),
   outDir: 'dist',
   extensionApi: 'chrome',
@@ -22,7 +26,10 @@ export default defineConfig({
       ? 'https://clerk.sploot.app/*' // Production: custom Clerk domain
       : 'https://tender-bison-73.clerk.accounts.dev/*'; // Development: standard Clerk domain
 
-    const rawApiHost = process.env.VITE_API_BASE_URL || (isProduction ? 'https://sploot.app' : 'http://localhost:3000');
+    const rawApiHost = process.env.VITE_API_BASE_URL;
+    if (!rawApiHost) {
+      throw new Error('VITE_API_BASE_URL is required for extension builds (e.g., https://sploot.app or http://localhost:3001)');
+    }
     const normalizedApiHost = rawApiHost.replace(/\/$/, '');
     const apiHostPermission = `${normalizedApiHost}/*`;
 
@@ -51,9 +58,9 @@ export default defineConfig({
         ])
       ),
       content_security_policy: {
-        extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
-        sandbox: "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self';",
-      },
+      extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
+      sandbox: "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self';",
+    },
       // @ts-expect-error - key is not in the UserManifest type but is valid for Chrome
       key: process.env.CRX_PUBLIC_KEY,
       action: {

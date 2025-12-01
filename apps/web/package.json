@@ -4,7 +4,7 @@
   "description": "Vercel-first meme library with text→image semantic search",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "PORT=${PORT:-3001} next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
