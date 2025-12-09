@@ -10,7 +10,53 @@ declare global {
   var prisma: PrismaClient | undefined;
 }
 
-let prismaClient: PrismaClient | null = null;
+type ExtendedPrismaClient = ReturnType<typeof createExtendedClient>;
+
+function createExtendedClient(baseClient: PrismaClient) {
+  return baseClient.$extends({
+    query: {
+      $allModels: {
+        async $allOperations({ operation, model, args, query }) {
+          const modelName = model ?? 'raw';
+          const operationName = `db:${modelName}:${operation}`;
+          const startTime = Date.now();
+          const perfMonitor = getPerformanceMonitor();
+
+          perfMonitor.startTiming(operationName);
+
+          try {
+            const result = await query(args);
+            const duration = Date.now() - startTime;
+            perfMonitor.endTiming(operationName);
+
+            if (duration > 100) {
+              observabilityLogger.logInfo('db:slow-query', {
+                model: modelName,
+                action: operation,
+                duration,
+              });
+            }
+
+            return result;
+          } catch (error) {
+            const duration = Date.now() - startTime;
+            perfMonitor.endTiming(operationName);
+
+            observabilityLogger.logError('db:query-failed', error, {
+              model: modelName,
+              action: operation,
+              duration,
+            });
+
+            throw error;
+          }
+        },
+      },
+    },
+  });
+}
+
+let prismaClient: ExtendedPrismaClient | PrismaClient | null = null;
 
 if (databaseConfigured) {
   // Prisma reads DATABASE_URL from schema - no override needed
@@ -65,51 +111,11 @@ if (databaseConfigured) {
     console.error('Failed to log database configuration:', logError);
   }
 
+  // Apply query monitoring extension using Prisma 5+ API
   try {
-    if (!prismaClient) {
-      throw new Error('Prisma client unavailable');
+    if (prismaClient) {
+      prismaClient = createExtendedClient(prismaClient);
     }
-
-    const client = prismaClient as unknown as {
-      $use: (middleware: (params: any, next: (params: any) => Promise<unknown>) => Promise<unknown>) => void;
-    };
-
-    client.$use(async (params: any, next: (params: any) => Promise<unknown>) => {
-      const model = params.model ?? 'raw';
-      const action = params.action ?? 'query';
-      const operation = `db:${model}:${action}`;
-      const startTime = Date.now();
-      const perfMonitor = getPerformanceMonitor();
-
-      perfMonitor.startTiming(operation);
-
-      try {
-        const result = await next(params);
-        const duration = Date.now() - startTime;
-        perfMonitor.endTiming(operation);
-
-        if (duration > 100) {
-          observabilityLogger.logInfo('db:slow-query', {
-            model,
-            action,
-            duration,
-          });
-        }
-
-        return result;
-      } catch (error) {
-        const duration = Date.now() - startTime;
-        perfMonitor.endTiming(operation);
-
-        observabilityLogger.logError('db:query-failed', error, {
-          model,
-          action,
-          duration,
-        });
-
-        throw error;
-      }
-    });
   } catch (middlewareError) {
     observabilityLogger.logError(
       'db:middleware-init-failed',
@@ -119,7 +125,8 @@ if (databaseConfigured) {
   }
 }
 
-export const prisma = prismaClient;
+// Export as the original PrismaClient type to maintain API compatibility
+export const prisma = prismaClient as unknown as PrismaClient;
 
 /**
  * Sync user data from Clerk to database.
