@@ -12,7 +12,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { ScrollChevron } from "@/components/landing/scroll-chevron";
 import { ProcessTimeline } from "@/components/landing/process-timeline";
 import { SectionDivider } from "@/components/landing/section-divider";
-import { LandingFooter } from "@/components/landing/landing-footer";
+import { GlobalFooter } from "@/components/global-footer";
 
 export default async function Home() {
   const { userId } = await getAuth();
@@ -219,8 +219,8 @@ export default async function Home() {
       {/* Section Divider */}
       <SectionDivider color="yellow" />
 
-      {/* Footer: Full viewport with animated stats */}
-      <LandingFooter />
+      {/* Global Footer */}
+      <GlobalFooter />
     </div>
   );
 }

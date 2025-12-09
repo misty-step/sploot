@@ -38,8 +38,8 @@ export default defineConfig({
     console.log(`[WXT Config] API host permission: ${apiHostPermission}`);
 
     return {
-      name: 'Add to Sploot',
-      description: 'Save memes from any website to your Sploot library with one click',
+      name: 'Sploot',
+      description: 'Save memes from any site with one click. Find them instantly using AI semantic search. Your private meme library.',
       version: '1.0.0',
       icons: {
         16: 'icon-16.png',
@@ -61,8 +61,8 @@ export default defineConfig({
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
       sandbox: "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self';",
     },
-      // @ts-expect-error - key is not in the UserManifest type but is valid for Chrome
-      key: process.env.CRX_PUBLIC_KEY,
+      // Only include key for local development (Web Store assigns its own key)
+      ...(isProduction ? {} : { key: process.env.CRX_PUBLIC_KEY }),
       action: {
         default_popup: 'popup.html',
       },
