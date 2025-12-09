@@ -43,6 +43,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Run database migrations
+        run: pnpm --filter web db:migrate
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/sploot_test?sslmode=disable
+
       - name: Lint
         run: pnpm turbo run lint
 
