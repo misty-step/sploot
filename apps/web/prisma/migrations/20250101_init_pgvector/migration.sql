@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS "asset_embeddings" (
     "model_name" TEXT NOT NULL,
     "model_version" TEXT NOT NULL,
     "dim" INTEGER NOT NULL,
-    "image_embedding" vector,
+    "image_embedding" vector(512),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
