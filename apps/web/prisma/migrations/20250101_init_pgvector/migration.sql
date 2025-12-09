@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS "assets" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deleted_at" TIMESTAMP(3),
+    "share_slug" TEXT,
 
     CONSTRAINT "assets_pkey" PRIMARY KEY ("id")
 );
@@ -40,6 +41,8 @@ CREATE UNIQUE INDEX "unique_user_checksum" ON "assets"("owner_user_id", "checksu
 CREATE INDEX "assets_owner_user_id_deleted_at_idx" ON "assets"("owner_user_id", "deleted_at");
 CREATE INDEX "assets_createdAt_idx" ON "assets"("createdAt");
 CREATE INDEX "assets_favorite_idx" ON "assets"("favorite");
+CREATE INDEX "assets_share_slug_idx" ON "assets"("share_slug");
+CREATE UNIQUE INDEX "assets_share_slug_key" ON "assets"("share_slug");
 
 -- Create asset_embeddings table with vector column
 CREATE TABLE IF NOT EXISTS "asset_embeddings" (
@@ -47,7 +50,7 @@ CREATE TABLE IF NOT EXISTS "asset_embeddings" (
     "model_name" TEXT NOT NULL,
     "model_version" TEXT NOT NULL,
     "dim" INTEGER NOT NULL,
-    "image_embedding" vector,
+    "image_embedding" vector(512),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

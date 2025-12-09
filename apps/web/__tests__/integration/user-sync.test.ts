@@ -177,7 +177,7 @@ describe('User Sync Integration Tests', () => {
         prisma.asset.create({
           data: {
             ownerUserId: oldUserId,
-            blobUrl: 'https://test.blob.vercel-storage.com/test1.png',
+            blobUrl: 'https://test.public.blob.vercel-storage.com/test1.png',
             pathname: '/test1.png',
             mime: 'image/png',
             size: 1000,
@@ -187,7 +187,7 @@ describe('User Sync Integration Tests', () => {
         prisma.asset.create({
           data: {
             ownerUserId: oldUserId,
-            blobUrl: 'https://test.blob.vercel-storage.com/test2.png',
+            blobUrl: 'https://test.public.blob.vercel-storage.com/test2.png',
             pathname: '/test2.png',
             mime: 'image/png',
             size: 2000,
