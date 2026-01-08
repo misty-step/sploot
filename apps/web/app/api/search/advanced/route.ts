@@ -45,6 +45,12 @@ async function postHandler(req: NextRequest) {
       sortBy = 'relevance', // 'relevance', 'date', 'favorite'
     } = body);
 
+    // Validate pagination bounds to prevent DoS
+    const MAX_LIMIT = 100;
+    const MAX_OFFSET = 10000;
+    limit = Math.min(Math.max(1, Math.floor(Number(limit) || 30)), MAX_LIMIT);
+    offset = Math.min(Math.max(0, Math.floor(Number(offset) || 0)), MAX_OFFSET);
+
     if (!query || typeof query !== 'string') {
       return NextResponse.json(
         { error: 'Missing or invalid query parameter' },
@@ -140,6 +146,16 @@ async function postHandler(req: NextRequest) {
     const validSortOptions = ['relevance', 'date', 'favorite'] as const;
     const validatedSortBy = validSortOptions.includes(sortBy as any) ? sortBy : 'relevance';
 
+    // Build ORDER BY clause with Prisma.raw for embedding vector
+    // embeddingStr is safe - generated from embedding API as numeric array
+    const embeddingVectorLiteral = Prisma.raw(`'${embeddingStr}'::vector`);
+    const orderByClauses: Record<string, Prisma.Sql> = {
+      date: Prisma.sql`a.created_at DESC`,
+      favorite: Prisma.sql`a.favorite DESC, ae.image_embedding <=> ${embeddingVectorLiteral}`,
+      relevance: Prisma.sql`ae.image_embedding <=> ${embeddingVectorLiteral}`,
+    };
+    const orderByClause = orderByClauses[validatedSortBy];
+
     // Execute parameterized search query
     // Using Prisma.sql template literal for safe parameterization
     const results = await prisma!.$queryRaw<Array<{
@@ -169,23 +185,20 @@ async function postHandler(req: NextRequest) {
         a.favorite,
         a.created_at,
         a.updated_at,
-        1 - (ae.image_embedding <=> ${embeddingStr}::vector) as similarity,
+        1 - (ae.image_embedding <=> ${embeddingVectorLiteral}) as similarity,
         COUNT(*) OVER() as total_count
       FROM assets a
       INNER JOIN asset_embeddings ae ON a.id = ae.asset_id
       WHERE a.owner_user_id = ${userId}
         AND a.deleted_at IS NULL
-        AND 1 - (ae.image_embedding <=> ${embeddingStr}::vector) > ${threshold}
+        AND 1 - (ae.image_embedding <=> ${embeddingVectorLiteral}) > ${threshold}
         ${filters.favorites === true ? Prisma.sql`AND a.favorite = true` : Prisma.empty}
         ${validatedMimeTypes.length > 0 ? Prisma.sql`AND a.mime = ANY(${validatedMimeTypes})` : Prisma.empty}
         ${validatedDateFrom ? Prisma.sql`AND a.created_at >= ${validatedDateFrom}` : Prisma.empty}
         ${validatedDateTo ? Prisma.sql`AND a.created_at <= ${validatedDateTo}` : Prisma.empty}
         ${validatedMinWidth ? Prisma.sql`AND a.width >= ${validatedMinWidth}` : Prisma.empty}
         ${validatedMinHeight ? Prisma.sql`AND a.height >= ${validatedMinHeight}` : Prisma.empty}
-      ORDER BY
-        ${validatedSortBy === 'date' ? Prisma.sql`a.created_at DESC` : Prisma.empty}
-        ${validatedSortBy === 'favorite' ? Prisma.sql`a.favorite DESC, ae.image_embedding <=> ${embeddingStr}::vector` : Prisma.empty}
-        ${validatedSortBy === 'relevance' ? Prisma.sql`ae.image_embedding <=> ${embeddingStr}::vector` : Prisma.empty}
+      ORDER BY ${orderByClause}
       LIMIT ${limit}
       OFFSET ${offset}
     `);
@@ -346,8 +359,12 @@ async function performMetadataSearch(
 
   if (filters.dateFrom || filters.dateTo) {
     where.createdAt = {};
-    if (filters.dateFrom) where.createdAt.gte = new Date(filters.dateFrom);
-    if (filters.dateTo) where.createdAt.lte = new Date(filters.dateTo);
+    if (filters.dateFrom && isValidISODate(filters.dateFrom)) {
+      where.createdAt.gte = new Date(filters.dateFrom);
+    }
+    if (filters.dateTo && isValidISODate(filters.dateTo)) {
+      where.createdAt.lte = new Date(filters.dateTo);
+    }
   }
 
   if (filters.minWidth) {
@@ -393,9 +410,12 @@ async function performMetadataSearch(
   }));
 }
 
-// Helper to validate ISO date strings
+// Helper to validate ISO 8601 date strings
 function isValidISODate(dateStr: string): boolean {
-  if (typeof dateStr !== 'string' || dateStr.length > 30) return false;
+  if (typeof dateStr !== 'string') return false;
+  // Strict ISO 8601: YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss(.sss)?(Z|+HH:mm)?
+  const isoPattern = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})?)?$/;
+  if (!isoPattern.test(dateStr)) return false;
   const date = new Date(dateStr);
   return !isNaN(date.getTime());
 }
