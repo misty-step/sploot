@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
@@ -111,78 +112,37 @@ async function postHandler(req: NextRequest) {
     const embeddingResult = await embeddingService.embedText(query);
     const embeddingStr = `[${embeddingResult.embedding.join(',')}]`;
 
-    // Build WHERE clause with filters
-    const whereConditions = [
-      `a.owner_user_id = '${userId}'`,
-      `a.deleted_at IS NULL`,
-      `1 - (ae.image_embedding <=> '${embeddingStr}'::vector) > ${threshold}`
-    ];
+    // Build parameterized query using Prisma.sql to prevent SQL injection
+    // All user inputs are properly parameterized
 
-    if (filters.favorites === true) {
-      whereConditions.push(`a.favorite = true`);
-    }
+    // Validate and sanitize filter inputs
+    const validatedMimeTypes = filters.mimeTypes?.filter(
+      (m): m is string => typeof m === 'string' && m.length > 0 && m.length < 100
+    ) || [];
 
-    if (filters.mimeTypes && filters.mimeTypes.length > 0) {
-      const mimeList = filters.mimeTypes.map((m: string) => `'${m}'`).join(',');
-      whereConditions.push(`a.mime IN (${mimeList})`);
-    }
+    const validatedDateFrom = filters.dateFrom && isValidISODate(filters.dateFrom)
+      ? new Date(filters.dateFrom)
+      : null;
 
-    if (filters.dateFrom) {
-      whereConditions.push(`a.created_at >= '${filters.dateFrom}'::timestamp`);
-    }
+    const validatedDateTo = filters.dateTo && isValidISODate(filters.dateTo)
+      ? new Date(filters.dateTo)
+      : null;
 
-    if (filters.dateTo) {
-      whereConditions.push(`a.created_at <= '${filters.dateTo}'::timestamp`);
-    }
+    const validatedMinWidth = typeof filters.minWidth === 'number' && filters.minWidth > 0
+      ? Math.floor(filters.minWidth)
+      : null;
 
-    if (filters.minWidth) {
-      whereConditions.push(`a.width >= ${filters.minWidth}`);
-    }
+    const validatedMinHeight = typeof filters.minHeight === 'number' && filters.minHeight > 0
+      ? Math.floor(filters.minHeight)
+      : null;
 
-    if (filters.minHeight) {
-      whereConditions.push(`a.height >= ${filters.minHeight}`);
-    }
+    // Validate sortBy to prevent SQL injection in ORDER BY
+    const validSortOptions = ['relevance', 'date', 'favorite'] as const;
+    const validatedSortBy = validSortOptions.includes(sortBy as any) ? sortBy : 'relevance';
 
-    // Build ORDER BY clause
-    let orderByClause = '';
-    switch (sortBy) {
-      case 'date':
-        orderByClause = 'a.created_at DESC';
-        break;
-      case 'favorite':
-        orderByClause = 'a.favorite DESC, ae.image_embedding <=> ${embeddingStr}::vector';
-        break;
-      case 'relevance':
-      default:
-        orderByClause = 'ae.image_embedding <=> ${embeddingStr}::vector';
-        break;
-    }
-
-    // Execute advanced search query
-    const searchQuery = `
-      SELECT
-        a.id,
-        a.blob_url,
-        a.pathname,
-        a.filename,
-        a.mime,
-        a.size,
-        a.width,
-        a.height,
-        a.favorite,
-        a.created_at,
-        a.updated_at,
-        1 - (ae.image_embedding <=> '${embeddingStr}'::vector) as similarity,
-        COUNT(*) OVER() as total_count
-      FROM assets a
-      INNER JOIN asset_embeddings ae ON a.id = ae.asset_id
-      WHERE ${whereConditions.join(' AND ')}
-      ORDER BY ${orderByClause}
-      LIMIT ${limit}
-      OFFSET ${offset}
-    `;
-
-    const results = await prisma!.$queryRawUnsafe<Array<{
+    // Execute parameterized search query
+    // Using Prisma.sql template literal for safe parameterization
+    const results = await prisma!.$queryRaw<Array<{
       id: string;
       blob_url: string;
       pathname: string;
@@ -196,7 +156,39 @@ async function postHandler(req: NextRequest) {
       updated_at: Date;
       similarity: number;
       total_count: bigint;
-    }>>(searchQuery);
+    }>>(Prisma.sql`
+      SELECT
+        a.id,
+        a.blob_url,
+        a.pathname,
+        a.filename,
+        a.mime,
+        a.size,
+        a.width,
+        a.height,
+        a.favorite,
+        a.created_at,
+        a.updated_at,
+        1 - (ae.image_embedding <=> ${embeddingStr}::vector) as similarity,
+        COUNT(*) OVER() as total_count
+      FROM assets a
+      INNER JOIN asset_embeddings ae ON a.id = ae.asset_id
+      WHERE a.owner_user_id = ${userId}
+        AND a.deleted_at IS NULL
+        AND 1 - (ae.image_embedding <=> ${embeddingStr}::vector) > ${threshold}
+        ${filters.favorites === true ? Prisma.sql`AND a.favorite = true` : Prisma.empty}
+        ${validatedMimeTypes.length > 0 ? Prisma.sql`AND a.mime = ANY(${validatedMimeTypes})` : Prisma.empty}
+        ${validatedDateFrom ? Prisma.sql`AND a.created_at >= ${validatedDateFrom}` : Prisma.empty}
+        ${validatedDateTo ? Prisma.sql`AND a.created_at <= ${validatedDateTo}` : Prisma.empty}
+        ${validatedMinWidth ? Prisma.sql`AND a.width >= ${validatedMinWidth}` : Prisma.empty}
+        ${validatedMinHeight ? Prisma.sql`AND a.height >= ${validatedMinHeight}` : Prisma.empty}
+      ORDER BY
+        ${validatedSortBy === 'date' ? Prisma.sql`a.created_at DESC` : Prisma.empty}
+        ${validatedSortBy === 'favorite' ? Prisma.sql`a.favorite DESC, ae.image_embedding <=> ${embeddingStr}::vector` : Prisma.empty}
+        ${validatedSortBy === 'relevance' ? Prisma.sql`ae.image_embedding <=> ${embeddingStr}::vector` : Prisma.empty}
+      LIMIT ${limit}
+      OFFSET ${offset}
+    `);
 
     // Handle tag filtering if specified
     let filteredResults = results;
@@ -399,6 +391,13 @@ async function performMetadataSearch(
       name: at.tag.name,
     })),
   }));
+}
+
+// Helper to validate ISO date strings
+function isValidISODate(dateStr: string): boolean {
+  if (typeof dateStr !== 'string' || dateStr.length > 30) return false;
+  const date = new Date(dateStr);
+  return !isNaN(date.getTime());
 }
 
 function applyMockFilters(results: any[], filters: SearchFilters, sortBy: string) {
