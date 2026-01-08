@@ -116,6 +116,15 @@ async function postHandler(req: NextRequest) {
 
     // Generate text embedding
     const embeddingResult = await embeddingService.embedText(query);
+
+    // Validate embedding array contains only finite numbers (defense-in-depth)
+    if (!Array.isArray(embeddingResult.embedding) ||
+        !embeddingResult.embedding.every(n => typeof n === 'number' && isFinite(n))) {
+      return NextResponse.json(
+        { error: 'Invalid embedding format from service' },
+        { status: 500 }
+      );
+    }
     const embeddingStr = `[${embeddingResult.embedding.join(',')}]`;
 
     // Build parameterized query using Prisma.sql to prevent SQL injection
