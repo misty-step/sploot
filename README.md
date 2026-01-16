@@ -31,7 +31,7 @@ pnpm install
 
 ### Development
 
-Run all apps simultaneously (Web: localhost:3000, Extension: hot-reload):
+Run all apps simultaneously (Web: localhost:3001, Extension: hot-reload):
 
 ```bash
 pnpm dev
@@ -62,10 +62,18 @@ We use **Turborepo** to orchestrate tasks.
 - **Deployment**: 
   - Web: Automatic via Vercel.
   - Extension: Manual submission to Chrome Web Store.
+- **Details**: See [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+## 🔐 Configuration
+
+Each app has its own env setup:
+- Web app: see [`apps/web/README.md`](./apps/web/README.md)
+- Extension: see [`apps/extension/README.md`](./apps/extension/README.md)
 
 ## 📄 Documentation
 
-- [Task Tracking](./TASK.md) - Current consolidation status.
 - [Developer Guide](./CLAUDE.md) - Guidelines for AI agents and developers.
 - [Web App Docs](./apps/web/README.md)
 - [Extension Docs](./apps/extension/README.md)
+- [Architecture](./ARCHITECTURE.md)
+- [ADRs](./docs/adr)

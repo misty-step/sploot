@@ -20,7 +20,8 @@ Create `.env` (dev) or `.env.production` (prod):
 ```env
 # Must match the Web App's keys
 VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
-VITE_API_BASE_URL=http://localhost:3000 # or https://sploot.app
+CLERK_SECRET_KEY=sk_test_...
+VITE_API_BASE_URL=http://localhost:3001 # or https://www.sploot.app
 ```
 
 ### 2. Development
@@ -36,14 +37,14 @@ This will open a Chrome instance with the extension pre-loaded and hot-reload en
 pnpm build:prod
 ```
 
-Output is generated in `.output/chrome-mv3`.
+Output is generated in `dist/chrome-mv3`.
 
 ### 4. Installation (Manual)
 
 1. Go to `chrome://extensions`.
 2. Enable **Developer Mode**.
 3. Click **Load Unpacked**.
-4. Select `apps/extension/.output/chrome-mv3`.
+4. Select `apps/extension/dist/chrome-mv3`.
 
 ## 🏗️ Architecture
 

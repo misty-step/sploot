@@ -8,7 +8,7 @@ Sploot provides a RESTful API for managing your personal meme library with seman
 
 ```
 Production: https://your-app.vercel.app/api
-Development: http://localhost:3000/api
+Development: http://localhost:3001/api
 ```
 
 ## Authentication

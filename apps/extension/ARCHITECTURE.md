@@ -1,5 +1,9 @@
 # Architecture Decision: Separate Repository
 
+> **Status**: Superseded (2025-12-01). The extension now lives in this monorepo at
+> `apps/extension` with shared code in `packages/common`. See
+> `docs/adr/0002-move-extension-into-monorepo.md` and `ARCHITECTURE.md` at the repo root.
+
 ## Decision: Keep Extension Separate from Main App
 
 **Date**: 2025-11-08

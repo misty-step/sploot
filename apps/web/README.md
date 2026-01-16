@@ -38,7 +38,7 @@ REPLICATE_API_TOKEN=r8_...
 ```bash
 pnpm dev
 ```
-Runs on [http://localhost:3000](http://localhost:3000).
+Runs on [http://localhost:3001](http://localhost:3001).
 
 ### 3. Database Management
 
