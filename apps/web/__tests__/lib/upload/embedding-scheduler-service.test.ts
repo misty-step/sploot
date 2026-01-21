@@ -8,6 +8,7 @@ import * as db from '@/lib/db';
 import * as embeddings from '@/lib/embeddings';
 import { EmbeddingError } from '@/lib/embeddings';
 import * as nextServer from 'next/server';
+import { acquireEmbeddingProcessing } from '@/lib/embedding-guard';
 
 // Mock dependencies
 vi.mock('next/server');
@@ -59,6 +60,11 @@ describe('EmbeddingSchedulerService', () => {
 
     mockCreateEmbeddingService = vi.fn();
     vi.spyOn(embeddings, 'createEmbeddingService').mockImplementation(mockCreateEmbeddingService);
+
+    vi.mocked(acquireEmbeddingProcessing).mockResolvedValue({
+      acquired: true,
+      state: 'processing',
+    });
 
     // Reset all mocks
     vi.clearAllMocks();
@@ -123,6 +129,7 @@ describe('EmbeddingSchedulerService', () => {
           status: 'ready',
           completedAt: new Date(),
           updatedAt: new Date(),
+          dim: 768,
         });
 
         // Execute
@@ -292,6 +299,10 @@ describe('EmbeddingSchedulerService', () => {
         mockPrisma.assetEmbedding.findUnique.mockResolvedValue({
           id: 'embedding-1',
           assetId: 'asset-123',
+          status: 'ready',
+          completedAt: new Date(),
+          updatedAt: new Date(),
+          dim: 768,
         });
 
         // Execute
