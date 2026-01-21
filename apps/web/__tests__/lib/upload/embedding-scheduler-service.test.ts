@@ -290,6 +290,10 @@ describe('EmbeddingSchedulerService', () => {
         });
 
         // Verify: error was marked in DB
+        const afterResult = mockAfter.mock.results[mockAfter.mock.results.length - 1]?.value;
+        if (afterResult instanceof Promise) {
+          await afterResult;
+        }
         expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalled();
       });
 
