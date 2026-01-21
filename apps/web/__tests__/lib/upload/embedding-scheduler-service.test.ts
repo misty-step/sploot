@@ -13,6 +13,16 @@ import * as nextServer from 'next/server';
 vi.mock('next/server');
 vi.mock('@/lib/db');
 vi.mock('@/lib/logger');
+vi.mock('@/lib/embedding-guard', async () => {
+  const actual = await vi.importActual<any>('@/lib/embedding-guard');
+  return {
+    ...actual,
+    acquireEmbeddingProcessing: vi.fn().mockResolvedValue({
+      acquired: true,
+      state: 'processing',
+    }),
+  };
+});
 
 describe('EmbeddingSchedulerService', () => {
   let service: EmbeddingSchedulerService;
@@ -110,6 +120,9 @@ describe('EmbeddingSchedulerService', () => {
         mockPrisma.assetEmbedding.findUnique.mockResolvedValue({
           id: 'embedding-1',
           assetId: 'asset-123',
+          status: 'ready',
+          completedAt: new Date(),
+          updatedAt: new Date(),
         });
 
         // Execute

@@ -5,7 +5,7 @@ import { getCacheService } from './cache';
 export const CLIP_MODEL = 'krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4';
 export const EMBEDDING_DIMENSION = 768; // CLIP embedding dimension
 export const MAX_RETRY_ATTEMPTS = 3;
-export const DEFAULT_TIMEOUT = 30000;
+export const DEFAULT_TIMEOUT = 20000;
 
 export interface EmbeddingResult {
   embedding: number[];
@@ -85,7 +85,7 @@ export class ReplicateEmbeddingService {
       const embedding = Array.isArray(result) ? result : (result as any).embedding;
 
       if (!embedding || !Array.isArray(embedding)) {
-        throw new EmbeddingError('Invalid embedding response from model');
+        throw new EmbeddingError('Invalid embedding response from model', 502, false);
       }
 
       // Cache the result
@@ -98,16 +98,7 @@ export class ReplicateEmbeddingService {
         processingTime: Date.now() - startTime,
       };
     } catch (error) {
-      if (error instanceof EmbeddingError) {
-        throw error;
-      }
-
-      // Error generating text embedding
-      throw new EmbeddingError(
-        `Failed to generate text embedding: ${(error as Error).message}`,
-        500,
-        true
-      );
+      throw this.normalizeError(error, 'text');
     }
   }
 
@@ -152,7 +143,7 @@ export class ReplicateEmbeddingService {
       const embedding = Array.isArray(result) ? result : (result as any).embedding;
 
       if (!embedding || !Array.isArray(embedding)) {
-        throw new EmbeddingError('Invalid embedding response from model');
+        throw new EmbeddingError('Invalid embedding response from model', 502, false);
       }
 
       // Cache the result
@@ -167,16 +158,7 @@ export class ReplicateEmbeddingService {
         processingTime: Date.now() - startTime,
       };
     } catch (error) {
-      if (error instanceof EmbeddingError) {
-        throw error;
-      }
-
-      // Error generating image embedding
-      throw new EmbeddingError(
-        `Failed to generate image embedding: ${(error as Error).message}`,
-        500,
-        true
-      );
+      throw this.normalizeError(error, 'image');
     }
   }
 
@@ -198,21 +180,16 @@ export class ReplicateEmbeddingService {
     operation: () => Promise<T>,
     context: string
   ): Promise<T> {
-    let lastError: Error;
+    let lastError: EmbeddingError | null = null;
 
     for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
       try {
-        return await operation();
+        return await this.withTimeout(operation, context);
       } catch (error) {
-        lastError = error as Error;
+        const normalized = this.normalizeError(error, context);
+        lastError = normalized;
 
-        // Retry attempt failed
-
-        if (
-          error instanceof EmbeddingError &&
-          !error.retryable ||
-          attempt === this.retryAttempts
-        ) {
+        if (!normalized.retryable || attempt === this.retryAttempts) {
           break;
         }
 
@@ -221,7 +198,52 @@ export class ReplicateEmbeddingService {
       }
     }
 
-    throw lastError!;
+    throw lastError ?? new EmbeddingError('Embedding request failed', 500, false);
+  }
+
+  private async withTimeout<T>(
+    operation: () => Promise<T>,
+    context: string
+  ): Promise<T> {
+    if (!this.timeout || this.timeout <= 0) {
+      return operation();
+    }
+
+    const timeoutError = new EmbeddingError(
+      `Embedding request timed out after ${this.timeout}ms`,
+      504,
+      true
+    );
+
+    return Promise.race([
+      operation(),
+      new Promise<T>((_, reject) => {
+        setTimeout(() => reject(timeoutError), this.timeout);
+      }),
+    ]);
+  }
+
+  private normalizeError(error: unknown, context: string): EmbeddingError {
+    if (error instanceof EmbeddingError) {
+      return error;
+    }
+
+    const message = error instanceof Error ? error.message : String(error);
+    const status = (error as any)?.status ?? (error as any)?.statusCode;
+
+    if (typeof status === 'number') {
+      if (status >= 400 && status < 500 && status !== 429) {
+        return new EmbeddingError(`Embedding ${context} failed: ${message}`, status, false);
+      }
+
+      return new EmbeddingError(`Embedding ${context} failed: ${message}`, status, true);
+    }
+
+    if (message.toLowerCase().includes('timeout')) {
+      return new EmbeddingError(`Embedding ${context} timed out: ${message}`, 504, true);
+    }
+
+    return new EmbeddingError(`Embedding ${context} failed: ${message}`, 500, true);
   }
 }
 

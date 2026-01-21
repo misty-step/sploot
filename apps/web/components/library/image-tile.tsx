@@ -6,7 +6,6 @@ import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { error as logError } from '@/lib/logger';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
-import { useEmbeddingRetry } from '@/hooks/use-embedding-retry';
 import { useBlobCircuitBreaker } from '@/contexts/blob-circuit-breaker-context';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -119,32 +118,7 @@ function ImageTileComponent({
     }
   };
 
-  // Auto-retry embedding generation for assets stuck in processing
-  const { isRetrying, error: retryError } = useEmbeddingRetry({
-    assetId: asset.id,
-    hasEmbedding,
-    onEmbeddingGenerated: handleEmbeddingSuccess,
-    retryDelay: 5000,
-    maxRetries: 3,
-  });
-
-  // Update embedding status when retrying
-  useEffect(() => {
-    if (isRetrying && embeddingStatus !== 'processing') {
-      if (isDebugMode) {
-        logger.logInfo('image-tile.debug.auto-retry', {
-          assetId: asset.id,
-          retryCount: asset.embeddingRetryCount || 0,
-          previousStatus: embeddingStatus,
-        });
-        setDebugInfo((prev) => ({
-          ...prev,
-          lastTransition: `${embeddingStatus} → processing (auto-retry)`,
-        }));
-      }
-      setEmbeddingStatus('processing');
-    }
-  }, [isRetrying, embeddingStatus, isDebugMode, asset.id, asset.embeddingRetryCount]);
+  // Auto-retry removed: rely on server-side scheduling + manual retry button
 
   // Log initial status and transitions in debug mode
   useEffect(() => {
@@ -244,7 +218,13 @@ function ImageTileComponent({
             result,
           });
         }
-        handleEmbeddingSuccess(result);
+        if (result?.success && result?.embedding) {
+          handleEmbeddingSuccess(result);
+        } else if (result?.status === 'processing') {
+          setEmbeddingStatus('processing');
+        } else {
+          setEmbeddingStatus('failed');
+        }
       } else {
         const errorText = await response.text();
         if (isDebugMode) {
