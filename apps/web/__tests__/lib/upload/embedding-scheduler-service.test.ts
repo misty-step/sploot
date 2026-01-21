@@ -8,11 +8,22 @@ import * as db from '@/lib/db';
 import * as embeddings from '@/lib/embeddings';
 import { EmbeddingError } from '@/lib/embeddings';
 import * as nextServer from 'next/server';
+import { acquireEmbeddingProcessing } from '@/lib/embedding-guard';
 
 // Mock dependencies
 vi.mock('next/server');
 vi.mock('@/lib/db');
 vi.mock('@/lib/logger');
+vi.mock('@/lib/embedding-guard', async () => {
+  const actual = await vi.importActual<any>('@/lib/embedding-guard');
+  return {
+    ...actual,
+    acquireEmbeddingProcessing: vi.fn().mockResolvedValue({
+      acquired: true,
+      state: 'processing',
+    }),
+  };
+});
 
 describe('EmbeddingSchedulerService', () => {
   let service: EmbeddingSchedulerService;
@@ -22,6 +33,8 @@ describe('EmbeddingSchedulerService', () => {
   let mockAfter: any;
 
   beforeEach(() => {
+    vi.clearAllMocks();
+
     service = new EmbeddingSchedulerService();
 
     // Setup mock functions
@@ -49,9 +62,10 @@ describe('EmbeddingSchedulerService', () => {
 
     mockCreateEmbeddingService = vi.fn();
     vi.spyOn(embeddings, 'createEmbeddingService').mockImplementation(mockCreateEmbeddingService);
-
-    // Reset all mocks
-    vi.clearAllMocks();
+    vi.mocked(acquireEmbeddingProcessing).mockResolvedValue({
+      acquired: true,
+      state: 'processing',
+    });
   });
 
   afterEach(() => {
@@ -110,6 +124,10 @@ describe('EmbeddingSchedulerService', () => {
         mockPrisma.assetEmbedding.findUnique.mockResolvedValue({
           id: 'embedding-1',
           assetId: 'asset-123',
+          status: 'ready',
+          completedAt: new Date(),
+          updatedAt: new Date(),
+          dim: 768,
         });
 
         // Execute
@@ -121,6 +139,24 @@ describe('EmbeddingSchedulerService', () => {
           mode: 'sync',
           assetId: 'asset-123',
         });
+        expect(mockUpsertAssetEmbedding).not.toHaveBeenCalled();
+      });
+
+      it('should skip when embedding lock is unavailable', async () => {
+        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
+        vi.mocked(acquireEmbeddingProcessing).mockResolvedValue({
+          acquired: false,
+          state: 'unavailable',
+        });
+
+        const result = await service.scheduleEmbedding(baseParams);
+
+        expect(result).toEqual({
+          scheduled: true,
+          mode: 'sync',
+          assetId: 'asset-123',
+        });
+        expect(mockCreateEmbeddingService).not.toHaveBeenCalled();
         expect(mockUpsertAssetEmbedding).not.toHaveBeenCalled();
       });
 
@@ -270,6 +306,10 @@ describe('EmbeddingSchedulerService', () => {
         });
 
         // Verify: error was marked in DB
+        const afterResult = mockAfter.mock.results[mockAfter.mock.results.length - 1]?.value;
+        if (afterResult instanceof Promise) {
+          await afterResult;
+        }
         expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalled();
       });
 
@@ -279,6 +319,10 @@ describe('EmbeddingSchedulerService', () => {
         mockPrisma.assetEmbedding.findUnique.mockResolvedValue({
           id: 'embedding-1',
           assetId: 'asset-123',
+          status: 'ready',
+          completedAt: new Date(),
+          updatedAt: new Date(),
+          dim: 768,
         });
 
         // Execute

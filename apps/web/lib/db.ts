@@ -566,6 +566,9 @@ export async function upsertAssetEmbedding(
         "model_version",
         "dim",
         "image_embedding",
+        "status",
+        "error",
+        "completedAt",
         "createdAt",
         "updatedAt"
       ) VALUES (
@@ -574,6 +577,9 @@ export async function upsertAssetEmbedding(
         ${modelVersion},
         ${dim},
         ${vectorSql}::vector,
+        'ready',
+        NULL,
+        NOW(),
         NOW(),
         NOW()
       )
@@ -582,6 +588,9 @@ export async function upsertAssetEmbedding(
         "model_version" = EXCLUDED."model_version",
         "dim" = EXCLUDED."dim",
         "image_embedding" = EXCLUDED."image_embedding",
+        "status" = 'ready',
+        "error" = NULL,
+        "completedAt" = NOW(),
         "updatedAt" = NOW()
       RETURNING
         "asset_id" AS "assetId",
