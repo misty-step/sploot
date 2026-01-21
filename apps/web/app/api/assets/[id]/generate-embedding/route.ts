@@ -243,6 +243,17 @@ async function postHandler(
           const retryAfterSec = lock.retryAfterMs ? Math.max(1, Math.ceil(lock.retryAfterMs / 1000)) : undefined;
 
           if (lock.state === 'ready') {
+            const latestEmbedding = prisma
+              ? await prisma.assetEmbedding.findUnique({
+                  where: { assetId: asset.id },
+                  select: {
+                    modelName: true,
+                    dim: true,
+                    createdAt: true,
+                  },
+                })
+              : null;
+            const readyEmbedding = latestEmbedding ?? asset.embedding;
             return {
               status: 200,
               body: {
@@ -250,6 +261,13 @@ async function postHandler(
                 status: 'ready',
                 alreadyExists: true,
                 message: 'Embedding already exists',
+                embedding: readyEmbedding
+                  ? {
+                      modelName: readyEmbedding.modelName,
+                      dimension: readyEmbedding.dim,
+                      createdAt: readyEmbedding.createdAt,
+                    }
+                  : undefined,
               },
             };
           }
@@ -376,7 +394,9 @@ async function postHandler(
         const errorMessage = error instanceof Error ? error.message : String(error);
         try {
           await markEmbeddingFailed(asset.id, errorMessage);
-        } catch {}
+        } catch (markError) {
+          logger.logError('generate-embedding.mark-failed', markError, { assetId: id });
+        }
 
         // Handle failure for circuit breaker
         const isRateLimitError = error instanceof EmbeddingError && error.statusCode === 429;
@@ -388,7 +408,11 @@ async function postHandler(
           if (circuitBreakerState.failureCount >= CIRCUIT_BREAKER_THRESHOLD) {
             circuitBreakerState.isOpen = true;
             circuitBreakerState.resetTime = Date.now() + CIRCUIT_BREAKER_TIMEOUT;
-            console.error(`[circuit-breaker] Opening after ${circuitBreakerState.failureCount} consecutive failures`);
+            logger.logError(
+              'generate-embedding.circuit-open',
+              error instanceof Error ? error : new Error(String(error)),
+              { assetId: id, failureCount: circuitBreakerState.failureCount }
+            );
           }
         }
 

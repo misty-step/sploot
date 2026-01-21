@@ -1,4 +1,5 @@
 import { kv } from '@vercel/kv';
+import { logger } from '@/lib/observability-logger';
 
 export const EMBEDDING_RATE_WINDOW_SECONDS = 60;
 export const EMBEDDING_USER_WINDOW_LIMIT = 5;
@@ -53,8 +54,8 @@ async function incrementWithExpiry(key: string, ttlSeconds: number): Promise<num
 async function decrementSafe(key: string): Promise<void> {
   try {
     await kv.decr(key);
-  } catch {
-    // best-effort rollback
+  } catch (error) {
+    logger.logError('embedding-rate-limit.decrement-failed', error, { key });
   }
 }
 
@@ -70,16 +71,22 @@ export async function acquireEmbeddingRateLimit(
 
   const userWindowKey = `embedding:rate:user:${userId}:${windowId}`;
   const globalWindowKey = `embedding:rate:global:${windowId}`;
+  let userInflightIncremented = false;
+  let globalInflightIncremented = false;
+  let userWindowIncremented = false;
+  let globalWindowIncremented = false;
 
   try {
     const userInflight = await incrementWithExpiry(
       inflightUserKey,
       EMBEDDING_INFLIGHT_TTL_SECONDS
     );
+    userInflightIncremented = true;
     const globalInflight = await incrementWithExpiry(
       inflightGlobalKey,
       EMBEDDING_INFLIGHT_TTL_SECONDS
     );
+    globalInflightIncremented = true;
 
     if (userInflight > EMBEDDING_USER_CONCURRENCY_LIMIT) {
       await Promise.all([
@@ -111,10 +118,12 @@ export async function acquireEmbeddingRateLimit(
       userWindowKey,
       EMBEDDING_RATE_WINDOW_SECONDS + 2
     );
+    userWindowIncremented = true;
     const globalWindow = await incrementWithExpiry(
       globalWindowKey,
       EMBEDDING_RATE_WINDOW_SECONDS + 2
     );
+    globalWindowIncremented = true;
 
     if (userWindow > EMBEDDING_USER_WINDOW_LIMIT) {
       await Promise.all([
@@ -155,7 +164,24 @@ export async function acquireEmbeddingRateLimit(
       },
       counts: { userWindow, globalWindow, userInflight, globalInflight },
     };
-  } catch {
+  } catch (error) {
+    const rollbacks: Promise<void>[] = [];
+    if (userInflightIncremented) {
+      rollbacks.push(decrementSafe(inflightUserKey));
+    }
+    if (globalInflightIncremented) {
+      rollbacks.push(decrementSafe(inflightGlobalKey));
+    }
+    if (userWindowIncremented) {
+      rollbacks.push(decrementSafe(userWindowKey));
+    }
+    if (globalWindowIncremented) {
+      rollbacks.push(decrementSafe(globalWindowKey));
+    }
+    if (rollbacks.length > 0) {
+      await Promise.all(rollbacks);
+    }
+    logger.logError('embedding-rate-limit.kv-unavailable', error, { userId });
     return {
       allowed: false,
       reason: 'kv_unavailable',

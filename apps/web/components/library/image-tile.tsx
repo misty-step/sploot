@@ -220,6 +220,16 @@ function ImageTileComponent({
         }
         if (result?.success && result?.embedding) {
           handleEmbeddingSuccess(result);
+        } else if (result?.status === 'ready') {
+          if (isDebugMode) {
+            logger.logInfo('image-tile.debug.manual-ready', {
+              assetId: asset.id,
+              result,
+            });
+            setDebugInfo((prev) => ({ ...prev, lastTransition: 'processing → ready (no payload)' }));
+          }
+          setHasEmbedding(true);
+          setEmbeddingStatus('ready');
         } else if (result?.status === 'processing') {
           setEmbeddingStatus('processing');
         } else {

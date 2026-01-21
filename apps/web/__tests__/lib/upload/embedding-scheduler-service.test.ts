@@ -33,6 +33,8 @@ describe('EmbeddingSchedulerService', () => {
   let mockAfter: any;
 
   beforeEach(() => {
+    vi.clearAllMocks();
+
     service = new EmbeddingSchedulerService();
 
     // Setup mock functions
@@ -60,14 +62,10 @@ describe('EmbeddingSchedulerService', () => {
 
     mockCreateEmbeddingService = vi.fn();
     vi.spyOn(embeddings, 'createEmbeddingService').mockImplementation(mockCreateEmbeddingService);
-
     vi.mocked(acquireEmbeddingProcessing).mockResolvedValue({
       acquired: true,
       state: 'processing',
     });
-
-    // Reset all mocks
-    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -141,6 +139,24 @@ describe('EmbeddingSchedulerService', () => {
           mode: 'sync',
           assetId: 'asset-123',
         });
+        expect(mockUpsertAssetEmbedding).not.toHaveBeenCalled();
+      });
+
+      it('should skip when embedding lock is unavailable', async () => {
+        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
+        vi.mocked(acquireEmbeddingProcessing).mockResolvedValue({
+          acquired: false,
+          state: 'unavailable',
+        });
+
+        const result = await service.scheduleEmbedding(baseParams);
+
+        expect(result).toEqual({
+          scheduled: true,
+          mode: 'sync',
+          assetId: 'asset-123',
+        });
+        expect(mockCreateEmbeddingService).not.toHaveBeenCalled();
         expect(mockUpsertAssetEmbedding).not.toHaveBeenCalled();
       });
 
