@@ -11,6 +11,7 @@ import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { addConnection, removeConnection } from '@/lib/sse-broadcaster';
 import { withObservability } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
 
 // Connection configuration
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
@@ -105,7 +106,7 @@ async function getHandler(request: NextRequest) {
             );
           }
         } catch (error) {
-          console.error('[SSE] Error fetching initial status:', error);
+          logError('sse:initial-status-failed', error, {});
         }
       }
 
@@ -155,7 +156,7 @@ async function getHandler(request: NextRequest) {
             );
           }
         } catch (error) {
-          console.error('[SSE] Polling error:', error);
+          logError('sse:polling-failed', error, {});
           // Don't close the connection on polling errors
         }
       }, 2000); // Poll every 2 seconds

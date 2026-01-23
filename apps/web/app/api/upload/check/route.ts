@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyBearerOrThrow } from '@/lib/auth/verify-bearer';
 import { prisma, assetExists } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
 
 /**
  * Upload Preflight Check Endpoint
@@ -121,7 +122,7 @@ async function postHandler(req: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error in upload preflight check:', error);
+    logError('upload:check-failed', error, {});
 
     // Handle specific error types
     if (error instanceof Error && error.message.includes('auth')) {

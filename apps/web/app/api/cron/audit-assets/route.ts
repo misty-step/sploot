@@ -137,7 +137,7 @@ async function getHandler(request: NextRequest) {
       } catch (err) {
         // Network error, timeout, or other fetch failure
         stats.errorCount++;
-        console.error(`[cron] Error checking asset ${asset.id}:`, err);
+        logger.logError('cron.audit-assets.asset-check-failed', err as Error, { assetId: asset.id });
       }
     }
 
@@ -161,20 +161,15 @@ async function getHandler(request: NextRequest) {
 
     // ALERT: If >10 broken blobs found, log detailed alert
     if (stats.brokenCount > 10) {
-      console.error(`[cron] 🚨 ALERT: ${stats.brokenCount} broken blobs detected!`);
-      console.error(`[cron] Users affected: ${stats.usersAffected}`);
-
-      // Log per-user breakdown for debugging
-      for (const [userId, userResult] of userAuditMap.entries()) {
-        console.error(`[cron]   User ${userId}: ${userResult.brokenCount} broken assets`);
-        // Log first 3 broken assets per user for debugging
-        userResult.brokenAssets.slice(0, 3).forEach((asset) => {
-          console.error(`[cron]     - ${asset.id}: ${asset.filename}`);
-        });
-      }
-
-      // TODO: Send email alert via Vercel Email API or SendGrid
-      // For now, console alerts are sufficient for monitoring via Vercel logs
+      logger.logError('cron.audit-assets.broken-blobs-alert', new Error('Critical: >10 broken blobs detected'), {
+        brokenCount: stats.brokenCount,
+        usersAffected: stats.usersAffected,
+        affectedUsers: Array.from(userAuditMap.entries()).map(([userId, result]) => ({
+          userId,
+          brokenCount: result.brokenCount,
+          sampleAssets: result.brokenAssets.slice(0, 3).map(a => a.id),
+        })),
+      });
     }
 
     // Return detailed stats
@@ -192,7 +187,7 @@ async function getHandler(request: NextRequest) {
       })),
     });
   } catch (error) {
-    console.error('[cron] Unexpected error in audit-assets:', error);
+    logger.logError('cron.audit-assets.failed', error as Error, {});
     return NextResponse.json(
       {
         error: 'Failed to audit assets',

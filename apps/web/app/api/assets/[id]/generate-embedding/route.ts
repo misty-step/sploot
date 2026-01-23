@@ -374,7 +374,7 @@ async function postHandler(
           });
         } catch (sseError) {
           // Don't fail the request if SSE broadcast fails
-          console.error('[SSE] Failed to broadcast embedding update:', sseError);
+          logger.logError('generate-embedding.sse-broadcast-failed', sseError as Error, { assetId: id });
         }
 
         return {
@@ -442,7 +442,7 @@ async function postHandler(
   } catch (error) {
     unstable_rethrow(error);
     const processingTime = Date.now() - startTime;
-    console.error(`[error] Failed to generate embedding for asset (${processingTime}ms):`, error);
+    logger.logError('generate-embedding.failed', error as Error, { processingTimeMs: processingTime });
 
     // Error generating embedding
     if (error instanceof EmbeddingError) {

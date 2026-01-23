@@ -4,6 +4,7 @@ import { getAuth } from '@/lib/auth/server';
 import { put } from '@vercel/blob';
 import { blobConfigured } from '@/lib/env';
 import { withObservability } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
 
 async function postHandler(req: NextRequest) {
   try {
@@ -62,8 +63,7 @@ async function postHandler(req: NextRequest) {
     });
 
   } catch (error) {
-    // Provide detailed error information for debugging
-    console.error('Upload URL generation error:', error);
+    logError('upload:generate-url-failed', error, {});
 
     // Return user-friendly error message
     const errorMessage = error instanceof Error
@@ -105,8 +105,7 @@ async function generateUploadUrl(pathname: string): Promise<{ uploadUrl: string;
       downloadUrl: blob.downloadUrl || blob.url,
     };
   } catch (error) {
-    // Log the actual error for debugging
-    console.error('Vercel Blob error:', error);
+    logError('upload:blob-error', error, { pathname });
 
     // Provide helpful error message based on error type
     if (error instanceof Error) {

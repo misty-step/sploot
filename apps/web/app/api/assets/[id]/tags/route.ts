@@ -4,6 +4,7 @@ import { requireUserIdWithSync } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
 
 /**
  * GET /api/assets/[id]/tags - Get tags for a specific asset
@@ -64,7 +65,7 @@ async function getHandler(
     });
   } catch (error) {
     unstable_rethrow(error);
-    console.error('Error fetching asset tags:', error);
+    logError('assets:tags-list-failed', error, {});
     return NextResponse.json(
       { error: 'Failed to fetch asset tags' },
       { status: 500 }
@@ -206,7 +207,7 @@ async function postHandler(
     });
   } catch (error) {
     unstable_rethrow(error);
-    console.error('Error adding tags to asset:', error);
+    logError('assets:tags-add-failed', error, {});
     return NextResponse.json(
       { error: 'Failed to add tags to asset' },
       { status: 500 }
@@ -280,7 +281,7 @@ async function deleteHandler(
     });
   } catch (error) {
     unstable_rethrow(error);
-    console.error('Error removing tags from asset:', error);
+    logError('assets:tags-remove-failed', error, {});
     return NextResponse.json(
       { error: 'Failed to remove tags from asset' },
       { status: 500 }
