@@ -85,6 +85,51 @@ function formatDate(dateString: string): string {
   });
 }
 
+function markdownToHtml(text: string): string {
+  const lines = text.split("\n");
+  const result: string[] = [];
+  let inList = false;
+
+  for (const line of lines) {
+    if (line.startsWith("### ")) {
+      if (inList) {
+        result.push("</ul>");
+        inList = false;
+      }
+      result.push(
+        `<h4 class="text-base font-semibold mt-4 mb-2">${line.slice(4)}</h4>`
+      );
+    } else if (line.startsWith("## ")) {
+      if (inList) {
+        result.push("</ul>");
+        inList = false;
+      }
+      result.push(
+        `<h3 class="text-lg font-semibold mt-4 mb-2">${line.slice(3)}</h3>`
+      );
+    } else if (line.startsWith("- ")) {
+      if (!inList) {
+        result.push('<ul class="list-disc ml-4">');
+        inList = true;
+      }
+      result.push(`<li>${line.slice(2)}</li>`);
+    } else if (line.trim() === "") {
+      if (inList) {
+        result.push("</ul>");
+        inList = false;
+      }
+    } else {
+      if (inList) {
+        result.push("</ul>");
+        inList = false;
+      }
+      result.push(`<p>${line}</p>`);
+    }
+  }
+  if (inList) result.push("</ul>");
+  return result.join("");
+}
+
 function ReleaseCard({ release }: { release: Release }) {
   // Extract user-friendly notes if present, otherwise use raw body
   const bodyMatch = release.body?.match(/## What's New\n\n([\s\S]*?)(?:<details|$)/);
@@ -115,18 +160,21 @@ function ReleaseCard({ release }: { release: Release }) {
         <div className="prose prose-sm dark:prose-invert max-w-none">
           <div
             dangerouslySetInnerHTML={{
-              __html: sanitizeHtml(
-                displayBody
-                  .replace(/^### /gm, '<h4 class="text-base font-semibold mt-4 mb-2">')
-                  .replace(/^## /gm, '<h3 class="text-lg font-semibold mt-4 mb-2">')
-                  .replace(/^- /gm, '<li class="ml-4">')
-                  .replace(/\n\n/g, "</p><p>")
-                  .replace(/\n/g, "<br>"),
-                {
-                  allowedTags: ["h3", "h4", "p", "li", "br", "strong", "em", "a", "code"],
-                  allowedAttributes: { "*": ["class"], a: ["href", "target", "rel"] },
-                }
-              ),
+              __html: sanitizeHtml(markdownToHtml(displayBody), {
+                allowedTags: [
+                  "h3",
+                  "h4",
+                  "p",
+                  "li",
+                  "ul",
+                  "br",
+                  "strong",
+                  "em",
+                  "a",
+                  "code",
+                ],
+                allowedAttributes: { "*": ["class"], a: ["href", "target", "rel"] },
+              }),
             }}
           />
         </div>
