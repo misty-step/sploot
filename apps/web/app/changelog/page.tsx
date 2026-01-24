@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import DOMPurify from "isomorphic-dompurify";
+import sanitizeHtml from "sanitize-html";
 import { logger } from "@/lib/observability-logger";
 
 export const metadata: Metadata = {
@@ -115,13 +115,17 @@ function ReleaseCard({ release }: { release: Release }) {
         <div className="prose prose-sm dark:prose-invert max-w-none">
           <div
             dangerouslySetInnerHTML={{
-              __html: DOMPurify.sanitize(
+              __html: sanitizeHtml(
                 displayBody
                   .replace(/^### /gm, '<h4 class="text-base font-semibold mt-4 mb-2">')
                   .replace(/^## /gm, '<h3 class="text-lg font-semibold mt-4 mb-2">')
                   .replace(/^- /gm, '<li class="ml-4">')
                   .replace(/\n\n/g, "</p><p>")
-                  .replace(/\n/g, "<br>")
+                  .replace(/\n/g, "<br>"),
+                {
+                  allowedTags: ["h3", "h4", "p", "li", "br", "strong", "em", "a", "code"],
+                  allowedAttributes: { "*": ["class"], a: ["href", "target", "rel"] },
+                }
               ),
             }}
           />
