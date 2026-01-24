@@ -294,7 +294,7 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockRejectedValue(new Error('Connection timeout'));
 
-      // Suppress console.error
+      // Suppress console.error (structured logging writes JSON to console.error)
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const response = await GET({} as NextRequest);
@@ -303,10 +303,9 @@ describe('/api/stats', () => {
       expect(response.status).toBe(500);
       expect(data.error).toBe('Failed to fetch stats');
 
-      // Verify error was logged
+      // Verify error was logged via structured logging (JSON with context field)
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Failed to fetch stats:',
-        expect.any(Error)
+        expect.stringContaining('"context":"stats:get-failed"')
       );
 
       consoleErrorSpy.mockRestore();
