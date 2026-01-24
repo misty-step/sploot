@@ -1,9 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useAuthUser, useAuthActions } from '@/lib/auth/client';
 import { usePwaInstallPrompt } from '@/hooks/use-pwa-install';
 import { cn } from '@/lib/utils';
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0';
 
 export default function SettingsPage() {
   const { user } = useAuthUser();
@@ -103,6 +105,31 @@ export default function SettingsPage() {
         <p className="text-muted-foreground text-sm">
           Theme switching, notification spam, and squad-sharing are on the roadmap. Ping us with your wildest feature dreams.
         </p>
+      </section>
+
+      <section className="bg-card border border-border p-5 space-y-3">
+        <h2 className="text-lg font-semibold text-foreground">About</h2>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground text-sm">Version</span>
+          <span className="font-mono text-sm text-foreground">{APP_VERSION}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground text-sm">What&apos;s new</span>
+          <Link
+            href="/changelog"
+            className="text-sm text-accent-cyan hover:underline"
+          >
+            View changelog →
+          </Link>
+        </div>
+        <div className="pt-2 border-t border-border flex gap-4 text-sm">
+          <Link href="/support" className="text-muted-foreground hover:text-foreground transition-colors">
+            Support
+          </Link>
+          <Link href="/privacy" className="text-muted-foreground hover:text-foreground transition-colors">
+            Privacy
+          </Link>
+        </div>
       </section>
     </div>
   );
