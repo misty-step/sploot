@@ -19,6 +19,11 @@ pre-commit:
     typecheck:
       run: pnpm turbo run type-check
 
+commit-msg:
+  commands:
+    commitlint:
+      run: pnpm commitlint --edit {1}
+
 pre-push:
   commands:
     typecheck:
