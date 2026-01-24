@@ -87,7 +87,7 @@ async function patchHandler(
       },
     });
   } catch (error) {
-    logError('tags:update-failed', error, {});
+    logError('tags:update-failed', error);
     return NextResponse.json(
       { error: 'Failed to update tag' },
       { status: 500 }
@@ -148,7 +148,7 @@ async function deleteHandler(
       message: 'Tag deleted successfully',
     });
   } catch (error) {
-    logError('tags:delete-failed', error, {});
+    logError('tags:delete-failed', error);
     return NextResponse.json(
       { error: 'Failed to delete tag' },
       { status: 500 }

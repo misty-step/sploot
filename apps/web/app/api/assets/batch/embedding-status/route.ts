@@ -142,7 +142,7 @@ async function postHandler(request: NextRequest) {
       statuses,
     });
   } catch (error) {
-    logError('assets:batch-embedding-status-failed', error, {});
+    logError('assets:batch-embedding-status-failed', error);
     return NextResponse.json(
       { error: 'Failed to check batch embedding status' },
       { status: 500 }

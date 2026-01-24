@@ -63,7 +63,7 @@ async function postHandler(req: NextRequest) {
     });
 
   } catch (error) {
-    logError('upload:generate-url-failed', error, {});
+    logError('upload:generate-url-failed', error);
 
     // Return user-friendly error message
     const errorMessage = error instanceof Error

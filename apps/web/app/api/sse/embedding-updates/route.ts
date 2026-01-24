@@ -106,7 +106,7 @@ async function getHandler(request: NextRequest) {
             );
           }
         } catch (error) {
-          logError('sse:initial-status-failed', error, {});
+          logError('sse:initial-status-failed', error);
         }
       }
 
@@ -156,7 +156,7 @@ async function getHandler(request: NextRequest) {
             );
           }
         } catch (error) {
-          logError('sse:polling-failed', error, {});
+          logError('sse:polling-failed', error);
           // Don't close the connection on polling errors
         }
       }, 2000); // Poll every 2 seconds

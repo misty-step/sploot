@@ -374,7 +374,7 @@ async function postHandler(
           });
         } catch (sseError) {
           // Don't fail the request if SSE broadcast fails
-          logger.logError('generate-embedding.sse-broadcast-failed', sseError as Error, { assetId: id });
+          logger.logError('generate-embedding:sse-broadcast-failed', sseError as Error, { assetId: id });
         }
 
         return {
@@ -395,7 +395,7 @@ async function postHandler(
         try {
           await markEmbeddingFailed(asset.id, errorMessage);
         } catch (markError) {
-          logger.logError('generate-embedding.mark-failed', markError, { assetId: id });
+          logger.logError('generate-embedding:mark-failed', markError, { assetId: id });
         }
 
         // Handle failure for circuit breaker
@@ -442,7 +442,7 @@ async function postHandler(
   } catch (error) {
     unstable_rethrow(error);
     const processingTime = Date.now() - startTime;
-    logger.logError('generate-embedding.failed', error as Error, { processingTimeMs: processingTime });
+    logger.logError('generate-embedding:failed', error as Error, { processingTimeMs: processingTime });
 
     // Error generating embedding
     if (error instanceof EmbeddingError) {

@@ -84,7 +84,7 @@ async function postHandler(
       return apiError('NOT_FOUND', 'Asset not found');
     }
 
-    logError('assets:share-failed', error, {});
+    logError('assets:share-failed', error);
 
     // Return generic error to client
     return apiError('INTERNAL_ERROR', 'Failed to generate share link');

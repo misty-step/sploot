@@ -70,7 +70,7 @@ async function getHandler(
       status: asset.embedding ? 'ready' : 'pending',
     });
   } catch (error) {
-    logError('assets:embedding-status-failed', error, {});
+    logError('assets:embedding-status-failed', error);
     return NextResponse.json(
       { error: 'Failed to check embedding status' },
       { status: 500 }

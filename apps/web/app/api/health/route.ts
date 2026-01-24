@@ -53,7 +53,7 @@ async function checkDatabase(): Promise<{
   } catch (e) {
     const err = e as Error;
     const latency_ms = Date.now() - start;
-    logger.logError('health-check-database-failed', err, {});
+    logger.logError('health-check-database-failed', err);
 
     return {
       success: false,
@@ -74,7 +74,7 @@ async function checkRedis(): Promise<boolean> {
     await kv.ping();
     return true;
   } catch (e) {
-    logger.logError('health-check-redis-failed', e as Error, {});
+    logger.logError('health-check-redis-failed', e as Error);
     return false;
   }
 }

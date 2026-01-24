@@ -65,7 +65,7 @@ async function getHandler(
     });
   } catch (error) {
     unstable_rethrow(error);
-    logError('assets:tags-list-failed', error, {});
+    logError('assets:tags-list-failed', error);
     return NextResponse.json(
       { error: 'Failed to fetch asset tags' },
       { status: 500 }
@@ -207,7 +207,7 @@ async function postHandler(
     });
   } catch (error) {
     unstable_rethrow(error);
-    logError('assets:tags-add-failed', error, {});
+    logError('assets:tags-add-failed', error);
     return NextResponse.json(
       { error: 'Failed to add tags to asset' },
       { status: 500 }
@@ -281,7 +281,7 @@ async function deleteHandler(
     });
   } catch (error) {
     unstable_rethrow(error);
-    logError('assets:tags-remove-failed', error, {});
+    logError('assets:tags-remove-failed', error);
     return NextResponse.json(
       { error: 'Failed to remove tags from asset' },
       { status: 500 }

@@ -122,7 +122,7 @@ async function getHandler(request: NextRequest) {
             });
           } catch (blobError) {
             // Log but continue - blob might already be deleted
-            logger.logError('cron.purge-deleted-assets.blob-delete-failed', blobError as Error, { assetId: asset.id, blobUrl });
+            logger.logError('cron:purge-deleted-assets:blob-delete-failed', blobError as Error, { assetId: asset.id, blobUrl });
           }
         }
 
@@ -142,7 +142,7 @@ async function getHandler(request: NextRequest) {
           assetId: asset.id,
           error: errorMessage,
         });
-        logger.logError('cron.purge-deleted-assets.asset-failed', error as Error, { assetId: asset.id });
+        logger.logError('cron:purge-deleted-assets:asset-failed', error as Error, { assetId: asset.id });
 
         // Continue processing other assets even if one fails
         continue;
@@ -173,7 +173,7 @@ async function getHandler(request: NextRequest) {
       },
     });
   } catch (error) {
-    logger.logError('cron.purge-deleted-assets.failed', error as Error, {});
+    logger.logError('cron:purge-deleted-assets:failed', error as Error);
     return NextResponse.json(
       {
         error: 'Failed to purge deleted assets',

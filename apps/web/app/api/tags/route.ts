@@ -46,7 +46,7 @@ async function getHandler(req: NextRequest) {
       })),
     });
   } catch (error) {
-    logError('tags:list-failed', error, {});
+    logError('tags:list-failed', error);
     return NextResponse.json(
       { error: 'Failed to fetch tags' },
       { status: 500 }
@@ -110,7 +110,7 @@ async function postHandler(req: NextRequest) {
       },
     });
   } catch (error) {
-    logError('tags:create-failed', error, {});
+    logError('tags:create-failed', error);
     return NextResponse.json(
       { error: 'Failed to create tag' },
       { status: 500 }

@@ -50,7 +50,7 @@ async function getHandler(_req: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
-    logError('stats:get-failed', error, {});
+    logError('stats:get-failed', error);
     return NextResponse.json(
       { error: 'Failed to fetch stats' },
       { status: 500 }

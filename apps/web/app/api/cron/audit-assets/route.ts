@@ -137,7 +137,7 @@ async function getHandler(request: NextRequest) {
       } catch (err) {
         // Network error, timeout, or other fetch failure
         stats.errorCount++;
-        logger.logError('cron.audit-assets.asset-check-failed', err as Error, { assetId: asset.id });
+        logger.logError('cron:audit-assets:asset-check-failed', err as Error, { assetId: asset.id });
       }
     }
 
@@ -161,7 +161,7 @@ async function getHandler(request: NextRequest) {
 
     // ALERT: If >10 broken blobs found, log detailed alert
     if (stats.brokenCount > 10) {
-      logger.logError('cron.audit-assets.broken-blobs-alert', new Error('Critical: >10 broken blobs detected'), {
+      logger.logError('cron:audit-assets:broken-blobs-alert', new Error('Critical: >10 broken blobs detected'), {
         brokenCount: stats.brokenCount,
         usersAffected: stats.usersAffected,
         affectedUsers: Array.from(userAuditMap.entries()).map(([userId, result]) => ({
@@ -187,7 +187,7 @@ async function getHandler(request: NextRequest) {
       })),
     });
   } catch (error) {
-    logger.logError('cron.audit-assets.failed', error as Error, {});
+    logger.logError('cron:audit-assets:failed', error as Error);
     return NextResponse.json(
       {
         error: 'Failed to audit assets',

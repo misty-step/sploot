@@ -122,7 +122,7 @@ async function getHandler(req: NextRequest) {
 
     return NextResponse.json(summary, { status: 200 });
   } catch (error) {
-    logError('assets:audit-failed', error, {});
+    logError('assets:audit-failed', error);
     return NextResponse.json(
       {
         error: 'Failed to audit assets',

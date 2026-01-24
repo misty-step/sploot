@@ -122,7 +122,7 @@ async function postHandler(req: NextRequest) {
     });
 
   } catch (error) {
-    logError('upload:check-failed', error, {});
+    logError('upload:check-failed', error);
 
     // Handle specific error types
     if (error instanceof Error && error.message.includes('auth')) {
