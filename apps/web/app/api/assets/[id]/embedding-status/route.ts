@@ -3,6 +3,7 @@ import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
 
 /**
  * GET /api/assets/[id]/embedding-status
@@ -69,7 +70,7 @@ async function getHandler(
       status: asset.embedding ? 'ready' : 'pending',
     });
   } catch (error) {
-    console.error('Error checking embedding status:', error);
+    logError('assets:embedding-status-failed', error);
     return NextResponse.json(
       { error: 'Failed to check embedding status' },
       { status: 500 }

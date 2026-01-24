@@ -6,6 +6,7 @@ import { getOrCreateShareSlug, AssetNotFoundError } from '@/lib/share';
 import { apiError } from '@/lib/api-error';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
 
 /**
  * Generate a share link for an asset
@@ -83,8 +84,7 @@ async function postHandler(
       return apiError('NOT_FOUND', 'Asset not found');
     }
 
-    // Log unexpected errors
-    console.error('[Share API] Unexpected error:', error);
+    logError('assets:share-failed', error);
 
     // Return generic error to client
     return apiError('INTERNAL_ERROR', 'Failed to generate share link');

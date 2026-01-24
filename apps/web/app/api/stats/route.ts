@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireUserIdWithSync } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
 
 /**
  * GET /api/stats
@@ -49,7 +50,7 @@ async function getHandler(_req: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
-    console.error('Failed to fetch stats:', error);
+    logError('stats:get-failed', error);
     return NextResponse.json(
       { error: 'Failed to fetch stats' },
       { status: 500 }

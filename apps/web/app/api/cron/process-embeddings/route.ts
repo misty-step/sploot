@@ -100,7 +100,7 @@ async function getHandler(request: NextRequest) {
     try {
       embeddingService = createEmbeddingService();
     } catch (error) {
-      console.error('[cron] Failed to initialize embedding service:', error);
+      logger.logError('cron:process-embeddings:service-init-failed', error as Error);
       return NextResponse.json(
         {
           error: 'Embedding service not configured',
@@ -151,7 +151,7 @@ async function getHandler(request: NextRequest) {
           assetId: asset.id,
           error: errorMessage,
         });
-        console.error(`[cron] Failed to process asset ${asset.id}:`, error);
+        logger.logError('cron:process-embeddings:asset-failed', error as Error, { assetId: asset.id });
 
         // Continue processing other assets even if one fails
         continue;
@@ -185,7 +185,7 @@ async function getHandler(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('[cron] Unexpected error in process-embeddings:', error);
+    logger.logError('cron:process-embeddings:failed', error as Error);
     return NextResponse.json(
       {
         error: 'Failed to process embeddings',

@@ -207,8 +207,8 @@ describe('/api/cron/purge-deleted-assets', () => {
       // Blob deletion fails but asset purge should continue
       vi.mocked(blobModule.del).mockRejectedValue(new Error('Blob not found'));
 
-      // Suppress console.warn
-      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      // Suppress structured logging output (logError writes JSON to console.error)
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const response = await GET({} as NextRequest);
       const data = await response.json();
@@ -221,13 +221,12 @@ describe('/api/cron/purge-deleted-assets', () => {
       // Database record should still be deleted
       expect(mockPrisma.asset.delete).toHaveBeenCalledWith({ where: { id: 'asset-1' } });
 
-      // Verify warning was logged
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to delete blob'),
-        expect.any(Error)
+      // Verify error was logged via structured logging (JSON with context field)
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('"context":"cron:purge-deleted-assets:blob-delete-failed"')
       );
 
-      consoleWarnSpy.mockRestore();
+      consoleErrorSpy.mockRestore();
     });
 
     it('should continue processing after single asset failure', async () => {

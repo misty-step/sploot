@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthWithUser } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
+import { withObservability } from '@/lib/with-observability';
 
 /**
  * User Sync Health Check Endpoint
@@ -12,7 +13,7 @@ import { prisma } from '@/lib/db';
  *
  * Returns comprehensive health status for user sync system
  */
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   try {
     // Get auth with explicit sync status
     const { userId, syncStatus, syncError } = await getAuthWithUser();
@@ -65,3 +66,8 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export const GET = withObservability(getHandler, {
+  operation: 'health:user-sync',
+  skipTiming: true,
+});

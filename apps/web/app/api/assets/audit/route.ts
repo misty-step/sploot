@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireUserIdWithSync } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
 
 interface AuditResult {
   id: string;
@@ -121,7 +122,7 @@ async function getHandler(req: NextRequest) {
 
     return NextResponse.json(summary, { status: 200 });
   } catch (error) {
-    console.error('Asset audit error:', error);
+    logError('assets:audit-failed', error);
     return NextResponse.json(
       {
         error: 'Failed to audit assets',
