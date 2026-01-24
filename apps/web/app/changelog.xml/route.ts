@@ -26,10 +26,16 @@ async function getReleases(): Promise<Release[]> {
   );
 
   if (!response.ok) {
+    console.error(`Failed to fetch releases for RSS: ${response.status}`);
     return [];
   }
 
-  return response.json();
+  try {
+    return await response.json();
+  } catch (error) {
+    console.error("Error parsing releases JSON for RSS:", error);
+    return [];
+  }
 }
 
 function escapeXml(unsafe: string): string {

@@ -13,8 +13,6 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    # Only run after CI passes (on same commit)
-    needs: []
     # Don't run on release commits
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
 

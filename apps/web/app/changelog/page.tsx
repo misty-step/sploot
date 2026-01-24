@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import DOMPurify from "isomorphic-dompurify";
+import { logger } from "@/lib/observability-logger";
 
 export const metadata: Metadata = {
   title: "Changelog - Sploot",
@@ -39,11 +41,16 @@ async function getReleases(): Promise<Release[]> {
   );
 
   if (!response.ok) {
-    console.error(`Failed to fetch releases: ${response.status}`);
+    logger.logError("Failed to fetch releases", { status: response.status });
     return [];
   }
 
-  return response.json();
+  try {
+    return await response.json();
+  } catch (error) {
+    logger.logError("Error parsing releases JSON", error);
+    return [];
+  }
 }
 
 function groupReleasesByMinor(releases: Release[]): GroupedReleases[] {
@@ -108,12 +115,14 @@ function ReleaseCard({ release }: { release: Release }) {
         <div className="prose prose-sm dark:prose-invert max-w-none">
           <div
             dangerouslySetInnerHTML={{
-              __html: displayBody
-                .replace(/^### /gm, '<h4 class="text-base font-semibold mt-4 mb-2">')
-                .replace(/^## /gm, '<h3 class="text-lg font-semibold mt-4 mb-2">')
-                .replace(/^- /gm, '<li class="ml-4">')
-                .replace(/\n\n/g, "</p><p>")
-                .replace(/\n/g, "<br>"),
+              __html: DOMPurify.sanitize(
+                displayBody
+                  .replace(/^### /gm, '<h4 class="text-base font-semibold mt-4 mb-2">')
+                  .replace(/^## /gm, '<h3 class="text-lg font-semibold mt-4 mb-2">')
+                  .replace(/^- /gm, '<li class="ml-4">')
+                  .replace(/\n\n/g, "</p><p>")
+                  .replace(/\n/g, "<br>")
+              ),
             }}
           />
         </div>
