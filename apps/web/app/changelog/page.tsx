@@ -27,28 +27,36 @@ interface GroupedReleases {
 
 async function getReleases(): Promise<Release[]> {
   const repo = process.env.GITHUB_REPOSITORY || "sploot-app/sploot";
-  const response = await fetch(
-    `https://api.github.com/repos/${repo}/releases?per_page=50`,
-    {
-      headers: {
-        Accept: "application/vnd.github.v3+json",
-        ...(process.env.GITHUB_TOKEN && {
-          Authorization: `token ${process.env.GITHUB_TOKEN}`,
-        }),
-      },
-      next: { revalidate: 3600 },
-    }
-  );
-
-  if (!response.ok) {
-    logger.logError("Failed to fetch releases", { status: response.status });
-    return [];
-  }
 
   try {
+    const response = await fetch(
+      `https://api.github.com/repos/${repo}/releases?per_page=50`,
+      {
+        headers: {
+          Accept: "application/vnd.github.v3+json",
+          ...(process.env.GITHUB_TOKEN && {
+            Authorization: `token ${process.env.GITHUB_TOKEN}`,
+          }),
+        },
+        next: { revalidate: 3600 },
+      }
+    );
+
+    if (!response.ok) {
+      // Pass an actual Error object, not a plain object
+      // Previously: { status } was captured as "Object with keys: status" in Sentry
+      logger.logError(
+        "changelog:fetch-failed",
+        new Error(`GitHub API returned status ${response.status}`),
+        { status: response.status, repo }
+      );
+      return [];
+    }
+
     return await response.json();
   } catch (error) {
-    logger.logError("Error parsing releases JSON", error);
+    // Handle network errors, timeouts, and JSON parsing failures
+    logger.logError("changelog:fetch-error", error, { repo });
     return [];
   }
 }

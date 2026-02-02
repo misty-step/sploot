@@ -16,6 +16,7 @@ interface HealthStatus {
     prisma_connection_test?: boolean;
     database_url_configured?: boolean;
     connection_latency_ms?: number;
+    connection_retries?: number;
     env_vars?: Record<string, 'configured' | 'missing'>;
   };
   version?: string;
@@ -23,45 +24,97 @@ interface HealthStatus {
 }
 
 const TIMEOUT_MS = 5000;
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 100;
 
-async function checkDatabase(): Promise<{
+interface DatabaseCheckResult {
   success: boolean;
   error?: string;
   latency_ms?: number;
   prisma_test?: boolean;
-}> {
+  retries?: number;
+}
+
+// Transient error patterns that should be retried (expected in serverless)
+const TRANSIENT_ERROR_PATTERNS = [
+  'Server has closed the connection',
+  "Can't reach database server",
+  'Connection refused',
+  'Connection reset',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'socket hang up',
+];
+
+function isTransientError(error: Error): boolean {
+  const message = error.message || '';
+  return TRANSIENT_ERROR_PATTERNS.some(pattern =>
+    message.toLowerCase().includes(pattern.toLowerCase())
+  );
+}
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function checkDatabase(): Promise<DatabaseCheckResult> {
   const start = Date.now();
 
-  try {
-    if (!prisma) {
-      return {
-        success: false,
-        error: 'Prisma client not initialized',
-        prisma_test: false,
-      };
-    }
-
-    // Prisma-specific connection test
-    await prisma.$queryRaw`SELECT 1`;
-    const latency_ms = Date.now() - start;
-
-    return {
-      success: true,
-      latency_ms,
-      prisma_test: true,
-    };
-  } catch (e) {
-    const err = e as Error;
-    const latency_ms = Date.now() - start;
-    logger.logError('health-check-database-failed', err);
-
+  if (!prisma) {
     return {
       success: false,
-      error: err.message,
-      latency_ms,
+      error: 'Prisma client not initialized',
       prisma_test: false,
     };
   }
+
+  let lastError: Error | null = null;
+  let attempts = 0;
+
+  // Retry loop for transient connection errors (common in serverless cold starts)
+  while (attempts <= MAX_RETRIES) {
+    try {
+      // Prisma-specific connection test
+      await prisma.$queryRaw`SELECT 1`;
+      const latency_ms = Date.now() - start;
+
+      return {
+        success: true,
+        latency_ms,
+        prisma_test: true,
+        ...(attempts > 0 && { retries: attempts }),
+      };
+    } catch (e) {
+      lastError = e as Error;
+      attempts++;
+
+      // Only retry on transient errors, not on auth/config issues
+      if (attempts <= MAX_RETRIES && isTransientError(lastError)) {
+        // Exponential backoff: 100ms, 200ms
+        await sleep(RETRY_DELAY_MS * attempts);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  const latency_ms = Date.now() - start;
+  const err = lastError as Error;
+
+  // Only log to Sentry if NOT a transient error (those are expected in serverless)
+  // Transient errors after retries are still logged locally but not to Sentry
+  if (!isTransientError(err)) {
+    logger.logError('health-check-database-failed', err);
+  }
+
+  return {
+    success: false,
+    error: err.message,
+    latency_ms,
+    prisma_test: false,
+    ...(attempts > 1 && { retries: attempts - 1 }),
+  };
 }
 
 async function checkRedis(): Promise<boolean> {
@@ -85,7 +138,7 @@ async function getHandler(_req: NextRequest) {
   // Timeout wrapper
   let timeoutId: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<{
-    db: { success: boolean; error?: string; latency_ms?: number; prisma_test?: boolean };
+    db: DatabaseCheckResult;
     redis: boolean;
   }>((_, reject) => {
     timeoutId = setTimeout(() => reject(new Error('Health check timeout')), TIMEOUT_MS);
@@ -121,6 +174,7 @@ async function getHandler(_req: NextRequest) {
           database_url_configured: !!process.env.DATABASE_URL,
           connection_latency_ms: results.db.latency_ms,
           env_vars: envVars,
+          ...(results.db.retries && { connection_retries: results.db.retries }),
         },
         version: pkg.version,
       };
@@ -146,6 +200,7 @@ async function getHandler(_req: NextRequest) {
           database_url_configured: !!process.env.DATABASE_URL,
           connection_latency_ms: results.db.latency_ms,
           env_vars: envVars,
+          ...(results.db.retries && { connection_retries: results.db.retries }),
         },
       };
 
