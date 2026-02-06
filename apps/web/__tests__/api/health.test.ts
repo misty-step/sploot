@@ -3,7 +3,7 @@ import { createMockRequest } from '../utils/test-helpers';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 const { mockPrisma, mockKv } = vi.hoisted(() => ({
-  mockPrisma: { $queryRaw: vi.fn() },
+  mockPrisma: { $queryRaw: vi.fn(), $disconnect: vi.fn(), $connect: vi.fn() },
   mockKv: { ping: vi.fn() },
 }));
 
@@ -21,6 +21,20 @@ vi.mock('@/lib/with-observability', () => ({
 
 vi.mock('@/package.json', () => ({
   default: { version: '0.1.0' },
+}));
+
+// Mock Prisma Client for error types
+vi.mock('@prisma/client', () => ({
+  Prisma: {
+    PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {
+      code: string;
+      constructor(message: string, { code }: { code: string }) {
+        super(message);
+        this.code = code;
+        this.name = 'PrismaClientKnownRequestError';
+      }
+    },
+  },
 }));
 
 describe('/api/health', () => {
@@ -185,5 +199,57 @@ describe('/api/health', () => {
     expect(data.error).toContain('Health check timeout');
 
     vi.useRealTimers();
+  });
+
+  it('should reconnect and return 200 when stale connection is detected', async () => {
+    // First call fails with stale connection error, second succeeds
+    const { Prisma } = await import('@prisma/client');
+
+    mockPrisma.$queryRaw
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Server has closed the connection', { code: 'P1002' })
+      )
+      .mockResolvedValueOnce([1]);
+    mockPrisma.$disconnect.mockResolvedValue(undefined);
+    mockPrisma.$connect.mockResolvedValue(undefined);
+    mockKv.ping.mockResolvedValue('PONG');
+
+    const req = createMockRequest('GET', null);
+    const context = { params: Promise.resolve({}) };
+    const res = await GET(req, context);
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+
+    expect(data.status).toBe('ok');
+    expect(data.dependencies.database).toBe('up');
+    expect(mockPrisma.$disconnect).toHaveBeenCalled();
+    expect(mockPrisma.$connect).toHaveBeenCalled();
+  });
+
+  it('should return 503 when reconnect fails after stale connection', async () => {
+    // First call fails with stale connection, reconnect also fails
+    const { Prisma } = await import('@prisma/client');
+
+    mockPrisma.$queryRaw
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Server has closed the connection', { code: 'P1002' })
+      )
+      .mockRejectedValueOnce(new Error('Still cannot connect'));
+    mockPrisma.$disconnect.mockResolvedValue(undefined);
+    mockPrisma.$connect.mockResolvedValue(undefined);
+    mockKv.ping.mockResolvedValue('PONG');
+
+    const req = createMockRequest('GET', null);
+    const context = { params: Promise.resolve({}) };
+    const res = await GET(req, context);
+
+    expect(res.status).toBe(503);
+    const data = await res.json();
+
+    expect(data.status).toBe('error');
+    expect(data.error).toContain('Reconnect failed');
+    expect(mockPrisma.$disconnect).toHaveBeenCalled();
+    expect(mockPrisma.$connect).toHaveBeenCalled();
   });
 });
