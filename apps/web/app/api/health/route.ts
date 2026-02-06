@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { kv } from '@vercel/kv';
 import { withObservability } from '@/lib/with-observability';
@@ -53,6 +54,56 @@ async function checkDatabase(): Promise<{
   } catch (e) {
     const err = e as Error;
     const latency_ms = Date.now() - start;
+
+    // Handle stale connections in serverless environments (Neon/PgBouncer)
+    // PrismaClientKnownRequestError with connection-related messages indicates
+    // the server closed the connection due to idle timeout
+    const isStaleConnection =
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      (err.message.includes('Server has closed the connection') ||
+        err.message.includes('Connection terminated unexpectedly') ||
+        err.message.includes('connection has been closed') ||
+        err.code === 'P1002' || // Connection timeout
+        err.code === 'P1008'); // Operations timed out
+
+    if (isStaleConnection) {
+      logger.logInfo('health-check-db-reconnecting', {
+        reason: 'stale_connection',
+        error: err.message,
+        errorCode: err instanceof Prisma.PrismaClientKnownRequestError ? err.code : undefined,
+      });
+
+      try {
+        // Force disconnect and reconnect to get a fresh connection
+        await prisma.$disconnect();
+        await prisma.$connect();
+
+        // Retry the health check query
+        await prisma.$queryRaw`SELECT 1`;
+        const reconnectLatencyMs = Date.now() - start;
+
+        logger.logInfo('health-check-db-reconnect-success', {
+          latency_ms: reconnectLatencyMs,
+        });
+
+        return {
+          success: true,
+          latency_ms: reconnectLatencyMs,
+          prisma_test: true,
+        };
+      } catch (reconnectError) {
+        const reconnectErr = reconnectError as Error;
+        logger.logError('health-check-db-reconnect-failed', reconnectErr);
+
+        return {
+          success: false,
+          error: `Reconnect failed: ${reconnectErr.message}`,
+          latency_ms: Date.now() - start,
+          prisma_test: false,
+        };
+      }
+    }
+
     logger.logError('health-check-database-failed', err);
 
     return {
