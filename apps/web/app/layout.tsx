@@ -7,6 +7,8 @@ import { EmbeddingStatusProvider } from "@/contexts/embedding-status-context";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { PostHogProvider } from "@/lib/posthog/PostHogProvider";
+import { PostHogPageview } from "@/lib/posthog/PostHogPageview";
 
 const dmSans = DM_Sans({
   variable: "--font-geist-sans",
@@ -126,17 +128,20 @@ export default function RootLayout({
           <body
             className={`${dmSans.variable} ${bebasNeue.variable} ${jetbrainsMono.variable} font-sans antialiased`}
           >
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="system"
-              enableSystem
-              disableTransitionOnChange
-            >
-              {children}
-              <Toaster />
-              <Analytics />
-              <SpeedInsights />
-            </ThemeProvider>
+            <PostHogProvider>
+              <PostHogPageview />
+              <ThemeProvider
+                attribute="class"
+                defaultTheme="system"
+                enableSystem
+                disableTransitionOnChange
+              >
+                {children}
+                <Toaster />
+                <Analytics />
+                <SpeedInsights />
+              </ThemeProvider>
+            </PostHogProvider>
           </body>
         </html>
       </EmbeddingStatusProvider>
