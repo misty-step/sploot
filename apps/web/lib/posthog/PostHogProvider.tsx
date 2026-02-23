@@ -6,30 +6,34 @@ import posthog from 'posthog-js';
 import { PostHogProvider as PHProvider } from 'posthog-js/react';
 import { POSTHOG_READY_EVENT } from './events';
 
-export function PostHogProvider({ children }: { children: ReactNode }) {
+function initializePostHog() {
+  try {
+    posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+      api_host: '/ingest',
+      ui_host: 'https://us.posthog.com',
+      person_profiles: 'identified_only',
+      capture_pageview: false,
+      respect_dnt: true,
+      session_recording: {
+        maskAllInputs: true,
+        maskTextSelector: '*',
+      },
+      loaded: (ph) => {
+        if (process.env.NODE_ENV === 'development') ph.debug();
+        window.dispatchEvent(new Event(POSTHOG_READY_EVENT));
+      },
+    });
+  } catch (error) {
+    console.error('posthog.init failed', error);
+  }
+}
+
+function PostHogWithClerk({ children }: { children: ReactNode }) {
   const { isSignedIn, isLoaded, user } = useUser();
 
   useEffect(() => {
     if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_POSTHOG_KEY) {
-      try {
-        posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY, {
-          api_host: '/ingest',
-          ui_host: 'https://us.posthog.com',
-          person_profiles: 'identified_only',
-          capture_pageview: false,
-          respect_dnt: true,
-          session_recording: {
-            maskAllInputs: true,
-            maskTextSelector: '*',
-          },
-          loaded: (ph) => {
-            if (process.env.NODE_ENV === 'development') ph.debug();
-            window.dispatchEvent(new Event(POSTHOG_READY_EVENT));
-          },
-        });
-      } catch (error) {
-        console.error('posthog.init failed', error);
-      }
+      initializePostHog();
     }
   }, []);
 
@@ -53,4 +57,22 @@ export function PostHogProvider({ children }: { children: ReactNode }) {
   }, [isSignedIn, isLoaded, user]);
 
   return <PHProvider client={posthog}>{children}</PHProvider>;
+}
+
+function PostHogWithoutClerk({ children }: { children: ReactNode }) {
+  useEffect(() => {
+    if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_POSTHOG_KEY) {
+      initializePostHog();
+    }
+  }, []);
+
+  return <PHProvider client={posthog}>{children}</PHProvider>;
+}
+
+export function PostHogProvider({ children }: { children: ReactNode }) {
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+    return <PostHogWithoutClerk>{children}</PostHogWithoutClerk>;
+  }
+
+  return <PostHogWithClerk>{children}</PostHogWithClerk>;
 }

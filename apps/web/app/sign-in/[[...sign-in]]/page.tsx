@@ -1,6 +1,16 @@
 import { SignIn } from "@clerk/nextjs";
 
 export default function SignInPage() {
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-black p-6 text-center">
+        <p className="text-sm text-gray-300">
+          Sign-in is unavailable in this preview deployment because Clerk is not configured.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-black">
       <SignIn

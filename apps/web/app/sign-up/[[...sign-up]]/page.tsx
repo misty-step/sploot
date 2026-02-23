@@ -1,6 +1,16 @@
 import { SignUp } from "@clerk/nextjs";
 
 export default function SignUpPage() {
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-black p-6 text-center">
+        <p className="text-sm text-gray-300">
+          Sign-up is unavailable in this preview deployment because Clerk is not configured.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 to-black">
       <SignUp
