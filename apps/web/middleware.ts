@@ -20,7 +20,11 @@ const isPublicRoute = createRouteMatcher([
 
 export default clerkMiddleware(async (auth, req) => {
   // Bypass auth for analytics and monitoring proxies
-  if (req.nextUrl.pathname.startsWith('/ingest') || req.nextUrl.pathname.startsWith('/monitoring')) {
+  const { pathname } = req.nextUrl
+  if (
+    pathname === '/ingest' || pathname.startsWith('/ingest/') ||
+    pathname === '/monitoring' || pathname.startsWith('/monitoring/')
+  ) {
     return;
   }
   if (isProtectedRoute(req)) {
