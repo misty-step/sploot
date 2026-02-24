@@ -18,6 +18,7 @@
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^12.0.2",
+    "posthog-js": "^1.352.0",
     "semantic-release": "^25.0.2",
     "turbo": "^2.3.3"
   }

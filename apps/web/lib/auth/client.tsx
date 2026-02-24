@@ -5,7 +5,7 @@ import React from 'react';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-  const isProductionDeployment = process.env.VERCEL_ENV === 'production';
+  const isProductionDeployment = process.env.NEXT_PUBLIC_VERCEL_ENV === 'production';
 
   if (!publishableKey) {
     if (isProductionDeployment) {
