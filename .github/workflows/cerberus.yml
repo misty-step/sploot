@@ -29,6 +29,9 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - name: Ensure pnpm store path exists for setup-node cache post-step
+        run: mkdir -p "$(pnpm store path --silent)"
       - uses: misty-step/cerberus@v1
         with:
           perspective: ${{ matrix.perspective }}
