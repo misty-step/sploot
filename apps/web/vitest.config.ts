@@ -5,6 +5,10 @@ import path from 'path';
 export default defineConfig({
   plugins: [react()],
   test: {
+    pool: 'forks',
+    poolOptions: {
+      forks: { maxForks: 4 },
+    },
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
     globals: true,
