@@ -1,0 +1,26 @@
+# Lefthook configuration for comprehensive pre-commit hooks
+
+pre-commit:
+  commands:
+    lint:
+      run: bun lint
+    type-check:
+      run: bun tsc --noEmit
+    test:
+      run: bun test
+    format:
+      run: bun format
+
+pre-push:
+  commands:
+    test:
+      run: bun test
+    build:
+      run: bun run build
+
+commit-msg:
+  commands:
+    validate:
+      run: "grep -q '^feat\|fix\|docs\|style\|refactor\|perf\|test\|chore\|revert' "$1""
+      
+# Source: https://github.com/evilmartians/lefthook/blob/master/templates/standard.yml
