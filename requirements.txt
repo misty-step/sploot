@@ -38,3 +38,7 @@ croniter
 python-telegram-bot>=20.0
 discord.py>=2.0
 aiohttp>=3.9.0
+
+# Monitoring dependencies
+sentry-sdk[flask,celery,redis,sqlalchemy]>=2.0.0
+posthog>=2.0.0
