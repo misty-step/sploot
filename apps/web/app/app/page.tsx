@@ -540,9 +540,9 @@ function AppPageClient() {
         });
       }
 
-      setSelectedAsset(asset);
+      router.push(`/app/meme/${asset.id}`);
     },
-    [filteredSearchAssets, isSearching]
+    [filteredSearchAssets, isSearching, router]
   );
 
   // Handler for performing the actual delete with modal integration
