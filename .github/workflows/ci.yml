@@ -94,3 +94,17 @@ jobs:
           name: extension-dist
           path: apps/extension/.output/
           retention-days: 7
+
+  merge-gate:
+    name: merge-gate
+    if: always()
+    needs: [build, extension-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required jobs
+        run: |
+          if [[ "${{ needs.build.result }}" != "success" || "${{ needs.extension-build.result }}" != "success" ]]; then
+            echo "Required jobs failed or were cancelled"
+            exit 1
+          fi
+          echo "All required jobs passed"
