@@ -37,8 +37,8 @@ export function Navbar({
         'fixed top-0 left-0 right-0',
         // Z-index to stay above content
         'z-50',
-        // Height: 64px
-        'h-16',
+        // Height: 48px mobile, 64px desktop
+        'h-12 md:h-16',
         // iOS PWA safe area support - push navbar below status bar/notch
         'pt-[env(safe-area-inset-top)]',
         'pl-[env(safe-area-inset-left)]',
@@ -64,12 +64,12 @@ export function Navbar({
           {/* Overlapping circles logo */}
           <OverlappingCircles
             strokeWidth={3}
-            className="w-8 h-8"
+            className="w-6 h-6 md:w-8 md:h-8"
           />
 
           {/* SPLOOT wordmark in Bebas Neue */}
           <span
-            className="text-2xl text-accent-cyan tracking-wider"
+            className="text-xl md:text-2xl text-accent-cyan tracking-wider"
             style={{ fontFamily: "var(--font-bebas-neue)" }}
           >
             SPLOOT
@@ -112,5 +112,5 @@ export function Navbar({
  * Accounts for both navbar height (64px/4rem) and iOS safe area inset
  */
 export function NavbarSpacer() {
-  return <div className="h-[calc(4rem+env(safe-area-inset-top))]" />;
+  return <div className="h-[calc(3rem+env(safe-area-inset-top))] md:h-[calc(4rem+env(safe-area-inset-top))]" />;
 }

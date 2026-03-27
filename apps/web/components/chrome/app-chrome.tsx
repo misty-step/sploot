@@ -47,7 +47,7 @@ export function AppChrome({ children }: AppChromeProps) {
       <NavbarSpacer />
 
       {/* Main content */}
-      <main className="min-h-[calc(100vh-56px)]">
+      <main className="min-h-[calc(100vh-48px)] md:min-h-[calc(100vh-56px)]">
         {children}
       </main>
     </>

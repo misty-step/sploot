@@ -6,5 +6,5 @@
  * Spacer for navbar height (56px)
  */
 export function NavbarSpacer() {
-  return <div className="h-14" />;
+  return <div className="h-12 md:h-14" />;
 }
