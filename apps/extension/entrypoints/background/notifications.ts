@@ -56,7 +56,7 @@ export function showErrorNotification(errorMessage: string): void {
   } else if (errorMessage.includes('Session expired')) {
     userMessage = 'Session expired. Please login again.';
   } else if (errorMessage.includes('too large')) {
-    userMessage = 'Image too large (max 10MB)';
+    userMessage = 'Image too large after compression.';
   } else if (errorMessage.includes('timeout')) {
     userMessage = 'Upload timeout. Please try again.';
   } else if (errorMessage.includes('Network error')) {

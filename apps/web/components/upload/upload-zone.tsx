@@ -24,6 +24,7 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { UPLOAD, prepareImageForUpload } from '@sploot/common';
 
 // Lightweight metadata for display - only ~300 bytes per file vs 5MB for File object
 interface FileMetadata {
@@ -100,6 +101,41 @@ export function UploadZone({
   const router = useRouter();
   const uploadQueueManager = getUploadQueueManager();
   const { validateFile, ALLOWED_FILE_TYPES } = useFileValidation();
+
+  const getMultipartSizeError = useCallback((file: File) =>
+    `too chunky for upload: ${file.name}. tried shrinking it, still over ${(UPLOAD.multipartSafeSize / 1024 / 1024).toFixed(0)}mb.`,
+  []);
+
+  const prepareFile = useCallback(async (file: File): Promise<{ file: File; error: string | null }> => {
+    try {
+      const prepared = await prepareImageForUpload(file);
+      const validationError = validateFile(prepared.file);
+
+      if (validationError) {
+        return { file: prepared.file, error: validationError };
+      }
+
+      if (prepared.file.size > UPLOAD.multipartSafeSize) {
+        return {
+          file: prepared.file,
+          error: getMultipartSizeError(file),
+        };
+      }
+
+      return { file: prepared.file, error: null };
+    } catch (error) {
+      logger.warn('[UploadZone] Image preparation failed', {
+        filename: file.name,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      const validationError = validateFile(file);
+      return {
+        file,
+        error: validationError || (file.size > UPLOAD.multipartSafeSize ? getMultipartSizeError(file) : null),
+      };
+    }
+  }, [getMultipartSizeError, validateFile]);
 
   // Progress throttling to reduce re-renders
   const progressThrottleMap = useRef<Map<string, { lastUpdate: number; lastPercent: number }>>(new Map());
@@ -705,46 +741,48 @@ export function UploadZone({
     // Process each chunk with a small delay to allow UI to breathe
     for (const chunk of chunks) {
       for (const file of chunk) {
-        const error = validateFile(file);
+        const prepared = await prepareFile(file);
+        const uploadFile = prepared.file;
+        const error = prepared.error;
         const id = `${Date.now()}-${Math.random()}`;
 
         if (error) {
           const metadata: FileMetadata = {
             id,
-            name: file.name,
-            size: file.size,
+            name: uploadFile.name,
+            size: uploadFile.size,
             status: 'error',
             progress: 0,
             error,
             addedAt: Date.now()
           };
           metadataToAdd.set(id, metadata);
-          fileObjects.current.set(id, file);
+          fileObjects.current.set(id, uploadFile);
         } else if (isOffline && supportsBackgroundSync) {
           // Use background sync when offline
-          const syncId = await addToBackgroundSync(file);
+          const syncId = await addToBackgroundSync(uploadFile);
           const metadata: FileMetadata = {
             id: syncId,
-            name: file.name,
-            size: file.size,
+            name: uploadFile.name,
+            size: uploadFile.size,
             status: 'queued',
             progress: 0,
             addedAt: Date.now()
           };
           metadataToAdd.set(syncId, metadata);
-          fileObjects.current.set(syncId, file);
+          fileObjects.current.set(syncId, uploadFile);
         } else {
           // Upload immediately or use fallback
           const metadata: FileMetadata = {
             id,
-            name: file.name,
-            size: file.size,
+            name: uploadFile.name,
+            size: uploadFile.size,
             status: 'pending',
             progress: 0,
             addedAt: Date.now()
           };
           metadataToAdd.set(id, metadata);
-          fileObjects.current.set(id, file);
+          fileObjects.current.set(id, uploadFile);
           filesToUpload.push(id);
         }
       }
@@ -773,7 +811,7 @@ export function UploadZone({
     if (!isOffline && filesToUpload.length > 0) {
       uploadBatch(filesToUpload);
     }
-  }, [isOffline, supportsBackgroundSync, addToBackgroundSync, validateFile, uploadBatch]);
+  }, [isOffline, supportsBackgroundSync, addToBackgroundSync, prepareFile, uploadBatch]);
 
   // Process files for upload with streaming generator pattern
   const processFilesWithQueue = useCallback(async (fileList: FileList | File[]) => {
@@ -834,26 +872,28 @@ export function UploadZone({
 
         // Get the original file for metadata
         const originalFile = fileListToProcess[processedCount - 1];
-        const error = validateFile(originalFile);
+        const prepared = await prepareFile(originalFile);
+        const uploadFile = prepared.file;
+        const error = prepared.error;
 
       // If offline, queue the file instead of uploading
       if (isOffline && !error) {
-        const queueItem = addToQueue(originalFile);
+        const queueItem = addToQueue(uploadFile);
         const metadata: FileMetadata = {
           id: queueItem.id,
-          name: originalFile.name,
-          size: originalFile.size,
+          name: uploadFile.name,
+          size: uploadFile.size,
           status: 'queued',
           progress: 0,
           error: undefined,
           addedAt: Date.now()
         };
         newFiles.push(metadata);
-        fileObjects.current.set(queueItem.id, originalFile);
+        fileObjects.current.set(queueItem.id, uploadFile);
 
         // Also persist to IndexedDB for recovery
         try {
-          await uploadQueueManager.addUpload(originalFile);
+          await uploadQueueManager.addUpload(uploadFile);
         } catch (err) {
           console.error('[UploadZone] Failed to persist upload:', err);
         }
@@ -861,20 +901,20 @@ export function UploadZone({
         const id = `${Date.now()}-${Math.random()}`;
         const metadata: FileMetadata = {
           id,
-          name: originalFile.name,
-          size: originalFile.size,
+          name: uploadFile.name,
+          size: uploadFile.size,
           status: error ? 'error' : 'pending',
           progress: 0,
           error: error || undefined,
           addedAt: Date.now()
         };
         newFiles.push(metadata);
-        fileObjects.current.set(id, originalFile);
+        fileObjects.current.set(id, uploadFile);
 
         // Persist pending uploads to IndexedDB
         if (!error && metadata.status === 'pending') {
           try {
-            const persistedId = await uploadQueueManager.addUpload(originalFile);
+            const persistedId = await uploadQueueManager.addUpload(uploadFile);
             // Store the persisted ID for later removal
             (metadata as any).persistedId = persistedId;
           } catch (err) {
@@ -967,7 +1007,7 @@ export function UploadZone({
         uploadBatch(filesToUpload);
       }
     }
-  }, [isOffline, addToQueue, validateFile, uploadBatch]);
+  }, [isOffline, addToQueue, prepareFile, uploadBatch]);
 
   // Choose the appropriate file processor based on enableBackgroundSync
   const processFiles = enableBackgroundSync ? processFilesWithSync : processFilesWithQueue;
