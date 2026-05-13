@@ -10,6 +10,16 @@ export const UPLOAD = {
   maxSize: 10 * 1024 * 1024,
   /** Maximum file size in MB for display */
   maxSizeMB: 10,
+  /** Safe multipart payload budget for Vercel Functions (4.5MB hard limit) */
+  multipartSafeSize: 4 * 1024 * 1024,
+  /** Compression target leaves room for multipart overhead */
+  compressionTargetSize: Math.floor(3.8 * 1024 * 1024),
+  /** Maximum static image edge before upload */
+  maxImageDimension: 2048,
+  /** Initial browser re-encode quality for static images */
+  compressionQuality: 0.86,
+  /** Lowest browser re-encode quality before giving up */
+  minimumCompressionQuality: 0.62,
   /** Upload timeout in milliseconds */
   timeout: 10_000,
   /** Allowed MIME types for image uploads */

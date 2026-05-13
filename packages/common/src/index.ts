@@ -13,5 +13,12 @@ export {
   isValidFileSize,
 } from './constants';
 
+export {
+  prepareImageForUpload,
+  isCompressibleImageType,
+  shouldPrepareImage,
+  type PreparedImage,
+} from './image-preparation';
+
 // API Types
 export type { SplootApiUploadResponse, SplootApiError } from './types';

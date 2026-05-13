@@ -84,7 +84,7 @@ export async function uploadImage(
       }
 
       if (response.status === 413) {
-        throw new Error(`Image too large (max ${UPLOAD.maxSizeMB}MB)`);
+        throw new Error('Image too large after compression.');
       }
 
       if (response.status === 429) {
