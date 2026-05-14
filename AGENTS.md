@@ -19,8 +19,8 @@ Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 15 app, API rou
 - Default base branch is `origin/master`.
 - Use `DATABASE_URL` for Prisma; do not invent env aliases.
 - `@sploot/common` is the source of truth for upload limits, MIME validation, and shared API types.
-- Source of truth for work tracking is GitHub Issues, not `backlog.d`.
-- Closure requires issue reference plus conventional commit or trailer linkage.
+- Source of truth for work tracking is local markdown files in `backlog.d/`, not GitHub Issues.
+- Closure requires the backlog item to move to `backlog.d/_done/` with a `What Was Built` note plus conventional commit or `Backlog: backlog.d/<id>-<slug>.md` trailer linkage.
 - Web deploy and extension release are separate surfaces.
 
 ## Gate Contract
@@ -34,16 +34,16 @@ Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web t
 | Sentry #7117400497 / PR #151 | `apps/web/app/api/health/route.ts` | Stale Prisma serverless connections need runtime health evidence on future DB health changes. |
 | GitHub PR #142 | embedding scheduler/rate-limit modules | Embedding spikes and duplicate job pressure are production risks; test scheduling and cost controls directly. |
 | GitHub PR #153 | `.github/workflows/release.yml` | Semantic-release depends on `GH_RELEASE_TOKEN`; release fixes must prove token path without weakening permissions. |
-| GitHub issue refs required | `apps/web/docs/API.md` | API docs are hand maintained and can drift from route behavior. |
+| Backlog refs required | `apps/web/docs/API.md` | API docs are hand maintained and can drift from route behavior. |
 
 ## Harness Index
 
 | Skill | What it does here |
 |---|---|
 | `research` | Triangulates Sploot stack facts from local docs plus primary docs for Next/WXT/Clerk/Prisma/Neon/Vercel/Sentry/Replicate. |
-| `groom` | Refreshes the GitHub Issues backlog from PRs, commits, Sentry incidents, release notes, docs, and code debt. |
+| `groom` | Refreshes `backlog.d/` from PRs, commits, Sentry incidents, release notes, docs, and code debt. |
 | `shape` | Produces context packets with web/extension/common boundaries and CI parity oracle. |
-| `implement` | Builds from issues or packets with TDD and Sploot mocking boundaries. |
+| `implement` | Builds from backlog items or packets with TDD and Sploot mocking boundaries. |
 | `qa` | Runs browser/API/extension/DB smoke paths beyond unit tests. |
 | `demo` | Captures screenshots, request/response snippets, artifact notes, or release blurbs. |
 | `code-review` | Reviews for auth, upload validation, Prisma/pgvector, embeddings, extension env, and release risks. |
@@ -51,11 +51,11 @@ Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web t
 | `ci` | Executes and diagnoses the CI parity gate. |
 | `diagnose` | Traces CI/Sentry/Vercel/release/extension failures source-to-sink. |
 | `monitor` | Watches health, Sentry, deploy, release, extension, and CI signals after changes. |
-| `deliver` | Composes one issue to merge-ready. |
+| `deliver` | Composes one backlog item to merge-ready. |
 | `settle` | Polishes branch/PR to merge-ready, then stops. |
-| `ship` | Lands merge-ready work with GitHub issue closure and post-merge checks. |
+| `ship` | Lands merge-ready work with local backlog closure and post-merge checks. |
 | `yeet` | Splits local changes into conventional commits and pushes. |
-| `flywheel` | Runs the issue-to-monitor outer loop. |
+| `flywheel` | Runs the backlog-to-monitor outer loop. |
 | `deploy` | Routes Vercel web deploy and extension production artifact release checks. |
 | `office-hours`, `ceo-review`, `reflect` | Universal judgment and learning protocols copied verbatim. |
 

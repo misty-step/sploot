@@ -9,17 +9,17 @@ description: |
 ## Sploot Anchors
 
 - Repo: pnpm Turborepo with `apps/web`, `apps/extension`, and `packages/common`.
-- Tracker: GitHub Issues. `backlog.d/` is not active here.
+- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not active for Sploot work tracking.
 - Base branch: `origin/master`.
 - Ship gate: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with DB-backed paths requiring `DATABASE_URL` against pgvector or an explicit unverified note.
 - Remote CI: frozen install, web Prisma migrate against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension build.
-- Closure: issue reference plus Conventional Commit subject/body or explicit trailers (`Refs: #123`, `Closes: #123`, `Refs-issue: #123`).
+- Closure: backlog item status moves to `done` with a `What Was Built` note plus Conventional Commit subject/body or an explicit `Backlog: backlog.d/<id>-<slug>.md` trailer.
 
 ## How This Skill Works Here
 
 Polish a branch or PR until it is merge-ready. Preconditions: not on `master`, no unresolved merge/rebase, worktree state understood, branch has commits beyond `origin/master`. Loop through `/ci`, GitHub PR checks and review comments, `/code-review`, `/refactor`, and targeted `/qa`.
 
-Stop at merge-ready. Do not merge, deploy, close issues, or reflect; hand off to `/ship`. The lifecycle gate blocks merge-ready claims unless issue linkage and CI parity evidence are present.
+Stop at merge-ready. Do not merge, deploy, archive backlog items, or reflect; hand off to `/ship`. The lifecycle gate blocks merge-ready claims unless backlog linkage and CI parity evidence are present.
 
 ## Output Contract
 
