@@ -19,7 +19,7 @@ description: |
 
 Review for Sploot regressions first: auth bypass in API routes, upload validation drift between apps, Prisma raw SQL, pgvector query correctness, embedding job fanout/cost, serverless connection handling, extension env mistakes, and docs drift in `apps/web/docs/API.md`.
 
-Use Cerberus as an additional signal when present, not as the final verdict. Findings lead, ordered by severity, with file/line references and exact runtime impact.
+Use the local diff, GitHub PR context, CI results, and repo docs as evidence. Findings lead, ordered by severity, with file/line references and exact runtime impact.
 
 ## Output Contract
 

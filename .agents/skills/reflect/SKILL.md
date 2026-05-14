@@ -14,7 +14,7 @@ Reflect after meaningful Sploot work. The goal is not journaling; it is durable 
 - Tracker: GitHub Issues. `backlog.d/` is not active here.
 - Base branch: `origin/master`.
 - Ship gate: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with DB-backed paths requiring `DATABASE_URL` against pgvector or explicit unverified evidence.
-- Production signals: Vercel web deploys, Sentry, semantic-release, Cerberus, extension artifacts under `apps/extension/.output/`.
+- Production signals: Vercel web deploys, Sentry, semantic-release, GitHub Actions CI, extension artifacts under `apps/extension/.output/`.
 
 ## Protocol
 

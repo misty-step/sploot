@@ -17,7 +17,7 @@ description: |
 
 ## How This Skill Works Here
 
-Polish a branch or PR until it is merge-ready. Preconditions: not on `master`, no unresolved merge/rebase, worktree state understood, branch has commits beyond `origin/master`. Loop through `/ci`, PR checks, Cerberus/review comments, `/code-review`, `/refactor`, and targeted `/qa`.
+Polish a branch or PR until it is merge-ready. Preconditions: not on `master`, no unresolved merge/rebase, worktree state understood, branch has commits beyond `origin/master`. Loop through `/ci`, GitHub PR checks and review comments, `/code-review`, `/refactor`, and targeted `/qa`.
 
 Stop at merge-ready. Do not merge, deploy, close issues, or reflect; hand off to `/ship`. The lifecycle gate blocks merge-ready claims unless issue linkage and CI parity evidence are present.
 

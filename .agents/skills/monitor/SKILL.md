@@ -17,7 +17,7 @@ description: |
 
 ## How This Skill Works Here
 
-Watch signals after merge/deploy/release. For web: Vercel deploy status, `/api/health`, `/api/db-ping`, Sentry, structured logs, and release notes. For extension: build artifact presence, manual Chrome smoke, and store-submission status when available. For CI-only changes: subsequent GitHub Actions runs and Cerberus verdicts.
+Watch signals after merge/deploy/release. For web: Vercel deploy status, `/api/health`, `/api/db-ping`, Sentry, structured logs, and release notes. For extension: build artifact presence, manual Chrome smoke, and store-submission status when available. For CI-only changes: subsequent GitHub Actions runs.
 
 Monitor emits a clean result or escalates to `/diagnose`; it does not patch code.
 

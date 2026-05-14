@@ -11,7 +11,7 @@ Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 15 app, API rou
 - Web API docs: `apps/web/docs/API.md` must stay synced with route behavior
 - Shared upload/API contract: `packages/common/src/*`
 - Prisma schema/migrations: `apps/web/prisma`
-- CI: `.github/workflows/ci.yml`; release: `.github/workflows/release.yml`; AI review: `.github/workflows/cerberus.yml`
+- CI: `.github/workflows/ci.yml`; release: `.github/workflows/release.yml`
 
 ## Invariants
 
