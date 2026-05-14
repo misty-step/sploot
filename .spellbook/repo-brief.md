@@ -31,7 +31,7 @@ Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web t
 - Sentry #7117400497: stale Prisma serverless connection surfaced in `GET /api/health`; health and DB-ping paths need runtime proof, not adjacent test confidence.
 - Embedding spikes: recent guard/rate-limit work touched `apps/web/lib/embedding-guard.ts`, `apps/web/lib/embedding-rate-limit.ts`, `apps/web/lib/embeddings.ts`, and scheduler routes. Treat embedding cost and duplicate job pressure as production risks.
 - Release automation is sensitive to `GH_RELEASE_TOKEN`; semantic-release updates `CHANGELOG.md` and `package.json` on `master`.
-- Cerberus PR review runs through `.github/workflows/cerberus.yml`; review guidance should account for that external AI reviewer as a signal, not a substitute for local review.
+- Cerberus PR review was removed from `.github/workflows`; review and readiness guidance now depend on local code review plus GitHub Actions CI, not an AI-review workflow.
 - API docs under `apps/web/docs/API.md` are hand maintained and can drift from routes.
 
 ## Terminology

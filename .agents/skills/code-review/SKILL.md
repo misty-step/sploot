@@ -9,17 +9,17 @@ description: |
 ## Sploot Anchors
 
 - Repo: pnpm Turborepo with `apps/web`, `apps/extension`, and `packages/common`.
-- Tracker: GitHub Issues. `backlog.d/` is not active here.
+- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not active for Sploot work tracking.
 - Base branch: `origin/master`.
 - Ship gate: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with DB-backed paths requiring `DATABASE_URL` against pgvector or an explicit unverified note.
 - Remote CI: frozen install, web Prisma migrate against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension build.
-- Closure: issue reference plus Conventional Commit subject/body or explicit trailers (`Refs: #123`, `Closes: #123`, `Refs-issue: #123`).
+- Closure: backlog item status moves to `done` with a `What Was Built` note plus Conventional Commit subject/body or an explicit `Backlog: backlog.d/<id>-<slug>.md` trailer.
 
 ## How This Skill Works Here
 
 Review for Sploot regressions first: auth bypass in API routes, upload validation drift between apps, Prisma raw SQL, pgvector query correctness, embedding job fanout/cost, serverless connection handling, extension env mistakes, and docs drift in `apps/web/docs/API.md`.
 
-Use Cerberus as an additional signal when present, not as the final verdict. Findings lead, ordered by severity, with file/line references and exact runtime impact.
+Use the local diff, GitHub PR context, CI results, and repo docs as evidence. Findings lead, ordered by severity, with file/line references and exact runtime impact.
 
 ## Output Contract
 
