@@ -1,0 +1,8 @@
+# Repo-local Codex config for Sploot.
+# Command authorization is intentionally absent here: Codex command policy is
+# controlled by top-level approval_policy and sandbox_mode, while this file is
+# for repo-local skills/MCP-style configuration. Do not add a [permissions]
+# command allowlist; Codex expects filesystem permission structs there.
+
+[skills]
+roots = ["../.agents/skills"]
