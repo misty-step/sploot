@@ -17,9 +17,11 @@ description: |
 
 ## How This Skill Works Here
 
-Take one local backlog item or shaped packet to merge-ready. Compose `/shape -> /implement -> /ci -> /code-review -> /refactor -> /qa`; stop before merge.
+When invoked without an explicit backlog item, inspect active top-level `backlog.d/*.md` tickets and select the highest-priority item whose `Status:` is `ready`, using the ticket number as the tie-breaker. Do not ask the operator to choose while `Priority:` and `Status:` provide a deterministic next item. If no ready item exists, say that and stop.
 
-The delivery receipt must name backlog refs, changed surfaces (`apps/web`, `apps/extension`, `packages/common`, CI/release), CI parity evidence, DB/pgvector verification status, and residual deploy/release risk. Delivered does not mean shipped.
+Take the selected local backlog item or shaped packet to merge-ready. Compose `/shape -> /implement -> /ci -> /code-review -> /refactor -> /qa`; stop before merge, push, deploy, or backlog archival.
+
+The delivery receipt must name the selected backlog ref, changed surfaces (`apps/web`, `apps/extension`, `packages/common`, CI/release), CI parity evidence, DB/pgvector verification status, and residual deploy/release risk. Delivered does not mean shipped.
 
 ## Output Contract
 

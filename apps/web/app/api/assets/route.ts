@@ -16,6 +16,21 @@ import { getDbFingerprint } from '@/lib/db-fingerprint';
 // Shuffle seed range: 0-1000000 for user-friendly integer values
 // Normalized to 0.0-1.0 for PostgreSQL setseed() in shuffle queries
 const MAX_SHUFFLE_SEED = 1000000;
+const MIN_ASSET_LIMIT = 1;
+const MAX_ASSET_LIMIT = 100;
+
+function parseUnsignedIntegerParam(value: string | null, defaultValue: number): number | null {
+  if (value === null) {
+    return defaultValue;
+  }
+
+  if (!/^\d+$/.test(value)) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
 
 async function postHandler(req: NextRequest) {
   const requestId = crypto.randomUUID();
@@ -191,13 +206,30 @@ async function getHandler(req: NextRequest) {
   try {
     // Parse query params INSIDE try block to catch URL parsing errors
     const { searchParams } = new URL(req.url);
-    limit = parseInt(searchParams.get('limit') || '50', 10);
-    offset = parseInt(searchParams.get('offset') || '0', 10);
+    const parsedLimit = parseUnsignedIntegerParam(searchParams.get('limit'), 50);
+    const parsedOffset = parseUnsignedIntegerParam(searchParams.get('offset'), 0);
+
+    if (parsedLimit === null || parsedLimit < MIN_ASSET_LIMIT || parsedLimit > MAX_ASSET_LIMIT) {
+      return NextResponse.json(
+        { error: `Invalid limit parameter. Must be integer ${MIN_ASSET_LIMIT}-${MAX_ASSET_LIMIT}.` },
+        { status: 400 }
+      );
+    }
+
+    if (parsedOffset === null) {
+      return NextResponse.json(
+        { error: 'Invalid offset parameter. Must be a non-negative integer.' },
+        { status: 400 }
+      );
+    }
+
+    limit = parsedLimit;
+    offset = parsedOffset;
 
     // Validate and type-cast sortBy to valid field names
     // Accept both database columns and special modes like 'shuffle'
     const sortByParam = searchParams.get('sortBy') || 'createdAt';
-    const validSortFields = ['createdAt', 'updatedAt', 'shuffle', 'pathname', 'size', 'favorite'] as const;
+    const isShuffle = sortByParam === 'shuffle';
     // For non-shuffle queries, only createdAt and updatedAt are supported
     // (shuffle mode uses raw SQL, size/pathname/favorite need ORM implementation)
     sortBy = (sortByParam === 'createdAt' || sortByParam === 'updatedAt')
@@ -210,9 +242,23 @@ async function getHandler(req: NextRequest) {
 
     // Parse and validate shuffleSeed
     const shuffleSeedParam = searchParams.get('shuffleSeed');
+    if (isShuffle && !shuffleSeedParam) {
+      return NextResponse.json(
+        { error: 'shuffleSeed is required when sortBy=shuffle.' },
+        { status: 400 }
+      );
+    }
+
+    if (!isShuffle && shuffleSeedParam) {
+      return NextResponse.json(
+        { error: 'shuffleSeed is only supported when sortBy=shuffle.' },
+        { status: 400 }
+      );
+    }
+
     if (shuffleSeedParam) {
-      const parsed = parseInt(shuffleSeedParam, 10);
-      if (isNaN(parsed) || parsed < 0 || parsed > MAX_SHUFFLE_SEED) {
+      const parsed = parseUnsignedIntegerParam(shuffleSeedParam, 0);
+      if (parsed === null || parsed > MAX_SHUFFLE_SEED) {
         return NextResponse.json(
           { error: `Invalid shuffleSeed parameter. Must be integer 0-${MAX_SHUFFLE_SEED}.` },
           { status: 400 }
