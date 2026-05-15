@@ -1,0 +1,90 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SplootApiUploadResponse } from '@sploot/common';
+import { toUploadResult } from './upload-response';
+
+vi.mock('@clerk/chrome-extension/background', () => ({
+  createClerkClient: vi.fn(async () => ({
+    session: {
+      id: 'session_123',
+      user: { id: 'user_123' },
+      expireAt: new Date('2026-05-14T12:00:00.000Z'),
+      getToken: vi.fn(async () => 'session-token'),
+    },
+  })),
+}));
+
+beforeEach(() => {
+  vi.resetModules();
+  vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_contract');
+  vi.stubEnv('VITE_CLERK_SYNC_HOST', 'https://sploot.test');
+  vi.stubEnv('VITE_API_BASE_URL', 'https://sploot.test');
+});
+
+describe('toUploadResult', () => {
+  it('maps the shared upload response asset into the extension upload result', () => {
+    const response: SplootApiUploadResponse = {
+      success: true,
+      isDuplicate: false,
+      asset: {
+        id: 'asset_123',
+        blobUrl: 'https://blob.vercel-storage.com/u/asset.jpg',
+        pathname: 'u/asset.jpg',
+        filename: 'asset.jpg',
+        mimeType: 'image/jpeg',
+        size: 2048,
+        checksum: 'sha256:abc123',
+        createdAt: '2026-05-14T12:00:00.000Z',
+        needsEmbedding: true,
+      },
+    };
+
+    expect(toUploadResult(response)).toEqual({
+      assetId: 'asset_123',
+      blobUrl: 'https://blob.vercel-storage.com/u/asset.jpg',
+      thumbnailUrl: 'https://blob.vercel-storage.com/u/asset.jpg',
+    });
+  });
+});
+
+describe('uploadImage', () => {
+  it('returns assetId and blobUrl from the shared upload response asset', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({
+        success: true,
+        isDuplicate: false,
+        asset: {
+          id: 'asset_123',
+          blobUrl: 'https://blob.vercel-storage.com/u/asset.jpg',
+          pathname: 'u/asset.jpg',
+          filename: 'asset.jpg',
+          mimeType: 'image/jpeg',
+          size: 2048,
+          checksum: 'sha256:abc123',
+          createdAt: '2026-05-14T12:00:00.000Z',
+          needsEmbedding: true,
+        },
+      } satisfies SplootApiUploadResponse), { status: 201 }))
+    );
+
+    const { uploadImage } = await import('./api-client');
+
+    await expect(
+      uploadImage(new Blob(['image'], { type: 'image/jpeg' }), 'asset.jpg')
+    ).resolves.toEqual({
+      assetId: 'asset_123',
+      blobUrl: 'https://blob.vercel-storage.com/u/asset.jpg',
+      thumbnailUrl: 'https://blob.vercel-storage.com/u/asset.jpg',
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://sploot.test/api/upload',
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer session-token',
+        },
+      })
+    );
+  });
+});

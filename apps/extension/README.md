@@ -20,9 +20,14 @@ Create `.env` (dev) or `.env.production` (prod):
 ```env
 # Must match the Web App's keys
 VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+VITE_CLERK_SYNC_HOST=http://localhost:3001
 CLERK_SECRET_KEY=sk_test_...
-VITE_API_BASE_URL=http://localhost:3001 # or https://www.sploot.app
+VITE_API_BASE_URL=http://localhost:3001 # or https://sploot.app
 ```
+
+The web app must trust this extension ID too. After `pnpm generate:crx-key`,
+add `chrome-extension://<generated-extension-id>` to the web app's
+`CLERK_AUTHORIZED_PARTIES` along with the target API origin.
 
 ### 2. Development
 
@@ -38,6 +43,14 @@ pnpm build:prod
 ```
 
 Output is generated in `dist/chrome-mv3`.
+
+For production-like unpacked QA with a stable extension ID:
+
+```bash
+VITE_API_BASE_URL=https://sploot.app \
+VITE_CLERK_SYNC_HOST=https://clerk.sploot.app \
+pnpm build:prod:unpacked
+```
 
 ### 4. Installation (Manual)
 

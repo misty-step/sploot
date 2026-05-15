@@ -25,6 +25,13 @@ pnpm --filter extension setup:clerk
 pnpm dev:extension
 ```
 
+the web app must also trust the same extension origin for Clerk bearer-token
+verification:
+
+```env
+CLERK_AUTHORIZED_PARTIES=https://sploot.app,https://www.sploot.app,http://localhost:3001,chrome-extension://<extension-id>
+```
+
 load unpacked:
 1. open `chrome://extensions`
 2. enable dev mode

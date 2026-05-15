@@ -102,6 +102,66 @@ Generate a pre-signed URL for direct client-side upload to Vercel Blob storage.
 - 401: Unauthorized
 - 500: Server error
 
+#### POST /api/upload
+
+upload an image through the api. this is the contract used by the chrome extension.
+
+**Authentication:** Required
+
+**Request:** `multipart/form-data`
+
+**Form Fields:**
+- `file` (file, required): Image file to upload
+- `tags` (json array, optional): Tag names to attach
+- `metadata` (json object, optional): Client metadata
+
+**Success Response (201):**
+```json
+{
+  "success": true,
+  "isDuplicate": false,
+  "asset": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+    "pathname": "user123/funny-meme.jpg",
+    "filename": "funny-meme.jpg",
+    "mimeType": "image/jpeg",
+    "size": 2048576,
+    "checksum": "sha256:abc123...",
+    "createdAt": "2026-05-14T12:00:00.000Z",
+    "needsEmbedding": true
+  },
+  "message": "Upload successful"
+}
+```
+
+**Duplicate Response (409):**
+```json
+{
+  "success": true,
+  "isDuplicate": true,
+  "asset": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+    "pathname": "user123/funny-meme.jpg",
+    "filename": "funny-meme.jpg",
+    "mimeType": "image/jpeg",
+    "size": 2048576,
+    "checksum": "sha256:abc123...",
+    "createdAt": "2026-05-14T12:00:00.000Z",
+    "needsEmbedding": false
+  },
+  "message": "This image already exists in your library"
+}
+```
+
+**Error Responses:**
+- 400: Missing file or invalid upload
+- 401: Unauthorized
+- 413: Image too large
+- 429: Too many uploads
+- 500: Server error
+
 ---
 
 ### Asset Management
@@ -647,39 +707,16 @@ ws.on('embedding:completed', (data) => {
 ```typescript
 // Using the API with fetch
 async function uploadMeme(file: File) {
-  // Step 1: Get upload URL
-  const uploadUrlRes = await fetch('/api/upload-url', {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const uploadRes = await fetch('/api/upload', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      filename: file.name,
-      mimeType: file.type,
-      size: file.size
-    })
+    body: formData
   });
 
-  const { uploadUrl, blobUrl } = await uploadUrlRes.json();
-
-  // Step 2: Upload directly to blob storage
-  await fetch(uploadUrl, {
-    method: 'PUT',
-    body: file
-  });
-
-  // Step 3: Create asset record
-  const assetRes = await fetch('/api/assets', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      blobUrl,
-      filename: file.name,
-      mimeType: file.type,
-      size: file.size,
-      checksum: await calculateSHA256(file)
-    })
-  });
-
-  return await assetRes.json();
+  const data = await uploadRes.json();
+  return data.asset;
 }
 
 // Search for memes

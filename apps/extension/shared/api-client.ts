@@ -5,9 +5,10 @@
  * Hides FormData construction, auth headers, error handling.
  */
 
-import { UPLOAD } from '@sploot/common';
+import { UPLOAD, type SplootApiUploadResponse } from '@sploot/common';
 import { getAuthToken } from '../entrypoints/background/auth-manager';
-import { CLERK_ENVIRONMENT, SPLOOT_API_BASE_URL } from './env';
+import { assertExtensionConfig, CLERK_ENVIRONMENT, SPLOOT_API_BASE_URL } from './env';
+import { toUploadResult, type UploadResult } from './upload-response';
 
 const API_BASE_URL = SPLOOT_API_BASE_URL;
 
@@ -15,12 +16,6 @@ console.log('[ApiClient] Initialized', {
   apiBaseUrl: API_BASE_URL,
   environment: CLERK_ENVIRONMENT,
 });
-
-export interface UploadResult {
-  assetId: string;
-  blobUrl: string;
-  thumbnailUrl: string;
-}
 
 /**
  * Upload image to Sploot
@@ -34,6 +29,8 @@ export async function uploadImage(
   blob: Blob,
   filename?: string
 ): Promise<UploadResult> {
+  assertExtensionConfig();
+
   // Get auth token
   const token = await getAuthToken();
   if (!token) {
@@ -106,18 +103,15 @@ export async function uploadImage(
     }
 
     // Parse successful response
-    const data = await response.json();
+    const data = (await response.json()) as SplootApiUploadResponse;
+    const uploadResult = toUploadResult(data);
 
     console.log('[ApiClient] Upload success', {
-      assetId: data.id || data.assetId,
-      blobUrl: data.blobUrl,
+      assetId: uploadResult.assetId,
+      blobUrl: uploadResult.blobUrl,
     });
 
-    return {
-      assetId: data.id || data.assetId,
-      blobUrl: data.blobUrl,
-      thumbnailUrl: data.thumbnailUrl || data.blobUrl,
-    };
+    return uploadResult;
   } catch (error) {
     clearTimeout(timeoutId);
 
