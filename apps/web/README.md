@@ -25,6 +25,7 @@ DATABASE_URL="postgresql://user:pass@ep-xxx-pooler.neon.tech/db?sslmode=require&
 # Auth (Clerk)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...
+CLERK_AUTHORIZED_PARTIES=https://sploot.app,https://www.sploot.app,http://localhost:3001,chrome-extension://<extension-id>
 
 # Storage (Vercel Blob)
 BLOB_READ_WRITE_TOKEN=vercel_blob_...
@@ -39,6 +40,10 @@ REPLICATE_API_TOKEN=r8_...
 pnpm dev
 ```
 Runs on [http://localhost:3001](http://localhost:3001).
+
+For extension QA, `CLERK_AUTHORIZED_PARTIES` must include the loaded Chrome
+extension origin (`chrome-extension://<id>`) and the local web origin used by
+`VITE_API_BASE_URL`.
 
 ### 3. Database Management
 

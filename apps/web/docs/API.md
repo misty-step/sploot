@@ -102,6 +102,66 @@ Generate a pre-signed URL for direct client-side upload to Vercel Blob storage.
 - 401: Unauthorized
 - 500: Server error
 
+#### POST /api/upload
+
+upload an image through the api. this is the contract used by the chrome extension.
+
+**Authentication:** Required
+
+**Request:** `multipart/form-data`
+
+**Form Fields:**
+- `file` (file, required): Image file to upload
+- `tags` (json array, optional): Tag names to attach
+- `metadata` (json object, optional): Client metadata
+
+**Success Response (201):**
+```json
+{
+  "success": true,
+  "isDuplicate": false,
+  "asset": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+    "pathname": "user123/funny-meme.jpg",
+    "filename": "funny-meme.jpg",
+    "mimeType": "image/jpeg",
+    "size": 2048576,
+    "checksum": "sha256:abc123...",
+    "createdAt": "2026-05-14T12:00:00.000Z",
+    "needsEmbedding": true
+  },
+  "message": "Upload successful"
+}
+```
+
+**Duplicate Response (409):**
+```json
+{
+  "success": true,
+  "isDuplicate": true,
+  "asset": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+    "pathname": "user123/funny-meme.jpg",
+    "filename": "funny-meme.jpg",
+    "mimeType": "image/jpeg",
+    "size": 2048576,
+    "checksum": "sha256:abc123...",
+    "createdAt": "2026-05-14T12:00:00.000Z",
+    "needsEmbedding": false
+  },
+  "message": "This image already exists in your library"
+}
+```
+
+**Error Responses:**
+- 400: Missing file or invalid upload
+- 401: Unauthorized
+- 413: Image too large
+- 429: Too many uploads
+- 500: Server error
+
 ---
 
 ### Asset Management
@@ -160,17 +220,23 @@ Create a new asset record after successful blob upload. Automatically generates 
 
 #### GET /api/assets
 
-List all assets for the authenticated user with pagination and filtering.
+List assets for the authenticated user with pagination, filtering, and seeded shuffle.
 
 **Authentication:** Required
 
 **Query Parameters:**
-- `limit` (number, optional): Number of results (default: 50, max: 100)
-- `offset` (number, optional): Skip first N results (default: 0)
-- `sort` (string, optional): Sort order (createdAt_desc, createdAt_asc, favorite)
-- `favoriteOnly` (boolean, optional): Filter to favorites only
-- `mimeTypes` (string, optional): Comma-separated MIME types
-- `tags` (string, optional): Comma-separated tag IDs
+- `limit` (number, optional): number of results (default: 50, min: 1, max: 100)
+- `offset` (number, optional): skip this many results (default: 0, min: 0)
+- `sortBy` (string, optional): `createdAt`, `updatedAt`, or `shuffle` (default: `createdAt`)
+- `sortOrder` (string, optional): `desc` or `asc` for non-shuffle sorts (default: `desc`)
+- `favorite` (boolean, optional): filter to favorites only
+- `tagId` (string, optional): filter to one tag id
+- `includeTags` (boolean, optional): include tag objects in each asset; enabled automatically with `tagId`
+- `shuffleSeed` (number, required when `sortBy=shuffle`): deterministic shuffle seed from `0` to `1000000`
+
+**Shuffle Contract:**
+
+Use `sortBy=shuffle&shuffleSeed=<seed>&limit=<n>` to fetch a deterministic random page of the authenticated user's assets. The same seed, filters, limit, and offset return the same PostgreSQL seeded random order while the matching asset set is unchanged. Shuffle is private to the authenticated user's library and respects `favorite`, `tagId`, `limit`, and `offset`.
 
 **Success Response (200):**
 ```json
@@ -189,11 +255,25 @@ List all assets for the authenticated user with pagination and filtering.
       "createdAt": "2025-09-16T12:00:00Z"
     }
   ],
-  "total": 150,
-  "limit": 50,
-  "offset": 0
+  "pagination": {
+    "total": 150,
+    "limit": 50,
+    "offset": 0,
+    "hasMore": true
+  }
 }
 ```
+
+**Shuffle Example:**
+
+```http
+GET /api/assets?sortBy=shuffle&shuffleSeed=424242&limit=30&offset=0
+```
+
+**Error Responses:**
+- 400: Invalid `limit`, `offset`, or `shuffleSeed`; `shuffleSeed` missing for `sortBy=shuffle`; `shuffleSeed` provided without `sortBy=shuffle`
+- 401: Unauthorized
+- 500: Server error
 
 #### GET /api/assets/{id}
 
@@ -647,39 +727,16 @@ ws.on('embedding:completed', (data) => {
 ```typescript
 // Using the API with fetch
 async function uploadMeme(file: File) {
-  // Step 1: Get upload URL
-  const uploadUrlRes = await fetch('/api/upload-url', {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const uploadRes = await fetch('/api/upload', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      filename: file.name,
-      mimeType: file.type,
-      size: file.size
-    })
+    body: formData
   });
 
-  const { uploadUrl, blobUrl } = await uploadUrlRes.json();
-
-  // Step 2: Upload directly to blob storage
-  await fetch(uploadUrl, {
-    method: 'PUT',
-    body: file
-  });
-
-  // Step 3: Create asset record
-  const assetRes = await fetch('/api/assets', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      blobUrl,
-      filename: file.name,
-      mimeType: file.type,
-      size: file.size,
-      checksum: await calculateSHA256(file)
-    })
-  });
-
-  return await assetRes.json();
+  const data = await uploadRes.json();
+  return data.asset;
 }
 
 // Search for memes

@@ -1,4 +1,5 @@
 {
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
   "crons": [
     {
       "path": "/api/cron/process-embeddings",

@@ -63,6 +63,9 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@20.19.25)(@vitest/ui@2.1.9)(jsdom@25.0.1)(lightningcss@1.30.2)(terser@5.44.1)
       wxt:
         specifier: ^0.20.11
         version: 0.20.11(@types/node@20.19.25)(jiti@2.6.1)(lightningcss@1.30.2)(rollup@4.53.3)(terser@5.44.1)(tsx@4.20.6)

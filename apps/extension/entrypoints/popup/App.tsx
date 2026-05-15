@@ -11,8 +11,9 @@ import {
   useUser,
 } from '@clerk/chrome-extension'
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
-import { CLERK_PUBLISHABLE_KEY } from '../../shared/env'
+import { EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
 import { authNavigation } from '../../shared/auth-navigation'
+import { getSplootAppUrl } from '../../shared/app-url'
 import './style.css'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
@@ -37,8 +38,16 @@ const clerkAppearance = {
 }
 
 function App() {
+  if (EXTENSION_CONFIG_ERROR) {
+    return <ConfigErrorPanel message={EXTENSION_CONFIG_ERROR} />
+  }
+
   return (
-    <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
+    <ClerkProvider
+      publishableKey={PUBLISHABLE_KEY}
+      syncHost={CLERK_SYNC_HOST}
+      __experimental_syncHostListener
+    >
       <AuthStatusReporter />
       <div className="popup-frame">
         <div className="popup-container">
@@ -78,6 +87,33 @@ function App() {
   )
 }
 
+function ConfigErrorPanel({ message }: { message: string }) {
+  return (
+    <div className="popup-frame">
+      <div className="popup-container">
+        <header>
+          <h1>
+            <img
+              src={chrome.runtime.getURL('icon-128.png')}
+              alt="Sploot"
+              className="logo-icon"
+            />
+            Sploot
+          </h1>
+        </header>
+        <main>
+          <div className="auth-panel">
+            <div className="auth-header">
+              <h2>Extension setup required</h2>
+              <p>{message}</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}
+
 function SignedInPanel() {
   const { user } = useUser()
   const { session } = useSession()
@@ -89,7 +125,7 @@ function SignedInPanel() {
     // Mark as used when opening library
     localStorage.setItem('sploot-has-used', 'true')
     setHasUsedExtension(true)
-    chrome.tabs.create({ url: 'https://sploot.app/app' })
+    chrome.tabs.create({ url: getSplootAppUrl() })
   }
 
   const handleDiagnostics = () => {

@@ -4,6 +4,8 @@
  * Shows browser notifications for upload success/errors.
  */
 
+import { getSplootAppUrl } from '../../shared/app-url';
+
 /**
  * Show success notification
  *
@@ -33,7 +35,7 @@ export function showSuccessNotification(
   // Handle notification click - open library
   const clickHandler = (clickedId: string) => {
     if (clickedId === notificationId) {
-      chrome.tabs.create({ url: 'https://sploot.app/app' });
+      chrome.tabs.create({ url: getSplootAppUrl() });
       chrome.notifications.clear(notificationId);
       chrome.notifications.onClicked.removeListener(clickHandler);
     }

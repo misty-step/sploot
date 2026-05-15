@@ -1,6 +1,11 @@
 import { createClerkClient } from '@clerk/chrome-extension/background'
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
-import { CLERK_ENVIRONMENT, CLERK_PUBLISHABLE_KEY } from '../../shared/env'
+import {
+  assertExtensionConfig,
+  CLERK_ENVIRONMENT,
+  CLERK_PUBLISHABLE_KEY,
+  CLERK_SYNC_HOST,
+} from '../../shared/env'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
 const SIGN_IN_TIMEOUT_MS = 60000
@@ -21,8 +26,11 @@ function updateCachedState(next: AuthState) {
 }
 
 async function createFreshClerkClient() {
+  assertExtensionConfig()
   return await createClerkClient({
     publishableKey: PUBLISHABLE_KEY,
+    syncHost: CLERK_SYNC_HOST,
+    __experimental_syncHostListener: true,
   })
 }
 
