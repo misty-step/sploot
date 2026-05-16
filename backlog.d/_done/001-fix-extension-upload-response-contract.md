@@ -1,3 +1,24 @@
+---
+id: 001-fix-extension-upload-response-contract
+title: Fix Extension Upload Response Contract
+status: done
+lifecycle_stage: Feedback
+owner: local
+acceptance:
+  - Contract test exercises the extension upload client against SplootApiUploadResponse.
+  - Successful nested asset response produces UploadResult.assetId and UploadResult.blobUrl.
+  - apps/web/docs/API.md examples match packages/common/src/types.ts.
+  - CI parity gate passes or narrower verification is justified.
+evidence_required:
+  - extension contract test
+  - API docs update
+  - verification command output
+refs:
+  - apps/extension/shared/api-client.ts
+  - apps/web/docs/API.md
+  - packages/common/src/types.ts
+---
+
 # Fix Extension Upload Response Contract
 
 Priority: high

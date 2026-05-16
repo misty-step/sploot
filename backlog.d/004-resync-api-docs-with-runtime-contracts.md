@@ -1,3 +1,23 @@
+---
+id: 004-resync-api-docs-with-runtime-contracts
+title: Resync API Docs With Runtime Contracts
+status: done
+lifecycle_stage: Feedback
+owner: local
+acceptance:
+  - /api/upload is documented using SplootApiUploadResponse.
+  - Upload, upload-url, embedding-status, batch embedding-status, and search examples are checked against route code or request-level tests.
+  - Stale base URLs and embedding dimension examples are fixed or explicitly marked as placeholders.
+  - Narrow docs/contract verification plus lint and type-check pass.
+evidence_required:
+  - API docs diff
+  - route/type contract review notes
+  - verification command output
+refs:
+  - apps/web/docs/API.md
+  - packages/common/src/types.ts
+---
+
 # Resync API Docs With Runtime Contracts
 
 Priority: medium

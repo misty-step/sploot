@@ -1,0 +1,51 @@
+{
+  "$schema": "../../schemas/harness-resolution.schema.json",
+  "id": "harness-sploot-0.1.0",
+  "profile": "solo-frontier",
+  "primitive_library": {
+    "name": "spellbook",
+    "role": "primary harness primitive library for skills, agents, and tailoring references"
+  },
+  "shared_skill_root": ".agents/skills",
+  "skills": [
+    "research",
+    "groom",
+    "shape",
+    "implement",
+    "qa",
+    "demo",
+    "code-review",
+    "refactor",
+    "ci",
+    "diagnose",
+    "monitor",
+    "deliver",
+    "settle",
+    "ship",
+    "yeet",
+    "flywheel",
+    "deploy",
+    "office-hours",
+    "ceo-review",
+    "reflect",
+    "harness",
+    "agent-readiness",
+    "gradient-contracts",
+    "zero-tech-debt"
+  ],
+  "agents": [
+    "planner",
+    "builder",
+    "critic",
+    "ousterhout",
+    "carmack",
+    "beck",
+    "cooper",
+    "grug"
+  ],
+  "bridges": [
+    ".claude/skills",
+    ".codex/skills",
+    ".pi/skills"
+  ]
+}

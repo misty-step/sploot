@@ -1,0 +1,99 @@
+name: sploot
+version: 0.1.0
+description: Gradient workspace profile for Sploot.
+
+harness:
+  implementation: spellbook
+  profile: solo-frontier
+  primitive_library:
+    name: spellbook
+    role: primary harness primitive library for skills, agents, and tailoring references
+  shared_skill_root: .agents/skills
+  bridges:
+    - .claude/skills
+    - .codex/skills
+    - .pi/skills
+  skills:
+    - research
+    - groom
+    - shape
+    - implement
+    - qa
+    - demo
+    - code-review
+    - refactor
+    - ci
+    - diagnose
+    - monitor
+    - deliver
+    - settle
+    - ship
+    - yeet
+    - flywheel
+    - deploy
+    - office-hours
+    - ceo-review
+    - reflect
+    - harness
+    - agent-readiness
+    - gradient-contracts
+    - zero-tech-debt
+  agents:
+    - planner
+    - builder
+    - critic
+    - ousterhout
+    - carmack
+    - beck
+    - cooper
+    - grug
+  providers:
+    - openai
+    - anthropic
+  default_budget: conservative
+
+work:
+  implementation: backlog.d
+  adapter: backlog-d
+  source: backlog.d
+  requirements:
+    durable_ids: true
+    acceptance_criteria: required
+    closure_directory: backlog.d/_done
+
+fleet:
+  implementation: local-supervised
+  backend: codex-local
+  mode: supervised
+  autonomy: operator_review
+  run_root: .gradient/runs
+
+policy:
+  autonomy: supervised
+  evidence:
+    trace_backend: local
+    retention: public-safe
+  evidence_required:
+    - validation
+    - evidence-packet
+    - policy-outcome
+  evals:
+    runner: scripts/eval-gradient.sh
+    suites:
+      - solo-mvp
+  feedback_destination: .gradient/feedback
+
+context:
+  sources:
+    - kind: repo
+      path: .
+    - kind: docs
+      path: ./docs
+    - kind: evidence
+      path: ./.gradient/evidence
+  retrieval:
+    mode: assist
+    citations: required
+  citations: required
+  freshness: current-worktree
+  permissions: public-safe

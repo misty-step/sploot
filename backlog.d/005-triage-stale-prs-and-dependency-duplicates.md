@@ -1,3 +1,20 @@
+---
+id: 005-triage-stale-prs-and-dependency-duplicates
+title: Triage Stale PRs And Dependency Duplicates
+status: ready
+lifecycle_stage: Intent
+owner: local
+acceptance:
+  - Each stale human PR has one explicit action.
+  - Duplicate Dependabot tracks for Next and @clerk/clerk-react are consolidated.
+  - Any retained PR has passing CI or a concrete follow-up backlog item.
+evidence_required:
+  - PR triage notes
+  - retained PR CI status or follow-up backlog item
+refs:
+  - backlog.d/README.md
+---
+
 # Triage Stale PRs And Dependency Duplicates
 
 Priority: medium

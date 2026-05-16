@@ -23,8 +23,8 @@ Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web t
 - Use `DATABASE_URL` for Prisma. Custom aliases like `POSTGRES_URL` are wrong because Prisma reads `DATABASE_URL` before app code can remap env.
 - Extension dev/build scripts need `VITE_API_BASE_URL`; production extension builds default to `https://www.sploot.app`.
 - Web deploys are Vercel-first; extension releases are Chrome Web Store artifact-first.
-- Source of truth for work tracking is GitHub Issues, not `backlog.d`.
-- Closure requires issue reference plus conventional commit or trailer linkage. Backlog archive commands are not enforcement in this repo.
+- Source of truth for work tracking is local markdown files in `backlog.d`, not GitHub Issues.
+- Closure requires the backlog item to move to `backlog.d/_done/` with a `What Was Built` note plus conventional commit or `Backlog: backlog.d/<id>-<slug>.md` trailer linkage.
 
 ## Known Debts & Failure Modes
 
@@ -40,4 +40,4 @@ Use “web app” for `apps/web`, “extension” for `apps/extension`, “commo
 
 ## Session Signal
 
-Validated patterns: pnpm-first commands, master as the base branch, GitHub Issues as tracker, Sentry incidents as production work inputs, and Vercel/Chrome extension releases as separate delivery surfaces. Recurring corrections to avoid: do not call `backlog.d` the active tracker, do not claim DB-backed code is tested without pgvector evidence, do not conflate web deploy with extension release, do not mutate extension env strictness to make Vercel installs pass, and do not lower quality gates to dodge missing secrets or DB setup.
+Validated patterns: pnpm-first commands, master as the base branch, `backlog.d` as tracker, Sentry incidents as production work inputs, and Vercel/Chrome extension releases as separate delivery surfaces. Recurring corrections to avoid: do not call GitHub Issues the active tracker, do not claim DB-backed code is tested without pgvector evidence, do not conflate web deploy with extension release, do not mutate extension env strictness to make Vercel installs pass, and do not lower quality gates to dodge missing secrets or DB setup.

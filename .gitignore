@@ -22,6 +22,8 @@ coverage/
 coverage-*
 .nyc_output/
 *.tsbuildinfo
+__pycache__/
+*.pyc
 
 # Environment & Secrets
 .env
@@ -74,3 +76,5 @@ sentry.properties
 
 # Vercel
 .vercel
+.gradient/sources.local.yaml
+.gradient/private/
