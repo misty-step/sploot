@@ -1,3 +1,25 @@
+---
+id: 002-configure-extension-auth-authorized-parties
+title: Configure Extension Auth Authorized Parties
+status: done
+lifecycle_stage: Feedback
+owner: local
+acceptance:
+  - Hardcoded Chrome extension authorized party is replaced with environment-backed configuration.
+  - At least one non-primary extension origin is covered by tests or documented local verification.
+  - Invalid origins still receive 401.
+  - CI parity gate passes or narrower verification is justified.
+evidence_required:
+  - bearer auth tests
+  - extension build evidence
+  - real Chrome workflow notes
+  - verification command output
+refs:
+  - apps/web/lib/auth/verify-bearer.ts
+  - apps/extension/shared/env.ts
+  - apps/extension/shared/api-client.ts
+---
+
 # Configure Extension Auth Authorized Parties
 
 Priority: high

@@ -1,3 +1,23 @@
+---
+id: 003-ship-first-class-shuffle-api-contract
+title: Ship First-Class Shuffle API Contract
+status: done
+lifecycle_stage: Feedback
+owner: local
+acceptance:
+  - Documented authenticated-user shuffle endpoint or query mode.
+  - Contract includes limit and seed semantics or an explicit non-determinism decision.
+  - Focused route tests cover bounds and deterministic seed behavior where applicable.
+  - apps/web/docs/API.md describes the shipped contract.
+evidence_required:
+  - API contract documentation
+  - focused route tests
+  - pgvector-backed integration evidence or DB-unverified note
+  - CI parity gate output
+refs:
+  - apps/web/docs/API.md
+---
+
 # Ship First-Class Shuffle API Contract
 
 Priority: high

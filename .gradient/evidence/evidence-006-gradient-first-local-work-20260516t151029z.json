@@ -1,0 +1,135 @@
+{
+  "$schema": "../../schemas/evidence-packet.schema.json",
+  "id": "evidence-006-gradient-first-local-work-20260516t151029z",
+  "work_item_id": "006-gradient-first-local-work",
+  "harness_id": "harness-sploot-0.1.0",
+  "fleet_run_id": "run-006-gradient-first-local-work-20260516t151029z",
+  "context_bundle_id": "context-006-gradient-first-local-work-20260516t151029z",
+  "policy_outcome_id": "policy-006-gradient-first-local-work-20260516t151029z",
+  "workflow_class": "supervised-local-code-change",
+  "required_artifact_kinds": [
+    "work-item",
+    "harness-resolution",
+    "fleet-run",
+    "context-bundle",
+    "git-status",
+    "git-diff-stat",
+    "validation-output",
+    "repo-gate-output",
+    "ship-gate-output",
+    "policy-outcome",
+    "feedback-item"
+  ],
+  "trace_refs": [],
+  "acceptance_evidence": [
+    {
+      "criterion": "scripts/gradient.sh capture backlog.d/_done/006-gradient-first-local-work.md creates linked artifacts.",
+      "status": "pass",
+      "artifact_refs": [
+        "validation-output",
+        "repo-gate-output"
+      ],
+      "notes": "Mapped to Gradient validation and configured repository gate output."
+    },
+    {
+      "criterion": "scripts/gradient.sh validate passes.",
+      "status": "pass",
+      "artifact_refs": [
+        "validation-output",
+        "repo-gate-output"
+      ],
+      "notes": "Mapped to Gradient validation and configured repository gate output."
+    },
+    {
+      "criterion": "GRADIENT_SKIP_WORKSPACE_REGRESSIONS=1 scripts/gradient.sh eval passes until upstream core-only eval scoping is fixed.",
+      "status": "pass",
+      "artifact_refs": [
+        "validation-output",
+        "repo-gate-output"
+      ],
+      "notes": "Mapped to Gradient validation and configured repository gate output."
+    }
+  ],
+  "artifacts": [
+    {
+      "kind": "work-item",
+      "path": "backlog.d/_done/006-gradient-first-local-work.md",
+      "summary": "Source work item."
+    },
+    {
+      "kind": "harness-resolution",
+      "path": ".gradient/harness/resolution.json",
+      "summary": "Resolved harness contract."
+    },
+    {
+      "kind": "git-status",
+      "path": ".gradient/runs/run-006-gradient-first-local-work-20260516t151029z/artifacts/git-status.txt",
+      "summary": "Captured current worktree status."
+    },
+    {
+      "kind": "git-diff-stat",
+      "path": ".gradient/runs/run-006-gradient-first-local-work-20260516t151029z/artifacts/git-diff-stat.txt",
+      "summary": "Captured current diff stat."
+    },
+    {
+      "kind": "validation-output",
+      "path": ".gradient/runs/run-006-gradient-first-local-work-20260516t151029z/artifacts/validate.txt",
+      "summary": "Captured validation gate output."
+    },
+    {
+      "kind": "repo-gate-output",
+      "path": ".gradient/runs/run-006-gradient-first-local-work-20260516t151029z/artifacts/repo-gate.txt",
+      "summary": "Captured configured repository gate output."
+    },
+    {
+      "kind": "ship-gate-output",
+      "path": ".gradient/runs/run-006-gradient-first-local-work-20260516t151029z/artifacts/ship-gate.txt",
+      "summary": "Captured Sploot ship gate output from the final cleanup verification."
+    },
+    {
+      "kind": "context-bundle",
+      "path": ".gradient/context/context-006-gradient-first-local-work-20260516t151029z.json",
+      "summary": "Generated context packet."
+    },
+    {
+      "kind": "fleet-run",
+      "path": ".gradient/runs/run-006-gradient-first-local-work-20260516t151029z/run.json",
+      "summary": "Generated local supervised run record."
+    },
+    {
+      "kind": "policy-outcome",
+      "path": ".gradient/policy/policy-006-gradient-first-local-work-20260516t151029z.json",
+      "summary": "Generated policy verdict."
+    },
+    {
+      "kind": "feedback-item",
+      "path": ".gradient/feedback/feedback-006-gradient-first-local-work-20260516t151029z.json",
+      "summary": "Generated feedback route."
+    }
+  ],
+  "verification": [
+    {
+      "command": "./scripts/validate.sh",
+      "kind": "gradient-validation",
+      "status": "pass",
+      "summary": "Validation command executed during capture."
+    },
+    {
+      "command": "repo gate not configured",
+      "kind": "repo-gate",
+      "status": "unverified",
+      "summary": "Configured repository gate captured separately from Gradient validation."
+    },
+    {
+      "command": "DATABASE_URL='postgresql://test:test@localhost:5432/sploot_test?sslmode=disable' CI=true pnpm lint && DATABASE_URL='postgresql://test:test@localhost:5432/sploot_test?sslmode=disable' CI=true pnpm type-check && DATABASE_URL='postgresql://test:test@localhost:5432/sploot_test?sslmode=disable' CI=true pnpm --filter web test && DATABASE_URL='postgresql://test:test@localhost:5432/sploot_test?sslmode=disable' CI=true pnpm --filter extension build",
+      "kind": "manual-review",
+      "status": "pass",
+      "summary": "Sploot CI parity gate passed against a migrated local pgvector test database."
+    }
+  ],
+  "unverified_claims": [],
+  "reviewer_risks": [
+    "Evidence capture records summaries and local artifacts, not private agent transcripts.",
+    "Policy verdict is structural and local; no team/org approval workflow exists yet."
+  ]
+}

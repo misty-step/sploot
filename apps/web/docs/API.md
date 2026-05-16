@@ -7,7 +7,7 @@ Sploot provides a RESTful API for managing your personal meme library with seman
 ## Base URL
 
 ```
-Production: https://your-app.vercel.app/api
+Production: https://<your-vercel-project>.vercel.app/api
 Development: http://localhost:3001/api
 ```
 
@@ -17,16 +17,8 @@ All API endpoints (except `/api/health`) require authentication via Clerk. Inclu
 
 ## Response Format
 
-All successful responses return JSON with the following structure:
-
-```json
-{
-  "data": { ... },
-  "timestamp": "2025-09-16T12:00:00Z"
-}
-```
-
-Error responses return:
+successful responses are endpoint-specific json objects. error responses use
+the route's `error` field, with optional diagnostic fields on some endpoints:
 
 ```json
 {
@@ -89,22 +81,25 @@ Generate a pre-signed URL for direct client-side upload to Vercel Blob storage.
 **Success Response (200):**
 ```json
 {
-  "uploadUrl": "https://blob.vercel-storage.com/upload?...",
-  "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
-  "fields": {
-    "key": "user123/funny-meme-1234567890.jpg"
+  "uploadUrl": "https://blob.vercel-storage.com/user123/funny-meme-1234567890.jpg",
+  "downloadUrl": "https://blob.vercel-storage.com/user123/funny-meme-1234567890.jpg",
+  "pathname": "user123/funny-meme-1234567890.jpg",
+  "method": "PUT",
+  "headers": {
+    "content-type": "image/jpeg"
   }
 }
 ```
 
 **Error Responses:**
-- 400: Invalid file type or size
+- 400: Missing filename, mimeType, or size; invalid file type or size
 - 401: Unauthorized
-- 500: Server error
+- 500: Blob storage not configured, invalid blob token, network/blob error, or server error
 
 #### POST /api/upload
 
-upload an image through the api. this is the contract used by the chrome extension.
+upload an image through the api. this is the `SplootApiUploadResponse` contract
+used by the chrome extension.
 
 **Authentication:** Required
 
@@ -112,8 +107,7 @@ upload an image through the api. this is the contract used by the chrome extensi
 
 **Form Fields:**
 - `file` (file, required): Image file to upload
-- `tags` (json array, optional): Tag names to attach
-- `metadata` (json object, optional): Client metadata
+- `tags` (json string array, optional): Tag names to attach
 
 **Success Response (201):**
 ```json
@@ -156,7 +150,8 @@ upload an image through the api. this is the contract used by the chrome extensi
 ```
 
 **Error Responses:**
-- 400: Missing file or invalid upload
+- 400: Missing file or invalid upload. validation errors return `success: false`
+  and `error`.
 - 401: Unauthorized
 - 413: Image too large
 - 429: Too many uploads
@@ -168,7 +163,8 @@ upload an image through the api. this is the contract used by the chrome extensi
 
 #### POST /api/assets
 
-Create a new asset record after successful blob upload. Automatically generates embeddings for semantic search.
+Create a new asset record after successful blob upload. Automatically starts
+embedding generation when Replicate is configured.
 
 **Authentication:** Required
 
@@ -176,6 +172,7 @@ Create a new asset record after successful blob upload. Automatically generates 
 ```json
 {
   "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+  "pathname": "user123/funny-meme.jpg",
   "filename": "funny-meme.jpg",
   "mimeType": "image/jpeg",
   "size": 2048576,
@@ -187,12 +184,14 @@ Create a new asset record after successful blob upload. Automatically generates 
 
 **Parameters:**
 - `blobUrl` (string, required): URL from Vercel Blob storage
+- `pathname` (string, required): Blob pathname to persist
 - `filename` (string, required): Original filename
 - `mimeType` (string, required): MIME type
 - `size` (number, required): File size in bytes
 - `width` (number, optional): Image width in pixels
 - `height` (number, optional): Image height in pixels
-- `checksum` (string, required): SHA-256 checksum for deduplication
+- `checksum` (string, optional): SHA-256 checksum for deduplication. when
+  omitted, the server generates a random checksum.
 
 **Success Response (201):**
 ```json
@@ -200,8 +199,9 @@ Create a new asset record after successful blob upload. Automatically generates 
   "asset": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
-    "filename": "funny-meme.jpg",
-    "mimeType": "image/jpeg",
+    "pathname": "user123/funny-meme.jpg",
+    "filename": "user123/funny-meme.jpg",
+    "mime": "image/jpeg",
     "size": 2048576,
     "width": 1920,
     "height": 1080,
@@ -209,12 +209,13 @@ Create a new asset record after successful blob upload. Automatically generates 
     "tags": [],
     "createdAt": "2025-09-16T12:00:00Z",
     "embeddingStatus": "processing"
-  }
+  },
+  "message": "Asset created successfully"
 }
 ```
 
 **Error Responses:**
-- 400: Invalid parameters or duplicate asset
+- 400: Missing or invalid parameters
 - 401: Unauthorized
 - 500: Server error
 
@@ -378,18 +379,64 @@ Check embedding generation status for an asset.
 ```json
 {
   "assetId": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "completed",
-  "modelName": "daanelson/imagebind:0383f62e173dc821ec52663ed22a076d9c970549c209666ac3db181618b7a304",
-  "dimension": 1024,
-  "createdAt": "2025-09-16T12:00:00Z"
+  "hasEmbedding": true,
+  "status": "ready"
 }
 ```
 
 **Status Values:**
-- `pending`: Not yet processed
-- `processing`: Currently generating
-- `completed`: Successfully generated
-- `failed`: Generation failed
+- `pending`: no embedding row exists yet
+- `ready`: embedding row exists
+
+**Error Responses:**
+- 401: Unauthorized
+- 404: Asset not found or access denied
+- 500: Server error
+- 503: Database unavailable
+
+#### POST /api/assets/batch/embedding-status
+
+Check embedding generation status for up to 50 assets.
+
+**Authentication:** Required
+
+**Request Body:**
+```json
+{
+  "assetIds": [
+    "550e8400-e29b-41d4-a716-446655440000",
+    "660e8400-e29b-41d4-a716-446655440001"
+  ]
+}
+```
+
+**Success Response (200):**
+```json
+{
+  "statuses": {
+    "550e8400-e29b-41d4-a716-446655440000": {
+      "hasEmbedding": true,
+      "status": "ready"
+    },
+    "660e8400-e29b-41d4-a716-446655440001": {
+      "hasEmbedding": false,
+      "status": "failed",
+      "error": "Asset not found or access denied"
+    }
+  }
+}
+```
+
+**Status Values:**
+- `pending`: asset exists and no embedding row exists yet
+- `ready`: embedding row exists
+- `failed`: asset was not found or access was denied
+
+**Error Responses:**
+- 400: `assetIds` is missing, not an array, or has more than 50 items
+- 401: Unauthorized
+- 500: Server error
+- 503: Database unavailable
 
 #### POST /api/assets/{id}/generate-embedding
 
@@ -427,19 +474,23 @@ Generate embeddings for text input (primarily for testing).
 **Request Body:**
 ```json
 {
-  "text": "distracted boyfriend meme"
+  "query": "distracted boyfriend meme"
 }
 ```
 
 **Success Response (200):**
 ```json
 {
+  "success": true,
   "embedding": [0.123, 0.456, ...],
-  "modelName": "daanelson/imagebind:0383f62e173dc821ec52663ed22a076d9c970549c209666ac3db181618b7a304",
-  "dimension": 1024,
-  "cached": false
+  "model": "krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4",
+  "dimension": 768,
+  "processingTime": 120
 }
 ```
+
+`dimension` is shown for the currently configured CLIP model and comes from the
+model response at runtime.
 
 #### POST /api/embeddings/image
 
@@ -450,19 +501,25 @@ Generate embeddings for an image URL (primarily for testing).
 **Request Body:**
 ```json
 {
-  "imageUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg"
+  "imageUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+  "assetId": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
 **Success Response (200):**
 ```json
 {
+  "success": true,
   "embedding": [0.789, 0.012, ...],
-  "modelName": "daanelson/imagebind:0383f62e173dc821ec52663ed22a076d9c970549c209666ac3db181618b7a304",
-  "dimension": 1024,
-  "cached": true
+  "model": "krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4",
+  "dimension": 768,
+  "processingTime": 130,
+  "assetId": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
+
+`assetId` is optional. when provided, the route verifies ownership and stores
+the generated embedding.
 
 ---
 
@@ -479,67 +536,83 @@ Perform semantic search using text queries.
 {
   "query": "distracted boyfriend",
   "limit": 30,
-  "threshold": 0.6
+  "threshold": 0.2,
+  "shuffleSeed": 424242
 }
 ```
 
 **Parameters:**
 - `query` (string, required): Search text (max 500 characters)
-- `limit` (number, optional): Number of results (default: 30, max: 100)
-- `threshold` (number, optional): Minimum similarity score (0-1, default: 0.6)
+- `limit` (number, optional): requested result count (default: 30). the server
+  searches for at least 10 similar results, so `limit` in the response may be
+  higher than the requested value.
+- `threshold` (number, optional): Minimum similarity score (0-1, default: 0.2)
+- `shuffleSeed` (number, optional): Seed used by vector search when supported
 
 **Success Response (200):**
 ```json
 {
   "results": [
     {
-      "asset": {
-        "id": "550e8400-e29b-41d4-a716-446655440000",
-        "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
-        "filename": "funny-meme.jpg",
-        "mimeType": "image/jpeg",
-        "width": 1920,
-        "height": 1080,
-        "favorite": false,
-        "tags": [],
-        "createdAt": "2025-09-16T12:00:00Z"
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+      "pathname": "user123/funny-meme.jpg",
+      "filename": "funny-meme.jpg",
+      "mime": "image/jpeg",
+      "width": 1920,
+      "height": 1080,
+      "favorite": false,
+      "size": 2048576,
+      "createdAt": "2025-09-16T12:00:00Z",
+      "embedding": {
+        "assetId": "550e8400-e29b-41d4-a716-446655440000"
       },
-      "score": 0.95,
-      "distance": 0.05,
-      "relevance": 95
+      "embeddingStatus": "ready",
+      "similarity": 0.95,
+      "relevance": 95,
+      "belowThreshold": false,
+      "tags": []
     }
   ],
   "query": "distracted boyfriend",
+  "total": 1,
+  "limit": 30,
+  "requestedLimit": 30,
+  "threshold": 0.2,
+  "requestedThreshold": 0.2,
+  "processingTime": 245,
+  "embeddingModel": "krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4",
   "cached": false,
-  "searchTime": 245,
-  "embeddingTime": 120,
-  "totalTime": 365
+  "thresholdFallback": false
 }
 ```
 
+When Replicate is not configured, the route returns `200` with an empty
+`results` array and an `error` explaining search is unavailable.
+
 #### GET /api/search
 
-Get search suggestions based on recent and popular searches.
+Get recent or popular search suggestions.
 
 **Authentication:** Required
 
 **Query Parameters:**
-- `type` (string, optional): Suggestion type (recent, popular, all)
-- `limit` (number, optional): Number of suggestions (default: 10)
+- `type` (string, optional): `recent` or `popular` (default: `recent`)
 
 **Success Response (200):**
 ```json
 {
-  "recent": [
-    "drake meme",
-    "woman yelling at cat"
-  ],
-  "popular": [
-    "distracted boyfriend",
-    "this is fine"
+  "searches": [
+    {
+      "query": "drake meme",
+      "resultCount": 12,
+      "timestamp": "2025-09-16T12:00:00Z"
+    }
   ]
 }
 ```
+
+for `type=popular`, each search object contains `query` and `count`.
 
 #### POST /api/search/advanced
 
@@ -552,15 +625,15 @@ Advanced search with multiple filters and sorting options.
 {
   "query": "reaction",
   "filters": {
-    "favoriteOnly": true,
+    "favorites": true,
     "mimeTypes": ["image/jpeg", "image/png"],
     "tags": ["reaction", "template"],
     "dateFrom": "2025-01-01T00:00:00Z",
     "dateTo": "2025-12-31T23:59:59Z",
     "minWidth": 500,
-    "maxWidth": 2000
+    "minHeight": 300
   },
-  "sort": "relevance",
+  "sortBy": "relevance",
   "limit": 30,
   "offset": 0,
   "threshold": 0.5
@@ -568,18 +641,16 @@ Advanced search with multiple filters and sorting options.
 ```
 
 **Parameters:**
-- `query` (string, optional): Search text (if omitted, filters metadata only)
+- `query` (string, required): Search text
 - `filters` (object, optional): Filter criteria
-  - `favoriteOnly` (boolean): Only favorites
+  - `favorites` (boolean): Only favorites
   - `mimeTypes` (array): MIME type filters
   - `tags` (array): Tag filters
   - `dateFrom` (string): Start date (ISO 8601)
   - `dateTo` (string): End date (ISO 8601)
   - `minWidth` (number): Minimum width
-  - `maxWidth` (number): Maximum width
   - `minHeight` (number): Minimum height
-  - `maxHeight` (number): Maximum height
-- `sort` (string, optional): Sort order (relevance, date_desc, date_asc, favorite)
+- `sortBy` (string, optional): Sort order (`relevance`, `date`, or `favorite`)
 - `limit` (number, optional): Results per page (default: 30)
 - `offset` (number, optional): Pagination offset (default: 0)
 - `threshold` (number, optional): Minimum similarity (0-1, default: 0.5)
@@ -589,17 +660,35 @@ Advanced search with multiple filters and sorting options.
 {
   "results": [
     {
-      "asset": { ... },
-      "score": 0.89,
-      "distance": 0.11,
-      "relevance": 89
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+      "pathname": "user123/funny-meme.jpg",
+      "filename": "funny-meme.jpg",
+      "mime": "image/jpeg",
+      "size": 2048576,
+      "width": 1920,
+      "height": 1080,
+      "favorite": false,
+      "createdAt": "2025-09-16T12:00:00Z",
+      "updatedAt": "2025-09-16T12:00:00Z",
+      "similarity": 0.89,
+      "relevance": 89,
+      "tags": []
     }
   ],
-  "total": 145,
   "query": "reaction",
   "filters": { ... },
-  "cached": false,
-  "searchTime": 320
+  "sortBy": "relevance",
+  "pagination": {
+    "total": 145,
+    "limit": 30,
+    "offset": 0,
+    "hasMore": true
+  },
+  "processingTime": 320,
+  "embeddingModel": "krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4",
+  "searchType": "semantic",
+  "cached": false
 }
 ```
 
@@ -756,6 +845,7 @@ async function searchMemes(query: string) {
 ```python
 import requests
 import hashlib
+import os
 
 class SplootAPI:
     def __init__(self, base_url, session_cookie):
@@ -786,7 +876,8 @@ class SplootAPI:
         asset_response = self.session.post(
             f"{self.base_url}/api/assets",
             json={
-                'blobUrl': upload_data['blobUrl'],
+                'blobUrl': upload_data['downloadUrl'],
+                'pathname': upload_data['pathname'],
                 'filename': os.path.basename(file_path),
                 'mimeType': 'image/jpeg',
                 'size': len(file_data),
