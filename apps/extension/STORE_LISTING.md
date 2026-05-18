@@ -1,134 +1,241 @@
-# Chrome Web Store Listing
+# Chrome Web Store Submission Packet
 
-## Extension Name
-Sploot - Save Memes Anywhere
+Canonical submission packet for Sploot extension version `1.0.0`.
 
-## Short Description (132 chars max)
-Save memes from any website with one click. AI-powered semantic search finds them instantly in your personal library.
+## Listing Fields
+
+**Extension name**
+
+```text
+Sploot - Meme Library & AI Search
+```
+
+**Summary**
+
+```text
+Save memes from any site with one click. Find them instantly using AI semantic search. Your private meme library.
+```
+
+**Category**
+
+```text
+Fun
+```
+
+**Language**
+
+```text
+English
+```
+
+**Homepage URL**
+
+```text
+https://www.sploot.app
+```
+
+**Support URL**
+
+```text
+https://www.sploot.app/support
+```
+
+**Privacy policy URL**
+
+```text
+https://www.sploot.app/privacy
+```
+
+**Mature content**
+
+```text
+No
+```
 
 ## Detailed Description
 
-### Save memes from anywhere on the web
+```text
+Stop scrolling forever. Find any meme in seconds.
 
-Sploot is your personal meme library with AI-powered search. Right-click any image and save it to your collection in one click.
+Sploot is your personal meme library with AI-powered semantic search. Save any image from any website with one click, then search your collection using natural language. No more digging through camera rolls, downloads folders, or random desktop piles.
 
-**Key Features:**
+How it works:
 
-• **One-Click Save** - Right-click any image on any website and select "Save to Sploot" to instantly add it to your library
+- Right-click any image and choose "Save to Sploot"
+- Images sync to your private library at www.sploot.app
+- Search with natural language like "cat with sunglasses" or "confused guy meme"
+- AI semantic search helps find the exact reaction image you meant
 
-• **AI-Powered Search** - Find any meme in seconds using natural language. Search "disappointed drake" or "surprised pikachu" and get instant results
+Key features:
 
-• **Works Everywhere** - Save images from Reddit, Twitter/X, Imgur, Discord, and any website with images
+- One-click saving from websites with image context menus
+- AI-powered search for your private meme collection
+- Fast access from the extension popup
+- Private library by default, with public links only when you choose to share
+- Secure account access through Clerk
 
-• **Instant Access** - Click the extension icon to quickly access your meme library and search
+Perfect for:
 
-• **Secure & Private** - Your memes are stored securely in your personal account
+- Meme collectors who keep losing the perfect reaction image
+- Social media managers who need fast access to visual references
+- Content creators building a searchable image library
+- Anyone tired of scrolling through thousands of unorganized images
 
-**How it works:**
+Privacy:
 
-1. Install the extension and sign in with your Sploot account
-2. Browse the web as usual
-3. When you see a meme you want to save, right-click and select "Save to Sploot"
-4. Find your memes instantly with AI-powered semantic search at sploot.app
-
-**Perfect for:**
-- Meme enthusiasts who save images across multiple platforms
-- Social media managers who need quick access to reaction images
-- Anyone tired of scrolling through camera roll to find that one meme
-
-Visit sploot.app to create your free account and start building your meme library today!
-
-## Category
-Social & Communication
-
-## Language
-English
-
-## Website
-https://www.sploot.app
-
-## Privacy Policy URL
-https://www.sploot.app/privacy
-
-## Support URL
-https://www.sploot.app/support
-
----
-
-## Screenshots Required
-
-Chrome Web Store requires at least 1 screenshot (1280x800 or 640x400).
-Recommended: 3-5 screenshots showing key features.
-
-### Screenshot 1: Context Menu
-- Show right-click menu on an image with "Save to Sploot" option
-- Capture on a site like imgur.com or reddit.com
-- **NOTE: Must be captured manually** (native browser UI)
-
-### Screenshot 2: Extension Popup (Signed Out)
-- Show the popup with sign-in prompt
-- **NOTE: Must be captured manually** (extension UI)
-
-### Screenshot 3: Extension Popup (Signed In)
-- Show the popup with "View Library" option
-- **NOTE: Must be captured manually** (extension UI)
-
-### Screenshot 4: Sploot Library
-- Show the library with memes and search functionality
-- Can be captured from sploot.app when signed in
-
-### Screenshot 5: Search Results
-- Show AI-powered search finding memes
-- Can be captured from sploot.app when signed in
-
----
-
-## Promotional Images (Optional but Recommended)
-
-### Small Promo Tile (440x280)
-- Logo + tagline: "Your Personal Meme Library"
-
-### Large Promo Tile (920x680)
-- Feature showcase with screenshots
-
-### Marquee Promo Tile (1400x560)
-- Hero image for featured placement
-
----
-
-## Additional Store Information
-
-### Single Purpose
-Save images from any website to Sploot personal meme library with AI-powered search.
-
-### Permissions Justification
-
-**contextMenus**: Required to add "Save to Sploot" to right-click menu on images
-
-**storage**: Required to maintain authentication state across browser sessions
-
-**notifications**: Required to show success/error feedback when saving images
-
-**Host Permissions**:
-- `https://www.sploot.app/*`: Required to upload saved images to user's library
-- `https://clerk.sploot.app/*`: Required for secure authentication via Clerk
-
-### Data Usage
-- Images are uploaded to user's private Sploot library (stored on Vercel Blob)
-- Authentication handled by Clerk (industry-standard auth provider)
-- No browsing history is collected or transmitted
-- Only the selected image is sent when the user chooses "Save to Sploot"
+- No ads
+- No browsing history tracking
+- Only the image you choose to save is uploaded
+- Images are stored securely in your Sploot account
 - Search logs and product analytics are described in the privacy policy
 
----
+Get started:
 
-## Build Information
+1. Install the extension
+2. Sign in to Sploot
+3. Right-click any meme and choose "Save to Sploot"
+4. Visit www.sploot.app to search your library
 
-**Package Location:** `dist/extension-1.0.0-chrome.zip` (1.41 MB)
-**Version:** 1.0.0
-**Manifest Version:** 3
+Free to start.
 
-To rebuild:
-```bash
-pnpm zip:prod
+Support: https://www.sploot.app/support
+Privacy Policy: https://www.sploot.app/privacy
 ```
+
+## Single Purpose
+
+```text
+Save user-selected images from websites to the user's private Sploot meme library for AI-powered search.
+```
+
+## Permission Justifications
+
+**contextMenus**
+
+```text
+Required to add the "Save to Sploot" option to image right-click menus.
+```
+
+**storage**
+
+```text
+Required to cache extension auth state and upload status across browser sessions.
+```
+
+**notifications**
+
+```text
+Required to show success and error feedback after the user saves an image.
+```
+
+**cookies**
+
+```text
+Required to sync the user's Clerk session between the Sploot web app and the extension.
+```
+
+**tabs**
+
+```text
+Required to open the Sploot library and sign-in pages from extension actions.
+```
+
+**Host permission: `*://*/*`**
+
+```text
+Required so the extension can offer "Save to Sploot" on images from arbitrary websites the user visits. The extension only uploads an image after the user explicitly chooses "Save to Sploot" from the context menu.
+```
+
+**Host permission: `https://www.sploot.app/*`**
+
+```text
+Required to upload selected images to the user's Sploot library and open the web app.
+```
+
+**Host permission: `https://sploot.app/*`**
+
+```text
+Required for compatibility with the apex Sploot domain.
+```
+
+**Host permission: `https://clerk.sploot.app/*`**
+
+```text
+Required for secure Clerk authentication and session synchronization.
+```
+
+## Data Usage
+
+- User-selected images are uploaded to the user's private Sploot library.
+- Authentication is handled by Clerk.
+- The extension does not collect or transmit browsing history.
+- Only images explicitly selected by the user through the context menu are sent
+  to Sploot.
+- Search logs and product analytics are described in the privacy policy.
+
+## Visual Assets
+
+Required before submission:
+
+- Store icon: `apps/extension/public/icon-128.png`
+- Screenshots: `apps/extension/store-assets/screenshots/`
+- Small promo tile: `apps/extension/store-assets/promo/`
+
+Current status: screenshot and promo directories only contain `.gitkeep`; final
+store screenshots still need to be captured or generated before Chrome Web
+Store submission.
+
+## Release Artifact
+
+Built on 2026-05-18:
+
+```text
+Path: apps/extension/dist/extension-1.0.0-chrome.zip
+Version: 1.0.0
+Size: 1.66 MB
+SHA256: ee12ad391996b50389a60995296c141af689db1bb75411f5f43ae74e583bb532
+```
+
+Build commands:
+
+```bash
+VITE_CLERK_PUBLISHABLE_KEY=pk_live_* pnpm --filter extension build:prod
+VITE_CLERK_PUBLISHABLE_KEY=pk_live_* pnpm --filter extension zip:prod
+```
+
+Smoke command:
+
+```bash
+VITE_CLERK_PUBLISHABLE_KEY=pk_live_* pnpm --filter web smoke:deployed
+```
+
+Smoke evidence from `apps/web/docs/deployed-smoke-report.json`:
+
+```text
+Started: 2026-05-18T19:12:47.411Z
+Finished: 2026-05-18T19:12:48.156Z
+Target: https://www.sploot.app
+Status: pass
+Checks: production health, service health, signed-out app route protection,
+signed-out API auth contract, production extension artifact
+```
+
+## Submission Status
+
+Status: not submitted.
+
+Blocking items before submission:
+
+- final screenshots and promo tile are missing
+- authenticated production Chrome extension QA is blocked because the Codex
+  Chrome backend is unavailable in this pass
+- no Chrome Web Store dashboard upload/review receipt has been captured
+
+Rollback/disable plan:
+
+- If the submitted extension causes production issues, disable or unpublish
+  version `1.0.0` from the Chrome Web Store developer dashboard.
+- Keep `https://www.sploot.app` deployed and healthy; extension upload failures
+  should return typed API errors and user-visible notifications.
+- Rebuild and submit a patched version after passing deployed smoke and real
+  Chrome extension upload QA.
