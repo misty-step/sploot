@@ -25,10 +25,36 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relations
-  assets Asset[]
-  tags   Tag[]
+  assets                    Asset[]
+  tags                      Tag[]
+  storageQuota              UserStorageQuota?
+  storageQuotaReservations  StorageQuotaReservation[]
 
   @@map("users")
+}
+
+model UserStorageQuota {
+  userId     String   @id @map("user_id")
+  limitBytes BigInt   @default(1073741824) @map("limit_bytes")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_storage_quotas")
+}
+
+model StorageQuotaReservation {
+  id          String   @id @default(cuid())
+  ownerUserId String   @map("owner_user_id")
+  bytes       BigInt
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  owner User @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@index([ownerUserId, expiresAt])
+  @@map("storage_quota_reservations")
 }
 
 // Asset model - represents uploaded images

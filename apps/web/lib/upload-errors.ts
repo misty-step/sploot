@@ -14,6 +14,7 @@ export enum UploadErrorType {
   SERVER_ERROR = 'server_error',
   AUTH_REQUIRED = 'auth_required',
   QUOTA_EXCEEDED = 'quota_exceeded',
+  UPLOADS_DISABLED = 'uploads_disabled',
   PROCESSING_FAILED = 'processing_failed',
   UNKNOWN = 'unknown',
 }
@@ -35,10 +36,37 @@ export interface UploadErrorDetails {
  */
 export function getUploadErrorDetails(
   error: Error | string,
-  statusCode?: number
+  statusCode?: number,
+  errorCode?: string
 ): UploadErrorDetails {
   const errorMessage = typeof error === 'string' ? error : error.message;
   const lowerMessage = errorMessage.toLowerCase();
+
+  if (errorCode === 'quota_exceeded') {
+    return {
+      type: UploadErrorType.QUOTA_EXCEEDED,
+      message: errorMessage,
+      userMessage: 'Storage quota exceeded',
+      action: {
+        label: 'Manage storage',
+        type: 'upgrade',
+      },
+      retryable: false,
+    };
+  }
+
+  if (errorCode === 'uploads_disabled') {
+    return {
+      type: UploadErrorType.UPLOADS_DISABLED,
+      message: errorMessage,
+      userMessage: 'Uploads are temporarily paused',
+      action: {
+        label: 'Try again later',
+        type: 'retry',
+      },
+      retryable: true,
+    };
+  }
 
   // Check for duplicate
   if (lowerMessage.includes('already exists') || lowerMessage.includes('duplicate')) {
@@ -74,31 +102,17 @@ export function getUploadErrorDetails(
     };
   }
 
-  // Check for storage errors
-  if (lowerMessage.includes('blob') || lowerMessage.includes('storage')) {
+  // Check for quota errors before generic storage text.
+  if (lowerMessage.includes('quota') || lowerMessage.includes('limit exceeded')) {
     return {
-      type: UploadErrorType.STORAGE_FAILED,
+      type: UploadErrorType.QUOTA_EXCEEDED,
       message: errorMessage,
-      userMessage: 'Failed to store image. Please try again',
+      userMessage: 'Storage quota exceeded',
       action: {
-        label: 'Retry upload',
-        type: 'retry',
+        label: 'Manage storage',
+        type: 'upgrade',
       },
-      retryable: true,
-    };
-  }
-
-  // Check for database errors
-  if (lowerMessage.includes('database') || lowerMessage.includes('prisma')) {
-    return {
-      type: UploadErrorType.DATABASE_FAILED,
-      message: errorMessage,
-      userMessage: 'Failed to save image details. Please try again',
-      action: {
-        label: 'Retry upload',
-        type: 'retry',
-      },
-      retryable: true,
+      retryable: false,
     };
   }
 
@@ -158,17 +172,31 @@ export function getUploadErrorDetails(
     };
   }
 
-  // Check for quota errors
-  if (lowerMessage.includes('quota') || lowerMessage.includes('limit exceeded')) {
+  // Check for storage errors
+  if (lowerMessage.includes('blob') || lowerMessage.includes('storage')) {
     return {
-      type: UploadErrorType.QUOTA_EXCEEDED,
+      type: UploadErrorType.STORAGE_FAILED,
       message: errorMessage,
-      userMessage: 'Storage quota exceeded',
+      userMessage: 'Failed to store image. Please try again',
       action: {
-        label: 'Upgrade plan',
-        type: 'upgrade',
+        label: 'Retry upload',
+        type: 'retry',
       },
-      retryable: false,
+      retryable: true,
+    };
+  }
+
+  // Check for database errors
+  if (lowerMessage.includes('database') || lowerMessage.includes('prisma')) {
+    return {
+      type: UploadErrorType.DATABASE_FAILED,
+      message: errorMessage,
+      userMessage: 'Failed to save image details. Please try again',
+      action: {
+        label: 'Retry upload',
+        type: 'retry',
+      },
+      retryable: true,
     };
   }
 

@@ -1,8 +1,8 @@
 ---
 id: 008-add-storage-quota-and-runtime-gates
 title: Add Storage Quota And Runtime Gates
-status: ready
-lifecycle_stage: Intent
+status: done
+lifecycle_stage: Feedback
 owner: local
 acceptance:
   - Uploads are checked against a first-class per-user storage quota before Blob writes.
@@ -25,7 +25,7 @@ refs:
 # Add Storage Quota And Runtime Gates
 
 Priority: high
-Status: ready
+Status: done
 Estimate: L
 
 ## Goal
@@ -41,15 +41,15 @@ runtime kill switches for upload and embedding cost exposure.
 
 ## Oracle
 
-- [ ] A `QuotaPolicy` or equivalent deep module computes used bytes, limit
+- [x] A `QuotaPolicy` or equivalent deep module computes used bytes, limit
       bytes, remaining bytes, and enforcement decision.
-- [ ] `POST /api/upload` refuses over-quota requests before Blob upload with a
+- [x] `POST /api/upload` refuses over-quota requests before Blob upload with a
       typed response such as `code: "quota_exceeded"`.
-- [ ] Upload and embedding routes return a consistent 503 gate response when a
+- [x] Upload and embedding routes return a consistent 503 gate response when a
       runtime gate is disabled.
-- [ ] Web and extension clients render a real remediation path instead of a
+- [x] Web and extension clients render a real remediation path instead of a
       dead `/app/settings?tab=billing` target.
-- [ ] `pnpm lint && pnpm type-check && DATABASE_URL=... CI=true pnpm --filter web test && pnpm --filter extension build`
+- [x] `pnpm lint && pnpm type-check && DATABASE_URL=... CI=true pnpm --filter web test && pnpm --filter extension build`
       passes against pgvector.
 
 ## Scope
@@ -75,3 +75,25 @@ no schema, policy module, pre-upload enforcement, or operator kill switch.
 - `apps/web/app/api/stats/route.ts`
 - `apps/web/components/upload/upload-error-display.tsx`
 - `apps/web/lib/upload-errors.ts`
+
+## What Was Built
+
+- Added quota schema, migration, and a transaction-backed storage quota policy
+  with short-lived reservations for server-side uploads.
+- Added upload and embedding runtime gates, typed API error contracts, quota
+  stats, settings storage visibility, and API docs.
+- Covered upload, direct-upload preflight, asset-create, scheduler, search,
+  embedding, and cron cost surfaces with gate/quota checks.
+- Updated web and extension clients to preserve typed quota/gate errors and
+  route users to `/app/settings` from actionable quota failures.
+
+## Evidence
+
+- `pnpm lint`
+- `pnpm type-check`
+- `DATABASE_URL='postgresql://test:test@localhost:5432/sploot_test?sslmode=disable' pnpm --filter web db:migrate`
+- `DATABASE_URL='postgresql://test:test@localhost:5432/sploot_test?sslmode=disable' CI=true pnpm --filter web test`
+- `pnpm --filter extension test -- entrypoints/background/notifications.test.ts shared/upload-response.test.ts`
+- `pnpm --filter extension build`
+- `git diff --check`
+- `gradient validate`

@@ -125,6 +125,74 @@ describe('UploadNetworkClient', () => {
       });
     });
 
+    it('should preserve typed quota error fields from the API', async () => {
+      const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
+      const uploadPromise = client.uploadFile(file);
+
+      const xhr = xhrInstances[0];
+      xhr.status = 403;
+      xhr.responseText = JSON.stringify({
+        error: 'Storage quota exceeded',
+        code: 'quota_exceeded',
+        retryable: false,
+        quota: {
+          usedBytes: 900,
+          limitBytes: 1000,
+          remainingBytes: 0,
+          incomingBytes: 200,
+        },
+        action: {
+          type: 'manage_storage',
+          label: 'Manage storage',
+          href: '/app/settings',
+        },
+      });
+
+      const loadHandler = xhr.addEventListener.mock.calls.find(
+        (call: any[]) => call[0] === 'load'
+      )[1];
+      loadHandler();
+
+      await expect(uploadPromise).rejects.toMatchObject({
+        message: 'Storage quota exceeded',
+        statusCode: 403,
+        isRetryable: false,
+        code: 'quota_exceeded',
+        action: {
+          type: 'manage_storage',
+          href: '/app/settings',
+        },
+        quota: {
+          limitBytes: 1000,
+        },
+      });
+    });
+
+    it('should preserve retryable upload gate errors from the API', async () => {
+      const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
+      const uploadPromise = client.uploadFile(file);
+
+      const xhr = xhrInstances[0];
+      xhr.status = 503;
+      xhr.responseText = JSON.stringify({
+        error: 'Uploads are temporarily paused',
+        code: 'uploads_disabled',
+        retryable: true,
+      });
+
+      const loadHandler = xhr.addEventListener.mock.calls.find(
+        (call: any[]) => call[0] === 'load'
+      )[1];
+      loadHandler();
+
+      await expect(uploadPromise).rejects.toMatchObject({
+        message: 'Uploads are temporarily paused',
+        statusCode: 503,
+        isRetryable: true,
+        code: 'uploads_disabled',
+      });
+    });
+
     it('should mark 5xx errors as retryable', async () => {
       const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
       const uploadPromise = client.uploadFile(file);

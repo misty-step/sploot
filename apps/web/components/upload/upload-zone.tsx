@@ -523,7 +523,8 @@ export function UploadZone({
 
       const errorDetails = getUploadErrorDetails(
         error instanceof Error ? error : new Error('Upload failed'),
-        statusCode
+        statusCode,
+        (error as any)?.code
       );
 
       setFileMetadata((prev) => {

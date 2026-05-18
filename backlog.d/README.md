@@ -14,7 +14,6 @@ Status conventions:
 | # | Title | Priority | Estimate |
 |---|-------|----------|----------|
 | [007](007-publish-extension-web-store-release.md) | Publish Extension Web Store Release | high | M |
-| [008](008-add-storage-quota-and-runtime-gates.md) | Add Storage Quota And Runtime Gates | high | L |
 | [010](010-repair-auth-boundary-and-api-error-contracts.md) | Repair Auth Boundary And API Error Contracts | high | M |
 | [011](011-unify-upload-url-offline-background-contract.md) | Unify Upload URL Offline Background Contract | high | M |
 | [012](012-make-deployed-qa-and-extension-gates-real.md) | Make Deployed QA And Extension Gates Real | high | M |
@@ -34,6 +33,7 @@ Recently completed:
 - [005](_done/005-triage-stale-prs-and-dependency-duplicates.md) Triage Stale PRs And Dependency Duplicates
 - [006](_done/006-gradient-first-local-work.md) Capture the first local Gradient work item
 - [009](_done/009-fix-release-automation-branch-protection.md) Fix Release Automation Branch Protection
+- [008](_done/008-add-storage-quota-and-runtime-gates.md) Add Storage Quota And Runtime Gates
 
 ## Workflow
 

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../shared/app-url', () => ({
-  getSplootAppUrl: () => 'https://sploot.test/app',
+  getSplootAppUrl: (path = '/app') => new URL(path, 'https://sploot.test').toString(),
 }));
 
 interface ChromeMock {
@@ -95,5 +95,36 @@ describe('notifications', () => {
       priority: 2,
       isClickable: false,
     });
+  });
+
+  it('maps quota and upload gate errors to short actionable copy', async () => {
+    const { toErrorNotificationMessage } = await import('./notifications');
+
+    expect(toErrorNotificationMessage('Storage quota exceeded. Open Sploot settings to manage storage.'))
+      .toBe('Storage quota exceeded. Open Sploot settings.');
+    expect(toErrorNotificationMessage('Uploads are temporarily paused. Please try again later.'))
+      .toBe('Uploads are paused. Please try again later.');
+  });
+
+  it('opens the remediation URL when an actionable error notification is clicked', async () => {
+    const { showErrorNotification } = await import('./notifications');
+
+    showErrorNotification({
+      message: 'Storage quota exceeded. Open Sploot settings to manage storage.',
+      actionHref: '/app/settings',
+    });
+    clickListeners[0]('error-1779105600000');
+
+    expect(chromeMock.notifications.create).toHaveBeenCalledWith('error-1779105600000', {
+      type: 'basic',
+      iconUrl: 'chrome-extension://extension-id/icon-128.png',
+      title: 'Save Failed',
+      message: 'Storage quota exceeded. Open Sploot settings.',
+      priority: 2,
+      isClickable: true,
+    });
+    expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/app/settings' });
+    expect(chromeMock.notifications.clear).toHaveBeenCalledWith('error-1779105600000');
+    expect(chromeMock.notifications.onClicked.removeListener).toHaveBeenCalledWith(expect.any(Function));
   });
 });

@@ -6,6 +6,7 @@ import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
 import { getAuth } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
+import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 
 interface SearchFilters {
   favorites?: boolean;
@@ -90,6 +91,11 @@ async function postHandler(req: NextRequest) {
         searchType: 'vector',
         cached: true,
       });
+    }
+
+    const embeddingGate = getRuntimeGate('embeddings');
+    if (!embeddingGate.enabled) {
+      return runtimeGateResponse(embeddingGate);
     }
 
     // Initialize embedding service

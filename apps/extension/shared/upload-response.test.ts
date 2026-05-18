@@ -87,4 +87,60 @@ describe('uploadImage', () => {
       })
     );
   });
+
+  it('maps typed quota errors into actionable extension copy', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({
+        success: false,
+        error: 'Storage quota exceeded',
+        code: 'quota_exceeded',
+        retryable: false,
+        action: {
+          type: 'manage_storage',
+          label: 'Manage storage',
+          href: '/app/settings',
+        },
+      }), { status: 403 }))
+    );
+
+    const { uploadImage, SplootApiClientError } = await import('./api-client');
+
+    await expect(
+      uploadImage(new Blob(['image'], { type: 'image/jpeg' }), 'asset.jpg')
+    ).rejects.toMatchObject({
+      name: 'SplootApiClientError',
+      message: 'Storage quota exceeded. Open Sploot settings to manage storage.',
+      status: 403,
+      code: 'quota_exceeded',
+      retryable: false,
+      actionHref: '/app/settings',
+    });
+
+    await expect(
+      uploadImage(new Blob(['image'], { type: 'image/jpeg' }), 'asset.jpg')
+    ).rejects.toBeInstanceOf(SplootApiClientError);
+  });
+
+  it('maps typed upload gates into retryable extension copy', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({
+        error: 'Uploads are temporarily paused',
+        code: 'uploads_disabled',
+        retryable: true,
+      }), { status: 503 }))
+    );
+
+    const { uploadImage } = await import('./api-client');
+
+    await expect(
+      uploadImage(new Blob(['image'], { type: 'image/jpeg' }), 'asset.jpg')
+    ).rejects.toMatchObject({
+      message: 'Uploads are temporarily paused. Please try again later.',
+      status: 503,
+      code: 'uploads_disabled',
+      retryable: true,
+    });
+  });
 });

@@ -13,6 +13,13 @@ import { logError } from '@/lib/vercel-logger';
 import { createErrorResponse } from '@/lib/error-response';
 import { withObservability } from '@/lib/with-observability';
 import { getDbFingerprint } from '@/lib/db-fingerprint';
+import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
+import {
+  releaseStorageQuotaReservation,
+  reserveUploadBytes,
+  storageQuotaError,
+  StorageQuotaExceededError,
+} from '@/lib/quota/storage-quota-policy';
 
 // Shuffle seed range: 0-1000000 for user-friendly integer values
 // Normalized to 0.0-1.0 for PostgreSQL setseed() in shuffle queries
@@ -35,9 +42,15 @@ function parseUnsignedIntegerParam(value: string | null, defaultValue: number): 
 
 async function postHandler(req: NextRequest) {
   const requestId = crypto.randomUUID();
+  let quotaReservationId: string | null = null;
 
   try {
     const userId = await requireUserIdWithSync();
+
+    const uploadGate = getRuntimeGate('uploads');
+    if (!uploadGate.enabled) {
+      return runtimeGateResponse(uploadGate);
+    }
 
     const body = await req.json();
     const {
@@ -108,6 +121,9 @@ async function postHandler(req: NextRequest) {
       });
     }
 
+    const quotaReservation = await reserveUploadBytes(userId, size);
+    quotaReservationId = quotaReservation.id;
+
     const asset = await prisma.asset.create({
       data: {
         ownerUserId: userId,
@@ -129,25 +145,33 @@ async function postHandler(req: NextRequest) {
         },
       },
     });
+    await releaseStorageQuotaReservation(quotaReservationId);
+    quotaReservationId = null;
 
     // Generate embedding asynchronously (non-blocking)
     let embeddingStatus = 'pending';
     let embeddingError = null;
 
-    try {
-      const embeddingService = createEmbeddingService();
-
-      // Start embedding generation in background
-      generateEmbeddingAsync(asset.id, blobUrl, checksumSha256, embeddingService).catch(error => {
-        // Failed to generate embedding
-      });
-
-      embeddingStatus = 'processing';
-    } catch (error) {
-      // Embedding service not configured - continue without embeddings
-      // Embedding service not available
+    const embeddingGate = getRuntimeGate('embeddings');
+    if (!embeddingGate.enabled) {
       embeddingStatus = 'unavailable';
-      embeddingError = error instanceof EmbeddingError ? error.message : 'Embedding service not configured';
+      embeddingError = embeddingGate.message;
+    } else {
+      try {
+        const embeddingService = createEmbeddingService();
+
+        // Start embedding generation in background
+        generateEmbeddingAsync(asset.id, blobUrl, checksumSha256, embeddingService).catch(error => {
+          // Failed to generate embedding
+        });
+
+        embeddingStatus = 'processing';
+      } catch (error) {
+        // Embedding service not configured - continue without embeddings
+        // Embedding service not available
+        embeddingStatus = 'unavailable';
+        embeddingError = error instanceof EmbeddingError ? error.message : 'Embedding service not configured';
+      }
     }
 
     // Invalidate cache after creating new asset
@@ -179,8 +203,14 @@ async function postHandler(req: NextRequest) {
       message: 'Asset created successfully',
     });
   } catch (error) {
+    await releaseStorageQuotaReservation(quotaReservationId);
+
     if (isUnauthorizedAuthError(error)) {
       return unauthorizedResponse();
+    }
+
+    if (error instanceof StorageQuotaExceededError) {
+      return NextResponse.json(storageQuotaError(error.snapshot), { status: 403 });
     }
 
     unstable_rethrow(error);

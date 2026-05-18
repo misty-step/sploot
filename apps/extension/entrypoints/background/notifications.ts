@@ -6,6 +6,11 @@
 
 import { getSplootAppUrl } from '../../shared/app-url';
 
+export interface ErrorNotificationInput {
+  message: string;
+  actionHref?: string;
+}
+
 /**
  * Show success notification
  *
@@ -48,6 +53,12 @@ export function showSuccessNotification(
  * Convert internal upload/auth/network errors into short user-facing copy.
  */
 export function toErrorNotificationMessage(errorMessage: string): string {
+  if (errorMessage.includes('Storage quota exceeded')) {
+    return 'Storage quota exceeded. Open Sploot settings.';
+  }
+  if (errorMessage.includes('Uploads are temporarily paused')) {
+    return 'Uploads are paused. Please try again later.';
+  }
   if (errorMessage.includes('Authentication required')) {
     return 'Please login to sploot.app first';
   }
@@ -70,9 +81,12 @@ export function toErrorNotificationMessage(errorMessage: string): string {
 /**
  * Show error notification
  */
-export function showErrorNotification(errorMessage: string): void {
+export function showErrorNotification(error: string | ErrorNotificationInput): void {
   const notificationId = `error-${Date.now()}`;
+  const errorMessage = typeof error === 'string' ? error : error.message;
   const userMessage = toErrorNotificationMessage(errorMessage);
+  const actionHref = typeof error === 'string' ? undefined : error.actionHref;
+  const actionUrl = actionHref ? getSplootAppUrl(actionHref) : undefined;
 
   chrome.notifications.create(notificationId, {
     type: 'basic',
@@ -80,8 +94,20 @@ export function showErrorNotification(errorMessage: string): void {
     title: 'Save Failed',
     message: userMessage,
     priority: 2,
-    isClickable: false,
+    isClickable: Boolean(actionUrl),
   });
+
+  if (actionUrl) {
+    const clickHandler = (clickedId: string) => {
+      if (clickedId === notificationId) {
+        chrome.tabs.create({ url: actionUrl });
+        chrome.notifications.clear(notificationId);
+        chrome.notifications.onClicked.removeListener(clickHandler);
+      }
+    };
+
+    chrome.notifications.onClicked.addListener(clickHandler);
+  }
 
   // Auto-dismiss after 10 seconds
   setTimeout(() => {

@@ -125,9 +125,40 @@ Generate a pre-signed URL for direct client-side upload to Vercel Blob storage.
 **Error Responses:**
 - 400: Missing filename, mimeType, or size; invalid file type or size
 - 401: Unauthorized
+- 403: Storage quota exceeded (`code: "quota_exceeded"`, includes `quota` snapshot and `/app/settings` action)
+- 503: Uploads disabled by `SPLOOT_UPLOADS_ENABLED=false` (`code: "uploads_disabled"`)
 - 500: Blob storage not configured, invalid blob token, network/blob error, or server error
 
 #### POST /api/upload
+
+Uploads are guarded by the same runtime and quota policy:
+
+- `SPLOOT_UPLOADS_ENABLED=false` pauses uploads before server-side Blob writes and returns `503` with `code: "uploads_disabled"`.
+- Per-user storage quota is checked after validation/deduplication and before image processing or Blob writes.
+- Quota denials return `403` with `code: "quota_exceeded"`, a `quota` snapshot, and an action pointing to `/app/settings`.
+- `/api/upload-url` performs the same auth, gate, validation, and quota preflight before issuing a direct-upload URL; `/api/assets` re-checks quota before accepting the completed direct upload record.
+
+Quota error example:
+
+```json
+{
+  "success": false,
+  "error": "Storage quota exceeded",
+  "code": "quota_exceeded",
+  "retryable": false,
+  "quota": {
+    "usedBytes": 104857600,
+    "limitBytes": 1073741824,
+    "remainingBytes": 0,
+    "incomingBytes": 10485760
+  },
+  "action": {
+    "type": "manage_storage",
+    "label": "Manage storage",
+    "href": "/app/settings"
+  }
+}
+```
 
 upload an image through the api. this is the `SplootApiUploadResponse` contract
 used by the chrome extension.
@@ -444,7 +475,7 @@ Run a blob-url audit for the authenticated user's non-deleted assets.
 
 #### GET /api/stats
 
-Return per-user aggregate stats (`assetCount`, `storageBytes`, `lastUploadAt`).
+Return per-user aggregate stats (`assetCount`, `storageBytes`, `storageLimitBytes`, `storageRemainingBytes`, `storageUsagePercent`, `lastUploadAt`).
 
 **Authentication:** Required
 
@@ -585,6 +616,8 @@ Check embedding generation status for up to 50 assets.
 #### POST /api/assets/{id}/generate-embedding
 
 Manually trigger embedding generation for an asset.
+
+Embedding generation is guarded by `SPLOOT_EMBEDDINGS_ENABLED=false`; when disabled this route returns `503` with `code: "embeddings_disabled"` before calling Replicate. The cron embedding processor uses the same gate.
 
 **Authentication:** Required
 

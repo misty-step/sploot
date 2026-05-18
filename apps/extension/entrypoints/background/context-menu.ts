@@ -106,9 +106,15 @@ async function handleImageSave(
   } catch (error) {
     console.error('[ContextMenu] Failed to save image:', error);
 
-    const errorMessage =
-      error instanceof Error ? error.message : 'Failed to save image';
-    showErrorNotification(errorMessage);
+    if (error instanceof Error && 'actionHref' in error && typeof error.actionHref === 'string') {
+      showErrorNotification({
+        message: error.message,
+        actionHref: error.actionHref,
+      });
+      return;
+    }
+
+    showErrorNotification(error instanceof Error ? error.message : 'Failed to save image');
   }
 }
 

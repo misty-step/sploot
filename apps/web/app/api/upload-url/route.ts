@@ -5,6 +5,12 @@ import { put } from '@vercel/blob';
 import { blobConfigured } from '@/lib/env';
 import { withObservability } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
+import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
+import {
+  checkUploadBytesAllowed,
+  storageQuotaError,
+  StorageQuotaExceededError,
+} from '@/lib/quota/storage-quota-policy';
 
 async function postHandler(req: NextRequest) {
   try {
@@ -15,6 +21,11 @@ async function postHandler(req: NextRequest) {
         { error: 'Unauthorized' },
         { status: 401 }
       );
+    }
+
+    const uploadGate = getRuntimeGate('uploads');
+    if (!uploadGate.enabled) {
+      return runtimeGateResponse(uploadGate);
     }
 
     // Parse request body
@@ -45,6 +56,8 @@ async function postHandler(req: NextRequest) {
       );
     }
 
+    await checkUploadBytesAllowed(userId, size);
+
     // Generate unique filename for storage
     const uniqueFilename = generateUniqueFilename(userId, filename);
 
@@ -63,6 +76,10 @@ async function postHandler(req: NextRequest) {
     });
 
   } catch (error) {
+    if (error instanceof StorageQuotaExceededError) {
+      return NextResponse.json(storageQuotaError(error.snapshot), { status: 403 });
+    }
+
     logError('upload:generate-url-failed', error);
 
     // Return user-friendly error message

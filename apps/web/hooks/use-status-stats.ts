@@ -6,6 +6,8 @@ import { getEmbeddingQueueManager } from '@/lib/embedding-queue';
 interface StatusStats {
   assetCount: number;
   storageUsed: number;
+  storageLimit: number;
+  storageRemaining: number;
   lastUploadTime: Date | null;
   queueDepth: number;
 }
@@ -18,6 +20,8 @@ export function useStatusStats(): StatusStats {
   const [stats, setStats] = useState<StatusStats>({
     assetCount: 0,
     storageUsed: 0,
+    storageLimit: 0,
+    storageRemaining: 0,
     lastUploadTime: null,
     queueDepth: 0,
   });
@@ -31,6 +35,8 @@ export function useStatusStats(): StatusStats {
         const data = await response.json();
         const assetCount = data.assetCount ?? 0;
         const storageUsed = data.storageBytes ?? 0;
+        const storageLimit = data.storageLimitBytes ?? 0;
+        const storageRemaining = data.storageRemainingBytes ?? Math.max(0, storageLimit - storageUsed);
         const lastUploadTime = data.lastUploadAt ? new Date(data.lastUploadAt) : null;
 
         // Get queue depth
@@ -41,6 +47,8 @@ export function useStatusStats(): StatusStats {
         setStats({
           assetCount,
           storageUsed,
+          storageLimit,
+          storageRemaining,
           lastUploadTime,
           queueDepth,
         });

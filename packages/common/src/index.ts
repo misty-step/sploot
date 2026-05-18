@@ -21,4 +21,11 @@ export {
 } from './image-preparation';
 
 // API Types
-export type { SplootApiUploadResponse, SplootApiError } from './types';
+export type {
+  SplootApiError,
+  SplootApiErrorAction,
+  SplootApiErrorActionType,
+  SplootApiErrorCode,
+  SplootApiUploadResponse,
+  StorageQuotaSnapshot,
+} from './types';

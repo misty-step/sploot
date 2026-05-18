@@ -28,6 +28,12 @@ export interface UploadResult {
   error?: string;
 }
 
+export interface UploadErrorAction {
+  type: string;
+  label: string;
+  href?: string;
+}
+
 export interface UploadOptions {
   /** Callback for upload progress updates */
   onProgress?: (event: UploadProgressEvent) => void;
@@ -43,7 +49,10 @@ export class UploadError extends Error {
   constructor(
     message: string,
     public readonly statusCode?: number,
-    public readonly isRetryable: boolean = false
+    public readonly isRetryable: boolean = false,
+    public readonly code?: string,
+    public readonly action?: UploadErrorAction,
+    public readonly quota?: unknown
   ) {
     super(message);
     this.name = 'UploadError';
@@ -119,17 +128,25 @@ export class UploadNetworkClient {
         } else {
           // HTTP error status
           let errorMessage: string;
+          let errorCode: string | undefined;
+          let retryable: boolean | undefined;
+          let action: UploadErrorAction | undefined;
+          let quota: unknown;
           try {
             const error = JSON.parse(xhr.responseText);
             errorMessage = error.error || `Upload failed with status ${xhr.status}`;
+            errorCode = error.code;
+            retryable = error.retryable;
+            action = error.action;
+            quota = error.quota;
           } catch {
             errorMessage = `Upload failed with status ${xhr.status}`;
           }
 
           // Determine if error is retryable (5xx server errors are retryable)
-          const isRetryable = xhr.status >= 500 && xhr.status < 600;
+          const isRetryable = retryable ?? (xhr.status >= 500 && xhr.status < 600);
 
-          reject(new UploadError(errorMessage, xhr.status, isRetryable));
+          reject(new UploadError(errorMessage, xhr.status, isRetryable, errorCode, action, quota));
         }
       });
 

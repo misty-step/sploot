@@ -39,7 +39,7 @@ export function UploadErrorDisplay({
         router.push('/sign-in');
         break;
       case 'upgrade':
-        router.push('/app/settings?tab=billing');
+        router.push('/app/settings');
         break;
       case 'contact':
         window.open('mailto:support@sploot.app?subject=Upload Error', '_blank');

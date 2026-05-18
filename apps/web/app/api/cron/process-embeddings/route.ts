@@ -4,6 +4,7 @@ import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { headers } from 'next/headers';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
+import { getRuntimeGate, runtimeGateError } from '@/lib/runtime-gates';
 
 // Performance tracking
 interface ProcessingStats {
@@ -54,6 +55,17 @@ async function getHandler(request: NextRequest) {
     if ( !prisma) {
       return NextResponse.json(
         { error: 'Database unavailable' },
+        { status: 503 }
+      );
+    }
+
+    const embeddingGate = getRuntimeGate('embeddings');
+    if (!embeddingGate.enabled) {
+      return NextResponse.json(
+        {
+          ...runtimeGateError(embeddingGate),
+          stats,
+        },
         { status: 503 }
       );
     }

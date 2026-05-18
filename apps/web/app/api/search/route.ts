@@ -5,6 +5,7 @@ import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
 import { getAuthWithUser } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
+import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 
 const MIN_SIMILAR_RESULTS = 10;
 
@@ -74,6 +75,11 @@ async function postHandler(req: NextRequest) {
         processingTime: Date.now() - startTime,
         cached: true,
       });
+    }
+
+    const embeddingGate = getRuntimeGate('embeddings');
+    if (!embeddingGate.enabled) {
+      return runtimeGateResponse(embeddingGate);
     }
 
     // Initialize embedding service

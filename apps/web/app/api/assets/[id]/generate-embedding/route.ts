@@ -10,6 +10,7 @@ import { broadcastEmbeddingUpdate } from '@/lib/sse-broadcaster';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
+import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 
 // Request deduplication: Track in-flight requests
 const inFlightRequests = new Map<string, Promise<any>>();
@@ -73,6 +74,11 @@ async function postHandler(
         { error: 'Asset not found' },
         { status: 404 }
       );
+    }
+
+    const embeddingGate = getRuntimeGate('embeddings');
+    if (!embeddingGate.enabled) {
+      return runtimeGateResponse(embeddingGate);
     }
 
     // Check circuit breaker
