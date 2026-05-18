@@ -56,6 +56,20 @@ def parse_source_skills(source_root: pathlib.Path) -> list[str]:
     return list(profile.get("harness", {}).get("skills", []))
 
 
+def source_shared_roots(source_root: pathlib.Path) -> list[pathlib.Path]:
+    roots: list[pathlib.Path] = []
+    profile = source_root / "gradient.yaml"
+    if profile.exists():
+        data = load_yaml(profile)
+        shared = data.get("harness", {}).get("shared_skill_root")
+        if shared:
+            roots.append(source_root / shared)
+    for candidate in [source_root / ".agents" / "skills", source_root / ".agent" / "skills"]:
+        if candidate not in roots:
+            roots.append(candidate)
+    return roots
+
+
 def target_shared_root(target_root: pathlib.Path) -> pathlib.Path:
     profile = target_root / "gradient.yaml"
     if profile.exists():
@@ -63,7 +77,7 @@ def target_shared_root(target_root: pathlib.Path) -> pathlib.Path:
         shared = data.get("harness", {}).get("shared_skill_root")
         if shared:
             return target_root / shared
-    return target_root / ".agent" / "skills"
+    return target_root / ".agents" / "skills"
 
 
 def iter_files(root: pathlib.Path) -> list[pathlib.Path]:
@@ -109,8 +123,11 @@ def managed_candidates(source_root: pathlib.Path, target_root: pathlib.Path) -> 
         add_candidate(candidates, source_root, target_root, source_agents, target_root / "AGENTS.md")
 
     shared = target_shared_root(target_root)
+    source_roots = source_shared_roots(source_root)
     for skill in parse_source_skills(source_root):
-        source_skill = source_root / ".agent" / "skills" / skill
+        source_skill = next((root / skill for root in source_roots if (root / skill).exists()), None)
+        if source_skill is None:
+            continue
         for source_path in iter_files(source_skill):
             add_candidate(
                 candidates,

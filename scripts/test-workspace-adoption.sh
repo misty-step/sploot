@@ -48,6 +48,7 @@ EOF
 
 grep -Eq "resolved git worktree root: .*/linked" "$TMP_ROOT/init.txt"
 grep -q "detected shared skill root: .agents/skills" "$TMP_ROOT/init.txt"
+test -d "$TMP_ROOT/linked/.agents/skills/research"
 test -d "$TMP_ROOT/linked/.agents/skills/gradient-contracts"
 test ! -d "$TMP_ROOT/linked/.agent/skills"
 grep -q "shared_skill_root: .agents/skills" "$TMP_ROOT/linked/gradient.yaml"
@@ -73,5 +74,21 @@ grep -q "shared_skill_root: .agents/skills" "$TMP_ROOT/linked/gradient.yaml"
   ./scripts/gradient.sh resolve
   ./scripts/gradient.sh validate
 )
+
+git -C "$TMP_ROOT" init configured >/dev/null
+git -C "$TMP_ROOT/configured" config user.email gradient@example.invalid
+git -C "$TMP_ROOT/configured" config user.name "Gradient Test"
+printf "# Configured Root Fixture\n" > "$TMP_ROOT/configured/README.md"
+cp "$ROOT/gradient.yaml" "$TMP_ROOT/configured/gradient.yaml"
+perl -0pi -e 's#shared_skill_root: \.agents/skills#shared_skill_root: .configured/skills#' "$TMP_ROOT/configured/gradient.yaml"
+git -C "$TMP_ROOT/configured" add README.md gradient.yaml
+git -C "$TMP_ROOT/configured" commit -m "seed" >/dev/null
+
+"$ROOT/scripts/gradient.sh" init --profile solo-frontier "$TMP_ROOT/configured" > "$TMP_ROOT/configured-init.txt"
+
+grep -q "detected shared skill root: .configured/skills" "$TMP_ROOT/configured-init.txt"
+test -d "$TMP_ROOT/configured/.configured/skills/research"
+test ! -d "$TMP_ROOT/configured/.agent/skills"
+grep -q "shared_skill_root: .configured/skills" "$TMP_ROOT/configured/gradient.yaml"
 
 echo "workspace adoption regression passed"

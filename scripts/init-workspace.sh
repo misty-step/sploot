@@ -170,13 +170,21 @@ def parse_source_skills() -> list[str]:
     ]
 
 
+def read_shared_skill_root(root: pathlib.Path) -> pathlib.Path | None:
+    profile = root / "gradient.yaml"
+    if not profile.exists():
+        return None
+    text = profile.read_text()
+    match = re.search(r"(?m)^  shared_skill_root:\s*(\S+)\s*$", text)
+    if not match:
+        return None
+    return pathlib.Path(match.group(1))
+
+
 def existing_shared_root() -> pathlib.Path:
-    profile = target / "gradient.yaml"
-    if profile.exists():
-        text = profile.read_text()
-        match = re.search(r"(?m)^  shared_skill_root:\s*(\S+)\s*$", text)
-        if match and (target / match.group(1)).exists():
-            return target / match.group(1)
+    configured = read_shared_skill_root(target)
+    if configured is not None:
+        return target / configured
     for candidate in [target / ".agents" / "skills", target / ".agent" / "skills"]:
         if candidate.exists():
             return candidate
@@ -197,8 +205,27 @@ def detect_bridges(shared: pathlib.Path) -> list[pathlib.Path]:
     return bridges
 
 
-def copy_missing_skill(skill: str, shared: pathlib.Path) -> None:
-    src = source / ".agent" / "skills" / skill
+def source_skill_roots() -> list[pathlib.Path]:
+    roots: list[pathlib.Path] = []
+    configured = read_shared_skill_root(source)
+    if configured is not None:
+        roots.append(source / configured)
+    for candidate in [source / ".agents" / "skills", source / ".agent" / "skills"]:
+        if candidate not in roots:
+            roots.append(candidate)
+    return roots
+
+
+def copy_missing_skill(skill: str, shared: pathlib.Path, roots: list[pathlib.Path]) -> None:
+    src = None
+    for root in roots:
+        candidate = root / skill
+        if candidate.exists():
+            src = candidate
+            break
+    if src is None:
+        searched = ", ".join(str((root / skill).resolve()) for root in roots)
+        raise SystemExit(f"missing source skill '{skill}'; searched: {searched}")
     dst = shared / skill
     if dst.exists():
         print(f"preserve existing {dst}")
@@ -247,13 +274,14 @@ def update_profile(shared: pathlib.Path, bridges: list[pathlib.Path], skills: li
 
 
 skills = parse_source_skills()
+source_roots = source_skill_roots()
 shared = existing_shared_root()
 bridges = detect_bridges(shared)
 print(f"detected shared skill root: {rel(shared)}")
 print("detected bridges: " + ", ".join(rel(path) for path in bridges))
 shared.mkdir(parents=True, exist_ok=True)
 for skill in skills:
-    copy_missing_skill(skill, shared)
+    copy_missing_skill(skill, shared, source_roots)
 for bridge in bridges:
     for skill in skills:
         link_skill(skill, shared, bridge)

@@ -19,6 +19,9 @@ git -C "$TMP_ROOT/target" add README.md
 git -C "$TMP_ROOT/target" commit -m "seed" >/dev/null
 
 "$ROOT/scripts/gradient.sh" init "$TMP_ROOT/target" > "$TMP_ROOT/init.txt"
+grep -q "detected shared skill root: .agents/skills" "$TMP_ROOT/init.txt"
+test -d "$TMP_ROOT/target/.agents/skills/research"
+test ! -d "$TMP_ROOT/target/.agent/skills"
 mkdir -p "$TMP_ROOT/target/.spellbook"
 
 cat > "$TMP_ROOT/target/ARCHITECTURE.md" <<'EOF'
