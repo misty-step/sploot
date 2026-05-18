@@ -185,6 +185,16 @@ Current status: screenshot and promo directories only contain `.gitkeep`; final
 store screenshots still need to be captured or generated before Chrome Web
 Store submission.
 
+Readiness gate:
+
+```bash
+pnpm --filter extension release:check
+```
+
+This command is expected to fail until final store screenshots, the promo tile,
+authenticated right-click upload/duplicate QA, and the Chrome Web Store
+dashboard receipt are complete.
+
 ## Authenticated Chrome QA
 
 Checked on 2026-05-18 with Google Chrome profile `Phaedrus (Phaedrus @ Home)`.

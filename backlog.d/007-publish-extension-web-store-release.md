@@ -53,6 +53,14 @@ Remaining blockers before this can move to `_done`:
   `apps/extension/store-assets/`.
 - Chrome Web Store dashboard upload/review receipt is not captured.
 
+## Release Readiness Gate - 2026-05-18
+
+Added `pnpm --filter extension release:check` as the local release-readiness
+gate for this item. In the current state it verifies the existing production
+zip and listing status, then fails with the remaining blockers: missing
+screenshots, missing small promo tile, unproven authenticated right-click
+upload/duplicate behavior, and missing Chrome Web Store dashboard receipt.
+
 ## Goal
 
 Sploot's Chrome extension is packaged, QAed, and submitted to the Chrome Web
