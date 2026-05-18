@@ -45,25 +45,34 @@ export function showSuccessNotification(
 }
 
 /**
+ * Convert internal upload/auth/network errors into short user-facing copy.
+ */
+export function toErrorNotificationMessage(errorMessage: string): string {
+  if (errorMessage.includes('Authentication required')) {
+    return 'Please login to sploot.app first';
+  }
+  if (errorMessage.includes('Session expired')) {
+    return 'Session expired. Please login again.';
+  }
+  if (errorMessage.includes('too large')) {
+    return 'Image too large after compression.';
+  }
+  if (errorMessage.includes('timeout')) {
+    return 'Upload timeout. Please try again.';
+  }
+  if (errorMessage.includes('Network error')) {
+    return 'Network error. Check your connection.';
+  }
+
+  return errorMessage;
+}
+
+/**
  * Show error notification
  */
 export function showErrorNotification(errorMessage: string): void {
   const notificationId = `error-${Date.now()}`;
-
-  // Simplify error messages for users
-  let userMessage = errorMessage;
-
-  if (errorMessage.includes('Authentication required')) {
-    userMessage = 'Please login to sploot.app first';
-  } else if (errorMessage.includes('Session expired')) {
-    userMessage = 'Session expired. Please login again.';
-  } else if (errorMessage.includes('too large')) {
-    userMessage = 'Image too large after compression.';
-  } else if (errorMessage.includes('timeout')) {
-    userMessage = 'Upload timeout. Please try again.';
-  } else if (errorMessage.includes('Network error')) {
-    userMessage = 'Network error. Check your connection.';
-  }
+  const userMessage = toErrorNotificationMessage(errorMessage);
 
   chrome.notifications.create(notificationId, {
     type: 'basic',

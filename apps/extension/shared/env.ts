@@ -1,4 +1,4 @@
-const RAW_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+const RAW_PUBLISHABLE_KEY = (import.meta.env.VITE_CLERK_PUBLISHABLE_KEY ?? '').trim();
 const RAW_API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').trim().replace(/\/$/, '');
 const RAW_SYNC_HOST = (import.meta.env.VITE_CLERK_SYNC_HOST ?? '').trim().replace(/\/$/, '');
 

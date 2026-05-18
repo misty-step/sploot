@@ -1,0 +1,61 @@
+{
+  "base_url": "https://www.sploot.app",
+  "extension_dist": "../extension/dist/chrome-mv3",
+  "started_at": "2026-05-18T17:22:10.931Z",
+  "finished_at": "2026-05-18T17:22:11.423Z",
+  "status": "fail",
+  "checks": [
+    {
+      "name": "production health",
+      "status": "pass",
+      "duration_ms": 200,
+      "details": {
+        "database": "up",
+        "redis": "up",
+        "database_latency_ms": 11,
+        "version": "0.1.0"
+      }
+    },
+    {
+      "name": "production service health",
+      "status": "pass",
+      "duration_ms": 111,
+      "details": {
+        "status": "degraded",
+        "all_services_configured": true,
+        "database": "healthy",
+        "blob_storage": "healthy",
+        "embeddings": "healthy",
+        "can_upload": true,
+        "can_search": true
+      }
+    },
+    {
+      "name": "signed-out app route protection",
+      "status": "fail",
+      "duration_ms": 63,
+      "error": "expected redirect to sign-in, got HTTP 404"
+    },
+    {
+      "name": "signed-out api auth contract",
+      "status": "fail",
+      "duration_ms": 108,
+      "error": "expected JSON from https://www.sploot.app/api/assets?limit=1, got: <!DOCTYPE html><!--JpSDyCjwrtSOmpdDf9l4U--><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"w"
+    },
+    {
+      "name": "production extension artifact",
+      "status": "pass",
+      "duration_ms": 9,
+      "details": {
+        "manifest": "../extension/dist/chrome-mv3/manifest.json",
+        "version": "1.0.0",
+        "host_permissions": [
+          "https://sploot.app/*",
+          "https://www.sploot.app/*",
+          "https://clerk.sploot.app/*"
+        ],
+        "clerk_publishable_key": "pk_live_*"
+      }
+    }
+  ]
+}

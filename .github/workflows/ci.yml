@@ -68,8 +68,8 @@ jobs:
       - name: Run tests
         run: pnpm --filter web test
 
-  extension-build:
-    name: Extension Build
+  extension:
+    name: Extension
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -79,25 +79,30 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter extension build
+      - name: Lint extension
+        run: pnpm --filter extension lint
+      - name: Test extension
+        run: pnpm --filter extension test
+      - name: Build extension
+        run: pnpm --filter extension build
       - uses: actions/upload-artifact@v4
         with:
           name: extension-dist
-          path: apps/extension/.output/
+          path: apps/extension/dist/
           retention-days: 7
 
   merge-gate:
     name: merge-gate
     if: always()
-    needs: [lint, type-check, test, extension-build]
+    needs: [lint, type-check, test, extension]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          results=("${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.test.result }}" "${{ needs.extension-build.result }}")
+          results=("${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" ]]; then
-              echo "One or more jobs failed: lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} test=${{ needs.test.result }} extension-build=${{ needs.extension-build.result }}"
+              echo "One or more jobs failed: lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }}"
               exit 1
             fi
           done

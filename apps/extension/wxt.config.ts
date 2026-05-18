@@ -21,6 +21,15 @@ export default defineConfig({
     // Default to development for safety
     const isProduction = process.env.WXT_MODE === 'production';
     const includeCrxKey = !isProduction || process.env.INCLUDE_CRX_KEY === 'true';
+    const publishableKey = process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ?? '';
+
+    if (isProduction && !publishableKey.startsWith('pk_live_')) {
+      throw new Error('VITE_CLERK_PUBLISHABLE_KEY must be a pk_live_ key for production extension builds');
+    }
+
+    if (!isProduction && publishableKey && !publishableKey.startsWith('pk_test_')) {
+      throw new Error('VITE_CLERK_PUBLISHABLE_KEY must be a pk_test_ key for development extension builds');
+    }
 
     // Determine Clerk frontend API domain based on environment
     const clerkDomain = isProduction
@@ -32,12 +41,18 @@ export default defineConfig({
       throw new Error('VITE_API_BASE_URL is required for extension builds (e.g., https://sploot.app or http://localhost:3001)');
     }
     const normalizedApiHost = rawApiHost.replace(/\/$/, '');
+    if (isProduction && normalizedApiHost !== 'https://www.sploot.app') {
+      throw new Error('Production extension builds must use VITE_API_BASE_URL=https://www.sploot.app');
+    }
     const apiHostPermission = `${normalizedApiHost}/*`;
     const rawSyncHost = process.env.VITE_CLERK_SYNC_HOST;
     if (!rawSyncHost) {
       throw new Error('VITE_CLERK_SYNC_HOST is required for extension builds (e.g., https://clerk.sploot.app or http://localhost:3001)');
     }
     const normalizedSyncHost = rawSyncHost.replace(/\/$/, '');
+    if (isProduction && normalizedSyncHost !== 'https://clerk.sploot.app') {
+      throw new Error('Production extension builds must use VITE_CLERK_SYNC_HOST=https://clerk.sploot.app');
+    }
     const syncHostPermission = `${normalizedSyncHost}/*`;
 
     console.log(`[WXT Config] Building in ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);

@@ -14,7 +14,7 @@ pre-commit:
 
     lint-extension:
       glob: "apps/extension/**/*.{js,ts,jsx,tsx}"
-      run: pnpm --filter extension lint 2>/dev/null || true
+      run: pnpm --filter extension lint
 
     typecheck:
       run: pnpm turbo run type-check
