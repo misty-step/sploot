@@ -178,12 +178,13 @@ Required for secure Clerk authentication and session synchronization.
 Required before submission:
 
 - Store icon: `apps/extension/public/icon-128.png`
-- Screenshots: `apps/extension/store-assets/screenshots/`
+- Screenshots:
+  `apps/extension/store-assets/screenshots/01-context-menu-save-to-sploot-1280x800.png`
 - Small promo tile: `apps/extension/store-assets/promo/small-promo-440x280.png`
 
-Current status: the small promo tile is present and validates at `440x280`.
-Final store screenshots still need to be captured before Chrome Web Store
-submission.
+Current status: one non-sensitive context-menu screenshot is present and
+validates at `1280x800`; the small promo tile is present and validates at
+`440x280`.
 
 Readiness gate:
 
@@ -191,9 +192,8 @@ Readiness gate:
 pnpm --filter extension release:check
 ```
 
-This command is expected to fail until final store screenshots, authenticated
-right-click upload/duplicate QA, and the Chrome Web Store dashboard receipt are
-complete.
+This command is expected to fail until authenticated right-click upload/duplicate
+QA and the Chrome Web Store dashboard receipt are complete.
 
 ## Authenticated Chrome QA
 
@@ -261,7 +261,6 @@ Status: not submitted.
 
 Blocking items before submission:
 
-- final screenshots are missing
 - authenticated production Chrome extension QA is partially complete, but
   right-click upload and duplicate behavior are not release-proven
 - production rebuild is blocked until `VITE_CLERK_PUBLISHABLE_KEY=pk_live_*`
