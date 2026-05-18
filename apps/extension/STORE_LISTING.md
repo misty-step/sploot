@@ -226,18 +226,19 @@ Unproven/requires follow-up before submission:
   worktree release build. A fresh production-like unpacked build from this
   worktree exists at `apps/extension/dist/chrome-mv3`, but loading or reloading
   it requires action-time confirmation.
-- The production extension build could not be rerun in this shell because
-  `VITE_CLERK_PUBLISHABLE_KEY` is not present.
+- The production extension build and zip were rerun from this worktree with the
+  existing public `pk_live_*` Clerk publishable key already embedded in the
+  release artifact.
 
 ## Release Artifact
 
-Built on 2026-05-18:
+Rebuilt on 2026-05-18:
 
 ```text
 Path: apps/extension/dist/extension-1.0.0-chrome.zip
 Version: 1.0.0
 Size: 1.66 MB
-SHA256: ee12ad391996b50389a60995296c141af689db1bb75411f5f43ae74e583bb532
+SHA256: 0daf17d25bc9da654a9497749800ae0d34667bb5babcd4859dbc9edfdc21a99c
 ```
 
 Build commands:
@@ -271,8 +272,8 @@ Blocking items before submission:
 
 - authenticated production Chrome extension QA is partially complete, but
   right-click upload and duplicate behavior are not release-proven
-- production rebuild is blocked until `VITE_CLERK_PUBLISHABLE_KEY=pk_live_*`
-  is available in the release shell
+- authenticated Chrome is currently loaded from stale extension source; reload
+  `apps/extension/dist/chrome-mv3` before treating upload QA as release evidence
 - no Chrome Web Store dashboard upload/review receipt has been captured
 
 Rollback/disable plan:

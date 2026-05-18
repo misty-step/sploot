@@ -35,9 +35,11 @@ Estimate: M
 - Re-ran `pnpm --filter web smoke:deployed`; it passes against
   `https://www.sploot.app` and validates
   `apps/extension/dist/extension-1.0.0-chrome.zip`.
-- Verified the existing release zip manifest has production Sploot and Clerk
-  host permissions, version `1.0.0`, and SHA256
-  `ee12ad391996b50389a60995296c141af689db1bb75411f5f43ae74e583bb532`.
+- Rebuilt the production extension from this worktree with the existing public
+  `pk_live_*` Clerk publishable key embedded in the release artifact. The
+  regenerated zip has production Sploot and Clerk host permissions, version
+  `1.0.0`, and SHA256
+  `0daf17d25bc9da654a9497749800ae0d34667bb5babcd4859dbc9edfdc21a99c`.
 - Checked Chrome with an authenticated profile: the Sploot popup is signed in,
   `View My Library` opens `https://sploot.app/app`, and the library renders.
 - Right-clicking `https://www.sploot.app/apple-icon.png` exposes
@@ -53,8 +55,6 @@ Estimate: M
 
 Remaining blockers before this can move to `_done`:
 
-- `VITE_CLERK_PUBLISHABLE_KEY=pk_live_*` is not available in the release shell,
-  so a fresh production build/zip cannot be recreated from source in this pass.
 - Reload authenticated Chrome from the fresh worktree production-like unpacked
   build at `apps/extension/dist/chrome-mv3` before treating right-click upload
   and duplicate QA as release evidence.
