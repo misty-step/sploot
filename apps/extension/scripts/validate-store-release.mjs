@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { createReadStream, existsSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -34,6 +35,19 @@ function recordExternal(message) {
   externalBlockers.push(message);
 }
 
+async function sha256File(filePath) {
+  const hash = createHash('sha256');
+
+  await new Promise((resolve, reject) => {
+    createReadStream(filePath)
+      .on('data', chunk => hash.update(chunk))
+      .on('error', reject)
+      .on('end', resolve);
+  });
+
+  return hash.digest('hex');
+}
+
 async function zipEntry(zipFile, entryName) {
   const { stdout } = await execFileAsync('unzip', ['-p', zipFile, entryName], {
     maxBuffer: 20 * 1024 * 1024,
@@ -61,6 +75,20 @@ async function validateZip() {
   if (!existsSync(zipPath)) {
     recordLocal(`missing release zip: ${rel(zipPath)}`);
     return;
+  }
+
+  if (existsSync(listingPath)) {
+    const listing = await readFile(listingPath, 'utf8');
+    const documentedSha = listing.match(/SHA256:\s*([a-f0-9]{64})/i)?.[1]?.toLowerCase();
+    const actualSha = await sha256File(zipPath);
+
+    if (!documentedSha) {
+      recordLocal('listing packet missing release zip SHA256');
+    } else if (documentedSha !== actualSha) {
+      recordLocal(`release zip SHA256 mismatch: listing has ${documentedSha}, actual is ${actualSha}`);
+    } else {
+      recordPass(`release zip SHA256 matches STORE_LISTING.md (${actualSha})`);
+    }
   }
 
   const entries = await zipEntries(zipPath);
