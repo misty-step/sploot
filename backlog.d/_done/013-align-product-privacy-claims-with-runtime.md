@@ -1,8 +1,8 @@
 ---
 id: 013-align-product-privacy-claims-with-runtime
 title: Align Product Privacy Claims With Runtime
-status: ready
-lifecycle_stage: Intent
+status: done
+lifecycle_stage: Feedback
 owner: local
 acceptance:
   - Landing, privacy, support, and store listing claims match actual analytics and search logging behavior.
@@ -25,7 +25,7 @@ refs:
 # Align Product Privacy Claims With Runtime
 
 Priority: high
-Status: ready
+Status: done
 Estimate: S
 
 ## Goal
@@ -41,13 +41,13 @@ running.
 
 ## Oracle
 
-- [ ] Public copy no longer says or implies stronger privacy guarantees than
+- [x] Public copy no longer says or implies stronger privacy guarantees than
       the runtime provides.
-- [ ] Search logging and analytics behavior are described accurately, including
+- [x] Search logging and analytics behavior are described accurately, including
       purpose and retention if retained.
-- [ ] Chrome Web Store listing privacy disclosures match web policy and
+- [x] Chrome Web Store listing privacy disclosures match web policy and
       extension permissions.
-- [ ] Owner signoff records whether Sploot wants to change code to match the
+- [x] Owner signoff records whether Sploot wants to change code to match the
       stronger claim or change copy to match current code.
 
 ## Scope
@@ -70,3 +70,22 @@ especially before publishing the extension.
 - `apps/web/lib/analytics.ts`
 - `apps/web/app/api/search/route.ts`
 - `apps/web/app/privacy/page.tsx`
+
+## What Was Built
+
+- Replaced public "no tracking" / "zero tracking" claims with narrower claims that match runtime behavior: private library by default, no ads, and public sharing only when chosen.
+- Updated privacy policy copy to disclose account-linked search logs, global popular search suggestions, 30-day retention, Replicate embedding processing, Vercel Analytics/Speed Insights, and Sentry diagnostics.
+- Updated Chrome Web Store listing drafts so extension privacy claims match the web policy and selected-image upload behavior.
+- Wired `/api/cron/purge-search-logs` into Vercel cron so the 30-day retention promise is scheduled in production.
+- Added a static privacy-copy contract test covering forbidden stronger claims, required runtime disclosures, and the retention cron.
+
+Owner signoff, 2026-05-18: chose copy-to-runtime alignment while preserving current runtime observability and search behavior. Runtime keeps Vercel Analytics/Speed Insights, Sentry, Replicate embedding processing, and account-linked search logs purged after 30 days. No telemetry opt-out or search-runtime behavior changed in this ticket.
+
+Evidence:
+- `pnpm --filter web exec vitest run __tests__/unit/privacy-copy-contract.test.ts __tests__/components/landing/benefit-grid.test.tsx`
+- `DATABASE_URL='postgresql://test:test@localhost:5432/sploot_test?sslmode=disable' CI=true pnpm --filter web test`
+- `pnpm type-check`
+- `pnpm lint`
+- `pnpm --filter extension build`
+- `git diff --check`
+- `gradient validate`

@@ -116,8 +116,9 @@ Save images from any website to Sploot personal meme library with AI-powered sea
 ### Data Usage
 - Images are uploaded to user's private Sploot library (stored on Vercel Blob)
 - Authentication handled by Clerk (industry-standard auth provider)
-- No browsing data is collected or transmitted
-- No analytics or tracking beyond standard auth flow
+- No browsing history is collected or transmitted
+- Only the selected image is sent when the user chooses "Save to Sploot"
+- Search logs and product analytics are described in the privacy policy
 
 ---
 

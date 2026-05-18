@@ -17,7 +17,6 @@ Status conventions:
 | [010](010-repair-auth-boundary-and-api-error-contracts.md) | Repair Auth Boundary And API Error Contracts | high | M |
 | [011](011-unify-upload-url-offline-background-contract.md) | Unify Upload URL Offline Background Contract | high | M |
 | [012](012-make-deployed-qa-and-extension-gates-real.md) | Make Deployed QA And Extension Gates Real | high | M |
-| [013](013-align-product-privacy-claims-with-runtime.md) | Align Product Privacy Claims With Runtime | high | S |
 | [014](014-fix-core-library-ux-contract-gaps.md) | Fix Core Library UX Contract Gaps | medium | M |
 | [015](015-improve-shuffle-and-upload-architecture.md) | Improve Shuffle And Upload Architecture | medium | L |
 
@@ -34,6 +33,7 @@ Recently completed:
 - [006](_done/006-gradient-first-local-work.md) Capture the first local Gradient work item
 - [009](_done/009-fix-release-automation-branch-protection.md) Fix Release Automation Branch Protection
 - [008](_done/008-add-storage-quota-and-runtime-gates.md) Add Storage Quota And Runtime Gates
+- [013](_done/013-align-product-privacy-claims-with-runtime.md) Align Product Privacy Claims With Runtime
 
 ## Workflow
 

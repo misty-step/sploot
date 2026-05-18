@@ -51,7 +51,7 @@ Right-click any image on any website. Works everywhere—Twitter, Reddit, Discor
 Type what you remember, not exact filenames. "Dancing cat" or "surprised Pikachu"—Sploot finds it instantly.
 
 ✓ PRIVATE & SECURE
-Your memes, your way. No tracking. No ads. Private library only you can access.
+Your memes, your way. No ads. Private library by default, with public links only when you choose to share.
 
 ✓ SEAMLESS SYNC
 Extension and web app work together. Save on desktop, search on mobile.
@@ -73,10 +73,11 @@ Built on Vercel edge infrastructure. Upload in seconds. Search in milliseconds.
 🔒 PRIVACY FIRST
 
 We take privacy seriously:
-• No tracking or analytics on your images
 • No ads, ever
+• No browsing history tracking
 • Images stored securely on Vercel Blob
 • Authentication via Clerk (Google, Apple, Magic Link)
+• Search logs and analytics are described in the privacy policy
 • You own your data
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -213,7 +214,7 @@ Browser window with 4 tabs clearly visible at the top, each showing recognizable
 
 **Nano Banana Pro Prompt:**
 ```
-Abstract technical illustration with large shield icon and padlock icon centered on dark background. Dark background (#000000) with diagonal stripe pattern. Three bullet points in clean sans-serif typography arranged vertically: "No tracking", "No ads", "Private library". Large bold text at top: "YOUR MEMES. YOUR PRIVACY." in Bebas Neue font. At bottom, a prominent button reading "GET STARTED FREE" with neon cyan (#00F0FF) glow. Neon cyan and purple (#A855F7) accent colors throughout. Technical brutalist aesthetic, sharp corners, high contrast, professional and clean. 16:10 aspect ratio, 2K resolution.
+Abstract technical illustration with large shield icon and padlock icon centered on dark background. Dark background (#000000) with diagonal stripe pattern. Three bullet points in clean sans-serif typography arranged vertically: "No ads", "Private library", "You choose what to save". Large bold text at top: "YOUR MEMES. YOUR PRIVACY." in Bebas Neue font. At bottom, a prominent button reading "GET STARTED FREE" with neon cyan (#00F0FF) glow. Neon cyan and purple (#A855F7) accent colors throughout. Technical brutalist aesthetic, sharp corners, high contrast, professional and clean. 16:10 aspect ratio, 2K resolution.
 ```
 
 **Generation command:**
