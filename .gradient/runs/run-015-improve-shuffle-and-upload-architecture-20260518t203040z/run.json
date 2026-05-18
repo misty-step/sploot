@@ -1,0 +1,43 @@
+{
+  "$schema": "../../../schemas/fleet-run.schema.json",
+  "id": "run-015-improve-shuffle-and-upload-architecture-20260518t203040z",
+  "backend": "codex-local",
+  "status": "succeeded",
+  "work_item_ids": [
+    "015-improve-shuffle-and-upload-architecture"
+  ],
+  "harness_id": "harness-sploot-0.1.0",
+  "context_bundle_id": "context-015-improve-shuffle-and-upload-architecture-20260518t203040z",
+  "operator": "local-supervised",
+  "started_at": "2026-05-18T20:30:40Z",
+  "ended_at": "2026-05-18T20:30:40Z",
+  "events": [
+    {
+      "type": "start",
+      "at": "2026-05-18T20:30:40Z",
+      "summary": "Captured local supervised work for 015-improve-shuffle-and-upload-architecture."
+    },
+    {
+      "type": "artifact",
+      "at": "2026-05-18T20:30:40Z",
+      "summary": "Recorded git status, diff stat, and validation output."
+    },
+    {
+      "type": "validation",
+      "at": "2026-05-18T20:30:40Z",
+      "summary": "Ran ./scripts/validate.sh during evidence capture."
+    },
+    {
+      "type": "complete",
+      "at": "2026-05-18T20:30:40Z",
+      "summary": "Evidence capture completed."
+    }
+  ],
+  "artifacts": [
+    ".gradient/runs/run-015-improve-shuffle-and-upload-architecture-20260518t203040z/artifacts/git-status.txt",
+    ".gradient/runs/run-015-improve-shuffle-and-upload-architecture-20260518t203040z/artifacts/git-diff-stat.txt",
+    ".gradient/runs/run-015-improve-shuffle-and-upload-architecture-20260518t203040z/artifacts/validate.txt",
+    ".gradient/runs/run-015-improve-shuffle-and-upload-architecture-20260518t203040z/artifacts/repo-gate.txt"
+  ],
+  "trace_refs": []
+}

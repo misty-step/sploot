@@ -1,0 +1,10 @@
+{
+  "$schema": "../../schemas/feedback-item.schema.json",
+  "id": "feedback-015-improve-shuffle-and-upload-architecture-20260518t203040z",
+  "module": "Policy",
+  "classification": "eval-case",
+  "severity": "medium",
+  "summary": "Review generated evidence and add a sharper eval if the capture missed an important risk.",
+  "route": "evals/gradient-contracts.md",
+  "status": "open"
+}
