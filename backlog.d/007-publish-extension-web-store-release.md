@@ -49,17 +49,21 @@ Remaining blockers before this can move to `_done`:
 
 - `VITE_CLERK_PUBLISHABLE_KEY=pk_live_*` is not available in the release shell,
   so a fresh production build/zip cannot be recreated from source in this pass.
-- Store screenshots and promo tile are still missing from
-  `apps/extension/store-assets/`.
+- Store screenshots are still missing from
+  `apps/extension/store-assets/screenshots/`.
 - Chrome Web Store dashboard upload/review receipt is not captured.
 
 ## Release Readiness Gate - 2026-05-18
 
 Added `pnpm --filter extension release:check` as the local release-readiness
 gate for this item. In the current state it verifies the existing production
-zip and listing status, then fails with the remaining blockers: missing
-screenshots, missing small promo tile, unproven authenticated right-click
+zip, listing status, and promo tile dimensions, then fails with the remaining
+blockers: missing screenshots, unproven authenticated right-click
 upload/duplicate behavior, and missing Chrome Web Store dashboard receipt.
+
+Generated the non-sensitive small promo tile at
+`apps/extension/store-assets/promo/small-promo-440x280.png`; it validates at
+Chrome's required `440x280` dimensions.
 
 ## Goal
 
