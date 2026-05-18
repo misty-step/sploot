@@ -7,7 +7,6 @@ import { Loader2, CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOffline } from '@/hooks/use-offline';
 import { useUploadQueue } from '@/hooks/use-upload-queue';
-import { useBackgroundSync } from '@/hooks/use-background-sync';
 import { useFileValidation } from '@/hooks/use-file-validation';
 import { UploadErrorDisplay } from '@/components/upload/upload-error-display';
 import { getUploadErrorDetails, UploadErrorDetails } from '@/lib/upload-errors';
@@ -21,7 +20,6 @@ import { FileStreamProcessor } from '@/lib/file-stream-processor';
 import { logger } from '@/lib/logger';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { UPLOAD, prepareImageForUpload } from '@sploot/common';
@@ -52,14 +50,6 @@ interface UploadFile extends FileMetadata {
 
 interface UploadZoneProps {
   /**
-   * Enable background sync for offline upload support.
-   * When true, uses service worker background sync.
-   * When false, uses localStorage-based queue.
-   * @default false
-   */
-  enableBackgroundSync?: boolean;
-
-  /**
    * Callback when uploads complete successfully
    */
   onUploadComplete?: (stats: {
@@ -77,7 +67,6 @@ interface UploadZoneProps {
 }
 
 export function UploadZone({
-  enableBackgroundSync = false,
   onUploadComplete,
   isOnDashboard = false
 }: UploadZoneProps) {
@@ -305,19 +294,6 @@ export function UploadZone({
 
   // Regular upload queue (localStorage-based)
   const { addToQueue } = useUploadQueue();
-
-  // Background sync (service worker-based)
-  const {
-    addToBackgroundSync,
-    supportsBackgroundSync,
-    queue: syncQueue,
-    retryFailedUploads: retryBackgroundSync,
-    clearCompleted: clearBackgroundSync,
-    pendingCount,
-    uploadingCount,
-    errorCount,
-  } = useBackgroundSync();
-
 
   const uploadFileToServer = useCallback(async (fileId: string) => {
     const uploadStartTime = Date.now();
@@ -719,101 +695,6 @@ export function UploadZone({
     }
   }, [currentConcurrency, setCurrentConcurrency, uploadFileToServer, processRetryQueue, setFileMetadata]);
 
-  // Process files for upload with background sync support
-  const FILE_PROCESSING_CHUNK_SIZE = 20; // Process files in chunks to prevent UI freezing
-
-  const processFilesWithSync = useCallback(async (fileList: FileList | File[]) => {
-    // Show preparing state immediately
-    const filesArray = Array.from(fileList);
-    setIsPreparing(true);
-    setPreparingFileCount(filesArray.length);
-    const totalSize = filesArray.reduce((acc, file) => acc + file.size, 0);
-    setPreparingTotalSize(totalSize);
-
-    const metadataToAdd = new Map<string, FileMetadata>();
-    const filesToUpload: string[] = [];
-
-    // Split files into chunks for processing
-    const chunks: File[][] = [];
-    for (let i = 0; i < filesArray.length; i += FILE_PROCESSING_CHUNK_SIZE) {
-      chunks.push(filesArray.slice(i, i + FILE_PROCESSING_CHUNK_SIZE));
-    }
-
-    // Process each chunk with a small delay to allow UI to breathe
-    for (const chunk of chunks) {
-      for (const file of chunk) {
-        const prepared = await prepareFile(file);
-        const uploadFile = prepared.file;
-        const error = prepared.error;
-        const id = `${Date.now()}-${Math.random()}`;
-
-        if (error) {
-          const metadata: FileMetadata = {
-            id,
-            name: uploadFile.name,
-            size: uploadFile.size,
-            status: 'error',
-            progress: 0,
-            error,
-            addedAt: Date.now()
-          };
-          metadataToAdd.set(id, metadata);
-          fileObjects.current.set(id, uploadFile);
-        } else if (isOffline && supportsBackgroundSync) {
-          // Use background sync when offline
-          const syncId = await addToBackgroundSync(uploadFile);
-          const metadata: FileMetadata = {
-            id: syncId,
-            name: uploadFile.name,
-            size: uploadFile.size,
-            status: 'queued',
-            progress: 0,
-            addedAt: Date.now()
-          };
-          metadataToAdd.set(syncId, metadata);
-          fileObjects.current.set(syncId, uploadFile);
-        } else {
-          // Upload immediately or use fallback
-          const metadata: FileMetadata = {
-            id,
-            name: uploadFile.name,
-            size: uploadFile.size,
-            status: 'pending',
-            progress: 0,
-            addedAt: Date.now()
-          };
-          metadataToAdd.set(id, metadata);
-          fileObjects.current.set(id, uploadFile);
-          filesToUpload.push(id);
-        }
-      }
-
-      // Allow UI to breathe between chunks
-      if (chunks.indexOf(chunk) < chunks.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 10));
-      }
-    }
-
-    // Update fileMetadata state
-    setFileMetadata((prev) => {
-      const newMap = new Map(prev);
-      metadataToAdd.forEach((value, key) => {
-        newMap.set(key, value);
-      });
-      return newMap;
-    });
-
-    // Clear preparing state before starting uploads
-    setIsPreparing(false);
-    setPreparingFileCount(0);
-    setPreparingTotalSize(0);
-
-    // Start uploading valid files if online with parallel batching
-    if (!isOffline && filesToUpload.length > 0) {
-      uploadBatch(filesToUpload);
-    }
-  }, [isOffline, supportsBackgroundSync, addToBackgroundSync, prepareFile, uploadBatch]);
-
   // Process files for upload with streaming generator pattern
   const processFilesWithQueue = useCallback(async (fileList: FileList | File[]) => {
     // Show preparing state immediately
@@ -1010,8 +891,7 @@ export function UploadZone({
     }
   }, [isOffline, addToQueue, prepareFile, uploadBatch]);
 
-  // Choose the appropriate file processor based on enableBackgroundSync
-  const processFiles = enableBackgroundSync ? processFilesWithSync : processFilesWithQueue;
+  const processFiles = processFilesWithQueue;
 
   // Check for interrupted uploads on mount
   useUploadRecovery(
@@ -1195,8 +1075,6 @@ export function UploadZone({
     setTimeout(() => setIsCancelling(false), 500);
   };
 
-  // Show background sync status if enabled
-  const showSyncStatus = enableBackgroundSync && (pendingCount > 0 || uploadingCount > 0 || errorCount > 0);
   const successfulUploads = filesArray.filter((file) => file.status === 'success' || file.status === 'duplicate');
   const hasSuccessfulUploads = successfulUploads.length > 0;
   const hasActiveUploads = filesArray.some((file) =>
@@ -1212,42 +1090,6 @@ export function UploadZone({
 
   return (
     <div className="w-full">
-      {/* Background sync status (only when enabled) */}
-      {showSyncStatus && (
-        <Alert className="mb-4">
-          <AlertDescription>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4 text-sm">
-                {pendingCount > 0 && (
-                  <Badge variant="outline">
-                    Pending: {pendingCount}
-                  </Badge>
-                )}
-                {uploadingCount > 0 && (
-                  <Badge variant="default">
-                    Uploading: {uploadingCount}
-                  </Badge>
-                )}
-                {errorCount > 0 && (
-                  <Badge variant="destructive">
-                    Failed: {errorCount}
-                  </Badge>
-                )}
-              </div>
-              {errorCount > 0 && (
-                <Button
-                  onClick={() => retryBackgroundSync()}
-                  size="sm"
-                  variant="ghost"
-                >
-                  Retry All
-                </Button>
-              )}
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
-
       {/* Recovery notification */}
       {showRecoveryNotification && (
         <Alert className="mb-4 animate-in fade-in duration-200">
@@ -1265,8 +1107,6 @@ export function UploadZone({
         isPreparing={isPreparing}
         preparingFileCount={preparingFileCount}
         preparingTotalSize={preparingTotalSize}
-        enableBackgroundSync={enableBackgroundSync}
-        supportsBackgroundSync={supportsBackgroundSync}
       />
 
       {/* File list */}
@@ -1441,9 +1281,4 @@ export function UploadZone({
       )}
     </div>
   );
-}
-
-// Export the component with background sync enabled for backwards compatibility
-export function UploadZoneWithSync() {
-  return <UploadZone enableBackgroundSync={true} />;
 }

@@ -127,7 +127,6 @@ import { POST as generateEmbedding } from '@/app/api/assets/[id]/generate-embedd
 import { POST as getBatchEmbeddingStatus } from '@/app/api/assets/batch/embedding-status/route';
 import { POST as searchAssets } from '@/app/api/search/route';
 import { POST as advancedSearch } from '@/app/api/search/advanced/route';
-import { POST as createUploadUrl } from '@/app/api/upload-url/route';
 import { GET as getUploadStatus, POST as directUpload } from '@/app/api/upload/route';
 import { POST as checkUpload } from '@/app/api/upload/check/route';
 import { GET as getUsageAnalytics } from '@/app/api/analytics/usage/route';
@@ -249,7 +248,6 @@ describe('auth error contracts', () => {
       () => getBatchEmbeddingStatus(makeRequest('/api/assets/batch/embedding-status', 'POST')),
       () => searchAssets(makeRequest('/api/search', 'POST')),
       () => advancedSearch(makeRequest('/api/search/advanced', 'POST')),
-      () => createUploadUrl(makeRequest('/api/upload-url', 'POST')),
       () => getUploadStatus(makeRequest('/api/upload', 'GET')),
       () => directUpload(makeRequest('/api/upload', 'POST')),
       () => checkUpload(makeRequest('/api/upload/check', 'POST')),

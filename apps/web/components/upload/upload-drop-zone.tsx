@@ -4,7 +4,6 @@ import { useState, useRef, DragEvent, ClipboardEvent, useEffect, useCallback } f
 import { Upload, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { showToast } from '@/components/ui/toast';
 import { ALLOWED_FILE_TYPES } from '@/lib/blob';
 
@@ -20,9 +19,6 @@ interface UploadDropZoneProps {
   preparingFileCount?: number;
   preparingTotalSize?: number;
 
-  /** Background sync support indicator */
-  enableBackgroundSync?: boolean;
-  supportsBackgroundSync?: boolean;
 }
 
 /**
@@ -42,8 +38,6 @@ export function UploadDropZone({
   isPreparing = false,
   preparingFileCount = 0,
   preparingTotalSize = 0,
-  enableBackgroundSync = false,
-  supportsBackgroundSync = false,
 }: UploadDropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingPulse, setIsProcessingPulse] = useState(false);
@@ -186,11 +180,6 @@ export function UploadDropZone({
           <p className="font-mono text-xs text-muted-foreground/60 uppercase tracking-wider">
             JPEG, PNG, WebP, GIF • Max 10MB per file
           </p>
-          {enableBackgroundSync && supportsBackgroundSync && (
-            <Badge variant="outline" className="mt-2 text-xs">
-              Background sync enabled
-            </Badge>
-          )}
         </CardContent>
       </Card>
 

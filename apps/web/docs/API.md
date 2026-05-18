@@ -37,7 +37,7 @@ their own auth contracts.
 with status `401`.
 
 Protected product API route inventory:
-- `/api/upload-url`, `/api/upload`, `/api/upload/check`
+- `/api/upload`, `/api/upload/check`
 - `/api/assets`, `/api/assets/{id}`, `/api/assets/{id}/tags`, `/api/assets/audit`, `/api/assets/{id}/share`, `/api/assets/{id}/similar`
 - `/api/assets/{id}/embedding-status`, `/api/assets/batch/embedding-status`, `/api/assets/{id}/generate-embedding`
 - `/api/search`, `/api/search/advanced`
@@ -89,46 +89,6 @@ Check API availability and system status.
 
 ### Upload Management
 
-#### POST /api/upload-url
-
-Generate a pre-signed URL for direct client-side upload to Vercel Blob storage.
-
-**Authentication:** Required
-
-**Request Body:**
-```json
-{
-  "filename": "funny-meme.jpg",
-  "mimeType": "image/jpeg",
-  "size": 2048576
-}
-```
-
-**Parameters:**
-- `filename` (string, required): Original filename
-- `mimeType` (string, required): MIME type of the file (image/jpeg, image/png, image/webp, image/gif)
-- `size` (number, required): File size in bytes (max 10MB)
-
-**Success Response (200):**
-```json
-{
-  "uploadUrl": "https://blob.vercel-storage.com/user123/funny-meme-1234567890.jpg",
-  "downloadUrl": "https://blob.vercel-storage.com/user123/funny-meme-1234567890.jpg",
-  "pathname": "user123/funny-meme-1234567890.jpg",
-  "method": "PUT",
-  "headers": {
-    "content-type": "image/jpeg"
-  }
-}
-```
-
-**Error Responses:**
-- 400: Missing filename, mimeType, or size; invalid file type or size
-- 401: Unauthorized
-- 403: Storage quota exceeded (`code: "quota_exceeded"`, includes `quota` snapshot and `/app/settings` action)
-- 503: Uploads disabled by `SPLOOT_UPLOADS_ENABLED=false` (`code: "uploads_disabled"`)
-- 500: Blob storage not configured, invalid blob token, network/blob error, or server error
-
 #### POST /api/upload
 
 Uploads are guarded by the same runtime and quota policy:
@@ -136,7 +96,7 @@ Uploads are guarded by the same runtime and quota policy:
 - `SPLOOT_UPLOADS_ENABLED=false` pauses uploads before server-side Blob writes and returns `503` with `code: "uploads_disabled"`.
 - Per-user storage quota is checked after validation/deduplication and before image processing or Blob writes.
 - Quota denials return `403` with `code: "quota_exceeded"`, a `quota` snapshot, and an action pointing to `/app/settings`.
-- `/api/upload-url` performs the same auth, gate, validation, and quota preflight before issuing a direct-upload URL; `/api/assets` re-checks quota before accepting the completed direct upload record.
+- `POST /api/upload` is the supported upload contract for web, extension, and future queued replay clients. Direct client-upload URL generation is not a supported product API.
 
 Quota error example:
 
@@ -1021,7 +981,6 @@ async function searchMemes(query: string) {
 
 ```python
 import requests
-import hashlib
 import os
 
 class SplootAPI:
@@ -1034,35 +993,14 @@ class SplootAPI:
         with open(file_path, 'rb') as f:
             file_data = f.read()
 
-        # Get upload URL
-        upload_url_response = self.session.post(
-            f"{self.base_url}/api/upload-url",
-            json={
-                'filename': os.path.basename(file_path),
-                'mimeType': 'image/jpeg',
-                'size': len(file_data)
-            }
-        )
-        upload_data = upload_url_response.json()
-
-        # Upload to blob
-        requests.put(upload_data['uploadUrl'], data=file_data)
-
-        # Create asset
-        checksum = hashlib.sha256(file_data).hexdigest()
-        asset_response = self.session.post(
-            f"{self.base_url}/api/assets",
-            json={
-                'blobUrl': upload_data['downloadUrl'],
-                'pathname': upload_data['pathname'],
-                'filename': os.path.basename(file_path),
-                'mimeType': 'image/jpeg',
-                'size': len(file_data),
-                'checksum': f"sha256:{checksum}"
+        upload_response = self.session.post(
+            f"{self.base_url}/api/upload",
+            files={
+                'file': (os.path.basename(file_path), file_data, 'image/jpeg')
             }
         )
 
-        return asset_response.json()
+        return upload_response.json()
 
     def search(self, query):
         response = self.session.post(

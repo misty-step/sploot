@@ -62,9 +62,9 @@ graph TB
 ## Data Flow
 
 ### Web Upload (drag/drop or file picker)
-1. Client calls `/api/upload-url` or `/api/upload` depending on flow.
-2. Blob upload goes to Vercel Blob.
-3. Server extracts metadata, stores asset record in Postgres.
+1. Client calls `POST /api/upload` with multipart form data.
+2. Server validates the file and writes the blob to Vercel Blob.
+3. Server extracts metadata and stores the asset record in Postgres.
 4. Embedding job runs async; results stored in `asset_embeddings`.
 5. UI updates via SSE and polling.
 
