@@ -28,11 +28,11 @@ describe('middleware auth boundary', () => {
 
       await middleware(
         { protect } as any,
-        { nextUrl: { pathname } } as any
+        { nextUrl: { pathname }, url: `https://www.sploot.app${pathname}` } as any
       );
 
       expect(protect).toHaveBeenCalledTimes(1);
-      expect(protect).toHaveBeenCalledWith({ unauthenticatedUrl: '/sign-in' });
+      expect(protect).toHaveBeenCalledWith({ unauthenticatedUrl: 'https://www.sploot.app/sign-in' });
     }
   );
 
