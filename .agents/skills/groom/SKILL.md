@@ -27,6 +27,15 @@ Run the full loop every time:
 4. **Rank.** Group candidates into 2-4 themes and rank by `(product impact * operational risk reduction) / effort`. Sploot's current product focus is save, search, shuffle; operational risk includes Prisma/pgvector, embeddings, Clerk auth, Vercel deploys, extension capture/upload, and release automation.
 5. **Emit backlog changes.** Create or update local backlog items when the mutation is straightforward and non-destructive. For destructive or ambiguous actions, present a ratification packet with exact `git mv`/file-edit commands or backlog file bodies.
 
+For broad product/QA grooming, deployed authenticated smoke is part of the
+evidence floor, not a nice-to-have. Use the `/qa` Chrome/Computer Use path with
+an existing signed-in Chrome profile/session or a user-provided test account
+path to exercise production library/search and, when relevant, upload or
+extension capture. If this cannot be run, the groom must say
+`authenticated production smoke: blocked` with the exact attempted path and
+must create or update backlog work for the missing harness/evidence if it
+changes the ranking.
+
 Always flag stale contradictions: a backlog item marked done but still referenced as active in docs, a shipped PR without backlog linkage, an open PR that duplicates another PR, a Sentry incident fixed without a regression test or monitoring note, or a TODO/debt marker with no backlog item. If someone asks to use GitHub Issues for work tracking, ask for explicit tracker migration approval first.
 
 Each new or refreshed backlog item must contain:
@@ -39,4 +48,4 @@ Each new or refreshed backlog item must contain:
 
 ## Output Contract
 
-End with evidence, decisions, backlog mutations, and residual risk. The final answer must include a **Refreshed Backlog** section with created/updated backlog file paths or a ratification packet. If no backlog item should be created, say which evidence made deletion/deferral better than backlog growth. If a changed executable path was not directly exercised, say so explicitly. Keep repo-specific names and commands in the body; do not append generic sidecar notes.
+End with evidence, decisions, backlog mutations, and residual risk. The final answer must include a **Refreshed Backlog** section with created/updated backlog file paths or a ratification packet. It must also include `authenticated production smoke: passed|failed|blocked`. If no backlog item should be created, say which evidence made deletion/deferral better than backlog growth. If a changed executable path was not directly exercised, say so explicitly. Keep repo-specific names and commands in the body; do not append generic sidecar notes.

@@ -19,6 +19,8 @@ description: |
 
 QA is not “tests passed.” For web UI changes, run the web dev server on port 3001 and walk the changed route in Browser, checking console/network errors. For API changes, replay representative HTTP requests and verify status/body/auth behavior. For extension changes, build with `pnpm --filter extension build` or `build:prod`, then inspect `apps/extension/dist/chrome-mv3/` and manually smoke popup/background flows when browser state matters.
 
+Authenticated production smoke is required whenever the work or investigation is about save/search/shuffle, extension publishing, auth, upload, storage quota, release readiness, deployed UX, or broad product grooming. Use an existing signed-in Chrome profile/session or a user-provided test account path. If no authenticated session/token is available, stop and record `authenticated production smoke: blocked`, including exactly which credential/session path was attempted. Do not silently substitute signed-out curl checks for authenticated QA.
+
 For DB/search/upload changes, use a pgvector-capable `DATABASE_URL`; otherwise mark that path unverified. Evidence should name exact commands and surfaces.
 
 ## Agentic Chrome Extension QA
@@ -63,6 +65,15 @@ If any required secret/env is missing, stop before browser login and record the 
 ### Chrome / Computer Use Path
 
 Use Chrome/Computer Use when auth or extension UI matters. At the start of each assistant turn that interacts with Chrome, call `get_app_state` for Google Chrome. Prefer a dedicated Chrome profile or WXT-launched Chrome window to avoid disturbing the user’s active browsing.
+
+For deployed-product QA, first check whether the existing Chrome profile is already signed in at `https://www.sploot.app/app`. If signed in, capture a receipt for at least:
+
+1. Library loads with real account state.
+2. Search executes against the authenticated collection.
+3. Upload or extension capture is exercised when the touched surface includes upload, storage, extension, or publish readiness.
+4. The resulting asset/search/status change is visible in the web app.
+
+If using production data, prefer a deterministic small fixture and record the created asset id/path so cleanup can be handled intentionally.
 
 Manual unpacked load, when WXT did not launch Chrome for you:
 
@@ -119,6 +130,11 @@ Every extension QA receipt must include:
 - Console/network errors observed.
 - DB/pgvector status for local API paths.
 - Changed executable paths that were not directly exercised.
+
+Every broad QA or groom receipt must additionally include one line for
+`authenticated production smoke`: `passed`, `failed`, or `blocked`, with the
+browser/profile/token source redacted but named at the level of
+`existing Chrome profile`, `dedicated test profile`, or `user-provided token`.
 
 ### Known Sploot Edge Cases
 

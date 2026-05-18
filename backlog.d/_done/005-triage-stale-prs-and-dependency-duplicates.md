@@ -1,8 +1,8 @@
 ---
 id: 005-triage-stale-prs-and-dependency-duplicates
 title: Triage Stale PRs And Dependency Duplicates
-status: ready
-lifecycle_stage: Intent
+status: done
+lifecycle_stage: Feedback
 owner: local
 acceptance:
   - Each stale human PR has one explicit action.
@@ -18,7 +18,7 @@ refs:
 # Triage Stale PRs And Dependency Duplicates
 
 Priority: medium
-Status: ready
+Status: done
 Estimate: S
 
 ## Goal
@@ -54,3 +54,10 @@ The PR queue had ten open PRs while the local backlog was empty. Three March 6
 human PRs were stale/dirty, and two dependency families had duplicate tracks.
 That makes review state noisy unless PR hygiene is captured locally and
 resolved.
+
+## What Was Built
+
+The 2026-05-18 groom verified that GitHub now has no open PRs
+(`gh pr list --limit 30 --json ...` returned `[]`). Recent dependency PRs for
+Clerk and Next are merged into `master`, and the stale PR-queue cleanup concern
+has been superseded by current release, extension, quota, and QA backlog items.
