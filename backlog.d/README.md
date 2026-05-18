@@ -14,8 +14,6 @@ Status conventions:
 | # | Title | Priority | Estimate |
 |---|-------|----------|----------|
 | [007](007-publish-extension-web-store-release.md) | Publish Extension Web Store Release | high | M |
-| [010](010-repair-auth-boundary-and-api-error-contracts.md) | Repair Auth Boundary And API Error Contracts | high | M |
-| [012](012-make-deployed-qa-and-extension-gates-real.md) | Make Deployed QA And Extension Gates Real | high | M |
 | [015](015-improve-shuffle-and-upload-architecture.md) | Improve Shuffle And Upload Architecture | medium | L |
 
 ## Done
@@ -34,6 +32,8 @@ Recently completed:
 - [013](_done/013-align-product-privacy-claims-with-runtime.md) Align Product Privacy Claims With Runtime
 - [011](_done/011-unify-upload-url-offline-background-contract.md) Unify Upload URL Offline Background Contract
 - [014](_done/014-fix-core-library-ux-contract-gaps.md) Fix Core Library UX Contract Gaps
+- [010](_done/010-repair-auth-boundary-and-api-error-contracts.md) Repair Auth Boundary And API Error Contracts
+- [012](_done/012-make-deployed-qa-and-extension-gates-real.md) Make Deployed QA And Extension Gates Real
 
 ## Workflow
 

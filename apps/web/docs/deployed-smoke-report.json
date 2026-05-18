@@ -1,25 +1,25 @@
 {
   "base_url": "https://www.sploot.app",
   "extension_dist": "../extension/dist/chrome-mv3",
-  "started_at": "2026-05-18T17:22:10.931Z",
-  "finished_at": "2026-05-18T17:22:11.423Z",
-  "status": "fail",
+  "started_at": "2026-05-18T19:12:47.411Z",
+  "finished_at": "2026-05-18T19:12:48.156Z",
+  "status": "pass",
   "checks": [
     {
       "name": "production health",
       "status": "pass",
-      "duration_ms": 200,
+      "duration_ms": 222,
       "details": {
         "database": "up",
         "redis": "up",
-        "database_latency_ms": 11,
+        "database_latency_ms": 14,
         "version": "0.1.0"
       }
     },
     {
       "name": "production service health",
       "status": "pass",
-      "duration_ms": 111,
+      "duration_ms": 136,
       "details": {
         "status": "degraded",
         "all_services_configured": true,
@@ -32,20 +32,41 @@
     },
     {
       "name": "signed-out app route protection",
-      "status": "fail",
-      "duration_ms": 63,
-      "error": "expected redirect to sign-in, got HTTP 404"
+      "status": "pass",
+      "duration_ms": 264,
+      "details": {
+        "redirects": [
+          {
+            "route": "/app",
+            "status": 307,
+            "location": "/sign-in"
+          },
+          {
+            "route": "/app/search",
+            "status": 307,
+            "location": "/sign-in"
+          },
+          {
+            "route": "/app/upload",
+            "status": 307,
+            "location": "/sign-in"
+          }
+        ]
+      }
     },
     {
       "name": "signed-out api auth contract",
-      "status": "fail",
-      "duration_ms": 108,
-      "error": "expected JSON from https://www.sploot.app/api/assets?limit=1, got: <!DOCTYPE html><!--JpSDyCjwrtSOmpdDf9l4U--><html lang=\"en\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"w"
+      "status": "pass",
+      "duration_ms": 100,
+      "details": {
+        "status": 401,
+        "error": "Unauthorized"
+      }
     },
     {
       "name": "production extension artifact",
       "status": "pass",
-      "duration_ms": 9,
+      "duration_ms": 22,
       "details": {
         "manifest": "../extension/dist/chrome-mv3/manifest.json",
         "version": "1.0.0",

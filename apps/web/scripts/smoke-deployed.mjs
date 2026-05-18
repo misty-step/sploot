@@ -124,23 +124,31 @@ await record('production service health', async () => {
 });
 
 await record('signed-out app route protection', async () => {
-  const response = await fetch(`${baseUrl}/app`, {
-    method: 'GET',
-    redirect: 'manual',
-  });
-  const location = response.headers.get('location') ?? '';
+  const protectedRoutes = ['/app', '/app/search', '/app/upload'];
+  const redirects = [];
 
-  if (![301, 302, 303, 307, 308].includes(response.status)) {
-    throw new Error(`expected redirect to sign-in, got HTTP ${response.status}`);
-  }
-  if (!location.includes('/sign-in')) {
-    throw new Error(`expected sign-in redirect, got ${location || '<missing location>'}`);
+  for (const route of protectedRoutes) {
+    const response = await fetch(`${baseUrl}${route}`, {
+      method: 'GET',
+      redirect: 'manual',
+    });
+    const location = response.headers.get('location') ?? '';
+
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      throw new Error(`${route}: expected redirect to sign-in, got HTTP ${response.status}`);
+    }
+    if (!location.includes('/sign-in')) {
+      throw new Error(`${route}: expected sign-in redirect, got ${location || '<missing location>'}`);
+    }
+
+    redirects.push({
+      route,
+      status: response.status,
+      location,
+    });
   }
 
-  return {
-    status: response.status,
-    location,
-  };
+  return { redirects };
 });
 
 await record('signed-out api auth contract', async () => {
