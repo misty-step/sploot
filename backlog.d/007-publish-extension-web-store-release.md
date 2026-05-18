@@ -27,6 +27,32 @@ Priority: high
 Status: ready
 Estimate: M
 
+## Latest Pass - 2026-05-18
+
+- Tightened deployed smoke to validate the canonical Chrome Web Store zip
+  artifact by default instead of the mutable unpacked `dist/chrome-mv3`
+  directory.
+- Re-ran `pnpm --filter web smoke:deployed`; it passes against
+  `https://www.sploot.app` and validates
+  `apps/extension/dist/extension-1.0.0-chrome.zip`.
+- Verified the existing release zip manifest has production Sploot and Clerk
+  host permissions, version `1.0.0`, and SHA256
+  `ee12ad391996b50389a60995296c141af689db1bb75411f5f43ae74e583bb532`.
+- Checked Chrome with an authenticated profile: the Sploot popup is signed in,
+  `View My Library` opens `https://sploot.app/app`, and the library renders.
+- Right-clicking `https://www.sploot.app/apple-icon.png` exposes
+  `Save to Sploot`, but selecting it did not create observable success feedback
+  or increase the library count from `3,020`; upload and duplicate behavior
+  remain unproven.
+
+Remaining blockers before this can move to `_done`:
+
+- `VITE_CLERK_PUBLISHABLE_KEY=pk_live_*` is not available in the release shell,
+  so a fresh production build/zip cannot be recreated from source in this pass.
+- Store screenshots and promo tile are still missing from
+  `apps/extension/store-assets/`.
+- Chrome Web Store dashboard upload/review receipt is not captured.
+
 ## Goal
 
 Sploot's Chrome extension is packaged, QAed, and submitted to the Chrome Web

@@ -42,22 +42,27 @@ Checks:
 2. Production `/api/health/services` records service readiness.
 3. Signed-out `/app`, `/app/search`, and `/app/upload` redirect to `/sign-in`.
 4. Signed-out `/api/assets?limit=1` returns `401 {"error":"Unauthorized"}`.
-5. The production extension artifact includes `manifest.json`, `popup.html`,
+5. The production extension zip includes `manifest.json`, `popup.html`,
    `background.js`, production host permissions, and a live Clerk publishable
-   key in the generated JavaScript.
+   key in the generated JavaScript. The harness validates
+   `../extension/dist/extension-1.0.0-chrome.zip` by default so release smoke
+   checks the upload artifact rather than a stale unpacked development build.
 
 ## Current Evidence
 
 - `validate:deployment`: passing against `https://www.sploot.app`.
-- `smoke:deployed`: passing against `https://www.sploot.app`.
+- `smoke:deployed`: passing against `https://www.sploot.app`; the extension
+  artifact check validated `../extension/dist/extension-1.0.0-chrome.zip`.
 - Passing smoke checks: health, service health, signed-out app route protection
   for `/app`, `/app/search`, and `/app/upload`, signed-out API auth contract,
-  and production extension artifact.
+  and production extension zip artifact.
 
 ## Known Issues
 
-- Authenticated production smoke remains blocked until a usable signed-in Chrome
-  session, production test account, or bearer token is available.
+- Authenticated extension popup and library visibility partially passed in
+  Chrome, but right-click upload and duplicate behavior remain unproven.
+- Store screenshots, promo tile, production rebuild from a live Clerk key, and
+  Chrome Web Store upload/review receipt remain open for extension publishing.
 
 ## Next Action
 

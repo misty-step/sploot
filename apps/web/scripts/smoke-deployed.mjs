@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
+const execFileAsync = promisify(execFile);
 const baseUrl = (process.env.DEPLOYED_SMOKE_URL ?? 'https://www.sploot.app').replace(/\/$/, '');
 const reportPath = path.resolve(
   process.cwd(),
   process.env.DEPLOYED_SMOKE_REPORT ?? 'docs/deployed-smoke-report.json'
 );
+const extensionZip = process.env.EXTENSION_ZIP
+  ? path.resolve(process.cwd(), process.env.EXTENSION_ZIP)
+  : path.resolve(process.cwd(), '../extension/dist/extension-1.0.0-chrome.zip');
 const extensionDist = path.resolve(
   process.cwd(),
   process.env.EXTENSION_DIST ?? '../extension/dist/chrome-mv3'
@@ -69,6 +75,80 @@ async function readJavaScriptFiles(directory) {
   }
 
   return contents;
+}
+
+async function readZipEntry(zipPath, entryName) {
+  const { stdout } = await execFileAsync('unzip', ['-p', zipPath, entryName], {
+    maxBuffer: 20 * 1024 * 1024,
+  });
+
+  if (!stdout) {
+    throw new Error(`missing ${entryName} in ${path.relative(process.cwd(), zipPath)}`);
+  }
+
+  return stdout;
+}
+
+async function listZipEntries(zipPath) {
+  const { stdout } = await execFileAsync('unzip', ['-Z1', zipPath], {
+    maxBuffer: 20 * 1024 * 1024,
+  });
+
+  return stdout
+    .split('\n')
+    .map(entry => entry.trim())
+    .filter(Boolean);
+}
+
+async function readExtensionArtifact() {
+  if (existsSync(extensionZip)) {
+    const entries = await listZipEntries(extensionZip);
+    const entrySet = new Set(entries);
+
+    for (const requiredEntry of ['manifest.json', 'popup.html', 'background.js']) {
+      if (!entrySet.has(requiredEntry)) {
+        throw new Error(`missing ${requiredEntry} in ${path.relative(process.cwd(), extensionZip)}`);
+      }
+    }
+
+    const javascriptBundle = (
+      await Promise.all(
+        entries
+          .filter(entry => entry.endsWith('.js'))
+          .map(entry => readZipEntry(extensionZip, entry))
+      )
+    ).join('\n');
+
+    return {
+      source: 'zip',
+      path: extensionZip,
+      manifest: JSON.parse(await readZipEntry(extensionZip, 'manifest.json')),
+      javascriptBundle,
+    };
+  }
+
+  if (process.env.ALLOW_EXTENSION_DIST_FALLBACK !== '1') {
+    throw new Error(
+      `missing release zip ${path.relative(process.cwd(), extensionZip)}; set EXTENSION_ZIP or ALLOW_EXTENSION_DIST_FALLBACK=1 to validate an unpacked directory`
+    );
+  }
+
+  const manifestPath = path.join(extensionDist, 'manifest.json');
+  const popupPath = path.join(extensionDist, 'popup.html');
+  const backgroundPath = path.join(extensionDist, 'background.js');
+
+  for (const requiredPath of [manifestPath, popupPath, backgroundPath]) {
+    if (!existsSync(requiredPath)) {
+      throw new Error(`missing ${path.relative(process.cwd(), requiredPath)}`);
+    }
+  }
+
+  return {
+    source: 'directory',
+    path: extensionDist,
+    manifest: JSON.parse(await readFile(manifestPath, 'utf8')),
+    javascriptBundle: (await readJavaScriptFiles(extensionDist)).join('\n'),
+  };
 }
 
 await record('production health', async () => {
@@ -170,18 +250,8 @@ await record('signed-out api auth contract', async () => {
 });
 
 await record('production extension artifact', async () => {
-  const manifestPath = path.join(extensionDist, 'manifest.json');
-  const popupPath = path.join(extensionDist, 'popup.html');
-  const backgroundPath = path.join(extensionDist, 'background.js');
-
-  for (const requiredPath of [manifestPath, popupPath, backgroundPath]) {
-    if (!existsSync(requiredPath)) {
-      throw new Error(`missing ${path.relative(process.cwd(), requiredPath)}`);
-    }
-  }
-
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  const javascriptBundle = (await readJavaScriptFiles(extensionDist)).join('\n');
+  const artifact = await readExtensionArtifact();
+  const { manifest, javascriptBundle } = artifact;
   const hostPermissions = new Set(manifest.host_permissions ?? []);
   const requiredHosts = [
     'https://sploot.app/*',
@@ -216,7 +286,8 @@ await record('production extension artifact', async () => {
   }
 
   return {
-    manifest: path.relative(process.cwd(), manifestPath),
+    artifact: path.relative(process.cwd(), artifact.path),
+    artifact_type: artifact.source,
     version: manifest.version,
     host_permissions: requiredHosts,
     clerk_publishable_key: 'pk_live_*',
@@ -226,6 +297,7 @@ await record('production extension artifact', async () => {
 const failed = checks.filter(check => check.status !== 'pass');
 const report = {
   base_url: baseUrl,
+  extension_zip: existsSync(extensionZip) ? path.relative(process.cwd(), extensionZip) : null,
   extension_dist: path.relative(process.cwd(), extensionDist),
   started_at: startedAt,
   finished_at: new Date().toISOString(),

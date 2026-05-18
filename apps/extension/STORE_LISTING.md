@@ -185,6 +185,32 @@ Current status: screenshot and promo directories only contain `.gitkeep`; final
 store screenshots still need to be captured or generated before Chrome Web
 Store submission.
 
+## Authenticated Chrome QA
+
+Checked on 2026-05-18 with Google Chrome profile `Phaedrus (Phaedrus @ Home)`.
+
+Passing evidence:
+
+- Sploot extension popup opened from Chrome toolbar at
+  `chrome-extension://ipnlamdcakhmbidjlpoinkgimfapejna/popup.html`.
+- Popup showed an authenticated Sploot session and rendered `View My Library`
+  plus `Sign Out`.
+- `View My Library` opened `https://sploot.app/app`.
+- Production library rendered signed-in content with `MEMES: 3,020` and
+  `SIZE: 11.4 MB`.
+- Right-clicking `https://www.sploot.app/apple-icon.png` exposed the
+  extension context menu item `Save to Sploot`.
+
+Unproven/requires follow-up before submission:
+
+- Selecting `Save to Sploot` on `https://www.sploot.app/apple-icon.png` did
+  not produce visible success feedback in the popup or increase the library
+  count from `3,020`; right-click upload is therefore not release-proven.
+- Duplicate-save behavior remains unproven because the first save did not
+  produce observable success evidence.
+- The production extension build could not be rerun in this shell because
+  `VITE_CLERK_PUBLISHABLE_KEY` is not present.
+
 ## Release Artifact
 
 Built on 2026-05-18:
@@ -212,12 +238,11 @@ VITE_CLERK_PUBLISHABLE_KEY=pk_live_* pnpm --filter web smoke:deployed
 Smoke evidence from `apps/web/docs/deployed-smoke-report.json`:
 
 ```text
-Started: 2026-05-18T19:12:47.411Z
-Finished: 2026-05-18T19:12:48.156Z
 Target: https://www.sploot.app
 Status: pass
 Checks: production health, service health, signed-out app route protection,
-signed-out API auth contract, production extension artifact
+signed-out API auth contract, production extension zip artifact
+Artifact: apps/extension/dist/extension-1.0.0-chrome.zip
 ```
 
 ## Submission Status
@@ -227,8 +252,10 @@ Status: not submitted.
 Blocking items before submission:
 
 - final screenshots and promo tile are missing
-- authenticated production Chrome extension QA is blocked because the Codex
-  Chrome backend is unavailable in this pass
+- authenticated production Chrome extension QA is partially complete, but
+  right-click upload and duplicate behavior are not release-proven
+- production rebuild is blocked until `VITE_CLERK_PUBLISHABLE_KEY=pk_live_*`
+  is available in the release shell
 - no Chrome Web Store dashboard upload/review receipt has been captured
 
 Rollback/disable plan:
