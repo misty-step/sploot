@@ -218,6 +218,14 @@ Unproven/requires follow-up before submission:
   count from `3,020`; right-click upload is therefore not release-proven.
 - Duplicate-save behavior remains unproven because the first save did not
   produce observable success evidence.
+- Latest blocked attempt: Chrome is signed in, but the installed extension
+  source is stale:
+  `/Users/phaedrus/Development/sploot/apps/extension/dist/chrome-mv3-dev`.
+  The stale extension reaches auth/session, retrieves a token, fetches the
+  image, and then fails at `POST /api/upload`; this does not prove the current
+  worktree release build. A fresh production-like unpacked build from this
+  worktree exists at `apps/extension/dist/chrome-mv3`, but loading or reloading
+  it requires action-time confirmation.
 - The production extension build could not be rerun in this shell because
   `VITE_CLERK_PUBLISHABLE_KEY` is not present.
 

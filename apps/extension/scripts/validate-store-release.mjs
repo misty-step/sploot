@@ -223,6 +223,10 @@ async function validateListing() {
     recordExternal('Chrome Web Store dashboard upload/review receipt still needs capture');
   }
 
+  if (/installed extension\s+source is stale/.test(listing)) {
+    recordExternal('Chrome is signed in but loaded from stale extension source; reload apps/extension/dist/chrome-mv3 before release QA');
+  }
+
   if (listing.includes('Status: not submitted.')) {
     recordPass('listing packet truthfully records not-submitted Web Store status');
   }

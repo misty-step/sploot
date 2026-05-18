@@ -44,11 +44,20 @@ Estimate: M
   `Save to Sploot`, but selecting it did not create observable success feedback
   or increase the library count from `3,020`; upload and duplicate behavior
   remain unproven.
+- Follow-up inspection found the authenticated Chrome profile is signed in but
+  the installed extension source is stale:
+  `/Users/phaedrus/Development/sploot/apps/extension/dist/chrome-mv3-dev`.
+  Service worker logs show auth/session, token retrieval, and image fetch
+  succeeded before `POST /api/upload` failed. This is useful failure evidence,
+  but it does not prove the current worktree release build.
 
 Remaining blockers before this can move to `_done`:
 
 - `VITE_CLERK_PUBLISHABLE_KEY=pk_live_*` is not available in the release shell,
   so a fresh production build/zip cannot be recreated from source in this pass.
+- Reload authenticated Chrome from the fresh worktree production-like unpacked
+  build at `apps/extension/dist/chrome-mv3` before treating right-click upload
+  and duplicate QA as release evidence.
 - Chrome Web Store dashboard upload/review receipt is not captured.
 
 ## Release Readiness Gate - 2026-05-18
@@ -56,8 +65,9 @@ Remaining blockers before this can move to `_done`:
 Added `pnpm --filter extension release:check` as the local release-readiness
 gate for this item. In the current state it verifies the existing production
 zip, listing status, screenshot dimensions, and promo tile dimensions, then
-fails with the remaining external blockers: unproven authenticated right-click
-upload/duplicate behavior and missing Chrome Web Store dashboard receipt.
+fails with the remaining external blockers: stale loaded Chrome extension
+source, unproven authenticated right-click upload/duplicate behavior, and
+missing Chrome Web Store dashboard receipt.
 
 Generated the non-sensitive small promo tile at
 `apps/extension/store-assets/promo/small-promo-440x280.png`; it validates at
