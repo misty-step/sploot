@@ -12,9 +12,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { ArrowDown, ArrowUp, ArrowDownAZ, ArrowUpAZ, Shuffle } from 'lucide-react';
+import type { AssetSortBy, AssetSortDirection } from '@sploot/common';
 
-export type SortOption = 'recent' | 'date' | 'size' | 'name' | 'shuffle';
-export type SortDirection = 'asc' | 'desc';
+export type SortOption = AssetSortBy;
+export type SortDirection = AssetSortDirection;
 
 interface SortDropdownProps {
   value?: SortOption;
@@ -28,17 +29,17 @@ interface SortDropdownProps {
  * Displays "recent ↓" by default with options for date/size/name sorting
  */
 export function SortDropdown({
-  value = 'recent',
+  value = 'createdAt',
   direction = 'desc',
   onChange,
   className,
 }: SortDropdownProps) {
   // Sort option configurations
   const sortOptions: Array<{ value: SortOption; label: string }> = [
-    { value: 'recent', label: 'RECENT' },
-    { value: 'date', label: 'DATE' },
+    { value: 'createdAt', label: 'RECENT' },
+    { value: 'updatedAt', label: 'UPDATED' },
     { value: 'size', label: 'SIZE' },
-    { value: 'name', label: 'NAME' },
+    { value: 'pathname', label: 'NAME' },
     { value: 'shuffle', label: 'SHUFFLE' },
   ];
 
@@ -51,7 +52,7 @@ export function SortDropdown({
     const newDirection =
       option === value
         ? direction === 'desc' ? 'asc' : 'desc'
-        : option === 'name' ? 'asc' : 'desc'; // Name defaults to A-Z, others to newest/largest first
+        : option === 'pathname' ? 'asc' : 'desc'; // Name defaults to A-Z, others to newest/largest first
 
     if (onChange) {
       onChange(option, newDirection);
@@ -119,7 +120,7 @@ export function SortDropdown({
  * Shows only icon with current sort direction
  */
 export function SortButtonCompact({
-  value = 'recent',
+  value = 'createdAt',
   direction = 'desc',
   onClick,
   className,
@@ -130,8 +131,8 @@ export function SortButtonCompact({
   className?: string;
 }) {
   const Icon = direction === 'desc'
-    ? (value === 'name' ? ArrowDownAZ : ArrowDown)
-    : (value === 'name' ? ArrowUpAZ : ArrowUp);
+    ? (value === 'pathname' ? ArrowDownAZ : ArrowDown)
+    : (value === 'pathname' ? ArrowUpAZ : ArrowUp);
 
   return (
     <Button

@@ -7,8 +7,13 @@
 
 // Constants
 export {
+  ASSET_SORT,
+  type AssetSortBy,
+  type AssetSortDirection,
   UPLOAD,
   type AllowedMimeType,
+  isAssetSortBy,
+  isAssetSortDirection,
   isValidMimeType,
   isValidFileSize,
 } from './constants';

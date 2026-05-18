@@ -32,7 +32,7 @@ export function UploadErrorDisplay({
         break;
       case 'view':
         if (error.action.data?.assetId) {
-          router.push(`/app?highlight=${error.action.data.assetId}`);
+          router.push(`/app/meme/${encodeURIComponent(error.action.data.assetId)}`);
         }
         break;
       case 'signin':

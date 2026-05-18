@@ -8,6 +8,7 @@ import { getAuthWithUser, requireUserIdWithSync } from '@/lib/auth/server';
 import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { Prisma } from '@prisma/client';
+import { isAssetSortBy } from '@sploot/common';
 import logger from '@/lib/logger';
 import { logError } from '@/lib/vercel-logger';
 import { createErrorResponse } from '@/lib/error-response';
@@ -231,7 +232,7 @@ async function getHandler(req: NextRequest) {
   // Declare params outside try block so they're accessible in catch for logging
   let limit = 50;
   let offset = 0;
-  let sortBy: 'createdAt' | 'updatedAt' = 'createdAt';
+  let sortBy: 'createdAt' | 'updatedAt' | 'size' | 'pathname' | 'shuffle' = 'createdAt';
   let sortOrder: 'asc' | 'desc' = 'desc';
   let favorite: string | null = null;
   let tagId: string | null = null;
@@ -287,15 +288,16 @@ async function getHandler(req: NextRequest) {
     limit = parsedLimit;
     offset = parsedOffset;
 
-    // Validate and type-cast sortBy to valid field names
-    // Accept both database columns and special modes like 'shuffle'
     const sortByParam = searchParams.get('sortBy') || 'createdAt';
+    if (!isAssetSortBy(sortByParam)) {
+      return NextResponse.json(
+        { error: 'Invalid sortBy parameter. Must be one of: createdAt, updatedAt, size, pathname, shuffle.' },
+        { status: 400 }
+      );
+    }
+
+    sortBy = sortByParam;
     const isShuffle = sortByParam === 'shuffle';
-    // For non-shuffle queries, only createdAt and updatedAt are supported
-    // (shuffle mode uses raw SQL, size/pathname/favorite need ORM implementation)
-    sortBy = (sortByParam === 'createdAt' || sortByParam === 'updatedAt')
-      ? sortByParam
-      : 'createdAt';
 
     // Validate and type-cast sortOrder to Prisma's expected literal type
     const sortOrderParam = searchParams.get('sortOrder') || 'desc';
@@ -424,9 +426,7 @@ async function getHandler(req: NextRequest) {
             where,
             take: limit,
             skip: offset,
-            orderBy: sortBy === 'createdAt'
-              ? { createdAt: sortOrder }
-              : { updatedAt: sortOrder },
+            orderBy: { [sortBy]: sortOrder },
             select: {
               id: true,
               blobUrl: true,

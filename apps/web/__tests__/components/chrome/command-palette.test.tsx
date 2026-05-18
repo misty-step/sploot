@@ -62,7 +62,10 @@ describe('CommandPalette', () => {
       expect(screen.getByText('Settings')).toBeInTheDocument();
       expect(screen.getByText('Search')).toBeInTheDocument();
       expect(screen.getByText('Go to Home')).toBeInTheDocument();
-      expect(screen.getByText('Sign Out')).toBeInTheDocument();
+      expect(screen.queryByText('Sign Out')).not.toBeInTheDocument();
+      expect(screen.queryByText('Compact')).not.toBeInTheDocument();
+      expect(screen.queryByText('Dense')).not.toBeInTheDocument();
+      expect(screen.queryByText('Comfortable')).not.toBeInTheDocument();
     });
 
     it('should render keyboard shortcuts for commands that have them', () => {
@@ -274,6 +277,12 @@ describe('CommandPalette', () => {
 
       expect(mockOnClose).toHaveBeenCalled();
       expect(mockOnSignOut).toHaveBeenCalled();
+    });
+
+    it('should not render Sign Out without a Clerk sign-out callback', () => {
+      render(<CommandPalette isOpen={true} onClose={mockOnClose} />);
+
+      expect(screen.queryByRole('option', { name: /sign out/i })).not.toBeInTheDocument();
     });
 
     it('should focus search input when Search command is executed', async () => {

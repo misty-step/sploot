@@ -250,7 +250,7 @@ List assets for the authenticated user with pagination, filtering, and seeded sh
 **Query Parameters:**
 - `limit` (number, optional): number of results (default: 50, min: 1, max: 100)
 - `offset` (number, optional): skip this many results (default: 0, min: 0)
-- `sortBy` (string, optional): `createdAt`, `updatedAt`, or `shuffle` (default: `createdAt`)
+- `sortBy` (string, optional): `createdAt`, `updatedAt`, `size`, `pathname`, or `shuffle` (default: `createdAt`)
 - `sortOrder` (string, optional): `desc` or `asc` for non-shuffle sorts (default: `desc`)
 - `favorite` (boolean, optional): filter to favorites only
 - `tagId` (string, optional): filter to one tag id
@@ -294,7 +294,7 @@ GET /api/assets?sortBy=shuffle&shuffleSeed=424242&limit=30&offset=0
 ```
 
 **Error Responses:**
-- 400: Invalid `limit`, `offset`, or `shuffleSeed`; `shuffleSeed` missing for `sortBy=shuffle`; `shuffleSeed` provided without `sortBy=shuffle`
+- 400: Invalid `limit`, `offset`, `sortBy`, or `shuffleSeed`; `shuffleSeed` missing for `sortBy=shuffle`; `shuffleSeed` provided without `sortBy=shuffle`
 - 401: Unauthorized
 - 500: Server error
 

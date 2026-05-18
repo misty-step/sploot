@@ -158,6 +158,45 @@ describe('GET /api/assets', () => {
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('orders non-shuffle assets by shared sort fields', async () => {
+    const response = await GET(request({
+      sortBy: 'size',
+      sortOrder: 'asc',
+      limit: '10',
+      offset: '0',
+    }), { params: Promise.resolve({}) });
+
+    expect(response.status).toBe(200);
+    expect(mocks.prisma.asset.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: { size: 'asc' },
+      })
+    );
+  });
+
+  it('supports pathname sorting for name UI order', async () => {
+    const response = await GET(request({
+      sortBy: 'pathname',
+      sortOrder: 'desc',
+    }), { params: Promise.resolve({}) });
+
+    expect(response.status).toBe(200);
+    expect(mocks.prisma.asset.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: { pathname: 'desc' },
+      })
+    );
+  });
+
+  it('rejects unsupported sortBy values instead of coercing to createdAt', async () => {
+    const response = await GET(request({ sortBy: 'favorite' }), { params: Promise.resolve({}) });
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe('Invalid sortBy parameter. Must be one of: createdAt, updatedAt, size, pathname, shuffle.');
+    expect(mocks.prisma.asset.findMany).not.toHaveBeenCalled();
+  });
+
   it('rejects shuffleSeed outside the supported range', async () => {
     const response = await GET(request({
       sortBy: 'shuffle',

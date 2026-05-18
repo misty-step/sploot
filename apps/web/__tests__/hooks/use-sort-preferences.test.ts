@@ -51,7 +51,7 @@ describe('useSortPreferences', () => {
 
       // Then switch to 'recent'
       act(() => {
-        result.current.handleSortChange('recent', 'desc');
+        result.current.handleSortChange('createdAt', 'desc');
       });
       expect(result.current.shuffleSeed).toBeUndefined();
     });
@@ -65,7 +65,7 @@ describe('useSortPreferences', () => {
       expect(result.current.shuffleSeed).toBeDefined();
 
       act(() => {
-        result.current.handleSortChange('name', 'asc');
+        result.current.handleSortChange('pathname', 'asc');
       });
       expect(result.current.shuffleSeed).toBeUndefined();
     });
@@ -79,7 +79,7 @@ describe('useSortPreferences', () => {
       expect(result.current.shuffleSeed).toBeDefined();
 
       act(() => {
-        result.current.handleSortChange('date', 'desc');
+        result.current.handleSortChange('updatedAt', 'desc');
       });
       expect(result.current.shuffleSeed).toBeUndefined();
     });
@@ -123,6 +123,30 @@ describe('useSortPreferences', () => {
       expect(result.current.shuffleSeed).toBe(testSeed);
     });
 
+    it('should migrate legacy stored sort values to canonical API values', () => {
+      localStorage.setItem('sploot-sort-preferences', JSON.stringify({
+        sortBy: 'name',
+        direction: 'asc',
+      }));
+
+      const { result } = renderHook(() => useSortPreferences());
+
+      expect(result.current.sortBy).toBe('pathname');
+      expect(result.current.direction).toBe('asc');
+    });
+
+    it('should discard invalid stored sort values', () => {
+      localStorage.setItem('sploot-sort-preferences', JSON.stringify({
+        sortBy: 'favorite',
+        direction: 'desc',
+      }));
+
+      const { result } = renderHook(() => useSortPreferences());
+
+      expect(result.current.sortBy).toBe('createdAt');
+      expect(JSON.parse(localStorage.getItem('sploot-sort-preferences')!).sortBy).toBe('createdAt');
+    });
+
     it('should persist seed cleared state when switching away from shuffle', async () => {
       const { result } = renderHook(() => useSortPreferences());
 
@@ -134,13 +158,13 @@ describe('useSortPreferences', () => {
 
       // Switch away from shuffle
       act(() => {
-        result.current.handleSortChange('recent', 'desc');
+        result.current.handleSortChange('createdAt', 'desc');
       });
       await new Promise(resolve => setTimeout(resolve, 150));
 
       const stored = localStorage.getItem('sploot-sort-preferences');
       const parsed = JSON.parse(stored!);
-      expect(parsed.sortBy).toBe('recent');
+      expect(parsed.sortBy).toBe('createdAt');
       expect(parsed.shuffleSeed).toBeUndefined();
     });
   });
