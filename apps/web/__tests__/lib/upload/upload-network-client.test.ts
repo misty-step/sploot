@@ -55,7 +55,7 @@ describe('UploadNetworkClient', () => {
       xhr.responseText = JSON.stringify(mockResponse);
 
       const loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
@@ -76,7 +76,7 @@ describe('UploadNetworkClient', () => {
 
       // Simulate progress events
       const progressHandler = xhr.upload.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'progress'
+        (call: any[]) => call[0] === 'progress',
       )[1];
 
       progressHandler({ lengthComputable: true, loaded: 500, total: 1000 });
@@ -97,7 +97,7 @@ describe('UploadNetworkClient', () => {
       xhr.status = 200;
       xhr.responseText = JSON.stringify(mockResponse);
       const loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
@@ -113,7 +113,7 @@ describe('UploadNetworkClient', () => {
       xhr.responseText = JSON.stringify({ error: 'Invalid file' });
 
       const loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
@@ -149,7 +149,7 @@ describe('UploadNetworkClient', () => {
       });
 
       const loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
@@ -181,7 +181,7 @@ describe('UploadNetworkClient', () => {
       });
 
       const loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
@@ -202,12 +202,32 @@ describe('UploadNetworkClient', () => {
       xhr.responseText = JSON.stringify({ error: 'Internal server error' });
 
       const loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
       await expect(uploadPromise).rejects.toMatchObject({
         statusCode: 500,
+        isRetryable: true,
+      });
+    });
+
+    it('should keep non-json 5xx errors retryable', async () => {
+      const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
+      const uploadPromise = client.uploadFile(file);
+
+      const xhr = xhrInstances[0];
+      xhr.status = 502;
+      xhr.responseText = '<html>bad gateway</html>';
+
+      const loadHandler = xhr.addEventListener.mock.calls.find(
+        (call: any[]) => call[0] === 'load',
+      )[1];
+      loadHandler();
+
+      await expect(uploadPromise).rejects.toMatchObject({
+        message: 'Upload failed with status 502',
+        statusCode: 502,
         isRetryable: true,
       });
     });
@@ -218,7 +238,7 @@ describe('UploadNetworkClient', () => {
 
       const xhr = xhrInstances[0];
       const errorHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'error'
+        (call: any[]) => call[0] === 'error',
       )[1];
       errorHandler();
 
@@ -236,7 +256,7 @@ describe('UploadNetworkClient', () => {
       expect(xhr.timeout).toBe(5000);
 
       const timeoutHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'timeout'
+        (call: any[]) => call[0] === 'timeout',
       )[1];
       timeoutHandler();
 
@@ -249,7 +269,9 @@ describe('UploadNetworkClient', () => {
     it('should handle abort signal', async () => {
       const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
       const abortController = new AbortController();
-      const uploadPromise = client.uploadFile(file, { signal: abortController.signal });
+      const uploadPromise = client.uploadFile(file, {
+        signal: abortController.signal,
+      });
 
       // Abort the request
       abortController.abort();
@@ -258,7 +280,7 @@ describe('UploadNetworkClient', () => {
       expect(xhr.abort).toHaveBeenCalled();
 
       const abortHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'abort'
+        (call: any[]) => call[0] === 'abort',
       )[1];
       abortHandler();
 
@@ -272,14 +294,16 @@ describe('UploadNetworkClient', () => {
       const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
       const mockResponse: UploadResult = { success: true };
 
-      const uploadPromise = client.uploadFile(file, { endpoint: '/api/custom-upload' });
+      const uploadPromise = client.uploadFile(file, {
+        endpoint: '/api/custom-upload',
+      });
 
       const xhr = xhrInstances[0];
       xhr.status = 200;
       xhr.responseText = JSON.stringify(mockResponse);
 
       const loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
@@ -296,7 +320,7 @@ describe('UploadNetworkClient', () => {
       xhr.responseText = 'not json';
 
       const loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
@@ -325,12 +349,44 @@ describe('UploadNetworkClient', () => {
       xhr.responseText = JSON.stringify(mockResponse);
 
       const loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
       const result = await uploadPromise;
       expect(result.isDuplicate).toBe(true);
+    });
+
+    it('should resolve duplicate detection returned as 409 success', async () => {
+      const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
+      const mockResponse: UploadResult = {
+        success: true,
+        isDuplicate: true,
+        asset: {
+          id: 'asset-123',
+          blobUrl: 'https://example.com/blob.jpg',
+          needsEmbedding: false,
+        },
+      };
+
+      const uploadPromise = client.uploadFile(file);
+
+      const xhr = xhrInstances[0];
+      xhr.status = 409;
+      xhr.responseText = JSON.stringify(mockResponse);
+
+      const loadHandler = xhr.addEventListener.mock.calls.find(
+        (call: any[]) => call[0] === 'load',
+      )[1];
+      loadHandler();
+
+      await expect(uploadPromise).resolves.toMatchObject({
+        success: true,
+        isDuplicate: true,
+        asset: {
+          id: 'asset-123',
+        },
+      });
     });
   });
 
@@ -346,7 +402,7 @@ describe('UploadNetworkClient', () => {
       xhr.responseText = JSON.stringify(mockResponse);
 
       const loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
@@ -367,7 +423,7 @@ describe('UploadNetworkClient', () => {
       xhr.status = 500;
       xhr.responseText = JSON.stringify({ error: 'Server error' });
       let loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
@@ -379,7 +435,7 @@ describe('UploadNetworkClient', () => {
       xhr.status = 200;
       xhr.responseText = JSON.stringify(mockResponse);
       loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
@@ -399,7 +455,7 @@ describe('UploadNetworkClient', () => {
       xhr.responseText = JSON.stringify({ error: 'Bad request' });
 
       const loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
@@ -421,7 +477,7 @@ describe('UploadNetworkClient', () => {
         xhr.status = 500;
         xhr.responseText = JSON.stringify({ error: 'Server error' });
         const loadHandler = xhr.addEventListener.mock.calls.find(
-          (call: any[]) => call[0] === 'load'
+          (call: any[]) => call[0] === 'load',
         )[1];
         loadHandler();
 
@@ -454,19 +510,24 @@ describe('UploadNetworkClient', () => {
       for (let i = 0; i < 3; i++) {
         const xhr = xhrInstances[i];
         xhr.status = 200;
-        xhr.responseText = JSON.stringify({ success: true, asset: { id: `asset-${i}` } });
+        xhr.responseText = JSON.stringify({
+          success: true,
+          asset: { id: `asset-${i}` },
+        });
         const loadHandler = xhr.addEventListener.mock.calls.find(
-          (call: any[]) => call[0] === 'load'
+          (call: any[]) => call[0] === 'load',
         )[1];
         loadHandler();
 
         // Allow event loop to process
-        await new Promise(resolve => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
 
       const results = await uploadPromise;
       expect(results).toHaveLength(3);
-      expect(results.every(r => 'success' in r && (r as UploadResult).success)).toBe(true);
+      expect(
+        results.every((r) => 'success' in r && (r as UploadResult).success),
+      ).toBe(true);
     });
 
     it('should handle mixed success and failure', async () => {
@@ -482,26 +543,28 @@ describe('UploadNetworkClient', () => {
       xhr.status = 200;
       xhr.responseText = JSON.stringify({ success: true });
       let loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       // Second fails
       xhr = xhrInstances[1];
       xhr.status = 400;
       xhr.responseText = JSON.stringify({ error: 'Bad request' });
       loadHandler = xhr.addEventListener.mock.calls.find(
-        (call: any[]) => call[0] === 'load'
+        (call: any[]) => call[0] === 'load',
       )[1];
       loadHandler();
 
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       const results = await uploadPromise;
       expect(results).toHaveLength(2);
-      expect('success' in results[0] && (results[0] as UploadResult).success).toBe(true);
+      expect(
+        'success' in results[0] && (results[0] as UploadResult).success,
+      ).toBe(true);
       expect(results[1]).toBeInstanceOf(UploadError);
     });
   });
