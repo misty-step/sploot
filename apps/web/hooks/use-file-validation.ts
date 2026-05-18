@@ -1,4 +1,7 @@
-import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE, isValidFileType, isValidFileSize } from '@/lib/blob';
+import { UPLOAD, isValidMimeType, isValidFileSize } from '@sploot/common';
+
+const allowedFileTypes = [...UPLOAD.allowedTypes];
+const maxFileSize = UPLOAD.maxSize;
 
 /**
  * Validation error for a single file
@@ -44,7 +47,7 @@ export function useFileValidation() {
    * @returns Error message if invalid, null if valid
    */
   const validateFile = (file: File): string | null => {
-    if (!isValidFileType(file.type)) {
+    if (!isValidMimeType(file.type)) {
       return `Invalid file type: ${file.name}. Only JPEG, PNG, WebP, and GIF are allowed.`;
     }
     if (!isValidFileSize(file.size)) {
@@ -83,8 +86,8 @@ export function useFileValidation() {
     validateFile,
     validateFiles,
     /** Allowed MIME types for validation */
-    ALLOWED_FILE_TYPES,
-    /** Maximum file size in bytes (10MB) */
-    MAX_FILE_SIZE,
+    allowedFileTypes,
+    /** Maximum file size in bytes */
+    maxFileSize,
   };
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE } from '@/lib/blob';
+import { UPLOAD, isValidMimeType, isValidFileSize } from '@sploot/common';
 import { info, error as logError } from '@/lib/logger';
 
 export function UploadTest() {
@@ -14,13 +14,13 @@ export function UploadTest() {
     if (!file) return;
 
     // Validate file type
-    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+    if (!isValidMimeType(file.type)) {
       setError('Invalid file type. Please upload a JPEG, PNG, WebP, or GIF image.');
       return;
     }
 
     // Validate file size
-    if (file.size > MAX_FILE_SIZE) {
+    if (!isValidFileSize(file.size)) {
       setError('File too large. Maximum size is 10MB.');
       return;
     }
@@ -68,7 +68,7 @@ export function UploadTest() {
           <input
             id="file-upload"
             type="file"
-            accept={ALLOWED_FILE_TYPES.join(',')}
+            accept={UPLOAD.allowedTypes.join(',')}
             onChange={handleFileChange}
             disabled={uploading}
             className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file: file:border-0 file:text-sm file:font-semibold file:bg-violet-600 file:text-white hover:file:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed"

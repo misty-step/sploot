@@ -11,6 +11,7 @@ import { BlobUploaderService } from '@/lib/upload/blob-uploader-service';
 import { AssetRecorderService } from '@/lib/upload/asset-recorder-service';
 import { EmbeddingSchedulerService } from '@/lib/upload/embedding-scheduler-service';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
+import { UPLOAD } from '@sploot/common';
 import {
   releaseStorageQuotaReservation,
   reserveUploadBytes,
@@ -354,8 +355,8 @@ async function getHandler(req: NextRequest) {
     status: 'ready',
     blobConfigured,
     limits: {
-      maxFileSize: 10 * 1024 * 1024, // 10MB
-      allowedTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+      maxFileSize: UPLOAD.maxSize,
+      allowedTypes: [...UPLOAD.allowedTypes],
     },
   });
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { isValidFileType, isValidFileSize } from '@/lib/blob';
+import { isAssetSortBy, isValidMimeType, isValidFileSize } from '@sploot/common';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import crypto from 'crypto';
 import { getCacheService } from '@/lib/cache';
@@ -8,7 +8,6 @@ import { getAuthWithUser, requireUserIdWithSync } from '@/lib/auth/server';
 import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { Prisma } from '@prisma/client';
-import { isAssetSortBy } from '@sploot/common';
 import logger from '@/lib/logger';
 import { logError } from '@/lib/vercel-logger';
 import { createErrorResponse } from '@/lib/error-response';
@@ -72,7 +71,7 @@ async function postHandler(req: NextRequest) {
       );
     }
 
-    if (!isValidFileType(mimeType)) {
+    if (!isValidMimeType(mimeType)) {
       return NextResponse.json(
         { error: 'Invalid file type. Only JPEG, PNG, WebP, and GIF images are allowed.' },
         { status: 400 }

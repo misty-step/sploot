@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { UPLOAD } from '@sploot/common';
 
 const mocks = vi.hoisted(() => ({
   verifyBearerOrThrow: vi.fn(),
@@ -111,7 +112,7 @@ vi.mock('@/lib/upload/embedding-scheduler-service', () => ({
   })),
 }));
 
-import { POST } from '@/app/api/upload/route';
+import { GET, POST } from '@/app/api/upload/route';
 
 function uploadRequest(): NextRequest {
   const form = new FormData();
@@ -159,5 +160,22 @@ describe('POST /api/upload quota and runtime gates', () => {
     expect(body.code).toBe('quota_exceeded');
     expect(mocks.processImage).not.toHaveBeenCalled();
     expect(mocks.upload).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/upload policy status', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.verifyBearerOrThrow.mockResolvedValue('user-1');
+  });
+
+  it('returns upload limits from shared common policy', async () => {
+    const response = await GET(new NextRequest('http://localhost:3000/api/upload', { method: 'GET' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.status).toBe('ready');
+    expect(body.limits.maxFileSize).toBe(UPLOAD.maxSize);
+    expect(body.limits.allowedTypes).toEqual([...UPLOAD.allowedTypes]);
   });
 });

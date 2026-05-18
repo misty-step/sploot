@@ -89,7 +89,7 @@ export function UploadZone({
   const { isOffline } = useOffline();
   const router = useRouter();
   const uploadQueueManager = getUploadQueueManager();
-  const { validateFile, ALLOWED_FILE_TYPES } = useFileValidation();
+  const { validateFile, allowedFileTypes } = useFileValidation();
 
   const getMultipartSizeError = useCallback((file: File) =>
     `too chunky for upload: ${file.name}. tried shrinking it, still over ${(UPLOAD.multipartSafeSize / 1024 / 1024).toFixed(0)}mb.`,
@@ -1103,7 +1103,7 @@ export function UploadZone({
       {/* Drop Zone */}
       <UploadDropZone
         onFilesAdded={(files) => processFiles(files)}
-        allowedFileTypes={ALLOWED_FILE_TYPES}
+        allowedFileTypes={allowedFileTypes}
         isPreparing={isPreparing}
         preparingFileCount={preparingFileCount}
         preparingTotalSize={preparingTotalSize}

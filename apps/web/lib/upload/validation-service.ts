@@ -1,4 +1,4 @@
-import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE } from '@/lib/blob';
+import { UPLOAD, isValidFileSize } from '@sploot/common';
 
 /**
  * Validation error with user-facing message
@@ -47,8 +47,8 @@ export class UploadValidationService {
   private maxTags: number;
 
   constructor(config?: ValidationConfig) {
-    this.allowedTypes = config?.allowedTypes ?? ALLOWED_FILE_TYPES;
-    this.maxFileSize = config?.maxFileSize ?? MAX_FILE_SIZE;
+    this.allowedTypes = config?.allowedTypes ?? [...UPLOAD.allowedTypes];
+    this.maxFileSize = config?.maxFileSize ?? UPLOAD.maxSize;
     this.maxTagLength = config?.maxTagLength ?? 50;
     this.maxTags = config?.maxTags ?? 20;
   }
@@ -57,9 +57,10 @@ export class UploadValidationService {
    * Validate file MIME type against allowed types
    */
   validateFileType(mimeType: string): ValidationResult {
-    const normalizedType = mimeType.toLowerCase().trim();
+    const normalizedType = mimeType.toLowerCase().trim().split(';')[0];
+    const isAllowedByConfig = this.allowedTypes.includes(normalizedType);
 
-    if (!this.allowedTypes.includes(normalizedType)) {
+    if (!isAllowedByConfig) {
       return {
         valid: false,
         error: new ValidationError(
@@ -88,7 +89,11 @@ export class UploadValidationService {
       };
     }
 
-    if (size > this.maxFileSize) {
+    const exceedsLimit = this.maxFileSize === UPLOAD.maxSize
+      ? !isValidFileSize(size)
+      : size > this.maxFileSize;
+
+    if (exceedsLimit) {
       const sizeMB = (size / 1024 / 1024).toFixed(2);
       const maxMB = (this.maxFileSize / 1024 / 1024).toFixed(0);
 

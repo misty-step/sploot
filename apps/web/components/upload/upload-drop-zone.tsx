@@ -5,13 +5,13 @@ import { Upload, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { showToast } from '@/components/ui/toast';
-import { ALLOWED_FILE_TYPES } from '@/lib/blob';
+import { UPLOAD } from '@sploot/common';
 
 interface UploadDropZoneProps {
   /** Callback when files are added (via drop, paste, or file input) */
   onFilesAdded: (files: File[]) => void;
 
-  /** List of allowed MIME types (defaults to ALLOWED_FILE_TYPES from @/lib/blob) */
+  /** List of allowed MIME types (defaults to shared upload policy) */
   allowedFileTypes?: string[];
 
   /** Shows preparing overlay with file count and size */
@@ -34,7 +34,7 @@ interface UploadDropZoneProps {
  */
 export function UploadDropZone({
   onFilesAdded,
-  allowedFileTypes = ALLOWED_FILE_TYPES,
+  allowedFileTypes = [...UPLOAD.allowedTypes],
   isPreparing = false,
   preparingFileCount = 0,
   preparingTotalSize = 0,
@@ -178,7 +178,7 @@ export function UploadDropZone({
             or click to browse • paste from clipboard
           </p>
           <p className="font-mono text-xs text-muted-foreground/60 uppercase tracking-wider">
-            JPEG, PNG, WebP, GIF • Max 10MB per file
+            JPEG, PNG, WebP, GIF • Max {UPLOAD.maxSizeMB}MB per file
           </p>
         </CardContent>
       </Card>

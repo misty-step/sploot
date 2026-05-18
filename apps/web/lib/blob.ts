@@ -8,11 +8,6 @@ export {
   type AllowedMimeType,
 } from '@sploot/common';
 
-// Backward compatibility aliases
-import { UPLOAD } from '@sploot/common';
-export const ALLOWED_FILE_TYPES: string[] = [...UPLOAD.allowedTypes];
-export const MAX_FILE_SIZE = UPLOAD.maxSize;
-
 /**
  * Vercel Blob upload result (internal type, not shared)
  */
@@ -22,13 +17,6 @@ export interface UploadResult {
   pathname: string;
   contentType: string;
   contentDisposition: string;
-}
-
-/**
- * @deprecated Use isValidMimeType from @sploot/common
- */
-export function isValidFileType(mimeType: string): boolean {
-  return UPLOAD.allowedTypes.includes(mimeType.toLowerCase() as typeof UPLOAD.allowedTypes[number]);
 }
 
 /**
