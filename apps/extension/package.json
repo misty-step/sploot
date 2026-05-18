@@ -37,8 +37,8 @@
     "wxt": "^0.20.11"
   },
   "dependencies": {
-    "@sploot/common": "workspace:*",
     "@clerk/chrome-extension": "^2.9.15",
-    "@clerk/clerk-react": "^5.53.8"
+    "@clerk/clerk-react": "^5.61.6",
+    "@sploot/common": "workspace:*"
   }
 }
