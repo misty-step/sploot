@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@sploot/common": "workspace:*",
-    "@clerk/chrome-extension": "^2.7.14",
+    "@clerk/chrome-extension": "^2.9.15",
     "@clerk/clerk-react": "^5.53.8"
   }
 }
