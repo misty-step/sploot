@@ -4,6 +4,7 @@ import { getAuth } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
 import { getOrCreateShareSlug, AssetNotFoundError } from '@/lib/share';
 import { apiError } from '@/lib/api-error';
+import { unauthorizedResponse } from '@/lib/auth/api';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
@@ -30,7 +31,7 @@ async function postHandler(
     // 1. Extract and verify auth
     const { userId } = await getAuth();
     if (!userId) {
-      return apiError('UNAUTHORIZED', 'You must be logged in to share assets');
+      return unauthorizedResponse();
     }
 
     // 2. Extract asset ID from params

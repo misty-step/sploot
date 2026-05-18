@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUserIdWithSync } from '@/lib/auth/server';
+import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
@@ -87,6 +88,10 @@ async function patchHandler(
       },
     });
   } catch (error) {
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
     logError('tags:update-failed', error);
     return NextResponse.json(
       { error: 'Failed to update tag' },
@@ -148,6 +153,10 @@ async function deleteHandler(
       message: 'Tag deleted successfully',
     });
   } catch (error) {
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
     logError('tags:delete-failed', error);
     return NextResponse.json(
       { error: 'Failed to delete tag' },

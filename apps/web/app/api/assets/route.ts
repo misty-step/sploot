@@ -5,6 +5,7 @@ import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import crypto from 'crypto';
 import { getCacheService } from '@/lib/cache';
 import { getAuthWithUser, requireUserIdWithSync } from '@/lib/auth/server';
+import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { Prisma } from '@prisma/client';
 import logger from '@/lib/logger';
@@ -178,6 +179,10 @@ async function postHandler(req: NextRequest) {
       message: 'Asset created successfully',
     });
   } catch (error) {
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
     unstable_rethrow(error);
     logError('POST /api/assets', error, { requestId });
     return createErrorResponse(
@@ -204,6 +209,32 @@ async function getHandler(req: NextRequest) {
   let includeTags = false;
 
   try {
+    // Get auth with explicit sync status before validating request details so
+    // signed-out callers consistently receive the auth contract.
+    const { userId, syncStatus, syncError } = await getAuthWithUser();
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Check if database sync failed (prevents empty gallery bug)
+    if (syncStatus === 'failed') {
+      return NextResponse.json(
+        {
+          error: 'Account sync in progress. Please refresh in a few seconds.',
+          retry: true,
+          // Include error details in development only
+          ...(process.env.NODE_ENV === 'development' && {
+            details: syncError,
+            syncStatus,
+          }),
+        },
+        { status: 503 }
+      );
+    }
+
     // Parse query params INSIDE try block to catch URL parsing errors
     const { searchParams } = new URL(req.url);
     const parsedLimit = parseUnsignedIntegerParam(searchParams.get('limit'), 50);
@@ -271,31 +302,6 @@ async function getHandler(req: NextRequest) {
     tagId = searchParams.get('tagId');
     // Auto-enable includeTags when filtering by tagId so UI can display tag names
     includeTags = searchParams.get('includeTags') === 'true' || !!tagId;
-
-    // Get auth with explicit sync status (Ousterhout: Expose important information)
-    const { userId, syncStatus, syncError } = await getAuthWithUser();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Check if database sync failed (prevents empty gallery bug)
-    if (syncStatus === 'failed') {
-      return NextResponse.json(
-        {
-          error: 'Account sync in progress. Please refresh in a few seconds.',
-          retry: true,
-          // Include error details in development only
-          ...(process.env.NODE_ENV === 'development' && {
-            details: syncError,
-            syncStatus,
-          }),
-        },
-        { status: 503 }
-      );
-    }
 
     const where = {
       ownerUserId: userId,

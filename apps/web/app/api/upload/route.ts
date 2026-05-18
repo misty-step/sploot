@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { verifyBearerOrThrow } from '@/lib/auth/verify-bearer';
+import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { blobConfigured } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { UploadValidationService } from '@/lib/upload/validation-service';
@@ -281,6 +282,10 @@ async function postHandler(req: NextRequest) {
   } catch (error) {
     unstable_rethrow(error);
 
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
     logger.error('Upload endpoint error', {
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
@@ -309,7 +314,11 @@ async function getHandler(req: NextRequest) {
     await verifyBearerOrThrow(req);
   } catch (error) {
     unstable_rethrow(error);
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
+    throw error;
   }
 
   return NextResponse.json({

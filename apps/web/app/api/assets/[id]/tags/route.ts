@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { requireUserIdWithSync } from '@/lib/auth/server';
+import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
@@ -64,6 +65,10 @@ async function getHandler(
       })),
     });
   } catch (error) {
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
     unstable_rethrow(error);
     logError('assets:tags-list-failed', error);
     return NextResponse.json(
@@ -206,6 +211,10 @@ async function postHandler(
       })),
     });
   } catch (error) {
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
     unstable_rethrow(error);
     logError('assets:tags-add-failed', error);
     return NextResponse.json(
@@ -280,6 +289,10 @@ async function deleteHandler(
       message: 'Tags removed from asset',
     });
   } catch (error) {
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
     unstable_rethrow(error);
     logError('assets:tags-remove-failed', error);
     return NextResponse.json(

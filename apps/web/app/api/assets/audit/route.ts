@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUserIdWithSync } from '@/lib/auth/server';
+import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
@@ -122,6 +123,10 @@ async function getHandler(req: NextRequest) {
 
     return NextResponse.json(summary, { status: 200 });
   } catch (error) {
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
     logError('assets:audit-failed', error);
     return NextResponse.json(
       {

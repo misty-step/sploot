@@ -2,7 +2,9 @@
 
 ## Overview
 
-Sploot provides a RESTful API for managing your personal meme library with semantic search capabilities. All API endpoints require authentication via Clerk and follow standard HTTP conventions.
+Sploot provides a RESTful API for managing your personal meme library with
+semantic search capabilities. Product APIs require Clerk authentication and
+follow standard HTTP conventions; operational routes define their own contracts.
 
 ## Base URL
 
@@ -13,7 +15,36 @@ Development: http://localhost:3001/api
 
 ## Authentication
 
-All API endpoints (except `/api/health`) require authentication via Clerk. Include the session cookie from your authenticated browser session or use Clerk's SDK for programmatic access.
+User-facing product APIs require authentication via Clerk. Include the session
+cookie from your authenticated browser session or use Clerk's SDK for
+programmatic access. Operational routes such as health and cron endpoints define
+their own auth contracts.
+
+### Auth Boundary
+
+- `apps/web/middleware.ts` protects only `/app(.*)` and redirects signed-out requests to `/sign-in`.
+- Clerk middleware still matches API routes so Clerk server auth can resolve,
+  but API routes enforce auth in route handlers rather than middleware.
+- The protected product JSON APIs listed below return this exact payload for
+  missing auth:
+
+```json
+{
+  "error": "Unauthorized"
+}
+```
+
+with status `401`.
+
+Protected product API route inventory:
+- `/api/upload-url`, `/api/upload`, `/api/upload/check`
+- `/api/assets`, `/api/assets/{id}`, `/api/assets/{id}/tags`, `/api/assets/audit`, `/api/assets/{id}/share`, `/api/assets/{id}/similar`
+- `/api/assets/{id}/embedding-status`, `/api/assets/batch/embedding-status`, `/api/assets/{id}/generate-embedding`
+- `/api/search`, `/api/search/advanced`
+- `/api/stats`
+- `/api/tags`, `/api/tags/{tagId}`
+- `/api/analytics/usage`, `/api/telemetry`
+- `/api/cache/stats`, `/api/embeddings/text`, `/api/embeddings/image`, `/api/sse/embedding-updates`
 
 ## Response Format
 
@@ -361,6 +392,119 @@ Delete an asset (soft delete by default).
   "permanent": false
 }
 ```
+
+#### GET /api/assets/{id}/tags
+
+List tags attached to an asset you own.
+
+**Authentication:** Required
+
+**Error Responses:**
+- 401: `{"error":"Unauthorized"}`
+- 404: Asset not found
+- 500: Server error
+
+#### POST /api/assets/{id}/tags
+
+Attach existing or new tags to an asset you own.
+
+**Authentication:** Required
+
+**Error Responses:**
+- 401: `{"error":"Unauthorized"}`
+- 404: Asset not found
+- 500: Server error
+
+#### DELETE /api/assets/{id}/tags
+
+Remove tag associations from an asset you own.
+
+**Authentication:** Required
+
+**Error Responses:**
+- 400: Tag IDs missing/invalid
+- 401: `{"error":"Unauthorized"}`
+- 404: Asset not found
+- 500: Server error
+
+#### GET /api/assets/audit
+
+Run a blob-url audit for the authenticated user's non-deleted assets.
+
+**Authentication:** Required
+
+**Error Responses:**
+- 401: `{"error":"Unauthorized"}`
+- 500: Failed to audit assets
+- 503: Database unavailable
+
+---
+
+### Stats
+
+#### GET /api/stats
+
+Return per-user aggregate stats (`assetCount`, `storageBytes`, `lastUploadAt`).
+
+**Authentication:** Required
+
+**Error Responses:**
+- 401: `{"error":"Unauthorized"}`
+- 500: Failed to fetch stats
+- 503: Database not available
+
+---
+
+### Tags
+
+#### GET /api/tags
+
+List tags for the authenticated user.
+
+**Authentication:** Required
+
+**Error Responses:**
+- 401: `{"error":"Unauthorized"}`
+- 500: Failed to fetch tags
+- 503: Database unavailable
+
+#### POST /api/tags
+
+Create a tag for the authenticated user.
+
+**Authentication:** Required
+
+**Error Responses:**
+- 400: Invalid tag payload
+- 401: `{"error":"Unauthorized"}`
+- 409: Tag already exists
+- 500: Failed to create tag
+- 503: Database unavailable
+
+#### PATCH /api/tags/{tagId}
+
+Update an existing user-owned tag.
+
+**Authentication:** Required
+
+**Error Responses:**
+- 401: `{"error":"Unauthorized"}`
+- 404: Tag not found
+- 409: Tag with this name already exists
+- 500: Failed to update tag
+- 503: Database unavailable
+
+#### DELETE /api/tags/{tagId}
+
+Delete an existing user-owned tag.
+
+**Authentication:** Required
+
+**Error Responses:**
+- 401: `{"error":"Unauthorized"}`
+- 404: Tag not found
+- 500: Failed to delete tag
+- 503: Database unavailable
 
 ---
 

@@ -128,7 +128,7 @@ describe('Share flow', () => {
 
       expect(response.status).toBe(401);
       const data = await response.json();
-      expect(data.error).toBe('You must be logged in to share assets');
+      expect(data.error).toBe('Unauthorized');
     });
 
     it('rejects sharing soft-deleted assets', async () => {

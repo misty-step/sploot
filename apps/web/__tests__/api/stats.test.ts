@@ -93,8 +93,8 @@ describe('/api/stats', () => {
       const response = await GET({} as NextRequest);
       const data = await response.json();
 
-      expect(response.status).toBe(500);
-      expect(data.error).toBe('Failed to fetch stats');
+      expect(response.status).toBe(401);
+      expect(data.error).toBe('Unauthorized');
 
       consoleErrorSpy.mockRestore();
     });
