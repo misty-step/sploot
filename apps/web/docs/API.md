@@ -37,6 +37,7 @@ their own auth contracts.
 with status `401`.
 
 Protected product API route inventory:
+
 - `/api/upload`, `/api/upload/check`
 - `/api/assets`, `/api/assets/{id}`, `/api/assets/{id}/tags`, `/api/assets/audit`, `/api/assets/{id}/share`, `/api/assets/{id}/similar`
 - `/api/assets/{id}/embedding-status`, `/api/assets/batch/embedding-status`, `/api/assets/{id}/generate-embedding`
@@ -77,6 +78,7 @@ Check API availability and system status.
 **Authentication:** Not required
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -128,10 +130,12 @@ used by the chrome extension.
 **Request:** `multipart/form-data`
 
 **Form Fields:**
+
 - `file` (file, required): Image file to upload
 - `tags` (json string array, optional): Tag names to attach
 
 **Success Response (201):**
+
 ```json
 {
   "success": true,
@@ -152,6 +156,7 @@ used by the chrome extension.
 ```
 
 **Duplicate Response (409):**
+
 ```json
 {
   "success": true,
@@ -172,6 +177,7 @@ used by the chrome extension.
 ```
 
 **Error Responses:**
+
 - 400: Missing file or invalid upload. validation errors return `success: false`
   and `error`.
 - 401: Unauthorized
@@ -191,6 +197,7 @@ embedding generation when Replicate is configured.
 **Authentication:** Required
 
 **Request Body:**
+
 ```json
 {
   "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
@@ -205,6 +212,7 @@ embedding generation when Replicate is configured.
 ```
 
 **Parameters:**
+
 - `blobUrl` (string, required): URL from Vercel Blob storage
 - `pathname` (string, required): Blob pathname to persist
 - `filename` (string, required): Original filename
@@ -216,6 +224,7 @@ embedding generation when Replicate is configured.
   omitted, the server generates a random checksum.
 
 **Success Response (201):**
+
 ```json
 {
   "asset": {
@@ -237,6 +246,7 @@ embedding generation when Replicate is configured.
 ```
 
 **Error Responses:**
+
 - 400: Missing or invalid parameters
 - 401: Unauthorized
 - 500: Server error
@@ -248,6 +258,7 @@ List assets for the authenticated user with pagination, filtering, and seeded sh
 **Authentication:** Required
 
 **Query Parameters:**
+
 - `limit` (number, optional): number of results (default: 50, min: 1, max: 100)
 - `offset` (number, optional): skip this many results (default: 0, min: 0)
 - `sortBy` (string, optional): `createdAt`, `updatedAt`, `size`, `pathname`, or `shuffle` (default: `createdAt`)
@@ -259,9 +270,12 @@ List assets for the authenticated user with pagination, filtering, and seeded sh
 
 **Shuffle Contract:**
 
-Use `sortBy=shuffle&shuffleSeed=<seed>&limit=<n>` to fetch a deterministic random page of the authenticated user's assets. The same seed, filters, limit, and offset return the same PostgreSQL seeded random order while the matching asset set is unchanged. Shuffle is private to the authenticated user's library and respects `favorite`, `tagId`, `limit`, and `offset`.
+Use `sortBy=shuffle&shuffleSeed=<seed>&limit=<n>` to fetch a deterministic seeded ring order for the authenticated user's assets. Each asset has a stable `shuffle_key` (`BIGINT`), and the seed maps to a pivot on that keyspace. Results are ordered by walking the ring from the pivot and wrapping at the end. The same seed, filters, limit, and offset return the same order while the matching asset set is unchanged. Shuffle is private to the authenticated user's library and respects `favorite`, `tagId`, `limit`, and `offset`.
+
+Tradeoff: this path is scalable and index-friendly, but it is not a per-request full-table random sort; it is a deterministic rotation over stable shuffle keys.
 
 **Success Response (200):**
+
 ```json
 {
   "assets": [
@@ -294,6 +308,7 @@ GET /api/assets?sortBy=shuffle&shuffleSeed=424242&limit=30&offset=0
 ```
 
 **Error Responses:**
+
 - 400: Invalid `limit`, `offset`, `sortBy`, or `shuffleSeed`; `shuffleSeed` missing for `sortBy=shuffle`; `shuffleSeed` provided without `sortBy=shuffle`
 - 401: Unauthorized
 - 500: Server error
@@ -305,9 +320,11 @@ Get details for a specific asset.
 **Authentication:** Required
 
 **Path Parameters:**
+
 - `id` (string, required): Asset UUID
 
 **Success Response (200):**
+
 ```json
 {
   "asset": {
@@ -327,6 +344,7 @@ Get details for a specific asset.
 ```
 
 **Error Responses:**
+
 - 404: Asset not found
 - 401: Unauthorized
 - 403: Forbidden (not owner)
@@ -338,9 +356,11 @@ Update asset metadata (favorite status, tags).
 **Authentication:** Required
 
 **Path Parameters:**
+
 - `id` (string, required): Asset UUID
 
 **Request Body:**
+
 ```json
 {
   "favorite": true,
@@ -349,10 +369,12 @@ Update asset metadata (favorite status, tags).
 ```
 
 **Parameters:**
+
 - `favorite` (boolean, optional): Set favorite status
 - `tags` (array, optional): Array of tag strings
 
 **Success Response (200):**
+
 ```json
 {
   "asset": {
@@ -371,12 +393,15 @@ Delete an asset (soft delete by default).
 **Authentication:** Required
 
 **Path Parameters:**
+
 - `id` (string, required): Asset UUID
 
 **Query Parameters:**
+
 - `permanent` (boolean, optional): Permanently delete if true
 
 **Success Response (200):**
+
 ```json
 {
   "message": "Asset deleted successfully",
@@ -391,6 +416,7 @@ List tags attached to an asset you own.
 **Authentication:** Required
 
 **Error Responses:**
+
 - 401: `{"error":"Unauthorized"}`
 - 404: Asset not found
 - 500: Server error
@@ -402,6 +428,7 @@ Attach existing or new tags to an asset you own.
 **Authentication:** Required
 
 **Error Responses:**
+
 - 401: `{"error":"Unauthorized"}`
 - 404: Asset not found
 - 500: Server error
@@ -413,6 +440,7 @@ Remove tag associations from an asset you own.
 **Authentication:** Required
 
 **Error Responses:**
+
 - 400: Tag IDs missing/invalid
 - 401: `{"error":"Unauthorized"}`
 - 404: Asset not found
@@ -425,6 +453,7 @@ Run a blob-url audit for the authenticated user's non-deleted assets.
 **Authentication:** Required
 
 **Error Responses:**
+
 - 401: `{"error":"Unauthorized"}`
 - 500: Failed to audit assets
 - 503: Database unavailable
@@ -440,6 +469,7 @@ Return per-user aggregate stats (`assetCount`, `storageBytes`, `storageLimitByte
 **Authentication:** Required
 
 **Error Responses:**
+
 - 401: `{"error":"Unauthorized"}`
 - 500: Failed to fetch stats
 - 503: Database not available
@@ -455,6 +485,7 @@ List tags for the authenticated user.
 **Authentication:** Required
 
 **Error Responses:**
+
 - 401: `{"error":"Unauthorized"}`
 - 500: Failed to fetch tags
 - 503: Database unavailable
@@ -466,6 +497,7 @@ Create a tag for the authenticated user.
 **Authentication:** Required
 
 **Error Responses:**
+
 - 400: Invalid tag payload
 - 401: `{"error":"Unauthorized"}`
 - 409: Tag already exists
@@ -479,6 +511,7 @@ Update an existing user-owned tag.
 **Authentication:** Required
 
 **Error Responses:**
+
 - 401: `{"error":"Unauthorized"}`
 - 404: Tag not found
 - 409: Tag with this name already exists
@@ -492,6 +525,7 @@ Delete an existing user-owned tag.
 **Authentication:** Required
 
 **Error Responses:**
+
 - 401: `{"error":"Unauthorized"}`
 - 404: Tag not found
 - 500: Failed to delete tag
@@ -508,9 +542,11 @@ Check embedding generation status for an asset.
 **Authentication:** Required
 
 **Path Parameters:**
+
 - `id` (string, required): Asset UUID
 
 **Success Response (200):**
+
 ```json
 {
   "assetId": "550e8400-e29b-41d4-a716-446655440000",
@@ -520,10 +556,12 @@ Check embedding generation status for an asset.
 ```
 
 **Status Values:**
+
 - `pending`: no embedding row exists yet
 - `ready`: embedding row exists
 
 **Error Responses:**
+
 - 401: Unauthorized
 - 404: Asset not found or access denied
 - 500: Server error
@@ -536,6 +574,7 @@ Check embedding generation status for up to 50 assets.
 **Authentication:** Required
 
 **Request Body:**
+
 ```json
 {
   "assetIds": [
@@ -546,6 +585,7 @@ Check embedding generation status for up to 50 assets.
 ```
 
 **Success Response (200):**
+
 ```json
 {
   "statuses": {
@@ -563,11 +603,13 @@ Check embedding generation status for up to 50 assets.
 ```
 
 **Status Values:**
+
 - `pending`: asset exists and no embedding row exists yet
 - `ready`: embedding row exists
 - `failed`: asset was not found or access was denied
 
 **Error Responses:**
+
 - 400: `assetIds` is missing, not an array, or has more than 50 items
 - 401: Unauthorized
 - 500: Server error
@@ -582,9 +624,11 @@ Embedding generation is guarded by `SPLOOT_EMBEDDINGS_ENABLED=false`; when disab
 **Authentication:** Required
 
 **Path Parameters:**
+
 - `id` (string, required): Asset UUID
 
 **Request Body:**
+
 ```json
 {
   "force": false
@@ -592,9 +636,11 @@ Embedding generation is guarded by `SPLOOT_EMBEDDINGS_ENABLED=false`; when disab
 ```
 
 **Parameters:**
+
 - `force` (boolean, optional): Regenerate even if embedding exists
 
 **Success Response (200):**
+
 ```json
 {
   "message": "Embedding generation started",
@@ -609,6 +655,7 @@ Generate embeddings for text input (primarily for testing).
 **Authentication:** Required
 
 **Request Body:**
+
 ```json
 {
   "query": "distracted boyfriend meme"
@@ -616,6 +663,7 @@ Generate embeddings for text input (primarily for testing).
 ```
 
 **Success Response (200):**
+
 ```json
 {
   "success": true,
@@ -636,6 +684,7 @@ Generate embeddings for an image URL (primarily for testing).
 **Authentication:** Required
 
 **Request Body:**
+
 ```json
 {
   "imageUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
@@ -644,6 +693,7 @@ Generate embeddings for an image URL (primarily for testing).
 ```
 
 **Success Response (200):**
+
 ```json
 {
   "success": true,
@@ -669,6 +719,7 @@ Perform semantic search using text queries.
 **Authentication:** Required
 
 **Request Body:**
+
 ```json
 {
   "query": "distracted boyfriend",
@@ -679,6 +730,7 @@ Perform semantic search using text queries.
 ```
 
 **Parameters:**
+
 - `query` (string, required): Search text (max 500 characters)
 - `limit` (number, optional): requested result count (default: 30). the server
   searches for at least 10 similar results, so `limit` in the response may be
@@ -687,6 +739,7 @@ Perform semantic search using text queries.
 - `shuffleSeed` (number, optional): Seed used by vector search when supported
 
 **Success Response (200):**
+
 ```json
 {
   "results": [
@@ -734,9 +787,11 @@ Get recent or popular search suggestions.
 **Authentication:** Required
 
 **Query Parameters:**
+
 - `type` (string, optional): `recent` or `popular` (default: `recent`)
 
 **Success Response (200):**
+
 ```json
 {
   "searches": [
@@ -758,6 +813,7 @@ Advanced search with multiple filters and sorting options.
 **Authentication:** Required
 
 **Request Body:**
+
 ```json
 {
   "query": "reaction",
@@ -778,6 +834,7 @@ Advanced search with multiple filters and sorting options.
 ```
 
 **Parameters:**
+
 - `query` (string, required): Search text
 - `filters` (object, optional): Filter criteria
   - `favorites` (boolean): Only favorites
@@ -793,6 +850,7 @@ Advanced search with multiple filters and sorting options.
 - `threshold` (number, optional): Minimum similarity (0-1, default: 0.5)
 
 **Success Response (200):**
+
 ```json
 {
   "results": [
@@ -840,6 +898,7 @@ Get cache statistics and performance metrics.
 **Authentication:** Required
 
 **Success Response (200):**
+
 ```json
 {
   "stats": {
@@ -853,7 +912,7 @@ Get cache statistics and performance metrics.
     "l2": {
       "hits": 280,
       "misses": 70,
-      "hitRate": 0.80,
+      "hitRate": 0.8,
       "avgLatency": 8.5
     },
     "overall": {
@@ -881,6 +940,7 @@ Clear or warm the cache.
 **Authentication:** Required
 
 **Request Body:**
+
 ```json
 {
   "action": "clear",
@@ -889,11 +949,13 @@ Clear or warm the cache.
 ```
 
 **Parameters:**
+
 - `action` (string, required): Action to perform (clear, warm)
 - `layer` (string, optional): Cache layer (l1, l2, all)
 - `queries` (array, optional): Queries to warm (for warm action)
 
 **Success Response (200):**
+
 ```json
 {
   "message": "Cache cleared successfully",
@@ -905,17 +967,17 @@ Clear or warm the cache.
 
 ## Error Codes
 
-| Code | Description |
-|------|------------|
-| 400 | Bad Request - Invalid parameters |
-| 401 | Unauthorized - Authentication required |
-| 403 | Forbidden - Access denied |
-| 404 | Not Found - Resource doesn't exist |
-| 409 | Conflict - Duplicate resource |
-| 413 | Payload Too Large - File exceeds size limit |
-| 429 | Too Many Requests - Rate limit exceeded |
-| 500 | Internal Server Error |
-| 503 | Service Unavailable - External service down |
+| Code | Description                                 |
+| ---- | ------------------------------------------- |
+| 400  | Bad Request - Invalid parameters            |
+| 401  | Unauthorized - Authentication required      |
+| 403  | Forbidden - Access denied                   |
+| 404  | Not Found - Resource doesn't exist          |
+| 409  | Conflict - Duplicate resource               |
+| 413  | Payload Too Large - File exceeds size limit |
+| 429  | Too Many Requests - Rate limit exceeded     |
+| 500  | Internal Server Error                       |
+| 503  | Service Unavailable - External service down |
 
 ## Mock Mode
 
@@ -931,18 +993,18 @@ To enable mock mode, set `MOCK_MODE=true` in your environment or leave external 
 
 ## WebSocket Events (Future)
 
-*Note: Real-time features are planned for v2*
+_Note: Real-time features are planned for v2_
 
 ```javascript
 // Example WebSocket connection for live updates
-const ws = new WebSocket('wss://your-app.vercel.app/api/ws');
+const ws = new WebSocket("wss://your-app.vercel.app/api/ws");
 
-ws.on('asset:created', (asset) => {
-  console.log('New asset:', asset);
+ws.on("asset:created", (asset) => {
+  console.log("New asset:", asset);
 });
 
-ws.on('embedding:completed', (data) => {
-  console.log('Embedding ready:', data.assetId);
+ws.on("embedding:completed", (data) => {
+  console.log("Embedding ready:", data.assetId);
 });
 ```
 
@@ -954,11 +1016,11 @@ ws.on('embedding:completed', (data) => {
 // Using the API with fetch
 async function uploadMeme(file: File) {
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append("file", file);
 
-  const uploadRes = await fetch('/api/upload', {
-    method: 'POST',
-    body: formData
+  const uploadRes = await fetch("/api/upload", {
+    method: "POST",
+    body: formData,
   });
 
   const data = await uploadRes.json();
@@ -967,10 +1029,10 @@ async function uploadMeme(file: File) {
 
 // Search for memes
 async function searchMemes(query: string) {
-  const res = await fetch('/api/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, limit: 30 })
+  const res = await fetch("/api/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, limit: 30 }),
   });
 
   return await res.json();
@@ -1021,6 +1083,7 @@ class SplootAPI:
 ## Changelog
 
 ### v1.0.0 (2025-09-16)
+
 - Initial API release
 - Core upload, search, and asset management
 - Semantic search with SigLIP embeddings
@@ -1028,6 +1091,7 @@ class SplootAPI:
 - PWA support with offline capabilities
 
 ### Planned Features (v2.0)
+
 - Batch upload endpoints
 - WebSocket for real-time updates
 - Public sharing links
