@@ -11,6 +11,7 @@ import { useFileValidation } from '@/hooks/use-file-validation';
 import { UploadErrorDisplay } from '@/components/upload/upload-error-display';
 import { getUploadErrorDetails, UploadErrorDetails } from '@/lib/upload-errors';
 import { EmbeddingStatusIndicator } from '@/components/upload/embedding-status-indicator';
+import { UploadBatchProgressCard } from '@/components/upload/upload-batch-progress-card';
 import { UploadDropZone } from '@/components/upload/upload-drop-zone';
 import { UploadFileList } from '@/components/upload/upload-file-list';
 import { getUploadQueueManager, useUploadRecovery } from '@/lib/upload-queue';
@@ -19,7 +20,6 @@ import type { ProgressStats } from './upload-progress-header';
 import { FileStreamProcessor } from '@/lib/file-stream-processor';
 import { logger } from '@/lib/logger';
 import { Card, CardContent } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { UPLOAD, prepareImageForUpload } from '@sploot/common';
@@ -999,60 +999,6 @@ export function UploadZone({
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
-  // Calculate overall progress
-  const calculateOverallProgress = () => {
-    if (filesArray.length === 0) return 0;
-
-    const totalProgress = filesArray.reduce((acc, file) => {
-      if (file.status === 'success' || file.status === 'duplicate') {
-        return acc + 100;
-      } else if (file.status === 'uploading') {
-        return acc + file.progress;
-      } else if (file.status === 'error') {
-        return acc + 0;
-      } else {
-        return acc + 0; // pending/queued
-      }
-    }, 0);
-
-    return Math.round(totalProgress / filesArray.length);
-  };
-
-  // Get upload statistics
-  const getUploadStats = () => {
-    const completed = filesArray.filter(f => f.status === 'success' || f.status === 'duplicate').length;
-    const uploading = filesArray.filter(f => f.status === 'uploading').length;
-    const pending = filesArray.filter(f => f.status === 'pending' || f.status === 'queued').length;
-    const failed = filesArray.filter(f => f.status === 'error').length;
-
-    return { completed, uploading, pending, failed, total: filesArray.length };
-  };
-
-  // Get errors grouped by type
-  const getGroupedErrors = () => {
-    const failedFiles = filesArray.filter(f => f.status === 'error' && f.errorDetails);
-    const groups = new Map<string, { type: string; message: string; count: number; files: FileMetadata[] }>();
-
-    failedFiles.forEach(file => {
-      if (file.errorDetails) {
-        const key = file.errorDetails.type;
-        if (!groups.has(key)) {
-          groups.set(key, {
-            type: file.errorDetails.type,
-            message: file.errorDetails.userMessage,
-            count: 0,
-            files: []
-          });
-        }
-        const group = groups.get(key)!;
-        group.count++;
-        group.files.push(file);
-      }
-    });
-
-    return Array.from(groups.values()).sort((a, b) => b.count - a.count);
-  };
-
   // Cancel remaining uploads
   const cancelRemainingUploads = () => {
     setIsCancelling(true);
@@ -1113,101 +1059,13 @@ export function UploadZone({
       {filesArray.length > 0 && (
         <div className="mt-6 space-y-4">
           {/* Batch Upload Progress Header */}
-          <Card>
-            <CardContent className="py-4">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className="font-medium text-sm">Upload Progress</h3>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    {(() => {
-                      const stats = getUploadStats();
-                      const parts = [];
-                      if (stats.completed > 0) parts.push(`${stats.completed} completed`);
-                      if (stats.uploading > 0) parts.push(`${stats.uploading} uploading`);
-                      if (stats.pending > 0) parts.push(`${stats.pending} pending`);
-                      if (stats.failed > 0) parts.push(`${stats.failed} failed`);
-                      return parts.join(' • ') || 'No files';
-                    })()}
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  {/* Retry all failed button */}
-                  {getUploadStats().failed > 0 && (
-                    <Button
-                      onClick={retryAllFailed}
-                      size="sm"
-                      variant="ghost"
-                    >
-                      Retry {getUploadStats().failed} Failed
-                    </Button>
-                  )}
-
-                  {/* Cancel button */}
-                  {hasActiveUploads && (
-                    <Button
-                      onClick={cancelRemainingUploads}
-                      disabled={isCancelling}
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                    >
-                      {isCancelling ? 'Cancelling...' : 'Cancel Remaining'}
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {/* Overall progress bar */}
-              <div className="space-y-2">
-                <Progress value={calculateOverallProgress()} className="h-2" />
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">
-                    {getUploadStats().completed} of {filesArray.length} files
-                  </span>
-                  <span className="text-primary font-medium">
-                    {calculateOverallProgress()}%
-                  </span>
-                </div>
-              </div>
-
-              {/* Quick stats */}
-              <div className="grid grid-cols-4 gap-2 mt-3">
-                <div className="text-center">
-                  <p className="text-green-500 text-lg font-semibold">{getUploadStats().completed}</p>
-                  <p className="text-muted-foreground text-xs">Complete</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-primary text-lg font-semibold">{getUploadStats().uploading}</p>
-                  <p className="text-muted-foreground text-xs">Uploading</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-muted-foreground text-lg font-semibold">{getUploadStats().pending}</p>
-                  <p className="text-muted-foreground text-xs">Pending</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-destructive text-lg font-semibold">{getUploadStats().failed}</p>
-                  <p className="text-muted-foreground text-xs">Failed</p>
-                </div>
-              </div>
-
-              {/* Error summary by type - show when errors exist */}
-              {getUploadStats().failed > 0 && (
-                <div className="mt-3 pt-3 border-t">
-                  <p className="text-muted-foreground text-xs font-medium mb-2">Error Details:</p>
-                  <div className="space-y-1">
-                    {getGroupedErrors().map((group) => (
-                      <div key={group.type} className="flex items-center justify-between text-xs">
-                        <span className="text-destructive">
-                          {group.count} {group.count === 1 ? 'file' : 'files'}: {group.message}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <UploadBatchProgressCard
+            files={filesArray}
+            hasActiveUploads={hasActiveUploads}
+            isCancelling={isCancelling}
+            onRetryAllFailed={retryAllFailed}
+            onCancelRemainingUploads={cancelRemainingUploads}
+          />
 
           {/* File list */}
           <UploadFileList
