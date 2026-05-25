@@ -8,19 +8,21 @@ description: |
 
 ## Sploot Anchors
 
-- Repo: pnpm Turborepo with `apps/web`, `apps/extension`, and `packages/common`.
-- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not active for Sploot work tracking.
+- Product: personal meme library focused on save, semantic search, and shuffle.
+- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts).
+- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`.
 - Base branch: `origin/master`.
-- Ship gate: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with DB-backed paths requiring `DATABASE_URL` against pgvector or an explicit unverified note.
-- Remote CI: frozen install, web Prisma migrate against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension build.
-- Closure: backlog item status moves to `done` with a `What Was Built` note plus Conventional Commit subject/body or an explicit `Backlog: backlog.d/<id>-<slug>.md` trailer.
+- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or explicit `DB path unverified` evidence. GitHub CI adds frozen install, `pnpm --filter web db:migrate` against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension lint/test/build, and the `merge-gate` aggregate job.
+- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` trailers.
 
 ## How This Skill Works Here
 
-Implement from a shaped packet or local backlog item. Create branches as `<type>/<id>-<slug>` when a backlog item exists; otherwise use `cx/<slug>` for Codex work. Write behavior tests before production code for business logic and API contracts.
+Use /implement for bounded Sploot code changes. Prefer Red -> Green -> Refactor unless the change is docs-only, harness-only, or manual QA evidence. Use `pnpm`; never introduce npm/yarn workflows.
 
-Respect internal boundaries: do not mock Sploot-owned modules; use realistic fakes or the real implementation. Boundary mocks are allowed for Clerk, Sentry, Vercel Blob, Replicate, network, clock, and browser APIs. New code must keep `@sploot/common` as the source of upload limits and API types.
+Default implementation loop: read the ticket, create or preserve a structured backlog reference, touch the smallest owned surface, update shared contracts in `packages/common` before duplicating rules, and add behavior tests near the changed path. Mock external boundaries only: network, clock, random, third-party SDKs, and filesystem when file contents are irrelevant. Do not mock owned upload/search/auth/business logic.
+
+Use branch/commit references that /ship can resolve back to `backlog.d/<id>-<slug>.md`. DB-backed code needs a pgvector `DATABASE_URL` for proof or an explicit unverified note.
 
 ## Output Contract
 
-End with evidence, decisions, and residual risk. If a changed executable path was not directly exercised, say so explicitly. Keep repo-specific names and commands in the body; do not append generic sidecar notes.
+End with evidence, decisions, and residual risk. Name exact commands/artifacts for executable paths. If a changed path was not directly exercised, say so explicitly. Keep Sploot-specific terms in the body; do not append generic sidecar notes.

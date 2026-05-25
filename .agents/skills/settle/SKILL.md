@@ -8,19 +8,19 @@ description: |
 
 ## Sploot Anchors
 
-- Repo: pnpm Turborepo with `apps/web`, `apps/extension`, and `packages/common`.
-- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not active for Sploot work tracking.
+- Product: personal meme library focused on save, semantic search, and shuffle.
+- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts).
+- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`.
 - Base branch: `origin/master`.
-- Ship gate: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with DB-backed paths requiring `DATABASE_URL` against pgvector or an explicit unverified note.
-- Remote CI: frozen install, web Prisma migrate against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension build.
-- Closure: backlog item status moves to `done` with a `What Was Built` note plus Conventional Commit subject/body or an explicit `Backlog: backlog.d/<id>-<slug>.md` trailer.
+- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or explicit `DB path unverified` evidence. GitHub CI adds frozen install, `pnpm --filter web db:migrate` against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension lint/test/build, and the `merge-gate` aggregate job.
+- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` trailers.
 
 ## How This Skill Works Here
 
-Polish a branch or PR until it is merge-ready. Preconditions: not on `master`, no unresolved merge/rebase, worktree state understood, branch has commits beyond `origin/master`. Loop through `/ci`, GitHub PR checks and review comments, `/code-review`, `/refactor`, and targeted `/qa`.
+Use /settle to polish an existing branch/PR to merge-ready. It does not merge. Loop through CI, code review, focused refactor, and QA until the branch is clean enough for /ship.
 
-Stop at merge-ready. Do not merge, deploy, archive backlog items, or reflect; hand off to `/ship`. The lifecycle gate blocks merge-ready claims unless backlog linkage and CI parity evidence are present.
+Before calling ready: ensure the backlog reference is structured, the active ticket is either still active intentionally or ready to archive, docs/API/release notes are synced, and the CI parity gate has current evidence. For extension release work, require release checker output and a note on authenticated Chrome/Web Store status.
 
 ## Output Contract
 
-End with evidence, decisions, and residual risk. If a changed executable path was not directly exercised, say so explicitly. Keep repo-specific names and commands in the body; do not append generic sidecar notes.
+End with evidence, decisions, and residual risk. Name exact commands/artifacts for executable paths. If a changed path was not directly exercised, say so explicitly. Keep Sploot-specific terms in the body; do not append generic sidecar notes.

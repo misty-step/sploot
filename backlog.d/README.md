@@ -25,7 +25,6 @@ Recently completed:
 - [003](_done/003-ship-first-class-shuffle-api-contract.md) Ship First-Class Shuffle API Contract
 - [004](_done/004-resync-api-docs-with-runtime-contracts.md) Resync API Docs With Runtime Contracts
 - [005](_done/005-triage-stale-prs-and-dependency-duplicates.md) Triage Stale PRs And Dependency Duplicates
-- [006](_done/006-gradient-first-local-work.md) Capture the first local Gradient work item
 - [009](_done/009-fix-release-automation-branch-protection.md) Fix Release Automation Branch Protection
 - [008](_done/008-add-storage-quota-and-runtime-gates.md) Add Storage Quota And Runtime Gates
 - [013](_done/013-align-product-privacy-claims-with-runtime.md) Align Product Privacy Claims With Runtime

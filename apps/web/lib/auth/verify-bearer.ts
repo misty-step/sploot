@@ -5,6 +5,8 @@ const DEFAULT_AUTHORIZED_PARTIES = [
   'https://sploot.app',
   'https://www.sploot.app',
   'chrome-extension://ipnlamdcakhmbidjlpoinkgimfapejna',
+  'chrome-extension://hikefmnilgapfckjmillbhcocihjffhn',
+  'chrome-extension://fbhkflbcnllfogefckablkafjknmcfnd',
   'http://localhost:3000',
   'http://localhost:3001',
 ];

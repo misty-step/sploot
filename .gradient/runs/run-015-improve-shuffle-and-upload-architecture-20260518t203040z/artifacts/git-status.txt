@@ -1,2 +1,0 @@
-D backlog.d/015-improve-shuffle-and-upload-architecture.md
-?? backlog.d/_done/015-improve-shuffle-and-upload-architecture.md

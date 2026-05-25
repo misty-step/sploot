@@ -2,25 +2,25 @@
   "base_url": "https://www.sploot.app",
   "extension_zip": "../extension/dist/extension-1.0.0-chrome.zip",
   "extension_dist": "../extension/dist/chrome-mv3",
-  "started_at": "2026-05-18T20:46:37.636Z",
-  "finished_at": "2026-05-18T20:46:38.973Z",
+  "started_at": "2026-05-25T19:00:48.853Z",
+  "finished_at": "2026-05-25T19:00:50.803Z",
   "status": "pass",
   "checks": [
     {
       "name": "production health",
       "status": "pass",
-      "duration_ms": 278,
+      "duration_ms": 421,
       "details": {
         "database": "up",
         "redis": "up",
-        "database_latency_ms": 7,
+        "database_latency_ms": 9,
         "version": "0.1.0"
       }
     },
     {
       "name": "production service health",
       "status": "pass",
-      "duration_ms": 181,
+      "duration_ms": 395,
       "details": {
         "status": "degraded",
         "all_services_configured": true,
@@ -34,7 +34,7 @@
     {
       "name": "signed-out app route protection",
       "status": "pass",
-      "duration_ms": 220,
+      "duration_ms": 370,
       "details": {
         "redirects": [
           {
@@ -58,7 +58,7 @@
     {
       "name": "signed-out api auth contract",
       "status": "pass",
-      "duration_ms": 118,
+      "duration_ms": 195,
       "details": {
         "status": 401,
         "error": "Unauthorized"
@@ -67,7 +67,7 @@
     {
       "name": "production extension artifact",
       "status": "pass",
-      "duration_ms": 539,
+      "duration_ms": 568,
       "details": {
         "artifact": "../extension/dist/extension-1.0.0-chrome.zip",
         "artifact_type": "zip",

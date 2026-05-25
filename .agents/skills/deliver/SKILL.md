@@ -8,21 +8,19 @@ description: |
 
 ## Sploot Anchors
 
-- Repo: pnpm Turborepo with `apps/web`, `apps/extension`, and `packages/common`.
-- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not active for Sploot work tracking.
+- Product: personal meme library focused on save, semantic search, and shuffle.
+- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts).
+- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`.
 - Base branch: `origin/master`.
-- Ship gate: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with DB-backed paths requiring `DATABASE_URL` against pgvector or an explicit unverified note.
-- Remote CI: frozen install, web Prisma migrate against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension build.
-- Closure: backlog item status moves to `done` with a `What Was Built` note plus Conventional Commit subject/body or an explicit `Backlog: backlog.d/<id>-<slug>.md` trailer.
+- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or explicit `DB path unverified` evidence. GitHub CI adds frozen install, `pnpm --filter web db:migrate` against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension lint/test/build, and the `merge-gate` aggregate job.
+- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` trailers.
 
 ## How This Skill Works Here
 
-When invoked without an explicit backlog item, inspect active top-level `backlog.d/*.md` tickets and select the highest-priority item whose `Status:` is `ready`, using the ticket number as the tie-breaker. Do not ask the operator to choose while `Priority:` and `Status:` provide a deterministic next item. If no ready item exists, say that and stop.
+Use /deliver to take one active Sploot backlog item to merge-ready, stopping before merge/push/deploy. If no item is named, select the highest-priority `ready` item from `backlog.d/`; today that means checking the active table in `backlog.d/README.md`.
 
-Take the selected local backlog item or shaped packet to merge-ready. Compose `/shape -> /implement -> /ci -> /code-review -> /refactor -> /qa`; stop before merge, push, deploy, or backlog archival.
-
-The delivery receipt must name the selected backlog ref, changed surfaces (`apps/web`, `apps/extension`, `packages/common`, CI/release), CI parity evidence, DB/pgvector verification status, and residual deploy/release risk. Delivered does not mean shipped.
+Compose the loop: /shape -> /implement -> /ci -> /code-review -> /refactor -> /qa. Carry the selected `backlog.d/<id>-<slug>.md` reference through branch, commit/PR body, evidence, and final handoff so /ship can archive it. Report gate evidence and unresolved blockers explicitly.
 
 ## Output Contract
 
-End with evidence, decisions, and residual risk. If a changed executable path was not directly exercised, say so explicitly. Keep repo-specific names and commands in the body; do not append generic sidecar notes.
+End with evidence, decisions, and residual risk. Name exact commands/artifacts for executable paths. If a changed path was not directly exercised, say so explicitly. Keep Sploot-specific terms in the body; do not append generic sidecar notes.

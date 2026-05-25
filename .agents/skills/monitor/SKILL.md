@@ -8,19 +8,19 @@ description: |
 
 ## Sploot Anchors
 
-- Repo: pnpm Turborepo with `apps/web`, `apps/extension`, and `packages/common`.
-- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not active for Sploot work tracking.
+- Product: personal meme library focused on save, semantic search, and shuffle.
+- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts).
+- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`.
 - Base branch: `origin/master`.
-- Ship gate: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with DB-backed paths requiring `DATABASE_URL` against pgvector or an explicit unverified note.
-- Remote CI: frozen install, web Prisma migrate against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension build.
-- Closure: backlog item status moves to `done` with a `What Was Built` note plus Conventional Commit subject/body or an explicit `Backlog: backlog.d/<id>-<slug>.md` trailer.
+- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or explicit `DB path unverified` evidence. GitHub CI adds frozen install, `pnpm --filter web db:migrate` against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension lint/test/build, and the `merge-gate` aggregate job.
+- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` trailers.
 
 ## How This Skill Works Here
 
-Watch signals after merge/deploy/release. For web: Vercel deploy status, `/api/health`, `/api/db-ping`, Sentry, structured logs, and release notes. For extension: build artifact presence, manual Chrome smoke, and store-submission status when available. For CI-only changes: subsequent GitHub Actions runs.
+Use /monitor after merges, deploys, release attempts, or risky production-facing changes. Sploot signals include GitHub Actions `merge-gate`, Vercel production smoke, Sentry incidents, `/api/health` and service health, release workflow output, semantic-release notes, Chrome extension release checker, and real Chrome QA receipts.
 
-Monitor emits a clean result or escalates to `/diagnose`; it does not patch code.
+Monitoring is evidence collection, not dashboard theater. Name what was checked, the result, the grace window if any, and the rollback/disable path. For extension release work, web deploy health and Chrome Web Store status are separate surfaces.
 
 ## Output Contract
 
-End with evidence, decisions, and residual risk. If a changed executable path was not directly exercised, say so explicitly. Keep repo-specific names and commands in the body; do not append generic sidecar notes.
+End with evidence, decisions, and residual risk. Name exact commands/artifacts for executable paths. If a changed path was not directly exercised, say so explicitly. Keep Sploot-specific terms in the body; do not append generic sidecar notes.

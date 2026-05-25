@@ -27,7 +27,99 @@ Priority: high
 Status: ready
 Estimate: M
 
-## Latest Pass - 2026-05-18
+## Latest Pass - 2026-05-22
+
+- Used Computer Use against Chrome's real extension manager to load the current
+  worktree production-like unpacked build from
+  `/Users/phaedrus/.codex/worktrees/5075/sploot/apps/extension/dist/chrome-mv3`.
+- Verified Chrome profile `Phaedrus (Phaedrus @ Home)` now records Sploot source
+  as `/Users/phaedrus/.codex/worktrees/5075/sploot/apps/extension/dist/chrome-mv3`.
+- Chrome's extension detail page shows Sploot version `1.0.0`, size `4.9 MB`,
+  enabled state `On`, site access `On all sites`, and `Allow access to file
+  URLs` enabled.
+- The freshly loaded current-worktree extension popup shows the signed-out Clerk
+  screen. `https://sploot.app/app` also redirects to sign-in, so authenticated
+  upload and duplicate QA require a fresh login before release proof can be
+  captured.
+- Updated `apps/extension/STORE_LISTING.md` so `pnpm --filter extension
+  release:check` no longer treats the stale extension source as current.
+
+Remaining blockers before this can move to `_done`:
+
+- Authenticate the current worktree extension in Chrome, then prove right-click
+  upload and duplicate behavior against production.
+- Chrome Web Store dashboard upload/review receipt is not captured.
+
+## Latest Pass - 2026-05-24
+
+- Used Computer Use in the real Chrome profile `Phaedrus (Phaedrus @ Home)`.
+- Restored production Sploot authentication via the saved Proton Pass login.
+- Verified `https://sploot.app/app` renders the signed-in production library
+  with `MEMES: 3,020` and `SIZE: 11.4 MB`.
+- Reauthenticated to the Chrome Web Store Developer Dashboard for publisher
+  `phaedrus` using the saved Google passkey.
+- Verified the current dashboard item list contains four existing extensions:
+  `Trump Goggles`, `Bitcoin Price Tag`, `Time Is Money`, and `Quack`; no
+  existing Sploot item is present.
+- Opened the `Add new item` dialog and verified the dashboard is ready to accept
+  a ZIP/CRX upload.
+
+Remaining blockers before this can move to `_done`:
+
+- Selecting `Save to Sploot` from a public image context menu uploads that image
+  into the signed-in Sploot account, so explicit action-time confirmation is
+  required before capturing right-click upload and duplicate proof.
+- Uploading `apps/extension/dist/extension-1.0.0-chrome.zip` to the Chrome Web
+  Store sends the package to Google, so explicit action-time confirmation is
+  required before creating the new Web Store item.
+- Chrome Web Store review submission receipt is not captured.
+
+## Latest Pass - 2026-05-25
+
+- Used Computer Use in the real Chrome profile `Phaedrus (Phaedrus @ Home)`.
+- Rebuilt `apps/extension/dist/extension-1.0.0-chrome.zip` with the existing
+  public live Clerk publishable key; SHA256 is
+  `dfbf3b4e2ada82629cae3387462c6e5d4305f82aa363400624adc7d977e12435`.
+- Uploaded the zip to the Chrome Web Store Developer Dashboard and created
+  draft item `fbhkflbcnllfogefckablkafjknmcfnd`.
+- Saved package, listing fields, store icon, screenshot, small promo tile,
+  homepage URL, support URL, category, language, mature-content setting,
+  privacy disclosures, permission justifications, data usage categories,
+  certifications, and privacy policy URL.
+- Captured dashboard evidence at
+  `.spellbook/evidence/cws-privacy-submit-enabled-20260525.png`; the dashboard
+  now enables `Submit for review`.
+- Re-uploaded the current `dfbf3b4e...` zip after restoring the local unpacked
+  production bundle; the draft remains item `fbhkflbcnllfogefckablkafjknmcfnd`.
+- Captured the current saved draft state at
+  `.spellbook/evidence/cws-current-package-submit-enabled-20260525.png`.
+- Added `chrome-extension://fbhkflbcnllfogefckablkafjknmcfnd` to the web API's
+  default Clerk authorized parties so the submitted Web Store extension origin
+  is accepted by `verifyBearerOrThrow`.
+- Added the currently enabled unpacked QA extension origin
+  `chrome-extension://hikefmnilgapfckjmillbhcocihjffhn` to the same default
+  authorized-party list after confirming that is the local Chrome extension ID
+  currently used for real QA.
+- Deployed the auth-origin change to production as
+  `dpl_Dc6S9wEDe6xtnDyBMU2sJfg5fxFe`
+  (`https://sploot-om9xryqr7-misty-step.vercel.app`) and confirmed
+  `https://www.sploot.app` aliases to that ready deployment.
+- Re-ran deployed smoke after the production deploy; `apps/web/docs/deployed-smoke-report.json`
+  records `status: pass` for health, service health, signed-out route/API
+  protection, and the production extension zip artifact.
+- Verified the targeted auth contract with
+  `pnpm --dir apps/web exec vitest run __tests__/lib/auth/verify-bearer.test.ts`.
+
+Remaining blockers before this can move to `_done`:
+
+- Prove right-click upload and duplicate behavior against production.
+- Computer Use is currently blocked by the macOS lock screen
+  (`cgWindowNotFound` for Google Chrome); unlock the Mac before capturing
+  screenshot, right-click upload, duplicate, or final submit evidence.
+- Click final Chrome Web Store `Submit for review` only after explicit
+  action-time confirmation.
+
+## Previous Pass - 2026-05-18
 
 - Tightened deployed smoke to validate the canonical Chrome Web Store zip
   artifact by default instead of the mutable unpacked `dist/chrome-mv3`
@@ -52,13 +144,6 @@ Estimate: M
   Service worker logs show auth/session, token retrieval, and image fetch
   succeeded before `POST /api/upload` failed. This is useful failure evidence,
   but it does not prove the current worktree release build.
-
-Remaining blockers before this can move to `_done`:
-
-- Reload authenticated Chrome from the fresh worktree production-like unpacked
-  build at `apps/extension/dist/chrome-mv3` before treating right-click upload
-  and duplicate QA as release evidence.
-- Chrome Web Store dashboard upload/review receipt is not captured.
 
 ## Release Readiness Gate - 2026-05-18
 

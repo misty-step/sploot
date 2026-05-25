@@ -1,8 +1,0 @@
-.gitignore                                         |  2 ++
- .spellbook/repo-brief.md                           |  6 +++---
- .../003-ship-first-class-shuffle-api-contract.md   | 20 ++++++++++++++++++++
- .../004-resync-api-docs-with-runtime-contracts.md  | 20 ++++++++++++++++++++
- ...5-triage-stale-prs-and-dependency-duplicates.md | 17 +++++++++++++++++
- .../001-fix-extension-upload-response-contract.md  | 21 +++++++++++++++++++++
- ...-configure-extension-auth-authorized-parties.md | 22 ++++++++++++++++++++++
- 7 files changed, 105 insertions(+), 3 deletions(-)

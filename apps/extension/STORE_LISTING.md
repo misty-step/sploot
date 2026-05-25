@@ -19,7 +19,7 @@ Save memes from any site with one click. Find them instantly using AI semantic s
 **Category**
 
 ```text
-Fun
+Just for Fun
 ```
 
 **Language**
@@ -197,7 +197,61 @@ QA and the Chrome Web Store dashboard receipt are complete.
 
 ## Authenticated Chrome QA
 
-Checked on 2026-05-18 with Google Chrome profile `Phaedrus (Phaedrus @ Home)`.
+Checked on 2026-05-18 and 2026-05-22 with Google Chrome profile
+`Phaedrus (Phaedrus @ Home)`.
+
+Latest check on 2026-05-25 with Computer Use and the same Chrome profile:
+
+- Rebuilt the production extension zip from this worktree with the existing
+  public live Clerk publishable key.
+- Uploaded `apps/extension/dist/extension-1.0.0-chrome.zip` to the Chrome Web
+  Store Developer Dashboard and created draft item
+  `fbhkflbcnllfogefckablkafjknmcfnd`.
+- Package page recorded version `1.0.0`, item type `Extension`, permissions
+  `storage`, `tabs`, `contextMenus`, `notifications`, `cookies`, and host
+  permissions.
+- Store listing fields, icon, screenshot, small promo tile, homepage URL,
+  support URL, language, category, and mature-content setting were saved.
+- Privacy page disclosures, permission justifications, remote-code answer,
+  data usage categories, certifications, and privacy policy URL were saved.
+- Evidence screenshot:
+  `.spellbook/evidence/cws-privacy-submit-enabled-20260525.png`.
+- Re-uploaded the rebuilt `dfbf3b4e...` zip to the same draft after restoring
+  the production-shaped unpacked bundle.
+- Current draft evidence screenshot:
+  `.spellbook/evidence/cws-current-package-submit-enabled-20260525.png`.
+- The dashboard enabled `Submit for review`; it was not clicked because final
+  review submission needs action-time confirmation.
+- The Web Store draft ID is now the production Chrome extension ID that must be
+  allowed by Clerk/backend auth:
+  `chrome-extension://fbhkflbcnllfogefckablkafjknmcfnd`.
+- The active unpacked QA extension ID
+  `chrome-extension://hikefmnilgapfckjmillbhcocihjffhn` and Web Store draft ID
+  `chrome-extension://fbhkflbcnllfogefckablkafjknmcfnd` are both included in
+  the web API's default Clerk authorized parties.
+- Production deploy `dpl_Dc6S9wEDe6xtnDyBMU2sJfg5fxFe`
+  (`https://sploot-om9xryqr7-misty-step.vercel.app`) is live behind
+  `https://www.sploot.app`, and deployed smoke passed after the auth-origin
+  change.
+- UI upload proof is paused because Computer Use cannot see Chrome while macOS
+  is locked (`cgWindowNotFound`); do not treat right-click upload or duplicate
+  behavior as release-proven until the Mac is unlocked and the real Chrome flow
+  is captured.
+
+Latest check on 2026-05-24 with Computer Use and the same Chrome profile:
+
+- Production `https://sploot.app/app` is signed in as the saved Sploot account
+  after Proton Pass autofill.
+- The production library renders `MEMES: 3,020` and `SIZE: 11.4 MB`.
+- Chrome Web Store Developer Dashboard reauthentication succeeded for publisher
+  `phaedrus`.
+- Publisher item list contains `Trump Goggles`, `Bitcoin Price Tag`, `Time Is
+  Money`, and `Quack`; no existing Sploot item is present.
+- The dashboard reaches the `Add new item` dialog and is ready for a ZIP/CRX
+  upload.
+- Uploading `apps/extension/dist/extension-1.0.0-chrome.zip` to Google and
+  selecting `Save to Sploot` from a public image context menu are the remaining
+  action-time confirmation boundaries.
 
 Passing evidence:
 
@@ -218,27 +272,35 @@ Unproven/requires follow-up before submission:
   count from `3,020`; right-click upload is therefore not release-proven.
 - Duplicate-save behavior remains unproven because the first save did not
   produce observable success evidence.
-- Latest blocked attempt: Chrome is signed in, but the installed extension
-  source is stale:
-  `/Users/phaedrus/Development/sploot/apps/extension/dist/chrome-mv3-dev`.
-  The stale extension reaches auth/session, retrieves a token, fetches the
-  image, and then fails at `POST /api/upload`; this does not prove the current
-  worktree release build. A fresh production-like unpacked build from this
-  worktree exists at `apps/extension/dist/chrome-mv3`, but loading or reloading
-  it requires action-time confirmation.
+- On 2026-05-22, reloaded the unpacked production-like build from this worktree:
+  `/Users/phaedrus/.codex/worktrees/5075/sploot/apps/extension/dist/chrome-mv3`.
+  Chrome's extension detail page shows source `apps/extension/dist/chrome-mv3`,
+  version `1.0.0`, size `4.9 MB`, enabled state `On`, site access `On all
+  sites`, and `Allow access to file URLs` enabled.
+- After loading the current worktree build, the Sploot extension popup and
+  `https://sploot.app/app` both show the signed-out Clerk screen. Authenticated
+  upload and duplicate QA now require a fresh login before they can be treated
+  as release evidence.
+- On 2026-05-24, production Sploot app authentication is restored, but
+  right-click upload and duplicate behavior are not release-proven because the
+  next step uploads a user-selected public image into the signed-in Sploot
+  account and requires explicit action-time confirmation.
 - The production extension build and zip were rerun from this worktree with the
   existing public `pk_live_*` Clerk publishable key already embedded in the
   release artifact.
 
 ## Release Artifact
 
-Rebuilt on 2026-05-18:
+Current release artifact, rebuilt on 2026-05-25:
 
 ```text
 Path: apps/extension/dist/extension-1.0.0-chrome.zip
 Version: 1.0.0
 Size: 1.66 MB
-SHA256: 0daf17d25bc9da654a9497749800ae0d34667bb5babcd4859dbc9edfdc21a99c
+SHA256: dfbf3b4e2ada82629cae3387462c6e5d4305f82aa363400624adc7d977e12435
+Chrome Web Store draft item: fbhkflbcnllfogefckablkafjknmcfnd
+Dashboard receipt: .spellbook/evidence/cws-privacy-submit-enabled-20260525.png
+Current draft receipt: .spellbook/evidence/cws-current-package-submit-enabled-20260525.png
 ```
 
 Build commands:
@@ -272,9 +334,13 @@ Blocking items before submission:
 
 - authenticated production Chrome extension QA is partially complete, but
   right-click upload and duplicate behavior are not release-proven
-- authenticated Chrome is currently loaded from stale extension source; reload
-  `apps/extension/dist/chrome-mv3` before treating upload QA as release evidence
-- no Chrome Web Store dashboard upload/review receipt has been captured
+- current Computer Use UI access is blocked by the macOS lock screen; unlock the
+  Mac before resuming screenshot, upload, duplicate, or final submit evidence
+- Chrome Web Store draft item `fbhkflbcnllfogefckablkafjknmcfnd` exists with
+  current package SHA256
+  `dfbf3b4e2ada82629cae3387462c6e5d4305f82aa363400624adc7d977e12435`,
+  listing, assets, and privacy disclosures saved; final `Submit for review` was
+  intentionally not clicked pending action-time confirmation.
 
 Rollback/disable plan:
 
