@@ -2,6 +2,12 @@
   "name": "sploot-monorepo",
   "private": true,
   "packageManager": "pnpm@10.22.0",
+  "pnpm": {
+    "overrides": {
+      "handlebars": "4.7.9",
+      "js-cookie": "3.0.7"
+    }
+  },
   "scripts": {
     "dev": "PORT=${PORT:-3001} VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001} turbo run dev",
     "dev:web": "turbo run dev --filter=web",
