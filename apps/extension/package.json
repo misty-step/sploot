@@ -27,19 +27,19 @@
   "license": "ISC",
   "packageManager": "pnpm@10.22.0",
   "devDependencies": {
-    "@types/chrome": "^0.1.27",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "@types/chrome": "^0.1.42",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "sharp": "^0.34.5",
     "typescript": "^5.9.3",
-    "vitest": "^2.1.9",
-    "wxt": "^0.20.11"
+    "vitest": "^4.1.7",
+    "wxt": "^0.20.26"
   },
   "dependencies": {
-    "@clerk/chrome-extension": "^2.9.15",
-    "@clerk/clerk-react": "^5.61.6",
+    "@clerk/chrome-extension": "^2.9.16",
+    "@clerk/clerk-react": "^5.61.7",
     "@sploot/common": "workspace:*"
   }
 }

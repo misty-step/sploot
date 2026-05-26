@@ -200,7 +200,7 @@ process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_test_mock_token_123456789012345
 process.env.REPLICATE_API_TOKEN = 'r8_test_mock_token_12345678901234567890';
 
 // Keep DB config aligned with the CI postgres service unless already provided.
-const defaultTestDbUrl = 'postgresql://postgres:postgres@localhost:5432/sploot_test';
+const defaultTestDbUrl = 'postgresql://test:test@localhost:5432/sploot_test?sslmode=disable';
 const setDefaultEnv = (key: string, value: string) => {
   if (!process.env[key]) {
     process.env[key] = value;
@@ -247,19 +247,22 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 });
 
-// Mock IntersectionObserver
-global.IntersectionObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}));
+// Mock observers as constructable classes because cmdk and Next instantiate them with `new`.
+class IntersectionObserverMock {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+  takeRecords = vi.fn(() => []);
+}
 
-// Mock ResizeObserver (required by cmdk and other components)
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
-  observe: vi.fn(),
-  unobserve: vi.fn(),
-  disconnect: vi.fn(),
-}));
+class ResizeObserverMock {
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+}
+
+global.IntersectionObserver = IntersectionObserverMock as any;
+global.ResizeObserver = ResizeObserverMock as any;
 
 // Mock scrollIntoView (required by cmdk keyboard navigation)
 Element.prototype.scrollIntoView = vi.fn();

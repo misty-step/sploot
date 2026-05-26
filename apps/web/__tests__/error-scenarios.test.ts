@@ -218,14 +218,13 @@ describe('Error Scenarios - System Resilience', () => {
 
   describe('Analytics failures', () => {
     it('should never block user flows when analytics fails', async () => {
-      const { track } = await import('@/lib/analytics');
-
-      // Mock Vercel Analytics to fail
-      vi.mock('@vercel/analytics', () => ({
+      vi.resetModules();
+      vi.doMock('@vercel/analytics', () => ({
         track: vi.fn().mockImplementation(() => {
           throw new Error('Analytics service unavailable');
         }),
       }));
+      const { track } = await import('@/lib/analytics');
 
       // User action should complete successfully even if analytics fails
       const userAction = async () => {
@@ -246,6 +245,7 @@ describe('Error Scenarios - System Resilience', () => {
 
       const result = await userAction();
       expect(result.success).toBe(true);
+      vi.doUnmock('@vercel/analytics');
     });
   });
 
