@@ -12,9 +12,11 @@ const mocks = vi.hoisted(() => ({
   checkDuplicate: vi.fn(),
   recordAsset: vi.fn(),
   scheduleEmbedding: vi.fn(),
+  loggerError: vi.fn(),
   StorageQuotaExceededError: class StorageQuotaExceededError extends Error {
     constructor(public readonly snapshot: any) {
       super('Storage quota exceeded');
+      Object.setPrototypeOf(this, StorageQuotaExceededError.prototype);
     }
   },
 }));
@@ -40,7 +42,7 @@ vi.mock('@/lib/logger', () => ({
   logger: {
     info: vi.fn(),
     warn: vi.fn(),
-    error: vi.fn(),
+    error: mocks.loggerError,
     debug: vi.fn(),
   },
 }));
@@ -76,43 +78,56 @@ vi.mock('@/lib/quota/storage-quota-policy', () => ({
 }));
 
 vi.mock('@/lib/upload/validation-service', () => ({
-  UploadValidationService: vi.fn(() => ({
+  UploadValidationService: vi.fn(function () {
+    return {
     validateUpload: mocks.validateUpload,
-  })),
+    };
+  }),
 }));
 
 vi.mock('@/lib/upload/image-processor-service', () => ({
-  ImageProcessorService: vi.fn(() => ({
+  ImageProcessorService: vi.fn(function () {
+    return {
     processImage: mocks.processImage,
-  })),
+    };
+  }),
 }));
 
 vi.mock('@/lib/upload/deduplication-service', () => ({
-  DeduplicationService: vi.fn(() => ({
+  DeduplicationService: vi.fn(function () {
+    return {
     checkDuplicate: mocks.checkDuplicate,
-  })),
+    };
+  }),
 }));
 
 vi.mock('@/lib/upload/blob-uploader-service', () => ({
-  BlobUploaderService: vi.fn(() => ({
+  BlobUploaderService: vi.fn(function () {
+    return {
     upload: mocks.upload,
     cleanup: vi.fn(),
-  })),
+    };
+  }),
 }));
 
 vi.mock('@/lib/upload/asset-recorder-service', () => ({
-  AssetRecorderService: vi.fn(() => ({
+  AssetRecorderService: vi.fn(function () {
+    return {
     recordAsset: mocks.recordAsset,
-  })),
+    };
+  }),
 }));
 
 vi.mock('@/lib/upload/embedding-scheduler-service', () => ({
-  EmbeddingSchedulerService: vi.fn(() => ({
+  EmbeddingSchedulerService: vi.fn(function () {
+    return {
     scheduleEmbedding: mocks.scheduleEmbedding,
-  })),
+    };
+  }),
 }));
 
 import { GET, POST } from '@/app/api/upload/route';
+import { StorageQuotaExceededError } from '@/lib/quota/storage-quota-policy';
 
 function uploadRequest(): NextRequest {
   const form = new FormData();
@@ -146,7 +161,7 @@ describe('POST /api/upload quota and runtime gates', () => {
   });
 
   it('returns a typed 403 before Blob upload when quota is exceeded', async () => {
-    mocks.reserveUploadBytes.mockRejectedValue(new mocks.StorageQuotaExceededError({
+    mocks.reserveUploadBytes.mockRejectedValue(new StorageQuotaExceededError({
       usedBytes: 900,
       limitBytes: 1000,
       remainingBytes: 0,
