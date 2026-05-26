@@ -50,14 +50,15 @@ export default function PrivacyPolicy() {
             </p>
             <ul className="list-disc pl-6 space-y-2">
               <li>Stored securely on Vercel Blob storage</li>
-              <li>Only accessible to you when authenticated</li>
-              <li>Never shared with third parties</li>
+              <li>Visible in your authenticated library by default</li>
+              <li>Shareable through public links when you choose to share them</li>
+              <li>Processed by Replicate to generate AI embeddings for search</li>
               <li>Never used for AI training</li>
             </ul>
 
             <h3 className="text-lg font-medium mt-6 mb-2">Search Queries</h3>
             <p>
-              Your search queries are processed to generate text embeddings for matching against your images. We do not store or log your search queries.
+              Your search queries are processed to generate text embeddings for matching against your images. We also store recent search logs with your account ID, query text, result count, and query timing so we can show recent searches, build global popular search suggestions, debug search quality, and improve relevance. Query text used in popular suggestions may be visible to other signed-in users.
             </p>
           </section>
 
@@ -100,6 +101,9 @@ export default function PrivacyPolicy() {
             <p>
               Your images and account data are retained as long as you maintain an account. You can delete individual images at any time. If you delete your account, all associated data will be permanently removed.
             </p>
+            <p>
+              Search logs are retained for 30 days and then purged automatically.
+            </p>
           </section>
 
           <section>
@@ -108,7 +112,10 @@ export default function PrivacyPolicy() {
             <ul className="list-disc pl-6 space-y-2">
               <li><strong>Clerk</strong>: Authentication (see <a href="https://clerk.com/privacy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">Clerk Privacy Policy</a>)</li>
               <li><strong>Vercel</strong>: Hosting and storage (see <a href="https://vercel.com/legal/privacy-policy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">Vercel Privacy Policy</a>)</li>
+              <li><strong>Vercel Analytics and Speed Insights</strong>: Product usage and performance measurement</li>
               <li><strong>Neon</strong>: Database (see <a href="https://neon.tech/privacy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">Neon Privacy Policy</a>)</li>
+              <li><strong>Replicate</strong>: AI embedding generation for image and text search</li>
+              <li><strong>Sentry</strong>: Error monitoring and diagnostics</li>
             </ul>
           </section>
 

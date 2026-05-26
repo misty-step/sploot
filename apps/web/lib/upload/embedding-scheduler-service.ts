@@ -2,6 +2,7 @@ import { after } from 'next/server';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { acquireEmbeddingProcessing, resolveEmbeddingGateState } from '@/lib/embedding-guard';
+import { getRuntimeGate } from '@/lib/runtime-gates';
 import { logger } from '@/lib/logger';
 
 /**
@@ -40,6 +41,7 @@ export interface EmbeddingScheduleResult {
   scheduled: boolean;
   mode: EmbeddingScheduleMode;
   assetId: string;
+  reason?: 'embeddings_disabled';
 }
 
 /**
@@ -72,6 +74,15 @@ export class EmbeddingSchedulerService {
       mode,
       blobUrl: blobUrl.substring(0, 50) + '...',
     });
+
+    const embeddingGate = getRuntimeGate('embeddings');
+    if (!embeddingGate.enabled) {
+      logger.warn('Embedding generation skipped by runtime gate', {
+        assetId,
+        gate: embeddingGate.code,
+      });
+      return { scheduled: false, mode, assetId, reason: 'embeddings_disabled' };
+    }
 
     if (mode === 'sync') {
       // Synchronous mode: generate embedding immediately

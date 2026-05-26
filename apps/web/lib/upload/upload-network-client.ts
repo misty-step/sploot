@@ -28,6 +28,12 @@ export interface UploadResult {
   error?: string;
 }
 
+export interface UploadErrorAction {
+  type: string;
+  label: string;
+  href?: string;
+}
+
 export interface UploadOptions {
   /** Callback for upload progress updates */
   onProgress?: (event: UploadProgressEvent) => void;
@@ -43,7 +49,10 @@ export class UploadError extends Error {
   constructor(
     message: string,
     public readonly statusCode?: number,
-    public readonly isRetryable: boolean = false
+    public readonly isRetryable: boolean = false,
+    public readonly code?: string,
+    public readonly action?: UploadErrorAction,
+    public readonly quota?: unknown,
   ) {
     super(message);
     this.name = 'UploadError';
@@ -101,36 +110,72 @@ export class UploadNetworkClient {
         }
       });
 
-      // Success response
       xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const response = JSON.parse(xhr.responseText) as UploadResult;
-            resolve(response);
-          } catch {
+        let response: UploadResult | undefined;
+
+        try {
+          response = JSON.parse(xhr.responseText) as UploadResult;
+        } catch {
+          if (xhr.status >= 200 && xhr.status < 300) {
             reject(
               new UploadError(
                 'Invalid response from server',
                 xhr.status,
-                false // Not retryable - response parsing failed
-              )
+                false, // Not retryable - response parsing failed
+              ),
             );
-          }
-        } else {
-          // HTTP error status
-          let errorMessage: string;
-          try {
-            const error = JSON.parse(xhr.responseText);
-            errorMessage = error.error || `Upload failed with status ${xhr.status}`;
-          } catch {
-            errorMessage = `Upload failed with status ${xhr.status}`;
+            return;
           }
 
-          // Determine if error is retryable (5xx server errors are retryable)
           const isRetryable = xhr.status >= 500 && xhr.status < 600;
-
-          reject(new UploadError(errorMessage, xhr.status, isRetryable));
+          reject(
+            new UploadError(
+              `Upload failed with status ${xhr.status}`,
+              xhr.status,
+              isRetryable,
+            ),
+          );
+          return;
         }
+
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(response);
+          return;
+        }
+
+        if (xhr.status === 409 && response.success && response.isDuplicate) {
+          resolve(response);
+          return;
+        }
+
+        // HTTP error status
+        const errorResponse = response as UploadResult & {
+          code?: string;
+          retryable?: boolean;
+          action?: UploadErrorAction;
+          quota?: unknown;
+        };
+        const errorMessage =
+          errorResponse.error || `Upload failed with status ${xhr.status}`;
+        const errorCode = errorResponse.code;
+        const retryable = errorResponse.retryable;
+        const action = errorResponse.action;
+        const quota = errorResponse.quota;
+
+        // Determine if error is retryable (5xx server errors are retryable)
+        const isRetryable =
+          retryable ?? (xhr.status >= 500 && xhr.status < 600);
+
+        reject(
+          new UploadError(
+            errorMessage,
+            xhr.status,
+            isRetryable,
+            errorCode,
+            action,
+            quota,
+          ),
+        );
       });
 
       // Network error (no response received)
@@ -139,8 +184,8 @@ export class UploadNetworkClient {
           new UploadError(
             'Network error during upload',
             undefined,
-            true // Retryable - transient network issue
-          )
+            true, // Retryable - transient network issue
+          ),
         );
       });
 
@@ -150,8 +195,8 @@ export class UploadNetworkClient {
           new UploadError(
             'Upload cancelled',
             undefined,
-            false // Not retryable - user action
-          )
+            false, // Not retryable - user action
+          ),
         );
       });
 
@@ -161,8 +206,8 @@ export class UploadNetworkClient {
           new UploadError(
             'Upload timeout - file too large or slow connection',
             undefined,
-            true // Retryable - could be transient
-          )
+            true, // Retryable - could be transient
+          ),
         );
       });
 
@@ -185,7 +230,7 @@ export class UploadNetworkClient {
   async uploadWithRetry(
     file: File,
     options?: UploadOptions,
-    maxRetries: number = 3
+    maxRetries: number = 3,
   ): Promise<UploadResult> {
     const backoffDelays = [1000, 3000, 9000]; // 1s, 3s, 9s
     let lastError: UploadError | undefined;
@@ -194,11 +239,14 @@ export class UploadNetworkClient {
       try {
         return await this.uploadFile(file, options);
       } catch (error) {
-        lastError = error instanceof UploadError ? error : new UploadError(
-          error instanceof Error ? error.message : 'Upload failed',
-          undefined,
-          false
-        );
+        lastError =
+          error instanceof UploadError
+            ? error
+            : new UploadError(
+                error instanceof Error ? error.message : 'Upload failed',
+                undefined,
+                false,
+              );
 
         // Don't retry if error is not retryable or we've exhausted retries
         if (!lastError.isRetryable || attempt >= maxRetries) {
@@ -206,8 +254,9 @@ export class UploadNetworkClient {
         }
 
         // Wait before retrying with exponential backoff
-        const delay = backoffDelays[attempt] || backoffDelays[backoffDelays.length - 1];
-        await new Promise(resolve => setTimeout(resolve, delay));
+        const delay =
+          backoffDelays[attempt] || backoffDelays[backoffDelays.length - 1];
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
@@ -226,7 +275,7 @@ export class UploadNetworkClient {
   async uploadBatch(
     files: File[],
     options?: UploadOptions,
-    concurrency: number = 6
+    concurrency: number = 6,
   ): Promise<Array<UploadResult | UploadError>> {
     const results: Array<UploadResult | UploadError> = new Array(files.length);
     const queue = files.map((file, index) => ({ file, index }));
@@ -238,15 +287,18 @@ export class UploadNetworkClient {
         const item = queue.shift()!;
 
         const uploadPromise = this.uploadFile(item.file, options)
-          .then(result => {
+          .then((result) => {
             results[item.index] = result;
           })
-          .catch(error => {
-            results[item.index] = error instanceof UploadError ? error : new UploadError(
-              error instanceof Error ? error.message : 'Upload failed',
-              undefined,
-              false
-            );
+          .catch((error) => {
+            results[item.index] =
+              error instanceof UploadError
+                ? error
+                : new UploadError(
+                    error instanceof Error ? error.message : 'Upload failed',
+                    undefined,
+                    false,
+                  );
           })
           .finally(() => {
             activeUploads.delete(uploadPromise);
@@ -270,7 +322,10 @@ export class UploadNetworkClient {
  */
 let defaultClient: UploadNetworkClient | null = null;
 
-export function getUploadNetworkClient(config?: { timeout?: number; endpoint?: string }): UploadNetworkClient {
+export function getUploadNetworkClient(config?: {
+  timeout?: number;
+  endpoint?: string;
+}): UploadNetworkClient {
   if (!defaultClient) {
     defaultClient = new UploadNetworkClient(config);
   }

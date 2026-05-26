@@ -48,6 +48,9 @@ describe('/api/stats', () => {
       expect(data).toEqual({
         assetCount: 42,
         storageBytes: 1048576,
+        storageLimitBytes: 1073741824,
+        storageRemainingBytes: 1072693248,
+        storageUsagePercent: 0.1,
         lastUploadAt: '2025-11-21T14:00:00.000Z',
       });
 
@@ -78,6 +81,9 @@ describe('/api/stats', () => {
       expect(response.status).toBe(200);
       expect(data.assetCount).toBe(500);
       expect(data.storageBytes).toBe(104857600);
+      expect(data.storageLimitBytes).toBe(1073741824);
+      expect(data.storageRemainingBytes).toBe(968884224);
+      expect(data.storageUsagePercent).toBe(9.8);
       expect(data.lastUploadAt).toBe('2025-11-21T18:30:00.000Z');
     });
   });
@@ -93,8 +99,8 @@ describe('/api/stats', () => {
       const response = await GET({} as NextRequest);
       const data = await response.json();
 
-      expect(response.status).toBe(500);
-      expect(data.error).toBe('Failed to fetch stats');
+      expect(response.status).toBe(401);
+      expect(data.error).toBe('Unauthorized');
 
       consoleErrorSpy.mockRestore();
     });
@@ -161,6 +167,9 @@ describe('/api/stats', () => {
       expect(data).toEqual({
         assetCount: 0,
         storageBytes: 0, // null coalesced to 0
+        storageLimitBytes: 1073741824,
+        storageRemainingBytes: 1073741824,
+        storageUsagePercent: 0,
         lastUploadAt: null,
       });
     });
@@ -394,7 +403,7 @@ describe('/api/stats', () => {
   });
 
   describe('Response Structure', () => {
-    it('should return all three expected fields', async () => {
+    it('should return all expected fields', async () => {
       mockRequireUserIdWithSync.mockResolvedValue('structure-test-user');
 
       mockPrisma.asset.aggregate.mockResolvedValue({
@@ -410,6 +419,9 @@ describe('/api/stats', () => {
         'assetCount',
         'lastUploadAt',
         'storageBytes',
+        'storageLimitBytes',
+        'storageRemainingBytes',
+        'storageUsagePercent',
       ].sort());
     });
 
@@ -441,6 +453,9 @@ describe('/api/stats', () => {
 
       expect(typeof data.assetCount).toBe('number');
       expect(typeof data.storageBytes).toBe('number');
+      expect(typeof data.storageLimitBytes).toBe('number');
+      expect(typeof data.storageRemainingBytes).toBe('number');
+      expect(typeof data.storageUsagePercent).toBe('number');
       expect(typeof data.lastUploadAt).toBe('string'); // ISO string, not null
     });
 

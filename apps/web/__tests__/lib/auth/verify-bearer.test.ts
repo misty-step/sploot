@@ -39,6 +39,8 @@ describe('verifyBearerOrThrow', () => {
           'https://sploot.app',
           'https://www.sploot.app',
           'chrome-extension://ipnlamdcakhmbidjlpoinkgimfapejna',
+          'chrome-extension://hikefmnilgapfckjmillbhcocihjffhn',
+          'chrome-extension://fbhkflbcnllfogefckablkafjknmcfnd',
           'http://localhost:3000',
           'http://localhost:3001',
         ]),
@@ -57,6 +59,8 @@ describe('verifyBearerOrThrow', () => {
     expect(getClerkAuthorizedParties()).toEqual(expect.arrayContaining([
       'https://sploot.app',
       'chrome-extension://ipnlamdcakhmbidjlpoinkgimfapejna',
+      'chrome-extension://hikefmnilgapfckjmillbhcocihjffhn',
+      'chrome-extension://fbhkflbcnllfogefckablkafjknmcfnd',
       'chrome-extension://devextensionid',
       'https://staging.sploot.app',
     ]));

@@ -1,5 +1,6 @@
 import Replicate from 'replicate';
 import { getCacheService } from './cache';
+import { getRuntimeGate } from './runtime-gates';
 
 // Updated to working CLIP model (SigLIP model was deprecated)
 export const CLIP_MODEL = 'krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4';
@@ -252,6 +253,11 @@ export class ReplicateEmbeddingService {
  * @throws {EmbeddingError} If API token not configured
  */
 export function createEmbeddingService(): ReplicateEmbeddingService {
+  const embeddingGate = getRuntimeGate('embeddings');
+  if (!embeddingGate.enabled) {
+    throw new EmbeddingError(embeddingGate.message, 503, true);
+  }
+
   const apiToken = process.env.REPLICATE_API_TOKEN;
 
   if (!apiToken || apiToken === 'your_replicate_token_here') {

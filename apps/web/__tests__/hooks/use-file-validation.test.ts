@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useFileValidation } from '@/hooks/use-file-validation';
+import { UPLOAD } from '@sploot/common';
 
 describe('useFileValidation', () => {
   let result: ReturnType<typeof useFileValidation>;
@@ -57,7 +58,7 @@ describe('useFileValidation', () => {
 
     it('should reject file exceeding max size (10MB)', () => {
       // Create 10MB + 1 byte file
-      const largeContent = new Uint8Array(10 * 1024 * 1024 + 1);
+      const largeContent = new Uint8Array(UPLOAD.maxSize + 1);
       const file = new File([largeContent], 'large.jpg', { type: 'image/jpeg' });
       const error = result.validateFile(file);
       expect(error).toContain('File too large');
@@ -67,14 +68,14 @@ describe('useFileValidation', () => {
 
     it('should accept file at exactly max size (10MB)', () => {
       // Create exactly 10MB file
-      const content = new Uint8Array(10 * 1024 * 1024);
+      const content = new Uint8Array(UPLOAD.maxSize);
       const file = new File([content], 'max.jpg', { type: 'image/jpeg' });
       const error = result.validateFile(file);
       expect(error).toBeNull();
     });
 
     it('should accept file at boundary (10MB - 1 byte)', () => {
-      const content = new Uint8Array(10 * 1024 * 1024 - 1);
+      const content = new Uint8Array(UPLOAD.maxSize - 1);
       const file = new File([content], 'boundary.jpg', { type: 'image/jpeg' });
       const error = result.validateFile(file);
       expect(error).toBeNull();
@@ -102,8 +103,8 @@ describe('useFileValidation', () => {
       // Note: File constructor normalizes MIME types, so we test what browser would provide
       const file = new File(['content'], 'image.jpg', { type: 'image/JPEG' });
       const error = result.validateFile(file);
-      // MIME types are case-insensitive per spec, should be handled by isValidFileType
-      expect(error).toBeDefined();
+      // MIME types are case-insensitive per spec
+      expect(error).toBeNull();
     });
   });
 
@@ -210,18 +211,15 @@ describe('useFileValidation', () => {
   });
 
   describe('constants', () => {
-    it('should export ALLOWED_FILE_TYPES', () => {
-      expect(result.ALLOWED_FILE_TYPES).toBeDefined();
-      expect(Array.isArray(result.ALLOWED_FILE_TYPES)).toBe(true);
-      expect(result.ALLOWED_FILE_TYPES).toContain('image/jpeg');
-      expect(result.ALLOWED_FILE_TYPES).toContain('image/png');
-      expect(result.ALLOWED_FILE_TYPES).toContain('image/webp');
-      expect(result.ALLOWED_FILE_TYPES).toContain('image/gif');
+    it('should expose allowed file types from shared policy', () => {
+      expect(result.allowedFileTypes).toBeDefined();
+      expect(Array.isArray(result.allowedFileTypes)).toBe(true);
+      expect(result.allowedFileTypes).toEqual([...UPLOAD.allowedTypes]);
     });
 
-    it('should export MAX_FILE_SIZE', () => {
-      expect(result.MAX_FILE_SIZE).toBeDefined();
-      expect(result.MAX_FILE_SIZE).toBe(10 * 1024 * 1024); // 10MB
+    it('should expose max file size from shared policy', () => {
+      expect(result.maxFileSize).toBeDefined();
+      expect(result.maxFileSize).toBe(UPLOAD.maxSize);
     });
   });
 });

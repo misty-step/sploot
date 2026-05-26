@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { verifyBearerOrThrow } from '@/lib/auth/verify-bearer';
+import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { blobConfigured } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { UploadValidationService } from '@/lib/upload/validation-service';
@@ -9,6 +10,14 @@ import { DeduplicationService } from '@/lib/upload/deduplication-service';
 import { BlobUploaderService } from '@/lib/upload/blob-uploader-service';
 import { AssetRecorderService } from '@/lib/upload/asset-recorder-service';
 import { EmbeddingSchedulerService } from '@/lib/upload/embedding-scheduler-service';
+import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
+import { UPLOAD } from '@sploot/common';
+import {
+  releaseStorageQuotaReservation,
+  reserveUploadBytes,
+  storageQuotaError,
+  StorageQuotaExceededError,
+} from '@/lib/quota/storage-quota-policy';
 import { withObservability } from '@/lib/with-observability';
 
 /**
@@ -42,6 +51,7 @@ export const maxDuration = 60;
  */
 async function postHandler(req: NextRequest) {
   const startTime = Date.now();
+  let quotaReservationId: string | null = null;
 
   try {
     // Parse request parameters
@@ -50,6 +60,11 @@ async function postHandler(req: NextRequest) {
 
     // Authenticate user (supports both Bearer token and cookies)
     const userId = await verifyBearerOrThrow(req);
+
+    const uploadGate = getRuntimeGate('uploads');
+    if (!uploadGate.enabled) {
+      return runtimeGateResponse(uploadGate);
+    }
 
     // Parse form data
     const formData = await req.formData();
@@ -108,18 +123,7 @@ async function postHandler(req: NextRequest) {
       tags: tags.length
     });
 
-    // Step 2: Process image
-    const processingResult = await processor.processImage(fileBuffer, file.type);
-    const processedImages = processingResult.processed;
-
-    logger.debug('Image processed', {
-      userId,
-      hasProcessed: processingResult.success,
-      hasThumbnail: !!processedImages?.thumbnail,
-      usedFallback: processingResult.usedFallback
-    });
-
-    // Step 3: Check for duplicates
+    // Step 2: Check for duplicates before reserving storage.
     const deduplicationResult = await deduplicator.checkDuplicate(userId, fileBuffer);
 
     if (deduplicationResult.isDuplicate && deduplicationResult.existingAsset) {
@@ -161,6 +165,21 @@ async function postHandler(req: NextRequest) {
       );
     }
 
+    // Step 3: Reserve quota before image processing and Blob writes.
+    const quotaReservation = await reserveUploadBytes(userId, file.size);
+    quotaReservationId = quotaReservation.id;
+
+    // Step 4: Process image
+    const processingResult = await processor.processImage(fileBuffer, file.type);
+    const processedImages = processingResult.processed;
+
+    logger.debug('Image processed', {
+      userId,
+      hasProcessed: processingResult.success,
+      hasThumbnail: !!processedImages?.thumbnail,
+      usedFallback: processingResult.usedFallback
+    });
+
     // Step 4: Upload to blob storage
     const uploadResult = await uploader.upload(
       userId,
@@ -200,6 +219,9 @@ async function postHandler(req: NextRequest) {
         tagsAssociated: recordResult.tagsAssociated,
         duration: Date.now() - startTime
       });
+
+      await releaseStorageQuotaReservation(quotaReservationId);
+      quotaReservationId = null;
 
       // Step 6: Schedule embedding generation
       await scheduler.scheduleEmbedding({
@@ -254,6 +276,9 @@ async function postHandler(req: NextRequest) {
         const existingAsset = recheckResult.existingAsset;
 
         if (existingAsset) {
+          await releaseStorageQuotaReservation(quotaReservationId);
+          quotaReservationId = null;
+
           return NextResponse.json(
             {
               success: true,
@@ -280,6 +305,16 @@ async function postHandler(req: NextRequest) {
     }
   } catch (error) {
     unstable_rethrow(error);
+
+    await releaseStorageQuotaReservation(quotaReservationId);
+
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
+    if (error instanceof StorageQuotaExceededError) {
+      return NextResponse.json(storageQuotaError(error.snapshot), { status: 403 });
+    }
 
     logger.error('Upload endpoint error', {
       error: error instanceof Error ? error.message : String(error),
@@ -309,15 +344,19 @@ async function getHandler(req: NextRequest) {
     await verifyBearerOrThrow(req);
   } catch (error) {
     unstable_rethrow(error);
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
+    throw error;
   }
 
   return NextResponse.json({
     status: 'ready',
     blobConfigured,
     limits: {
-      maxFileSize: 10 * 1024 * 1024, // 10MB
-      allowedTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+      maxFileSize: UPLOAD.maxSize,
+      allowedTypes: [...UPLOAD.allowedTypes],
     },
   });
 }

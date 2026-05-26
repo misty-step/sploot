@@ -15,7 +15,7 @@ const benefits: Benefit[] = [
   {
     icon: Lock,
     title: "PRIVATE & SECURE",
-    description: "Your memes stay yours. Zero tracking, zero sharing.",
+    description: "Your memes stay yours. Private library by default, no ads.",
     borderColor: "border-electric-lime",
     iconBg: "bg-electric-lime/10",
   },

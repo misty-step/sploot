@@ -6,6 +6,11 @@
 
 import { getSplootAppUrl } from '../../shared/app-url';
 
+export interface ErrorNotificationInput {
+  message: string;
+  actionHref?: string;
+}
+
 /**
  * Show success notification
  *
@@ -14,14 +19,15 @@ import { getSplootAppUrl } from '../../shared/app-url';
  */
 export function showSuccessNotification(
   filename: string,
-  _thumbnailUrl?: string // Kept for API compatibility but unused
+  _thumbnailUrl?: string, // Kept for API compatibility but unused
+  options?: { isDuplicate?: boolean }
 ): void {
   const notificationId = `success-${Date.now()}`;
 
   chrome.notifications.create(notificationId, {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icon-128.png'), // Always use local icon
-    title: 'Saved to Sploot',
+    title: options?.isDuplicate ? 'Already in Sploot' : 'Saved to Sploot',
     message: filename,
     priority: 1,
     isClickable: true,
@@ -45,25 +51,43 @@ export function showSuccessNotification(
 }
 
 /**
+ * Convert internal upload/auth/network errors into short user-facing copy.
+ */
+export function toErrorNotificationMessage(errorMessage: string): string {
+  if (errorMessage.includes('Storage quota exceeded')) {
+    return 'Storage quota exceeded. Open Sploot settings.';
+  }
+  if (errorMessage.includes('Uploads are temporarily paused')) {
+    return 'Uploads are paused. Please try again later.';
+  }
+  if (errorMessage.includes('Authentication required')) {
+    return 'Please login to sploot.app first';
+  }
+  if (errorMessage.includes('Session expired')) {
+    return 'Session expired. Please login again.';
+  }
+  if (errorMessage.includes('too large')) {
+    return 'Image too large after compression.';
+  }
+  if (errorMessage.includes('timeout')) {
+    return 'Upload timeout. Please try again.';
+  }
+  if (errorMessage.includes('Network error')) {
+    return 'Network error. Check your connection.';
+  }
+
+  return errorMessage;
+}
+
+/**
  * Show error notification
  */
-export function showErrorNotification(errorMessage: string): void {
+export function showErrorNotification(error: string | ErrorNotificationInput): void {
   const notificationId = `error-${Date.now()}`;
-
-  // Simplify error messages for users
-  let userMessage = errorMessage;
-
-  if (errorMessage.includes('Authentication required')) {
-    userMessage = 'Please login to sploot.app first';
-  } else if (errorMessage.includes('Session expired')) {
-    userMessage = 'Session expired. Please login again.';
-  } else if (errorMessage.includes('too large')) {
-    userMessage = 'Image too large after compression.';
-  } else if (errorMessage.includes('timeout')) {
-    userMessage = 'Upload timeout. Please try again.';
-  } else if (errorMessage.includes('Network error')) {
-    userMessage = 'Network error. Check your connection.';
-  }
+  const errorMessage = typeof error === 'string' ? error : error.message;
+  const userMessage = toErrorNotificationMessage(errorMessage);
+  const actionHref = typeof error === 'string' ? undefined : error.actionHref;
+  const actionUrl = actionHref ? getSplootAppUrl(actionHref) : undefined;
 
   chrome.notifications.create(notificationId, {
     type: 'basic',
@@ -71,8 +95,20 @@ export function showErrorNotification(errorMessage: string): void {
     title: 'Save Failed',
     message: userMessage,
     priority: 2,
-    isClickable: false,
+    isClickable: Boolean(actionUrl),
   });
+
+  if (actionUrl) {
+    const clickHandler = (clickedId: string) => {
+      if (clickedId === notificationId) {
+        chrome.tabs.create({ url: actionUrl });
+        chrome.notifications.clear(notificationId);
+        chrome.notifications.onClicked.removeListener(clickHandler);
+      }
+    };
+
+    chrome.notifications.onClicked.addListener(clickHandler);
+  }
 
   // Auto-dismiss after 10 seconds
   setTimeout(() => {

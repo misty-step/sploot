@@ -159,7 +159,7 @@ export function UploadFileList({
                           <Button
                             onClick={() => {
                               if (file.assetId) {
-                                router.push(`/app?highlight=${file.assetId}`);
+                                router.push(`/app/meme/${encodeURIComponent(file.assetId)}`);
                               }
                             }}
                             size="sm"

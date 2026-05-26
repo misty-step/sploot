@@ -65,7 +65,7 @@ describe('/api/telemetry', () => {
     const body = await response.json();
 
     expect(response.status).toBe(401);
-    expect(body).toEqual({ success: false, message: 'unauthorized' });
+    expect(body).toEqual({ error: 'Unauthorized' });
   });
 
   it('returns 400 when body is not valid JSON', async () => {

@@ -222,7 +222,7 @@ export function FileListVirtual({
   // Handle duplicate view navigation
   const handleViewDuplicate = useCallback((assetId: string) => {
     if (assetId) {
-      router.push(`/app?highlight=${assetId}`);
+      router.push(`/app/meme/${encodeURIComponent(assetId)}`);
     }
   }, [router]);
 

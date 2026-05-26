@@ -8,19 +8,19 @@ description: |
 
 ## Sploot Anchors
 
-- Repo: pnpm Turborepo with `apps/web`, `apps/extension`, and `packages/common`.
-- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not active for Sploot work tracking.
+- Product: personal meme library focused on save, semantic search, and shuffle.
+- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts).
+- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`.
 - Base branch: `origin/master`.
-- Ship gate: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with DB-backed paths requiring `DATABASE_URL` against pgvector or an explicit unverified note.
-- Remote CI: frozen install, web Prisma migrate against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension build.
-- Closure: backlog item status moves to `done` with a `What Was Built` note plus Conventional Commit subject/body or an explicit `Backlog: backlog.d/<id>-<slug>.md` trailer.
+- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or explicit `DB path unverified` evidence. GitHub CI adds frozen install, `pnpm --filter web db:migrate` against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension lint/test/build, and the `merge-gate` aggregate job.
+- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` trailers.
 
 ## How This Skill Works Here
 
-Refactor only when complexity blocks the requested change or a touched module is actually broken. Hot areas are the upload pipeline, embedding guard/rate-limit/scheduler code, API observability wrappers, and extension auth/upload clients.
+Use /refactor to simplify touched Sploot hot paths without unrelated churn. Prefer deeper modules with smaller interfaces: upload pipeline services, shared upload policy, auth/API error contracts, shuffle ordering, embedding scheduling/rate limits, and extension API client/background boundaries.
 
-Keep modules deep: callers should not learn Prisma pool details, Replicate scheduling internals, or WXT manifest quirks. Do not reformat or rename unrelated files. Re-run the smallest relevant tests plus CI parity slice.
+Delete compatibility cruft only after checking real callers. Do not split components or helpers unless it hides meaningful complexity. Keep `@sploot/common` as the shared source for upload limits/types; do not fork constants into web and extension. Refactors that touch DB/search/upload/auth need behavior tests and the CI parity gate.
 
 ## Output Contract
 
-End with evidence, decisions, and residual risk. If a changed executable path was not directly exercised, say so explicitly. Keep repo-specific names and commands in the body; do not append generic sidecar notes.
+End with evidence, decisions, and residual risk. Name exact commands/artifacts for executable paths. If a changed path was not directly exercised, say so explicitly. Keep Sploot-specific terms in the body; do not append generic sidecar notes.

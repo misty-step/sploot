@@ -167,22 +167,13 @@ interface UploadPipeline {
 ```typescript
 // Client-side optimistic update
 async function uploadImage(file: File): Promise<OptimisticAsset> {
-  // 1. Get signed upload URL
-  const { uploadUrl, assetId } = await getSignedUploadUrl(file.name, file.type)
+  // 1. Upload through the supported multipart API contract
+  const formData = new FormData()
+  formData.append('file', file)
+  const asset = await uploadToSploot(formData)
 
-  // 2. Upload to blob storage
-  await uploadToBlob(uploadUrl, file)
-
-  // 3. Extract metadata and create asset record
-  const metadata = await extractMetadata(file)
-  const asset = await createAsset({
-    id: assetId,
-    ...metadata,
-    status: 'processing'
-  })
-
-  // 4. Start background embedding generation
-  processEmbeddingAsync(assetId)
+  // 2. Start background embedding generation
+  processEmbeddingAsync(asset.id)
 
   return asset
 }

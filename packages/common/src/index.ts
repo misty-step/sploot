@@ -7,8 +7,13 @@
 
 // Constants
 export {
+  ASSET_SORT,
+  type AssetSortBy,
+  type AssetSortDirection,
   UPLOAD,
   type AllowedMimeType,
+  isAssetSortBy,
+  isAssetSortDirection,
   isValidMimeType,
   isValidFileSize,
 } from './constants';
@@ -21,4 +26,11 @@ export {
 } from './image-preparation';
 
 // API Types
-export type { SplootApiUploadResponse, SplootApiError } from './types';
+export type {
+  SplootApiError,
+  SplootApiErrorAction,
+  SplootApiErrorActionType,
+  SplootApiErrorCode,
+  SplootApiUploadResponse,
+  StorageQuotaSnapshot,
+} from './types';

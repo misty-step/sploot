@@ -24,7 +24,7 @@ const FEATURES: FeatureStatement[] = [
   },
   {
     headline: "PRIVATE",
-    subtext: "Zero tracking. Zero sharing.",
+    subtext: "Your library. Your choice.",
     color: "text-cyber-blue",
   },
 ];
@@ -102,7 +102,7 @@ export function LandingFooter() {
           <Link href="/sign-up">START YOUR COLLECTION →</Link>
         </Button>
         <p className="mt-6 text-sm text-muted-foreground font-mono text-center">
-          START FREE • NO CREDIT CARD • NO TRACKING
+          START FREE • NO CREDIT CARD • NO ADS
         </p>
       </div>
 

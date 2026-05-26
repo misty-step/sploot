@@ -4,6 +4,7 @@ export interface UploadResult {
   assetId: string;
   blobUrl: string;
   thumbnailUrl: string;
+  isDuplicate: boolean;
 }
 
 export function toUploadResult(response: SplootApiUploadResponse): UploadResult {
@@ -15,5 +16,6 @@ export function toUploadResult(response: SplootApiUploadResponse): UploadResult 
     assetId: response.asset.id,
     blobUrl: response.asset.blobUrl,
     thumbnailUrl: response.asset.blobUrl,
+    isDuplicate: response.isDuplicate ?? false,
   };
 }

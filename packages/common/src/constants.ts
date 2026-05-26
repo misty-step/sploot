@@ -32,6 +32,22 @@ export const UPLOAD = {
   ] as const,
 } as const;
 
+export const ASSET_SORT = {
+  values: ['createdAt', 'updatedAt', 'size', 'pathname', 'shuffle'] as const,
+  directions: ['asc', 'desc'] as const,
+} as const;
+
+export type AssetSortBy = (typeof ASSET_SORT.values)[number];
+export type AssetSortDirection = (typeof ASSET_SORT.directions)[number];
+
+export function isAssetSortBy(value: string): value is AssetSortBy {
+  return ASSET_SORT.values.includes(value as AssetSortBy);
+}
+
+export function isAssetSortDirection(value: string): value is AssetSortDirection {
+  return ASSET_SORT.directions.includes(value as AssetSortDirection);
+}
+
 /** Type helper for allowed MIME types */
 export type AllowedMimeType = (typeof UPLOAD.allowedTypes)[number];
 

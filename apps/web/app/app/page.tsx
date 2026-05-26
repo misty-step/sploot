@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { useAssets, useSearchAssets } from '@/hooks/use-assets';
+import { useAuthActions } from '@/lib/auth/client';
 import { ImageGrid } from '@/components/library/image-grid';
 import { ImageGridErrorBoundary } from '@/components/library/image-grid-error-boundary';
 import { AssetIntegrityBanner } from '@/components/library/asset-integrity-banner';
@@ -36,6 +37,7 @@ import { haveFiltersChanged, type LibraryFilterSnapshot } from '@/lib/filter-cha
 
 function AppPageClient() {
   const router = useRouter();
+  const { signOut } = useAuthActions();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryParam = searchParams.get('q') ?? '';
@@ -135,6 +137,7 @@ function AppPageClient() {
     hasMore,
     total,
     integrityIssue,
+    error: libraryError,
     loadAssets,
     updateAsset,
     deleteAsset,
@@ -415,7 +418,7 @@ function AppPageClient() {
     }
 
     // Name sorting: client-side since DB doesn't support it
-    if (sortBy === 'name') {
+    if (sortBy === 'pathname') {
       const sorted = [...assets].sort((a, b) => {
         const nameA = a.filename.toLowerCase();
         const nameB = b.filename.toLowerCase();
@@ -732,7 +735,7 @@ function AppPageClient() {
               {/* Right group: View controls */}
               <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
                 <SortDropdown
-                  value={sortBy === 'recent' ? 'recent' : sortBy as any}
+                  value={sortBy}
                   direction={sortOrder}
                   onChange={handleSortChange}
                 />
@@ -832,6 +835,12 @@ function AppPageClient() {
                   </Alert>
                 )}
               </div>
+            )}
+
+            {!isSearching && libraryError && (
+              <Alert variant="destructive">
+                <AlertDescription>{libraryError}</AlertDescription>
+              </Alert>
             )}
           </header>
         </div>
@@ -1079,7 +1088,10 @@ function AppPageClient() {
         isOpen={isCommandPaletteOpen}
         onClose={closePalette}
         onUpload={() => router.push('/app/upload')}
-        onSignOut={() => window.location.href = '/api/auth/signout'}
+        onSignOut={async () => {
+          await signOut();
+          router.push('/');
+        }}
       />
 
       {/* Keyboard Shortcuts Help */}

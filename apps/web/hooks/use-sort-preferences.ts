@@ -3,12 +3,24 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDebounce } from './use-debounce';
 import type { SortOption, SortDirection } from '@/components/chrome/sort-dropdown';
+import { isAssetSortBy, isAssetSortDirection } from '@sploot/common';
 
 const STORAGE_KEY = 'sploot-sort-preferences';
 const DEBOUNCE_DELAY = 100; // 100ms as specified
 // Shuffle seed range: 0-1000000 for user-friendly integer values
 // Normalized to 0.0-1.0 for PostgreSQL setseed() in API/DB layer
 const MAX_SHUFFLE_SEED = 1000000;
+
+function normalizeStoredSort(value: unknown): SortOption | null {
+  if (typeof value !== 'string') return null;
+  if (value === 'recent' || value === 'date') return 'createdAt';
+  if (value === 'name') return 'pathname';
+  return isAssetSortBy(value) ? value : null;
+}
+
+function normalizeStoredDirection(value: unknown): SortDirection | null {
+  return typeof value === 'string' && isAssetSortDirection(value) ? value : null;
+}
 
 interface SortPreferences {
   sortBy: SortOption;
@@ -22,7 +34,7 @@ interface SortPreferences {
  */
 export function useSortPreferences() {
   // Initialize state with defaults
-  const [sortBy, setSortBy] = useState<SortOption>('recent');
+  const [sortBy, setSortBy] = useState<SortOption>('createdAt');
   const [direction, setDirection] = useState<SortDirection>('desc');
   const [shuffleSeed, setShuffleSeed] = useState<number | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
@@ -45,12 +57,18 @@ export function useSortPreferences() {
         // Validate the parsed data
         if (
           parsed.sortBy &&
-          ['recent', 'date', 'size', 'name', 'shuffle'].includes(parsed.sortBy) &&
-          parsed.direction &&
-          ['asc', 'desc'].includes(parsed.direction)
+          parsed.direction
         ) {
-          setSortBy(parsed.sortBy);
-          setDirection(parsed.direction);
+          const normalizedSort = normalizeStoredSort(parsed.sortBy);
+          const normalizedDirection = normalizeStoredDirection(parsed.direction);
+
+          if (!normalizedSort || !normalizedDirection) {
+            localStorage.removeItem(STORAGE_KEY);
+            return;
+          }
+
+          setSortBy(normalizedSort);
+          setDirection(normalizedDirection);
           if (parsed.shuffleSeed !== undefined) {
             setShuffleSeed(parsed.shuffleSeed);
           }
@@ -91,7 +109,7 @@ export function useSortPreferences() {
    * When switching to 'shuffle' mode, generates a random seed in range [0, MAX_SHUFFLE_SEED].
    * For all other sort modes, clears the shuffle seed to undefined.
    *
-   * @param newSortBy - The sort option to apply ('recent', 'date', 'size', 'name', 'shuffle')
+   * @param newSortBy - The sort option to apply ('createdAt', 'updatedAt', 'size', 'pathname', 'shuffle')
    * @param newDirection - The sort direction ('asc' or 'desc')
    */
   const handleSortChange = useCallback(
@@ -113,10 +131,10 @@ export function useSortPreferences() {
   /**
    * Reset all sort preferences to default values.
    *
-   * Clears localStorage and resets to: sortBy='recent', direction='desc', shuffleSeed=undefined
+   * Clears localStorage and resets to: sortBy='createdAt', direction='desc', shuffleSeed=undefined
    */
   const resetPreferences = useCallback(() => {
-    setSortBy('recent');
+    setSortBy('createdAt');
     setDirection('desc');
     if (typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
@@ -124,25 +142,10 @@ export function useSortPreferences() {
   }, []);
 
   /**
-   * Map UI sort options to Prisma/database column names.
-   *
-   * Translates user-facing sort options into actual database field names for queries.
-   *
-   * @param option - The UI sort option ('recent', 'date', 'size', 'name', 'shuffle')
-   * @returns Database column name ('createdAt', 'size', 'pathname')
+   * Return the canonical API sort option.
    */
   const getSortColumn = useCallback((option: SortOption): string => {
-    switch (option) {
-      case 'recent':
-      case 'date':
-        return 'createdAt';
-      case 'size':
-        return 'size';
-      case 'name':
-        return 'pathname';
-      default:
-        return 'createdAt';
-    }
+    return option;
   }, []);
 
   return {
@@ -165,7 +168,7 @@ export function useSortPreferencesWithDefaults() {
 
   return {
     ...preferences,
-    sortBy: preferences.sortBy || 'recent',
+    sortBy: preferences.sortBy || 'createdAt',
     direction: preferences.direction || 'desc',
   };
 }

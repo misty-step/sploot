@@ -14,7 +14,7 @@ describe("BenefitGrid", () => {
     });
 
     expect(
-      screen.getByText("Your memes stay yours. Zero tracking, zero sharing."),
+      screen.getByText("Your memes stay yours. Private library by default, no ads."),
     ).toBeInTheDocument();
     expect(
       screen.getByText(

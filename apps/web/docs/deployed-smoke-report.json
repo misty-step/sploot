@@ -1,0 +1,84 @@
+{
+  "base_url": "https://www.sploot.app",
+  "extension_zip": "../extension/dist/extension-1.0.0-chrome.zip",
+  "extension_dist": "../extension/dist/chrome-mv3",
+  "started_at": "2026-05-25T19:00:48.853Z",
+  "finished_at": "2026-05-25T19:00:50.803Z",
+  "status": "pass",
+  "checks": [
+    {
+      "name": "production health",
+      "status": "pass",
+      "duration_ms": 421,
+      "details": {
+        "database": "up",
+        "redis": "up",
+        "database_latency_ms": 9,
+        "version": "0.1.0"
+      }
+    },
+    {
+      "name": "production service health",
+      "status": "pass",
+      "duration_ms": 395,
+      "details": {
+        "status": "degraded",
+        "all_services_configured": true,
+        "database": "healthy",
+        "blob_storage": "healthy",
+        "embeddings": "healthy",
+        "can_upload": true,
+        "can_search": true
+      }
+    },
+    {
+      "name": "signed-out app route protection",
+      "status": "pass",
+      "duration_ms": 370,
+      "details": {
+        "redirects": [
+          {
+            "route": "/app",
+            "status": 307,
+            "location": "/sign-in"
+          },
+          {
+            "route": "/app/search",
+            "status": 307,
+            "location": "/sign-in"
+          },
+          {
+            "route": "/app/upload",
+            "status": 307,
+            "location": "/sign-in"
+          }
+        ]
+      }
+    },
+    {
+      "name": "signed-out api auth contract",
+      "status": "pass",
+      "duration_ms": 195,
+      "details": {
+        "status": 401,
+        "error": "Unauthorized"
+      }
+    },
+    {
+      "name": "production extension artifact",
+      "status": "pass",
+      "duration_ms": 568,
+      "details": {
+        "artifact": "../extension/dist/extension-1.0.0-chrome.zip",
+        "artifact_type": "zip",
+        "version": "1.0.0",
+        "host_permissions": [
+          "https://sploot.app/*",
+          "https://www.sploot.app/*",
+          "https://clerk.sploot.app/*"
+        ],
+        "clerk_publishable_key": "pk_live_*"
+      }
+    }
+  ]
+}

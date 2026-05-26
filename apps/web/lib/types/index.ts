@@ -4,6 +4,8 @@
 
 // Re-export shared API types from @sploot/common
 export type {
+  AssetSortBy,
+  AssetSortDirection,
   SplootApiUploadResponse,
   SplootApiError,
 } from '@sploot/common';
@@ -75,8 +77,8 @@ export interface AssetUpdate {
 
 export interface UseAssetsOptions {
   initialLimit?: number;
-  sortBy?: 'recent' | 'date' | 'size' | 'name' | 'shuffle' | 'createdAt' | 'favorite';
-  sortOrder?: 'asc' | 'desc';
+  sortBy?: import('@sploot/common').AssetSortBy;
+  sortOrder?: import('@sploot/common').AssetSortDirection;
   filterFavorites?: boolean;
   autoLoad?: boolean;
   tagId?: string;

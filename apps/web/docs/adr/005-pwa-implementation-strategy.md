@@ -11,7 +11,7 @@ Sploot must function as a Progressive Web App to provide native app-like experie
 
 - **Cross-platform installation:** iOS, Android, macOS, Windows, Linux
 - **Offline functionality:** Browse cached memes when network unavailable
-- **Background sync:** Resume failed uploads when connection restored
+- **Upload retry:** Resume interrupted uploads from the in-app queue when connection restored
 - **Push notifications:** Optional for upload completion status
 - **Native integration:** Share target for receiving images from other apps
 
@@ -27,14 +27,14 @@ Sploot must function as a Progressive Web App to provide native app-like experie
 **Technical Requirements:**
 - Next.js App Router compatibility
 - Service Worker integration with client-side routing
-- Background sync for upload recovery
+- In-app upload retry for upload recovery
 - Efficient caching strategy for assets and data
 - Cross-platform icon and splash screen support
 
 **Performance Requirements:**
 - App shell cache: <500KB total size
 - Offline page loads: <200ms from cache
-- Background sync: Resume within 30s of reconnection
+- Upload retry: Resume within 30s of reconnection
 - Storage efficiency: <50MB for typical usage patterns
 
 ## Decision
@@ -45,14 +45,14 @@ We will implement a **Network-First PWA with Intelligent Caching** strategy usin
 - **Service Worker:** Custom implementation with Workbox for advanced caching
 - **Caching Strategy:** Network-first for dynamic content, cache-first for assets
 - **Offline Support:** Cached shell + graceful degradation for uncached content
-- **Background Sync:** Queue failed uploads and API calls for retry on reconnection
+- **Upload Retry:** Queue interrupted uploads in the app for retry on reconnection
 - **Installation:** Standard Web App Manifest with platform-specific optimizations
 
 **Implementation Approach:**
 ```
 App Shell (Cached) → Dynamic Content (Network-First) → Fallback (Cached)
                   ↓
-Background Sync Queue → Retry on Connection Restore
+Upload Retry Queue → Retry on Connection Restore
 ```
 
 ## Consequences
@@ -117,7 +117,7 @@ Background Sync Queue → Retry on Connection Restore
 **Cons:**
 - No installation capability
 - Poor offline experience
-- No background sync for uploads
+- No upload retry for interrupted uploads
 - Less native-like user experience
 
 **Verdict:** Rejected due to user experience requirements in PRD.
@@ -217,8 +217,6 @@ module.exports = withPWA({
 import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching'
 import { registerRoute } from 'workbox-routing'
 import { StaleWhileRevalidate, CacheFirst, NetworkFirst } from 'workbox-strategies'
-import { BackgroundSync } from 'workbox-background-sync'
-
 // Precache app shell
 precacheAndRoute(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
@@ -236,7 +234,7 @@ registerRoute(
   })
 )
 
-// API routes - network first with background sync fallback
+// API routes - network first
 registerRoute(
   ({ url }) => url.pathname.startsWith('/api/'),
   new NetworkFirst({
@@ -265,23 +263,12 @@ registerRoute(
   })
 )
 
-// Background sync for failed uploads
-const bgSync = new BackgroundSync('upload-queue', {
-  maxRetentionTime: 24 * 60 // 24 hours
-})
-
-registerRoute(
-  ({ url }) => url.pathname === '/api/assets',
-  new NetworkFirst({
-    plugins: [bgSync.replayPlugin]
-  }),
-  'POST'
-)
+// Upload retry is handled inside the app against POST /api/upload.
 ```
 
-### Phase 3: Background Sync and Queue Management
+### Phase 3: Upload Retry Queue Management
 ```typescript
-// lib/background-sync.ts - Upload queue management
+// lib/upload-queue.ts - Upload queue management
 interface QueuedUpload {
   id: string
   file: File
@@ -350,7 +337,7 @@ class UploadQueue {
       formData.append(key, value)
     })
 
-    const response = await fetch('/api/assets', {
+    const response = await fetch('/api/upload', {
       method: 'POST',
       body: formData
     })
@@ -667,9 +654,9 @@ describe('PWA Functionality', () => {
     expect(response?.status()).toBe(200)
   })
 
-  test('Background sync queues failed uploads', async () => {
+  test('In-app upload retry queues failed uploads', async () => {
     // Mock failed upload
-    await page.route('/api/assets', route => route.abort())
+    await page.route('/api/upload', route => route.abort())
 
     // Attempt upload
     await page.locator('input[type="file"]').setInputFiles('test-image.jpg')
@@ -696,7 +683,7 @@ describe('PWA Functionality', () => {
 1. **Installation testing:** Verify install flow on iOS, Android, desktop
 2. **Offline testing:** Test all major features without network connection
 3. **Update testing:** Verify service worker update flow
-4. **Background sync:** Test upload recovery after network restoration
+4. **Upload recovery:** Test in-app upload retry after network restoration; service-worker upload replay is not a supported product path.
 5. **Performance testing:** Measure startup times and cache effectiveness
 
 ## Monitoring and Analytics
@@ -719,8 +706,8 @@ class PWAAnalytics {
     })
   }
 
-  trackBackgroundSync() {
-    gtag('event', 'background_sync', {
+  trackUploadRetry() {
+    gtag('event', 'upload_retry', {
       event_category: 'performance',
       value: this.getQueueLength()
     })

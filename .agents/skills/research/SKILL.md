@@ -8,19 +8,21 @@ description: |
 
 ## Sploot Anchors
 
-- Repo: pnpm Turborepo with `apps/web`, `apps/extension`, and `packages/common`.
-- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not active for Sploot work tracking.
+- Product: personal meme library focused on save, semantic search, and shuffle.
+- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts).
+- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`.
 - Base branch: `origin/master`.
-- Ship gate: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with DB-backed paths requiring `DATABASE_URL` against pgvector or an explicit unverified note.
-- Remote CI: frozen install, web Prisma migrate against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension build.
-- Closure: backlog item status moves to `done` with a `What Was Built` note plus Conventional Commit subject/body or an explicit `Backlog: backlog.d/<id>-<slug>.md` trailer.
+- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or explicit `DB path unverified` evidence. GitHub CI adds frozen install, `pnpm --filter web db:migrate` against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension lint/test/build, and the `merge-gate` aggregate job.
+- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` trailers.
 
 ## How This Skill Works Here
 
-Use research when Sploot work needs outside evidence, official docs, or multiple perspectives. Start from local truth: `ARCHITECTURE.md`, `vision.md`, `CLAUDE.md`, app-level `AGENTS.md`, `.spellbook/repo-brief.md`, and the current local backlog item or PR. For framework/API facts that may have changed, cite primary docs: Next.js, WXT, Clerk, Prisma, Neon, Vercel Blob, Sentry, Replicate, Turborepo, Vitest.
+Use /research when Sploot work needs outside evidence, official docs, or multiple perspectives. Start from local truth: `vision.md`, `ARCHITECTURE.md`, app-level architecture docs, `apps/web/docs/API.md`, `packages/common/src/*`, Prisma migrations, and the active `backlog.d/` item.
 
-For repo investigations, fan out by surface: web/API, extension, common package, CI/release. Keep synthesis on the lead model and mark any unverified DB/pgvector path.
+For framework facts, use primary docs for Next.js, WXT, Clerk, Prisma, Neon, Vercel Blob, Sentry, Replicate, Turborepo, and Vitest. For product/release facts, inspect the current deployed smoke report and extension listing artifacts before searching.
+
+Split research by surface: web/API, extension, common package, CI/release, and production evidence. Mark DB/pgvector paths unverified unless the evidence used a real pgvector `DATABASE_URL`.
 
 ## Output Contract
 
-End with evidence, decisions, and residual risk. If a changed executable path was not directly exercised, say so explicitly. Keep repo-specific names and commands in the body; do not append generic sidecar notes.
+End with evidence, decisions, and residual risk. Name exact commands/artifacts for executable paths. If a changed path was not directly exercised, say so explicitly. Keep Sploot-specific terms in the body; do not append generic sidecar notes.

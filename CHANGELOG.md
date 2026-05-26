@@ -1,6 +1,10 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+This file is historical as of 2026-05-18. The release workflow now publishes
+GitHub Releases and generated release notes without committing changelog updates
+back to protected branches. When `GEMINI_API_KEY` is configured, the release
+workflow may synthesize the GitHub Release notes after semantic-release
+publishes them; GitHub Releases remain the authoritative changelog.
 
 # 1.0.0 (2026-01-24)
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE } from '@/lib/blob';
+import { UPLOAD, isValidMimeType, isValidFileSize } from '@sploot/common';
 import { info, error as logError } from '@/lib/logger';
 
 export function UploadTest() {
@@ -14,13 +14,13 @@ export function UploadTest() {
     if (!file) return;
 
     // Validate file type
-    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+    if (!isValidMimeType(file.type)) {
       setError('Invalid file type. Please upload a JPEG, PNG, WebP, or GIF image.');
       return;
     }
 
     // Validate file size
-    if (file.size > MAX_FILE_SIZE) {
+    if (!isValidFileSize(file.size)) {
       setError('File too large. Maximum size is 10MB.');
       return;
     }
@@ -29,36 +29,22 @@ export function UploadTest() {
     setUploading(true);
 
     try {
-      // Step 1: Get upload URL from our API
-      const response = await fetch('/api/upload-url', {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/upload', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          filename: file.name,
-          mimeType: file.type,
-          size: file.size,
-        }),
+        body: formData,
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Failed to get upload URL');
+        throw new Error(error.error || 'Failed to upload image');
       }
 
-      const uploadConfig = await response.json();
-
-      // In production, Step 2 would be: Upload file directly to blob storage
-      // const uploadResponse = await fetch(uploadConfig.uploadUrl, {
-      //   method: uploadConfig.method,
-      //   headers: uploadConfig.headers,
-      //   body: file,
-      // });
-
-      // For now, we just show the upload configuration
-      setUploadResult(uploadConfig);
-      info('Upload configuration:', uploadConfig);
+      const uploadResponse = await response.json();
+      setUploadResult(uploadResponse);
+      info('Upload response:', uploadResponse);
 
     } catch (err) {
       logError('Upload error:', err);
@@ -82,7 +68,7 @@ export function UploadTest() {
           <input
             id="file-upload"
             type="file"
-            accept={ALLOWED_FILE_TYPES.join(',')}
+            accept={UPLOAD.allowedTypes.join(',')}
             onChange={handleFileChange}
             disabled={uploading}
             className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file: file:border-0 file:text-sm file:font-semibold file:bg-violet-600 file:text-white hover:file:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -92,7 +78,7 @@ export function UploadTest() {
         {uploading && (
           <div className="text-gray-400">
             <span className="inline-block animate-spin mr-2">⏳</span>
-            Generating upload URL...
+            Uploading image...
           </div>
         )}
 
@@ -105,16 +91,13 @@ export function UploadTest() {
         {uploadResult && (
           <div className="bg-green-900/20 border border-green-800 p-3">
             <p className="text-green-400 text-sm font-semibold mb-2">
-              ✅ Upload URL Generated Successfully!
+              ✅ Upload Completed Successfully!
             </p>
             <div className="text-xs text-gray-400 font-mono">
-              <p>Pathname: {uploadResult.pathname}</p>
-              <p>Method: {uploadResult.method}</p>
-              <p className="truncate">URL: {uploadResult.uploadUrl}</p>
+              <p>Asset ID: {uploadResult.asset?.id}</p>
+              <p>Filename: {uploadResult.asset?.filename}</p>
+              <p className="truncate">URL: {uploadResult.asset?.blobUrl}</p>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Note: Actual upload requires Vercel Blob token configuration
-            </p>
           </div>
         )}
       </div>

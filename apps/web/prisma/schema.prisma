@@ -25,31 +25,58 @@ model User {
   updatedAt DateTime @updatedAt
 
   // Relations
-  assets Asset[]
-  tags   Tag[]
+  assets                   Asset[]
+  tags                     Tag[]
+  storageQuota             UserStorageQuota?
+  storageQuotaReservations StorageQuotaReservation[]
 
   @@map("users")
 }
 
+model UserStorageQuota {
+  userId     String   @id @map("user_id")
+  limitBytes BigInt   @default(1073741824) @map("limit_bytes")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_storage_quotas")
+}
+
+model StorageQuotaReservation {
+  id          String   @id @default(cuid())
+  ownerUserId String   @map("owner_user_id")
+  bytes       BigInt
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  owner User @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@index([ownerUserId, expiresAt])
+  @@map("storage_quota_reservations")
+}
+
 // Asset model - represents uploaded images
 model Asset {
-  id              String    @id @default(cuid())
-  ownerUserId     String    @map("owner_user_id")
-  blobUrl         String    @map("blob_url") // Validated via CHECK constraint: https://[a-z0-9-]+.public.blob.vercel-storage.com/*
-  thumbnailUrl    String?   @map("thumbnail_url") // URL for 256px thumbnail. Validated via CHECK constraint if set
-  pathname        String    // Path in blob storage
-  thumbnailPath   String?   @map("thumbnail_path") // Path for thumbnail in blob storage
-  mime            String
-  width           Int?
-  height          Int?
-  size            Int       // File size in bytes
-  checksumSha256  String    @map("checksum_sha256")
-  phash           String?   // Perceptual hash for near-duplicate detection
-  favorite        Boolean   @default(false)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  deletedAt       DateTime? @map("deleted_at")
-  shareSlug       String?   @unique @map("share_slug") // Short ID for public sharing URLs
+  id             String    @id @default(cuid())
+  ownerUserId    String    @map("owner_user_id")
+  blobUrl        String    @map("blob_url") // Validated via CHECK constraint: https://[a-z0-9-]+.public.blob.vercel-storage.com/*
+  thumbnailUrl   String?   @map("thumbnail_url") // URL for 256px thumbnail. Validated via CHECK constraint if set
+  pathname       String // Path in blob storage
+  thumbnailPath  String?   @map("thumbnail_path") // Path for thumbnail in blob storage
+  mime           String
+  width          Int?
+  height         Int?
+  size           Int // File size in bytes
+  checksumSha256 String    @map("checksum_sha256")
+  phash          String? // Perceptual hash for near-duplicate detection
+  favorite       Boolean   @default(false)
+  shuffleKey     BigInt    @default(dbgenerated("floor((random() * 9223372036854775807::double precision))::bigint")) @map("shuffle_key")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime? @map("deleted_at")
+  shareSlug      String?   @unique @map("share_slug") // Short ID for public sharing URLs
 
   // Relations
   owner     User            @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
@@ -67,17 +94,17 @@ model Asset {
 
 // AssetEmbedding model - stores vector embeddings for semantic search
 model AssetEmbedding {
-  assetId         String                       @id @map("asset_id")
-  modelName       String                       @map("model_name")
-  modelVersion    String                       @map("model_version")
-  dim             Int                          // Embedding dimensions
-  imageEmbedding  Unsupported("vector")?       @map("image_embedding")
-  status          String?                      @default("pending") // pending, processing, ready, failed
-  error           String?                      // Error message if failed
-  completedAt     DateTime?                    @map("completedAt") // When embedding was completed
-  embeddingVector Unsupported("vector")?       @map("embeddingVector") // Alternative vector column
-  createdAt       DateTime                     @default(now())
-  updatedAt       DateTime                     @updatedAt
+  assetId         String                 @id @map("asset_id")
+  modelName       String                 @map("model_name")
+  modelVersion    String                 @map("model_version")
+  dim             Int // Embedding dimensions
+  imageEmbedding  Unsupported("vector")? @map("image_embedding")
+  status          String?                @default("pending") // pending, processing, ready, failed
+  error           String? // Error message if failed
+  completedAt     DateTime?              @map("completedAt") // When embedding was completed
+  embeddingVector Unsupported("vector")? @map("embeddingVector") // Alternative vector column
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
 
   // Relations
   asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
@@ -93,7 +120,7 @@ model Tag {
   id          String   @id @default(cuid())
   ownerUserId String   @map("owner_user_id")
   name        String
-  color       String?  // Hex color for UI
+  color       String? // Hex color for UI
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

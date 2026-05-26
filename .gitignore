@@ -76,5 +76,3 @@ sentry.properties
 
 # Vercel
 .vercel
-.gradient/sources.local.yaml
-.gradient/private/
