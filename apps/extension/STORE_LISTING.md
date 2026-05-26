@@ -192,15 +192,50 @@ Readiness gate:
 pnpm --filter extension release:check
 ```
 
-This command is expected to fail until authenticated right-click upload/duplicate
-QA and the Chrome Web Store dashboard receipt are complete.
+This command must pass before release closure. It validates the package SHA,
+production manifest shape, Web Store visual assets, and the current submission
+status recorded below.
 
 ## Authenticated Chrome QA
 
 Checked on 2026-05-18 and 2026-05-22 with Google Chrome profile
 `Phaedrus (Phaedrus @ Home)`.
 
-Latest check on 2026-05-25 with Computer Use and the same Chrome profile:
+Latest check on 2026-05-26 with Computer Use and the same Chrome profile:
+
+- Baseline-resolved the existing production database schema and applied the
+  pending `20250929_add_blob_url_validation`,
+  `20260518_add_asset_shuffle_key`, and `20260518_add_storage_quota`
+  migrations after production `/api/stats` showed
+  `public.user_storage_quotas` was missing.
+- Rebuilt the production unpacked extension and zip with the live Clerk
+  publishable key sanitized from the Vercel production env file.
+- Verified the active unpacked QA extension
+  `chrome-extension://hikefmnilgapfckjmillbhcocihjffhn` loads from
+  `/Users/phaedrus/.codex/worktrees/5075/sploot/apps/extension/dist/chrome-mv3`.
+- Saved a unique local image through Chrome's real image context menu. The
+  production Sploot library showed `Last upload: 2026-05-26T14:14:59Z`,
+  `MEMES: 3,021`, `SIZE: 12.6 MB`, and first asset
+  `user_35AWEm3dlfbKS0eWeQTRHAMlUA0/1779804899669-tp2wukz.png`.
+- Repeated `Save to Sploot` on the same image after fixing extension duplicate
+  response handling. The production library stayed at `MEMES: 3,021`, queue
+  `0`, and the same first asset, proving the duplicate path does not add a
+  second asset.
+- Private local QA screenshots were captured but are intentionally not committed
+  because this repository is public and the screenshots show the signed-in
+  production library.
+- Uploaded the corrected
+  `apps/extension/dist/extension-1.0.0-chrome.zip` to Chrome Web Store draft
+  item `fbhkflbcnllfogefckablkafjknmcfnd` and saved the draft.
+- Current draft evidence screenshot:
+  `.spellbook/evidence/cws-updated-package-submit-enabled-20260526.png`.
+- Submitted the item for Chrome Web Store review. Google showed the `Pending
+  Review` receipt and the item header now records `Status: Pending review`.
+- Submission evidence screenshots:
+  `.spellbook/evidence/cws-submitted-pending-review-20260526.png`,
+  `.spellbook/evidence/cws-submitted-status-20260526.png`.
+
+Previous check on 2026-05-25 with Computer Use and the same Chrome profile:
 
 - Rebuilt the production extension zip from this worktree with the existing
   public live Clerk publishable key.
@@ -265,13 +300,12 @@ Passing evidence:
 - Right-clicking `https://www.sploot.app/apple-icon.png` exposed the
   extension context menu item `Save to Sploot`.
 
-Unproven/requires follow-up before submission:
+Earlier failed or superseded evidence:
 
 - Selecting `Save to Sploot` on `https://www.sploot.app/apple-icon.png` did
   not produce visible success feedback in the popup or increase the library
-  count from `3,020`; right-click upload is therefore not release-proven.
-- Duplicate-save behavior remains unproven because the first save did not
-  produce observable success evidence.
+  count from `3,020`; this was superseded by the 2026-05-26 production upload
+  proof.
 - On 2026-05-22, reloaded the unpacked production-like build from this worktree:
   `/Users/phaedrus/.codex/worktrees/5075/sploot/apps/extension/dist/chrome-mv3`.
   Chrome's extension detail page shows source `apps/extension/dist/chrome-mv3`,
@@ -281,32 +315,28 @@ Unproven/requires follow-up before submission:
   `https://sploot.app/app` both show the signed-out Clerk screen. Authenticated
   upload and duplicate QA now require a fresh login before they can be treated
   as release evidence.
-- On 2026-05-24, production Sploot app authentication is restored, but
-  right-click upload and duplicate behavior are not release-proven because the
-  next step uploads a user-selected public image into the signed-in Sploot
-  account and requires explicit action-time confirmation.
 - The production extension build and zip were rerun from this worktree with the
   existing public `pk_live_*` Clerk publishable key already embedded in the
   release artifact.
 
 ## Release Artifact
 
-Current release artifact, rebuilt on 2026-05-25:
+Current release artifact, rebuilt on 2026-05-26:
 
 ```text
 Path: apps/extension/dist/extension-1.0.0-chrome.zip
 Version: 1.0.0
 Size: 1.66 MB
-SHA256: dfbf3b4e2ada82629cae3387462c6e5d4305f82aa363400624adc7d977e12435
+SHA256: a73c2996fd8fd102a0802da221832ebd1fddefe4e76c579183ae8a03ded0191f
 Chrome Web Store draft item: fbhkflbcnllfogefckablkafjknmcfnd
 Dashboard receipt: .spellbook/evidence/cws-privacy-submit-enabled-20260525.png
-Current draft receipt: .spellbook/evidence/cws-current-package-submit-enabled-20260525.png
+Current draft receipt: .spellbook/evidence/cws-updated-package-submit-enabled-20260526.png
 ```
 
 Build commands:
 
 ```bash
-VITE_CLERK_PUBLISHABLE_KEY=pk_live_* pnpm --filter extension build:prod
+VITE_CLERK_PUBLISHABLE_KEY=pk_live_* pnpm --filter extension build:prod:unpacked
 VITE_CLERK_PUBLISHABLE_KEY=pk_live_* pnpm --filter extension zip:prod
 ```
 
@@ -328,19 +358,16 @@ Artifact: apps/extension/dist/extension-1.0.0-chrome.zip
 
 ## Submission Status
 
-Status: not submitted.
+Status: submitted for review.
 
-Blocking items before submission:
+Review status:
 
-- authenticated production Chrome extension QA is partially complete, but
-  right-click upload and duplicate behavior are not release-proven
-- current Computer Use UI access is blocked by the macOS lock screen; unlock the
-  Mac before resuming screenshot, upload, duplicate, or final submit evidence
 - Chrome Web Store draft item `fbhkflbcnllfogefckablkafjknmcfnd` exists with
   current package SHA256
-  `dfbf3b4e2ada82629cae3387462c6e5d4305f82aa363400624adc7d977e12435`,
-  listing, assets, and privacy disclosures saved; final `Submit for review` was
-  intentionally not clicked pending action-time confirmation.
+  `a73c2996fd8fd102a0802da221832ebd1fddefe4e76c579183ae8a03ded0191f`,
+  listing, assets, and privacy disclosures saved.
+- Google reports `Pending review`; review may take up to a few business days.
+- The review was submitted with automatic publication enabled after approval.
 
 Rollback/disable plan:
 

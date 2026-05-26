@@ -1,7 +1,7 @@
 ---
 id: 007-publish-extension-web-store-release
 title: Publish Extension Web Store Release
-status: ready
+status: done
 lifecycle_stage: Intent
 owner: local
 acceptance:
@@ -24,8 +24,75 @@ refs:
 # Publish Extension Web Store Release
 
 Priority: high
-Status: ready
+Status: done
 Estimate: M
+
+## Latest Pass - 2026-05-26
+
+- Used Computer Use in the real Chrome profile `Phaedrus (Phaedrus @ Home)`.
+- Pulled Vercel production env locally, inspected production schema, resolved
+  the first three migrations as the baseline for the existing non-empty
+  production database, then applied the pending blob URL validation,
+  shuffle-key, and storage-quota migrations. This fixed the production
+  `/api/stats` failure caused by missing `public.user_storage_quotas`.
+- Rebuilt the production unpacked extension and zip with the live Clerk
+  publishable key sanitized from the Vercel production env file.
+- Verified the active unpacked QA extension ID is
+  `hikefmnilgapfckjmillbhcocihjffhn` and source is this worktree's
+  `apps/extension/dist/chrome-mv3`.
+- Saved a unique generated image through Chrome's real image context menu. The
+  production library showed `Last upload: 2026-05-26T14:14:59Z`, queue `0`,
+  `MEMES: 3,021`, `SIZE: 12.6 MB`, and first asset
+  `user_35AWEm3dlfbKS0eWeQTRHAMlUA0/1779804899669-tp2wukz.png`.
+- Fixed duplicate right-click saves so the extension treats Sploot's successful
+  `409` duplicate upload response as a success instead of throwing. Duplicate
+  notifications now say `Already in Sploot`.
+- Repeated `Save to Sploot` on the same image. The production library stayed at
+  `MEMES: 3,021`, queue `0`, and the same first asset, proving no duplicate
+  asset was created.
+- Uploaded corrected zip SHA256
+  `a73c2996fd8fd102a0802da221832ebd1fddefe4e76c579183ae8a03ded0191f` to
+  Chrome Web Store draft item `fbhkflbcnllfogefckablkafjknmcfnd` and saved the
+  draft.
+- Evidence:
+  `.spellbook/evidence/cws-updated-package-submit-enabled-20260526.png`.
+  Private local QA screenshots were captured but are intentionally not committed
+  because this repository is public and the screenshots show the signed-in
+  production library.
+
+- Submitted Chrome Web Store draft item
+  `fbhkflbcnllfogefckablkafjknmcfnd` for review after explicit action-time
+  confirmation. Google reports `Pending review` and automatic publication after
+  approval is enabled.
+- Submission evidence:
+  `.spellbook/evidence/cws-submitted-pending-review-20260526.png` and
+  `.spellbook/evidence/cws-submitted-status-20260526.png`.
+
+## What Was Built
+
+- Production extension duplicate uploads now use Sploot's successful duplicate
+  response as a successful result instead of surfacing an error.
+- Duplicate right-click saves now show explicit `Already in Sploot`
+  notification copy.
+- Production database migration state was baseline-resolved and pending
+  storage/shuffle/blob URL migrations were applied, unblocking production upload
+  and stats paths.
+- Chrome Web Store item `fbhkflbcnllfogefckablkafjknmcfnd` was packaged,
+  listed, privacy-disclosed, QAed in real Chrome, and submitted for review.
+
+## Evidence
+
+- `pnpm --filter extension test -- --run shared/upload-response.test.ts entrypoints/background/notifications.test.ts`
+- `pnpm lint`
+- `pnpm type-check`
+- `DATABASE_URL='postgresql://test:test@localhost:5432/sploot_test?sslmode=disable' pnpm --filter web db:migrate`
+- `DATABASE_URL='postgresql://test:test@localhost:5432/sploot_test?sslmode=disable' CI=true pnpm --filter web test`
+- `pnpm --filter extension build`
+- `pnpm --filter extension release:check`
+- Chrome Web Store receipts:
+  `.spellbook/evidence/cws-updated-package-submit-enabled-20260526.png`,
+  `.spellbook/evidence/cws-submitted-pending-review-20260526.png`,
+  `.spellbook/evidence/cws-submitted-status-20260526.png`
 
 ## Latest Pass - 2026-05-22
 

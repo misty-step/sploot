@@ -19,14 +19,15 @@ export interface ErrorNotificationInput {
  */
 export function showSuccessNotification(
   filename: string,
-  _thumbnailUrl?: string // Kept for API compatibility but unused
+  _thumbnailUrl?: string, // Kept for API compatibility but unused
+  options?: { isDuplicate?: boolean }
 ): void {
   const notificationId = `success-${Date.now()}`;
 
   chrome.notifications.create(notificationId, {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icon-128.png'), // Always use local icon
-    title: 'Saved to Sploot',
+    title: options?.isDuplicate ? 'Already in Sploot' : 'Saved to Sploot',
     message: filename,
     priority: 1,
     isClickable: true,

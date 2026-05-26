@@ -71,6 +71,21 @@ describe('notifications', () => {
     expect(chromeMock.notifications.onClicked.removeListener).toHaveBeenCalledWith(expect.any(Function));
   });
 
+  it('uses explicit copy for duplicate success notifications', async () => {
+    const { showSuccessNotification } = await import('./notifications');
+
+    showSuccessNotification('meme.jpg', undefined, { isDuplicate: true });
+
+    expect(chromeMock.notifications.create).toHaveBeenCalledWith('success-1779105600000', {
+      type: 'basic',
+      iconUrl: 'chrome-extension://extension-id/icon-128.png',
+      title: 'Already in Sploot',
+      message: 'meme.jpg',
+      priority: 1,
+      isClickable: true,
+    });
+  });
+
   it('maps auth and timeout errors to user-facing notification messages', async () => {
     const { showErrorNotification, toErrorNotificationMessage } = await import('./notifications');
 

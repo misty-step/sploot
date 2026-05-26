@@ -35,12 +35,17 @@ export class SplootApiClientError extends Error {
   }
 }
 
-async function parseErrorResponse(response: Response): Promise<SplootApiClientError> {
-  let errorData: SplootApiError | null = null;
-  try {
-    errorData = (await response.json()) as SplootApiError;
-  } catch {
-    errorData = null;
+async function parseErrorResponse(
+  response: Response,
+  parsedErrorData?: Partial<SplootApiError> | null
+): Promise<SplootApiClientError> {
+  let errorData: Partial<SplootApiError> | null = parsedErrorData ?? null;
+  if (parsedErrorData === undefined) {
+    try {
+      errorData = (await response.json()) as SplootApiError;
+    } catch {
+      errorData = null;
+    }
   }
 
   if (errorData?.code === 'quota_exceeded') {
@@ -140,12 +145,22 @@ export async function uploadImage(
 
     clearTimeout(timeoutId);
 
+    const data = (await response.json()) as SplootApiUploadResponse;
+
+    if (response.status === 409 && data.success && data.asset && data.isDuplicate) {
+      const uploadResult = toUploadResult(data);
+      console.log('[ApiClient] Duplicate upload', {
+        assetId: uploadResult.assetId,
+        blobUrl: uploadResult.blobUrl,
+      });
+      return uploadResult;
+    }
+
     if (!response.ok) {
-      throw await parseErrorResponse(response);
+      throw await parseErrorResponse(response, data);
     }
 
     // Parse successful response
-    const data = (await response.json()) as SplootApiUploadResponse;
     const uploadResult = toUploadResult(data);
 
     console.log('[ApiClient] Upload success', {

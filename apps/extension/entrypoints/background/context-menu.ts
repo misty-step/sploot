@@ -100,7 +100,7 @@ async function handleImageSave(
     const result = await uploadImage(imageBlob, filename);
 
     // Show success notification
-    showSuccessNotification(filename, result.thumbnailUrl);
+    showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
 
     console.log('[ContextMenu] Image saved successfully:', result.assetId);
   } catch (error) {

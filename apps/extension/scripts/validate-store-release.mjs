@@ -230,7 +230,6 @@ async function validateListing() {
 
   const listing = await readFile(listingPath, 'utf8');
   const requiredSnippets = [
-    'Status: not submitted.',
     'https://www.sploot.app/support',
     'https://www.sploot.app/privacy',
     'Host permission: `*://*/*`',
@@ -255,8 +254,10 @@ async function validateListing() {
     recordExternal('Chrome is signed in but loaded from stale extension source; reload apps/extension/dist/chrome-mv3 before release QA');
   }
 
-  if (listing.includes('Status: not submitted.')) {
-    recordPass('listing packet truthfully records not-submitted Web Store status');
+  if (/Status: (not submitted|submitted for review)\./.test(listing)) {
+    recordPass('listing packet records current Web Store submission status');
+  } else {
+    recordLocal('listing packet missing current Web Store submission status');
   }
 }
 
