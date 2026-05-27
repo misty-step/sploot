@@ -100,6 +100,14 @@ function forwardErrorTelemetry(payload: ErrorPayload, userId: string): void {
       },
       user: { id: userId },
     });
+
+    logger.logError('client:error', error, {
+      userId,
+      url: payload.url,
+      timestamp: payload.timestamp,
+      hasStack: Boolean(payload.stack),
+      hasComponentStack: Boolean(payload.componentStack),
+    });
   } catch (error) {
     logger.logError('telemetry:sentry-failure', error, { userId, payload });
   }

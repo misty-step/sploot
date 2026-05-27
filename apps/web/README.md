@@ -32,6 +32,11 @@ BLOB_READ_WRITE_TOKEN=vercel_blob_...
 
 # AI (Replicate)
 REPLICATE_API_TOKEN=r8_...
+
+# Agent observability (Canary, optional but expected in production)
+CANARY_ENDPOINT=https://canary-obs.fly.dev
+CANARY_API_KEY=<ingest-scoped key>
+CANARY_SERVICE_NAME=sploot-web
 ```
 
 ### 2. Development

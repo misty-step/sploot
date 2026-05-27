@@ -5,6 +5,7 @@ const originalEnv = {
   NODE_ENV: process.env.NODE_ENV,
   VERCEL_REGION: process.env.VERCEL_REGION,
   VERCEL_URL: process.env.VERCEL_URL,
+  CANARY_ENABLE_IN_TEST: process.env.CANARY_ENABLE_IN_TEST,
 };
 
 type ConsoleSpy = ReturnType<typeof vi.spyOn>;
@@ -14,6 +15,9 @@ let consoleErrorSpy: ConsoleSpy;
 
 async function importLogger(sentryFactory?: () => unknown) {
   vi.doUnmock('@sentry/nextjs');
+  vi.doMock('@/lib/canary-reporter', () => ({
+    reportCanaryError: vi.fn(),
+  }));
   vi.doMock(
     '@sentry/nextjs',
     sentryFactory ??
@@ -72,6 +76,12 @@ afterEach(() => {
     delete process.env.VERCEL_URL;
   } else {
     process.env.VERCEL_URL = originalEnv.VERCEL_URL;
+  }
+
+  if (originalEnv.CANARY_ENABLE_IN_TEST === undefined) {
+    delete process.env.CANARY_ENABLE_IN_TEST;
+  } else {
+    process.env.CANARY_ENABLE_IN_TEST = originalEnv.CANARY_ENABLE_IN_TEST;
   }
 
   vi.doUnmock('@sentry/nextjs');
@@ -138,6 +148,28 @@ describe('observability logger', () => {
         },
       },
     });
+  });
+
+  it('pipes server-side errors into Canary with sanitized context metadata', async () => {
+    process.env.CANARY_ENABLE_IN_TEST = '1';
+    const { logger } = await importLogger();
+    const canary = await import('@/lib/canary-reporter');
+    const err = new Error('upload queue failed');
+
+    logger.logError('canary-signal', err, { requestId: 'req-123' });
+    await flushAsync();
+
+    expect(vi.mocked(canary.reportCanaryError)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: 'canary-signal',
+        traceId: undefined,
+        metadata: { requestId: 'req-123' },
+        error: expect.objectContaining({
+          name: 'Error',
+          message: 'upload queue failed',
+        }),
+      })
+    );
   });
 
   it('logs timing entries with duration and success fields', async () => {

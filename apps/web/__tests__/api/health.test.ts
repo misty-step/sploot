@@ -19,6 +19,10 @@ vi.mock('@/lib/with-observability', () => ({
   withObservability: (handler: any) => handler,
 }));
 
+vi.mock('@/lib/canary-reporter', () => ({
+  canaryConfigured: vi.fn(() => false),
+}));
+
 vi.mock('@/package.json', () => ({
   default: { version: '0.1.0' },
 }));
@@ -64,6 +68,7 @@ describe('/api/health', () => {
     expect(data.diagnostics.prisma_connection_test).toBe(true);
     expect(data.diagnostics.database_url_configured).toBe(true);
     expect(data.diagnostics.connection_latency_ms).toBeGreaterThanOrEqual(0);
+    expect(data.diagnostics.canary_configured).toBe(false);
     expect(data.diagnostics.env_vars).toBeDefined();
     expect(data.diagnostics.env_vars.DATABASE_URL).toBe('configured');
 

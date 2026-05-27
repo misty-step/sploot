@@ -135,6 +135,16 @@ describe('/api/telemetry', () => {
       },
       user: { id: AUTH_USER.userId },
     });
+    expect(mockLogger.logError).toHaveBeenCalledWith(
+      'client:error',
+      expect.any(Error),
+      expect.objectContaining({
+        userId: AUTH_USER.userId,
+        url: payload.payload.url,
+        hasStack: true,
+        hasComponentStack: true,
+      })
+    );
   });
 
   it('logs when Sentry forwarding fails but still returns success', async () => {

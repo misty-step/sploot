@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { kv } from '@vercel/kv';
+import { canaryConfigured } from '@/lib/canary-reporter';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
 import pkg from '@/package.json';
@@ -18,6 +19,7 @@ interface HealthStatus {
     database_url_configured?: boolean;
     connection_latency_ms?: number;
     env_vars?: Record<string, 'configured' | 'missing'>;
+    canary_configured?: boolean;
   };
   version?: string;
   error?: string;
@@ -171,6 +173,7 @@ async function getHandler(_req: NextRequest) {
           prisma_connection_test: results.db.prisma_test,
           database_url_configured: !!process.env.DATABASE_URL,
           connection_latency_ms: results.db.latency_ms,
+          canary_configured: canaryConfigured(),
           env_vars: envVars,
         },
         version: pkg.version,
@@ -196,6 +199,7 @@ async function getHandler(_req: NextRequest) {
           prisma_connection_test: results.db.prisma_test,
           database_url_configured: !!process.env.DATABASE_URL,
           connection_latency_ms: results.db.latency_ms,
+          canary_configured: canaryConfigured(),
           env_vars: envVars,
         },
       };
@@ -219,6 +223,7 @@ async function getHandler(_req: NextRequest) {
       error: error instanceof Error ? error.message : 'Unknown error',
       diagnostics: {
         database_url_configured: !!process.env.DATABASE_URL,
+        canary_configured: canaryConfigured(),
         env_vars: {
           DATABASE_URL: process.env.DATABASE_URL ? 'configured' : 'missing',
         },
