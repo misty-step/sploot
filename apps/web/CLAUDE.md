@@ -255,6 +255,11 @@ BLOB_READ_WRITE_TOKEN=
 # Embeddings API
 EMBEDDINGS_API_KEY=
 EMBEDDINGS_API_URL=
+
+# Agent observability (Canary)
+CANARY_ENDPOINT=https://canary-obs.fly.dev
+CANARY_API_KEY=
+CANARY_SERVICE_NAME=sploot-web
 ```
 
 ### Environment File Structure

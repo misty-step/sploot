@@ -13,13 +13,14 @@ Status conventions:
 
 | # | Title | Priority | Estimate |
 |---|-------|----------|----------|
-| [007](007-publish-extension-web-store-release.md) | Publish Extension Web Store Release | high | M |
+| _none_ | _No active backlog items_ | - | - |
 
 ## Done
 
 See `_done/` for completed tickets with their `## What Was Built` notes.
 
 Recently completed:
+- [016](_done/016-integrate-canary-agent-observability.md) Integrate Canary Agent Observability
 - [001](_done/001-fix-extension-upload-response-contract.md) Fix Extension Upload Response Contract
 - [002](_done/002-configure-extension-auth-authorized-parties.md) Configure Extension Auth Authorized Parties
 - [003](_done/003-ship-first-class-shuffle-api-contract.md) Ship First-Class Shuffle API Contract

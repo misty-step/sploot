@@ -112,6 +112,20 @@ export function withObservability(
             duration,
             success,
           });
+
+          if (statusCode >= 500) {
+            logger.logError(
+              'request:server-error-status',
+              new Error(`Request completed with HTTP ${statusCode}`),
+              {
+                ...metadata,
+                operation,
+                statusCode,
+                duration,
+                success,
+              }
+            );
+          }
         } catch {
           // Silently ignore logging failures
         }

@@ -8,6 +8,7 @@ import path from 'node:path';
 
 const execFileAsync = promisify(execFile);
 const baseUrl = (process.env.DEPLOYED_SMOKE_URL ?? 'https://www.sploot.app').replace(/\/$/, '');
+const expectCanaryConfigured = process.env.EXPECT_CANARY_CONFIGURED === '1';
 const reportPath = path.resolve(
   process.cwd(),
   process.env.DEPLOYED_SMOKE_REPORT ?? 'docs/deployed-smoke-report.json'
@@ -168,10 +169,14 @@ await record('production health', async () => {
   if (json?.diagnostics?.database_url_configured !== true) {
     throw new Error('expected DATABASE_URL to be configured');
   }
+  if (expectCanaryConfigured && json?.diagnostics?.canary_configured !== true) {
+    throw new Error('expected Canary to be configured');
+  }
 
   return {
     database: json.dependencies.database,
     redis: json.dependencies.redis,
+    canary_configured: json.diagnostics?.canary_configured ?? null,
     database_latency_ms: json.diagnostics?.connection_latency_ms ?? null,
     version: json.version ?? null,
   };
@@ -188,6 +193,9 @@ await record('production service health', async () => {
   if (!json?.services?.database || !json?.services?.blobStorage || !json?.services?.embeddings) {
     throw new Error('expected database, blobStorage, and embeddings service entries');
   }
+  if (expectCanaryConfigured && json.services.canary?.status !== 'healthy') {
+    throw new Error(`expected Canary healthy, got ${json.services.canary?.status}`);
+  }
   if (json.services.database.status !== 'healthy') {
     throw new Error(`expected database healthy, got ${json.services.database.status}`);
   }
@@ -198,6 +206,7 @@ await record('production service health', async () => {
     database: json.services.database.status,
     blob_storage: json.services.blobStorage.status,
     embeddings: json.services.embeddings.status,
+    canary: json.services.canary?.status ?? null,
     can_upload: json.readiness?.canUpload ?? null,
     can_search: json.readiness?.canSearch ?? null,
   };

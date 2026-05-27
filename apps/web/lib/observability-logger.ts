@@ -148,6 +148,19 @@ class ObservabilityLoggerImpl implements ObservabilityLogger {
         // Sentry capture should never throw for callers
       }
     });
+
+    void import('./canary-reporter')
+      .then(({ reportCanaryError }) =>
+        reportCanaryError({
+          context,
+          error: serializedError,
+          traceId: this.traceId,
+          metadata,
+        })
+      )
+      .catch(() => {
+        // Canary forwarding is best-effort and must never affect callers.
+      });
   }
 
   logTiming(
