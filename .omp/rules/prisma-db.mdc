@@ -1,0 +1,25 @@
+---
+description: Prisma / Neon / pgvector database invariants for apps/web
+globs:
+  - "apps/web/prisma/**"
+  - "apps/web/lib/db*"
+  - "apps/web/lib/**/db*"
+  - "apps/web/app/api/**"
+alwaysApply: false
+---
+
+# Database (apps/web)
+
+- Prisma's Rust engine reads **`DATABASE_URL`** at init, before Node runs. Never
+  introduce alias env names (`POSTGRES_URL`, etc.) — they are read too late in
+  serverless and silently break.
+- The pooled Neon connection string needs `-pooler` in the host and
+  `pgbouncer=true` in the query string; direct (migration) URLs do not.
+- Schema changes ship as **named migrations** (`pnpm --filter web db:migrate:dev`),
+  not `db:push`. CI applies `prisma migrate deploy` against
+  `pgvector/pgvector:pg15`.
+- Vector search uses pgvector. Embedding-writing paths (scheduler / rate-limit)
+  are a known production risk — test scheduling and cost controls directly, do
+  not mock them away.
+- Serverless connection health: stale Prisma connections have caused health
+  incidents — surface runtime evidence when touching DB health paths.

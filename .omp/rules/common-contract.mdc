@@ -1,0 +1,22 @@
+---
+description: "@sploot/common is the shared source of truth — change it here, then both apps"
+globs:
+  - "packages/common/**"
+alwaysApply: false
+---
+
+# @sploot/common contract
+
+- `packages/common/src/` is the **single source of truth** for upload limits,
+  MIME validation (`isValidMimeType`, `UPLOAD`), and shared API response types
+  (`SplootApiUploadResponse`, etc.). Both `apps/web` and `apps/extension` import
+  from `@sploot/common`.
+- Add shared code by: (1) put it in `packages/common/src/`, (2) export it from
+  `packages/common/src/index.ts`, (3) import via `import { X } from
+  '@sploot/common'`.
+- Changing a constant or type here is a contract change — update **both**
+  consumers (web API routes/handlers and the extension api-client) in the same
+  change, and keep `apps/web/docs/API.md` in sync if route behavior shifts.
+- The extension resolves this package via the WXT alias in `wxt.config.ts`
+  (`@sploot/common` → `../../packages/common/src`); web resolves it through the
+  workspace. Don't break either resolution path.
