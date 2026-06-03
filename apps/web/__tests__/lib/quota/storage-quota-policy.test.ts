@@ -118,4 +118,19 @@ describe('storage quota policy', () => {
     });
     expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(2);
   });
+
+  it('retries when PostgreSQL reports a raw serialization failure code', async () => {
+    const serializationError = Object.assign(new Error('serialization failure'), { code: '40001' });
+    mocks.prisma.$transaction
+      .mockRejectedValueOnce(serializationError)
+      .mockImplementationOnce((callback) => callback(mocks.tx));
+
+    await expect(getStorageQuotaSnapshot('user-1')).resolves.toEqual({
+      usedBytes: 400,
+      limitBytes: 1000,
+      remainingBytes: 500,
+      reservedBytes: 100,
+    });
+    expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
 });
