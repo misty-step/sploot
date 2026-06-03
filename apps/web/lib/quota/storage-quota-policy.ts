@@ -121,10 +121,7 @@ export async function getStorageQuotaSnapshot(userId: string): Promise<StorageQu
     };
   }
 
-  const snapshot = await prisma.$transaction((tx) => readSnapshot(tx, userId), {
-    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-  });
-
+  const snapshot = await executeTransactionWithRetry((tx) => readSnapshot(tx, userId));
   return toPublicSnapshot(snapshot);
 }
 
@@ -140,7 +137,7 @@ export async function reserveUploadBytes(
     throw new Error('Database not configured');
   }
 
-  return prisma.$transaction(async (tx) => {
+  return executeTransactionWithRetry(async (tx) => {
     const requested = BigInt(incomingBytes);
     const snapshot = await readSnapshot(tx, userId, requested);
     const wouldUse = snapshot.usedBytes + snapshot.reservedBytes + requested;
@@ -162,8 +159,6 @@ export async function reserveUploadBytes(
       id: reservation.id,
       snapshot: toPublicSnapshot(snapshot),
     };
-  }, {
-    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
   });
 }
 
@@ -179,7 +174,7 @@ export async function checkUploadBytesAllowed(
     throw new Error('Database not configured');
   }
 
-  return prisma.$transaction(async (tx) => {
+  const snapshot = await executeTransactionWithRetry(async (tx) => {
     const requested = BigInt(incomingBytes);
     const snapshot = await readSnapshot(tx, userId, requested);
     const wouldUse = snapshot.usedBytes + snapshot.reservedBytes + requested;
@@ -188,10 +183,55 @@ export async function checkUploadBytesAllowed(
       throw new StorageQuotaExceededError(toPublicSnapshot(snapshot));
     }
 
-    return toPublicSnapshot(snapshot);
-  }, {
-    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    return snapshot;
   });
+
+  return toPublicSnapshot(snapshot);
+}
+
+/**
+ * Executes a Prisma serializable transaction with automated retry on deadlock or serialization conflicts (P2034).
+ * Follows exponential backoff with jitter to maximize concurrency throughput.
+ */
+async function executeTransactionWithRetry<T>(
+  action: (tx: any) => Promise<T>,
+  maxAttempts = 5,
+  baseDelayMs = 50
+): Promise<T> {
+  let lastError: any;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await prisma!.$transaction(action, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    } catch (error: any) {
+      lastError = error;
+
+      // Detect P2034 (Prisma serialization failure) or PostgreSQL transaction rollback/deadlock codes
+      const isSerializationError =
+        error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034';
+      const isDeadlockMsg =
+        error instanceof Error &&
+        (error.message.includes('deadlock detected') ||
+          error.message.includes('write conflict') ||
+          error.message.includes('serialization failure'));
+
+      if ((isSerializationError || isDeadlockMsg) && attempt < maxAttempts) {
+        // Exponential backoff delay with random jitter (up to 50%) to prevent lock-stepping retries
+        const backoff = baseDelayMs * Math.pow(2, attempt - 1);
+        const jitter = Math.random() * 0.5 * backoff;
+        const delay = backoff + jitter;
+
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError;
 }
 
 export async function releaseStorageQuotaReservation(reservationId: string | null | undefined): Promise<void> {
