@@ -1,0 +1,14 @@
+{
+  "branch": "fix/issue-2-sql-injection",
+  "base": "master",
+  "verdict": "ship",
+  "reviewers": ["critic", "ousterhout", "grug", "codex", "gemini", "scout", "pulse", "guard"],
+  "scores": {
+    "correctness": 9,
+    "depth": 8,
+    "simplicity": 9,
+    "craft": 8
+  },
+  "sha": "fe74834aaa7abdb82d0f9e9dcda6d3d773d7a51d",
+  "date": "2026-06-03T14:15:00Z"
+}
