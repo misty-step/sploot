@@ -32,7 +32,7 @@ near every turn so they survive long sessions.
 - `extension.mdc` → `apps/extension/**`
 
 **Slash commands (`.omp/commands/`).**
-- `/gate` — full CI-parity ship gate, per-step ✅/❌
+- `/gate` — CI-parity ship gate (4 steps; CI adds more), per-step ✅/❌
 - `/typecheck` — monorepo `tsc --noEmit` triage
 - `/test-web` — web Vitest via the CI `test` script (`CI=1`, run-once)
 - `/db` — Prisma/Neon ops with the `DATABASE_URL` guardrail

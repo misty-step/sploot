@@ -16,5 +16,6 @@ contract: read `AGENTS.md` (loaded as context) and `CLAUDE.md`.
   Closure = move to `backlog.d/_done/` with `Status: done`, a `## What Was
   Built` note, and a conventional-commit `Backlog:`/`Closes-backlog:` trailer.
 - **Ship gate = CI parity:** `pnpm lint && pnpm type-check && pnpm --filter web
-  test && pnpm --filter extension build` (run the web step as `CI=1 pnpm
-  --filter web test` so Vitest stays one-shot under omp's PTY).
+  test && pnpm --filter extension build` (run the web step as `CI=1 pnpm --filter
+  web test` so Vitest stays one-shot under omp's PTY). CI adds a frozen install,
+  `db:migrate`, and extension lint/test on top, so green local ≈ (not =) green CI.
