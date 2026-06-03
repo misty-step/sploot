@@ -36,6 +36,7 @@ import {
   reserveUploadBytes,
   releaseStorageQuotaReservation,
   StorageQuotaExceededError,
+  getStorageQuotaSnapshot,
 } from '@/lib/quota/storage-quota-policy';
 
 describe('storage quota policy', () => {
@@ -94,9 +95,42 @@ describe('storage quota policy', () => {
 
   it('releases reservations idempotently', async () => {
     await releaseStorageQuotaReservation('reservation-1');
-
     expect(mocks.prisma.storageQuotaReservation.deleteMany).toHaveBeenCalledWith({
       where: { id: 'reservation-1' },
     });
+  });
+  it('retries when Prisma throws a serialization P2034 error', async () => {
+    // Import Prisma so we can mock our known client error
+    const { Prisma: ClientPrisma } = await import('@prisma/client');
+    const p2034Error = new ClientPrisma.PrismaClientKnownRequestError(
+      'Transaction failed due to a write conflict or a deadlock',
+      { code: 'P2034', clientVersion: '5.0.0' }
+    );
+    // Mock $transaction to fail once with P2034 and succeed on the next attempt
+    mocks.prisma.$transaction
+      .mockRejectedValueOnce(p2034Error)
+      .mockImplementationOnce((callback) => callback(mocks.tx));
+    await expect(getStorageQuotaSnapshot('user-1')).resolves.toEqual({
+      usedBytes: 400,
+      limitBytes: 1000,
+      remainingBytes: 500,
+      reservedBytes: 100,
+    });
+    expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries when PostgreSQL reports a raw serialization failure code', async () => {
+    const serializationError = Object.assign(new Error('serialization failure'), { code: '40001' });
+    mocks.prisma.$transaction
+      .mockRejectedValueOnce(serializationError)
+      .mockImplementationOnce((callback) => callback(mocks.tx));
+
+    await expect(getStorageQuotaSnapshot('user-1')).resolves.toEqual({
+      usedBytes: 400,
+      limitBytes: 1000,
+      remainingBytes: 500,
+      reservedBytes: 100,
+    });
+    expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(2);
   });
 });
