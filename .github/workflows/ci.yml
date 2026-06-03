@@ -10,6 +10,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  secrets:
+    name: Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm secrets:check
+      - run: pnpm secrets:test
+      - name: Scan commits in this event
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            range="${{ github.event.pull_request.base.sha }}..HEAD"
+          elif [[ -n "${{ github.event.before }}" && "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]]; then
+            range="${{ github.event.before }}..HEAD"
+          else
+            range="HEAD~1..HEAD"
+          fi
+          pnpm secrets:check -- --git-range "$range"
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -94,15 +121,15 @@ jobs:
   merge-gate:
     name: merge-gate
     if: always()
-    needs: [lint, type-check, test, extension]
+    needs: [secrets, lint, type-check, test, extension]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          results=("${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}")
+          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" ]]; then
-              echo "One or more jobs failed: lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }}"
+              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }}"
               exit 1
             fi
           done
