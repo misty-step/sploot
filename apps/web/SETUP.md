@@ -122,20 +122,20 @@ Example: user_123abc/1703123456789-x7b9k2.jpg
 
 ## 3. PostgreSQL Database with pgvector
 
-### Create Vercel Postgres
-1. In Vercel Dashboard → Storage → Create Database
-2. Select "Postgres"
-3. Choose region (closest to users)
-4. Name it (e.g., "sploot-db")
+### Create Neon Postgres
+1. In Neon dashboard, create a Postgres project (pgvector enabled).
+2. Use the **pooler** endpoint (PgBouncer) for serverless.
 
-### Get Connection Strings
+### Get Connection String
 ```env
-POSTGRES_URL="postgres://default:xxxxx@xxx.neon.tech/verceldb?sslmode=require"
-POSTGRES_URL_NON_POOLING="postgres://default:xxxxx@xxx.neon.tech/verceldb?sslmode=require"
+DATABASE_URL="postgresql://user:pass@ep-xxx-pooler.neon.tech/db?sslmode=require&pgbouncer=true"
 ```
 
+> **important**: use `DATABASE_URL` only. prisma reads it before node starts.
+> see `apps/web/docs/architecture/database-connection.md` for the full why.
+
 ### Enable pgvector Extension
-In Vercel Postgres query console:
+In the Neon SQL editor:
 ```sql
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
@@ -228,14 +228,13 @@ CLERK_SECRET_KEY=sk_test_...
 BLOB_READ_WRITE_TOKEN=vercel_blob_...
 
 # PostgreSQL Database (Required)
-POSTGRES_URL=postgres://...
-POSTGRES_URL_NON_POOLING=postgres://...
+DATABASE_URL=postgresql://...-pooler.neon.tech/...?...&pgbouncer=true
 
 # Replicate API (Required for search)
 REPLICATE_API_TOKEN=r8_...
 
 # Optional: Prisma Studio
-DATABASE_URL=${POSTGRES_URL_NON_POOLING}
+# use a non-pooler neon url if you hit pgbouncer limits in studio
 ```
 
 ### Deploy to Vercel

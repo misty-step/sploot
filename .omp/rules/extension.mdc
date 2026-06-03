@@ -1,0 +1,22 @@
+---
+description: WXT/React Chrome extension — Clerk env matching and release packet
+globs:
+  - "apps/extension/**"
+alwaysApply: false
+---
+
+# Chrome extension (apps/extension, WXT + React)
+
+- Clerk publishable key **must match the environment**: `pk_test_*` with
+  localhost for dev, `pk_live_*` with `https://www.sploot.app` for prod. A
+  mismatched key is the classic auth-fails-silently bug. Keys live in
+  `.env` (dev) / `.env.production` (prod): `VITE_CLERK_PUBLISHABLE_KEY`,
+  `VITE_API_BASE_URL`, `VITE_CLERK_SYNC_HOST`.
+- Builds go through WXT, not a generic bundler: `build` (dev),
+  `build:prod` / `build:prod:unpacked`, `zip:prod`. `lint` and `type-check`
+  are both `tsc --noEmit`.
+- The Web Store release packet is gated by `pnpm --filter extension
+  release:check` (`scripts/validate-store-release.mjs`) plus
+  `STORE_LISTING.md` and `store-assets/`. Extension release ≠ web deploy.
+- Shared upload/MIME/type logic comes from `@sploot/common` — don't fork it
+  into the extension.

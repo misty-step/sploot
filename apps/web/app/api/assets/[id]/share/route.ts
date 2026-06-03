@@ -4,8 +4,10 @@ import { getAuth } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
 import { getOrCreateShareSlug, AssetNotFoundError } from '@/lib/share';
 import { apiError } from '@/lib/api-error';
+import { unauthorizedResponse } from '@/lib/auth/api';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
 
 /**
  * Generate a share link for an asset
@@ -29,7 +31,7 @@ async function postHandler(
     // 1. Extract and verify auth
     const { userId } = await getAuth();
     if (!userId) {
-      return apiError('UNAUTHORIZED', 'You must be logged in to share assets');
+      return unauthorizedResponse();
     }
 
     // 2. Extract asset ID from params
@@ -83,8 +85,7 @@ async function postHandler(
       return apiError('NOT_FOUND', 'Asset not found');
     }
 
-    // Log unexpected errors
-    console.error('[Share API] Unexpected error:', error);
+    logError('assets:share-failed', error);
 
     // Return generic error to client
     return apiError('INTERNAL_ERROR', 'Failed to generate share link');

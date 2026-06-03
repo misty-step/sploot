@@ -1,0 +1,1117 @@
+{
+  "agent_refs": {
+    "refs": [],
+    "root": ".claude/agents"
+  },
+  "agent_root": ".claude/agents",
+  "agents_debt": {
+    "debt_ids": [
+      "007-publish-extension-web-store-release.md"
+    ],
+    "unfiled_hits": []
+  },
+  "always_install": {
+    "expected": [
+      "research",
+      "groom",
+      "shape",
+      "implement",
+      "qa",
+      "demo",
+      "code-review",
+      "refactor",
+      "ci",
+      "diagnose",
+      "monitor",
+      "deliver",
+      "settle",
+      "ship",
+      "trace",
+      "yeet",
+      "flywheel"
+    ],
+    "missing": [],
+    "trace_present": true
+  },
+  "artifacts": {
+    "byte_identity": ".spellbook/tailor/audit/20260522T160014Z/byte-identity.txt",
+    "lifecycle": ".spellbook/tailor/audit/20260522T160014Z/grep/lifecycle.txt",
+    "portable_paths": ".spellbook/tailor/audit/20260522T160014Z/grep/portable-paths.txt",
+    "readlinks": ".spellbook/tailor/audit/20260522T160014Z/readlinks.txt"
+  },
+  "bridges": [
+    {
+      "dir": ".claude/skills",
+      "entries": [
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "ceo-review",
+          "path": ".agents/skills/ceo-review",
+          "target": "../../.agents/skills/ceo-review"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "ci",
+          "path": ".agents/skills/ci",
+          "target": "../../.agents/skills/ci"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "code-review",
+          "path": ".agents/skills/code-review",
+          "target": "../../.agents/skills/code-review"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "deliver",
+          "path": ".agents/skills/deliver",
+          "target": "../../.agents/skills/deliver"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "demo",
+          "path": ".agents/skills/demo",
+          "target": "../../.agents/skills/demo"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "deploy",
+          "path": ".agents/skills/deploy",
+          "target": "../../.agents/skills/deploy"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "diagnose",
+          "path": ".agents/skills/diagnose",
+          "target": "../../.agents/skills/diagnose"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "flywheel",
+          "path": ".agents/skills/flywheel",
+          "target": "../../.agents/skills/flywheel"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "groom",
+          "path": ".agents/skills/groom",
+          "target": "../../.agents/skills/groom"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "implement",
+          "path": ".agents/skills/implement",
+          "target": "../../.agents/skills/implement"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "monitor",
+          "path": ".agents/skills/monitor",
+          "target": "../../.agents/skills/monitor"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "office-hours",
+          "path": ".agents/skills/office-hours",
+          "target": "../../.agents/skills/office-hours"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "qa",
+          "path": ".agents/skills/qa",
+          "target": "../../.agents/skills/qa"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "refactor",
+          "path": ".agents/skills/refactor",
+          "target": "../../.agents/skills/refactor"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "reflect",
+          "path": ".agents/skills/reflect",
+          "target": "../../.agents/skills/reflect"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "research",
+          "path": ".agents/skills/research",
+          "target": "../../.agents/skills/research"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "settle",
+          "path": ".agents/skills/settle",
+          "target": "../../.agents/skills/settle"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "shape",
+          "path": ".agents/skills/shape",
+          "target": "../../.agents/skills/shape"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "ship",
+          "path": ".agents/skills/ship",
+          "target": "../../.agents/skills/ship"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "trace",
+          "path": ".agents/skills/trace",
+          "target": "../../.agents/skills/trace"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "yeet",
+          "path": ".agents/skills/yeet",
+          "target": "../../.agents/skills/yeet"
+        }
+      ],
+      "exists": true
+    },
+    {
+      "dir": ".codex/skills",
+      "entries": [
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "ceo-review",
+          "path": ".agents/skills/ceo-review",
+          "target": "../../.agents/skills/ceo-review"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "ci",
+          "path": ".agents/skills/ci",
+          "target": "../../.agents/skills/ci"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "code-review",
+          "path": ".agents/skills/code-review",
+          "target": "../../.agents/skills/code-review"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "deliver",
+          "path": ".agents/skills/deliver",
+          "target": "../../.agents/skills/deliver"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "demo",
+          "path": ".agents/skills/demo",
+          "target": "../../.agents/skills/demo"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "deploy",
+          "path": ".agents/skills/deploy",
+          "target": "../../.agents/skills/deploy"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "diagnose",
+          "path": ".agents/skills/diagnose",
+          "target": "../../.agents/skills/diagnose"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "flywheel",
+          "path": ".agents/skills/flywheel",
+          "target": "../../.agents/skills/flywheel"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "groom",
+          "path": ".agents/skills/groom",
+          "target": "../../.agents/skills/groom"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "implement",
+          "path": ".agents/skills/implement",
+          "target": "../../.agents/skills/implement"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "monitor",
+          "path": ".agents/skills/monitor",
+          "target": "../../.agents/skills/monitor"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "office-hours",
+          "path": ".agents/skills/office-hours",
+          "target": "../../.agents/skills/office-hours"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "qa",
+          "path": ".agents/skills/qa",
+          "target": "../../.agents/skills/qa"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "refactor",
+          "path": ".agents/skills/refactor",
+          "target": "../../.agents/skills/refactor"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "reflect",
+          "path": ".agents/skills/reflect",
+          "target": "../../.agents/skills/reflect"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "research",
+          "path": ".agents/skills/research",
+          "target": "../../.agents/skills/research"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "settle",
+          "path": ".agents/skills/settle",
+          "target": "../../.agents/skills/settle"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "shape",
+          "path": ".agents/skills/shape",
+          "target": "../../.agents/skills/shape"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "ship",
+          "path": ".agents/skills/ship",
+          "target": "../../.agents/skills/ship"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "trace",
+          "path": ".agents/skills/trace",
+          "target": "../../.agents/skills/trace"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "yeet",
+          "path": ".agents/skills/yeet",
+          "target": "../../.agents/skills/yeet"
+        }
+      ],
+      "exists": true
+    },
+    {
+      "dir": ".pi/skills",
+      "entries": [
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "ceo-review",
+          "path": ".agents/skills/ceo-review",
+          "target": "../../.agents/skills/ceo-review"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "ci",
+          "path": ".agents/skills/ci",
+          "target": "../../.agents/skills/ci"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "code-review",
+          "path": ".agents/skills/code-review",
+          "target": "../../.agents/skills/code-review"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "deliver",
+          "path": ".agents/skills/deliver",
+          "target": "../../.agents/skills/deliver"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "demo",
+          "path": ".agents/skills/demo",
+          "target": "../../.agents/skills/demo"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "deploy",
+          "path": ".agents/skills/deploy",
+          "target": "../../.agents/skills/deploy"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "diagnose",
+          "path": ".agents/skills/diagnose",
+          "target": "../../.agents/skills/diagnose"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "flywheel",
+          "path": ".agents/skills/flywheel",
+          "target": "../../.agents/skills/flywheel"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "groom",
+          "path": ".agents/skills/groom",
+          "target": "../../.agents/skills/groom"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "implement",
+          "path": ".agents/skills/implement",
+          "target": "../../.agents/skills/implement"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "monitor",
+          "path": ".agents/skills/monitor",
+          "target": "../../.agents/skills/monitor"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "office-hours",
+          "path": ".agents/skills/office-hours",
+          "target": "../../.agents/skills/office-hours"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "qa",
+          "path": ".agents/skills/qa",
+          "target": "../../.agents/skills/qa"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "refactor",
+          "path": ".agents/skills/refactor",
+          "target": "../../.agents/skills/refactor"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "reflect",
+          "path": ".agents/skills/reflect",
+          "target": "../../.agents/skills/reflect"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "research",
+          "path": ".agents/skills/research",
+          "target": "../../.agents/skills/research"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "settle",
+          "path": ".agents/skills/settle",
+          "target": "../../.agents/skills/settle"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "shape",
+          "path": ".agents/skills/shape",
+          "target": "../../.agents/skills/shape"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "ship",
+          "path": ".agents/skills/ship",
+          "target": "../../.agents/skills/ship"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "trace",
+          "path": ".agents/skills/trace",
+          "target": "../../.agents/skills/trace"
+        },
+        {
+          "broken": false,
+          "exists": true,
+          "is_symlink": true,
+          "name": "yeet",
+          "path": ".agents/skills/yeet",
+          "target": "../../.agents/skills/yeet"
+        }
+      ],
+      "exists": true
+    }
+  ],
+  "gate_inventory": {
+    "AGENTS.md": [
+      {
+        "line": 5,
+        "path": "AGENTS.md",
+        "text": "Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 15 app, App Router API routes, Clerk auth, Prisma/Neon pgvector, Vercel Blob, Replicate embeddings, Sentry, deployed smoke, and Vercel release posture. `apps/extension` owns t"
+      },
+      {
+        "line": 20,
+        "path": "AGENTS.md",
+        "text": "- Use pnpm. Do not introduce npm/yarn workflows."
+      },
+      {
+        "line": 31,
+        "path": "AGENTS.md",
+        "text": "Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or explicit `DB path un"
+      }
+    ],
+    "ci": [
+      {
+        "line": 12,
+        "path": ".agents/skills/ci/SKILL.md",
+        "text": "- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts)."
+      },
+      {
+        "line": 15,
+        "path": ".agents/skills/ci/SKILL.md",
+        "text": "- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or"
+      },
+      {
+        "line": 20,
+        "path": ".agents/skills/ci/SKILL.md",
+        "text": "Use /ci to run or diagnose the CI parity gate. Local baseline: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`. For true CI parity on DB-backed paths, first run `pnpm --filter web db:migrate` and we"
+      },
+      {
+        "line": 22,
+        "path": ".agents/skills/ci/SKILL.md",
+        "text": "Remote CI also runs frozen install, extension lint/test/build, and the aggregate `merge-gate`. Lefthook runs gitleaks, web/extension lint, and turbo type-check before local commit/push. Do not lower gates; diagnose env, migrations, ports, p"
+      }
+    ],
+    "deliver": [
+      {
+        "line": 12,
+        "path": ".agents/skills/deliver/SKILL.md",
+        "text": "- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts)."
+      },
+      {
+        "line": 15,
+        "path": ".agents/skills/deliver/SKILL.md",
+        "text": "- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or"
+      }
+    ],
+    "implement": [
+      {
+        "line": 12,
+        "path": ".agents/skills/implement/SKILL.md",
+        "text": "- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts)."
+      },
+      {
+        "line": 15,
+        "path": ".agents/skills/implement/SKILL.md",
+        "text": "- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or"
+      },
+      {
+        "line": 20,
+        "path": ".agents/skills/implement/SKILL.md",
+        "text": "Use /implement for bounded Sploot code changes. Prefer Red -> Green -> Refactor unless the change is docs-only, harness-only, or manual QA evidence. Use `pnpm`; never introduce npm/yarn workflows."
+      }
+    ],
+    "monitor": [
+      {
+        "line": 12,
+        "path": ".agents/skills/monitor/SKILL.md",
+        "text": "- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts)."
+      },
+      {
+        "line": 15,
+        "path": ".agents/skills/monitor/SKILL.md",
+        "text": "- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or"
+      }
+    ],
+    "qa": [
+      {
+        "line": 12,
+        "path": ".agents/skills/qa/SKILL.md",
+        "text": "- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts)."
+      },
+      {
+        "line": 15,
+        "path": ".agents/skills/qa/SKILL.md",
+        "text": "- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or"
+      },
+      {
+        "line": 25,
+        "path": ".agents/skills/qa/SKILL.md",
+        "text": "- Deployed/release: run `pnpm --filter web smoke:deployed` and `pnpm --filter extension release:check` when publishing, release packet, or production smoke is in scope."
+      }
+    ],
+    "settle": [
+      {
+        "line": 12,
+        "path": ".agents/skills/settle/SKILL.md",
+        "text": "- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts)."
+      },
+      {
+        "line": 15,
+        "path": ".agents/skills/settle/SKILL.md",
+        "text": "- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or"
+      }
+    ],
+    "ship": [
+      {
+        "line": 12,
+        "path": ".agents/skills/ship/SKILL.md",
+        "text": "- Stack: pnpm Turborepo with `apps/web` (Next.js 15, Clerk, Prisma/Neon pgvector, Vercel Blob, Replicate, Sentry), `apps/extension` (WXT/React Chrome extension), and `packages/common` (shared upload/API contracts)."
+      },
+      {
+        "line": 15,
+        "path": ".agents/skills/ship/SKILL.md",
+        "text": "- Load-bearing gate: Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or"
+      }
+    ]
+  },
+  "generated_at": "2026-05-22T16:00:14+00:00",
+  "installed_skills": [
+    {
+      "byte_identical_to_source": true,
+      "category": "universal",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/ceo-review/.spellbook",
+      "name": "ceo-review",
+      "path": ".agents/skills/ceo-review",
+      "source": "ceo-review",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/ci/.spellbook",
+      "name": "ci",
+      "path": ".agents/skills/ci",
+      "source": "ci",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/code-review/.spellbook",
+      "name": "code-review",
+      "path": ".agents/skills/code-review",
+      "source": "code-review",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/deliver/.spellbook",
+      "name": "deliver",
+      "path": ".agents/skills/deliver",
+      "source": "deliver",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/demo/.spellbook",
+      "name": "demo",
+      "path": ".agents/skills/demo",
+      "source": "demo",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/deploy/.spellbook",
+      "name": "deploy",
+      "path": ".agents/skills/deploy",
+      "source": "deploy",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/diagnose/.spellbook",
+      "name": "diagnose",
+      "path": ".agents/skills/diagnose",
+      "source": "diagnose",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/flywheel/.spellbook",
+      "name": "flywheel",
+      "path": ".agents/skills/flywheel",
+      "source": "flywheel",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/groom/.spellbook",
+      "name": "groom",
+      "path": ".agents/skills/groom",
+      "source": "groom",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/implement/.spellbook",
+      "name": "implement",
+      "path": ".agents/skills/implement",
+      "source": "implement",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/monitor/.spellbook",
+      "name": "monitor",
+      "path": ".agents/skills/monitor",
+      "source": "monitor",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": true,
+      "category": "universal",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/office-hours/.spellbook",
+      "name": "office-hours",
+      "path": ".agents/skills/office-hours",
+      "source": "office-hours",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/qa/.spellbook",
+      "name": "qa",
+      "path": ".agents/skills/qa",
+      "source": "qa",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/refactor/.spellbook",
+      "name": "refactor",
+      "path": ".agents/skills/refactor",
+      "source": "refactor",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": true,
+      "category": "universal",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/reflect/.spellbook",
+      "name": "reflect",
+      "path": ".agents/skills/reflect",
+      "source": "reflect",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/research/.spellbook",
+      "name": "research",
+      "path": ".agents/skills/research",
+      "source": "research",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/settle/.spellbook",
+      "name": "settle",
+      "path": ".agents/skills/settle",
+      "source": "settle",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/shape/.spellbook",
+      "name": "shape",
+      "path": ".agents/skills/shape",
+      "source": "shape",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/ship/.spellbook",
+      "name": "ship",
+      "path": ".agents/skills/ship",
+      "source": "ship",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/trace/.spellbook",
+      "name": "trace",
+      "path": ".agents/skills/trace",
+      "source": "trace",
+      "symlink_target": null
+    },
+    {
+      "byte_identical_to_source": false,
+      "category": "workflow",
+      "has_skill_md": true,
+      "installed_by": "tailor",
+      "is_symlink": false,
+      "marker_path": ".agents/skills/yeet/.spellbook",
+      "name": "yeet",
+      "path": ".agents/skills/yeet",
+      "source": "yeet",
+      "symlink_target": null
+    }
+  ],
+  "lifecycle_facts": {
+    "deliver": [
+      {
+        "line": 13,
+        "path": ".agents/skills/deliver/SKILL.md",
+        "text": "- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`."
+      },
+      {
+        "line": 16,
+        "path": ".agents/skills/deliver/SKILL.md",
+        "text": "- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` t"
+      },
+      {
+        "line": 20,
+        "path": ".agents/skills/deliver/SKILL.md",
+        "text": "Use /deliver to take one active Sploot backlog item to merge-ready, stopping before merge/push/deploy. If no item is named, select the highest-priority `ready` item from `backlog.d/`; today that means checking the active table in `backlog.d"
+      },
+      {
+        "line": 22,
+        "path": ".agents/skills/deliver/SKILL.md",
+        "text": "Compose the loop: /shape -> /implement -> /ci -> /code-review -> /refactor -> /qa. Carry the selected `backlog.d/<id>-<slug>.md` reference through branch, commit/PR body, evidence, and final handoff so /ship can archive it. Report gate evid"
+      }
+    ],
+    "flywheel": [
+      {
+        "line": 13,
+        "path": ".agents/skills/flywheel/SKILL.md",
+        "text": "- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`."
+      },
+      {
+        "line": 16,
+        "path": ".agents/skills/flywheel/SKILL.md",
+        "text": "- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` t"
+      }
+    ],
+    "groom": [
+      {
+        "line": 13,
+        "path": ".agents/skills/groom/SKILL.md",
+        "text": "- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`."
+      },
+      {
+        "line": 16,
+        "path": ".agents/skills/groom/SKILL.md",
+        "text": "- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` t"
+      },
+      {
+        "line": 20,
+        "path": ".agents/skills/groom/SKILL.md",
+        "text": "Use /groom to keep `backlog.d/` aligned with real Sploot risks: production incidents, CI failures, extension release blockers, docs drift, stale dependency PRs, and recently touched hot paths. Do not use GitHub Issues as the active tracker."
+      },
+      {
+        "line": 22,
+        "path": ".agents/skills/groom/SKILL.md",
+        "text": "Always run a tidy pass: compare active top-level tickets with `backlog.d/_done/`, recent commits, and PR/body trailers. If a shipped item remains active, either archive it with a `What Was Built` note or flag the contradiction. New tickets "
+      }
+    ],
+    "implement": [
+      {
+        "line": 13,
+        "path": ".agents/skills/implement/SKILL.md",
+        "text": "- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`."
+      },
+      {
+        "line": 16,
+        "path": ".agents/skills/implement/SKILL.md",
+        "text": "- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` t"
+      },
+      {
+        "line": 24,
+        "path": ".agents/skills/implement/SKILL.md",
+        "text": "Use branch/commit references that /ship can resolve back to `backlog.d/<id>-<slug>.md`. DB-backed code needs a pgvector `DATABASE_URL` for proof or an explicit unverified note."
+      }
+    ],
+    "settle": [
+      {
+        "line": 13,
+        "path": ".agents/skills/settle/SKILL.md",
+        "text": "- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`."
+      },
+      {
+        "line": 16,
+        "path": ".agents/skills/settle/SKILL.md",
+        "text": "- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` t"
+      },
+      {
+        "line": 22,
+        "path": ".agents/skills/settle/SKILL.md",
+        "text": "Before calling ready: ensure the backlog reference is structured, the active ticket is either still active intentionally or ready to archive, docs/API/release notes are synced, and the CI parity gate has current evidence. For extension rele"
+      }
+    ],
+    "ship": [
+      {
+        "line": 13,
+        "path": ".agents/skills/ship/SKILL.md",
+        "text": "- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`."
+      },
+      {
+        "line": 16,
+        "path": ".agents/skills/ship/SKILL.md",
+        "text": "- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` t"
+      },
+      {
+        "line": 22,
+        "path": ".agents/skills/ship/SKILL.md",
+        "text": "Closure is mechanical: each shipped `backlog.d/<id>-*.md` gets `Status: done`, a `## What Was Built` note, moves to `backlog.d/_done/`, and is referenced by `Backlog: backlog.d/<id>-<slug>.md` or `Closes-backlog:` / `Ships-backlog:` in the "
+      }
+    ],
+    "trace": [
+      {
+        "line": 2,
+        "path": ".agents/skills/trace/SKILL.md",
+        "text": "name: trace"
+      },
+      {
+        "line": 7,
+        "path": ".agents/skills/trace/SKILL.md",
+        "text": "# /trace"
+      },
+      {
+        "line": 13,
+        "path": ".agents/skills/trace/SKILL.md",
+        "text": "- Tracker: local markdown files in `backlog.d/`; GitHub Issues are not the source of truth. Active work stays top-level, done work moves to `backlog.d/_done/`."
+      },
+      {
+        "line": 16,
+        "path": ".agents/skills/trace/SKILL.md",
+        "text": "- Closure signal: move the backlog item to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and a conventional commit/PR body carrying `Backlog: backlog.d/<id>-<slug>.md` or explicit `Closes-backlog:` / `Ships-backlog:` t"
+      },
+      {
+        "line": 20,
+        "path": ".agents/skills/trace/SKILL.md",
+        "text": "Use /trace to leave durable breadcrumbs for Sploot work that future agents must recover: branch-point decisions, blocker state, release evidence, authenticated QA receipts, and why a backlog item stayed active."
+      },
+      {
+        "line": 22,
+        "path": ".agents/skills/trace/SKILL.md",
+        "text": "Trace artifacts should live in the repo surface that owns them: backlog item notes for lifecycle state, `apps/web/docs/deployed-smoke-report.json` for deployed smoke, extension listing/release docs for Chrome Web Store evidence, and PR/comm"
+      }
+    ]
+  },
+  "portable_path_hits": [],
+  "repo_brief": {
+    "debt_ids": [
+      "007-publish-extension-web-store-release.md"
+    ],
+    "exists": true,
+    "generated": null,
+    "load_bearing_gate": null,
+    "path": ".spellbook/repo-brief.md",
+    "says_no_deploy_target": false
+  },
+  "repo_root": "/Users/phaedrus/.codex/worktrees/5075/sploot",
+  "run_id": "20260522T160014Z",
+  "schema_version": 1,
+  "shared_scripts": [
+    {
+      "exists": true,
+      "matches_source": true,
+      "path": "scripts/lib/backlog.sh",
+      "source_exists": true
+    },
+    {
+      "exists": true,
+      "matches_source": true,
+      "path": "scripts/lib/verdicts.sh",
+      "source_exists": true
+    }
+  ],
+  "shared_skill_root": ".agents/skills",
+  "spellbook_root": "/Users/phaedrus/Development/spellbook",
+  "stale_lifecycle_hits": [],
+  "workflow_byte_identical": []
+}

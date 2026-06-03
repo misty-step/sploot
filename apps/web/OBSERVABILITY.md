@@ -2,7 +2,26 @@
 
 ## Overview
 
-This guide is the go-to reference when you need to peek behind the curtain of Sploot's behaviour in production. Everything below is tuned for Vercel Logs + Sentry. Copy, paste, tweak filters, and keep the vibes tidy.
+This guide is the go-to reference when you need to inspect Sploot's behaviour in production. Vercel Logs and Sentry remain the human-debugging surfaces; Canary is the agent-facing substrate for grouped errors, health checks, replay, and annotations.
+
+## Canary Integration
+
+Server-side route failures and authenticated client error telemetry are forwarded to Canary when these production environment variables are present:
+
+```env
+CANARY_ENDPOINT=https://canary-obs.fly.dev
+CANARY_API_KEY=<ingest-scoped key>
+CANARY_SERVICE_NAME=sploot-web
+```
+
+Canary forwarding is best-effort: failures are swallowed so observability never blocks upload, search, auth, or telemetry responses. Payloads are sanitized before ingest; token, cookie, secret, session, and API-key shaped metadata keys are redacted.
+
+Runtime proof points:
+
+- `/api/health` includes `diagnostics.canary_configured`.
+- `/api/health/services` includes `services.canary` with `healthy`, `degraded`, or `not_configured`.
+- `EXPECT_CANARY_CONFIGURED=1 pnpm --filter web smoke:deployed` fails deployed smoke when Canary is not configured and reachable.
+- Canary query path: `GET /api/v1/query?service=sploot-web&window=1h`.
 
 ## SLO Monitoring Queries
 
@@ -87,6 +106,7 @@ Use these to calibrate alerts in Vercel or external tooling:
 | No logs appearing | Ensure `withObservability` wraps the route; confirm `TRACE_ID` header not stripped by clients. |
 | Missing analytics events | Verify client isn’t in Do Not Track mode; ensure `@vercel/analytics` is loaded. |
 | Sentry not capturing | Check `SENTRY_DSN` in env + preview env; run `npx @sentry/wizard` if reinitialising. |
+| Canary not receiving errors | Check `CANARY_ENDPOINT`, `CANARY_API_KEY`, and `/api/health/services` `services.canary`; run deployed smoke with `EXPECT_CANARY_CONFIGURED=1`. |
 | Telemetry endpoint returning 401 | Requires authenticated user; confirm session in app/api/telemetry hits `getAuth`. |
 | High cost alerts | Pull `/api/analytics/usage` to confirm counts per hour/day; cross-check with Vercel log queries above. |
 

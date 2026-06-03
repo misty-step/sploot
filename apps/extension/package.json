@@ -4,17 +4,20 @@
   "description": "Chrome extension for saving memes to Sploot",
   "type": "module",
   "scripts": {
-    "dev": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001} wxt",
+    "dev": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001} VITE_CLERK_SYNC_HOST=${VITE_CLERK_SYNC_HOST:-http://localhost:3001} wxt",
     "dev:firefox": "wxt -b firefox",
-    "build": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001} WXT_MODE=development wxt build",
-    "build:prod": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://www.sploot.app} WXT_MODE=production wxt build",
+    "build": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001} VITE_CLERK_SYNC_HOST=${VITE_CLERK_SYNC_HOST:-http://localhost:3001} WXT_MODE=development wxt build",
+    "build:prod": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://www.sploot.app} VITE_CLERK_SYNC_HOST=${VITE_CLERK_SYNC_HOST:-https://clerk.sploot.app} WXT_MODE=production wxt build",
+    "build:prod:unpacked": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://www.sploot.app} VITE_CLERK_SYNC_HOST=${VITE_CLERK_SYNC_HOST:-https://clerk.sploot.app} INCLUDE_CRX_KEY=true WXT_MODE=production wxt build",
     "build:firefox": "WXT_MODE=development wxt build -b firefox",
+    "release:check": "node scripts/validate-store-release.mjs",
     "zip": "wxt zip",
-    "zip:prod": "WXT_MODE=production wxt zip",
+    "zip:prod": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://www.sploot.app} VITE_CLERK_SYNC_HOST=${VITE_CLERK_SYNC_HOST:-https://clerk.sploot.app} WXT_MODE=production wxt zip",
     "zip:firefox": "wxt zip -b firefox",
-    "postinstall": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001} wxt prepare",
+    "postinstall": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001} VITE_CLERK_SYNC_HOST=${VITE_CLERK_SYNC_HOST:-http://localhost:3001} wxt prepare",
+    "test": "vitest run",
     "type-check": "tsc --noEmit",
-    "lint": "echo 'No lint configured for extension'",
+    "lint": "tsc --noEmit --pretty false",
     "generate:crx-key": "bash scripts/generate-crx-key.sh",
     "generate:icons": "node scripts/generate-icons.js",
     "setup:clerk": "bash scripts/configure-clerk.sh"
@@ -22,20 +25,21 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.20.0",
+  "packageManager": "pnpm@10.22.0",
   "devDependencies": {
-    "@types/chrome": "^0.1.27",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
+    "@types/chrome": "^0.1.42",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "sharp": "^0.34.5",
     "typescript": "^5.9.3",
-    "wxt": "^0.20.11"
+    "vitest": "^4.1.7",
+    "wxt": "^0.20.26"
   },
   "dependencies": {
-    "@sploot/common": "workspace:*",
-    "@clerk/chrome-extension": "^2.7.14",
-    "@clerk/clerk-react": "^5.53.8"
+    "@clerk/chrome-extension": "^2.9.16",
+    "@clerk/clerk-react": "^5.61.7",
+    "@sploot/common": "workspace:*"
   }
 }

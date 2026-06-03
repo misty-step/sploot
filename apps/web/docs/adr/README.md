@@ -10,7 +10,7 @@ This directory contains Architecture Decision Records for Sploot, a Vercel-first
 | [002](./002-vector-storage-strategy.md) | Vector Storage Strategy | Proposed | Use Vercel Postgres with pgvector HNSW indexes for similarity search |
 | [003](./003-upload-processing-pipeline.md) | Upload Processing Pipeline | Proposed | Hybrid sync-async pipeline with optimistic UI updates |
 | [004](./004-caching-architecture.md) | Caching Architecture | Proposed | Multi-layer caching: client, edge, Redis, and database levels |
-| [005](./005-pwa-implementation-strategy.md) | PWA Implementation Strategy | Proposed | Network-first PWA with intelligent caching and background sync |
+| [005](./005-pwa-implementation-strategy.md) | PWA Implementation Strategy | Proposed | Network-first PWA with intelligent caching; service-worker upload replay is not supported |
 
 ## Decision Process
 
@@ -104,7 +104,7 @@ Minimize operational overhead for single-developer maintenance:
 - [ADR-005](./005-pwa-implementation-strategy.md): PWA shell and service worker
 
 ### Phase 3: Advanced Features (M4+)
-- Background sync and offline functionality
+- Offline functionality and in-app upload retry
 - Advanced caching strategies and cache warming
 - Performance monitoring and optimization
 - Migration planning for future scale

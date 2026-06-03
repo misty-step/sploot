@@ -3,6 +3,7 @@ import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { getAuth } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
+import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 
 async function postHandler(req: NextRequest) {
   try {
@@ -46,6 +47,11 @@ async function postHandler(req: NextRequest) {
           { status: 404 }
         );
       }
+    }
+
+    const embeddingGate = getRuntimeGate('embeddings');
+    if (!embeddingGate.enabled) {
+      return runtimeGateResponse(embeddingGate);
     }
 
     let embeddingService;

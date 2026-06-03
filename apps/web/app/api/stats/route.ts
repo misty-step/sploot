@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUserIdWithSync } from '@/lib/auth/server';
+import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
+import { getStorageQuotaSnapshot } from '@/lib/quota/storage-quota-policy';
 
 /**
  * GET /api/stats
@@ -9,9 +12,12 @@ import { withObservability } from '@/lib/with-observability';
  * Lightweight per-user stats:
  * - assetCount: total non-deleted assets
  * - storageBytes: sum of asset sizes
+ * - storageLimitBytes: quota limit in bytes
+ * - storageRemainingBytes: available storage in bytes
+ * - storageUsagePercent: quota usage percentage
  * - lastUploadAt: ISO timestamp of most recent asset (or null)
  *
- * Single aggregate query, no joins.
+ * Single asset aggregate plus quota snapshot.
  */
 async function getHandler(_req: NextRequest) {
   try {
@@ -36,6 +42,12 @@ async function getHandler(_req: NextRequest) {
 
     const assetCount = aggregate._count.id;
     const storageBytes = aggregate._sum.size ?? 0;
+    const quota = await getStorageQuotaSnapshot(userId);
+    const storageLimitBytes = quota.limitBytes;
+    const storageRemainingBytes = Math.max(0, quota.limitBytes - storageBytes - (quota.reservedBytes ?? 0));
+    const storageUsagePercent = storageLimitBytes > 0
+      ? Math.min(100, Math.round((storageBytes / storageLimitBytes) * 1000) / 10)
+      : 0;
     const lastUploadAt = aggregate._max.createdAt
       ? aggregate._max.createdAt.toISOString()
       : null;
@@ -44,12 +56,19 @@ async function getHandler(_req: NextRequest) {
       {
         assetCount,
         storageBytes,
+        storageLimitBytes,
+        storageRemainingBytes,
+        storageUsagePercent,
         lastUploadAt,
       },
       { status: 200 }
     );
   } catch (error) {
-    console.error('Failed to fetch stats:', error);
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
+    logError('stats:get-failed', error);
     return NextResponse.json(
       { error: 'Failed to fetch stats' },
       { status: 500 }

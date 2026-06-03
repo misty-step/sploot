@@ -195,6 +195,15 @@ describe('withObservability', () => {
         success: false,
       })
     );
+    expect(record?.logger.logError).toHaveBeenCalledWith(
+      'request:server-error-status',
+      expect.any(Error),
+      expect.objectContaining({
+        operation: '/api/chaos',
+        statusCode: 500,
+        success: false,
+      })
+    );
   });
 
   it('logs errors, invokes unstable_rethrow, and rethrows', async () => {

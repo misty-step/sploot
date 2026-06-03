@@ -1,5 +1,7 @@
-export type SortDirectionValue = 'asc' | 'desc';
-export type SortOptionValue = 'recent' | 'date' | 'size' | 'name' | 'shuffle';
+import type { AssetSortBy, AssetSortDirection } from '@sploot/common';
+
+export type SortDirectionValue = AssetSortDirection;
+export type SortOptionValue = AssetSortBy;
 
 export interface LibraryFilterSnapshot {
   tagId: string | null;
@@ -31,4 +33,3 @@ export function haveFiltersChanged(
     prev.shuffleSeed !== current.shuffleSeed
   );
 }
-

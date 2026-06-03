@@ -5,7 +5,12 @@
  * Background context has elevated permissions to bypass CORS.
  */
 
-import { UPLOAD, isValidMimeType } from '@sploot/common';
+import {
+  UPLOAD,
+  isValidMimeType,
+  prepareImageForUpload,
+  isCompressibleImageType,
+} from '@sploot/common';
 
 /**
  * Fetch image from URL
@@ -59,23 +64,20 @@ export async function fetchImage(url: string): Promise<Blob> {
     // Get blob
     const blob = await response.blob();
 
-    // Validate size
-    if (blob.size > UPLOAD.maxSize) {
-      const sizeMB = (blob.size / 1024 / 1024).toFixed(2);
-      console.warn('[ImageFetcher] Image too large', { url, sizeMB });
-      throw new Error(`Image too large: ${sizeMB}MB (max ${UPLOAD.maxSizeMB}MB)`);
-    }
-
     // Ensure blob has correct MIME type
     if (!isValidMimeType(blob.type)) {
       // Try to infer from content-type header
       const inferredType = contentType || 'image/jpeg';
-      return new Blob([blob], { type: inferredType });
+      return await prepareFetchedImage(new Blob([blob], { type: inferredType }));
     }
 
-    return blob;
+    return await prepareFetchedImage(blob);
   } catch (error) {
     // If fetch fails, try fallback method using image element
+    if (error instanceof Error && error.message.includes('too large')) {
+      throw error;
+    }
+
     console.warn('[ImageFetcher] Fetch failed, trying fallback:', error);
     return await fetchViaImageElement(url);
   }
@@ -106,16 +108,9 @@ async function fetchViaImageElement(url: string): Promise<Blob> {
 
         // Convert to blob
         canvas
-          .convertToBlob({ type: 'image/png', quality: 0.95 })
+          .convertToBlob({ type: 'image/webp', quality: UPLOAD.compressionQuality })
           .then(blob => {
-            // Validate size
-            if (blob.size > UPLOAD.maxSize) {
-              const sizeMB = (blob.size / 1024 / 1024).toFixed(2);
-              reject(new Error(`Image too large: ${sizeMB}MB (max ${UPLOAD.maxSizeMB}MB)`));
-              return;
-            }
-
-            resolve(blob);
+            prepareFetchedImage(blob).then(resolve).catch(reject);
           })
           .catch(reject);
       } catch (error) {
@@ -136,4 +131,24 @@ async function fetchViaImageElement(url: string): Promise<Blob> {
       reject(new Error('Image load timeout'));
     }, UPLOAD.timeout);
   });
+}
+
+async function prepareFetchedImage(blob: Blob): Promise<Blob> {
+  let uploadBlob = blob;
+
+  if (blob.size > UPLOAD.compressionTargetSize && isCompressibleImageType(blob.type)) {
+    const file = new File([blob], 'image-from-page', {
+      type: blob.type,
+      lastModified: Date.now(),
+    });
+    uploadBlob = (await prepareImageForUpload(file)).file;
+  }
+
+  if (uploadBlob.size > UPLOAD.multipartSafeSize) {
+    const sizeMB = (uploadBlob.size / 1024 / 1024).toFixed(2);
+    console.warn('[ImageFetcher] Image too large after preparation', { sizeMB });
+    throw new Error(`Image too large after compression: ${sizeMB}MB`);
+  }
+
+  return uploadBlob;
 }

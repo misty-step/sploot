@@ -69,11 +69,11 @@ describe('Navbar', () => {
       expect(nav).toHaveClass('fixed', 'top-0', 'left-0', 'right-0');
     });
 
-    it('should have correct height (64px / h-16)', () => {
+    it('should have correct height (48px mobile, 64px desktop)', () => {
       render(<Navbar />);
 
       const nav = screen.getByRole('navigation');
-      expect(nav).toHaveClass('h-16');
+      expect(nav).toHaveClass('h-12', 'md:h-16');
     });
 
     it('should have correct z-index for layering', () => {
@@ -124,18 +124,18 @@ describe('NavbarSpacer', () => {
 
     const spacer = container.firstChild as HTMLElement;
     expect(spacer).toBeInTheDocument();
-    expect(spacer).toHaveClass('h-[calc(4rem+env(safe-area-inset-top))]');
+    expect(spacer).toHaveClass('h-[calc(3rem+env(safe-area-inset-top))]', 'md:h-[calc(4rem+env(safe-area-inset-top))]');
   });
 
-  it('should match navbar height (64px / h-16)', () => {
+  it('should match navbar height (48px mobile, 64px desktop)', () => {
     const { container: navbarContainer } = render(<Navbar />);
     const { container: spacerContainer } = render(<NavbarSpacer />);
 
     const navbar = navbarContainer.querySelector('nav');
     const spacer = spacerContainer.firstChild as HTMLElement;
 
-    // Navbar has h-16 class, spacer includes safe area inset
-    expect(navbar).toHaveClass('h-16');
-    expect(spacer).toHaveClass('h-[calc(4rem+env(safe-area-inset-top))]');
+    // Navbar has responsive height, spacer includes safe area inset
+    expect(navbar).toHaveClass('h-12', 'md:h-16');
+    expect(spacer).toHaveClass('h-[calc(3rem+env(safe-area-inset-top))]', 'md:h-[calc(4rem+env(safe-area-inset-top))]');
   });
 });

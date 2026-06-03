@@ -20,6 +20,16 @@ export default defineConfig({
     // Use: `WXT_MODE=production wxt build` for production builds
     // Default to development for safety
     const isProduction = process.env.WXT_MODE === 'production';
+    const includeCrxKey = !isProduction || process.env.INCLUDE_CRX_KEY === 'true';
+    const publishableKey = process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ?? '';
+
+    if (isProduction && !publishableKey.startsWith('pk_live_')) {
+      throw new Error('VITE_CLERK_PUBLISHABLE_KEY must be a pk_live_ key for production extension builds');
+    }
+
+    if (!isProduction && publishableKey && !publishableKey.startsWith('pk_test_')) {
+      throw new Error('VITE_CLERK_PUBLISHABLE_KEY must be a pk_test_ key for development extension builds');
+    }
 
     // Determine Clerk frontend API domain based on environment
     const clerkDomain = isProduction
@@ -31,11 +41,24 @@ export default defineConfig({
       throw new Error('VITE_API_BASE_URL is required for extension builds (e.g., https://sploot.app or http://localhost:3001)');
     }
     const normalizedApiHost = rawApiHost.replace(/\/$/, '');
+    if (isProduction && normalizedApiHost !== 'https://www.sploot.app') {
+      throw new Error('Production extension builds must use VITE_API_BASE_URL=https://www.sploot.app');
+    }
     const apiHostPermission = `${normalizedApiHost}/*`;
+    const rawSyncHost = process.env.VITE_CLERK_SYNC_HOST;
+    if (!rawSyncHost) {
+      throw new Error('VITE_CLERK_SYNC_HOST is required for extension builds (e.g., https://clerk.sploot.app or http://localhost:3001)');
+    }
+    const normalizedSyncHost = rawSyncHost.replace(/\/$/, '');
+    if (isProduction && normalizedSyncHost !== 'https://clerk.sploot.app') {
+      throw new Error('Production extension builds must use VITE_CLERK_SYNC_HOST=https://clerk.sploot.app');
+    }
+    const syncHostPermission = `${normalizedSyncHost}/*`;
 
     console.log(`[WXT Config] Building in ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
     console.log(`[WXT Config] Clerk domain: ${clerkDomain}`);
     console.log(`[WXT Config] API host permission: ${apiHostPermission}`);
+    console.log(`[WXT Config] Sync host permission: ${syncHostPermission}`);
 
     return {
       name: 'Sploot',
@@ -52,6 +75,7 @@ export default defineConfig({
         new Set([
           '*://*/*',
           apiHostPermission,
+          syncHostPermission,
           'https://sploot.app/*',
           'https://www.sploot.app/*',
           clerkDomain,
@@ -61,8 +85,8 @@ export default defineConfig({
       extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
       sandbox: "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self';",
     },
-      // Only include key for local development (Web Store assigns its own key)
-      ...(isProduction ? {} : { key: process.env.CRX_PUBLIC_KEY }),
+      // Web Store assigns its own key. Unpacked QA builds opt in so Chrome keeps a stable ID.
+      ...(includeCrxKey ? { key: process.env.CRX_PUBLIC_KEY } : {}),
       action: {
         default_popup: 'popup.html',
       },

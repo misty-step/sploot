@@ -32,14 +32,14 @@ export function UploadErrorDisplay({
         break;
       case 'view':
         if (error.action.data?.assetId) {
-          router.push(`/app?highlight=${error.action.data.assetId}`);
+          router.push(`/app/meme/${encodeURIComponent(error.action.data.assetId)}`);
         }
         break;
       case 'signin':
         router.push('/sign-in');
         break;
       case 'upgrade':
-        router.push('/app/settings?tab=billing');
+        router.push('/app/settings');
         break;
       case 'contact':
         window.open('mailto:support@sploot.app?subject=Upload Error', '_blank');

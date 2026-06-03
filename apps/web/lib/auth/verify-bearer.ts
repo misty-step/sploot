@@ -1,6 +1,36 @@
 import { NextRequest } from 'next/server';
 import { createClerkClient } from '@clerk/backend';
 
+const DEFAULT_AUTHORIZED_PARTIES = [
+  'https://sploot.app',
+  'https://www.sploot.app',
+  'chrome-extension://ipnlamdcakhmbidjlpoinkgimfapejna',
+  'chrome-extension://hikefmnilgapfckjmillbhcocihjffhn',
+  'chrome-extension://fbhkflbcnllfogefckablkafjknmcfnd',
+  'http://localhost:3000',
+  'http://localhost:3001',
+];
+
+function parseAuthorizedParties(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+}
+
+export function getClerkAuthorizedParties(): string[] {
+  return Array.from(
+    new Set([
+      ...DEFAULT_AUTHORIZED_PARTIES,
+      ...parseAuthorizedParties(process.env.CLERK_AUTHORIZED_PARTIES),
+    ])
+  );
+}
+
 /**
  * Verify Bearer token or cookie authentication for API requests
  *
@@ -27,13 +57,8 @@ export async function verifyBearerOrThrow(req: NextRequest): Promise<string> {
 
   // authenticateRequest() automatically checks both Authorization header and cookies
   const { isSignedIn, toAuth } = await clerk.authenticateRequest(req, {
-    // Authorized parties - protect against CSRF by whitelisting origins
-    authorizedParties: [
-      'https://sploot.app',
-      'https://www.sploot.app',
-      'chrome-extension://ipnlamdcakhmbidjlpoinkgimfapejna', // Extension ID
-      'http://localhost:3000',
-    ],
+    // Authorized parties protect against CSRF by whitelisting trusted origins.
+    authorizedParties: getClerkAuthorizedParties(),
     // Accept session tokens (what the extension sends)
     acceptsToken: 'session_token',
     // Optional: Enable networkless verification if CLERK_JWT_KEY is set

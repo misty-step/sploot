@@ -173,7 +173,7 @@ export function SearchBar({
             placeholder={placeholder || 'search your memes...'}
             autoFocus={autoFocus}
             className={`
-              w-full h-[56px] pl-6 pr-12 text-base font-mono
+              w-full h-10 md:h-[56px] pl-3 md:pl-6 pr-10 md:pr-12 text-sm md:text-base font-mono
               bg-card text-foreground placeholder-muted-foreground/60
               border border-border rounded-none
               focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan focus-visible:ring-offset-2

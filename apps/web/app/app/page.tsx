@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { useAssets, useSearchAssets } from '@/hooks/use-assets';
+import { useAuthActions } from '@/lib/auth/client';
 import { ImageGrid } from '@/components/library/image-grid';
 import { ImageGridErrorBoundary } from '@/components/library/image-grid-error-boundary';
 import { AssetIntegrityBanner } from '@/components/library/asset-integrity-banner';
@@ -36,6 +37,7 @@ import { haveFiltersChanged, type LibraryFilterSnapshot } from '@/lib/filter-cha
 
 function AppPageClient() {
   const router = useRouter();
+  const { signOut } = useAuthActions();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryParam = searchParams.get('q') ?? '';
@@ -135,6 +137,7 @@ function AppPageClient() {
     hasMore,
     total,
     integrityIssue,
+    error: libraryError,
     loadAssets,
     updateAsset,
     deleteAsset,
@@ -415,7 +418,7 @@ function AppPageClient() {
     }
 
     // Name sorting: client-side since DB doesn't support it
-    if (sortBy === 'name') {
+    if (sortBy === 'pathname') {
       const sorted = [...assets].sort((a, b) => {
         const nameA = a.filename.toLowerCase();
         const nameB = b.filename.toLowerCase();
@@ -540,9 +543,9 @@ function AppPageClient() {
         });
       }
 
-      setSelectedAsset(asset);
+      router.push(`/app/meme/${asset.id}`);
     },
-    [filteredSearchAssets, isSearching]
+    [filteredSearchAssets, isSearching, router]
   );
 
   // Handler for performing the actual delete with modal integration
@@ -624,14 +627,14 @@ function AppPageClient() {
   }, [selectedAsset]);
 
   return (
-    <div className="flex h-[calc(100vh-56px)] flex-col">
+    <div className="flex h-[calc(100vh-48px)] md:h-[calc(100vh-56px)] flex-col">
       {/* Container with ultra-wide support - max-width at 1920px+ */}
-      <div className="px-6 pb-8 pt-8 md:px-10 2xl:px-12 border-b-[6px] border-electric-lime">
+      <div className="px-3 pb-3 pt-3 md:px-10 md:pb-8 md:pt-8 2xl:px-12 border-b-[3px] md:border-b-[6px] border-electric-lime">
         <div className="mx-auto w-full max-w-7xl 2xl:max-w-[1920px]">
-          <header className="flex flex-col gap-6">
+          <header className="flex flex-col gap-2 md:gap-6">
             {/* Terminal-style status bar */}
             {stats.total > 0 && (
-              <div className="font-mono text-sm brutalist-border border-border bg-card p-3 flex items-center gap-4 flex-wrap">
+              <div className="hidden md:flex font-mono text-sm brutalist-border border-border bg-card p-3 items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
                   <span className="text-muted-foreground uppercase">MEMES:</span>
                   <span className="text-electric-lime font-bold">{stats.total.toLocaleString()}</span>
@@ -673,14 +676,22 @@ function AppPageClient() {
             />
 
             {/* Action toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 md:gap-3">
               {/* Left group: Primary actions */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
+                <UploadButton
+                  onClick={() => setShowUploadPanel((prev) => !prev)}
+                  isActive={showUploadPanel}
+                  size="sm"
+                  showLabel={false}
+                  className="md:hidden"
+                />
                 <UploadButton
                   onClick={() => setShowUploadPanel((prev) => !prev)}
                   isActive={showUploadPanel}
                   size="lg"
                   showLabel={true}
+                  className="hidden md:inline-flex"
                 />
                 {failedEmbeddings.length > 0 && (
                   <Button
@@ -702,15 +713,29 @@ function AppPageClient() {
                       if (bangersOnly) toggleBangers();
                     }
                   }}
+                  size="sm"
+                  showLabels={true}
+                  className="md:hidden"
+                />
+                <FilterChips
+                  activeFilter={bangersOnly ? 'bangers' : 'all'}
+                  onFilterChange={(filter) => {
+                    if (filter === 'bangers') {
+                      if (!bangersOnly) toggleBangers();
+                    } else if (filter === 'all') {
+                      if (bangersOnly) toggleBangers();
+                    }
+                  }}
                   size="lg"
                   showLabels={true}
+                  className="hidden md:flex"
                 />
               </div>
 
               {/* Right group: View controls */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
                 <SortDropdown
-                  value={sortBy === 'recent' ? 'recent' : sortBy as any}
+                  value={sortBy}
                   direction={sortOrder}
                   onChange={handleSortChange}
                 />
@@ -740,7 +765,7 @@ function AppPageClient() {
             )}
 
             {showUploadPanel && (
-              <div className="border border-dashed border-border bg-muted p-5">
+              <div className="border border-dashed border-border bg-muted p-3 md:p-5">
                 <UploadZone
                   isOnDashboard={true}
                   onUploadComplete={(stats) => {
@@ -810,6 +835,12 @@ function AppPageClient() {
                   </Alert>
                 )}
               </div>
+            )}
+
+            {!isSearching && libraryError && (
+              <Alert variant="destructive">
+                <AlertDescription>{libraryError}</AlertDescription>
+              </Alert>
             )}
           </header>
         </div>
@@ -1057,7 +1088,10 @@ function AppPageClient() {
         isOpen={isCommandPaletteOpen}
         onClose={closePalette}
         onUpload={() => router.push('/app/upload')}
-        onSignOut={() => window.location.href = '/api/auth/signout'}
+        onSignOut={async () => {
+          await signOut();
+          router.push('/');
+        }}
       />
 
       {/* Keyboard Shortcuts Help */}

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { UploadValidationService, ValidationError } from '@/lib/upload/validation-service';
-import { MAX_FILE_SIZE } from '@/lib/blob';
+import { UPLOAD } from '@sploot/common';
 
 describe('UploadValidationService', () => {
   let validator: UploadValidationService;
@@ -67,7 +67,7 @@ describe('UploadValidationService', () => {
     });
 
     it('accepts file at exact size limit', () => {
-      const result = validator.validateFileSize(MAX_FILE_SIZE);
+      const result = validator.validateFileSize(UPLOAD.maxSize);
       expect(result.valid).toBe(true);
     });
 
@@ -88,7 +88,7 @@ describe('UploadValidationService', () => {
     });
 
     it('rejects file exceeding size limit by 1 byte', () => {
-      const result = validator.validateFileSize(MAX_FILE_SIZE + 1);
+      const result = validator.validateFileSize(UPLOAD.maxSize + 1);
       expect(result.valid).toBe(false);
       expect(result.error?.errorType).toBe('file_too_large');
     });
@@ -229,7 +229,7 @@ describe('UploadValidationService', () => {
     });
 
     it('rejects upload with invalid file size', () => {
-      const largeContent = new Uint8Array(MAX_FILE_SIZE + 1);
+      const largeContent = new Uint8Array(UPLOAD.maxSize + 1);
       const file = new File([largeContent], 'test.jpg', { type: 'image/jpeg' });
       const result = validator.validateUpload(file, ['tag1']);
       expect(result.valid).toBe(false);

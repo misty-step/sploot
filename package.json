@@ -2,6 +2,17 @@
   "name": "sploot-monorepo",
   "private": true,
   "packageManager": "pnpm@10.22.0",
+  "pnpm": {
+    "overrides": {
+      "handlebars": "4.7.9",
+      "js-cookie": "3.0.7",
+      "postcss@<8.5.10": "8.5.15",
+      "serialize-javascript@<=7.0.2": "7.0.5",
+      "undici@<6.24.0": "6.24.0",
+      "undici@>=7.0.0 <7.24.0": "7.24.0",
+      "uuid@<11.1.1": "11.1.1"
+    }
+  },
   "scripts": {
     "dev": "PORT=${PORT:-3001} VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001} turbo run dev",
     "dev:web": "turbo run dev --filter=web",
@@ -10,9 +21,15 @@
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
     "test": "turbo run test",
+    "release": "semantic-release",
+    "release:dry-run": "semantic-release --dry-run --no-ci",
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
-    "turbo": "^2.3.3"
+    "@commitlint/cli": "^20.5.3",
+    "@commitlint/config-conventional": "^20.5.3",
+    "@semantic-release/github": "^12.0.8",
+    "semantic-release": "^25.0.3",
+    "turbo": "^2.9.14"
   }
 }

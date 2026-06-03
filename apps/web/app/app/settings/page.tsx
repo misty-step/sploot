@@ -1,15 +1,56 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useAuthUser, useAuthActions } from '@/lib/auth/client';
 import { usePwaInstallPrompt } from '@/hooks/use-pwa-install';
 import { cn } from '@/lib/utils';
+const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0';
+
+interface StorageStats {
+  storageBytes: number;
+  storageLimitBytes: number;
+  storageRemainingBytes: number;
+  storageUsagePercent: number;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
 
 export default function SettingsPage() {
   const { user } = useAuthUser();
   const { signOut } = useAuthActions();
   const { installable, installed, promptInstall } = usePwaInstallPrompt();
   const [signOutLoading, setSignOutLoading] = useState(false);
+  const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStorageStats() {
+      const response = await fetch('/api/stats');
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!cancelled) {
+        setStorageStats({
+          storageBytes: data.storageBytes ?? 0,
+          storageLimitBytes: data.storageLimitBytes ?? 0,
+          storageRemainingBytes: data.storageRemainingBytes ?? 0,
+          storageUsagePercent: data.storageUsagePercent ?? 0,
+        });
+      }
+    }
+
+    loadStorageStats().catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSignOut = async () => {
     setSignOutLoading(true);
@@ -59,6 +100,30 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      <section className="bg-card border border-border p-5 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Storage</h2>
+          <p className="text-muted-foreground text-sm mt-1">
+            {storageStats
+              ? `${formatBytes(storageStats.storageBytes)} of ${formatBytes(storageStats.storageLimitBytes)} used`
+              : 'Checking storage usage...'}
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <div className="h-2 bg-muted overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all"
+              style={{ width: `${Math.min(100, storageStats?.storageUsagePercent ?? 0)}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{storageStats ? `${storageStats.storageUsagePercent}% used` : 'Usage unavailable'}</span>
+            <span>{storageStats ? `${formatBytes(storageStats.storageRemainingBytes)} remaining` : ''}</span>
+          </div>
+        </div>
+      </section>
+
       <section className="bg-card border border-border p-5 space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-foreground">Install as app</h2>
@@ -103,6 +168,31 @@ export default function SettingsPage() {
         <p className="text-muted-foreground text-sm">
           Theme switching, notification spam, and squad-sharing are on the roadmap. Ping us with your wildest feature dreams.
         </p>
+      </section>
+
+      <section className="bg-card border border-border p-5 space-y-3">
+        <h2 className="text-lg font-semibold text-foreground">About</h2>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground text-sm">Version</span>
+          <span className="font-mono text-sm text-foreground">{APP_VERSION}</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground text-sm">What&apos;s new</span>
+          <Link
+            href="/changelog"
+            className="text-sm text-accent-cyan hover:underline"
+          >
+            View changelog →
+          </Link>
+        </div>
+        <div className="pt-2 border-t border-border flex gap-4 text-sm">
+          <Link href="/support" className="text-muted-foreground hover:text-foreground transition-colors">
+            Support
+          </Link>
+          <Link href="/privacy" className="text-muted-foreground hover:text-foreground transition-colors">
+            Privacy
+          </Link>
+        </div>
       </section>
     </div>
   );

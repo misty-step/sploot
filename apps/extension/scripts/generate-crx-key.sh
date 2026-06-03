@@ -65,7 +65,7 @@ CRX_PUBLIC_KEY="$PUBLIC_KEY"
 VITE_CLERK_PUBLISHABLE_KEY=
 CLERK_SECRET_KEY=
 # Optional API override
-# VITE_API_BASE_URL=http://localhost:3000
+# VITE_API_BASE_URL=http://localhost:3001
 EOF
   echo "✓ Created $ENV_FILE with CRX_PUBLIC_KEY"
 fi

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUserIdWithSync } from '@/lib/auth/server';
+import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
 
 /**
  * GET /api/tags - Get all tags for the current user
@@ -45,7 +47,11 @@ async function getHandler(req: NextRequest) {
       })),
     });
   } catch (error) {
-    console.error('Error fetching tags:', error);
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
+    logError('tags:list-failed', error);
     return NextResponse.json(
       { error: 'Failed to fetch tags' },
       { status: 500 }
@@ -109,7 +115,11 @@ async function postHandler(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Error creating tag:', error);
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
+    logError('tags:create-failed', error);
     return NextResponse.json(
       { error: 'Failed to create tag' },
       { status: 500 }

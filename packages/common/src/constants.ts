@@ -10,6 +10,16 @@ export const UPLOAD = {
   maxSize: 10 * 1024 * 1024,
   /** Maximum file size in MB for display */
   maxSizeMB: 10,
+  /** Safe multipart payload budget for Vercel Functions (4.5MB hard limit) */
+  multipartSafeSize: 4 * 1024 * 1024,
+  /** Compression target leaves room for multipart overhead */
+  compressionTargetSize: Math.floor(3.8 * 1024 * 1024),
+  /** Maximum static image edge before upload */
+  maxImageDimension: 2048,
+  /** Initial browser re-encode quality for static images */
+  compressionQuality: 0.86,
+  /** Lowest browser re-encode quality before giving up */
+  minimumCompressionQuality: 0.62,
   /** Upload timeout in milliseconds */
   timeout: 10_000,
   /** Allowed MIME types for image uploads */
@@ -21,6 +31,22 @@ export const UPLOAD = {
     'image/gif',
   ] as const,
 } as const;
+
+export const ASSET_SORT = {
+  values: ['createdAt', 'updatedAt', 'size', 'pathname', 'shuffle'] as const,
+  directions: ['asc', 'desc'] as const,
+} as const;
+
+export type AssetSortBy = (typeof ASSET_SORT.values)[number];
+export type AssetSortDirection = (typeof ASSET_SORT.directions)[number];
+
+export function isAssetSortBy(value: string): value is AssetSortBy {
+  return ASSET_SORT.values.includes(value as AssetSortBy);
+}
+
+export function isAssetSortDirection(value: string): value is AssetSortDirection {
+  return ASSET_SORT.directions.includes(value as AssetSortDirection);
+}
 
 /** Type helper for allowed MIME types */
 export type AllowedMimeType = (typeof UPLOAD.allowedTypes)[number];

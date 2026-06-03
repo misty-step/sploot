@@ -6,9 +6,6 @@ import {
   Upload,
   Settings,
   Search,
-  Grid3x3,
-  Grid2x2,
-  LayoutGrid,
   Home,
   LogOut,
 } from 'lucide-react';
@@ -28,8 +25,6 @@ interface CommandPaletteProps {
   onClose: () => void;
   onUpload?: () => void;
   onSignOut?: () => void;
-  onDensityChange?: (density: 'compact' | 'dense' | 'comfortable') => void;
-  currentDensity?: 'compact' | 'dense' | 'comfortable';
 }
 
 /**
@@ -42,8 +37,6 @@ export function CommandPalette({
   onClose,
   onUpload,
   onSignOut,
-  onDensityChange,
-  currentDensity = 'dense',
 }: CommandPaletteProps) {
   const router = useRouter();
 
@@ -70,13 +63,6 @@ export function CommandPalette({
     }, 100);
   };
 
-  const handleDensityChange = (density: 'compact' | 'dense' | 'comfortable') => {
-    onClose();
-    if (onDensityChange) {
-      onDensityChange(density);
-    }
-  };
-
   const handleHome = () => {
     onClose();
     router.push('/app');
@@ -86,9 +72,6 @@ export function CommandPalette({
     onClose();
     if (onSignOut) {
       onSignOut();
-    } else {
-      // Default sign out behavior
-      window.location.href = '/api/auth/signout';
     }
   };
 
@@ -116,28 +99,6 @@ export function CommandPalette({
           </CommandItem>
         </CommandGroup>
 
-        <CommandSeparator />
-
-        <CommandGroup heading="View Density">
-          <CommandItem onSelect={() => handleDensityChange('compact')}>
-            <Grid3x3 className="mr-2" />
-            <span>Compact</span>
-            {currentDensity === 'compact' && <CommandShortcut>✓</CommandShortcut>}
-          </CommandItem>
-          <CommandItem onSelect={() => handleDensityChange('dense')}>
-            <Grid2x2 className="mr-2" />
-            <span>Dense</span>
-            {currentDensity === 'dense' && <CommandShortcut>✓</CommandShortcut>}
-          </CommandItem>
-          <CommandItem onSelect={() => handleDensityChange('comfortable')}>
-            <LayoutGrid className="mr-2" />
-            <span>Comfortable</span>
-            {currentDensity === 'comfortable' && <CommandShortcut>✓</CommandShortcut>}
-          </CommandItem>
-        </CommandGroup>
-
-        <CommandSeparator />
-
         <CommandGroup heading="Navigation">
           <CommandItem onSelect={handleHome}>
             <Home className="mr-2" />
@@ -152,12 +113,14 @@ export function CommandPalette({
 
         <CommandSeparator />
 
-        <CommandGroup heading="Account">
-          <CommandItem onSelect={handleSignOut}>
-            <LogOut className="mr-2" />
-            <span>Sign Out</span>
-          </CommandItem>
-        </CommandGroup>
+        {onSignOut && (
+          <CommandGroup heading="Account">
+            <CommandItem onSelect={handleSignOut}>
+              <LogOut className="mr-2" />
+              <span>Sign Out</span>
+            </CommandItem>
+          </CommandGroup>
+        )}
       </CommandList>
     </CommandDialog>
   );

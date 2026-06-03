@@ -100,15 +100,21 @@ async function handleImageSave(
     const result = await uploadImage(imageBlob, filename);
 
     // Show success notification
-    showSuccessNotification(filename, result.thumbnailUrl);
+    showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
 
     console.log('[ContextMenu] Image saved successfully:', result.assetId);
   } catch (error) {
     console.error('[ContextMenu] Failed to save image:', error);
 
-    const errorMessage =
-      error instanceof Error ? error.message : 'Failed to save image';
-    showErrorNotification(errorMessage);
+    if (error instanceof Error && 'actionHref' in error && typeof error.actionHref === 'string') {
+      showErrorNotification({
+        message: error.message,
+        actionHref: error.actionHref,
+      });
+      return;
+    }
+
+    showErrorNotification(error instanceof Error ? error.message : 'Failed to save image');
   }
 }
 

@@ -3,10 +3,14 @@ import { unstable_rethrow } from 'next/navigation';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getAuth } from '@/lib/auth/server';
+import { acquireEmbeddingProcessing, markEmbeddingFailed, resolveEmbeddingGateState } from '@/lib/embedding-guard';
+import { acquireEmbeddingRateLimit, releaseEmbeddingRateLimit } from '@/lib/embedding-rate-limit';
+import type { EmbeddingRateLimitLease } from '@/lib/embedding-rate-limit';
 import { broadcastEmbeddingUpdate } from '@/lib/sse-broadcaster';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
+import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 
 // Request deduplication: Track in-flight requests
 const inFlightRequests = new Map<string, Promise<any>>();
@@ -40,6 +44,12 @@ const performanceMetrics: {
   totalProcessingTime: 0,
 };
 
+interface EmbeddingResponse {
+  status: number;
+  body: Record<string, any>;
+  headers?: HeadersInit;
+}
+
 async function postHandler(
   req: NextRequest,
   context: RouteContext
@@ -64,6 +74,11 @@ async function postHandler(
         { error: 'Asset not found' },
         { status: 404 }
       );
+    }
+
+    const embeddingGate = getRuntimeGate('embeddings');
+    if (!embeddingGate.enabled) {
+      return runtimeGateResponse(embeddingGate);
     }
 
     // Check circuit breaker
@@ -91,7 +106,10 @@ async function postHandler(
     if (existingRequest) {
       logger.logInfo('generate-embedding.dedup-hit', { assetId: id });
       const result = await existingRequest;
-      return NextResponse.json(result);
+      return NextResponse.json(result.body, {
+        status: result.status,
+        headers: result.headers,
+      });
     }
 
     if (!prisma) {
@@ -108,7 +126,16 @@ async function postHandler(
         deletedAt: null,
       },
       include: {
-        embedding: true,
+        embedding: {
+          select: {
+            modelName: true,
+            dim: true,
+            createdAt: true,
+            status: true,
+            updatedAt: true,
+            completedAt: true,
+          },
+        },
       },
     });
 
@@ -119,26 +146,175 @@ async function postHandler(
       );
     }
 
-    // Check if embedding already exists
-    if (asset.embedding) {
+    const gateState = resolveEmbeddingGateState(asset.embedding);
+    if (gateState.state === 'ready') {
       const processingTime = Date.now() - startTime;
       logger.logInfo('generate-embedding.already-exists', {
         assetId: id,
         processingTimeMs: processingTime,
       });
       return NextResponse.json({
+        success: true,
+        status: 'ready',
+        alreadyExists: true,
         message: 'Embedding already exists',
-        embedding: {
-          modelName: asset.embedding.modelName,
-          dimension: asset.embedding.dim,
-          createdAt: asset.embedding.createdAt,
-        },
+        embedding: asset.embedding
+          ? {
+            modelName: asset.embedding.modelName,
+            dimension: asset.embedding.dim,
+            createdAt: asset.embedding.createdAt,
+          }
+          : undefined,
       });
     }
 
+    if (gateState.state === 'processing') {
+      const retryAfterSec = gateState.retryAfterMs ? Math.max(1, Math.ceil(gateState.retryAfterMs / 1000)) : undefined;
+      logger.logInfo('generate-embedding.already-processing', {
+        assetId: id,
+        retryAfterSec,
+      });
+      return NextResponse.json(
+        {
+          success: true,
+          status: 'processing',
+          message: 'Embedding already processing',
+          retryAfter: retryAfterSec,
+        },
+        {
+          status: 202,
+          headers: retryAfterSec ? { 'Retry-After': retryAfterSec.toString() } : undefined,
+        }
+      );
+    }
+
+    if (gateState.state === 'cooldown') {
+      const retryAfterSec = gateState.retryAfterMs ? Math.max(1, Math.ceil(gateState.retryAfterMs / 1000)) : undefined;
+      logger.logInfo('generate-embedding.cooldown', {
+        assetId: id,
+        retryAfterSec,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          status: 'cooldown',
+          error: 'Embedding recently failed, retry later',
+          retryAfter: retryAfterSec,
+        },
+        {
+          status: 429,
+          headers: retryAfterSec ? { 'Retry-After': retryAfterSec.toString() } : undefined,
+        }
+      );
+    }
+
     // Create a new promise for this embedding generation
-    const embeddingPromise = (async () => {
+    const embeddingPromise = (async (): Promise<EmbeddingResponse> => {
+      let rateLimitLease: EmbeddingRateLimitLease | null = null;
+
       try {
+        const rateLimit = await acquireEmbeddingRateLimit(userId);
+        if (!rateLimit.allowed) {
+          const retryAfterSec = rateLimit.retryAfterSec;
+          logger.logInfo('generate-embedding.rate-limited', {
+            assetId: id,
+            reason: rateLimit.reason,
+            retryAfterSec,
+            counts: rateLimit.counts,
+          });
+
+          const statusCode = rateLimit.reason === 'kv_unavailable' ? 503 : 429;
+          return {
+            status: statusCode,
+            headers: retryAfterSec ? { 'Retry-After': retryAfterSec.toString() } : undefined,
+            body: {
+              success: false,
+              status: 'rate_limited',
+              error: rateLimit.reason === 'kv_unavailable'
+                ? 'Embedding rate limiter unavailable'
+                : 'Rate limit exceeded',
+              reason: rateLimit.reason,
+              retryAfter: retryAfterSec,
+            },
+          };
+        }
+
+        rateLimitLease = rateLimit.lease ?? null;
+
+        const lock = await acquireEmbeddingProcessing(asset.id);
+        if (!lock.acquired) {
+          await releaseEmbeddingRateLimit(rateLimitLease);
+          rateLimitLease = null;
+
+          const retryAfterSec = lock.retryAfterMs ? Math.max(1, Math.ceil(lock.retryAfterMs / 1000)) : undefined;
+
+          if (lock.state === 'ready') {
+            const latestEmbedding = prisma
+              ? await prisma.assetEmbedding.findUnique({
+                  where: { assetId: asset.id },
+                  select: {
+                    modelName: true,
+                    dim: true,
+                    createdAt: true,
+                  },
+                })
+              : null;
+            const readyEmbedding = latestEmbedding ?? asset.embedding;
+            return {
+              status: 200,
+              body: {
+                success: true,
+                status: 'ready',
+                alreadyExists: true,
+                message: 'Embedding already exists',
+                embedding: readyEmbedding
+                  ? {
+                      modelName: readyEmbedding.modelName,
+                      dimension: readyEmbedding.dim,
+                      createdAt: readyEmbedding.createdAt,
+                    }
+                  : undefined,
+              },
+            };
+          }
+
+          if (lock.state === 'processing') {
+            return {
+              status: 202,
+              headers: retryAfterSec ? { 'Retry-After': retryAfterSec.toString() } : undefined,
+              body: {
+                success: true,
+                status: 'processing',
+                message: 'Embedding already processing',
+                retryAfter: retryAfterSec,
+              },
+            };
+          }
+
+          if (lock.state === 'cooldown') {
+            return {
+              status: 429,
+              headers: retryAfterSec ? { 'Retry-After': retryAfterSec.toString() } : undefined,
+              body: {
+                success: false,
+                status: 'cooldown',
+                error: 'Embedding recently failed, retry later',
+                retryAfter: retryAfterSec,
+              },
+            };
+          }
+
+          return {
+            status: 503,
+            body: {
+              success: false,
+              error: 'Embedding lock unavailable',
+            },
+          };
+        }
+
+        logger.logInfo('generate-embedding.lock-acquired', { assetId: id });
+
         // Generate embedding
         let embeddingService;
         try {
@@ -204,33 +380,51 @@ async function postHandler(
           });
         } catch (sseError) {
           // Don't fail the request if SSE broadcast fails
-          console.error('[SSE] Failed to broadcast embedding update:', sseError);
+          logger.logError('generate-embedding:sse-broadcast-failed', sseError as Error, { assetId: id });
         }
 
         return {
-          success: true,
-          message: 'Embedding generated successfully',
-          embedding: {
-            modelName: embedding.modelName,
-            dimension: embedding.dim,
-            processingTime: result.processingTime,
-            createdAt: embedding.createdAt,
+          status: 200,
+          body: {
+            success: true,
+            message: 'Embedding generated successfully',
+            embedding: {
+              modelName: embedding.modelName,
+              dimension: embedding.dim,
+              processingTime: result.processingTime,
+              createdAt: embedding.createdAt,
+            },
           },
         };
       } catch (error) {
-        // Handle failure for circuit breaker
-        circuitBreakerState.failureCount++;
-        circuitBreakerState.lastFailureTime = Date.now();
-        performanceMetrics.failureCount++;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        try {
+          await markEmbeddingFailed(asset.id, errorMessage);
+        } catch (markError) {
+          logger.logError('generate-embedding:mark-failed', markError, { assetId: id });
+        }
 
-        if (circuitBreakerState.failureCount >= CIRCUIT_BREAKER_THRESHOLD) {
-          circuitBreakerState.isOpen = true;
-          circuitBreakerState.resetTime = Date.now() + CIRCUIT_BREAKER_TIMEOUT;
-          console.error(`[circuit-breaker] Opening after ${circuitBreakerState.failureCount} consecutive failures`);
+        // Handle failure for circuit breaker
+        const isRateLimitError = error instanceof EmbeddingError && error.statusCode === 429;
+        if (!isRateLimitError) {
+          circuitBreakerState.failureCount++;
+          circuitBreakerState.lastFailureTime = Date.now();
+          performanceMetrics.failureCount++;
+
+          if (circuitBreakerState.failureCount >= CIRCUIT_BREAKER_THRESHOLD) {
+            circuitBreakerState.isOpen = true;
+            circuitBreakerState.resetTime = Date.now() + CIRCUIT_BREAKER_TIMEOUT;
+            logger.logError(
+              'generate-embedding.circuit-open',
+              error instanceof Error ? error : new Error(String(error)),
+              { assetId: id, failureCount: circuitBreakerState.failureCount }
+            );
+          }
         }
 
         throw error;
       } finally {
+        await releaseEmbeddingRateLimit(rateLimitLease);
         // Clean up in-flight request after a short delay
         setTimeout(() => {
           inFlightRequests.delete(requestKey);
@@ -243,7 +437,10 @@ async function postHandler(
 
     try {
       const result = await embeddingPromise;
-      return NextResponse.json(result);
+      return NextResponse.json(result.body, {
+        status: result.status,
+        headers: result.headers,
+      });
     } catch (error) {
       // Re-throw to be handled by outer catch
       throw error;
@@ -251,7 +448,7 @@ async function postHandler(
   } catch (error) {
     unstable_rethrow(error);
     const processingTime = Date.now() - startTime;
-    console.error(`[error] Failed to generate embedding for asset (${processingTime}ms):`, error);
+    logger.logError('generate-embedding:failed', error as Error, { processingTimeMs: processingTime });
 
     // Error generating embedding
     if (error instanceof EmbeddingError) {

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { UPLOAD } from '@sploot/common';
 import {
   DeduplicationService,
   hasDuplicate,
@@ -379,7 +380,7 @@ describe('DeduplicationService', () => {
     it('handles very large buffer', async () => {
       vi.mocked(db.assetExists).mockResolvedValue(null);
 
-      const largeBuffer = Buffer.alloc(10 * 1024 * 1024); // 10MB
+      const largeBuffer = Buffer.alloc(UPLOAD.maxSize);
       const result = await deduplicator.checkDuplicate(mockUserId, largeBuffer);
 
       expect(result.checksum).toBeDefined();

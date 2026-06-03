@@ -5,11 +5,40 @@ on:
     branches: [main, master]
   pull_request:
 
-jobs:
-  build:
-    name: Build & Test
-    runs-on: ubuntu-latest
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run lint
+
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run type-check
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: pgvector/pgvector:pg15
@@ -24,73 +53,57 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/sploot_test?sslmode=disable
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 10
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Run database migrations
         run: pnpm --filter web db:migrate
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/sploot_test?sslmode=disable
-
-      - name: Lint
-        run: pnpm turbo run lint
-
-      - name: Type check
-        run: pnpm turbo run type-check
-
-      # Note: Full production build requires real Clerk keys (handled by Vercel)
-      # CI focuses on type-check, lint, and tests - the critical quality gates
-
-      - name: Test (web)
+      - name: Run tests
         run: pnpm --filter web test
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/sploot_test?sslmode=disable
 
-  extension-build:
-    name: Extension Build
+  extension:
+    name: Extension
     runs-on: ubuntu-latest
-    needs: build
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 10
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint extension
+        run: pnpm --filter extension lint
+      - name: Test extension
+        run: pnpm --filter extension test
       - name: Build extension
         run: pnpm --filter extension build
-
-      - name: Upload extension artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: extension-dist
-          path: apps/extension/.output/
+          path: apps/extension/dist/
           retention-days: 7
+
+  merge-gate:
+    name: merge-gate
+    if: always()
+    needs: [lint, type-check, test, extension]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs
+        run: |
+          results=("${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}")
+          for r in "${results[@]}"; do
+            if [[ "$r" != "success" ]]; then
+              echo "One or more jobs failed: lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }}"
+              exit 1
+            fi
+          done
+          echo "All jobs passed"

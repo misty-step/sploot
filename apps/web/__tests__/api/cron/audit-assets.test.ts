@@ -246,7 +246,7 @@ describe('/api/cron/audit-assets', () => {
         status: 404,
       });
 
-      // Spy on console.error to verify alert
+      // Spy on console.error (structured logging writes JSON to console.error)
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const response = await GET({} as NextRequest);
@@ -255,9 +255,9 @@ describe('/api/cron/audit-assets', () => {
       expect(data.stats.brokenCount).toBe(12);
       expect(data.alert).toBe('Critical: >10 broken blobs detected');
 
-      // Verify console.error was called with alert message
+      // Verify structured logging was called with alert context
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('🚨 ALERT: 12 broken blobs detected')
+        expect.stringContaining('"context":"cron:audit-assets:broken-blobs-alert"')
       );
 
       consoleErrorSpy.mockRestore();
@@ -308,7 +308,7 @@ describe('/api/cron/audit-assets', () => {
       // Mock fetch to throw network error
       (global.fetch as any).mockRejectedValue(new Error('Network error'));
 
-      // Spy on console.error
+      // Spy on console.error (structured logging writes JSON to console.error)
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const response = await GET({} as NextRequest);
@@ -319,10 +319,9 @@ describe('/api/cron/audit-assets', () => {
       expect(data.stats.brokenCount).toBe(0);
       expect(data.stats.errorCount).toBe(2); // Both assets errored
 
-      // Verify errors were logged
+      // Verify errors were logged via structured logging
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Error checking asset'),
-        expect.any(Error)
+        expect.stringContaining('"context":"cron:audit-assets:asset-check-failed"')
       );
 
       consoleErrorSpy.mockRestore();

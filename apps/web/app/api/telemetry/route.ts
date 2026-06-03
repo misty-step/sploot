@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { captureException } from '@sentry/nextjs';
 
 import { getAuth } from '@/lib/auth/server';
+import { unauthorizedResponse } from '@/lib/auth/api';
 import { trackTiming } from '@/lib/analytics';
 import { logger } from '@/lib/observability-logger';
 import { withObservability } from '@/lib/with-observability';
@@ -40,11 +41,11 @@ interface TelemetryResponse {
   message?: string;
 }
 
-async function postHandler(request: NextRequest): Promise<NextResponse<TelemetryResponse>> {
+async function postHandler(request: NextRequest): Promise<NextResponse> {
   try {
     const { userId } = await getAuth();
     if (!userId) {
-      return respond({ success: false, message: 'unauthorized' }, 401);
+      return unauthorizedResponse();
     }
 
     const body = await safeJson(request);
@@ -98,6 +99,14 @@ function forwardErrorTelemetry(payload: ErrorPayload, userId: string): void {
         },
       },
       user: { id: userId },
+    });
+
+    logger.logError('client:error', error, {
+      userId,
+      url: payload.url,
+      timestamp: payload.timestamp,
+      hasStack: Boolean(payload.stack),
+      hasComponentStack: Boolean(payload.componentStack),
     });
   } catch (error) {
     logger.logError('telemetry:sentry-failure', error, { userId, payload });

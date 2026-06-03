@@ -1,117 +1,53 @@
-# Chrome Extension - Add to Sploot
+# chrome extension - add to sploot
 
-## Location
+## location
 
-The Chrome extension is developed in a **separate repository**:
+the extension lives in this repo at `apps/extension`.
 
-```
-/Users/phaedrus/Development/sploot-extension/
-```
+## status
 
-## Status
+✅ phase 1 mvp complete (2025-11-08)
 
-✅ **Phase 1 MVP Complete** (2025-11-08)
+## quick start
 
-### Implemented Features
-
-- Right-click image save from any website
-- Clerk WebSSO authentication (syncs with sploot.app session)
-- Upload to existing `/api/upload` endpoint
-- Success/error notifications
-- Extension popup with auth status
-
-### Ready for Testing
-
-See extension repo for:
-- **TESTING.md**: Manual test scenarios
-- **SUMMARY.md**: Complete feature list
-- **README.md**: Development workflow
-
-## Quick Start
+from repo root:
 
 ```bash
-cd /Users/phaedrus/Development/sploot-extension
-
-# 1. Setup environment
 pnpm install
-cp .env.example .env
-# Add VITE_CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY to .env
+cp apps/extension/.env.example apps/extension/.env
+# set:
+# VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+# CLERK_SECRET_KEY=sk_test_...
+# VITE_API_BASE_URL=http://localhost:3001
 
-# 2. Generate consistent extension ID
-pnpm generate:crx-key
-
-# 3. Configure Clerk (automated via API)
-pnpm setup:clerk
-
-# 4. Build extension
-pnpm build
-
-# 5. Load in Chrome
-# - Open chrome://extensions
-# - Enable "Developer mode"
-# - Click "Load unpacked"
-# - Select .output/chrome-mv3 directory
+pnpm --filter extension generate:crx-key
+pnpm --filter extension setup:clerk
+pnpm dev:extension
 ```
 
-## Architecture Decision
+the web app must also trust the same extension origin for Clerk bearer-token
+verification:
 
-Extension kept as **separate repository** for:
-- Deployment independence (Chrome Web Store vs Vercel)
-- Build system isolation (WXT vs Next.js)
-- Development velocity (no monorepo overhead)
+```env
+CLERK_AUTHORIZED_PARTIES=https://sploot.app,https://www.sploot.app,http://localhost:3001,chrome-extension://<extension-id>
+```
 
-See `sploot-extension/ARCHITECTURE.md` for full rationale.
+load unpacked:
+1. open `chrome://extensions`
+2. enable dev mode
+3. click "load unpacked"
+4. select `apps/extension/dist/chrome-mv3`
 
-## Integration Points
+## integration points
 
-### API Endpoint
-Extension calls existing:
-- `POST /api/upload` (multipart form data)
-- No server-side changes required
+- **api**: `POST /api/upload` (multipart form data)
+- **shared constants**: `@sploot/common` (upload limits + mime validation)
+- **auth**: `@clerk/chrome-extension` with allowed origins for `chrome-extension://<id>`
 
-### Shared Constants
-Extension duplicates these constants (validated by server):
-- `MAX_FILE_SIZE`: 10MB (lib/blob.ts)
-- `ALLOWED_FILE_TYPES`: jpeg, jpg, png, webp, gif (lib/blob.ts)
+## architecture notes
 
-### Authentication
-Uses `@clerk/chrome-extension` for WebSSO:
-- Syncs with sploot.app session
-- Shares same Clerk publishable key
-- Requires `chrome-extension://` in Clerk allowed origins
+- background handles context menu + upload flow
+- popup shows auth status + feedback
+- `shared/` is the deep module for api + env + auth glue
 
-## Next Steps
-
-### User Action Required
-
-1. **Configure Clerk** (Automated)
-   - Get Secret Key from dashboard.clerk.com (API Keys section)
-   - Add to `.env`: `CLERK_SECRET_KEY=sk_test_...`
-   - Run: `pnpm generate:crx-key && pnpm setup:clerk`
-   - No manual dashboard configuration needed
-
-2. **Run Tests**
-   - Follow `sploot-extension/TESTING.md`
-   - Test on 10+ sites
-   - Verify upload performance <3s
-
-### Future Phases
-
-- **Phase 2**: Crop tool + offline queue (Week 2)
-- **Phase 3**: Polish + Chrome Web Store (Week 3)
-
-## Development
-
-Extension development is independent from main app:
-- Different build system (WXT vs Next.js)
-- Different deployment (Chrome Web Store vs Vercel)
-- Own git repository and commit history
-
-## Documentation
-
-All extension docs in `sploot-extension/`:
-- README.md
-- TESTING.md
-- SUMMARY.md
-- ARCHITECTURE.md
-- PROGRESS.md
+see `docs/adr/0002-move-extension-into-monorepo.md` for the monorepo decision.

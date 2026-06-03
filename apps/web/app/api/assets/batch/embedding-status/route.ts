@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import { logError, logInfo } from '@/lib/observability-logger';
 
 interface BatchEmbeddingStatusRequest {
   assetIds: string[];
@@ -134,14 +135,14 @@ async function postHandler(request: NextRequest) {
 
     // Log performance metrics for monitoring
     if (responseTime > 100) {
-      console.warn(`[perf] Batch embedding status took ${responseTime}ms for ${assetIds.length} assets`);
+      logInfo('assets:batch-embedding-status-slow', { responseTime, assetCount: assetIds.length });
     }
 
     return NextResponse.json({
       statuses,
     });
   } catch (error) {
-    console.error('Error checking batch embedding status:', error);
+    logError('assets:batch-embedding-status-failed', error);
     return NextResponse.json(
       { error: 'Failed to check batch embedding status' },
       { status: 500 }

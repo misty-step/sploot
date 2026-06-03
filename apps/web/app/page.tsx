@@ -210,7 +210,7 @@ export default async function Home() {
               <Link href="/sign-up">START FOR FREE →</Link>
             </Button>
             <p className="mt-6 text-sm text-muted-foreground font-mono">
-              NO CREDIT CARD • NO TRACKING • NO BS
+              NO CREDIT CARD • PRIVATE LIBRARY • NO ADS
             </p>
           </div>
         </div>

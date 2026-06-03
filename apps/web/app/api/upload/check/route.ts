@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyBearerOrThrow } from '@/lib/auth/verify-bearer';
+import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma, assetExists } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
 
 /**
  * Upload Preflight Check Endpoint
@@ -121,14 +123,10 @@ async function postHandler(req: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error in upload preflight check:', error);
+    logError('upload:check-failed', error);
 
-    // Handle specific error types
-    if (error instanceof Error && error.message.includes('auth')) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
     }
 
     return NextResponse.json(

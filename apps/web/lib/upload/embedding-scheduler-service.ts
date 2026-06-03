@@ -1,6 +1,8 @@
 import { after } from 'next/server';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
+import { acquireEmbeddingProcessing, resolveEmbeddingGateState } from '@/lib/embedding-guard';
+import { getRuntimeGate } from '@/lib/runtime-gates';
 import { logger } from '@/lib/logger';
 
 /**
@@ -39,6 +41,7 @@ export interface EmbeddingScheduleResult {
   scheduled: boolean;
   mode: EmbeddingScheduleMode;
   assetId: string;
+  reason?: 'embeddings_disabled';
 }
 
 /**
@@ -71,6 +74,15 @@ export class EmbeddingSchedulerService {
       mode,
       blobUrl: blobUrl.substring(0, 50) + '...',
     });
+
+    const embeddingGate = getRuntimeGate('embeddings');
+    if (!embeddingGate.enabled) {
+      logger.warn('Embedding generation skipped by runtime gate', {
+        assetId,
+        gate: embeddingGate.code,
+      });
+      return { scheduled: false, mode, assetId, reason: 'embeddings_disabled' };
+    }
 
     if (mode === 'sync') {
       // Synchronous mode: generate embedding immediately
@@ -139,7 +151,31 @@ export class EmbeddingSchedulerService {
     });
 
     if (existingEmbedding) {
-      logger.info('Embedding already exists, skipping generation', { assetId });
+      const gateState = resolveEmbeddingGateState(existingEmbedding);
+      if (gateState.state === 'ready') {
+        logger.info('Embedding already exists, skipping generation', { assetId });
+        return;
+      }
+      if (gateState.state === 'processing') {
+        logger.info('Embedding already processing, skipping generation', { assetId });
+        return;
+      }
+      if (gateState.state === 'cooldown') {
+        logger.info('Embedding in cooldown, skipping generation', {
+          assetId,
+          retryAfterMs: gateState.retryAfterMs,
+        });
+        return;
+      }
+    }
+
+    const lock = await acquireEmbeddingProcessing(assetId);
+    if (!lock.acquired) {
+      logger.info('Embedding lock not acquired, skipping generation', {
+        assetId,
+        state: lock.state,
+        retryAfterMs: lock.retryAfterMs,
+      });
       return;
     }
 

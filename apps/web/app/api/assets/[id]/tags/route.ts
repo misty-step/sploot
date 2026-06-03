@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { requireUserIdWithSync } from '@/lib/auth/server';
+import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
+import { logError } from '@/lib/observability-logger';
 
 /**
  * GET /api/assets/[id]/tags - Get tags for a specific asset
@@ -63,8 +65,12 @@ async function getHandler(
       })),
     });
   } catch (error) {
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
     unstable_rethrow(error);
-    console.error('Error fetching asset tags:', error);
+    logError('assets:tags-list-failed', error);
     return NextResponse.json(
       { error: 'Failed to fetch asset tags' },
       { status: 500 }
@@ -205,8 +211,12 @@ async function postHandler(
       })),
     });
   } catch (error) {
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
     unstable_rethrow(error);
-    console.error('Error adding tags to asset:', error);
+    logError('assets:tags-add-failed', error);
     return NextResponse.json(
       { error: 'Failed to add tags to asset' },
       { status: 500 }
@@ -279,8 +289,12 @@ async function deleteHandler(
       message: 'Tags removed from asset',
     });
   } catch (error) {
+    if (isUnauthorizedAuthError(error)) {
+      return unauthorizedResponse();
+    }
+
     unstable_rethrow(error);
-    console.error('Error removing tags from asset:', error);
+    logError('assets:tags-remove-failed', error);
     return NextResponse.json(
       { error: 'Failed to remove tags from asset' },
       { status: 500 }

@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuth } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
+import { logError } from '@/lib/observability-logger';
+import { withObservability } from '@/lib/with-observability';
 
 const COST_PER_UPLOAD = 0.00022; // $0.00022 per upload
 
-export async function GET(_req: NextRequest) {
+async function getHandler(_req: NextRequest) {
   try {
     const { userId } = await getAuth();
     if (!userId) {
@@ -92,6 +94,7 @@ export async function GET(_req: NextRequest) {
       isSustainedHighRate,
     });
   } catch (error) {
+    logError('analytics:usage-failed', error);
     return NextResponse.json(
       {
         error: 'Failed to fetch usage analytics',
@@ -106,3 +109,5 @@ export async function GET(_req: NextRequest) {
     );
   }
 }
+
+export const GET = withObservability(getHandler, { operation: 'analytics:usage' });

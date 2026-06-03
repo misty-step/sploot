@@ -22,6 +22,8 @@ coverage/
 coverage-*
 .nyc_output/
 *.tsbuildinfo
+__pycache__/
+*.pyc
 
 # Environment & Secrets
 .env
@@ -74,3 +76,7 @@ sentry.properties
 
 # Vercel
 .vercel
+
+# Harness Kit runtime traces (delegation receipts) — local-only, not committed
+.harness-kit/traces/*.jsonl
+.harness-kit/traces/provider-lanes/

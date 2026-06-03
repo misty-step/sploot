@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { kv } from '@vercel/kv';
+import { canaryConfigured } from '@/lib/canary-reporter';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
 import pkg from '@/package.json';
@@ -17,6 +19,7 @@ interface HealthStatus {
     database_url_configured?: boolean;
     connection_latency_ms?: number;
     env_vars?: Record<string, 'configured' | 'missing'>;
+    canary_configured?: boolean;
   };
   version?: string;
   error?: string;
@@ -53,7 +56,57 @@ async function checkDatabase(): Promise<{
   } catch (e) {
     const err = e as Error;
     const latency_ms = Date.now() - start;
-    logger.logError('health-check-database-failed', err, {});
+
+    // Handle stale connections in serverless environments (Neon/PgBouncer)
+    // PrismaClientKnownRequestError with connection-related messages indicates
+    // the server closed the connection due to idle timeout
+    const isStaleConnection =
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      (err.message.includes('Server has closed the connection') ||
+        err.message.includes('Connection terminated unexpectedly') ||
+        err.message.includes('connection has been closed') ||
+        err.code === 'P1002' || // Connection timeout
+        err.code === 'P1008'); // Operations timed out
+
+    if (isStaleConnection) {
+      logger.logInfo('health-check-db-reconnecting', {
+        reason: 'stale_connection',
+        error: err.message,
+        errorCode: err instanceof Prisma.PrismaClientKnownRequestError ? err.code : undefined,
+      });
+
+      try {
+        // Force disconnect and reconnect to get a fresh connection
+        await prisma.$disconnect();
+        await prisma.$connect();
+
+        // Retry the health check query
+        await prisma.$queryRaw`SELECT 1`;
+        const reconnectLatencyMs = Date.now() - start;
+
+        logger.logInfo('health-check-db-reconnect-success', {
+          latency_ms: reconnectLatencyMs,
+        });
+
+        return {
+          success: true,
+          latency_ms: reconnectLatencyMs,
+          prisma_test: true,
+        };
+      } catch (reconnectError) {
+        const reconnectErr = reconnectError as Error;
+        logger.logError('health-check-db-reconnect-failed', reconnectErr);
+
+        return {
+          success: false,
+          error: `Reconnect failed: ${reconnectErr.message}`,
+          latency_ms: Date.now() - start,
+          prisma_test: false,
+        };
+      }
+    }
+
+    logger.logError('health-check-database-failed', err);
 
     return {
       success: false,
@@ -74,7 +127,7 @@ async function checkRedis(): Promise<boolean> {
     await kv.ping();
     return true;
   } catch (e) {
-    logger.logError('health-check-redis-failed', e as Error, {});
+    logger.logError('health-check-redis-failed', e as Error);
     return false;
   }
 }
@@ -120,6 +173,7 @@ async function getHandler(_req: NextRequest) {
           prisma_connection_test: results.db.prisma_test,
           database_url_configured: !!process.env.DATABASE_URL,
           connection_latency_ms: results.db.latency_ms,
+          canary_configured: canaryConfigured(),
           env_vars: envVars,
         },
         version: pkg.version,
@@ -145,6 +199,7 @@ async function getHandler(_req: NextRequest) {
           prisma_connection_test: results.db.prisma_test,
           database_url_configured: !!process.env.DATABASE_URL,
           connection_latency_ms: results.db.latency_ms,
+          canary_configured: canaryConfigured(),
           env_vars: envVars,
         },
       };
@@ -168,6 +223,7 @@ async function getHandler(_req: NextRequest) {
       error: error instanceof Error ? error.message : 'Unknown error',
       diagnostics: {
         database_url_configured: !!process.env.DATABASE_URL,
+        canary_configured: canaryConfigured(),
         env_vars: {
           DATABASE_URL: process.env.DATABASE_URL ? 'configured' : 'missing',
         },
