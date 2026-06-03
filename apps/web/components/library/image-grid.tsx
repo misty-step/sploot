@@ -9,6 +9,7 @@ import { EmptyState } from './empty-state';
 import { cn } from '@/lib/utils';
 import { trackBrokenImageRatio, setupCLSTracking } from '@/lib/performance-metrics';
 import type { Asset } from '@/lib/types';
+import { IMAGE_GRID_BREAKPOINT_COLS, IMAGE_GRID_SCROLL_CLASS } from './image-grid-layout';
 
 interface ImageGridProps {
   assets: Asset[];
@@ -59,16 +60,6 @@ export function ImageGrid({
       return () => clearTimeout(timer);
     }
   }, [loading, assets.length]);
-
-  // Responsive column breakpoints for masonry layout
-  // Mobile: 2 cols, Tablet: 3 cols, Desktop: 4 cols
-  const breakpointCols = {
-    default: 4,  // Desktop (>1280px)
-    1280: 4,     // xl
-    1024: 3,     // lg
-    768: 2,      // md
-    640: 2,      // sm
-  };
 
   // Setup CLS (Cumulative Layout Shift) tracking
   // Monitors layout stability of image grid (target: CLS < 0.1)
@@ -142,7 +133,7 @@ export function ImageGrid({
       <div className="h-full">
         <div
           ref={setContainerRef}
-          className={cn('h-full overflow-auto p-2 md:p-6', containerClassName)}
+          className={cn(IMAGE_GRID_SCROLL_CLASS, containerClassName)}
           style={{ scrollbarGutter: 'stable' }}
         >
           <ImageGridSkeleton count={20} variant="tile" className="animate-fade-in" />
@@ -158,7 +149,7 @@ export function ImageGrid({
       <div className="h-full">
         <div
           ref={setContainerRef}
-          className={cn('h-full overflow-auto p-2 md:p-6', containerClassName)}
+          className={cn(IMAGE_GRID_SCROLL_CLASS, containerClassName)}
           style={{ scrollbarGutter: 'stable' }}
         >
           <ImageGridSkeleton
@@ -188,11 +179,11 @@ export function ImageGrid({
     <div className="h-full">
       <div
         ref={setContainerRef}
-        className={cn('h-full overflow-auto p-2 md:p-6', containerClassName)}
+        className={cn(IMAGE_GRID_SCROLL_CLASS, containerClassName)}
         style={{ scrollbarGutter: 'stable' }}
       >
         <Masonry
-          breakpointCols={breakpointCols}
+          breakpointCols={IMAGE_GRID_BREAKPOINT_COLS}
           className="masonry-grid"
           columnClassName="masonry-grid-column"
         >
