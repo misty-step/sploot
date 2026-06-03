@@ -198,40 +198,36 @@ async function executeTransactionWithRetry<T>(
   maxAttempts = 5,
   baseDelayMs = 50
 ): Promise<T> {
-  let lastError: any;
-
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await prisma!.$transaction(action, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
     } catch (error: any) {
-      lastError = error;
-
-      // Detect P2034 (Prisma serialization failure) or PostgreSQL transaction rollback/deadlock codes
+      // Detect P2034 (Prisma serialization failure)
       const isSerializationError =
         error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034';
+      // Detect raw PostgreSQL transaction rollback/deadlock codes ('40001' is serialization failure, '40P01' is deadlock)
+      const pgCode = error?.code || error?.meta?.code || '';
+      const isRawPgConflict = pgCode === '40001' || pgCode === '40P01';
+      // Fallback to error message parsing if error properties are wrapped differently by drivers
       const isDeadlockMsg =
         error instanceof Error &&
         (error.message.includes('deadlock detected') ||
-          error.message.includes('write conflict') ||
-          error.message.includes('serialization failure'));
-
-      if ((isSerializationError || isDeadlockMsg) && attempt < maxAttempts) {
+          error.message.includes('serialization failure') ||
+          error.message.includes('could not serialize access'));
+      if ((isSerializationError || isRawPgConflict || isDeadlockMsg) && attempt < maxAttempts) {
         // Exponential backoff delay with random jitter (up to 50%) to prevent lock-stepping retries
         const backoff = baseDelayMs * Math.pow(2, attempt - 1);
         const jitter = Math.random() * 0.5 * backoff;
         const delay = backoff + jitter;
-
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
-
       throw error;
     }
   }
-
-  throw lastError;
+  throw new Error('BUG: Transaction retry loop terminated without throwing or returning.');
 }
 
 export async function releaseStorageQuotaReservation(reservationId: string | null | undefined): Promise<void> {
