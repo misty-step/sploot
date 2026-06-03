@@ -42,40 +42,10 @@ Lefthook runs gitleaks, web lint, extension lint, and turbo type-check before lo
 | PR #153 | `.github/workflows/release.yml` | Semantic-release depends on `GH_RELEASE_TOKEN`; release fixes must prove token path without weakening permissions. |
 | Backlog refs required | `apps/web/docs/API.md` | API docs are hand maintained and can drift from route behavior. |
 
-## Harness Index
+## Harness Routing
 
-| Skill | What it does here |
-|---|---|
-| `research` | Triangulates Sploot stack facts from local docs plus primary docs for Next/WXT/Clerk/Prisma/Neon/Vercel/Sentry/Replicate. |
-| `groom` | Maintains `backlog.d` from production signals, release blockers, docs drift, and code debt. |
-| `shape` | Produces Sploot context packets with web/extension/common boundaries and CI parity oracle. |
-| `implement` | Builds from backlog items with TDD, shared-contract discipline, and pgvector/auth evidence requirements. |
-| `qa` | Runs browser/API/extension/DB/deployed smoke paths beyond unit tests, using Computer Use for real Chrome UI. |
-| `demo` | Captures screenshots, request/response snippets, extension receipts, release packets, and smoke evidence. |
-| `code-review` | Reviews auth, upload validation, Prisma/pgvector, embeddings, extension env, release, and docs drift risks. |
-| `refactor` | Simplifies touched hot paths without unrelated churn, preserving `@sploot/common` as shared contract. |
-| `ci` | Executes and diagnoses CI parity. |
-| `diagnose` | Traces CI/Sentry/Vercel/release/extension failures source-to-sink. |
-| `monitor` | Watches health, Sentry, deploy, release, extension, and CI signals after risky changes. |
-| `deliver` | Composes one backlog item to merge-ready and stops before merge. |
-| `settle` | Polishes branches/PRs to merge-ready, then hands off to `ship`. |
-| `ship` | Lands merge-ready work with backlog archival, structured closure, reflect, and post-merge checks. |
-| `trace` | Persists durable breadcrumbs in backlog/docs/PR evidence without reviving legacy harness artifacts. |
-| `yeet` | Splits local changes into conventional commits with backlog linkage. |
-| `flywheel` | Runs the backlog-to-monitor outer loop. |
-| `deploy` | Separates Vercel web deploy evidence from Chrome Web Store extension release evidence. |
-| `office-hours`, `ceo-review`, `reflect` | Universal judgment and learning protocols. |
-
-## Installed Agents
-
-| Agent | Purpose |
-|---|---|
-| `planner` | Portfolio and implementation planning. |
-| `builder` | Bounded implementation. |
-| `critic` | Acceptance and rewrite critique. |
-| `beck` | TDD discipline. |
-| `carmack` | Shippability and scope pressure. |
-| `grug` | Complexity audit. |
-| `ousterhout` | Module depth and information hiding. |
-| `cooper` | Test-double discipline. |
-| `a11y-*` | Accessibility audit/fix/review for UI work. |
+Use the installed Harness Kit skills; do not duplicate their catalog here.
+Substantive work should start from the backlog/docs anchors above, respect the
+web/extension/common boundary, and close with CI-parity evidence plus any
+surface-specific DB, deployed-smoke, or extension-release proof named by the
+ticket.
