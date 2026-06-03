@@ -32,7 +32,6 @@ POSTGRES_URL_REFS=$(grep -r "POSTGRES_URL" \
   --exclude="*.test.ts" \
   --exclude="*.test.tsx" \
   --exclude="TODO.md" \
-  --exclude="INVESTIGATION.md" \
   --exclude="ISSUE.md" \
   --exclude="BACKLOG.md" \
   --exclude="*.md" \
@@ -54,7 +53,6 @@ fi
 DOC_REFS=$(grep -r "POSTGRES_URL" \
   --include="*.md" \
   --exclude="TODO.md" \
-  --exclude="INVESTIGATION.md" \
   --exclude="BACKLOG.md" \
   . 2>/dev/null || true)
 

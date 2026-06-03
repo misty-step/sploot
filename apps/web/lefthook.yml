@@ -5,8 +5,12 @@ pre-commit:
   parallel: true
   commands:
     gitleaks:
-      run: gitleaks protect --staged --verbose
+      run: gitleaks protect --staged --verbose --config ../../.gitleaks.toml
       # Scans staged files for secrets before commit
+
+    secrets:
+      run: pnpm --workspace-root secrets:check
+      # Repo-specific scanner for Neon/Postgres URLs and service tokens
 
     validate-env:
       run: bash scripts/validate-env-vars.sh
@@ -22,6 +26,10 @@ pre-commit:
 
 pre-push:
   commands:
+    secrets:
+      run: pnpm --workspace-root secrets:check
+    gitleaks:
+      run: gitleaks dir --redact=100 --config ../../.gitleaks.toml ../..
     typecheck:
       run: pnpm type-check
       # Fast ~5s check, CI handles full test suite

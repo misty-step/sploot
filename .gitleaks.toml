@@ -1,0 +1,43 @@
+title = "sploot secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "sploot-neon-postgres-url"
+description = "Real-looking Neon Postgres connection URL"
+regex = '''postgres(?:ql)?://[^:@\s]+:[^@\s]+@[^/\s]+\.neon\.tech/[^\s'"`<>]+'''
+secretGroup = 0
+keywords = ["neon.tech", "postgresql://", "postgres://"]
+
+[[rules]]
+id = "sploot-vercel-blob-token"
+description = "Vercel Blob read/write token"
+regex = '''vercel_blob_[A-Za-z0-9_-]{16,}'''
+secretGroup = 0
+keywords = ["vercel_blob_"]
+
+[[rules]]
+id = "sploot-replicate-token"
+description = "Replicate API token"
+regex = '''r8_[A-Za-z0-9]{16,}'''
+secretGroup = 0
+keywords = ["r8_"]
+
+[allowlist]
+description = "Allow placeholders and repo-owned test fixtures"
+paths = [
+  '''\.test\.ts$''',
+  '''\.spec\.ts$''',
+  '''\.test\.mjs$''',
+  '''vitest\.setup\.ts$''',
+  '''__tests__/.*''',
+]
+regexes = [
+  '''postgres:postgres@localhost''',
+  '''postgres(?:ql)?://user:(?:pass|password)@[^/\s]+\.neon\.tech''',
+  '''postgres(?:ql)?://user:password@host(?:-pooler)?\.neon\.tech''',
+  '''sk_test_your_[A-Za-z0-9_]+''',
+  '''vercel_blob_(?:your_token_here|x+)''',
+  '''r8_your_[A-Za-z0-9_]+''',
+]

@@ -5,8 +5,12 @@ pre-commit:
   parallel: true
   commands:
     gitleaks:
-      run: gitleaks protect --staged --verbose
+      run: gitleaks protect --staged --verbose --config .gitleaks.toml
       # Scans staged files for secrets before commit
+
+    secrets:
+      run: pnpm secrets:check
+      # Repo-specific scanner for Neon/Postgres URLs and service tokens
 
     lint-web:
       glob: "apps/web/**/*.{js,ts,jsx,tsx}"
@@ -26,6 +30,10 @@ commit-msg:
 
 pre-push:
   commands:
+    secrets:
+      run: pnpm secrets:check
+    gitleaks:
+      run: gitleaks dir --redact=100 --config .gitleaks.toml .
     typecheck:
       run: pnpm turbo run type-check
     # Note: Tests require postgres database - run via CI or manually
