@@ -1,1 +1,1 @@
-{"date":"2026-06-03","pr":null,"branch":"chore/omp-harness","correctness":9,"depth":8,"simplicity":8,"craft":8,"verdict":"ship","providers":["claude","codex","grok"]}
+{"date":"2026-06-03","pr":null,"correctness":9,"depth":8,"simplicity":9,"craft":8,"verdict":"ship","providers":["claude","thinktank","codex","gemini"]}
