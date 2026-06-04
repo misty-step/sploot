@@ -24,7 +24,7 @@ Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 15 app, App Rou
 - Source of truth for work tracking is local markdown files in `backlog.d/`, not GitHub Issues.
 - Closure requires the backlog item to move to `backlog.d/_done/` with `Status: done`, a `## What Was Built` note, and conventional commit/PR linkage such as `Backlog: backlog.d/<id>-<slug>.md`, `Closes-backlog:`, or `Ships-backlog:`.
 - Web deploy and extension release are separate surfaces.
-- The legacy harness has been removed. Do not require legacy harness config, schemas, or evidence directories; use Spellbook-tailored skills plus backlog/docs evidence.
+- The legacy harness has been removed. Do not require legacy harness config, schemas, evidence directories, or repo-local lifecycle skill catalogs; use globally installed Harness Kit skills plus backlog/docs evidence unless a future Sploot-specific exception is explicitly justified.
 
 ## Gate Contract
 
@@ -45,9 +45,11 @@ Lefthook runs gitleaks, web lint, extension lint, and turbo type-check before lo
 ## Harness Routing
 
 Use the globally configured Harness Kit skills. Do not vendor lifecycle skill
-catalogs, generated skill references, or provider adapters into this repo
-unless the behavior is an extreme Sploot-specific exception that cannot live in
-Harness Kit. Substantive work should start from the backlog/docs anchors above,
-respect the web/extension/common boundary, and close with CI-parity evidence
-plus any surface-specific DB, deployed-smoke, or extension-release proof named
-by the ticket.
+catalogs, generated skill references, provider adapters, or cross-harness skill
+symlinks into this repo unless the behavior is an extreme Sploot-specific
+exception that cannot live in Harness Kit. If such an exception is needed,
+document the narrow surface here and keep the bridge/config pointing only at
+that exception. Substantive work should start from the backlog/docs anchors
+above, respect the web/extension/common boundary, and close with CI-parity
+evidence plus any surface-specific DB, deployed-smoke, or extension-release
+proof named by the ticket.
