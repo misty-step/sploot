@@ -9,7 +9,13 @@ import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/
 import { useBlobCircuitBreaker } from '@/contexts/blob-circuit-breaker-context';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Heart, Trash2, ImageOff, Loader2, AlertCircle, Clock } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Heart, Trash2, ImageOff, Loader2, AlertCircle, Clock, MoreHorizontal } from 'lucide-react';
 import type { Asset } from '@/lib/types';
 import { ShareButton } from './share-button';
 import { logger } from '@/lib/observability-logger';
@@ -371,7 +377,7 @@ function ImageTileComponent({
                   src={imageSrc}
                   alt={asset.filename || asset.pathname?.split('/').pop() || 'Uploaded image'}
                   fill
-                  sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
+                  sizes="(max-width: 640px) calc(100vw - 24px), (max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
                   className={cn(
                     'h-full w-full',
                     preserveAspectRatio ? 'object-contain' : 'object-cover'
@@ -427,9 +433,9 @@ function ImageTileComponent({
           </div>
 
           {/* Action bar below image */}
-          <div className="flex items-center justify-between gap-2 px-2 py-1.5 bg-card dark:bg-muted border-t border-border">
+          <div className="flex items-center justify-between gap-2 px-2 py-2 bg-card dark:bg-muted border-t border-border sm:py-1.5">
             {/* Left: Actions */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5 sm:gap-1">
               {/* Banger button - always visible */}
               <TooltipProvider>
                 <Tooltip>
@@ -438,7 +444,7 @@ function ImageTileComponent({
                       variant="ghost"
                       size="icon"
                       className={cn(
-                        'h-7 w-7 transition-colors',
+                        'h-11 w-11 transition-colors sm:h-7 sm:w-7',
                         asset.favorite
                           ? 'text-accent-coral hover:text-accent-coral/80'
                           : 'text-muted-foreground/80 hover:text-accent-coral'
@@ -446,8 +452,9 @@ function ImageTileComponent({
                       onClick={handleFavoriteToggle}
                       disabled={isLoading}
                       aria-pressed={asset.favorite}
+                      aria-label={asset.favorite ? 'remove banger' : 'mark as banger'}
                     >
-                      <Heart className={cn('h-4 w-4', asset.favorite && 'fill-current')} />
+                      <Heart className={cn('h-5 w-5 sm:h-4 sm:w-4', asset.favorite && 'fill-current')} />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -466,7 +473,7 @@ function ImageTileComponent({
                       filename={asset.filename}
                       mimeType={asset.mime}
                       size="icon"
-                      className="h-7 w-7 transition-colors text-muted-foreground/60 hover:text-accent-cyan"
+                      className="h-11 w-11 transition-colors text-muted-foreground/60 hover:text-accent-cyan sm:h-7 sm:w-7"
                     />
                   </TooltipTrigger>
                   <TooltipContent side="top">
@@ -479,7 +486,7 @@ function ImageTileComponent({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 transition-colors text-muted-foreground/60 hover:text-destructive"
+                className="hidden h-7 w-7 transition-colors text-muted-foreground/60 hover:text-destructive sm:inline-flex"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDelete(e);
@@ -494,17 +501,17 @@ function ImageTileComponent({
             {/* Right: Metadata */}
             <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
               {/* Dimensions and size - monospace for technical data */}
-              <span className="font-mono text-xs text-muted-foreground tabular-nums whitespace-nowrap">
+              <span className="hidden font-mono text-xs text-muted-foreground tabular-nums whitespace-nowrap sm:inline">
                 {asset.width}×{asset.height} {formatFileSize(asset.size || 0)}
               </span>
 
               {/* Relevance score - search results only */}
               {typeof asset.relevance === 'number' && (
                 <>
-                  <span className="text-muted-foreground/30">|</span>
+                  <span className="hidden text-muted-foreground/30 sm:inline">|</span>
                   <span
                     className={cn(
-                      'font-mono text-xs tabular-nums',
+                      'hidden font-mono text-xs tabular-nums sm:inline',
                       asset.belowThreshold ? 'text-orange-400' : 'text-green-400'
                     )}
                   >
@@ -516,12 +523,39 @@ function ImageTileComponent({
               {/* Embedding status - only show if not ready */}
               {embeddingStatusInfo && (
                 <>
-                  <span className="text-muted-foreground/30">|</span>
-                  <span className={cn('text-xs shrink-0', embeddingStatusInfo.color)}>
+                  <span className="hidden text-muted-foreground/30 sm:inline">|</span>
+                  <span className={cn('hidden text-xs shrink-0 sm:inline', embeddingStatusInfo.color)}>
                     {embeddingStatusInfo.label}
                   </span>
                 </>
               )}
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-11 w-11 text-muted-foreground/70 hover:text-foreground sm:hidden"
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label="more meme actions"
+                  >
+                    <MoreHorizontal className="h-5 w-5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenuItem
+                    className="gap-2 text-destructive focus:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(e);
+                    }}
+                    disabled={isLoading}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 

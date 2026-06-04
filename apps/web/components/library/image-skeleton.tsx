@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import Masonry from 'react-masonry-css';
 import { cn } from '@/lib/utils';
+import { IMAGE_GRID_BREAKPOINT_COLS } from './image-grid-layout';
 
 interface ImageSkeletonProps {
   className?: string;
@@ -73,18 +74,9 @@ export function ImageGridSkeleton({ count = 20, variant = 'tile', className }: I
     );
   }
 
-  // Masonry layout matching the actual image grid
-  const breakpointCols = {
-    default: 4,
-    1280: 4,
-    1024: 3,
-    768: 2,
-    640: 2,
-  };
-
   return (
     <Masonry
-      breakpointCols={breakpointCols}
+      breakpointCols={IMAGE_GRID_BREAKPOINT_COLS}
       className={cn('masonry-grid', className)}
       columnClassName="masonry-grid-column"
     >

@@ -29,7 +29,7 @@ import { SortDropdown } from '@/components/chrome/sort-dropdown';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { RotateCcw, X, Trash2 } from 'lucide-react';
+import { RotateCcw, Shuffle, X, Trash2 } from 'lucide-react';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
 import { track } from '@/lib/analytics';
 import { logger } from '@/lib/observability-logger';
@@ -409,6 +409,13 @@ function AppPageClient() {
   });
 
   const gridContainerClassName = 'h-full overflow-y-auto overflow-x-hidden';
+  const handleBangersFilterChange = useCallback((filter: FilterType) => {
+    if (filter === 'bangers') {
+      if (!bangersOnly) toggleBangers();
+    } else if (filter === 'all') {
+      if (bangersOnly) toggleBangers();
+    }
+  }, [bangersOnly, toggleBangers]);
 
   // Sort assets by filename if needed (shuffle now handled server-side)
   const sortedAssets = useMemo(() => {
@@ -676,7 +683,7 @@ function AppPageClient() {
             />
 
             {/* Action toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 md:gap-3">
+            <div className="hidden flex-wrap items-center justify-between gap-2 md:flex md:gap-3">
               {/* Left group: Primary actions */}
               <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
                 <UploadButton
@@ -706,26 +713,7 @@ function AppPageClient() {
                 )}
                 <FilterChips
                   activeFilter={bangersOnly ? 'bangers' : 'all'}
-                  onFilterChange={(filter) => {
-                    if (filter === 'bangers') {
-                      if (!bangersOnly) toggleBangers();
-                    } else if (filter === 'all') {
-                      if (bangersOnly) toggleBangers();
-                    }
-                  }}
-                  size="sm"
-                  showLabels={true}
-                  className="md:hidden"
-                />
-                <FilterChips
-                  activeFilter={bangersOnly ? 'bangers' : 'all'}
-                  onFilterChange={(filter) => {
-                    if (filter === 'bangers') {
-                      if (!bangersOnly) toggleBangers();
-                    } else if (filter === 'all') {
-                      if (bangersOnly) toggleBangers();
-                    }
-                  }}
+                  onFilterChange={handleBangersFilterChange}
                   size="lg"
                   showLabels={true}
                   className="hidden md:flex"
@@ -738,6 +726,7 @@ function AppPageClient() {
                   value={sortBy}
                   direction={sortOrder}
                   onChange={handleSortChange}
+                  className="hidden md:inline-flex"
                 />
 
                 {tagIdParam && (
@@ -884,6 +873,61 @@ function AppPageClient() {
           </div>
         </div>
       )}
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-3 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur md:hidden">
+        <div className="mx-auto flex max-w-md items-center gap-2 overflow-x-auto">
+          <UploadButton
+            onClick={() => setShowUploadPanel((prev) => !prev)}
+            isActive={showUploadPanel}
+            size="md"
+            showLabel={false}
+            className="h-11 w-11"
+          />
+
+          {failedEmbeddings.length > 0 && (
+            <Button
+              variant="accent"
+              size="lg"
+              onClick={handleBulkRetry}
+              className="h-11 gap-2 whitespace-nowrap font-mono text-xs uppercase tracking-wider"
+            >
+              <RotateCcw className="h-4 w-4" />
+              retry {failedEmbeddings.length}
+            </Button>
+          )}
+
+          <FilterChips
+            activeFilter={bangersOnly ? 'bangers' : 'all'}
+            onFilterChange={handleBangersFilterChange}
+            size="sm"
+            showLabels={true}
+            className="[&_[data-slot=toggle-group-item]]:h-11"
+          />
+
+          <Button
+            variant={sortBy === 'shuffle' ? 'accent' : 'outline'}
+            size="lg"
+            onClick={() => {
+              handleSortChange('shuffle', 'desc');
+              requestAnimationFrame(() => {
+                gridScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+              });
+            }}
+            className="h-11 gap-2 whitespace-nowrap font-mono text-xs uppercase tracking-wider"
+            aria-pressed={sortBy === 'shuffle'}
+          >
+            <Shuffle className="h-4 w-4" />
+            shuffle
+          </Button>
+
+          <SortDropdown
+            value={sortBy}
+            direction={sortOrder}
+            onChange={handleSortChange}
+            className="h-11 whitespace-nowrap px-3 text-xs"
+          />
+        </div>
+      </div>
 
       {/* Image Preview Modal */}
       {selectedAsset && (
