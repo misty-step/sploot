@@ -44,8 +44,10 @@ Lefthook runs gitleaks, web lint, extension lint, and turbo type-check before lo
 
 ## Harness Routing
 
-Use the installed Harness Kit skills; do not duplicate their catalog here.
-Substantive work should start from the backlog/docs anchors above, respect the
-web/extension/common boundary, and close with CI-parity evidence plus any
-surface-specific DB, deployed-smoke, or extension-release proof named by the
-ticket.
+Use the globally configured Harness Kit skills. Do not vendor lifecycle skill
+catalogs, generated skill references, or provider adapters into this repo
+unless the behavior is an extreme Sploot-specific exception that cannot live in
+Harness Kit. Substantive work should start from the backlog/docs anchors above,
+respect the web/extension/common boundary, and close with CI-parity evidence
+plus any surface-specific DB, deployed-smoke, or extension-release proof named
+by the ticket.
