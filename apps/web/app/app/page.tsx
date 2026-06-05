@@ -8,6 +8,7 @@ import { useAssets, useSearchAssets } from '@/hooks/use-assets';
 import { useAuthActions } from '@/lib/auth/client';
 import { ImageGrid } from '@/components/library/image-grid';
 import { ImageGridErrorBoundary } from '@/components/library/image-grid-error-boundary';
+import { MobileCommandDock } from '@/components/chrome/mobile-command-dock';
 import { AssetIntegrityBanner } from '@/components/library/asset-integrity-banner';
 import { SearchBar, SearchLoadingScreen, SimilarityScoreLegend, QuerySyntaxIndicator } from '@/components/search';
 import { cn } from '@/lib/utils';
@@ -87,6 +88,7 @@ function AppPageClient() {
   // Use local state for search, URL for persistence/sharing
   const libraryQuery = localSearchQuery;
   const [showUploadPanel, setShowUploadPanel] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(Boolean(queryParam));
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollTopRef = useRef<number | null>(null);
   const filtersRef = useRef<LibraryFilterSnapshot | undefined>(undefined);
@@ -445,6 +447,7 @@ function AppPageClient() {
 
   const trimmedLibraryQuery = libraryQuery.trim();
   const isSearching = trimmedLibraryQuery.length > 0;
+  const showMobileSearch = isMobileSearchOpen || isSearching;
 
   const activeAssets = useMemo(() => {
     if (isSearching) {
@@ -663,24 +666,25 @@ function AppPageClient() {
               </div>
             )}
 
-            {/* Search bar - hero element */}
-            <SearchBar
-              onSearch={handleInlineSearch}
-              inline
-              initialQuery={queryParam}
-              searchState={
-                searchLoading ? 'loading' :
-                  isTypingRef.current ? 'typing' :
-                    libraryQuery && searchAssets.length > 0 ? 'success' :
-                      libraryQuery && searchAssets.length === 0 ? 'no-results' :
-                        searchError ? 'error' :
-                          'idle'
-              }
-              resultCount={searchAssets.length}
-              className="w-full"
-              placeholder="search your memes..."
-              autoFocus={false}
-            />
+            <div className={cn('md:block', showMobileSearch ? 'block' : 'hidden')}>
+              <SearchBar
+                onSearch={handleInlineSearch}
+                inline
+                initialQuery={queryParam}
+                searchState={
+                  searchLoading ? 'loading' :
+                    isTypingRef.current ? 'typing' :
+                      libraryQuery && searchAssets.length > 0 ? 'success' :
+                        libraryQuery && searchAssets.length === 0 ? 'no-results' :
+                          searchError ? 'error' :
+                            'idle'
+                }
+                resultCount={searchAssets.length}
+                className="w-full"
+                placeholder="search your memes..."
+                autoFocus={showMobileSearch && !isSearching}
+              />
+            </div>
 
             {/* Action toolbar */}
             <div className="hidden flex-wrap items-center justify-between gap-2 md:flex md:gap-3">
@@ -728,6 +732,22 @@ function AppPageClient() {
                   onChange={handleSortChange}
                   className="hidden md:inline-flex"
                 />
+
+                <Button
+                  variant={sortBy === 'shuffle' ? 'accent' : 'outline'}
+                  size="lg"
+                  onClick={() => {
+                    handleSortChange('shuffle', 'desc');
+                    requestAnimationFrame(() => {
+                      gridScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                    });
+                  }}
+                  className="hidden gap-2 font-mono uppercase tracking-wider md:inline-flex"
+                  aria-pressed={sortBy === 'shuffle'}
+                >
+                  <Shuffle className="h-4 w-4" />
+                  shuffle
+                </Button>
 
                 {tagIdParam && (
                   <Button
@@ -874,60 +894,33 @@ function AppPageClient() {
         </div>
       )}
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-3 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 backdrop-blur md:hidden">
-        <div className="mx-auto flex max-w-md items-center gap-2 overflow-x-auto">
-          <UploadButton
-            onClick={() => setShowUploadPanel((prev) => !prev)}
-            isActive={showUploadPanel}
-            size="md"
-            showLabel={false}
-            className="h-11 w-11"
-          />
-
-          {failedEmbeddings.length > 0 && (
-            <Button
-              variant="accent"
-              size="lg"
-              onClick={handleBulkRetry}
-              className="h-11 gap-2 whitespace-nowrap font-mono text-xs uppercase tracking-wider"
-            >
-              <RotateCcw className="h-4 w-4" />
-              retry {failedEmbeddings.length}
-            </Button>
-          )}
-
-          <FilterChips
-            activeFilter={bangersOnly ? 'bangers' : 'all'}
-            onFilterChange={handleBangersFilterChange}
-            size="sm"
-            showLabels={true}
-            className="[&_[data-slot=toggle-group-item]]:h-11"
-          />
-
-          <Button
-            variant={sortBy === 'shuffle' ? 'accent' : 'outline'}
-            size="lg"
-            onClick={() => {
-              handleSortChange('shuffle', 'desc');
-              requestAnimationFrame(() => {
-                gridScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-              });
-            }}
-            className="h-11 gap-2 whitespace-nowrap font-mono text-xs uppercase tracking-wider"
-            aria-pressed={sortBy === 'shuffle'}
-          >
-            <Shuffle className="h-4 w-4" />
-            shuffle
-          </Button>
-
-          <SortDropdown
-            value={sortBy}
-            direction={sortOrder}
-            onChange={handleSortChange}
-            className="h-11 whitespace-nowrap px-3 text-xs"
-          />
-        </div>
-      </div>
+      <MobileCommandDock
+        activeFilter={bangersOnly ? 'bangers' : 'all'}
+        failedEmbeddingsCount={failedEmbeddings.length}
+        isSearchOpen={showMobileSearch}
+        isShuffleActive={sortBy === 'shuffle'}
+        isUploadOpen={showUploadPanel}
+        onFilterChange={handleBangersFilterChange}
+        onRetryFailed={failedEmbeddings.length > 0 ? handleBulkRetry : undefined}
+        onSearchToggle={() => {
+          if (showMobileSearch && !isSearching) {
+            setIsMobileSearchOpen(false);
+            return;
+          }
+          setIsMobileSearchOpen(true);
+          requestAnimationFrame(focusSearchBar);
+        }}
+        onShuffle={() => {
+          handleSortChange('shuffle', 'desc');
+          requestAnimationFrame(() => {
+            gridScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+          });
+        }}
+        onSortChange={handleSortChange}
+        onUploadClick={() => setShowUploadPanel((prev) => !prev)}
+        sortBy={sortBy}
+        sortOrder={sortOrder}
+      />
 
       {/* Image Preview Modal */}
       {selectedAsset && (

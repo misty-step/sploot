@@ -61,13 +61,15 @@ describe('mobile meme feed layout contract', () => {
     );
 
     const image = screen.getByAltText('meme.jpg');
-    expect(image).toHaveAttribute('sizes', expect.stringContaining('calc(100vw - 24px)'));
+    expect(image).toHaveAttribute('sizes', expect.stringContaining('(max-width: 640px) 100vw'));
 
     const favorite = screen.getByRole('button', { name: /mark as banger/i });
     expect(favorite).toHaveClass('h-11', 'w-11');
 
-    const more = screen.getByRole('button', { name: /more meme actions/i });
-    expect(more).toHaveClass('h-11', 'w-11', 'sm:hidden');
+    const deleteButton = screen.getByRole('button', { name: /delete meme/i });
+    expect(deleteButton).toHaveClass('h-11', 'w-11');
+
+    expect(screen.queryByRole('button', { name: /more meme actions/i })).not.toBeInTheDocument();
 
     expect(screen.getByText('601×178 28.3 KB')).toHaveClass('hidden', 'sm:inline');
     expect(screen.getByText('87%')).toHaveClass('hidden', 'sm:inline');

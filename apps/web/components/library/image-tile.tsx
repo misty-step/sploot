@@ -9,13 +9,7 @@ import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/
 import { useBlobCircuitBreaker } from '@/contexts/blob-circuit-breaker-context';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Heart, Trash2, ImageOff, Loader2, AlertCircle, Clock, MoreHorizontal } from 'lucide-react';
+import { Heart, Trash2, ImageOff, Loader2, AlertCircle, Clock } from 'lucide-react';
 import type { Asset } from '@/lib/types';
 import { ShareButton } from './share-button';
 import { logger } from '@/lib/observability-logger';
@@ -377,7 +371,7 @@ function ImageTileComponent({
                   src={imageSrc}
                   alt={asset.filename || asset.pathname?.split('/').pop() || 'Uploaded image'}
                   fill
-                  sizes="(max-width: 640px) calc(100vw - 24px), (max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
+                  sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
                   className={cn(
                     'h-full w-full',
                     preserveAspectRatio ? 'object-contain' : 'object-cover'
@@ -482,19 +476,20 @@ function ImageTileComponent({
                 </Tooltip>
               </TooltipProvider>
 
-              {/* Delete button - always visible */}
+              {/* Delete button - direct on mobile so there is no one-item overflow menu */}
               <Button
                 variant="ghost"
                 size="icon"
-                className="hidden h-7 w-7 transition-colors text-muted-foreground/60 hover:text-destructive sm:inline-flex"
+                className="h-11 w-11 transition-colors text-muted-foreground/60 hover:text-destructive sm:h-7 sm:w-7"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDelete(e);
                 }}
                 disabled={isLoading}
+                aria-label="delete meme"
                 title="delete"
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-5 w-5 sm:h-4 sm:w-4" />
               </Button>
             </div>
 
@@ -529,33 +524,6 @@ function ImageTileComponent({
                   </span>
                 </>
               )}
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-11 w-11 text-muted-foreground/70 hover:text-foreground sm:hidden"
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label="more meme actions"
-                  >
-                    <MoreHorizontal className="h-5 w-5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenuItem
-                    className="gap-2 text-destructive focus:text-destructive"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(e);
-                    }}
-                    disabled={isLoading}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    delete
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
             </div>
           </div>
 

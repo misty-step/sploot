@@ -40,7 +40,6 @@ export function SortDropdown({
     { value: 'updatedAt', label: 'UPDATED' },
     { value: 'size', label: 'SIZE' },
     { value: 'pathname', label: 'NAME' },
-    { value: 'shuffle', label: 'SHUFFLE' },
   ];
 
   // Handle sort option selection
