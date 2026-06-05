@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sploot Mobile Command Dock Demo</title>
+    <style>
+      :root {
+        --ink: #151515;
+        --paper: #f4f1ec;
+        --panel: #fffdfa;
+        --cyan: #0098a8;
+        --cyan-dark: #087480;
+        --pink: #ff4d7e;
+        --lime: #c8f84f;
+        --amber: #ffb84d;
+        --line: #b9b3aa;
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          "Courier New", monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--paper);
+        color: var(--ink);
+      }
+
+      .phone {
+        position: relative;
+        width: 390px;
+        height: 844px;
+        margin: 0 auto;
+        overflow: hidden;
+        background:
+          linear-gradient(rgba(0, 0, 0, 0.035) 1px, transparent 1px) 0 0 / 100% 42px,
+          var(--paper);
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 72px;
+        padding: 18px 16px 10px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(244, 241, 236, 0.96);
+      }
+
+      .brand {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        color: var(--cyan-dark);
+        font-size: 20px;
+        font-weight: 900;
+        letter-spacing: 1px;
+      }
+
+      .brand-mark {
+        width: 31px;
+        height: 20px;
+      }
+
+      .profile {
+        width: 42px;
+        height: 42px;
+        border: 2px solid var(--paper);
+        border-radius: 999px;
+        background:
+          radial-gradient(circle at 50% 32%, #fff 0 8px, transparent 9px),
+          radial-gradient(circle at 50% 82%, #fff 0 16px, transparent 17px),
+          linear-gradient(135deg, #6f2cff, #bd4dff);
+        box-shadow: 0 0 0 1px rgba(21, 21, 21, 0.18);
+      }
+
+      .toolbar-space {
+        height: 2px;
+        background: var(--cyan);
+        box-shadow: 0 3px 0 var(--lime);
+      }
+
+      .search-panel {
+        position: absolute;
+        z-index: 15;
+        top: 72px;
+        left: 0;
+        right: 0;
+        padding: 10px 12px 12px;
+        border-bottom: 2px solid var(--cyan);
+        background: var(--paper);
+        opacity: 0;
+        transform: translateY(-180%);
+        transition: transform 220ms cubic-bezier(0.2, 0.85, 0.2, 1);
+      }
+
+      [data-step="search"] .search-panel,
+      [data-step="filter"] .search-panel,
+      [data-step="sort"] .search-panel {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .search-box {
+        width: 100%;
+        height: 52px;
+        padding: 0 16px;
+        border: 2px solid var(--line);
+        background: var(--panel);
+        color: var(--ink);
+        font-size: 16px;
+        font-weight: 700;
+        outline: none;
+      }
+
+      .feed {
+        height: calc(100% - 74px);
+        overflow: hidden;
+        padding: 0 0 104px;
+      }
+
+      .rail {
+        transition: transform 260ms cubic-bezier(0.2, 0.85, 0.2, 1);
+      }
+
+      [data-step="search"] .rail {
+        transform: translateY(54px);
+      }
+
+      [data-step="filter"] .rail,
+      [data-step="sort"] .rail {
+        transform: translateY(132px);
+      }
+
+      [data-step="shuffle"] .rail {
+        transform: translateY(-70px);
+      }
+
+      .meme-card {
+        width: 100%;
+        margin: 0 0 12px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+        box-shadow: inset 0 -3px 0 rgba(0, 152, 168, 0.08);
+      }
+
+      .tweet {
+        padding: 14px 14px 10px;
+        background: #fff;
+      }
+
+      .tweet-head {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin-bottom: 10px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .avatar {
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--cyan), var(--pink));
+      }
+
+      .name {
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .handle {
+        color: #6b6b6b;
+        font-size: 11px;
+      }
+
+      .tweet p {
+        margin: 0 0 10px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 16px;
+        line-height: 1.22;
+      }
+
+      .quote {
+        margin-top: 10px;
+        padding: 12px;
+        border: 1px solid #dedede;
+        border-radius: 8px;
+        background: #fafafa;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 13px;
+        line-height: 1.25;
+      }
+
+      .image-meme {
+        position: relative;
+        height: 220px;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.18) 0 1px, transparent 1px) 0 0 / 32px 100%,
+          linear-gradient(135deg, #335f54, #8aa66f);
+        color: #fff;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        overflow: hidden;
+      }
+
+      .image-meme::before {
+        content: "SPL";
+        position: absolute;
+        top: 18px;
+        left: 18px;
+        font-size: 54px;
+        font-weight: 900;
+        opacity: 0.45;
+      }
+
+      .image-meme .caption {
+        position: absolute;
+        right: 18px;
+        bottom: 18px;
+        left: 18px;
+        padding: 10px 12px;
+        background: rgba(21, 21, 21, 0.74);
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr auto;
+        align-items: center;
+        min-height: 56px;
+        border-top: 1px solid var(--line);
+        background: #fbfaf7;
+      }
+
+      .action {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 56px;
+        border: 0;
+        border-right: 1px solid var(--line);
+        background: transparent;
+        color: #555;
+      }
+
+      .action svg {
+        width: 26px;
+        height: 26px;
+        stroke-width: 2.1;
+      }
+
+      .action.like {
+        color: var(--pink);
+      }
+
+      .action.delete {
+        width: 64px;
+        border-right: 0;
+        color: #7a5a58;
+      }
+
+      [data-step="delete"] .meme-card:first-child .action.delete {
+        background: var(--pink);
+        color: #fff;
+      }
+
+      .meta {
+        justify-self: end;
+        padding-right: 12px;
+        color: #666;
+        font-size: 13px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .dock {
+        position: absolute;
+        z-index: 30;
+        right: 10px;
+        bottom: 12px;
+        left: 10px;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 8px;
+        padding: 9px;
+        border: 2px solid var(--ink);
+        background: rgba(255, 253, 250, 0.94);
+        box-shadow: 5px 5px 0 var(--cyan), 0 12px 36px rgba(21, 21, 21, 0.18);
+        backdrop-filter: blur(14px);
+      }
+
+      .dock button {
+        display: grid;
+        place-items: center;
+        height: 50px;
+        border: 2px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .dock button svg {
+        width: 24px;
+        height: 24px;
+        stroke-width: 2.25;
+      }
+
+      [data-step="search"] .dock [data-action="search"],
+      [data-step="filter"] .dock [data-action="filter"],
+      [data-step="sort"] .dock [data-action="sort"],
+      [data-step="shuffle"] .dock [data-action="shuffle"] {
+        border-color: var(--ink);
+        background: var(--cyan);
+        color: #fff;
+        transform: translateY(-3px);
+        box-shadow: 0 4px 0 var(--ink);
+      }
+
+      .sheet {
+        position: absolute;
+        z-index: 18;
+        right: 12px;
+        left: 12px;
+        top: 134px;
+        display: none;
+        border: 2px solid var(--ink);
+        background: var(--panel);
+        box-shadow: 5px 5px 0 var(--amber);
+      }
+
+      [data-step="filter"] .sheet.filter,
+      [data-step="sort"] .sheet.sort {
+        display: block;
+        animation: pop 180ms cubic-bezier(0.2, 0.85, 0.2, 1);
+      }
+
+      .sheet-title {
+        padding: 10px 12px;
+        border-bottom: 2px solid var(--ink);
+        background: var(--lime);
+        font-size: 13px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .sheet-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 44px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .sheet-row:last-child {
+        border-bottom: 0;
+      }
+
+      .pill {
+        padding: 4px 8px;
+        border: 1px solid var(--ink);
+        background: var(--cyan);
+        color: #fff;
+        font-size: 11px;
+      }
+
+      .toast {
+        position: absolute;
+        z-index: 36;
+        right: 14px;
+        bottom: 94px;
+        left: 14px;
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px;
+        border: 2px solid var(--ink);
+        background: var(--pink);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 900;
+        box-shadow: 4px 4px 0 var(--ink);
+      }
+
+      [data-step="delete"] .toast {
+        display: flex;
+      }
+
+      @keyframes pop {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.98);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+    </style>
+  </head>
+  <body data-step="feed">
+    <div class="phone" aria-label="Representative Sploot mobile app demo">
+      <header class="topbar">
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 64 40" fill="none" aria-hidden="true">
+            <circle cx="22" cy="20" r="18" stroke="currentColor" stroke-width="3" />
+            <circle cx="42" cy="20" r="18" stroke="currentColor" stroke-width="3" opacity=".45" />
+          </svg>
+          SPLOOT
+        </div>
+        <div class="profile" aria-hidden="true"></div>
+      </header>
+      <div class="toolbar-space"></div>
+
+      <form class="search-panel">
+        <input class="search-box" value="reaction memes, unread chaos" aria-label="Search your memes" />
+      </form>
+
+      <section class="sheet filter" aria-label="Filter menu">
+        <div class="sheet-title">Filter</div>
+        <div class="sheet-row">All memes <span class="pill">active</span></div>
+        <div class="sheet-row">Bangers only <span>heart</span></div>
+        <div class="sheet-row">Uploads this week <span>12</span></div>
+      </section>
+
+      <section class="sheet sort" aria-label="Sort menu">
+        <div class="sheet-title">Sort</div>
+        <div class="sheet-row">Newest first <span class="pill">active</span></div>
+        <div class="sheet-row">Oldest first <span></span></div>
+        <div class="sheet-row">Smallest file <span></span></div>
+      </section>
+
+      <main class="feed">
+        <div class="rail">
+          <article class="meme-card">
+            <div class="tweet">
+              <div class="tweet-head">
+                <div class="avatar"></div>
+                <div>
+                  <div class="name">melian refuge</div>
+                  <div class="handle">@escapeFromMelos</div>
+                </div>
+              </div>
+              <p>a fish, so to speak, knows nothing of water</p>
+              <div class="quote">guy saying his never once smiled like fish is that like a misogynist myth or smth cause what</div>
+            </div>
+            <div class="actions">
+              <button class="action like" aria-label="Favorite">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M19.5 12.5 12 20l-7.5-7.5a5 5 0 1 1 7.5-6.5 5 5 0 1 1 7.5 6.5Z"/></svg>
+              </button>
+              <button class="action" aria-label="Share">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 8 4M16.6 6.5l-8 4"/></svg>
+              </button>
+              <button class="action delete" aria-label="Delete">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2M6 6l1 16h10l1-16M10 11v6M14 11v6"/></svg>
+              </button>
+              <div class="meta">599x255 44.5 KB</div>
+            </div>
+          </article>
+
+          <article class="meme-card">
+            <div class="tweet">
+              <div class="tweet-head">
+                <div class="avatar" style="background: linear-gradient(135deg, #ffb84d, #c8f84f)"></div>
+                <div>
+                  <div class="name">office episode</div>
+                  <div class="handle">@exactlyOnce</div>
+                </div>
+              </div>
+              <p>donkey kong is a fool if he thinks wearing a tie will earn him respect</p>
+            </div>
+            <div class="actions">
+              <button class="action like" aria-label="Favorite">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M19.5 12.5 12 20l-7.5-7.5a5 5 0 1 1 7.5-6.5 5 5 0 1 1 7.5 6.5Z"/></svg>
+              </button>
+              <button class="action" aria-label="Share">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 8 4M16.6 6.5l-8 4"/></svg>
+              </button>
+              <button class="action delete" aria-label="Delete">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2M6 6l1 16h10l1-16M10 11v6M14 11v6"/></svg>
+              </button>
+              <div class="meta">599x234 38.5 KB</div>
+            </div>
+          </article>
+
+          <article class="meme-card">
+            <div class="image-meme">
+              <div class="caption">when shuffle is finally a button and not a buried sort mode</div>
+            </div>
+            <div class="actions">
+              <button class="action like" aria-label="Favorite">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M19.5 12.5 12 20l-7.5-7.5a5 5 0 1 1 7.5-6.5 5 5 0 1 1 7.5 6.5Z"/></svg>
+              </button>
+              <button class="action" aria-label="Share">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 8 4M16.6 6.5l-8 4"/></svg>
+              </button>
+              <button class="action delete" aria-label="Delete">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 6h18M8 6V4h8v2M6 6l1 16h10l1-16M10 11v6M14 11v6"/></svg>
+              </button>
+              <div class="meta">601x176 28.3 KB</div>
+            </div>
+          </article>
+        </div>
+      </main>
+
+      <nav class="dock" aria-label="Mobile meme commands">
+        <button data-action="upload" aria-label="Upload">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v12M7 8l5-5 5 5M5 14v5h14v-5"/></svg>
+        </button>
+        <button data-action="search" aria-label="Search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+        </button>
+        <button data-action="filter" aria-label="Filter">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+        </button>
+        <button data-action="sort" aria-label="Sort">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M7 4v16M4 17l3 3 3-3M17 20V4M14 7l3-3 3 3"/></svg>
+        </button>
+        <button data-action="shuffle" aria-label="Shuffle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+        </button>
+      </nav>
+
+      <div class="toast">
+        <span>Deleted meme</span>
+        <span>UNDO</span>
+      </div>
+    </div>
+    <script>
+      window.demoSetStep = function demoSetStep(step) {
+        document.body.dataset.step = step;
+      };
+    </script>
+  </body>
+</html>
