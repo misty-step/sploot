@@ -13,7 +13,7 @@ Status conventions:
 
 | # | Title | Priority | Estimate |
 |---|-------|----------|----------|
-| _none_ | _No active backlog items_ | - | - |
+| [018](018-agent-friendly-auth-and-qa-harness.md) | Agent-Friendly Auth And QA Harness | P1 | L |
 
 ## Done
 
