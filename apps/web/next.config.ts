@@ -52,6 +52,11 @@ const pwaConfig = withPWA({
   register: true,
   reloadOnOnline: true,
   disable: process.env.NODE_ENV === "development",
+  // The root/start document is auth-dependent: signed-out users see landing,
+  // signed-in users redirect to /app. Never let the service worker replay the
+  // signed-out document after the Clerk session changes.
+  cacheStartUrl: false,
+  dynamicStartUrl: false,
   workboxOptions: {
     disableDevLogs: true,
     skipWaiting: true,
