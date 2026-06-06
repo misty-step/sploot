@@ -47,6 +47,20 @@
 
   /* Background pattern color */
   --pattern-color: rgba(0, 0, 0, 0.03);
+
+  /* Sploot semantic design tokens: self-organizing zine archive */
+  --sploot-ink: oklch(0.1 0 0);
+  --sploot-paper: oklch(0.98 0 0);
+  --sploot-paper-warm: oklch(0.96 0.01 88);
+  --sploot-void: oklch(0 0 0);
+  --sploot-cyan: var(--accent-cyan);
+  --sploot-coral: var(--accent-coral);
+  --sploot-violet: var(--accent-violet);
+  --sploot-lime: oklch(0.84 0.18 126);
+  --sploot-grid-line: var(--pattern-color);
+  --sploot-sticker-shadow: 2px 2px 0 var(--sploot-ink);
+  --sploot-active-border-width: 3px;
+  --sploot-touch-target: 44px;
 }
 
 @theme inline {
@@ -91,6 +105,15 @@
   --color-accent-cyan: var(--accent-cyan);
   --color-accent-coral: var(--accent-coral);
   --color-accent-violet: var(--accent-violet);
+  --color-sploot-ink: var(--sploot-ink);
+  --color-sploot-paper: var(--sploot-paper);
+  --color-sploot-paper-warm: var(--sploot-paper-warm);
+  --color-sploot-void: var(--sploot-void);
+  --color-sploot-cyan: var(--sploot-cyan);
+  --color-sploot-coral: var(--sploot-coral);
+  --color-sploot-violet: var(--sploot-violet);
+  --color-sploot-lime: var(--sploot-lime);
+  --color-sploot-grid-line: var(--sploot-grid-line);
 }
 
 /* Basic animations - keep for backward compatibility during migration */
@@ -278,6 +301,20 @@ select:focus-visible {
 
   /* Background pattern color */
   --pattern-color: rgba(255, 255, 255, 0.02);
+
+  /* Sploot semantic design tokens: dark mode */
+  --sploot-ink: oklch(0.985 0 0);
+  --sploot-paper: oklch(0 0 0);
+  --sploot-paper-warm: oklch(0.08 0.01 88);
+  --sploot-void: oklch(0 0 0);
+  --sploot-cyan: var(--accent-cyan);
+  --sploot-coral: var(--accent-coral);
+  --sploot-violet: var(--accent-violet);
+  --sploot-lime: oklch(0.86 0.18 126);
+  --sploot-grid-line: var(--pattern-color);
+  --sploot-sticker-shadow: 2px 2px 0 oklch(0 0 0);
+  --sploot-active-border-width: 3px;
+  --sploot-touch-target: 44px;
 }
 
 @layer base {

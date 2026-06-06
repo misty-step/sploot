@@ -19,6 +19,7 @@
     "dev:extension": "turbo run dev --filter=extension",
     "build": "turbo run build",
     "lint": "turbo run lint",
+    "lint:design": "node scripts/check-design-system.mjs",
     "type-check": "turbo run type-check",
     "test": "turbo run test",
     "secrets:check": "node scripts/check-secrets.mjs",
