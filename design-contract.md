@@ -17,6 +17,12 @@ usable contract; this file is the provenance ledger.
 | Generated image `ig_03417fb7d499a6b3016a24484d9d4c81919c6c69cf412ce9ee.png` | The landing metaphor should be "no folders. just vibes": messy saves becoming automatic semantic piles. | provided | high | keep | User explicitly preferred No Folders Just Vibes aesthetics with Meme Atlas mechanics. |
 | User direction in this thread | Combine unsupervised clustering from Meme Atlas with No Folders Just Vibes aesthetics. | provided | high | keep | This is the current north-star art direction. |
 | Harness design references | Anti-slop rules: no gradient text, generic AI gradients, decorative glass/blobs, meta-copy, or one-note template styling. | observed | high | keep | Use as lint and review criteria, not copied prose. |
+| `apps/web/components/sploot/*` | Sticker, banger, cluster, and atlas landing wrappers are the first implemented component grammar for the design system. | observed | high | keep | Added to turn docs/tokens into reusable product code. |
+| `apps/web/app/page.tsx` | The first viewport now shows messy imports becoming automatic semantic piles. | observed | high | keep | Landing adoption point for No Folders Just Vibes plus Meme Atlas mechanics. |
+| `scripts/check-design-system.mjs` | Design lint now requires docs, tokens, Sploot wrappers, and landing adoption. | observed | high | keep | Prevents doc-only design-system pass from satisfying `pnpm lint:design`. |
+| `apps/extension/entrypoints/popup/*` | Extension popup is part of the Sploot design surface and now mirrors paper/ink/cyan/coral/violet square token grammar. | observed | high | keep | Added after critic found extension drift outside design lint. |
+| `apps/web/components/chrome/navbar.tsx` | App chrome now uses `PileMark` instead of abstract overlapping circles. | observed | high | keep | Carries self-organizing pile metaphor into authenticated navigation. |
+| `apps/web/components/library/image-tile.tsx` | Similarity and banger states now use Sploot cyan/violet/coral roles instead of generic green/yellow. | observed | high | keep | Aligns core image tile affordances with the semantic token system. |
 
 ## Migration Exceptions
 

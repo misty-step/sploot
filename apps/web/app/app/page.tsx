@@ -29,8 +29,8 @@ import { UploadButton } from '@/components/chrome/upload-button';
 import { FilterChips, type FilterType } from '@/components/chrome/filter-chips';
 import { SortDropdown } from '@/components/chrome/sort-dropdown';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { StickerTab } from '@/components/sploot';
 import { RotateCcw, Shuffle, X, Trash2 } from 'lucide-react';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
 import { track } from '@/lib/analytics';
@@ -643,7 +643,7 @@ function AppPageClient() {
   return (
     <div className="flex h-[calc(100vh-48px)] md:h-[calc(100vh-56px)] flex-col">
       {/* Container with ultra-wide support - max-width at 1920px+ */}
-      <div className="px-3 pb-3 pt-3 md:px-10 md:pb-8 md:pt-8 2xl:px-12 border-b-[3px] md:border-b-[6px] border-electric-lime">
+      <div className="border-b-[3px] border-sploot-cyan px-3 pb-3 pt-3 md:border-b-[6px] md:px-10 md:pb-8 md:pt-8 2xl:px-12">
         <div className="mx-auto w-full max-w-7xl 2xl:max-w-[1920px]">
           <header className="flex flex-col gap-2 md:gap-6">
             {/* Terminal-style status bar */}
@@ -651,21 +651,21 @@ function AppPageClient() {
               <div className="hidden md:flex font-mono text-sm brutalist-border border-border bg-card p-3 items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
                   <span className="text-muted-foreground uppercase">MEMES:</span>
-                  <span className="text-electric-lime font-bold">{stats.total.toLocaleString()}</span>
+                  <span className="font-bold text-sploot-cyan">{stats.total.toLocaleString()}</span>
                 </div>
                 {stats.favorites > 0 && (
                   <>
                     <span className="text-border">|</span>
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground uppercase">BANGERS:</span>
-                      <span className="text-hot-pink font-bold">{stats.favorites.toLocaleString()}</span>
+                      <span className="font-bold text-sploot-coral">{stats.favorites.toLocaleString()}</span>
                     </div>
                   </>
                 )}
                 <span className="text-border">|</span>
                 <div className="flex items-center gap-2">
                   <span className="text-muted-foreground uppercase">SIZE:</span>
-                  <span className="text-cyber-blue font-bold">{stats.sizeFormatted}</span>
+                  <span className="font-bold text-sploot-violet">{stats.sizeFormatted}</span>
                 </div>
               </div>
             )}
@@ -771,9 +771,9 @@ function AppPageClient() {
 
             {(!isSearching && tagIdParam) && (
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className="gap-2">
-                  filtering tag <span className="font-medium">#{activeTagName ?? tagIdParam.slice(0, 6)}</span>
-                </Badge>
+                <StickerTab tone="violet">
+                  filtering tag #{activeTagName ?? tagIdParam.slice(0, 6)}
+                </StickerTab>
               </div>
             )}
 
@@ -944,8 +944,8 @@ function AppPageClient() {
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  'h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-green-400',
-                  selectedAsset.favorite && 'text-green-500 hover:text-green-400'
+                  'h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-sploot-coral',
+                  selectedAsset.favorite && 'text-sploot-coral hover:text-sploot-coral'
                 )}
                 onClick={async (e) => {
                   e.stopPropagation();
@@ -979,7 +979,7 @@ function AppPageClient() {
                 mimeType={selectedAsset.mime}
                 variant="ghost"
                 size="icon"
-                className="h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-blue-400"
+                className="h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-sploot-cyan"
               />
 
               {/* Delete button */}

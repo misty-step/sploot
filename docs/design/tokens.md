@@ -31,6 +31,14 @@ Do not use raw hex values in product components when a semantic token exists.
 | `--sploot-sticker-shadow` | hard ink offset | hard dark offset | Sticker tabs and stamps |
 | `--sploot-active-border-width` | `3px` | `3px` | Command dock and selected surfaces |
 | `--sploot-touch-target` | `44px` | `44px` | Minimum mobile target |
+| `--sploot-command-surface` | white | near black | Command bars, stats strips, and search surfaces |
+| `--sploot-command-surface-contrast` | ink | paper | Text/icons on command surfaces |
+| `--sploot-pile-surface` | warm paper | warm near-black | Cluster pile panels |
+| `--sploot-pile-selected` | violet wash | violet wash | Selected or active semantic pile |
+| `--sploot-sticker-cyan` | cyan paper tint | cyan dark tint | Search/active sticker tab |
+| `--sploot-sticker-coral` | coral paper tint | coral dark tint | Banger/favorite sticker tab |
+| `--sploot-sticker-violet` | violet paper tint | violet dark tint | Semantic/related sticker tab |
+| `--sploot-sticker-lime` | lime paper tint | lime dark tint | Rare discovery sticker tab |
 
 ## Tailwind Names
 
@@ -49,6 +57,11 @@ The CSS `@theme inline` block exposes color utilities:
 Existing historical utility names such as `electric-lime`, `hot-pink`, and
 `cyber-blue` may remain during migration, but new product code should prefer
 the `sploot-*` names.
+
+The Chrome extension cannot import the Next app Tailwind theme directly. Its
+popup stylesheet mirrors the required semantic token names in
+`apps/extension/entrypoints/popup/style.css`; design lint treats that file as
+part of the system.
 
 ## Color Use
 
@@ -91,3 +104,9 @@ Recommended bands:
 
 Cluster and shuffle motion must have a reduced-motion fallback.
 
+Live CSS tokens:
+
+- `--sploot-motion-fast`: press feedback and icon state.
+- `--sploot-motion-base`: hover, focus, and menu open.
+- `--sploot-motion-panel`: sheets, inspectors, and search overlays.
+- `--sploot-motion-cluster`: sorting, clustering, and upload queue movement.

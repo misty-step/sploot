@@ -130,3 +130,21 @@ Good future wrappers:
 - `AssetInspector`
 - `UploadInbox`
 
+## Implemented wrappers
+
+These wrappers are canonical starting points for new product surfaces:
+
+| Component | Source | Status | Use |
+|---|---|---|---|
+| `StickerTab` | `apps/web/components/sploot/sticker-tab.tsx` | implemented | Short labels, tags, status tabs, and zine annotations |
+| `BangerStamp` | `apps/web/components/sploot/banger-stamp.tsx` | implemented | Favorite/top-ranked marker distinct from alerts |
+| `ClusterPile` | `apps/web/components/sploot/cluster-pile.tsx` | implemented | Automatic semantic group preview with text or thumbnail tiles |
+| `PileMark` | `apps/web/components/sploot/pile-mark.tsx` | implemented | Compact brand mark for navigation and tight chrome |
+| `AtlasLandingHero` | `apps/web/components/sploot/atlas-landing-hero.tsx` | implemented | Landing first viewport showing messy saves becoming piles |
+
+New product code should import these wrappers from `apps/web/components/sploot`
+before inventing local sticker, pile, or banger treatments.
+
+The Chrome extension popup is also a product surface. It should use the same
+paper/ink/cyan/coral/violet token meanings, square shape grammar, and 44px
+minimum button targets even though it owns a standalone CSS file.

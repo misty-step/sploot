@@ -4,7 +4,7 @@ import { ReactNode } from 'react';
 import Link from 'next/link';
 import { UserAvatar } from './user-avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { OverlappingCircles } from '@/components/landing/overlapping-circles';
+import { PileMark } from '@/components/sploot';
 import { cn } from '@/lib/utils';
 
 interface NavbarProps {
@@ -55,17 +55,13 @@ export function Navbar({
     >
       {/* Container for navbar content - max-width for ultra-wide screens */}
       <div className="flex items-center justify-between w-full max-w-screen-2xl 2xl:max-w-[1920px] mx-auto">
-        {/* Left section: SPLOOT branding with overlapping circles */}
+        {/* Left section: SPLOOT branding with pile mark */}
         <Link
           href="/app"
           aria-label="Sploot - Home"
           className="flex items-center gap-2 group hover:opacity-80 transition-opacity duration-150"
         >
-          {/* Overlapping circles logo */}
-          <OverlappingCircles
-            strokeWidth={3}
-            className="w-6 h-6 md:w-8 md:h-8"
-          />
+          <PileMark />
 
           {/* SPLOOT wordmark in Bebas Neue */}
           <span

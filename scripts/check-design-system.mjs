@@ -32,6 +32,13 @@ assertFile('DESIGN.md');
 assertFile('design-contract.md');
 assertFile('docs/design/tokens.md');
 assertFile('docs/design/component-library.md');
+assertFile('apps/web/components/sploot/sticker-tab.tsx');
+assertFile('apps/web/components/sploot/banger-stamp.tsx');
+assertFile('apps/web/components/sploot/cluster-pile.tsx');
+assertFile('apps/web/components/sploot/atlas-landing-hero.tsx');
+assertFile('apps/web/components/sploot/pile-mark.tsx');
+assertFile('apps/extension/entrypoints/popup/App.tsx');
+assertFile('apps/extension/entrypoints/popup/style.css');
 
 if (existsSync(join(repoRoot, 'DESIGN.md'))) {
   for (const heading of [
@@ -88,8 +95,67 @@ for (const phrase of ['--sploot-ink', '--sploot-cyan', '--sploot-touch-target'])
   assertIncludes('docs/design/tokens.md', phrase, 'documented design token');
 }
 
-for (const phrase of ['Command dock', 'Pile / cluster', 'Sticker tab', 'Banger stamp']) {
+for (const phrase of ['Command dock', 'Pile / cluster', 'Sticker tab', 'Banger stamp', 'Implemented wrappers']) {
   assertIncludes('docs/design/component-library.md', phrase, 'documented component grammar');
+}
+
+for (const [path, phrases] of Object.entries({
+  'apps/web/components/sploot/sticker-tab.tsx': ['sploot-sticker-shadow', 'border-sploot-cyan'],
+  'apps/web/components/sploot/banger-stamp.tsx': ['border-sploot-coral', 'sploot-tabular'],
+  'apps/web/components/sploot/cluster-pile.tsx': ['bg-sploot-pile-surface', 'StickerTab', 'src?: string'],
+  'apps/web/components/sploot/atlas-landing-hero.tsx': ['ClusterPile', 'no folders just vibes'],
+  'apps/web/components/sploot/pile-mark.tsx': ['--sploot-sticker-cyan', '--sploot-sticker-violet'],
+  'apps/web/components/chrome/navbar.tsx': ['PileMark'],
+  'apps/web/components/chrome/filter-chips.tsx': ['bg-sploot-coral', 'border-sploot-coral'],
+  'apps/web/components/search/search-bar.tsx': ['--sploot-touch-target'],
+  'apps/web/components/chrome/mobile-command-dock.tsx': ['--sploot-touch-target'],
+  'apps/web/components/library/image-tile.tsx': ['BangerStamp', 'border-sploot-violet', 'text-sploot-cyan'],
+  'apps/extension/entrypoints/popup/App.tsx': ['#0891B2', "borderRadius: '0'"],
+  'apps/extension/entrypoints/popup/style.css': ['--sploot-cyan', '--sploot-coral', '--radius-square: 0px'],
+  'apps/web/app/page.tsx': ['AtlasLandingHero'],
+})) {
+  for (const phrase of phrases) {
+    assertIncludes(path, phrase, 'implemented Sploot design-system adoption');
+  }
+}
+
+const landingSystemFiles = [
+  'apps/web/app/page.tsx',
+  'apps/web/components/sploot/atlas-landing-hero.tsx',
+  'apps/web/components/sploot/sticker-tab.tsx',
+  'apps/web/components/sploot/banger-stamp.tsx',
+  'apps/web/components/sploot/cluster-pile.tsx',
+];
+
+for (const file of landingSystemFiles) {
+  const content = read(file);
+  for (const phrase of ['MEME SEARCH. INSTANT.', 'AI POWERED', 'START FOR FREE']) {
+    if (content.includes(phrase)) {
+      fail(`${file}: legacy SaaS hero phrase remains (${phrase})`);
+    }
+  }
+  for (const tokenName of ['electric-lime', 'hot-pink', 'cyber-blue']) {
+    if (content.includes(tokenName)) {
+      fail(`${file}: new landing design-system code must use sploot-* tokens, not ${tokenName}`);
+    }
+  }
+}
+
+const extensionUiFiles = [
+  'apps/extension/entrypoints/popup/App.tsx',
+  'apps/extension/entrypoints/popup/style.css',
+];
+
+for (const file of extensionUiFiles) {
+  const content = read(file);
+  for (const forbidden of ['#7C5CFF', "borderRadius: '8px'", 'backdrop-filter']) {
+    if (content.includes(forbidden)) {
+      fail(`${file}: extension popup must use Sploot square token grammar, found ${forbidden}`);
+    }
+  }
+  if (content.includes('linear-gradient') && !content.includes('linear-gradient(var(--sploot-grid-line)')) {
+    fail(`${file}: extension popup may use Sploot grid lines, not decorative gradients`);
+  }
 }
 
 const trackedUiFiles = execSync(

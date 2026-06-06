@@ -1,26 +1,32 @@
-/* ============================================
-   SPLOOT EXTENSION - CURATOR'S INSTANT THEME
-   ============================================ */
-
-/* No external fonts - using system fonts for instant load */
+/* Sploot extension popup: self-organizing zine archive grammar. */
 
 /* Design Tokens */
 :root {
-  /* Colors - Monochrome Foundation */
-  --bg-primary: #FFFFFF;
-  --bg-secondary: #FAFAFA;
-  --bg-tertiary: #F5F5F5;
-  --text-primary: #0A0A0A;
-  --text-secondary: #666666;
-  --text-tertiary: #999999;
-  --border-primary: #E5E5E5;
-  --border-secondary: #F0F0F0;
+  --sploot-ink: #0A0A0A;
+  --sploot-paper: #FAFAF5;
+  --sploot-paper-warm: #F3F0E6;
+  --sploot-cyan: #0891B2;
+  --sploot-cyan-muted: #0E7490;
+  --sploot-coral: #DC2626;
+  --sploot-violet: #7C3AED;
+  --sploot-grid-line: rgba(10, 10, 10, 0.06);
+  --sploot-sticker-shadow: 2px 2px 0 var(--sploot-ink);
+  --sploot-touch-target: 44px;
+  --radius-square: 0px;
 
-  /* Colors - Vibrant Purple Accent (matches main app) */
-  --accent-primary: #7C5CFF;
-  --accent-hover: #6B4FE8;
-  --accent-subtle: #F5F3FF;
-  --accent-shadow: rgba(124, 92, 255, 0.25);
+  --bg-primary: var(--sploot-paper);
+  --bg-secondary: var(--sploot-paper-warm);
+  --bg-tertiary: #FFFFFF;
+  --text-primary: var(--sploot-ink);
+  --text-secondary: #525252;
+  --text-tertiary: #737373;
+  --border-primary: var(--sploot-ink);
+  --border-secondary: var(--sploot-cyan);
+
+  --accent-primary: var(--sploot-cyan);
+  --accent-hover: var(--sploot-cyan-muted);
+  --accent-subtle: color-mix(in srgb, var(--sploot-cyan) 12%, white);
+  --accent-shadow: rgba(8, 145, 178, 0.24);
 
   /* Colors - Functional */
   --success: #00C853;
@@ -53,12 +59,11 @@
   --space-8: 32px;
   --space-10: 40px;
 
-  /* Border Radius */
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-full: 9999px;
+  --radius-sm: var(--radius-square);
+  --radius-md: var(--radius-square);
+  --radius-lg: var(--radius-square);
+  --radius-xl: var(--radius-square);
+  --radius-full: var(--radius-square);
 
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -89,7 +94,11 @@ body {
   font-size: var(--font-base);
   font-weight: var(--weight-normal);
   color: var(--text-primary);
-  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+  background-color: var(--bg-primary);
+  background-image:
+    linear-gradient(var(--sploot-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--sploot-grid-line) 1px, transparent 1px);
+  background-size: 18px 18px;
   min-height: 480px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -131,10 +140,7 @@ html, body {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg,
-    var(--accent-primary) 0%,
-    transparent 100%
-  );
+  background: var(--accent-primary);
 }
 
 /* ============================================
@@ -160,6 +166,7 @@ header h1 {
 .logo-icon {
   width: 24px;
   height: 24px;
+  border: 1px solid var(--sploot-ink);
   border-radius: var(--radius-sm);
 }
 
@@ -211,8 +218,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(10px);
+  background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-lg);
   padding: var(--space-5);
@@ -286,13 +292,14 @@ main {
 button {
   background: var(--accent-primary);
   color: white;
-  border: none;
+  border: 1px solid var(--sploot-ink);
   padding: var(--space-3) var(--space-5);
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--font-md);
   font-weight: var(--weight-medium);
   font-family: inherit;
+  min-height: var(--sploot-touch-target);
   transition: all var(--transition-fast);
   transform: scale(1);
   box-shadow: var(--shadow-sm);
@@ -385,7 +392,7 @@ button.debug:hover {
   max-width: 100% !important;
   min-width: 0 !important;
   border: 1px solid var(--border-primary) !important;
-  box-shadow: var(--shadow-md) !important;
+  box-shadow: none !important;
   border-radius: var(--radius-lg) !important;
 }
 
@@ -412,6 +419,26 @@ button.debug:hover {
 
 .text-accent {
   color: var(--accent-primary);
+}
+
+.bg-sploot-cyan {
+  background: var(--sploot-cyan) !important;
+}
+
+.hover\:bg-sploot-cyan-muted:hover {
+  background: var(--sploot-cyan-muted) !important;
+}
+
+.border-sploot-ink {
+  border-color: var(--sploot-ink) !important;
+}
+
+.text-sploot-cyan {
+  color: var(--sploot-cyan) !important;
+}
+
+.hover\:text-sploot-cyan-muted:hover {
+  color: var(--sploot-cyan-muted) !important;
 }
 
 .mono {

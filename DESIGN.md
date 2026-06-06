@@ -170,6 +170,19 @@ Canonical component grammar:
 | Upload inbox | Pending import state | Workbench panel with queue and failure recovery |
 | Empty state | First-use and zero-result education | Show product action and example pile, not generic illustration |
 
+Implemented product wrappers live in `apps/web/components/sploot`:
+
+- `StickerTab` for labels, tags, status, and playful annotations.
+- `BangerStamp` for favorite or top-ranked markers.
+- `ClusterPile` for automatic semantic group previews, including real
+  thumbnail-backed piles when image URLs are available.
+- `PileMark` for compact brand/navigation surfaces where the product mechanic
+  needs to replace abstract circle marks.
+- `AtlasLandingHero` for the landing first viewport.
+
+New product surfaces should compose these wrappers before creating one-off
+sticker, pile, banger, or atlas treatments.
+
 Interaction rules:
 
 - Motion must explain sorting, clustering, uploading, or selection.
@@ -236,7 +249,10 @@ Governance rules:
 - Update this file when durable visual facts change: tokens, layout density,
   component grammar, content voice, accessibility rules, or anti-patterns.
 - Record source/provenance changes in `design-contract.md`.
-- Run `pnpm lint:design` before shipping visual-system changes.
+- Run `pnpm lint:design` before shipping visual-system changes. The lint must
+  require both the contract artifacts and at least one concrete product-surface
+  adoption point. It also covers extension popup token drift because saving
+  from Chrome is part of the product surface.
 - Exploratory design catalogs stay on branches or local artifacts until
   production movement is explicitly approved.
 

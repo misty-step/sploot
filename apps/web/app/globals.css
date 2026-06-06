@@ -61,6 +61,18 @@
   --sploot-sticker-shadow: 2px 2px 0 var(--sploot-ink);
   --sploot-active-border-width: 3px;
   --sploot-touch-target: 44px;
+  --sploot-command-surface: oklch(1 0 0);
+  --sploot-command-surface-contrast: oklch(0.1 0 0);
+  --sploot-pile-surface: oklch(0.96 0.01 88);
+  --sploot-pile-selected: color-mix(in srgb, var(--sploot-violet) 16%, transparent);
+  --sploot-sticker-cyan: color-mix(in srgb, var(--sploot-cyan) 18%, white);
+  --sploot-sticker-coral: color-mix(in srgb, var(--sploot-coral) 18%, white);
+  --sploot-sticker-violet: color-mix(in srgb, var(--sploot-violet) 16%, white);
+  --sploot-sticker-lime: color-mix(in srgb, var(--sploot-lime) 24%, white);
+  --sploot-motion-fast: 75ms;
+  --sploot-motion-base: 150ms;
+  --sploot-motion-panel: 240ms;
+  --sploot-motion-cluster: 360ms;
 }
 
 @theme inline {
@@ -114,6 +126,10 @@
   --color-sploot-violet: var(--sploot-violet);
   --color-sploot-lime: var(--sploot-lime);
   --color-sploot-grid-line: var(--sploot-grid-line);
+  --color-sploot-command-surface: var(--sploot-command-surface);
+  --color-sploot-command-surface-contrast: var(--sploot-command-surface-contrast);
+  --color-sploot-pile-surface: var(--sploot-pile-surface);
+  --color-sploot-pile-selected: var(--sploot-pile-selected);
 }
 
 /* Basic animations - keep for backward compatibility during migration */
@@ -315,6 +331,18 @@ select:focus-visible {
   --sploot-sticker-shadow: 2px 2px 0 oklch(0 0 0);
   --sploot-active-border-width: 3px;
   --sploot-touch-target: 44px;
+  --sploot-command-surface: oklch(0.06 0 0);
+  --sploot-command-surface-contrast: oklch(0.985 0 0);
+  --sploot-pile-surface: oklch(0.08 0.01 88);
+  --sploot-pile-selected: color-mix(in srgb, var(--sploot-violet) 22%, transparent);
+  --sploot-sticker-cyan: color-mix(in srgb, var(--sploot-cyan) 26%, black);
+  --sploot-sticker-coral: color-mix(in srgb, var(--sploot-coral) 26%, black);
+  --sploot-sticker-violet: color-mix(in srgb, var(--sploot-violet) 28%, black);
+  --sploot-sticker-lime: color-mix(in srgb, var(--sploot-lime) 24%, black);
+  --sploot-motion-fast: 75ms;
+  --sploot-motion-base: 150ms;
+  --sploot-motion-panel: 240ms;
+  --sploot-motion-cluster: 360ms;
 }
 
 @layer base {
@@ -441,6 +469,22 @@ select:focus-visible {
   background-image: linear-gradient(var(--pattern-color) 1px, transparent 1px),
     linear-gradient(90deg, var(--pattern-color) 1px, transparent 1px);
   background-size: 24px 24px;
+}
+
+.bg-sploot-workbench {
+  background-color: var(--sploot-paper);
+  background-image:
+    linear-gradient(var(--sploot-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--sploot-grid-line) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.sploot-sticker-shadow {
+  box-shadow: var(--sploot-sticker-shadow);
+}
+
+.sploot-tabular {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Sharp corners override */

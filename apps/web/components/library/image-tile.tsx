@@ -13,6 +13,7 @@ import { Heart, Trash2, ImageOff, Loader2, AlertCircle, Clock } from 'lucide-rea
 import type { Asset } from '@/lib/types';
 import { ShareButton } from './share-button';
 import { logger } from '@/lib/observability-logger';
+import { BangerStamp } from '@/components/sploot';
 
 interface ImageTileProps {
   asset: Asset;
@@ -309,9 +310,9 @@ function ImageTileComponent({
     if (typeof score !== 'number') return null;
 
     if (score > 0.85) {
-      return 'border-green-500 shadow-[0_0_0_2px_rgb(34_197_94),0_0_12px_rgba(34,197,94,0.3)]';
+      return 'border-sploot-cyan shadow-[0_0_0_2px_var(--sploot-cyan),0_0_12px_color-mix(in_srgb,var(--sploot-cyan)_28%,transparent)]';
     } else if (score >= 0.7) {
-      return 'border-yellow-500 shadow-[0_0_0_2px_rgb(234_179_8),0_0_12px_rgba(234,179,8,0.3)]';
+      return 'border-sploot-violet shadow-[0_0_0_2px_var(--sploot-violet),0_0_12px_color-mix(in_srgb,var(--sploot-violet)_28%,transparent)]';
     }
     return 'border-border shadow-[0_0_0_2px_hsl(var(--border))]';
   }, [showSimilarityScore, asset]);
@@ -419,8 +420,8 @@ function ImageTileComponent({
             {/* Similarity score overlay */}
             {similarityScore !== null && (
               <div className="absolute top-2 right-2 z-10">
-                <div className="px-2 py-1 bg-black/80 backdrop-blur-sm border border-green-500 rounded">
-                  <span className="font-mono text-xs text-green-500 tabular-nums">{similarityScore}</span>
+                <div className="border border-sploot-violet bg-black/80 px-2 py-1">
+                  <span className="font-mono text-xs text-sploot-cyan sploot-tabular">{similarityScore}</span>
                 </div>
               </div>
             )}
@@ -448,7 +449,11 @@ function ImageTileComponent({
                       aria-pressed={asset.favorite}
                       aria-label={asset.favorite ? 'remove banger' : 'mark as banger'}
                     >
-                      <Heart className={cn('h-5 w-5 sm:h-4 sm:w-4', asset.favorite && 'fill-current')} />
+                      {asset.favorite ? (
+                        <BangerStamp className="pointer-events-none min-h-0 border-0 bg-transparent p-0 text-current" />
+                      ) : (
+                        <Heart className="h-5 w-5 sm:h-4 sm:w-4" />
+                      )}
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>

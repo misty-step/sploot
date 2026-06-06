@@ -173,7 +173,7 @@ export function SearchBar({
             placeholder={placeholder || 'search your memes...'}
             autoFocus={autoFocus}
             className={`
-              w-full h-10 md:h-[56px] pl-3 md:pl-6 pr-10 md:pr-12 text-sm md:text-base font-mono
+              w-full min-h-[var(--sploot-touch-target)] md:h-[56px] pl-3 md:pl-6 pr-12 md:pr-14 text-sm md:text-base font-mono
               bg-card text-foreground placeholder-muted-foreground/60
               border border-border rounded-none
               focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan focus-visible:ring-offset-2
@@ -193,7 +193,7 @@ export function SearchBar({
             {query && (
               <button
                 onClick={handleClear}
-                className="p-1.5 text-muted-foreground/80 hover:text-destructive cursor-pointer"
+                className="flex min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)] items-center justify-center text-muted-foreground/80 hover:text-destructive cursor-pointer"
                 aria-label="clear search"
                 title="clear search (esc)"
               >

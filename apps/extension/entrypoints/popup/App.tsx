@@ -21,19 +21,19 @@ const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
 // Clerk appearance customization to match our theme
 const clerkAppearance = {
   variables: {
-    colorPrimary: '#7C5CFF',
+    colorPrimary: '#0891B2',
     colorTextOnPrimaryBackground: '#FFFFFF',
-    colorBackground: '#FFFFFF',
-    colorInputBackground: '#FAFAFA',
+    colorBackground: '#FAFAF5',
+    colorInputBackground: '#FFFFFF',
     colorInputText: '#0A0A0A',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
-    borderRadius: '8px',
+    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    borderRadius: '0',
   },
   elements: {
-    card: 'shadow-md',
-    formButtonPrimary: 'bg-accent-primary hover:bg-accent-hover',
-    formFieldInput: 'border-border-primary',
-    footerActionLink: 'text-accent-primary hover:text-accent-hover',
+    card: 'shadow-none',
+    formButtonPrimary: 'bg-sploot-cyan hover:bg-sploot-cyan-muted',
+    formFieldInput: 'border-sploot-ink',
+    footerActionLink: 'text-sploot-cyan hover:text-sploot-cyan-muted',
   },
 }
 

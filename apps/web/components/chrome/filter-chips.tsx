@@ -47,7 +47,7 @@ export function FilterChips({
         className={cn(
           "gap-1.5 border border-r-0 uppercase tracking-wider font-bold font-mono",
           activeFilter === 'all'
-            ? 'bg-accent-cyan text-black border-accent-cyan'
+            ? 'bg-sploot-cyan text-black border-sploot-cyan'
             : 'bg-transparent text-foreground border-border hover:bg-muted'
         )}
       >
@@ -61,7 +61,7 @@ export function FilterChips({
         className={cn(
           "gap-1.5 border uppercase tracking-wider font-bold font-mono",
           activeFilter === 'bangers'
-            ? 'bg-accent-cyan text-black border-accent-cyan'
+            ? 'bg-sploot-coral text-black border-sploot-coral'
             : 'bg-transparent text-foreground border-border hover:bg-muted'
         )}
       >
