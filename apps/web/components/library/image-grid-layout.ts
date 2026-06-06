@@ -6,4 +6,11 @@ export const IMAGE_GRID_BREAKPOINT_COLS = Object.freeze({
   640: 1,
 });
 
-export const IMAGE_GRID_SCROLL_CLASS = 'h-full overflow-auto px-0 pt-2 pb-24 sm:p-2 md:p-6';
+export const IMAGE_GRID_SCROLL_CLASS =
+  'h-full overflow-auto px-0 pt-2 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-2 md:p-6';
+
+export function getMobileFeedDockPaddingClass(failedEmbeddingsCount: number) {
+  return failedEmbeddingsCount > 0
+    ? 'pb-[calc(9rem+env(safe-area-inset-bottom))]'
+    : undefined;
+}

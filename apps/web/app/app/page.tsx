@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { useAssets, useSearchAssets } from '@/hooks/use-assets';
 import { useAuthActions } from '@/lib/auth/client';
 import { ImageGrid } from '@/components/library/image-grid';
+import { getMobileFeedDockPaddingClass } from '@/components/library/image-grid-layout';
 import { ImageGridErrorBoundary } from '@/components/library/image-grid-error-boundary';
 import { MobileCommandDock } from '@/components/chrome/mobile-command-dock';
 import { AssetIntegrityBanner } from '@/components/library/asset-integrity-banner';
@@ -410,7 +411,10 @@ function AppPageClient() {
     enabled: true,
   });
 
-  const gridContainerClassName = 'h-full overflow-y-auto overflow-x-hidden';
+  const gridContainerClassName = cn(
+    'h-full overflow-y-auto overflow-x-hidden',
+    getMobileFeedDockPaddingClass(failedEmbeddings.length)
+  );
   const handleBangersFilterChange = useCallback((filter: FilterType) => {
     if (filter === 'bangers') {
       if (!bangersOnly) toggleBangers();
