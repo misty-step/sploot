@@ -9,7 +9,7 @@ follow standard HTTP conventions; operational routes define their own contracts.
 ## Base URL
 
 ```
-Production: https://<your-vercel-project>.vercel.app/api
+Production: https://www.sploot.app/api
 Development: http://localhost:3001/api
 ```
 
@@ -22,6 +22,13 @@ their own auth contracts.
 
 ### Auth Boundary
 
+- browser page traffic on `https://sploot.app` redirects to
+  `https://www.sploot.app` before auth checks, so signed-in users do not get
+  dumped into the wrong-host landing page. api routes stay on their requested
+  host and keep json auth responses.
+- `apps/web/next.config.ts` keeps PWA start-url document caching off because
+  `/` is auth-dependent; the service worker may cache images and search data,
+  but not the signed-out landing document.
 - `apps/web/middleware.ts` protects only `/app(.*)` and redirects signed-out requests to `/sign-in`.
 - Clerk middleware still matches API routes so Clerk server auth can resolve,
   but API routes enforce auth in route handlers rather than middleware.

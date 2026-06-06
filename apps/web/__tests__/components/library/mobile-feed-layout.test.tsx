@@ -5,6 +5,7 @@ import { ImageTile } from '@/components/library/image-tile';
 import {
   IMAGE_GRID_BREAKPOINT_COLS,
   IMAGE_GRID_SCROLL_CLASS,
+  getMobileFeedDockPaddingClass,
 } from '@/components/library/image-grid-layout';
 import type { Asset } from '@/lib/types';
 
@@ -48,9 +49,14 @@ describe('mobile meme feed layout contract', () => {
   });
 
   it('reserves mobile scroll space for the bottom command rail', () => {
-    expect(IMAGE_GRID_SCROLL_CLASS).toContain('pb-24');
+    expect(IMAGE_GRID_SCROLL_CLASS).toContain('pb-[calc(6rem+env(safe-area-inset-bottom))]');
     expect(IMAGE_GRID_SCROLL_CLASS).toContain('sm:p-2');
     expect(IMAGE_GRID_SCROLL_CLASS).toContain('md:p-6');
+  });
+
+  it('lifts the mobile feed above the retry row only when retry is visible', () => {
+    expect(getMobileFeedDockPaddingClass(0)).toBeUndefined();
+    expect(getMobileFeedDockPaddingClass(2)).toBe('pb-[calc(9rem+env(safe-area-inset-bottom))]');
   });
 
   it('keeps mobile tile actions thumb-sized and hides technical metadata', () => {
