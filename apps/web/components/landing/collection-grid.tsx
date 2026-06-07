@@ -28,15 +28,15 @@ export function CollectionGrid() {
   // Rotate through neon colors for brutalist aesthetic
   const getBorderColor = (index: number) => {
     const colors = [
-      "border-electric-lime hover:bg-electric-lime/10",
-      "border-hot-pink hover:bg-hot-pink/10",
-      "border-cyber-blue hover:bg-cyber-blue/10",
+      "border-sploot-cyan hover:bg-[var(--sploot-sticker-cyan)]",
+      "border-sploot-coral hover:bg-[var(--sploot-sticker-coral)]",
+      "border-sploot-violet hover:bg-[var(--sploot-sticker-violet)]",
     ];
     return colors[index % 3];
   };
 
   return (
-    <div className="grid grid-cols-3 gap-3 w-64 md:w-72">
+    <div className="grid w-60 grid-cols-3 gap-3 md:w-72">
       {Array.from({ length: 9 }).map((_, i) => {
         const { delay, duration } = timings[i];
 

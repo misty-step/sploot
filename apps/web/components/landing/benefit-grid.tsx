@@ -14,26 +14,26 @@ type Benefit = {
 const benefits: Benefit[] = [
   {
     icon: Lock,
-    title: "PRIVATE & SECURE",
-    description: "Your memes stay yours. Private library by default, no ads.",
-    borderColor: "border-electric-lime",
-    iconBg: "bg-electric-lime/10",
+    title: "private by default",
+    description: "your memes stay yours. no ads, no public profile, no weird social graph.",
+    borderColor: "border-sploot-cyan",
+    iconBg: "bg-[var(--sploot-sticker-cyan)]",
   },
   {
     icon: Zap,
-    title: "LIGHTNING FAST",
+    title: "fast recall",
     description:
-      "Search thousands of memes in milliseconds with AI semantic search.",
-    borderColor: "border-hot-pink",
-    iconBg: "bg-hot-pink/10",
+      "search the pile by memory instead of doomscrolling your camera roll.",
+    borderColor: "border-sploot-coral",
+    iconBg: "bg-[var(--sploot-sticker-coral)]",
   },
   {
     icon: Globe,
-    title: "WORKS EVERYWHERE",
+    title: "saves anywhere",
     description:
-      "Install as a PWA, works offline, and feels native on any device.",
-    borderColor: "border-cyber-blue",
-    iconBg: "bg-cyber-blue/10",
+      "clip from the extension, browse on mobile, and keep the chaos portable.",
+    borderColor: "border-sploot-violet",
+    iconBg: "bg-[var(--sploot-sticker-violet)]",
   },
 ];
 
@@ -41,11 +41,11 @@ export function BenefitGrid() {
   // Icon-specific animation classes
   const getIconAnimation = (title: string) => {
     switch (title) {
-      case "PRIVATE & SECURE":
+      case "private by default":
         return "group-hover:animate-[shake_0.5s_ease-in-out]";
-      case "LIGHTNING FAST":
+      case "fast recall":
         return "group-hover:animate-[flash_0.6s_ease-in-out]";
-      case "WORKS EVERYWHERE":
+      case "saves anywhere":
         return "group-hover:animate-[spin_1s_ease-in-out]";
       default:
         return "";
@@ -58,7 +58,7 @@ export function BenefitGrid() {
         {benefits.map(({ icon: Icon, title, description, borderColor, iconBg }) => (
           <article
             key={title}
-            className={`group brutalist-border ${borderColor} bg-card p-8 transition-all duration-300 hover:-translate-y-2 hover:shadow-lg`}
+            className={`group brutalist-border ${borderColor} bg-sploot-paper p-6 transition-all duration-150 hover:-translate-y-1 md:p-8`}
           >
             {/* Icon container */}
             <div className={`mb-6 flex h-16 w-16 items-center justify-center ${iconBg} brutalist-corners`}>
@@ -70,7 +70,7 @@ export function BenefitGrid() {
 
           {/* Title - Bebas Neue for boldness */}
           <h3
-            className="text-2xl md:text-3xl leading-tight tracking-wide mb-4"
+            className="mb-4 text-2xl leading-tight tracking-wide md:text-3xl"
             style={{ fontFamily: "var(--font-bebas-neue)" }}
           >
             {title}
@@ -85,7 +85,7 @@ export function BenefitGrid() {
     </div>
 
     {/* Animation keyframes */}
-    <style jsx global>{`
+    <style>{`
       @keyframes shake {
         0%, 100% { transform: translateX(0) rotate(0deg); }
         25% { transform: translateX(-4px) rotate(-5deg); }

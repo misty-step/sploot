@@ -192,7 +192,7 @@ export function MobileCommandDock({
           variant="accent"
           size="sm"
           onClick={onRetryFailed}
-          className="mx-auto mt-2 flex h-9 max-w-md gap-2 font-mono text-xs uppercase tracking-wider"
+          className="mx-auto mt-2 flex min-h-[var(--sploot-touch-target)] max-w-md gap-2 font-mono text-xs uppercase tracking-wider"
         >
           retry {failedEmbeddingsCount}
         </Button>

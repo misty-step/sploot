@@ -2,9 +2,6 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getAuth } from "@/lib/auth/server";
 import { Button } from "@/components/ui/button";
-import { OverlappingCircles } from "@/components/landing/overlapping-circles";
-import { SearchInput } from "@/components/landing/search-input";
-import { ScrollIndicator } from "@/components/landing/scroll-indicator";
 import { AnimatedCircles } from "@/components/landing/animated-circles";
 import { CollectionGrid } from "@/components/landing/collection-grid";
 import { BenefitGrid } from "@/components/landing/benefit-grid";
@@ -13,6 +10,7 @@ import { ScrollChevron } from "@/components/landing/scroll-chevron";
 import { ProcessTimeline } from "@/components/landing/process-timeline";
 import { SectionDivider } from "@/components/landing/section-divider";
 import { GlobalFooter } from "@/components/global-footer";
+import { AtlasLandingHero } from "@/components/sploot";
 
 export default async function Home() {
   const { userId } = await getAuth();
@@ -29,61 +27,13 @@ export default async function Home() {
         <ThemeToggle />
         <Link
           href="/sign-in"
-          className="font-mono text-sm text-muted-foreground hover:text-electric-lime transition-colors uppercase tracking-wider"
+          className="font-mono text-sm uppercase tracking-wider text-muted-foreground transition-colors hover:text-sploot-cyan"
         >
           sign in
         </Link>
       </nav>
 
-      {/* Hero section - bold brutalist energy */}
-      <section className="min-h-screen flex flex-col items-center justify-center px-6 py-20 bg-grid relative">
-        <div className="w-full max-w-5xl mx-auto flex flex-col items-center space-y-10 text-center">
-          {/* Logo + Wordmark */}
-          <OverlappingCircles
-            strokeWidth={3}
-            className="w-28 h-28 md:w-56 md:h-56 opacity-0 animate-[fadeIn_1s_ease-out_forwards]"
-          />
-
-          {/* Tagline - bold and direct */}
-          <div className="space-y-6 opacity-0 animate-[fadeIn_1s_ease-out_0.15s_forwards]">
-            <p
-              className="text-2xl md:text-4xl lg:text-5xl tracking-wider text-foreground"
-              style={{ fontFamily: "var(--font-bebas-neue)" }}
-            >
-              MEME SEARCH. INSTANT.
-            </p>
-            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
-              Stop scrolling forever. Find any meme in seconds with AI-powered semantic search.
-            </p>
-          </div>
-
-          {/* Search input (visual demo) */}
-          <div className="w-full max-w-2xl opacity-0 animate-[fadeIn_1s_ease-out_0.3s_forwards]">
-            <div className="relative">
-              <SearchInput placeholder="disappointed drake..." />
-              <div className="absolute -right-2 -top-2 bg-hot-pink text-black px-3 py-1 font-mono text-xs font-bold rotate-3">
-                TRY IT!
-              </div>
-            </div>
-          </div>
-
-          {/* CTA button */}
-          <div className="opacity-0 animate-[fadeIn_1s_ease-out_0.45s_forwards]">
-            <Button
-              asChild
-              variant="accent"
-              size="lg"
-              className="px-10 py-7 text-base md:text-lg"
-              style={{ fontFamily: "var(--font-bebas-neue)" }}
-            >
-              <Link href="/sign-up">START FOR FREE →</Link>
-            </Button>
-          </div>
-        </div>
-
-        {/* Scroll indicator */}
-        <ScrollIndicator />
-      </section>
+      <AtlasLandingHero />
 
       {/* Section Divider */}
       <SectionDivider color="lime" />
@@ -103,11 +53,11 @@ export default async function Home() {
                 SEARCH
               </h2>
               <p className="text-xl md:text-2xl text-muted-foreground leading-relaxed">
-                Type what you remember, get what you need. No more endless scrolling through camera roll.
+                type what you remember. pull the exact reaction out of the pile.
               </p>
               <div className="flex items-center gap-3">
-                <div className="h-px flex-1 bg-electric-lime" />
-                <span className="font-mono text-xs text-electric-lime">AI POWERED</span>
+                <div className="h-px flex-1 bg-sploot-cyan" />
+                <span className="font-mono text-xs uppercase text-sploot-cyan">automatic piles</span>
               </div>
             </div>
 
@@ -121,7 +71,7 @@ export default async function Home() {
       </section>
 
       {/* Section Divider */}
-      <SectionDivider color="pink" />
+      <SectionDivider color="coral" />
 
       {/* Section 2: Personal Library - Right text, Left visual */}
       <section id="section-personal-library" className="relative min-h-screen flex items-center px-6 py-12 md:py-20 bg-grid">
@@ -143,11 +93,11 @@ export default async function Home() {
                 LIBRARY
               </h2>
               <p className="text-xl md:text-2xl text-muted-foreground leading-relaxed">
-                Organized. Searchable. Instant. Your memes, your way.
+                your saves stay private, searchable, and gloriously unfoldered.
               </p>
               <div className="flex items-center gap-3">
-                <div className="h-px flex-1 bg-hot-pink" />
-                <span className="font-mono text-xs text-hot-pink">PRIVATE & SECURE</span>
+                <div className="h-px flex-1 bg-sploot-coral" />
+                <span className="font-mono text-xs uppercase text-sploot-coral">private chaos</span>
               </div>
             </div>
           </div>
@@ -156,7 +106,7 @@ export default async function Home() {
       </section>
 
       {/* Section Divider */}
-      <SectionDivider color="blue" />
+      <SectionDivider color="cyan" />
 
       {/* Section 3: How it Works - Timeline */}
       <section id="section-how-it-works" className="relative min-h-screen flex items-center px-6 py-12 md:py-20 bg-diagonal-stripes">
@@ -169,7 +119,7 @@ export default async function Home() {
               HOW IT WORKS
             </h2>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              From chaos to searchable
+              from chaos to piles
             </p>
           </div>
           <ProcessTimeline />
@@ -193,7 +143,7 @@ export default async function Home() {
               WORKS EVERYWHERE.
             </h2>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              Built for speed, designed for privacy, ready anywhere.
+              built for recall, privacy, and saving memes mid-scroll.
             </p>
           </div>
 
@@ -207,17 +157,17 @@ export default async function Home() {
               className="px-12 py-8 text-lg md:text-xl"
               style={{ fontFamily: "var(--font-bebas-neue)" }}
             >
-              <Link href="/sign-up">START FOR FREE →</Link>
+              <Link href="/sign-up">start your pile</Link>
             </Button>
             <p className="mt-6 text-sm text-muted-foreground font-mono">
-              NO CREDIT CARD • PRIVATE LIBRARY • NO ADS
+              no credit card - private pile - no ads
             </p>
           </div>
         </div>
       </section>
 
       {/* Section Divider */}
-      <SectionDivider color="yellow" />
+      <SectionDivider color="violet" />
 
       {/* Global Footer */}
       <GlobalFooter />

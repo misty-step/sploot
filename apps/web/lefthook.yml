@@ -29,7 +29,14 @@ pre-push:
     secrets:
       run: pnpm --workspace-root secrets:check
     gitleaks:
-      run: gitleaks dir --redact=100 --config ../../.gitleaks.toml ../..
+      run: |
+        upstream="$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || true)"
+        if [ -n "$upstream" ]; then
+          range="$upstream..HEAD"
+        else
+          range="origin/master..HEAD"
+        fi
+        gitleaks git --redact=100 --config ../../.gitleaks.toml --log-opts "$range" ../..
     typecheck:
       run: pnpm type-check
       # Fast ~5s check, CI handles full test suite
