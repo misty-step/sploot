@@ -18,6 +18,7 @@ import { EmbeddingStatusIndicator } from '@/components/upload/embedding-status-i
 import { UploadBatchProgressCard } from '@/components/upload/upload-batch-progress-card';
 import { UploadDropZone } from '@/components/upload/upload-drop-zone';
 import { UploadFileList } from '@/components/upload/upload-file-list';
+import { useUploadCompletion } from '@/components/upload/use-upload-completion';
 import {
   getUploadNetworkClient,
   UploadError,
@@ -113,6 +114,7 @@ export function UploadZone({
   const uploadQueueManager = getUploadQueueManager();
   const uploadNetworkClient = useMemo(() => getUploadNetworkClient(), []);
   const { validateFile, allowedFileTypes } = useFileValidation();
+  const hasExternalUploadCompletion = Boolean(onUploadComplete);
 
   const getMultipartSizeError = useCallback(
     (file: File) =>
@@ -180,43 +182,7 @@ export function UploadZone({
     });
   }, [uploadQueueManager]);
 
-  // Track when all uploads complete
-  useEffect(() => {
-    if (!onUploadComplete) return;
-
-    const filesArray = Array.from(fileMetadata.values());
-    const hasActiveUploads = filesArray.some(
-      (file) =>
-        file.status === 'uploading' ||
-        file.status === 'pending' ||
-        file.status === 'queued',
-    );
-
-    const successfulUploads = filesArray.filter(
-      (file) => file.status === 'success',
-    );
-    const duplicates = filesArray.filter((file) => file.status === 'duplicate');
-    const failed = filesArray.filter((file) => file.status === 'error');
-
-    // Trigger callback when all uploads are done and we have at least one file
-    if (
-      filesArray.length > 0 &&
-      !hasActiveUploads &&
-      (successfulUploads.length > 0 || duplicates.length > 0)
-    ) {
-      // Only trigger once when uploads complete
-      const stats = {
-        uploaded: successfulUploads.length,
-        duplicates: duplicates.length,
-        failed: failed.length,
-      };
-
-      // Small delay to ensure UI updates first
-      setTimeout(() => {
-        onUploadComplete(stats);
-      }, 100);
-    }
-  }, [fileMetadata, onUploadComplete]);
+  useUploadCompletion(filesArray, onUploadComplete);
 
   // Keep ref in sync with state to avoid stale closures in async retry logic
   useEffect(() => {
@@ -255,8 +221,6 @@ export function UploadZone({
         (!f.needsEmbedding || f.embeddingStatus === 'ready'),
     ).length;
 
-    // Check if all processing is complete
-    const allComplete = successful + failed === filesArray.length;
     const allReady = ready + failed === filesArray.length;
 
     setUploadStats({
@@ -289,7 +253,7 @@ export function UploadZone({
           const successCount = currentFiles.filter(
             (f) => f.status === 'success' || f.status === 'duplicate',
           ).length;
-          if (successCount > 0) {
+          if (successCount > 0 && !hasExternalUploadCompletion) {
             showToast(
               `✓ ${successCount} ${successCount === 1 ? 'file' : 'files'} uploaded successfully`,
               'success',
@@ -304,7 +268,7 @@ export function UploadZone({
 
       return () => clearTimeout(clearTimer);
     }
-  }, [fileMetadata]);
+  }, [fileMetadata, hasExternalUploadCompletion]);
 
   // Auto-remove failed uploads after 3 seconds with fade-out animation and toast
   useEffect(() => {
@@ -627,7 +591,6 @@ export function UploadZone({
 
         try {
           await uploadFileToServer(fileId);
-          uploadStatsRef.current.successful++;
           logger.debug(`[Upload] Retry successful for ${metadata.name}`);
         } catch (error) {
           // Re-check metadata exists before retry logic (may have been removed)
@@ -732,7 +695,6 @@ export function UploadZone({
           const fileId = uploadQueue.shift()!;
           const uploadPromise = uploadFileToServer(fileId)
             .then(() => {
-              uploadStatsRef.current.successful++;
               activeUploads.delete(uploadPromise);
             })
             .catch((error) => {
@@ -959,6 +921,13 @@ export function UploadZone({
             }
           });
           return newMap;
+        });
+
+        fileMetadataRef.current = new Map(fileMetadataRef.current);
+        newFiles.forEach((metadata) => {
+          if (!fileMetadataRef.current.has(metadata.id)) {
+            fileMetadataRef.current.set(metadata.id, metadata);
+          }
         });
 
         // Stats will be automatically updated by the effect that watches fileMetadata changes
