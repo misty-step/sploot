@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { BenefitGrid } from "@/components/landing/benefit-grid";
 
-const titles = ["PRIVATE & SECURE", "LIGHTNING FAST", "WORKS EVERYWHERE"];
+const titles = ["private by default", "fast recall", "saves anywhere"];
 
 describe("BenefitGrid", () => {
   it("renders all benefit cards with the correct copy", () => {
@@ -14,16 +14,16 @@ describe("BenefitGrid", () => {
     });
 
     expect(
-      screen.getByText("Your memes stay yours. Private library by default, no ads."),
-    ).toBeInTheDocument();
-    expect(
       screen.getByText(
-        "Search thousands of memes in milliseconds with AI semantic search.",
+        "your memes stay yours. no ads, no public profile, no weird social graph.",
       ),
     ).toBeInTheDocument();
     expect(
+      screen.getByText("search the pile by memory instead of doomscrolling your camera roll."),
+    ).toBeInTheDocument();
+    expect(
       screen.getByText(
-        "Install as a PWA, works offline, and feels native on any device.",
+        "clip from the extension, browse on mobile, and keep the chaos portable.",
       ),
     ).toBeInTheDocument();
   });
@@ -56,8 +56,7 @@ describe("BenefitGrid", () => {
 
     expect(cards).toHaveLength(3);
     cards.forEach((card) => {
-      expect(card.className).toContain("hover:-translate-y-2");
-      expect(card.className).toContain("hover:shadow-lg");
+      expect(card.className).toContain("hover:-translate-y-1");
       expect(card.className).toContain("transition-all");
     });
   });

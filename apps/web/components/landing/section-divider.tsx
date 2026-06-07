@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 interface SectionDividerProps {
   sectionNumber?: string;
-  color?: "lime" | "pink" | "blue" | "yellow";
+  color?: "lime" | "coral" | "cyan" | "violet";
   className?: string;
 }
 
@@ -37,10 +37,10 @@ export function SectionDivider({
   }, [sectionNumber]);
 
   const colorClasses = {
-    lime: "bg-electric-lime text-black",
-    pink: "bg-hot-pink text-black",
-    blue: "bg-cyber-blue text-black",
-    yellow: "bg-neon-yellow text-black",
+    lime: "bg-sploot-lime text-black",
+    coral: "bg-sploot-coral text-black",
+    cyan: "bg-sploot-cyan text-black",
+    violet: "bg-sploot-violet text-black",
   };
 
   return (

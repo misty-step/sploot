@@ -59,9 +59,9 @@ const piles = [
 
 export function AtlasLandingHero() {
   return (
-    <section className="min-h-[92svh] overflow-hidden bg-sploot-workbench px-4 pb-16 pt-24 md:px-8 md:pb-20 md:pt-24">
+    <section className="min-h-[92svh] overflow-x-clip bg-sploot-workbench px-5 pb-16 pt-24 sm:px-6 md:px-8 md:pb-20 md:pt-24">
       <div className="mx-auto grid w-full min-w-0 max-w-7xl gap-6 lg:grid-cols-[0.9fr_0.72fr_1.08fr] lg:items-center">
-        <div className="order-2 mx-auto w-full max-w-[22rem] min-w-0 space-y-4 lg:order-1 lg:max-w-none">
+        <div className="order-2 mx-auto w-full max-w-[21.5rem] min-w-0 space-y-4 lg:order-1 lg:max-w-none">
           <div className="flex items-center gap-2">
             <Upload className="h-4 w-4 text-sploot-cyan" aria-hidden="true" />
             <StickerTab tone="lime" tilt="left">upload chaos</StickerTab>
@@ -84,14 +84,14 @@ export function AtlasLandingHero() {
           </div>
         </div>
 
-        <div className="order-1 mx-auto w-full max-w-[22rem] space-y-5 overflow-hidden text-center lg:order-2 lg:max-w-none lg:text-left">
+        <div className="order-1 mx-auto w-full max-w-[21.5rem] space-y-5 text-center lg:order-2 lg:max-w-none lg:text-left">
           <StickerTab tone="cyan" className="mx-auto lg:mx-0">
             no folders just vibes
           </StickerTab>
           <div className="space-y-4">
             <h1
               aria-label="your saves sort themselves."
-              className="font-display text-5xl leading-[0.92] tracking-normal text-sploot-ink sm:text-6xl md:text-8xl lg:text-7xl"
+              className="font-display text-[3.25rem] leading-[0.92] tracking-normal text-sploot-ink min-[390px]:text-6xl md:text-8xl lg:text-7xl"
             >
               <span className="block">your saves</span>
               <span className="block">sort</span>
@@ -103,10 +103,10 @@ export function AtlasLandingHero() {
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-center lg:justify-start">
-            <Button asChild variant="accent" size="lg" className="min-h-[var(--sploot-touch-target)] px-6">
+            <Button asChild variant="accent" size="lg" className="min-h-[var(--sploot-touch-target)] w-full px-6 sm:w-auto">
               <Link href="/sign-up">start your pile</Link>
             </Button>
-            <Button asChild variant="outline" size="lg" className="min-h-[var(--sploot-touch-target)] px-6">
+            <Button asChild variant="outline" size="lg" className="min-h-[var(--sploot-touch-target)] w-full px-6 sm:w-auto">
               <Link href="/sign-in">sign in</Link>
             </Button>
           </div>
@@ -126,7 +126,7 @@ export function AtlasLandingHero() {
           </div>
         </div>
 
-        <div className="order-3 mx-auto w-full max-w-[22rem] min-w-0 space-y-3 lg:max-w-none">
+        <div className="order-3 mx-auto w-full max-w-[21.5rem] min-w-0 space-y-3 lg:max-w-none">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-sploot-violet" aria-hidden="true" />

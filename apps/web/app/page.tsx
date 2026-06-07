@@ -53,11 +53,11 @@ export default async function Home() {
                 SEARCH
               </h2>
               <p className="text-xl md:text-2xl text-muted-foreground leading-relaxed">
-                Type what you remember, get what you need. No more endless scrolling through camera roll.
+                type what you remember. pull the exact reaction out of the pile.
               </p>
               <div className="flex items-center gap-3">
                 <div className="h-px flex-1 bg-sploot-cyan" />
-                <span className="font-mono text-xs text-sploot-cyan">AUTOMATIC PILES</span>
+                <span className="font-mono text-xs uppercase text-sploot-cyan">automatic piles</span>
               </div>
             </div>
 
@@ -71,7 +71,7 @@ export default async function Home() {
       </section>
 
       {/* Section Divider */}
-      <SectionDivider color="pink" />
+      <SectionDivider color="coral" />
 
       {/* Section 2: Personal Library - Right text, Left visual */}
       <section id="section-personal-library" className="relative min-h-screen flex items-center px-6 py-12 md:py-20 bg-grid">
@@ -93,11 +93,11 @@ export default async function Home() {
                 LIBRARY
               </h2>
               <p className="text-xl md:text-2xl text-muted-foreground leading-relaxed">
-                Organized. Searchable. Instant. Your memes, your way.
+                your saves stay private, searchable, and gloriously unfoldered.
               </p>
               <div className="flex items-center gap-3">
                 <div className="h-px flex-1 bg-sploot-coral" />
-                <span className="font-mono text-xs text-sploot-coral">PRIVATE & SECURE</span>
+                <span className="font-mono text-xs uppercase text-sploot-coral">private chaos</span>
               </div>
             </div>
           </div>
@@ -106,7 +106,7 @@ export default async function Home() {
       </section>
 
       {/* Section Divider */}
-      <SectionDivider color="blue" />
+      <SectionDivider color="cyan" />
 
       {/* Section 3: How it Works - Timeline */}
       <section id="section-how-it-works" className="relative min-h-screen flex items-center px-6 py-12 md:py-20 bg-diagonal-stripes">
@@ -119,7 +119,7 @@ export default async function Home() {
               HOW IT WORKS
             </h2>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              From chaos to searchable
+              from chaos to piles
             </p>
           </div>
           <ProcessTimeline />
@@ -143,7 +143,7 @@ export default async function Home() {
               WORKS EVERYWHERE.
             </h2>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              Built for speed, designed for privacy, ready anywhere.
+              built for recall, privacy, and saving memes mid-scroll.
             </p>
           </div>
 
@@ -157,17 +157,17 @@ export default async function Home() {
               className="px-12 py-8 text-lg md:text-xl"
               style={{ fontFamily: "var(--font-bebas-neue)" }}
             >
-              <Link href="/sign-up">start your pile →</Link>
+              <Link href="/sign-up">start your pile</Link>
             </Button>
             <p className="mt-6 text-sm text-muted-foreground font-mono">
-              NO CREDIT CARD • PRIVATE LIBRARY • NO ADS
+              no credit card - private pile - no ads
             </p>
           </div>
         </div>
       </section>
 
       {/* Section Divider */}
-      <SectionDivider color="yellow" />
+      <SectionDivider color="violet" />
 
       {/* Global Footer */}
       <GlobalFooter />

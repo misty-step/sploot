@@ -21,20 +21,20 @@ type ProcessStep = {
 const steps: ProcessStep[] = [
   {
     number: "01",
-    title: "UPLOAD",
-    description: "Drag and drop your memes. We'll handle the rest.",
+    title: "upload chaos",
+    description: "drop in the screenshots, reactions, and groupchat relics.",
     icon: UploadIcon,
   },
   {
     number: "02",
-    title: "AI ANALYZES",
-    description: "CLIP embeddings capture semantic meaning of every image.",
+    title: "piles appear",
+    description: "similar saves drift into nearby semantic neighborhoods.",
     icon: AnalyzeIcon,
   },
   {
     number: "03",
-    title: "SEARCH & FIND",
-    description: "Type what you remember, get what you need instantly.",
+    title: "find bangers",
+    description: "type what you remember and pull the exact meme back.",
     icon: SearchIcon,
   },
 ];
@@ -125,7 +125,7 @@ function TimelineStep({
         className={cn(
           "relative flex flex-col items-center text-center",
           "w-full max-w-xs md:w-72",
-          "bg-card border border-border",
+          "bg-sploot-paper border border-sploot-ink",
           "p-6",
           cascadeOffset[index] ?? "md:mt-0",
           "transition-all duration-700 ease-out",
@@ -139,18 +139,18 @@ function TimelineStep({
         }
       >
         {/* Top accent bar */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-cyber-blue" />
+        <div className="absolute left-0 right-0 top-0 h-1 bg-sploot-cyan" />
 
         {/* Number + Title row */}
         <div className="flex items-center gap-3 mb-4">
           <span
-            className="text-3xl md:text-4xl tracking-wider text-cyber-blue"
+            className="text-3xl tracking-wider text-sploot-cyan md:text-4xl"
             style={{ fontFamily: "var(--font-bebas-neue)" }}
           >
             {step.number}
           </span>
           <h3
-            className="text-2xl md:text-3xl tracking-wider"
+            className="text-2xl tracking-wider md:text-3xl"
             style={{ fontFamily: "var(--font-bebas-neue)" }}
           >
             {step.title}
@@ -172,7 +172,7 @@ function TimelineStep({
       {!isLast && (
         <span
           className={cn(
-            "hidden md:block text-3xl text-cyber-blue font-bold",
+            "hidden md:block text-3xl text-sploot-violet font-bold",
             "transition-all duration-700 ease-out",
             isVisible ? "opacity-100" : "opacity-0",
             prefersReducedMotion && "opacity-100 transition-none"

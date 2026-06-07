@@ -156,7 +156,7 @@ Each section follows this pattern:
 </section>
 ```
 
-Sections alternate between `bg-diagonal-stripes` and `bg-grid`, separated by `<SectionDivider color="lime|pink|blue" />`.
+Sections alternate between `bg-diagonal-stripes` and `bg-grid`, separated by `<SectionDivider color="lime|coral|cyan|violet" />`.
 
 ### Component Energy
 
