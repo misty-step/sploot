@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import {
   ClerkProvider,
-  SignIn,
   SignedIn,
   SignedOut,
   SignOutButton,
@@ -12,30 +11,10 @@ import {
 } from '@clerk/chrome-extension'
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
 import { EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
-import { authNavigation } from '../../shared/auth-navigation'
-import { getSplootAppUrl } from '../../shared/app-url'
+import { getSplootAppUrl, getSplootSignInUrl } from '../../shared/app-url'
 import './style.css'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
-
-// Clerk appearance customization to match our theme
-const clerkAppearance = {
-  variables: {
-    colorPrimary: '#7C5CFF',
-    colorTextOnPrimaryBackground: '#FFFFFF',
-    colorBackground: '#FFFFFF',
-    colorInputBackground: '#FAFAFA',
-    colorInputText: '#0A0A0A',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif',
-    borderRadius: '8px',
-  },
-  elements: {
-    card: 'shadow-md',
-    formButtonPrimary: 'bg-accent-primary hover:bg-accent-hover',
-    formFieldInput: 'border-border-primary',
-    footerActionLink: 'text-accent-primary hover:text-accent-hover',
-  },
-}
 
 function App() {
   if (EXTENSION_CONFIG_ERROR) {
@@ -63,19 +42,7 @@ function App() {
           </header>
           <main>
             <SignedOut>
-              <div className="auth-panel">
-                <div className="auth-header">
-                  <h2>Welcome to Sploot</h2>
-                  <p>Sign in to save images from anywhere on the web</p>
-                </div>
-                <SignIn
-                  routing="hash"
-                  redirectUrl={authNavigation.redirectUrl}
-                  afterSignInUrl={authNavigation.afterSignInUrl}
-                  afterSignUpUrl={authNavigation.afterSignUpUrl}
-                  appearance={clerkAppearance}
-                />
-              </div>
+              <SignedOutPanel />
             </SignedOut>
             <SignedIn>
               <SignedInPanel />
@@ -84,6 +51,24 @@ function App() {
         </div>
       </div>
     </ClerkProvider>
+  )
+}
+
+function SignedOutPanel() {
+  const handleSignIn = () => {
+    chrome.tabs.create({ url: getSplootSignInUrl() })
+  }
+
+  return (
+    <div className="auth-panel">
+      <div className="auth-header">
+        <h2>Sign in on Sploot</h2>
+        <p>Use the full Sploot sign-in page, then return here to save images from the web.</p>
+      </div>
+      <div className="actions">
+        <button onClick={handleSignIn}>Sign In</button>
+      </div>
+    </div>
   )
 }
 

@@ -372,33 +372,6 @@ button.debug:hover {
 }
 
 /* ============================================
-   CLERK CUSTOMIZATION
-   ============================================ */
-
-/* Override Clerk's default styles to match our theme */
-.cl-rootBox {
-  width: 100%;
-}
-
-.cl-card {
-  width: 100% !important;
-  max-width: 100% !important;
-  min-width: 0 !important;
-  border: 1px solid var(--border-primary) !important;
-  box-shadow: var(--shadow-md) !important;
-  border-radius: var(--radius-lg) !important;
-}
-
-.cl-formButtonPrimary {
-  background: var(--accent-primary) !important;
-  font-weight: var(--weight-medium) !important;
-}
-
-.cl-formButtonPrimary:hover {
-  background: var(--accent-hover) !important;
-}
-
-/* ============================================
    UTILITY CLASSES
    ============================================ */
 

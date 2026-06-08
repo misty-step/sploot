@@ -20,6 +20,7 @@ Status conventions:
 See `_done/` for completed tickets with their `## What Was Built` notes.
 
 Recently completed:
+- [017](_done/017-open-web-signin-from-extension.md) Open Web Sign-In From Extension
 - [016](_done/016-integrate-canary-agent-observability.md) Integrate Canary Agent Observability
 - [001](_done/001-fix-extension-upload-response-contract.md) Fix Extension Upload Response Contract
 - [002](_done/002-configure-extension-auth-authorized-parties.md) Configure Extension Auth Authorized Parties

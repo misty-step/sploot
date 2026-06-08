@@ -6,9 +6,11 @@ import {
   CLERK_PUBLISHABLE_KEY,
   CLERK_SYNC_HOST,
 } from '../../shared/env'
+import { getSplootSignInUrl } from '../../shared/app-url'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
 const SIGN_IN_TIMEOUT_MS = 60000
+const SIGN_IN_POLL_INTERVAL_MS = 1000
 
 let cachedState: AuthState = { status: 'unknown' }
 const waiters = new Set<(state: AuthState) => void>()
@@ -94,29 +96,57 @@ export async function getAuthToken(): Promise<string | null> {
 
 export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS): Promise<boolean> {
   return new Promise(resolve => {
-    const timeoutId = setTimeout(() => {
+    let settled = false
+    let intervalId: ReturnType<typeof setInterval> | undefined
+
+    const finish = (signedIn: boolean) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      clearTimeout(timeoutId)
+      if (intervalId) {
+        clearInterval(intervalId)
+      }
       waiters.delete(listener)
-      resolve(false)
+      resolve(signedIn)
+    }
+
+    const timeoutId = setTimeout(() => {
+      finish(false)
     }, timeoutMs)
 
     const listener = (state: AuthState) => {
       if (state.status === 'signed-in') {
-        clearTimeout(timeoutId)
-        waiters.delete(listener)
-        resolve(true)
+        finish(true)
+      }
+    }
+
+    const pollForSyncedSession = async () => {
+      if (settled) {
+        return
+      }
+
+      if (await isAuthenticated()) {
+        finish(true)
       }
     }
 
     waiters.add(listener)
+    intervalId = setInterval(() => {
+      void pollForSyncedSession()
+    }, SIGN_IN_POLL_INTERVAL_MS)
+    void pollForSyncedSession()
   })
 }
 
 export async function promptUserSignIn(): Promise<boolean> {
   try {
-    await chrome.action.openPopup()
+    await chrome.tabs.create({ url: getSplootSignInUrl() })
   } catch (error) {
-    console.warn('[Auth] Unable to open popup automatically, opening new tab instead', error)
-    chrome.tabs.create({ url: chrome.runtime.getURL('popup.html') })
+    console.warn('[Auth] Unable to open Sploot sign-in tab', error)
+    return false
   }
 
   return await waitForSignIn()

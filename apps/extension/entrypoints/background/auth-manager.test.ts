@@ -99,6 +99,50 @@ describe('auth-manager', () => {
     await expect(getAuthToken()).resolves.toBeNull();
   });
 
+  it('opens the Sploot web sign-in page instead of the extension popup', async () => {
+    createClerkClient.mockResolvedValue({ session: null });
+
+    const { promptUserSignIn, setupAuthBridge } = await importAuthManager();
+    setupAuthBridge();
+
+    const signInPromise = promptUserSignIn();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/sign-in' });
+    expect(chromeMock.action.openPopup).not.toHaveBeenCalled();
+
+    const signedInState: AuthState = {
+      status: 'signed-in',
+      userId: 'user_789',
+      sessionId: 'session_789',
+    };
+    messageListeners[0](
+      { type: AUTH_MESSAGES.STATE_UPDATE, payload: signedInState },
+      {},
+      () => undefined
+    );
+
+    await expect(signInPromise).resolves.toBe(true);
+  });
+
+  it('resolves the sign-in prompt when the background Clerk client observes a synced web session', async () => {
+    createClerkClient.mockResolvedValue({
+      session: {
+        id: 'session_web',
+        user: { id: 'user_web' },
+        expireAt: new Date('2026-05-18T12:00:00.000Z'),
+        getToken: vi.fn(),
+      },
+    });
+
+    const { promptUserSignIn } = await importAuthManager();
+
+    await expect(promptUserSignIn()).resolves.toBe(true);
+
+    expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/sign-in' });
+    expect(chromeMock.action.openPopup).not.toHaveBeenCalled();
+  });
+
   it('resolves sign-in waiters when the popup sends a signed-in state update', async () => {
     const signedInState: AuthState = {
       status: 'signed-in',
