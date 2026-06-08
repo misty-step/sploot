@@ -103,7 +103,7 @@ Handles FormData construction, auth headers, timeout (10s), error translation.
 
 **Popup UI** (`entrypoints/popup/App.tsx`)
 - React component with `ClerkProvider`
-- Two states: `SignedOut` (login prompt) / `SignedIn` (view library)
+- Two states: `SignedOut` (opens web sign-in) / `SignedIn` (view library)
 - No state persistence - queries auth on every open
 
 ### Environment Management
@@ -124,19 +124,24 @@ Handles FormData construction, auth headers, timeout (10s), error translation.
   - Prod: `https://clerk.sploot.app/*`
 - Adds API host permission derived from `VITE_API_BASE_URL` (defaults to sploot.app or localhost)
 
-### Authentication Flow (Inline Clerk Sign-In)
+### Authentication Flow (Web Sign-In)
 
-**Dedicated extension session:** Popup hosts the Clerk UI so authentication is captured entirely inside the extension.
+**Shared Sploot session:** Sign-in happens on the Sploot web app so users get
+the full Clerk surface instead of a constrained extension popup.
 
-1. `<ClerkProvider>` renders `<SignIn/>` inside the popup
-2. Successful sign-in triggers an `AUTH_STATE_UPDATE` broadcast to the background worker
+1. Signed-out popup and background prompts open `${VITE_API_BASE_URL}/sign-in`
+   in a new tab
+2. Successful popup state checks still trigger an `AUTH_STATE_UPDATE` broadcast
+   to the background worker
 3. Background lazily calls `createClerkClient` for tokens whenever uploads need them
-4. Context menu prompts users to open the popup if no session is available
+4. Context menu prompts poll a fresh Clerk background client until WebSSO syncs
+   the web session into the extension
 
 **Implementation constraints:**
 - Clerk domain must be in manifest `host_permissions`
 - Extension ID must be allowed in Clerk dashboard (via `pnpm setup:clerk`)
 - Fresh Clerk client per call (no caching)
+- Web app URLs are centralized in `shared/app-url.ts`
 
 ### RPC Message Pattern
 

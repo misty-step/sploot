@@ -80,10 +80,10 @@ async function handleImageSave(
     // Check authentication
     const authenticated = await isAuthenticated();
     if (!authenticated) {
-      showErrorNotification('Please sign in via the Sploot extension popup');
+      showErrorNotification('Opening Sploot sign-in. Try saving again after signing in.');
       const signedIn = await promptUserSignIn();
       if (!signedIn) {
-        showErrorNotification('Sign-in was not completed. Try again.');
+        showErrorNotification('Sign in on Sploot, then try saving again.');
         return;
       }
     }

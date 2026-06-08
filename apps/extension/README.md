@@ -7,7 +7,7 @@ A Chrome Extension built with WXT and React that integrates seamlessly with the 
 ## ✨ Key Features
 
 - **Context Menu**: Right-click any image → "Save to Sploot".
-- **Popup UI**: View status, sign in/out.
+- **Popup UI**: View status, open web sign-in, sign out.
 - **Auth**: Seamless Clerk integration sharing session with web app.
 - **Tech**: WXT (Vite-based), React 19, TypeScript.
 
