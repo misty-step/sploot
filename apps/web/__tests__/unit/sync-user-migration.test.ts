@@ -18,12 +18,22 @@ type SearchLogRecord = {
   queryTime: number;
   createdAt?: Date;
 };
+type UserIdentityRecord = {
+  id: string;
+  userId: string;
+  provider: string;
+  providerSubject: string;
+  email?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
 
 const createState = () => ({
   users: [] as UserRecord[],
   assets: [] as AssetRecord[],
   tags: [] as TagRecord[],
   searchLogs: [] as SearchLogRecord[],
+  identities: [] as UserIdentityRecord[],
 });
 
 describe('syncUser migration', () => {
@@ -116,6 +126,31 @@ describe('syncUser migration', () => {
           },
         };
 
+        userIdentity = {
+          upsert: async ({ where, update, create }: any) => {
+            const unique = where.unique_provider_subject;
+            const existing = state.identities.find(
+              (identity) =>
+                identity.provider === unique.provider &&
+                identity.providerSubject === unique.providerSubject
+            );
+
+            if (existing) {
+              Object.assign(existing, update, { updatedAt: new Date() });
+              return existing;
+            }
+
+            const record: UserIdentityRecord = {
+              id: `identity_${state.identities.length + 1}`,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              ...create,
+            };
+            state.identities.push(record);
+            return record;
+          },
+        };
+
         $use() {
           // no-op for middleware stubs
         }
@@ -155,5 +190,11 @@ describe('syncUser migration', () => {
     expect(__dbState.assets.every((a: AssetRecord) => a.ownerUserId === newUserId)).toBe(true);
     expect(__dbState.tags.every((t: TagRecord) => t.ownerUserId === newUserId)).toBe(true);
     expect(__dbState.searchLogs.every((s: SearchLogRecord) => s.userId === newUserId)).toBe(true);
+    expect(__dbState.identities).toContainEqual(expect.objectContaining({
+      userId: newUserId,
+      provider: 'clerk',
+      providerSubject: newUserId,
+      email,
+    }));
   });
 });

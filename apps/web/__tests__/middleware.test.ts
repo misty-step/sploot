@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@clerk/nextjs/server', () => {
   const createRouteMatcher = (patterns: string[]) => {
@@ -19,8 +19,16 @@ vi.mock('@clerk/nextjs/server', () => {
 });
 
 import middleware, { config } from '@/middleware';
+import { createQaLocalAuthToken, getQaLocalAuthHeader } from '@/lib/auth/qa-local';
 
 describe('middleware auth boundary', () => {
+  const QA_SECRET = 'test-secret-with-enough-entropy';
+
+  beforeEach(() => {
+    vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
+    vi.stubEnv('SPLOOT_QA_AUTH_SECRET', QA_SECRET);
+  });
+
   it.each([
     ['/', 'https://www.sploot.app/'],
     ['/app?from=apex', 'https://www.sploot.app/app?from=apex'],
@@ -75,6 +83,51 @@ describe('middleware auth boundary', () => {
       expect(protect).toHaveBeenCalledWith({ unauthenticatedUrl: 'https://www.sploot.app/sign-in' });
     }
   );
+
+  it('allows signed qa-local app navigation without Clerk protect outside production', async () => {
+    const protect = vi.fn();
+    const token = await createQaLocalAuthToken({
+      userId: 'qa-user-1',
+      secret: QA_SECRET,
+      expiresInSeconds: 60,
+    });
+
+    const response = await middleware(
+      { protect } as any,
+      {
+        method: 'GET',
+        nextUrl: { pathname: '/app' },
+        url: 'https://www.sploot.app/app',
+        headers: new Headers({ [getQaLocalAuthHeader()]: token }),
+      } as any
+    );
+
+    expect(response).toBeUndefined();
+    expect(protect).not.toHaveBeenCalled();
+  });
+
+  it('does not let qa-local bypass app protection in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('VERCEL_ENV', 'production');
+    const protect = vi.fn();
+    const token = await createQaLocalAuthToken({
+      userId: 'qa-user-1',
+      secret: QA_SECRET,
+      expiresInSeconds: 60,
+    });
+
+    await middleware(
+      { protect } as any,
+      {
+        method: 'GET',
+        nextUrl: { pathname: '/app' },
+        url: 'https://www.sploot.app/app',
+        headers: new Headers({ [getQaLocalAuthHeader()]: token }),
+      } as any
+    );
+
+    expect(protect).toHaveBeenCalledTimes(1);
+  });
 
   it.each(['/api/stats', '/api/tags', '/api/assets'])(
     'does not protect json api route %s',

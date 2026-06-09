@@ -1,7 +1,8 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
-import { afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
 import { TextEncoder, TextDecoder } from 'util';
+import { webcrypto } from 'crypto';
 
 // Cleanup after each test
 afterEach(() => {
@@ -15,6 +16,26 @@ afterEach(() => {
 // Polyfill for TextEncoder/TextDecoder
 global.TextEncoder = TextEncoder as any;
 global.TextDecoder = TextDecoder as any;
+
+function installWebCrypto() {
+  Object.defineProperty(globalThis, 'crypto', {
+    value: webcrypto,
+    configurable: true,
+  });
+
+  if (typeof window !== 'undefined') {
+    Object.defineProperty(window, 'crypto', {
+      value: webcrypto,
+      configurable: true,
+    });
+  }
+}
+
+installWebCrypto();
+
+beforeEach(() => {
+  installWebCrypto();
+});
 
 // Polyfill Request and Response for Next.js API routes testing
 if (!global.Request) {

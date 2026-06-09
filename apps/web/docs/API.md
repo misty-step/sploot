@@ -15,10 +15,11 @@ Development: http://localhost:3001/api
 
 ## Authentication
 
-User-facing product APIs require authentication via Clerk. Include the session
-cookie from your authenticated browser session or use Clerk's SDK for
-programmatic access. Operational routes such as health and cron endpoints define
-their own auth contracts.
+User-facing product APIs require authentication through Sploot's auth boundary.
+Production requests are still Clerk-backed. Local and CI authenticated smoke
+tests may use the signed `qa-local` mode documented in `apps/web/docs/AUTH.md`.
+Operational routes such as health and cron endpoints define their own auth
+contracts.
 
 ### Auth Boundary
 
@@ -32,6 +33,9 @@ their own auth contracts.
 - `apps/web/middleware.ts` protects only `/app(.*)` and redirects signed-out requests to `/sign-in`.
 - Clerk middleware still matches API routes so Clerk server auth can resolve,
   but API routes enforce auth in route handlers rather than middleware.
+- New protected API routes use `lib/auth/with-authenticated-api`; legacy direct
+  Clerk/helper imports are temporarily allowlisted by
+  `pnpm --filter web auth:guard` until route migration is complete.
 - The protected product JSON APIs listed below return this exact payload for
   missing auth:
 

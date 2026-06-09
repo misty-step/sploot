@@ -70,6 +70,24 @@ pnpm dev
 ```
 Visit http://localhost:3000 and test sign-in flow
 
+### Agent/CI Auth Smoke
+For deterministic authenticated QA without a manual Clerk login, use the
+non-production `qa-local` mode:
+
+```env
+SPLOOT_QA_AUTH_MODE=enabled
+SPLOOT_QA_AUTH_SECRET=local-secret-with-enough-entropy
+```
+
+Then run:
+
+```bash
+pnpm --filter web e2e:auth
+```
+
+`qa-local` is rejected in production. Do not commit real Clerk credentials,
+session cookies, or Playwright storage state.
+
 ### Production Notes
 - Add environment variables to Vercel
 - Update Clerk with production domain

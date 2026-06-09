@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { useSortPreferences } from '@/hooks/use-sort-preferences';
+
+async function waitForDebouncedSave() {
+  await act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 150));
+  });
+}
 
 describe('useSortPreferences', () => {
   beforeEach(() => {
@@ -88,6 +94,7 @@ describe('useSortPreferences', () => {
   describe('localStorage persistence', () => {
     it('should persist shuffleSeed to localStorage', async () => {
       const { result } = renderHook(() => useSortPreferences());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
 
       act(() => {
         result.current.handleSortChange('shuffle', 'desc');
@@ -97,7 +104,7 @@ describe('useSortPreferences', () => {
       expect(seed).toBeDefined();
 
       // Wait for debounced save
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await waitForDebouncedSave();
 
       const stored = localStorage.getItem('sploot-sort-preferences');
       expect(stored).toBeTruthy();
@@ -149,18 +156,19 @@ describe('useSortPreferences', () => {
 
     it('should persist seed cleared state when switching away from shuffle', async () => {
       const { result } = renderHook(() => useSortPreferences());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
 
       // Activate shuffle
       act(() => {
         result.current.handleSortChange('shuffle', 'desc');
       });
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await waitForDebouncedSave();
 
       // Switch away from shuffle
       act(() => {
         result.current.handleSortChange('createdAt', 'desc');
       });
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await waitForDebouncedSave();
 
       const stored = localStorage.getItem('sploot-sort-preferences');
       const parsed = JSON.parse(stored!);

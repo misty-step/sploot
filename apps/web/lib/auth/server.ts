@@ -1,5 +1,7 @@
 import { syncUser } from '../db';
 import { getUserSyncCircuitBreaker } from '../circuit-breaker';
+import { verifyQaLocalAuthHeaders } from './qa-local';
+import type { RequestAuthResult } from './types';
 
 interface AuthResult {
   userId: string | null;
@@ -23,6 +25,14 @@ interface AuthWithUserResult extends AuthResult {
 }
 
 export async function getAuth(): Promise<AuthResult> {
+  const qaAuth = await getQaLocalAuthFromCurrentRequest();
+  if (qaAuth?.status === 'authenticated') {
+    return {
+      userId: qaAuth.principal.userId,
+      sessionId: qaAuth.principal.sessionId ?? null,
+      getToken: async () => null,
+    };
+  }
   const clerk = await import('@clerk/nextjs/server');
   const auth = await clerk.auth();
   return {
@@ -37,6 +47,16 @@ export async function getAuth(): Promise<AuthResult> {
  * This automatically syncs Clerk users with our database
  */
 export async function getAuthWithUser(): Promise<AuthWithUserResult> {
+  const qaAuth = await getQaLocalAuthFromCurrentRequest();
+  if (qaAuth?.status === 'authenticated') {
+    return {
+      userId: qaAuth.principal.userId,
+      sessionId: qaAuth.principal.sessionId ?? null,
+      getToken: async () => null,
+      userEmail: qaAuth.principal.email,
+      syncStatus: 'skipped',
+    };
+  }
   const clerk = await import('@clerk/nextjs/server');
   const { logger } = await import('../observability-logger');
   const Sentry = await import('@sentry/nextjs');
@@ -168,4 +188,14 @@ export async function requireUserIdWithSync(): Promise<string> {
     throw new Error('Unauthorized');
   }
   return userId;
+}
+
+async function getQaLocalAuthFromCurrentRequest(): Promise<RequestAuthResult | null> {
+  try {
+    const { headers } = await import('next/headers');
+    const requestHeaders = await headers();
+    return await verifyQaLocalAuthHeaders(requestHeaders as unknown as Headers);
+  } catch {
+    return null;
+  }
 }

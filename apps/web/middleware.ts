@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse, type NextRequest } from 'next/server'
+import { verifyQaLocalAuthHeaders } from '@/lib/auth/qa-local'
 
 // Define protected routes that require authentication
 const isProtectedRoute = createRouteMatcher([
@@ -41,6 +42,11 @@ export default clerkMiddleware(async (auth, req) => {
   }
 
   if (isProtectedRoute(req)) {
+    const qaAuth = await verifyQaLocalAuthHeaders(req.headers ?? new Headers())
+    if (qaAuth.status === 'authenticated') {
+      return
+    }
+
     await auth.protect({ unauthenticatedUrl: new URL('/sign-in', req.url).toString() })
   }
 })
