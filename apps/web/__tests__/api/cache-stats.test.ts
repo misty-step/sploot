@@ -1,16 +1,15 @@
 import { GET, POST } from '@/app/api/cache/stats/route';
 import { createMockRequest } from '../utils/test-helpers';
-import { getAuth } from '@/lib/auth/server';
 import { getCacheService } from '@/lib/cache';
 import type { CacheStats } from '@/lib/cache';
+import { createQaLocalAuthToken, getQaLocalAuthHeader } from '@/lib/auth/qa-local';
 
 // Mock dependencies
-vi.mock('@/lib/auth/server');
 vi.mock('@/lib/cache');
 
-const mockGetAuth = vi.mocked(getAuth);
 const mockGetCacheService = vi.mocked(getCacheService);
 const defaultContext = { params: Promise.resolve({}) };
+const QA_SECRET = 'test-secret-with-enough-entropy';
 
 // Helper to create mock cache service
 function createMockCache(stats?: Partial<CacheStats>) {
@@ -33,12 +32,29 @@ function createMockCache(stats?: Partial<CacheStats>) {
 describe('/api/cache/stats', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
+    vi.stubEnv('SPLOOT_QA_AUTH_SECRET', QA_SECRET);
+    vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', '');
+    vi.stubEnv('CLERK_SECRET_KEY', '');
   });
+
+  async function createAuthenticatedRequest(
+    method: string,
+    searchParams?: Record<string, string>
+  ) {
+    const token = await createQaLocalAuthToken({
+      userId: 'test-user-id',
+      secret: QA_SECRET,
+      expiresInSeconds: 60,
+    });
+
+    return createMockRequest(method, null, {
+      [getQaLocalAuthHeader()]: token,
+    }, searchParams);
+  }
 
   describe('GET', () => {
     it('should return 401 if user is not authenticated', async () => {
-      mockGetAuth.mockResolvedValue({ userId: null, sessionId: null, async getToken() { return null; } });
-
       const request = createMockRequest('GET');
       const response = await GET(request, defaultContext);
       const data = await response.json();
@@ -48,8 +64,6 @@ describe('/api/cache/stats', () => {
     });
 
     it('should return cache statistics', async () => {
-      mockGetAuth.mockResolvedValue({ userId: 'test-user-id', sessionId: 'test-session', async getToken() { return null; } });
-
       const mockCache = createMockCache({
         hits: 150,
         misses: 30,
@@ -59,7 +73,7 @@ describe('/api/cache/stats', () => {
       });
       mockGetCacheService.mockReturnValue(mockCache as any);
 
-      const request = createMockRequest('GET');
+      const request = await createAuthenticatedRequest('GET');
       const response = await GET(request, defaultContext);
       const data = await response.json();
 
@@ -75,8 +89,6 @@ describe('/api/cache/stats', () => {
     });
 
     it('should indicate when cache performance is below target', async () => {
-      mockGetAuth.mockResolvedValue({ userId: 'test-user-id', sessionId: 'test-session', async getToken() { return null; } });
-
       const mockCache = createMockCache({
         hits: 70,
         misses: 80,
@@ -86,7 +98,7 @@ describe('/api/cache/stats', () => {
       });
       mockGetCacheService.mockReturnValue(mockCache as any);
 
-      const request = createMockRequest('GET');
+      const request = await createAuthenticatedRequest('GET');
       const response = await GET(request, defaultContext);
       const data = await response.json();
 
@@ -98,8 +110,6 @@ describe('/api/cache/stats', () => {
 
   describe('POST', () => {
     it('should return 401 if user is not authenticated', async () => {
-      mockGetAuth.mockResolvedValue({ userId: null, sessionId: null, async getToken() { return null; } });
-
       const request = createMockRequest('POST', null, {}, {
         action: 'reset-stats',
       });
@@ -112,12 +122,10 @@ describe('/api/cache/stats', () => {
     });
 
     it('should reset cache statistics', async () => {
-      mockGetAuth.mockResolvedValue({ userId: 'test-user-id', sessionId: 'test-session', async getToken() { return null; } });
-
       const mockCache = createMockCache();
       mockGetCacheService.mockReturnValue(mockCache as any);
 
-      const request = createMockRequest('POST', null, {}, {
+      const request = await createAuthenticatedRequest('POST', {
         action: 'reset-stats',
       });
 
@@ -130,12 +138,10 @@ describe('/api/cache/stats', () => {
     });
 
     it('should clear cache for clear-all action', async () => {
-      mockGetAuth.mockResolvedValue({ userId: 'test-user-id', sessionId: 'test-session', async getToken() { return null; } });
-
       const mockCache = createMockCache();
       mockGetCacheService.mockReturnValue(mockCache as any);
 
-      const request = createMockRequest('POST', null, {}, {
+      const request = await createAuthenticatedRequest('POST', {
         action: 'clear-all',
       });
 
@@ -148,12 +154,10 @@ describe('/api/cache/stats', () => {
     });
 
     it('should clear cache for invalidate action', async () => {
-      mockGetAuth.mockResolvedValue({ userId: 'test-user-id', sessionId: 'test-session', async getToken() { return null; } });
-
       const mockCache = createMockCache();
       mockGetCacheService.mockReturnValue(mockCache as any);
 
-      const request = createMockRequest('POST', null, {}, {
+      const request = await createAuthenticatedRequest('POST', {
         action: 'invalidate',
       });
 
@@ -166,12 +170,10 @@ describe('/api/cache/stats', () => {
     });
 
     it('should return 501 for cache warming (not implemented)', async () => {
-      mockGetAuth.mockResolvedValue({ userId: 'test-user-id', sessionId: 'test-session', async getToken() { return null; } });
-
       const mockCache = createMockCache();
       mockGetCacheService.mockReturnValue(mockCache as any);
 
-      const request = createMockRequest('POST', null, {}, {
+      const request = await createAuthenticatedRequest('POST', {
         action: 'warm',
       });
 
@@ -183,12 +185,10 @@ describe('/api/cache/stats', () => {
     });
 
     it('should return 400 for invalid action', async () => {
-      mockGetAuth.mockResolvedValue({ userId: 'test-user-id', sessionId: 'test-session', async getToken() { return null; } });
-
       const mockCache = createMockCache();
       mockGetCacheService.mockReturnValue(mockCache as any);
 
-      const request = createMockRequest('POST', null, {}, {
+      const request = await createAuthenticatedRequest('POST', {
         action: 'invalid-action',
       });
 

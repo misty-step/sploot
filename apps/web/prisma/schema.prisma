@@ -27,10 +27,27 @@ model User {
   // Relations
   assets                   Asset[]
   tags                     Tag[]
+  identities               UserIdentity[]
   storageQuota             UserStorageQuota?
   storageQuotaReservations StorageQuotaReservation[]
 
   @@map("users")
+}
+
+model UserIdentity {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  provider        String
+  providerSubject String   @map("provider_subject")
+  email           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject], name: "unique_provider_subject")
+  @@index([userId])
+  @@map("user_identities")
 }
 
 model UserStorageQuota {

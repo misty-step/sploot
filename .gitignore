@@ -20,6 +20,8 @@ out/
 build/
 coverage/
 coverage-*
+test-results/
+playwright-report/
 .nyc_output/
 *.tsbuildinfo
 __pycache__/
@@ -80,4 +82,6 @@ sentry.properties
 # Harness Kit runtime traces (delegation receipts) — local-only, not committed
 .harness-kit/traces/*.jsonl
 .harness-kit/traces/provider-lanes/
+.spellbook/traces/prompts/
+.spellbook/traces/provider-lanes/
 .pi/state/

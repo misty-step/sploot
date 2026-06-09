@@ -1,19 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCacheService } from '@/lib/cache';
-import { getAuth } from '@/lib/auth/server';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import { withObservability } from '@/lib/with-observability';
 
 // GET /api/cache/stats - Get cache statistics
 async function getHandler(req: NextRequest) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     const cache = getCacheService();
     const stats = cache.getStats();
 
@@ -55,14 +47,6 @@ async function getHandler(req: NextRequest) {
 // POST /api/cache/stats - Reset cache statistics
 async function postHandler(req: NextRequest) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     const { searchParams } = new URL(req.url);
     const action = searchParams.get('action');
 
@@ -109,5 +93,11 @@ async function postHandler(req: NextRequest) {
   }
 }
 
-export const GET = withObservability(getHandler, { operation: 'cache:stats:get' });
-export const POST = withObservability(postHandler, { operation: 'cache:stats:manage' });
+export const GET = withObservability(
+  withAuthenticatedApi(getHandler),
+  { operation: 'cache:stats:get' }
+);
+export const POST = withObservability(
+  withAuthenticatedApi(postHandler),
+  { operation: 'cache:stats:manage' }
+);

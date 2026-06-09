@@ -153,16 +153,21 @@ export async function syncUser(clerkUserId: string, email: string) {
   // This avoids race conditions when concurrent requests try to create the same user
   if (!existingUserByEmail || existingUserByEmail.id === clerkUserId) {
     try {
-      return await prisma.user.upsert({
+      const user = await prisma.user.upsert({
         where: { id: clerkUserId },
         update: { email },
         create: { id: clerkUserId, email },
       });
+      await syncClerkIdentity(clerkUserId, user.id, email);
+      return user;
     } catch (e) {
       // Handle race condition: if unique constraint fails, fetch the user
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         const user = await prisma.user.findUnique({ where: { id: clerkUserId } });
-        if (user) return user;
+        if (user) {
+          await syncClerkIdentity(clerkUserId, user.id, email);
+          return user;
+        }
       }
       throw e;
     }
@@ -215,10 +220,30 @@ export async function syncUser(clerkUserId: string, email: string) {
       await tx.user.delete({ where: { id: oldUserId } });
 
       // Now we can set the real email (unique constraint is free)
-      return await tx.user.update({
+      const user = await tx.user.update({
         where: { id: newUserId },
         data: { email },
       });
+      await tx.userIdentity.upsert({
+        where: {
+          unique_provider_subject: {
+            provider: 'clerk',
+            providerSubject: clerkUserId,
+          },
+        },
+        update: {
+          userId: user.id,
+          email,
+        },
+        create: {
+          userId: user.id,
+          provider: 'clerk',
+          providerSubject: clerkUserId,
+          email,
+        },
+      });
+
+      return user;
     }, {
       // Increase timeout for migration transactions (default 5s may be too short)
       timeout: 15000,
@@ -229,6 +254,27 @@ export async function syncUser(clerkUserId: string, email: string) {
 
   // Unreachable: upsert handles all non-orphaned cases
   throw new Error('syncUser: unexpected code path');
+}
+
+async function syncClerkIdentity(clerkUserId: string, userId: string, email: string) {
+  await prisma.userIdentity.upsert({
+    where: {
+      unique_provider_subject: {
+        provider: 'clerk',
+        providerSubject: clerkUserId,
+      },
+    },
+    update: {
+      userId,
+      email,
+    },
+    create: {
+      userId,
+      provider: 'clerk',
+      providerSubject: clerkUserId,
+      email,
+    },
+  });
 }
 
 

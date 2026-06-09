@@ -22,6 +22,14 @@ console.log('[ApiClient] Initialized', {
   environment: CLERK_ENVIRONMENT,
 });
 
+export interface AuthTokenProvider {
+  getToken(): Promise<string | null>;
+}
+
+const clerkAuthTokenProvider: AuthTokenProvider = {
+  getToken: getAuthToken,
+};
+
 export class SplootApiClientError extends Error {
   constructor(
     message: string,
@@ -33,6 +41,21 @@ export class SplootApiClientError extends Error {
     super(message);
     this.name = 'SplootApiClientError';
   }
+}
+
+export class SplootApiClient {
+  constructor(private readonly authTokenProvider: AuthTokenProvider = clerkAuthTokenProvider) {}
+
+  async uploadImage(
+    blob: Blob,
+    filename?: string
+  ): Promise<UploadResult> {
+    return uploadImageWithTokenProvider(this.authTokenProvider, blob, filename);
+  }
+}
+
+export function createSplootApiClient(authTokenProvider?: AuthTokenProvider): SplootApiClient {
+  return new SplootApiClient(authTokenProvider);
 }
 
 async function parseErrorResponse(
@@ -100,10 +123,18 @@ export async function uploadImage(
   blob: Blob,
   filename?: string
 ): Promise<UploadResult> {
+  return uploadImageWithTokenProvider(clerkAuthTokenProvider, blob, filename);
+}
+
+async function uploadImageWithTokenProvider(
+  authTokenProvider: AuthTokenProvider,
+  blob: Blob,
+  filename?: string
+): Promise<UploadResult> {
   assertExtensionConfig();
 
   // Get auth token
-  const token = await getAuthToken();
+  const token = await authTokenProvider.getToken();
   if (!token) {
     throw new Error('Authentication required');
   }
