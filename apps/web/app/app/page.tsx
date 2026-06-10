@@ -678,9 +678,9 @@ function AppPageClient() {
                 searchState={
                   searchLoading ? 'loading' :
                     isTypingRef.current ? 'typing' :
-                      libraryQuery && searchAssets.length > 0 ? 'success' :
-                        libraryQuery && searchAssets.length === 0 ? 'no-results' :
-                          searchError ? 'error' :
+                      searchError ? 'error' :
+                        libraryQuery && searchAssets.length > 0 ? 'success' :
+                          libraryQuery && searchAssets.length === 0 ? 'no-results' :
                             'idle'
                 }
                 resultCount={searchAssets.length}

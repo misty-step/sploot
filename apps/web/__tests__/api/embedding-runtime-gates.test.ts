@@ -91,3 +91,29 @@ describe('embedding runtime gates', () => {
     expect(mocks.createEmbeddingService).not.toHaveBeenCalled();
   });
 });
+
+describe('search degraded-service honesty', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('SPLOOT_EMBEDDINGS_ENABLED', 'true');
+    mocks.getAuth.mockResolvedValue({ userId: 'user-1' });
+    mocks.getSearchResults.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('POST /api/search returns 503, not 200 + empty results, when the embedding service cannot initialize', async () => {
+    mocks.createEmbeddingService.mockImplementation(() => {
+      throw new Error('REPLICATE_API_TOKEN is not configured');
+    });
+
+    const response = await search(jsonRequest('/api/search', { query: 'cat' }));
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.error).toMatch(/unavailable/i);
+    expect(body.results).toBeUndefined();
+  });
+});

@@ -87,21 +87,17 @@ async function postHandler(req: NextRequest) {
     try {
       embeddingService = createEmbeddingService();
     } catch (error) {
-      // Failed to initialize embedding service
-
-      // Return empty results when embedding service is unavailable
-      return NextResponse.json({
-        results: [],
-        query,
-        total: 0,
-        limit: effectiveLimit,
-        requestedLimit: limit,
-        processingTime: Date.now() - startTime,
-        requestedThreshold: threshold,
-        threshold,
-        thresholdFallback: false,
-        error: 'Search is currently unavailable. Please configure Replicate API token.',
-      });
+      // Failed to initialize embedding service. A degraded backend must not
+      // masquerade as an honest empty result set (HTTP 200 + results: []
+      // renders as "no matches" in the client).
+      return NextResponse.json(
+        {
+          error: 'Search is temporarily unavailable: embedding service is not configured.',
+          query,
+          processingTime: Date.now() - startTime,
+        },
+        { status: 503 }
+      );
     }
 
     // Generate text embedding for the query
