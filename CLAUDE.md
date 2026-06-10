@@ -145,4 +145,4 @@ Pre-push runs: typecheck (tests skipped locally - require database)
 2. Export from `packages/common/src/index.ts`
 3. Import in apps: `import { X } from '@sploot/common'`
 
-See `TASK.md` for consolidation status and remaining deployment work.
+Work tracking lives in `backlog.d/` (see `backlog.d/README.md`), not GitHub Issues.
