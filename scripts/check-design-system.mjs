@@ -91,7 +91,22 @@ for (const token of [
   assertIncludes(cssPath, token, 'Sploot semantic token');
 }
 
-for (const phrase of ['--sploot-ink', '--sploot-cyan', '--sploot-touch-target']) {
+for (const token of [
+  '--sploot-motion-fast',
+  '--sploot-motion-base',
+  '--sploot-motion-panel',
+  '--sploot-motion-cluster',
+  '--sploot-ease-out',
+  '--sploot-ease-snap',
+  'animate-sploot-stamp',
+  'animate-sploot-pop',
+  'animate-sploot-slide-up',
+  'prefers-reduced-motion: reduce',
+]) {
+  assertIncludes(cssPath, token, 'Sploot motion system');
+}
+
+for (const phrase of ['--sploot-ink', '--sploot-cyan', '--sploot-touch-target', '--sploot-ease-snap', 'animate-sploot-stamp']) {
   assertIncludes('docs/design/tokens.md', phrase, 'documented design token');
 }
 
@@ -110,7 +125,9 @@ for (const [path, phrases] of Object.entries({
   'apps/web/components/search/search-bar.tsx': ['--sploot-touch-target'],
   'apps/web/components/chrome/mobile-command-dock.tsx': ['--sploot-touch-target'],
   'apps/web/components/library/image-tile.tsx': ['BangerStamp', 'border-sploot-violet', 'text-sploot-cyan'],
-  'apps/extension/entrypoints/popup/App.tsx': ['#0891B2', "borderRadius: '0'"],
+  // The popup adopts tokens through its stylesheet: App.tsx must import the
+  // token-driven style.css and use its semantic panel classes.
+  'apps/extension/entrypoints/popup/App.tsx': ["import './style.css'", 'auth-panel'],
   'apps/extension/entrypoints/popup/style.css': ['--sploot-cyan', '--sploot-coral', '--radius-square: 0px'],
   'apps/web/app/page.tsx': ['AtlasLandingHero'],
 })) {
