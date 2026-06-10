@@ -257,6 +257,25 @@ export async function syncUser(clerkUserId: string, email: string) {
 }
 
 async function syncClerkIdentity(clerkUserId: string, userId: string, email: string) {
+  try {
+    await syncClerkIdentityStrict(clerkUserId, userId, email);
+  } catch (e) {
+    // Identity mirroring is a secondary index of the Clerk linkage; the user
+    // row itself synced fine. Schema drift here (e.g. migration not yet
+    // applied) must not fail auth for every signed-in user.
+    // Incident 2026-06-09: missing user_identities table 503'd the whole app.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && (e.code === 'P2021' || e.code === 'P2022')) {
+      logger.error('syncClerkIdentity skipped: schema out of date', {
+        code: e.code,
+        clerkUserId,
+      });
+      return;
+    }
+    throw e;
+  }
+}
+
+async function syncClerkIdentityStrict(clerkUserId: string, userId: string, email: string) {
   await prisma.userIdentity.upsert({
     where: {
       unique_provider_subject: {
