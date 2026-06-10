@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "PORT=${PORT:-3001} next dev",
-    "build": "next build",
+    "build": "node scripts/migrate-deploy.mjs && next build",
     "start": "next start",
     "lint": "next lint && pnpm auth:guard",
     "type-check": "tsc --noEmit",

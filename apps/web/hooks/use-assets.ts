@@ -129,11 +129,14 @@ export function useAssets(options: UseAssetsOptions = {}) {
             403: 'Forbidden - Access denied',
             404: 'API endpoint not found',
             500: 'Server error - Please try again',
-            503: 'Service unavailable - Database may be offline',
+            503: 'Service temporarily unavailable - Please try again',
           };
 
-          const specificMessage = statusMessages[response.status]
-            || `${errorMessage} (HTTP ${response.status})`;
+          // Prefer the server's own error message; fall back to the generic
+          // per-status text only when the response carried no usable detail.
+          const specificMessage = (errorDetails && errorMessage !== 'Failed to fetch assets')
+            ? errorMessage
+            : (statusMessages[response.status] || `${errorMessage} (HTTP ${response.status})`);
 
           throw new Error(specificMessage);
         }
