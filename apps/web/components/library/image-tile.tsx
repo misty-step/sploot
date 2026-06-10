@@ -427,6 +427,13 @@ function ImageTileComponent({
             )}
 
 
+            {/* Banger stamp - slapped on the artwork like a sticker */}
+            {asset.favorite && !imageError && (
+              <div className="absolute top-2 left-2 z-10 -rotate-6">
+                <BangerStamp className="animate-sploot-stamp sploot-sticker-shadow" />
+              </div>
+            )}
+
             {/* Similarity score overlay */}
             {similarityScore !== null && (
               <div className="absolute top-2 right-2 z-10">
@@ -449,21 +456,19 @@ function ImageTileComponent({
                       variant="ghost"
                       size="icon"
                       className={cn(
-                        'h-11 w-11 transition-colors sm:h-7 sm:w-7',
+                        'h-11 w-11 rounded-none transition-colors hover:bg-sploot-coral hover:text-black sm:h-7 sm:w-7',
                         asset.favorite
-                          ? 'text-accent-coral hover:text-accent-coral/80'
-                          : 'text-muted-foreground/80 hover:text-accent-coral'
+                          ? 'text-sploot-coral'
+                          : 'text-muted-foreground/80'
                       )}
                       onClick={handleFavoriteToggle}
                       disabled={isLoading}
                       aria-pressed={asset.favorite}
                       aria-label={asset.favorite ? 'remove banger' : 'mark as banger'}
                     >
-                      {asset.favorite ? (
-                        <BangerStamp className="pointer-events-none min-h-0 border-0 bg-transparent p-0 text-current animate-sploot-stamp" />
-                      ) : (
-                        <Heart className="h-5 w-5 sm:h-4 sm:w-4" />
-                      )}
+                      <Heart
+                        className={cn('h-5 w-5 sm:h-4 sm:w-4', asset.favorite && 'fill-current')}
+                      />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
@@ -482,7 +487,7 @@ function ImageTileComponent({
                       filename={asset.filename}
                       mimeType={asset.mime}
                       size="icon"
-                      className="h-11 w-11 transition-colors text-muted-foreground/60 hover:text-accent-cyan sm:h-7 sm:w-7"
+                      className="h-11 w-11 rounded-none transition-colors text-muted-foreground/60 hover:bg-sploot-cyan hover:text-black sm:h-7 sm:w-7"
                     />
                   </TooltipTrigger>
                   <TooltipContent side="top">
@@ -495,7 +500,7 @@ function ImageTileComponent({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-11 w-11 transition-colors text-muted-foreground/60 hover:text-destructive sm:h-7 sm:w-7"
+                className="h-11 w-11 rounded-none transition-colors text-muted-foreground/60 hover:bg-destructive hover:text-white sm:h-7 sm:w-7"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDelete(e);
