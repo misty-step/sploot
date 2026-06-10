@@ -181,3 +181,16 @@ model SearchLog {
   @@index([createdAt])
   @@map("search_logs")
 }
+
+// Persistent text-embedding cache - survives serverless instance churn so
+// repeat searches skip the Replicate round-trip (in-memory cache is L1).
+model TextEmbeddingCache {
+  key       String   @id
+  model     String
+  embedding Json
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+
+  @@index([expiresAt])
+  @@map("text_embedding_cache")
+}

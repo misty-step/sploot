@@ -1,5 +1,6 @@
 import { ICacheBackend, CacheStats, SearchFilters } from './types';
 import { MemoryBackend } from './MemoryBackend';
+import { PostgresTextEmbeddingStore } from './PostgresTextEmbeddingStore';
 
 /**
  * Generate a hash string from input for cache key generation.
@@ -23,8 +24,17 @@ function hashString(str: string): string {
  * Cache key generators
  * Uses delimited hashing to prevent collisions
  */
+/**
+ * Normalize query text for cache keying only (the raw text still goes to the
+ * embedding model). Trim, lowercase, collapse whitespace.
+ */
+function normalizeQueryText(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 const CACHE_KEYS = {
-  TEXT_EMBEDDING: (text: string) => `txt:${hashString(text)}`,
+  TEXT_EMBEDDING: (text: string, model: string) =>
+    `txt:${hashString(model)}:${hashString(normalizeQueryText(text))}`,
   IMAGE_EMBEDDING: (checksum: string) => `img:${checksum}`,
   SEARCH_RESULTS: (userId: string, query: string, filters: string) =>
     `search:${userId}:${hashString(query)}:${hashString(filters)}`,
@@ -43,10 +53,12 @@ const CACHE_KEYS = {
  */
 export class CacheService {
   private backend: ICacheBackend;
+  private textEmbeddingStore: PostgresTextEmbeddingStore;
   private stats: CacheStats;
 
   constructor(backend?: ICacheBackend) {
     this.backend = backend ?? new MemoryBackend();
+    this.textEmbeddingStore = new PostgresTextEmbeddingStore();
     this.stats = {
       hits: 0,
       misses: 0,
@@ -58,13 +70,21 @@ export class CacheService {
 
   // Text Embedding Methods
 
-  async getTextEmbedding(text: string): Promise<number[] | null> {
+  async getTextEmbedding(text: string, model = ''): Promise<number[] | null> {
     try {
-      const key = CACHE_KEYS.TEXT_EMBEDDING(text);
+      const key = CACHE_KEYS.TEXT_EMBEDDING(text, model);
       const embedding = await this.backend.get<number[]>(key);
       if (embedding) {
         this.incrementHit();
         return embedding;
+      }
+
+      // L2: persistent store survives serverless instance churn.
+      const persisted = await this.textEmbeddingStore.get(key);
+      if (persisted) {
+        await this.backend.set(key, persisted);
+        this.incrementHit();
+        return persisted;
       }
 
       this.incrementMiss();
@@ -79,10 +99,11 @@ export class CacheService {
     }
   }
 
-  async setTextEmbedding(text: string, embedding: number[]): Promise<void> {
+  async setTextEmbedding(text: string, embedding: number[], model = ''): Promise<void> {
     try {
-      const key = CACHE_KEYS.TEXT_EMBEDDING(text);
+      const key = CACHE_KEYS.TEXT_EMBEDDING(text, model);
       await this.backend.set(key, embedding);
+      await this.textEmbeddingStore.set(key, model, embedding);
     } catch (error) {
       console.error('[CacheService] setTextEmbedding failed:', {
         textPreview: text.substring(0, 50),
@@ -180,6 +201,9 @@ export class CacheService {
   async invalidate(key: string): Promise<void> {
     try {
       await this.backend.delete(key);
+      if (key.startsWith('txt:')) {
+        await this.textEmbeddingStore.delete(key);
+      }
     } catch (error) {
       console.error('[CacheService] invalidate failed:', {
         key,
@@ -191,6 +215,9 @@ export class CacheService {
   async clear(namespace?: string): Promise<void> {
     try {
       await this.backend.clear(namespace);
+      if (namespace === undefined || namespace === 'txt') {
+        await this.textEmbeddingStore.clear();
+      }
     } catch (error) {
       console.error('[CacheService] clear failed:', {
         namespace: namespace ?? 'all',

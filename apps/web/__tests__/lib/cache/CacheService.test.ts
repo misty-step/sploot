@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// These tests cover in-memory (L1) cache semantics in isolation. The
+// persistent text-embedding L2 is disabled by mocking out prisma; it has its
+// own coverage in text-embedding-l2.test.ts.
+vi.mock('@/lib/db', () => ({ prisma: null }));
+
 import { CacheService } from '@/lib/cache/CacheService';
 import type { ICacheBackend } from '@/lib/cache/types';
 
