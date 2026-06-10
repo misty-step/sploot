@@ -57,7 +57,7 @@ export class ReplicateEmbeddingService {
 
     // Check cache first
     const cache = getCacheService();
-    const cachedEmbedding = await cache.getTextEmbedding(query);
+    const cachedEmbedding = await cache.getTextEmbedding(query, this.model);
     if (cachedEmbedding) {
       return {
         embedding: cachedEmbedding,
@@ -90,7 +90,7 @@ export class ReplicateEmbeddingService {
       }
 
       // Cache the result
-      await cache.setTextEmbedding(query, embedding);
+      await cache.setTextEmbedding(query, embedding, this.model);
 
       return {
         embedding,
