@@ -13,13 +13,19 @@ Status conventions:
 
 | # | Title | Priority | Estimate |
 |---|-------|----------|----------|
-| [018](018-agent-friendly-auth-and-qa-harness.md) | Agent-Friendly Auth And QA Harness | P1 | L |
+| [019](019-make-degraded-search-and-stats-honest.md) | Make Degraded Search And Stats Honest | P1 | M |
+| [020](020-clear-open-dependabot-vulnerabilities.md) | Clear Open Dependabot Vulnerabilities | P1 | S |
+| [021](021-make-landing-piles-show-real-memes.md) | Make Landing Piles Show Real Memes | P2 | M |
+| [022](022-prune-stale-agent-docs.md) | Prune Stale Agent Docs | P2 | S |
+| [023](023-one-command-design-qa-seed.md) | One-Command Design QA Seed | P2 | S |
+| [024](024-cache-text-query-embeddings.md) | Cache Text-Query Embeddings | P2 | M |
 
 ## Done
 
 See `_done/` for completed tickets with their `## What Was Built` notes.
 
 Recently completed:
+- [018](_done/018-agent-friendly-auth-and-qa-harness.md) Agent-Friendly Auth And QA Harness
 - [017](_done/017-open-web-signin-from-extension.md) Open Web Sign-In From Extension
 - [016](_done/016-integrate-canary-agent-observability.md) Integrate Canary Agent Observability
 - [001](_done/001-fix-extension-upload-response-contract.md) Fix Extension Upload Response Contract
