@@ -1,6 +1,6 @@
 # Clear open Dependabot vulnerabilities
 
-Priority: P1 · Status: pending · Estimate: S
+Priority: P1 · Status: done · Estimate: S
 
 ## Goal
 
@@ -32,3 +32,11 @@ Dependabot's bump run for shell-quote
 (`actions/runs/27251498043`) concluded `failure` — likely pnpm workspace
 lockfile handling. Bump via pnpm directly (overrides in root `package.json`
 where the dep is transitive), one PR for the lot.
+
+## What Was Built
+
+PR #206 (`b759152`). pnpm overrides pin shell-quote >=1.8.4 (critical) and
+tmp >=0.2.6 (high) — the only vulnerable resolutions actually in the
+lockfile. next/vitest/ws/postcss alerts verified stale or already patched;
+some reference the deleted apps/extension/pnpm-lock.yaml and will close on
+Dependabot rescan.

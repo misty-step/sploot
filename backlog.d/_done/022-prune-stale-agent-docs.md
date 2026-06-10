@@ -1,6 +1,6 @@
 # Prune stale agent docs
 
-Priority: P2 · Status: pending · Estimate: S
+Priority: P2 · Status: done · Estimate: S
 
 ## Goal
 
@@ -29,3 +29,10 @@ Stale harness prose is an agent hazard: a cold agent reading
 design lint now rejects, and a pointer to a tracker file that doesn't exist.
 Keep the database/observability sections — those are accurate and
 load-bearing.
+
+## What Was Built
+
+PR #207 (`c87987b`). Root CLAUDE.md points at backlog.d/ instead of the
+missing TASK.md; apps/web/CLAUDE.md design section defers to DESIGN.md and
+real scripts; PROMPT.md deleted (its health-route fix had shipped);
+AGENTS.md debt-map path fixed.

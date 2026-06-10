@@ -13,18 +13,19 @@ Status conventions:
 
 | # | Title | Priority | Estimate |
 |---|-------|----------|----------|
-| [019](019-make-degraded-search-and-stats-honest.md) | Make Degraded Search And Stats Honest | P1 | M |
-| [020](020-clear-open-dependabot-vulnerabilities.md) | Clear Open Dependabot Vulnerabilities | P1 | S |
-| [021](021-make-landing-piles-show-real-memes.md) | Make Landing Piles Show Real Memes | P2 | M |
-| [022](022-prune-stale-agent-docs.md) | Prune Stale Agent Docs | P2 | S |
-| [023](023-one-command-design-qa-seed.md) | One-Command Design QA Seed | P2 | S |
-| [024](024-cache-text-query-embeddings.md) | Cache Text-Query Embeddings | P2 | M |
+| _(empty — run `/groom` to refill)_ | | | |
 
 ## Done
 
 See `_done/` for completed tickets with their `## What Was Built` notes.
 
 Recently completed:
+- [019](_done/019-make-degraded-search-and-stats-honest.md) Make Degraded Search And Stats Honest
+- [020](_done/020-clear-open-dependabot-vulnerabilities.md) Clear Open Dependabot Vulnerabilities
+- [021](_done/021-make-landing-piles-show-real-memes.md) Make Landing Piles Show Real Memes
+- [022](_done/022-prune-stale-agent-docs.md) Prune Stale Agent Docs
+- [023](_done/023-one-command-design-qa-seed.md) One-Command Design QA Seed
+- [024](_done/024-cache-text-query-embeddings.md) Cache Text-Query Embeddings
 - [018](_done/018-agent-friendly-auth-and-qa-harness.md) Agent-Friendly Auth And QA Harness
 - [017](_done/017-open-web-signin-from-extension.md) Open Web Sign-In From Extension
 - [016](_done/016-integrate-canary-agent-observability.md) Integrate Canary Agent Observability

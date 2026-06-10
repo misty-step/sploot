@@ -1,6 +1,6 @@
 # One-command design QA seed
 
-Priority: P2 · Status: pending · Estimate: S
+Priority: P2 · Status: done · Estimate: S
 
 ## Goal
 
@@ -28,3 +28,10 @@ dismissing the client integrity banner (`use-assets.ts` validates URLs contain
 Options: a dev/QA-only allowlist for local seed URLs in both validators, or
 seed with constraint-shaped URLs proxied by a dev-only route. Builds directly
 on the 018 qa-local auth harness; this is the data half that 018 left out.
+
+## What Was Built
+
+PR #209 (`59f62de`). pnpm --filter web qa:seed / --teardown: QA user +
+generated PNG fixtures with CHECK-compliant URLs on a reserved
+sploot-qa-seed host; QA-only image loader maps the host to static files.
+Verified rendered at /app under qa-local auth. Documented in docs/AUTH.md.

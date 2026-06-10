@@ -1,6 +1,6 @@
 # Cache text-query embeddings
 
-Priority: P2 · Status: pending · Estimate: M
+Priority: P2 · Status: done · Estimate: M
 
 ## Goal
 
@@ -27,3 +27,10 @@ instances. A small Postgres table keyed by `hash(model, normalized_query)`
 (or Vercel KV) gives cross-instance reuse and survives deploys. Normalize the
 query (trim/lowercase/collapse whitespace) before hashing. Invalidate by model
 name so an embedding-model upgrade naturally misses.
+
+## What Was Built
+
+PR #210 (`4358100`). text_embedding_cache table as persistent L2 inside
+CacheService (fail-soft, 30-day TTL, opportunistic pruning), keyed by
+(model, normalized query). clear/invalidate propagate to L2. Live p50
+against Replicate unverified (no token locally); mechanism proven by tests.
