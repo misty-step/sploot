@@ -183,6 +183,31 @@ Implemented product wrappers live in `apps/web/components/sploot`:
 New product surfaces should compose these wrappers before creating one-off
 sticker, pile, banger, or atlas treatments.
 
+### Motion
+
+Motion tokens live in `apps/web/app/globals.css` and are the only sanctioned
+timing values:
+
+| Token | Value | Use |
+|---|---|---|
+| `--sploot-motion-fast` | 75ms | Hover/press feedback |
+| `--sploot-motion-base` | 150ms | Tile lifts, pops, small reveals |
+| `--sploot-motion-panel` | 240ms | Panels, sheets, stamps |
+| `--sploot-motion-cluster` | 360ms | Grid reshuffle/cluster moves |
+| `--sploot-ease-out` | cubic-bezier(0.2, 0.8, 0.2, 1) | Default deceleration |
+| `--sploot-ease-snap` | cubic-bezier(0.34, 1.56, 0.64, 1) | Sticker/stamp overshoot |
+
+Named utilities:
+
+- `.animate-sploot-stamp`: banger/favorite stamp punch (scale-down rotate-in).
+- `.animate-sploot-pop`: sticker tabs and labels appearing.
+- `.animate-sploot-slide-up`: panels, sheets, and docks entering.
+- Grid tiles cascade with `fadeInScale` staggered at 30ms per tile, capped at
+  15 tiles so paginated content never waits.
+
+A global `prefers-reduced-motion: reduce` override collapses all animations
+and transitions; do not add per-component opt-outs.
+
 Interaction rules:
 
 - Motion must explain sorting, clustering, uploading, or selection.

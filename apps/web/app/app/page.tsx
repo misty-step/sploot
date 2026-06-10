@@ -643,12 +643,12 @@ function AppPageClient() {
   return (
     <div className="flex h-[calc(100vh-48px)] md:h-[calc(100vh-56px)] flex-col">
       {/* Container with ultra-wide support - max-width at 1920px+ */}
-      <div className="border-b-[3px] border-sploot-cyan px-3 pb-3 pt-3 md:border-b-[6px] md:px-10 md:pb-8 md:pt-8 2xl:px-12">
+      <div className="border-b-[3px] border-sploot-cyan px-3 pb-3 pt-3 md:px-10 md:pb-4 md:pt-4 2xl:px-12">
         <div className="mx-auto w-full max-w-7xl 2xl:max-w-[1920px]">
-          <header className="flex flex-col gap-2 md:gap-6">
+          <header className="flex flex-col gap-2 md:gap-3">
             {/* Terminal-style status bar */}
             {stats.total > 0 && (
-              <div className="hidden md:flex font-mono text-sm brutalist-border border-border bg-card p-3 items-center gap-4 flex-wrap">
+              <div className="hidden md:flex font-mono text-xs brutalist-border border-border bg-card px-3 py-1.5 items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
                   <span className="text-muted-foreground uppercase">MEMES:</span>
                   <span className="font-bold text-sploot-cyan">{stats.total.toLocaleString()}</span>
@@ -771,14 +771,14 @@ function AppPageClient() {
 
             {(!isSearching && tagIdParam) && (
               <div className="flex flex-wrap items-center gap-2">
-                <StickerTab tone="violet">
+                <StickerTab tone="violet" className="animate-sploot-pop">
                   filtering tag #{activeTagName ?? tagIdParam.slice(0, 6)}
                 </StickerTab>
               </div>
             )}
 
             {showUploadPanel && (
-              <div className="border border-dashed border-border bg-muted p-3 md:p-5">
+              <div className="animate-sploot-slide-up border border-dashed border-border bg-muted p-3 md:p-5">
                 <UploadZone
                   isOnDashboard={true}
                   onUploadComplete={(stats) => {
@@ -891,6 +891,10 @@ function AppPageClient() {
                   onScrollContainerReady={handleScrollContainerReady}
                   onUploadClick={() => setShowUploadPanel(true)}
                   showSimilarityScores={isSearching}
+                  emptyStateVariant={
+                    isSearching ? 'search' : (bangersOnly || tagIdParam) ? 'filtered' : 'first-use'
+                  }
+                  emptyStateSearchQuery={isSearching ? trimmedLibraryQuery : undefined}
                 />
               </ImageGridErrorBoundary>
             </div>

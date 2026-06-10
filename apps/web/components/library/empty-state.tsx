@@ -101,15 +101,15 @@ export function EmptyState({
     switch (variant) {
       case 'search':
         return {
-          title: 'no results found',
+          title: 'no matches in the pile',
           description: searchQuery
-            ? `No memes match "${searchQuery}". Try different search terms or browse your full library.`
-            : 'No memes match your search. Try different terms or browse your full library.',
+            ? `nothing matches "${searchQuery}". try different words or browse the full library.`
+            : 'nothing matches that search. try different words or browse the full library.',
         };
       case 'filtered':
         return {
           title: 'no memes match these filters',
-          description: 'Try adjusting your filters or clearing them to see all your memes.',
+          description: 'try adjusting your filters or clearing them to see all your memes.',
         };
       case 'first-use':
       default:

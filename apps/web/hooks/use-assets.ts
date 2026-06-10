@@ -42,8 +42,10 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
   const loadAssets = useCallback(
     async (reset = false) => {
-      // Use refs to check current state without causing recreations
-      if (loadingRef.current || (!hasMoreRef.current && !reset)) return;
+      // Use refs to check current state without causing recreations.
+      // Reset loads (initial load, refresh, filter changes) always proceed and
+      // take over any in-flight request; only pagination loads are deduped.
+      if (!reset && (loadingRef.current || !hasMoreRef.current)) return;
 
       // Cancel any in-flight request
       if (abortControllerRef.current) {
@@ -216,8 +218,10 @@ export function useAssets(options: UseAssetsOptions = {}) {
           }
         }
       } finally {
-        // Only update loading state if this request wasn't aborted
-        if (!controller.signal.aborted) {
+        // Reset loading unless a newer request has taken over. Checking
+        // ownership (not signal.aborted) means an unmount-abort can't strand
+        // loading=true forever (e.g. StrictMode's dev mount/unmount/remount).
+        if (abortControllerRef.current === controller) {
           loadingRef.current = false;
           setLoading(false);
         }
@@ -395,10 +399,16 @@ export function useAssets(options: UseAssetsOptions = {}) {
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
       if (authRetryTimeoutRef.current) {
         clearTimeout(authRetryTimeoutRef.current);
       }
+      // Allow a remount to auto-load again; the aborted request above never
+      // delivered data, so the next mount must not be blocked by hasLoadedRef
+      // (StrictMode remounts the same hook state in development).
+      loadingRef.current = false;
+      hasLoadedRef.current = false;
     };
   }, []);
 

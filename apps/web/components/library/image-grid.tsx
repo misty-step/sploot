@@ -9,6 +9,7 @@ import { EmptyState } from './empty-state';
 import { cn } from '@/lib/utils';
 import { trackBrokenImageRatio, setupCLSTracking } from '@/lib/performance-metrics';
 import type { Asset } from '@/lib/types';
+import type { EmptyStateVariant } from './empty-state';
 import { IMAGE_GRID_BREAKPOINT_COLS, IMAGE_GRID_SCROLL_CLASS } from './image-grid-layout';
 
 interface ImageGridProps {
@@ -23,6 +24,8 @@ interface ImageGridProps {
   onScrollContainerReady?: (node: HTMLDivElement | null) => void;
   onUploadClick?: () => void;
   showSimilarityScores?: boolean;
+  emptyStateVariant?: EmptyStateVariant;
+  emptyStateSearchQuery?: string;
 }
 
 export function ImageGrid({
@@ -37,6 +40,8 @@ export function ImageGrid({
   onScrollContainerReady,
   onUploadClick,
   showSimilarityScores = false,
+  emptyStateVariant = 'first-use',
+  emptyStateSearchQuery,
 }: ImageGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showingTransition, setShowingTransition] = useState(false);
@@ -168,7 +173,12 @@ export function ImageGrid({
   if (assets.length === 0 && !loading) {
     return (
       <div className="animate-fade-in">
-        <EmptyState variant="first-use" onUploadClick={onUploadClick} showUploadButton={false} />
+        <EmptyState
+          variant={emptyStateVariant}
+          searchQuery={emptyStateSearchQuery}
+          onUploadClick={onUploadClick}
+          showUploadButton={false}
+        />
       </div>
     );
   }
@@ -176,7 +186,7 @@ export function ImageGrid({
   // Render column-based masonry layout
   // Perfect vertical spacing within each column, natural tile flow
   return (
-    <div className="h-full">
+    <div className="h-full bg-sploot-workbench">
       <div
         ref={setContainerRef}
         className={cn(IMAGE_GRID_SCROLL_CLASS, containerClassName)}
@@ -192,7 +202,8 @@ export function ImageGrid({
               key={asset.id}
               className="masonry-item"
               style={{
-                animation: `fadeInScale 300ms ease-out ${index * 30}ms forwards`,
+                // Cap the cascade so late/paginated tiles never wait seconds
+                animation: `fadeInScale 300ms var(--sploot-ease-out) ${Math.min(index, 15) * 30}ms forwards`,
                 opacity: 0,
               }}
             >
@@ -214,7 +225,7 @@ export function ImageGrid({
         {/* Loading indicator */}
         {loading && (
           <div className="py-8 text-center">
-            <div className="inline-flex items-center gap-2 text-green-600">
+            <div className="inline-flex items-center gap-2 text-sploot-cyan">
               <svg
                 className="animate-spin h-5 w-5"
                 fill="none"
@@ -241,8 +252,10 @@ export function ImageGrid({
 
         {/* End of list indicator */}
         {!hasMore && assets.length > 0 && (
-          <div className="py-6 text-center font-mono text-xs tracking-wide text-muted-foreground/60">
-            no more memes in this view
+          <div className="flex justify-center py-6">
+            <span className="inline-block border border-border bg-card px-3 py-1 font-mono text-xs uppercase tracking-wider text-muted-foreground sploot-sticker-shadow">
+              end of the pile
+            </span>
           </div>
         )}
       </div>
