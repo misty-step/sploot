@@ -96,22 +96,24 @@ describe("ProcessTimeline", () => {
     expect(screen.getByText("03")).toBeInTheDocument();
   });
 
-  it("fades steps into view with staggered delays when intersecting", () => {
+  it("keeps steps visible before intersecting and animates them in with staggered delays after", () => {
     render(<ProcessTimeline />);
     const articlesBefore = screen.getAllByRole("article");
 
+    // Content must never be hidden waiting on the observer: no JS, aborted
+    // scroll, or screenshots would otherwise see a blank section.
     articlesBefore.forEach((article) => {
-      expect(article.className).toContain("opacity-0");
-      expect(article.className).toContain("translate-y-8");
+      expect(article.className).not.toContain("opacity-0");
+      expect(article.className).not.toContain("animate-sploot-slide-up");
     });
 
     triggerIntersection();
 
     const articlesAfter = screen.getAllByRole("article");
     articlesAfter.forEach((article, index) => {
-      expect(article.className).toContain("opacity-100");
-      expect(article.className).toContain("translate-y-0");
-      expect(article.style.transitionDelay).toBe(`${index * 150}ms`);
+      expect(article.className).toContain("animate-sploot-slide-up");
+      expect(article.style.animationDelay).toBe(`${index * 150}ms`);
+      expect(article.style.animationFillMode).toBe("backwards");
     });
   });
 });

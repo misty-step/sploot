@@ -3,14 +3,16 @@ import { Shuffle, Sparkles, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ClusterPile } from './cluster-pile';
 import { StickerTab } from './sticker-tab';
+import { MemeDoodle, type MemeDoodleKind } from './meme-doodle';
+import { cn } from '@/lib/utils';
 
-const importItems = [
-  { label: 'reaction', tone: 'cyan' as const },
-  { label: 'groupchat', tone: 'coral' as const },
-  { label: 'cat?', tone: 'lime' as const },
-  { label: 'drake', tone: 'violet' as const },
-  { label: 'screenshot', tone: 'ink' as const },
-  { label: 'chaos', tone: 'coral' as const },
+const importItems: Array<{ label: string; doodle: MemeDoodleKind; tone: 'cyan' | 'coral' | 'violet' | 'lime' | 'ink' }> = [
+  { label: 'reaction', doodle: 'sob', tone: 'cyan' },
+  { label: 'groupchat', doodle: 'bubble', tone: 'coral' },
+  { label: 'cat?', doodle: 'cat', tone: 'lime' },
+  { label: 'cursed', doodle: 'skull', tone: 'violet' },
+  { label: 'screenshot', doodle: 'eyes', tone: 'ink' },
+  { label: 'chaos', doodle: 'fire', tone: 'coral' },
 ];
 
 const piles = [
@@ -21,12 +23,12 @@ const piles = [
     selected: true,
     bangers: 17,
     items: [
-      { label: 'nope', tone: 'violet' as const },
-      { label: 'sigh', tone: 'cyan' as const },
-      { label: 'panic', tone: 'coral' as const },
-      { label: 'same', tone: 'lime' as const },
-      { label: 'why', tone: 'violet' as const },
-      { label: 'fine', tone: 'ink' as const },
+      { label: 'nope', doodle: 'skull' as const, tone: 'violet' as const },
+      { label: 'sigh', doodle: 'sob' as const, tone: 'cyan' as const },
+      { label: 'panic', doodle: 'fire' as const, tone: 'coral' as const },
+      { label: 'same', doodle: 'eyes' as const, tone: 'lime' as const },
+      { label: 'why', doodle: 'bubble' as const, tone: 'violet' as const },
+      { label: 'fine', doodle: 'fire' as const, tone: 'ink' as const },
     ],
   },
   {
@@ -34,12 +36,12 @@ const piles = [
     count: 74,
     tone: 'cyan' as const,
     items: [
-      { label: 'yes', tone: 'cyan' as const },
-      { label: 'chef', tone: 'lime' as const },
-      { label: 'done', tone: 'cyan' as const },
-      { label: 'ship', tone: 'violet' as const },
-      { label: 'clean', tone: 'ink' as const },
-      { label: 'nice', tone: 'coral' as const },
+      { label: 'yes', doodle: 'sparkle' as const, tone: 'cyan' as const },
+      { label: 'chef', doodle: 'hundred' as const, tone: 'lime' as const },
+      { label: 'done', doodle: 'check' as const, tone: 'cyan' as const },
+      { label: 'ship', doodle: 'check' as const, tone: 'violet' as const },
+      { label: 'clean', doodle: 'sparkle' as const, tone: 'ink' as const },
+      { label: 'nice', doodle: 'hundred' as const, tone: 'coral' as const },
     ],
   },
   {
@@ -47,12 +49,12 @@ const piles = [
     count: 46,
     tone: 'coral' as const,
     items: [
-      { label: 'email', tone: 'coral' as const },
-      { label: 'slack', tone: 'violet' as const },
-      { label: 'zoom', tone: 'ink' as const },
-      { label: 'oops', tone: 'lime' as const },
-      { label: 'later', tone: 'cyan' as const },
-      { label: 'wild', tone: 'coral' as const },
+      { label: 'email', doodle: 'bubble' as const, tone: 'coral' as const },
+      { label: 'slack', doodle: 'eyes' as const, tone: 'violet' as const },
+      { label: 'zoom', doodle: 'sob' as const, tone: 'ink' as const },
+      { label: 'oops', doodle: 'fire' as const, tone: 'lime' as const },
+      { label: 'later', doodle: 'zzz' as const, tone: 'cyan' as const },
+      { label: 'wild', doodle: 'cat' as const, tone: 'coral' as const },
     ],
   },
 ];
@@ -75,9 +77,17 @@ export function AtlasLandingHero() {
               {importItems.map((item, index) => (
                 <div
                   key={`${item.label}-${index}`}
-                  className="min-w-0 overflow-hidden border border-sploot-ink bg-sploot-paper-warm p-2 font-mono text-[0.62rem] font-bold uppercase text-sploot-ink aspect-[4/5]"
+                  className={cn(
+                    'relative min-w-0 overflow-hidden border border-sploot-ink bg-sploot-paper-warm p-2 font-mono text-[0.62rem] font-bold uppercase text-sploot-ink aspect-[4/5]',
+                    index % 2 === 0 ? 'rotate-1' : '-rotate-1'
+                  )}
                 >
-                  <div className="flex h-full items-end break-all">{item.label}</div>
+                  <div className="absolute inset-0 p-3 pb-6 text-sploot-ink">
+                    <MemeDoodle kind={item.doodle} />
+                  </div>
+                  <span className="absolute bottom-1 left-1 bg-sploot-ink px-1 text-sploot-paper">
+                    {item.label}
+                  </span>
                 </div>
               ))}
             </div>

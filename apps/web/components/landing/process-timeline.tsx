@@ -128,14 +128,16 @@ function TimelineStep({
           "bg-sploot-paper border border-sploot-ink",
           "p-6",
           cascadeOffset[index] ?? "md:mt-0",
-          "transition-all duration-700 ease-out",
-          isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8",
-          prefersReducedMotion && "translate-y-0 opacity-100 transition-none"
+          // Content is visible by default; the observer only adds the
+          // entrance animation. Hiding behind opacity-0 left the section
+          // blank whenever the observer never fired (no JS, screenshots,
+          // aborted scroll).
+          isVisible && !prefersReducedMotion && "animate-sploot-slide-up"
         )}
         style={
           prefersReducedMotion || !isVisible
             ? undefined
-            : { transitionDelay: `${transitionDelayMs}ms` }
+            : { animationDelay: `${transitionDelayMs}ms`, animationFillMode: "backwards" }
         }
       >
         {/* Top accent bar */}
@@ -173,14 +175,12 @@ function TimelineStep({
         <span
           className={cn(
             "hidden md:block text-3xl text-sploot-violet font-bold",
-            "transition-all duration-700 ease-out",
-            isVisible ? "opacity-100" : "opacity-0",
-            prefersReducedMotion && "opacity-100 transition-none"
+            isVisible && !prefersReducedMotion && "animate-sploot-pop"
           )}
           style={
             prefersReducedMotion || !isVisible
               ? undefined
-              : { transitionDelay: `${transitionDelayMs + 100}ms` }
+              : { animationDelay: `${transitionDelayMs + 100}ms`, animationFillMode: "backwards" }
           }
           aria-hidden="true"
         >

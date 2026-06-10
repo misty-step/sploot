@@ -2,6 +2,7 @@ import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { BangerStamp } from './banger-stamp';
 import { StickerTab } from './sticker-tab';
+import { MemeDoodle, type MemeDoodleKind } from './meme-doodle';
 
 interface ClusterPileProps {
   label: string;
@@ -13,6 +14,7 @@ interface ClusterPileProps {
     label: string;
     src?: string;
     alt?: string;
+    doodle?: MemeDoodleKind;
     tone?: 'cyan' | 'coral' | 'violet' | 'lime' | 'ink';
   }>;
   className?: string;
@@ -73,6 +75,15 @@ export function ClusterPile({
                   className="object-cover"
                 />
                 <span className="absolute bottom-1 left-1 bg-black/80 px-1 text-white">
+                  {item.label}
+                </span>
+              </>
+            ) : item.doodle ? (
+              <>
+                <div className="absolute inset-0 p-2.5 pb-4">
+                  <MemeDoodle kind={item.doodle} />
+                </div>
+                <span className="absolute bottom-1 left-1 bg-sploot-ink px-1 text-sploot-paper">
                   {item.label}
                 </span>
               </>
