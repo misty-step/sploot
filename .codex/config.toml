@@ -1,0 +1,5 @@
+[skills]
+roots = ["../.agents/skills"]
+
+[mcp_servers.exa]
+url = "https://mcp.exa.ai/mcp"
