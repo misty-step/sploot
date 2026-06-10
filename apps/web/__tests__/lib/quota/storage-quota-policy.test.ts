@@ -133,4 +133,20 @@ describe('storage quota policy', () => {
     });
     expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(2);
   });
+
+  it('degrades to the default snapshot when the users row is missing (quota FK violation)', async () => {
+    const { Prisma } = await import('@prisma/client');
+    const fkViolation = new Prisma.PrismaClientKnownRequestError(
+      'Foreign key constraint violated: user_storage_quotas_user_id_fkey',
+      { code: 'P2003', clientVersion: 'test' }
+    );
+    mocks.tx.userStorageQuota.upsert.mockRejectedValue(fkViolation);
+
+    await expect(getStorageQuotaSnapshot('user-without-row')).resolves.toEqual({
+      usedBytes: 0,
+      limitBytes: 1024 * 1024 * 1024,
+      remainingBytes: 1024 * 1024 * 1024,
+      reservedBytes: 0,
+    });
+  });
 });

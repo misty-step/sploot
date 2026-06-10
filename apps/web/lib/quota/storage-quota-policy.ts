@@ -121,8 +121,27 @@ export async function getStorageQuotaSnapshot(userId: string): Promise<StorageQu
     };
   }
 
-  const snapshot = await executeTransactionWithRetry((tx) => readSnapshot(tx, userId));
-  return toPublicSnapshot(snapshot);
+  try {
+    const snapshot = await executeTransactionWithRetry((tx) => readSnapshot(tx, userId));
+    return toPublicSnapshot(snapshot);
+  } catch (error) {
+    // Auth deliberately survives identity-sync failures, so an authenticated
+    // request can reach this read before its users row exists. The quota
+    // upsert then hits the user FK; degrade to the default snapshot instead
+    // of failing the whole stats read.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2003'
+    ) {
+      return {
+        usedBytes: 0,
+        limitBytes: DEFAULT_STORAGE_QUOTA_BYTES,
+        remainingBytes: DEFAULT_STORAGE_QUOTA_BYTES,
+        reservedBytes: 0,
+      };
+    }
+    throw error;
+  }
 }
 
 export async function reserveUploadBytes(
