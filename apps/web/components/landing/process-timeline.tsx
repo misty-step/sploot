@@ -27,15 +27,15 @@ const steps: ProcessStep[] = [
   },
   {
     number: "02",
-    title: "piles appear",
-    description: "similar saves drift into nearby semantic neighborhoods.",
-    icon: AnalyzeIcon,
+    title: "type the vibe",
+    description: "describe what you remember: “crying cat,” “office chaos,” “that one frog.”",
+    icon: SearchIcon,
   },
   {
     number: "03",
-    title: "find bangers",
-    description: "type what you remember and pull the exact meme back.",
-    icon: SearchIcon,
+    title: "crown bangers",
+    description: "smash the heart on the goated ones. your hall of fame builds itself.",
+    icon: AnalyzeIcon,
   },
 ];
 

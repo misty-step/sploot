@@ -25,6 +25,8 @@ usable contract; this file is the provenance ledger.
 | `apps/web/components/library/image-tile.tsx` | Similarity and banger states now use Sploot cyan/violet/coral roles instead of generic green/yellow. | observed | high | keep | Aligns core image tile affordances with the semantic token system. |
 
 | Live local screenshots, June 10, 2026 design pass (`/app` grid, search, upload, mobile dock at 1440px and 390px) | Core workbench surfaces verified rendered: motion utilities (`animate-sploot-stamp/pop/slide-up`), muted skeletons, context-aware empty states, capped tile cascade, keyboard-focusable tiles, compacted desktop header. | observed | high | keep | Captured against seeded local data via the qa-local auth harness. |
+| User direction, June 10, 2026 | The design system voice is hypermaximalist, zoomer meme-culture brainrot — delightful, deadpan, terminally online. | provided | high | keep | Codified in DESIGN.md §7; applies to all surfaces going forward. |
+| Code audit, June 10, 2026 | No clustering feature exists (no grouping API or code); "your saves sort themselves" and "automatic piles" overclaimed. Landing copy recast to feature-true: piles are search results ("piles on demand") until Meme Atlas clustering ships. | observed | high | keep | Feature-true copy rule added to DESIGN.md §7; auto-piles tracked as backlog 025. |
 
 ## Migration Exceptions
 

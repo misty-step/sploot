@@ -13,7 +13,7 @@ Status conventions:
 
 | # | Title | Priority | Estimate |
 |---|-------|----------|----------|
-| _(empty — run `/groom` to refill)_ | | | |
+| [025](025-build-automatic-semantic-piles.md) | Build Automatic Semantic Piles | P1 | L |
 
 ## Done
 
