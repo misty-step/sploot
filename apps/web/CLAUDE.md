@@ -18,24 +18,22 @@ Sploot is a **Vercel-first meme library with text→image semantic search** - a 
 
 ## Development Commands
 
+Run from the repo root with `pnpm --filter web <script>`, or from `apps/web`:
+
 ```bash
-# Initial Setup (when implemented)
-pnpm install              # Install dependencies
-pnpm dev                  # Start development server on http://localhost:3000
-pnpm build                # Build for production
-pnpm start                # Start production server
-pnpm lint                 # Run ESLint
-pnpm type-check          # Run TypeScript type checking
+pnpm dev                  # Start dev server (defaults to PORT=3001)
+pnpm build                # Run pending migrations, then next build
+pnpm lint                 # next lint + auth boundary guard
+pnpm type-check           # tsc --noEmit
+pnpm test                 # Vitest (CI=1 for non-interactive runs)
+pnpm e2e:auth             # Playwright auth harness evidence
 
-# Database (once configured)
-pnpm db:migrate          # Run database migrations
-pnpm db:seed             # Seed development data
-pnpm db:reset            # Reset database
-
-# Testing (when implemented)
-pnpm test                # Run all tests
-pnpm test:unit           # Run unit tests
-pnpm test:e2e            # Run end-to-end tests
+# Database (Prisma + Neon pgvector)
+pnpm db:migrate:dev       # Create/apply migration in dev
+pnpm db:migrate           # prisma migrate deploy
+pnpm db:push              # Push schema without a migration
+pnpm db:studio            # Prisma Studio
+pnpm db:seed              # tsx prisma/seed.ts
 ```
 
 ## Architecture
@@ -103,79 +101,20 @@ pnpm test:e2e            # Run end-to-end tests
 
 ## Design System
 
-### Brand Aesthetic: Technical Neo-Brutalist
+The design system is owned by the repo-root docs — read those, not this file:
 
-Sploot's visual identity is **bold, technical, and intentionally rough-edged** - think Swiss grid precision meets punk zine energy. This is NOT minimal terminal aesthetic. It's maximalist technical design with strong opinions.
+- `DESIGN.md` — the usable contract (visual language, layout density,
+  component grammar, content voice, motion, accessibility).
+- `docs/design/tokens.md` — semantic `--sploot-*` tokens and named animation
+  utilities; the live CSS variables are in `app/globals.css`.
+- `docs/design/component-library.md` — Sploot component grammar
+  (`StickerTab`, `BangerStamp`, `ClusterPile`, `PileMark`, …).
+- `design-contract.md` — provenance ledger for design decisions.
 
-### Typography
-- **Headlines**: Bebas Neue - ALL-CAPS, wide tracking, bold presence
-  - Use via `style={{ fontFamily: "var(--font-bebas-neue)" }}`
-  - Always uppercase for section headers
-- **Body**: Geist Sans - clean, readable, professional
-- **Technical/Code**: JetBrains Mono - timestamps, metadata, badges, stats
-
-### Color System (Light/Dark Adaptive)
-
-Three accent colors used consistently across sections:
-
-| Class Name | Actual Color | Usage |
-|------------|-------------|-------|
-| `electric-lime` | Cyan (`--accent-cyan`) | Primary accent, first sections |
-| `hot-pink` | Coral (`--accent-coral`) | Warm accent, middle sections |
-| `cyber-blue` | Violet (`--accent-violet`) | Bridge accent, later sections |
-
-**Note**: Class names are legacy but actively used. They map to semantic color variables.
-
-### Visual Patterns
-
-**Backgrounds** (use on sections):
-- `.bg-diagonal-stripes` - 45° stripe pattern
-- `.bg-grid` - 24px grid overlay
-
-**Structural**:
-- `.brutalist-border` - 1px solid borders
-- `.brutalist-corners` - Sharp corners (no radius)
-- `.corner-bracket` - Technical corner framing
-
-**Effects**:
-- `.accent-glow` - Cyan glow effect
-- Gradient classes: `.from-electric-lime`, `.via-hot-pink`, `.to-cyber-blue`
-
-### Landing Page Section Structure
-
-Each section follows this pattern:
-```tsx
-<section className="relative min-h-screen flex items-center px-6 py-12 md:py-20 bg-diagonal-stripes">
-  <div className="max-w-7xl mx-auto w-full">
-    <h2 style={{ fontFamily: "var(--font-bebas-neue)" }}>
-      SECTION TITLE
-    </h2>
-    {/* Content with accent color consistent with section */}
-  </div>
-  <ScrollChevron targetId="next-section" />
-</section>
-```
-
-Sections alternate between `bg-diagonal-stripes` and `bg-grid`, separated by `<SectionDivider color="lime|coral|cyan|violet" />`.
-
-### Component Energy
-
-- **Headlines**: Large (text-5xl to text-8xl), ALL-CAPS, Bebas Neue
-- **Subheadlines**: text-xl to text-2xl, muted-foreground
-- **Accent lines**: Colored dividers with monospace labels (e.g., "AI POWERED")
-- **CTAs**: Bold buttons with accent backgrounds, Bebas Neue text
-- **Badges**: Small rotated labels (e.g., "TRY IT!")
-
-### Animation Guidelines
-- Fade-in with stagger delays (150ms between elements)
-- Use `animate-[fadeIn_1s_ease-out_forwards]` pattern
-- Scroll-triggered via IntersectionObserver
-- Respect `prefers-reduced-motion`
-
-### App vs Landing
-
-The **landing page** uses full brutalist treatment (Bebas Neue, patterns, bold colors).
-The **app** (`/app/*`) uses more restrained styling for usability but maintains sharp corners and accent colors.
+`pnpm lint:design` (repo root) enforces token adoption and bans drift
+(gradient text, decorative gradients/blur, legacy `electric-lime`/`hot-pink`/
+`cyber-blue` names in new landing code). New product code uses `sploot-*`
+tokens.
 
 ## Performance Requirements
 
@@ -184,21 +123,6 @@ The **app** (`/app/*`) uses more restrained styling for usability but maintains 
 - **Search response**: < 500ms
 - **Initial page load**: < 1.5 seconds
 - **Image grid render**: < 300ms for 100 images
-
-### Optimization Strategies
-- Lazy loading for image grids
-- Virtual scrolling for large collections
-- Edge caching for embeddings
-- Optimistic UI updates
-
-## Development Milestones
-
-Currently implementing milestone-based development:
-- **M0**: Skeleton app with auth setup
-- **M1**: Upload functionality with Vercel Blob
-- **M2**: Embeddings and semantic search
-- **M3**: Polish features (favorites, PWA, keyboard shortcuts)
-- **M4**: Hardening and optimization
 
 ## Key Implementation Notes
 
