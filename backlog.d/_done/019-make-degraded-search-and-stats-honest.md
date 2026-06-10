@@ -1,6 +1,6 @@
 # Make degraded search and stats honest
 
-Priority: P1 · Status: pending · Estimate: M
+Priority: P1 · Status: done · Estimate: M
 
 ## Goal
 
@@ -38,3 +38,10 @@ Evidence (verified 2026-06-10):
 Fix at the API layer first (status codes are the contract); client banner
 second. Do not weaken the auth-boundary grace — make downstream consumers
 survive it.
+
+## What Was Built
+
+PR #208 (`7c2587a`). /api/search returns 503 on embedding-init failure;
+search bar state ternary ranks error above no-results; quota snapshot
+degrades to defaults on the users-row FK violation (P2003). Regression
+tests for both paths.
