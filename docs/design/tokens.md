@@ -110,3 +110,14 @@ Live CSS tokens:
 - `--sploot-motion-base`: hover, focus, and menu open.
 - `--sploot-motion-panel`: sheets, inspectors, and search overlays.
 - `--sploot-motion-cluster`: sorting, clustering, and upload queue movement.
+- `--sploot-ease-out`: default deceleration curve for reveals and lifts.
+- `--sploot-ease-snap`: overshoot curve for sticker and stamp moments.
+
+Named animation utilities (defined in `globals.css`):
+
+- `.animate-sploot-stamp`: banger/favorite stamp punch.
+- `.animate-sploot-pop`: sticker tabs and labels appearing.
+- `.animate-sploot-slide-up`: panels, sheets, and docks entering.
+
+A global `prefers-reduced-motion: reduce` rule collapses all animations and
+transitions; components must not re-implement their own opt-outs.

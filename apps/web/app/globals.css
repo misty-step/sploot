@@ -73,6 +73,8 @@
   --sploot-motion-base: 150ms;
   --sploot-motion-panel: 240ms;
   --sploot-motion-cluster: 360ms;
+  --sploot-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --sploot-ease-snap: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 @theme inline {
@@ -234,6 +236,69 @@
   animation: accentGlow 2s ease-in-out infinite;
 }
 
+/* Sploot motion system: animations explain sorting, stamping, and selection.
+   Durations come from --sploot-motion-*; easings from --sploot-ease-*. */
+@keyframes splootStamp {
+  0% {
+    opacity: 0;
+    transform: scale(1.6) rotate(-12deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(0.88) rotate(3deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.animate-sploot-stamp {
+  animation: splootStamp var(--sploot-motion-panel) var(--sploot-ease-snap);
+}
+
+@keyframes splootPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-sploot-pop {
+  animation: splootPopIn var(--sploot-motion-base) var(--sploot-ease-snap);
+}
+
+@keyframes splootSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-sploot-slide-up {
+  animation: splootSlideUp var(--sploot-motion-panel) var(--sploot-ease-out);
+}
+
+/* Reduced motion: collapse all animation and transition theatrics. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* shadcn/ui animations provided by tailwindcss-animate plugin */
 /* Radix UI components use: animate-in, animate-out, fade-in, fade-out, zoom-in, slide-in, etc. */
 
@@ -384,13 +449,13 @@ select:focus-visible {
 .masonry-grid {
   display: flex;
   width: 100%;
-  gap: 24px; /* Horizontal gap between columns - increased for breathing room */
+  gap: 16px; /* Horizontal gap between columns - archive-workbench density */
 }
 
 .masonry-grid-column {
   display: flex;
   flex-direction: column;
-  gap: 24px; /* Vertical gap between tiles within a column - increased for breathing room */
+  gap: 16px; /* Vertical gap between tiles within a column - archive-workbench density */
 }
 
 .masonry-item {

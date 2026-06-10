@@ -16,7 +16,7 @@ export function SearchLoadingScreen({ query }: SearchLoadingScreenProps) {
         <div className="border-b px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <Loader2 className="size-5 animate-spin text-green-500" />
+              <Loader2 className="size-5 animate-spin text-sploot-cyan" />
               <span className="font-mono text-sm text-muted-foreground">searching for</span>
             </div>
             <span className="font-mono text-sm">&ldquo;{query}&rdquo;</span>
@@ -37,9 +37,9 @@ export function SearchLoadingScreen({ query }: SearchLoadingScreenProps) {
           {/* Progress indicator */}
           <div className="mt-8 flex flex-col items-center justify-center gap-4">
             <div className="flex items-center gap-3">
-              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" style={{ animationDelay: '150ms' }} />
-              <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" style={{ animationDelay: '300ms' }} />
+              <div className="h-2 w-2 bg-sploot-cyan animate-pulse" />
+              <div className="h-2 w-2 bg-sploot-violet animate-pulse" style={{ animationDelay: '150ms' }} />
+              <div className="h-2 w-2 bg-sploot-coral animate-pulse" style={{ animationDelay: '300ms' }} />
             </div>
             <p className="font-mono text-sm text-muted-foreground">
               finding your memes...

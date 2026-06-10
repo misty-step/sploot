@@ -338,8 +338,18 @@ function ImageTileComponent({
   return (
     <>
       <div
+        role="button"
+        tabIndex={0}
+        aria-label={`open ${asset.filename || asset.pathname?.split('/').pop() || 'meme'}`}
         onClick={onClick || (() => onSelect?.(asset))}
-        className="group overflow-hidden cursor-pointer hover:opacity-95 transition-all border border-border hover:shadow-lg hover:shadow-black/5"
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            (onClick || (() => onSelect?.(asset)))();
+          }
+        }}
+        className="group overflow-hidden cursor-pointer border border-border transition-all duration-[var(--sploot-motion-base)] hover:-translate-y-0.5 hover:border-sploot-ink hover:shadow-[3px_3px_0_var(--sploot-ink)]"
       >
         <div className="relative">
           {/* Image container */}
@@ -450,7 +460,7 @@ function ImageTileComponent({
                       aria-label={asset.favorite ? 'remove banger' : 'mark as banger'}
                     >
                       {asset.favorite ? (
-                        <BangerStamp className="pointer-events-none min-h-0 border-0 bg-transparent p-0 text-current" />
+                        <BangerStamp className="pointer-events-none min-h-0 border-0 bg-transparent p-0 text-current animate-sploot-stamp" />
                       ) : (
                         <Heart className="h-5 w-5 sm:h-4 sm:w-4" />
                       )}

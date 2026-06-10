@@ -24,6 +24,8 @@ usable contract; this file is the provenance ledger.
 | `apps/web/components/chrome/navbar.tsx` | App chrome now uses `PileMark` instead of abstract overlapping circles. | observed | high | keep | Carries self-organizing pile metaphor into authenticated navigation. |
 | `apps/web/components/library/image-tile.tsx` | Similarity and banger states now use Sploot cyan/violet/coral roles instead of generic green/yellow. | observed | high | keep | Aligns core image tile affordances with the semantic token system. |
 
+| Live local screenshots, June 10, 2026 design pass (`/app` grid, search, upload, mobile dock at 1440px and 390px) | Core workbench surfaces verified rendered: motion utilities (`animate-sploot-stamp/pop/slide-up`), muted skeletons, context-aware empty states, capped tile cascade, keyboard-focusable tiles, compacted desktop header. | observed | high | keep | Captured against seeded local data via the qa-local auth harness. |
+
 ## Migration Exceptions
 
 These are known places where the current repo does not yet satisfy the full
