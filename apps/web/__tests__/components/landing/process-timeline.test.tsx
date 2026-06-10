@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import { ProcessTimeline } from "@/components/landing/process-timeline";
 
-const titles = ["upload chaos", "piles appear", "find bangers"];
+const titles = ["upload chaos", "type the vibe", "crown bangers"];
 let intersectionCallback: IntersectionObserverCallback | null = null;
 
 class IntersectionObserverMock implements IntersectionObserver {
@@ -60,10 +60,10 @@ describe("ProcessTimeline", () => {
       screen.getByText("drop in the screenshots, reactions, and groupchat relics."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("similar saves drift into nearby semantic neighborhoods."),
+      screen.getByText("describe what you remember: \u201ccrying cat,\u201d \u201coffice chaos,\u201d \u201cthat one frog.\u201d"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("type what you remember and pull the exact meme back."),
+      screen.getByText("smash the heart on the goated ones. your hall of fame builds itself."),
     ).toBeInTheDocument();
   });
 

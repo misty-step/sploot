@@ -220,17 +220,33 @@ Interaction rules:
 
 ## 7. Content Voice
 
-Voice is lowercase, direct, and a little funny. Use product language, not agent
-process language.
+The voice is hypermaximalist, terminally online, zoomer meme-culture brainrot —
+delivered deadpan inside Swiss chrome. Lowercase everything except display
+headlines. The product talks like the person whose camera roll it is:
+self-aware, a little feral, never corporate. Every surface gets one moment of
+personality; density of delight, not density of words.
 
-Preferred:
+Lexicon (use naturally, never all at once):
 
 - "no folders. just vibes."
-- "your saves sort themselves."
-- "shuffle the pile"
-- "bangers"
-- "similar saves"
-- "upload chaos"
+- "type the vibe. summon the meme."
+- "bangers", "goated", "unhinged", "feral", "cursed", "brainrot"
+- "the pile" (the library is always the pile)
+- "go touch grass", "zero thoughts", "hall of fame"
+- "upload chaos", "shuffle the pile", "similar saves"
+
+Rules:
+
+- **Feature-true copy.** Visible UI and marketing claims describe what ships
+  today. "self-organizing piles" is north-star direction (Meme Atlas); until
+  clustering ships, piles in copy are search results — piles on demand, not
+  automatic piles. Design polish must not launder unshipped features.
+- Deadpan over exclamation. The humor lands because the chrome is Swiss.
+  Never more than one slang term per sentence; brainrot is seasoning, not soup.
+- Skip slang with a short shelf life or fellow-kids energy (no "rizz", no
+  "skibidi", nothing that reads as a brand doing a bit).
+- Empty states, end-of-list markers, errors, and loading copy are the prime
+  personality slots. Buttons and labels stay short and functional.
 
 Avoid:
 

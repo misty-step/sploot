@@ -57,7 +57,7 @@ export default async function Home() {
               </p>
               <div className="flex items-center gap-3">
                 <div className="h-px flex-1 bg-sploot-cyan" />
-                <span className="font-mono text-xs uppercase text-sploot-cyan">automatic piles</span>
+                <span className="font-mono text-xs uppercase text-sploot-cyan">vibe-based retrieval</span>
               </div>
             </div>
 
@@ -119,7 +119,7 @@ export default async function Home() {
               HOW IT WORKS
             </h2>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              from chaos to piles
+              from camera-roll chaos to instant summon
             </p>
           </div>
           <ProcessTimeline />

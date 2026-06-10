@@ -15,9 +15,11 @@ const importItems: Array<{ label: string; doodle: MemeDoodleKind; tone: 'cyan' |
   { label: 'chaos', doodle: 'fire', tone: 'coral' },
 ];
 
+// Each pile is a search result: the label is the query you'd type. Sploot
+// does not (yet) cluster unprompted — landing visuals must stay feature-true.
 const piles = [
   {
-    label: 'dramatic reactions',
+    label: '“dramatic reactions”',
     count: 128,
     tone: 'violet' as const,
     selected: true,
@@ -32,7 +34,7 @@ const piles = [
     ],
   },
   {
-    label: 'tiny wins',
+    label: '“tiny wins”',
     count: 74,
     tone: 'cyan' as const,
     items: [
@@ -45,7 +47,7 @@ const piles = [
     ],
   },
   {
-    label: 'unhinged office',
+    label: '“unhinged office”',
     count: 46,
     tone: 'coral' as const,
     items: [
@@ -100,16 +102,16 @@ export function AtlasLandingHero() {
           </StickerTab>
           <div className="space-y-4">
             <h1
-              aria-label="your saves sort themselves."
+              aria-label="type the vibe. summon the meme."
               className="font-display text-[3.25rem] leading-[0.92] tracking-normal text-sploot-ink min-[390px]:text-6xl md:text-8xl lg:text-7xl"
             >
-              <span className="block">your saves</span>
-              <span className="block">sort</span>
-              <span className="block">themselves.</span>
+              <span className="block">type the vibe.</span>
+              <span className="block">summon</span>
+              <span className="block">the meme.</span>
             </h1>
             <p className="mx-auto max-w-xl text-base leading-7 text-muted-foreground md:text-lg lg:mx-0">
-              Sploot turns the memes you already saved into searchable semantic piles, bangers,
-              and nearby weird little neighborhoods.
+              dump years of reaction pics into sploot, type &ldquo;sad cat thumbs up,&rdquo; and
+              the exact one materializes. zero folders. zero scrolling. zero thoughts.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-center lg:justify-start">
@@ -122,16 +124,16 @@ export function AtlasLandingHero() {
           </div>
           <div className="grid min-w-0 grid-cols-3 overflow-hidden border border-sploot-ink bg-sploot-command-surface text-left font-mono text-[0.68rem] sploot-tabular sm:text-xs">
             <div className="min-w-0 border-r border-sploot-ink p-3">
-              <span className="block truncate text-muted-foreground">search</span>
-              <span className="font-bold text-sploot-cyan">0.18s</span>
+              <span className="block truncate text-muted-foreground">memes</span>
+              <span className="font-bold text-sploot-cyan">1,312</span>
             </div>
             <div className="min-w-0 border-r border-sploot-ink p-3">
-              <span className="block truncate text-muted-foreground">piles</span>
-              <span className="font-bold text-sploot-violet">24</span>
-            </div>
-            <div className="min-w-0 p-3">
               <span className="block truncate text-muted-foreground">bangers</span>
               <span className="font-bold text-sploot-coral">91</span>
+            </div>
+            <div className="min-w-0 p-3">
+              <span className="block truncate text-muted-foreground">brainrot</span>
+              <span className="font-bold text-sploot-violet">∞</span>
             </div>
           </div>
         </div>
@@ -140,7 +142,7 @@ export function AtlasLandingHero() {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-sploot-violet" aria-hidden="true" />
-              <StickerTab tone="violet" tilt="right">automatic piles</StickerTab>
+              <StickerTab tone="violet" tilt="right">piles on demand</StickerTab>
             </div>
             <Shuffle className="h-5 w-5 text-sploot-cyan" aria-hidden="true" />
           </div>

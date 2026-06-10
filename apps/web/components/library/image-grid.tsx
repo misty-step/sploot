@@ -253,8 +253,8 @@ export function ImageGrid({
         {/* End of list indicator */}
         {!hasMore && assets.length > 0 && (
           <div className="flex justify-center py-6">
-            <span className="inline-block border border-border bg-card px-3 py-1 font-mono text-xs uppercase tracking-wider text-muted-foreground sploot-sticker-shadow">
-              end of the pile
+            <span className="inline-block -rotate-1 border border-border bg-card px-3 py-1 font-mono text-xs uppercase tracking-wider text-muted-foreground sploot-sticker-shadow">
+              end of the pile. go touch grass.
             </span>
           </div>
         )}

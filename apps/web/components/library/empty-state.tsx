@@ -103,19 +103,19 @@ export function EmptyState({
         return {
           title: 'no matches in the pile',
           description: searchQuery
-            ? `nothing matches "${searchQuery}". try different words or browse the full library.`
-            : 'nothing matches that search. try different words or browse the full library.',
+            ? `the pile has nothing for "${searchQuery}". the vibe may be too specific. try fewer words.`
+            : 'the pile has nothing for that. the vibe may be too specific. try fewer words.',
         };
       case 'filtered':
         return {
           title: 'no memes match these filters',
-          description: 'try adjusting your filters or clearing them to see all your memes.',
+          description: 'these filters filtered everything. loosen up or clear them.',
         };
       case 'first-use':
       default:
         return {
-          title: 'drop files here',
-          description: 'drag and drop images into your library or start an upload to see them appear instantly.',
+          title: 'the pile awaits',
+          description: 'drag in your most unhinged screenshots and reaction pics. they show up instantly.',
         };
     }
   };
