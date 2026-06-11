@@ -1,0 +1,49 @@
+# Ingest memes where they live
+
+Priority: P1 · Status: pending · Estimate: XL
+
+## Goal
+
+A user whose memes are scattered across their phone, Twitter bookmarks, and
+random URLs can get them into Sploot from where they already are — ingestion
+stops being "drag a file onto a desktop browser tab."
+
+## Oracle
+
+- [ ] On Android (and iOS where supported), sharing an image from another
+      app's native share sheet to the installed Sploot PWA saves it to the
+      library (manifest `share_target` + receiving route, verified on a real
+      device or emulator).
+- [ ] The web upload surface accepts a pasted image URL and ingests the
+      remote image server-side (with existing checksum dedupe applied).
+- [ ] A bulk import path exists for at least one "scattered collection"
+      source (zip/folder of images at minimum; Twitter/X bookmarks if API
+      access proves viable) with progress UI and dedupe.
+- [ ] The extension's registered Cmd+Shift+S screenshot shortcut either has a
+      working capture UI or the dead manifest registration is removed.
+- [ ] Offline/failed uploads survive a page refresh (queue persisted to
+      IndexedDB, not memory).
+- [ ] Full web suite + extension build green; live evidence per shipped child.
+
+## Notes
+
+Vision targets "people with meme collections scattered across Twitter
+bookmarks, Google Photos, camera rolls" — but the 2026-06-10 ingestion audit
+found only desktop drag-drop/paste/picker and the Chrome right-click menu.
+No share_target in `apps/web/public/manifest.json`, no URL import, no bulk
+import, in-memory-only upload queue, and a screenshot shortcut registered in
+`wxt.config.ts` with no UI behind it. Checksum dedupe
+(`lib/upload/deduplication-service.ts`) already exists and de-risks every
+bulk path. Ingestion is upstream of every other differentiator: piles,
+search, and taste all need library mass.
+
+## Children
+
+1. PWA share-target: manifest entry + POST receiver route + device QA.
+2. URL import: paste-a-URL field in the upload zone + server-side fetch
+   with size/MIME validation and dedupe.
+3. Persist the upload queue to IndexedDB; retry on reconnect/refresh.
+4. Bulk import v1: zip/folder of images with progress + dedupe summary.
+5. Decide screenshot capture: build the crop UI or delete the shortcut.
+6. Investigate Twitter/X bookmark import feasibility (API access, cost);
+   emit or kill with a written verdict.
