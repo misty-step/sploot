@@ -11,6 +11,8 @@ import { ImageGrid } from '@/components/library/image-grid';
 import { cn } from '@/lib/utils';
 import type { Asset } from '@/lib/types';
 import { error as logError } from '@/lib/logger';
+import { isAnimatedImageMimeType, isVideoMimeType } from '@sploot/common';
+import { resolveQaSeedSrc } from '@/lib/qa/qa-image-loader';
 
 interface MemeDetailPageProps {
   params: Promise<{ id: string }>;
@@ -216,9 +218,20 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
               <ImageOff className="h-16 w-16 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">Image unavailable</p>
             </div>
+          ) : isVideoMimeType(asset.mime) ? (
+            <video
+              src={resolveQaSeedSrc(asset.blobUrl)}
+              poster={asset.thumbnailUrl ? resolveQaSeedSrc(asset.thumbnailUrl) : undefined}
+              controls
+              autoPlay
+              loop
+              playsInline
+              className="w-full h-auto max-h-[75vh] object-contain"
+              onError={() => setImageError(true)}
+            />
           ) : (
             <Image
-              src={asset.blobUrl}
+              src={resolveQaSeedSrc(asset.blobUrl)}
               alt={asset.filename || 'Meme'}
               width={asset.width || 1200}
               height={asset.height || 630}
@@ -226,6 +239,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
               className="w-full h-auto max-h-[75vh] object-contain"
               priority
               quality={90}
+              unoptimized={isAnimatedImageMimeType(asset.mime)}
               onError={() => setImageError(true)}
             />
           )}

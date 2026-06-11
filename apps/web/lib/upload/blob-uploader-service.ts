@@ -1,7 +1,7 @@
 import { put, del } from '@vercel/blob';
 import { generateUniqueFilename } from '@/lib/blob';
 import { logger } from '@/lib/logger';
-import type { ImageProcessingResult } from '@/lib/image-processing';
+import type { ProcessedImage } from '@/lib/image-processing';
 
 /**
  * Blob upload error with cleanup information
@@ -25,6 +25,11 @@ export interface BlobUploadResult {
   mainPathname: string;
   thumbnailUrl: string | null;
   thumbnailPathname: string | null;
+}
+
+export interface BlobUploadRenditions {
+  main?: ProcessedImage | null;
+  thumbnail?: ProcessedImage | null;
 }
 
 /**
@@ -58,23 +63,26 @@ export class BlobUploaderService {
   }
 
   /**
-   * Upload main image and optional thumbnail to blob storage
+   * Upload main media and optional thumbnail to blob storage
    * Atomic operation: both succeed or both are cleaned up
    */
   async upload(
     userId: string,
     originalFilename: string,
     mainBuffer: Buffer,
-    processedImages?: ImageProcessingResult | null
+    renditions?: BlobUploadRenditions | null
   ): Promise<BlobUploadResult> {
     const uniqueFilename = generateUniqueFilename(userId, originalFilename);
-    const thumbnailFilename = uniqueFilename.replace(/\.(\w+)$/, '-thumb.$1');
+    const thumbnailFilename = withThumbnailSuffix(
+      uniqueFilename,
+      renditions?.thumbnail?.format ?? 'jpg'
+    );
 
     logger.debug('Starting blob upload', {
       userId,
       filename: uniqueFilename,
       mainSize: mainBuffer.length,
-      hasThumbnail: !!processedImages,
+      hasThumbnail: !!renditions?.thumbnail,
     });
 
     let mainBlobUrl: string | null = null;
@@ -86,7 +94,7 @@ export class BlobUploaderService {
       // Upload main image
       const mainBlob = await this.uploadWithRetry(
         uniqueFilename,
-        processedImages ? processedImages.main.buffer : mainBuffer
+        renditions?.main?.buffer ?? mainBuffer
       );
 
       mainBlobUrl = mainBlob.url;
@@ -98,9 +106,9 @@ export class BlobUploaderService {
       });
 
       // Upload thumbnail if processed images are available
-      if (processedImages) {
+      if (renditions?.thumbnail) {
         try {
-          const thumbnailBlob = await put(thumbnailFilename, processedImages.thumbnail.buffer, {
+          const thumbnailBlob = await put(thumbnailFilename, renditions.thumbnail.buffer, {
             access: this.access,
             addRandomSuffix: this.addRandomSuffix,
           });
@@ -286,4 +294,14 @@ export function getBlobUploader(): BlobUploaderService {
     defaultUploader = new BlobUploaderService();
   }
   return defaultUploader;
+}
+
+function withThumbnailSuffix(filename: string, format: string): string {
+  const extension = format === 'jpeg' ? 'jpg' : format;
+
+  if (/\.[^/.]+$/.test(filename)) {
+    return filename.replace(/\.[^/.]+$/, `-thumb.${extension}`);
+  }
+
+  return `${filename}-thumb.${extension}`;
 }

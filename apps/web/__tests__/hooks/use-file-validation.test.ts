@@ -43,10 +43,16 @@ describe('useFileValidation', () => {
       expect(error).toContain('document.pdf');
     });
 
-    it('should reject video file', () => {
+    it('should accept MP4 video file', () => {
       const file = new File(['content'], 'video.mp4', { type: 'video/mp4' });
       const error = result.validateFile(file);
-      expect(error).toContain('Invalid file type');
+      expect(error).toBeNull();
+    });
+
+    it('should accept WebM video file', () => {
+      const file = new File(['content'], 'video.webm', { type: 'video/webm' });
+      const error = result.validateFile(file);
+      expect(error).toBeNull();
     });
 
     it('should reject empty file (0 bytes)', () => {

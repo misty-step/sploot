@@ -5,10 +5,12 @@ import {
   isSuccessfulProcessing,
 } from '@/lib/upload/image-processor-service';
 import * as imageProcessing from '@/lib/image-processing';
+import * as videoProcessing from '@/lib/video-processing';
 import { logger } from '@/lib/logger';
 
 // Mock dependencies
 vi.mock('@/lib/image-processing');
+vi.mock('@/lib/video-processing');
 vi.mock('@/lib/logger');
 
 describe('ImageProcessorService', () => {
@@ -190,6 +192,54 @@ describe('ImageProcessorService', () => {
           dimensions: '1024x768',
         })
       );
+    });
+
+    it('preserves animated gif originals and returns a poster thumbnail', async () => {
+      const poster = {
+        buffer: Buffer.from('gif-poster'),
+        format: 'jpeg',
+        width: 256,
+        height: 256,
+        size: 9000,
+      };
+
+      vi.mocked(imageProcessing.isValidImage).mockResolvedValue(true);
+      vi.mocked(imageProcessing.getImageMetadata).mockResolvedValue({
+        width: 320,
+        height: 180,
+        format: 'gif',
+        size: mockBuffer.length,
+        hasAlpha: false,
+        orientation: undefined,
+      });
+      vi.mocked(imageProcessing.generateImagePoster).mockResolvedValue(poster);
+
+      const result = await processor.processImage(mockBuffer, 'image/gif');
+
+      expect(result.success).toBe(true);
+      expect(result.processed).toEqual({ thumbnail: poster });
+      expect(result.metadata).toEqual({ width: 320, height: 180 });
+      expect(imageProcessing.processUploadedImage).not.toHaveBeenCalled();
+    });
+
+    it('preserves video originals and returns an ffmpeg poster thumbnail', async () => {
+      const poster = {
+        buffer: Buffer.from('video-poster'),
+        format: 'jpeg',
+        width: 1280,
+        height: 720,
+        size: 12000,
+      };
+
+      vi.mocked(videoProcessing.extractVideoPoster).mockResolvedValue(poster);
+
+      const result = await processor.processImage(mockBuffer, 'video/mp4');
+
+      expect(result.success).toBe(true);
+      expect(result.processed).toEqual({ thumbnail: poster });
+      expect(result.metadata).toEqual({ width: 1280, height: 720 });
+      expect(imageProcessing.isValidImage).not.toHaveBeenCalled();
+      expect(imageProcessing.processUploadedImage).not.toHaveBeenCalled();
     });
 
     it('handles non-Error exceptions gracefully', async () => {

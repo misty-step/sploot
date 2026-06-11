@@ -16,6 +16,11 @@ export {
   isAssetSortDirection,
   isValidMimeType,
   isValidFileSize,
+  normalizeMimeType,
+  isVideoMimeType,
+  isImageMimeType,
+  isAnimatedImageMimeType,
+  isStaticImageMimeType,
 } from './constants';
 
 export {

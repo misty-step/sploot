@@ -2,7 +2,7 @@ import { UPLOAD, isValidMimeType } from '@sploot/common';
 import { isQaLocalAuthEnabled } from '@/lib/auth/qa-local';
 
 /**
- * Server-side fetch of a user-supplied image URL for ingestion.
+ * Server-side fetch of a user-supplied media URL for ingestion.
  *
  * SSRF stance: only http(s), and never private/internal hosts — checked on
  * the requested URL and re-checked on the post-redirect response URL.
@@ -88,7 +88,7 @@ function filenameFromUrl(url: string): string {
   } catch {
     // fall through
   }
-  return 'imported-image';
+  return 'imported-meme';
 }
 
 export async function fetchRemoteImage(
@@ -100,7 +100,7 @@ export async function fetchRemoteImage(
     response = await fetch(url, {
       redirect: 'follow',
       signal: AbortSignal.timeout(timeoutMs),
-      headers: { accept: 'image/*' },
+      headers: { accept: 'image/*,video/mp4,video/webm' },
     });
   } catch (error) {
     return {
@@ -125,20 +125,20 @@ export async function fetchRemoteImage(
 
   const contentType = (response.headers.get('content-type') ?? '').split(';')[0].trim();
   if (!isValidMimeType(contentType)) {
-    return { ok: false, reason: 'that url is not an image we can save' };
+    return { ok: false, reason: 'that url is not a meme we can save' };
   }
 
   const declaredLength = Number(response.headers.get('content-length') ?? 0);
   if (declaredLength > maxBytes) {
-    return { ok: false, reason: 'that image is too big' };
+    return { ok: false, reason: 'that meme is too big' };
   }
 
   const buffer = await response.arrayBuffer();
   if (buffer.byteLength > maxBytes) {
-    return { ok: false, reason: 'that image is too big' };
+    return { ok: false, reason: 'that meme is too big' };
   }
   if (buffer.byteLength === 0) {
-    return { ok: false, reason: 'that url returned an empty image' };
+    return { ok: false, reason: 'that url returned an empty meme' };
   }
 
   const file = new File([buffer], filenameFromUrl(response.url || url.href), {

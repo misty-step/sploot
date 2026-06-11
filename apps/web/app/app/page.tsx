@@ -36,6 +36,8 @@ import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/
 import { track } from '@/lib/analytics';
 import { logger } from '@/lib/observability-logger';
 import { haveFiltersChanged, type LibraryFilterSnapshot } from '@/lib/filter-change';
+import { isAnimatedImageMimeType, isVideoMimeType } from '@sploot/common';
+import { resolveQaSeedSrc } from '@/lib/qa/qa-image-loader';
 
 function AppPageClient() {
   const router = useRouter();
@@ -1033,14 +1035,27 @@ function AppPageClient() {
             onMouseLeave={() => setShowMetadata(false)}
           >
             <div className="relative w-full h-full">
-              <Image
-                src={selectedAsset.blobUrl}
-                alt={selectedAsset.filename}
-                width={1920}
-                height={1080}
-                className="max-w-full max-h-[90vh] object-contain"
-                priority
-              />
+              {isVideoMimeType(selectedAsset.mime) ? (
+                <video
+                  src={resolveQaSeedSrc(selectedAsset.blobUrl)}
+                  poster={selectedAsset.thumbnailUrl ? resolveQaSeedSrc(selectedAsset.thumbnailUrl) : undefined}
+                  controls
+                  autoPlay
+                  loop
+                  playsInline
+                  className="max-w-full max-h-[90vh] object-contain"
+                />
+              ) : (
+                <Image
+                  src={resolveQaSeedSrc(selectedAsset.blobUrl)}
+                  alt={selectedAsset.filename}
+                  width={1920}
+                  height={1080}
+                  className="max-w-full max-h-[90vh] object-contain"
+                  priority
+                  unoptimized={isAnimatedImageMimeType(selectedAsset.mime)}
+                />
+              )}
             </div>
 
             {/* Metadata overlay - shows on hover */}
@@ -1050,7 +1065,8 @@ function AppPageClient() {
             )}>
               <p className="text-white font-medium">{selectedAsset.filename}</p>
               <p className="text-white/80 text-sm mt-1">
-                {selectedAsset.width}×{selectedAsset.height} • {selectedAsset.mime.split('/')[1].toUpperCase()}
+                {selectedAsset.width && selectedAsset.height ? `${selectedAsset.width}×${selectedAsset.height} • ` : ''}
+                {selectedAsset.mime.split('/')[1].toUpperCase()}
               </p>
             </div>
           </div>

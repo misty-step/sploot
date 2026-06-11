@@ -17,15 +17,21 @@
  */
 
 import { createHash } from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
+import ffmpeg from '@ffmpeg-installer/ffmpeg';
 import { PrismaClient } from '@prisma/client';
 import sharp from 'sharp';
 import { QA_SEED_BLOB_HOST } from '../lib/qa/qa-image-loader';
+import { generateImagePoster } from '../lib/image-processing';
+import { extractVideoPoster } from '../lib/video-processing';
 
 const SEED_DIR = join(process.cwd(), 'public', 'qa-blob-seed');
 const DEFAULT_USER_ID = 'qa-design-user';
 const DEFAULT_COUNT = 24;
+const execFileAsync = promisify(execFile);
 
 const PALETTE = [
   { bg: '#0891B2', fg: '#FAFAF7' }, // cyan
@@ -72,7 +78,27 @@ function assertLocalDatabase() {
   }
 }
 
-async function renderFixture(index: number): Promise<{ buffer: Buffer; width: number; height: number }> {
+interface RenderedFixture {
+  filename: string;
+  buffer: Buffer;
+  width: number;
+  height: number;
+  mime: string;
+  thumbnail?: {
+    filename: string;
+    buffer: Buffer;
+  };
+}
+
+async function renderFixture(index: number): Promise<RenderedFixture> {
+  if (index === 0) {
+    return await renderAnimatedGifFixture(index);
+  }
+
+  if (index === 1) {
+    return await renderVideoFixture(index);
+  }
+
   const [width, height] = ASPECTS[index % ASPECTS.length];
   const { bg, fg } = PALETTE[index % PALETTE.length];
   const label = `MEME ${String(index + 1).padStart(2, '0')}`;
@@ -88,7 +114,75 @@ async function renderFixture(index: number): Promise<{ buffer: Buffer; width: nu
   </svg>`;
 
   const buffer = await sharp(Buffer.from(svg)).png().toBuffer();
-  return { buffer, width, height };
+  return {
+    filename: `qa-meme-${String(index + 1).padStart(3, '0')}.png`,
+    buffer,
+    width,
+    height,
+    mime: 'image/png',
+  };
+}
+
+async function renderAnimatedGifFixture(index: number): Promise<RenderedFixture> {
+  const filename = `qa-meme-${String(index + 1).padStart(3, '0')}.gif`;
+  const filePath = join(SEED_DIR, filename);
+  await execFileAsync(ffmpeg.path, [
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc2=s=320x180:d=1',
+    '-vf',
+    'fps=6',
+    '-loop',
+    '0',
+    filePath,
+  ]);
+
+  const buffer = await readFile(filePath);
+  const poster = await generateImagePoster(buffer);
+
+  return {
+    filename,
+    buffer,
+    width: 320,
+    height: 180,
+    mime: 'image/gif',
+    thumbnail: {
+      filename: `qa-meme-${String(index + 1).padStart(3, '0')}-poster.jpg`,
+      buffer: poster.buffer,
+    },
+  };
+}
+
+async function renderVideoFixture(index: number): Promise<RenderedFixture> {
+  const filename = `qa-meme-${String(index + 1).padStart(3, '0')}.mp4`;
+  const filePath = join(SEED_DIR, filename);
+  await execFileAsync(ffmpeg.path, [
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc2=s=320x180:d=1',
+    '-pix_fmt',
+    'yuv420p',
+    filePath,
+  ]);
+
+  const buffer = await readFile(filePath);
+  const poster = await extractVideoPoster(buffer, 'video/mp4');
+
+  return {
+    filename,
+    buffer,
+    width: poster.width,
+    height: poster.height,
+    mime: 'video/mp4',
+    thumbnail: {
+      filename: `qa-meme-${String(index + 1).padStart(3, '0')}-poster.jpg`,
+      buffer: poster.buffer,
+    },
+  };
 }
 
 async function seed(prisma: PrismaClient, userId: string, count: number) {
@@ -101,12 +195,17 @@ async function seed(prisma: PrismaClient, userId: string, count: number) {
   await mkdir(SEED_DIR, { recursive: true });
 
   for (let i = 0; i < count; i++) {
-    const { buffer, width, height } = await renderFixture(i);
-    const filename = `qa-meme-${String(i + 1).padStart(3, '0')}.png`;
+    const { filename, buffer, width, height, mime, thumbnail } = await renderFixture(i);
     await writeFile(join(SEED_DIR, filename), buffer);
+    if (thumbnail) {
+      await writeFile(join(SEED_DIR, thumbnail.filename), thumbnail.buffer);
+    }
 
     const checksum = createHash('sha256').update(buffer).digest('hex');
     const blobUrl = `${QA_SEED_BLOB_HOST}/qa-blob-seed/${filename}`;
+    const thumbnailUrl = thumbnail
+      ? `${QA_SEED_BLOB_HOST}/qa-blob-seed/${thumbnail.filename}`
+      : null;
 
     await prisma.asset.upsert({
       where: { unique_user_checksum: { ownerUserId: userId, checksumSha256: checksum } },
@@ -114,8 +213,10 @@ async function seed(prisma: PrismaClient, userId: string, count: number) {
       create: {
         ownerUserId: userId,
         blobUrl,
+        thumbnailUrl,
         pathname: `qa-blob-seed/${filename}`,
-        mime: 'image/png',
+        thumbnailPath: thumbnail ? `qa-blob-seed/${thumbnail.filename}` : null,
+        mime,
         width,
         height,
         size: buffer.byteLength,
@@ -125,8 +226,8 @@ async function seed(prisma: PrismaClient, userId: string, count: number) {
     });
   }
 
-  console.log(`Seeded ${count} assets for user "${userId}".`);
-  console.log(`Images in public/qa-blob-seed/; rows point at ${QA_SEED_BLOB_HOST}.`);
+  console.log(`Seeded ${count} assets for user "${userId}" (including GIF/video fixtures when count >= 2).`);
+  console.log(`Media in public/qa-blob-seed/; rows point at ${QA_SEED_BLOB_HOST}.`);
   console.log('Run the dev server with SPLOOT_QA_AUTH_MODE=enabled so the QA image loader is active.');
 }
 

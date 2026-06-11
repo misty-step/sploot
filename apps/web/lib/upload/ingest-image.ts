@@ -160,8 +160,8 @@ export async function ingestImage({
           pathname: uploadResult.mainPathname,
           thumbnailPath: uploadResult.thumbnailPathname,
           mime: file.type,
-          width: processedImages?.main.width ?? null,
-          height: processedImages?.main.height ?? null,
+          width: processingResult.metadata?.width ?? processedImages?.main?.width ?? null,
+          height: processingResult.metadata?.height ?? processedImages?.main?.height ?? null,
           size: file.size,
           checksumSha256: deduplicationResult.checksum,
         },
@@ -182,7 +182,7 @@ export async function ingestImage({
       // Step 7: Schedule embedding generation
       await scheduler.scheduleEmbedding({
         assetId: recordResult.asset.id,
-        blobUrl: uploadResult.mainUrl,
+        blobUrl: uploadResult.thumbnailUrl ?? uploadResult.mainUrl,
         checksum: deduplicationResult.checksum,
         mode: syncEmbeddings ? 'sync' : 'async',
       });

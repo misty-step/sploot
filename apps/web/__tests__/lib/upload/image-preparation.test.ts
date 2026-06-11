@@ -26,6 +26,16 @@ describe('image upload preparation policy', () => {
     expect(shouldPrepareImage(file)).toBe(false);
   });
 
+  it('does not prepare video uploads because browser canvas cannot preserve playback', () => {
+    const file = new File(
+      [new Uint8Array(UPLOAD.compressionTargetSize + 1)],
+      'reaction.mp4',
+      { type: 'video/mp4' }
+    );
+
+    expect(shouldPrepareImage(file)).toBe(false);
+  });
+
   it('keeps the current multipart target below the Vercel function body limit', () => {
     expect(UPLOAD.compressionTargetSize).toBeLessThan(UPLOAD.multipartSafeSize);
     expect(UPLOAD.multipartSafeSize).toBeLessThan(4.5 * 1024 * 1024);
@@ -36,5 +46,6 @@ describe('image upload preparation policy', () => {
     expect(isCompressibleImageType('image/png')).toBe(true);
     expect(isCompressibleImageType('image/webp')).toBe(true);
     expect(isCompressibleImageType('image/gif')).toBe(false);
+    expect(isCompressibleImageType('video/mp4')).toBe(false);
   });
 });
