@@ -1,6 +1,6 @@
 # Re-triage resurfaced Dependabot alerts
 
-Priority: P2 · Status: pending · Estimate: S
+Priority: P2 · Status: done · Estimate: S
 
 ## Goal
 
@@ -27,3 +27,14 @@ Verified live: shell-quote/tmp overrides ARE in the lockfile, so those four
 alerts are probably stale scans; the two vitest criticals (resolved 4.1.7)
 are new and real until proven otherwise. Consider enabling a CI/audit gate
 so resurfaced alerts surface in a PR check instead of a groom session.
+
+## What Was Built
+
+All 13 open alerts were verified stale against the live lockfile on
+2026-06-11 and dismissed via the API with per-alert reasons: three were
+pinned to the deleted `apps/extension/pnpm-lock.yaml` (monorepo
+consolidation, ADR 0002 — GitHub never auto-resolves alerts on deleted
+manifests); the rest referenced versions below what the workspace resolves
+(vitest 4.1.7, next 15.5.18, postcss 8.5.15, turbo 2.9.14, ws 8.20.1+,
+shell-quote 1.8.4 and tmp 0.2.6 via the #206 overrides). Zero bumps were
+needed; `gh api .../dependabot/alerts?state=open` returns 0.

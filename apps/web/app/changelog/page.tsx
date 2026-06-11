@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import sanitizeHtml from "sanitize-html";
-import { logger } from "@/lib/observability-logger";
+import { getReleases, type Release } from "@/lib/releases";
 
 export const metadata: Metadata = {
   title: "Changelog - Sploot",
@@ -11,46 +11,9 @@ export const metadata: Metadata = {
 
 export const revalidate = 3600; // Revalidate every hour
 
-interface Release {
-  id: number;
-  tag_name: string;
-  name: string;
-  body: string;
-  published_at: string;
-  html_url: string;
-}
-
 interface GroupedReleases {
   minor: string;
   releases: Release[];
-}
-
-async function getReleases(): Promise<Release[]> {
-  const repo = process.env.GITHUB_REPOSITORY || "sploot-app/sploot";
-  const response = await fetch(
-    `https://api.github.com/repos/${repo}/releases?per_page=50`,
-    {
-      headers: {
-        Accept: "application/vnd.github.v3+json",
-        ...(process.env.GITHUB_TOKEN && {
-          Authorization: `token ${process.env.GITHUB_TOKEN}`,
-        }),
-      },
-      next: { revalidate: 3600 },
-    }
-  );
-
-  if (!response.ok) {
-    logger.logError("Failed to fetch releases", { status: response.status });
-    return [];
-  }
-
-  try {
-    return await response.json();
-  } catch (error) {
-    logger.logError("Error parsing releases JSON", error);
-    return [];
-  }
 }
 
 function groupReleasesByMinor(releases: Release[]): GroupedReleases[] {

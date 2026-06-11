@@ -1,42 +1,7 @@
 import { NextResponse } from "next/server";
+import { getReleases } from "@/lib/releases";
 
 export const revalidate = 3600; // Revalidate every hour
-
-interface Release {
-  tag_name: string;
-  name: string;
-  body: string;
-  published_at: string;
-  html_url: string;
-}
-
-async function getReleases(): Promise<Release[]> {
-  const repo = process.env.GITHUB_REPOSITORY || "sploot-app/sploot";
-  const response = await fetch(
-    `https://api.github.com/repos/${repo}/releases?per_page=20`,
-    {
-      headers: {
-        Accept: "application/vnd.github.v3+json",
-        ...(process.env.GITHUB_TOKEN && {
-          Authorization: `token ${process.env.GITHUB_TOKEN}`,
-        }),
-      },
-      next: { revalidate: 3600 },
-    }
-  );
-
-  if (!response.ok) {
-    console.error(`Failed to fetch releases for RSS: ${response.status}`);
-    return [];
-  }
-
-  try {
-    return await response.json();
-  } catch (error) {
-    console.error("Error parsing releases JSON for RSS:", error);
-    return [];
-  }
-}
 
 function escapeXml(unsafe: string): string {
   return unsafe
@@ -48,7 +13,7 @@ function escapeXml(unsafe: string): string {
 }
 
 export async function GET() {
-  const releases = await getReleases();
+  const releases = await getReleases(20);
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://sploot.app";
 
   const items = releases
