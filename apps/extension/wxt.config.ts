@@ -90,15 +90,6 @@ export default defineConfig({
       action: {
         default_popup: 'popup.html',
       },
-      commands: {
-        'capture-screenshot': {
-          suggested_key: {
-            default: 'Ctrl+Shift+S',
-            mac: 'Command+Shift+S',
-          },
-          description: 'Capture screenshot selection',
-        },
-      },
     };
   },
 });

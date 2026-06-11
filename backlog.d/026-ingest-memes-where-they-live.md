@@ -1,6 +1,6 @@
 # Ingest memes where they live
 
-Priority: P1 · Status: pending · Estimate: XL
+Priority: P1 · Status: in-progress · Estimate: XL
 
 ## Goal
 
@@ -39,11 +39,22 @@ search, and taste all need library mass.
 
 ## Children
 
-1. PWA share-target: manifest entry + POST receiver route + device QA.
-2. URL import: paste-a-URL field in the upload zone + server-side fetch
-   with size/MIME validation and dedupe.
+1. ~~PWA share-target: manifest entry + POST receiver route + device QA.~~
+   DONE — PR #216, evidence `docs/qa/evidence/2026-06-10-share-target/`.
+   Real-device share-sheet QA remains residual (simulated multipart
+   navigation POSTs only).
+2. ~~URL import: paste-a-URL field in the upload zone + server-side fetch
+   with size/MIME validation and dedupe.~~
+   DONE — PR #217, evidence `docs/qa/evidence/2026-06-10-url-import/`.
 3. Persist the upload queue to IndexedDB; retry on reconnect/refresh.
-4. Bulk import v1: zip/folder of images with progress + dedupe summary.
-5. Decide screenshot capture: build the crop UI or delete the shortcut.
-6. Investigate Twitter/X bookmark import feasibility (API access, cost);
-   emit or kill with a written verdict.
+4. Bulk import v1: zip/folder of images with progress + dedupe summary —
+   per ADR 0003, also accept bookmarks-export JSON/CSV (media URLs routed
+   through the URL-import pipeline).
+5. ~~Decide screenshot capture: build the crop UI or delete the shortcut.~~
+   DONE — dead `capture-screenshot` registration removed from
+   `wxt.config.ts`; crop tool stays future scope.
+6. ~~Investigate Twitter/X bookmark import feasibility; emit or kill with a
+   written verdict.~~
+   DONE — `docs/adr/0003-no-twitter-bookmark-api-integration.md`: no API
+   integration ($200/mo tier, ~800-bookmark cap, account archive excludes
+   bookmarks); ingest exporter JSON/CSV via child 4 instead.
