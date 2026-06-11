@@ -25,6 +25,11 @@ stops being "drag a file onto a desktop browser tab."
       IndexedDB, not memory).
 - [ ] Full web suite + extension build green; live evidence per shipped child.
 
+All six children shipped (PRs #216–#219 + evidence packets under
+`docs/qa/evidence/`). The single open oracle item is real-device
+share-sheet verification (item 1) — simulated multipart navigation POSTs
+only so far. Close the epic after a phone/emulator share test.
+
 ## Notes
 
 Vision targets "people with meme collections scattered across Twitter
@@ -46,10 +51,16 @@ search, and taste all need library mass.
 2. ~~URL import: paste-a-URL field in the upload zone + server-side fetch
    with size/MIME validation and dedupe.~~
    DONE — PR #217, evidence `docs/qa/evidence/2026-06-10-url-import/`.
-3. Persist the upload queue to IndexedDB; retry on reconnect/refresh.
-4. Bulk import v1: zip/folder of images with progress + dedupe summary —
-   per ADR 0003, also accept bookmarks-export JSON/CSV (media URLs routed
-   through the URL-import pipeline).
+3. ~~Persist the upload queue to IndexedDB; retry on reconnect/refresh.~~
+   DONE — PR #219 (queue already existed; recovery never fired due to an
+   effect-churn bug, now fixed + dequeue-on-recovery; /api/upload migrated
+   to authenticateRequest). Evidence
+   `docs/qa/evidence/2026-06-10-persistent-upload-queue/`.
+4. ~~Bulk import v1: zip + bookmarks-export JSON/CSV with dedupe.~~
+   DONE — zips unpack client-side into the normal pipeline; text bundles
+   route extracted image URLs through /api/upload/url. Evidence
+   `docs/qa/evidence/2026-06-10-bulk-import/`. Folder drag-drop traversal
+   deferred.
 5. ~~Decide screenshot capture: build the crop UI or delete the shortcut.~~
    DONE — dead `capture-screenshot` registration removed from
    `wxt.config.ts`; crop tool stays future scope.

@@ -8,6 +8,12 @@ import { cn } from '@/lib/utils';
 import { useOffline } from '@/hooks/use-offline';
 import { useUploadQueue } from '@/hooks/use-upload-queue';
 import { useFileValidation } from '@/hooks/use-file-validation';
+import {
+  extractImageUrls,
+  extractZipImages,
+  isTextBundleFile,
+  isZipFile,
+} from '@/lib/upload/bulk-import';
 import { UploadErrorDisplay } from '@/components/upload/upload-error-display';
 import {
   getStructuredUploadErrorDetails,
@@ -962,7 +968,73 @@ export function UploadZone({
     [isOffline, addToQueue, prepareFile, uploadBatch],
   );
 
-  const processFiles = processFilesWithQueue;
+  // Batch URL import for bundle files (bookmark exports etc.): small
+  // worker pool against /api/upload/url, one summary toast at the end.
+  const importUrls = useCallback(async (urls: string[]) => {
+    if (urls.length === 0) return;
+    showToast(`importing ${urls.length} url${urls.length === 1 ? '' : 's'}...`, 'info');
+    let saved = 0;
+    let duplicates = 0;
+    let failed = 0;
+    const queue = [...urls];
+    const workers = Array.from({ length: 3 }, async () => {
+      for (let url = queue.shift(); url !== undefined; url = queue.shift()) {
+        try {
+          const response = await fetch('/api/upload/url', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ url }),
+          });
+          if (response.status === 201) saved++;
+          else if (response.status === 409) duplicates++;
+          else failed++;
+        } catch {
+          failed++;
+        }
+      }
+    });
+    await Promise.all(workers);
+    showToast(
+      `url import: ${saved} saved · ${duplicates} already in library · ${failed} failed`,
+      failed > 0 ? 'error' : 'success',
+      5000
+    );
+    if (saved + duplicates > 0) {
+      onUploadComplete?.({ uploaded: saved, duplicates, failed });
+    }
+  }, [onUploadComplete]);
+
+  // Expand bundles (zips, bookmark exports) before the normal pipeline:
+  // zip entries become regular Files; text bundles become URL imports.
+  const processFiles = useCallback(async (incoming: File[]) => {
+    const direct: File[] = [];
+    for (const file of incoming) {
+      if (isZipFile(file)) {
+        try {
+          const images = await extractZipImages(file);
+          showToast(
+            `unpacked ${images.length} image${images.length === 1 ? '' : 's'} from ${file.name}`,
+            images.length > 0 ? 'info' : 'error'
+          );
+          direct.push(...images);
+        } catch {
+          showToast(`couldn't unpack ${file.name}`, 'error');
+        }
+      } else if (isTextBundleFile(file)) {
+        const urls = extractImageUrls(await file.text());
+        if (urls.length === 0) {
+          showToast(`no image urls found in ${file.name}`, 'info');
+        } else {
+          void importUrls(urls);
+        }
+      } else {
+        direct.push(file);
+      }
+    }
+    if (direct.length > 0) {
+      await processFilesWithQueue(direct);
+    }
+  }, [processFilesWithQueue, importUrls]);
 
   // Pasted URLs import server-side through /api/upload/url (shared ingest
   // pipeline), then reuse the normal completion callback to refresh the grid.
@@ -1152,7 +1224,7 @@ export function UploadZone({
       <UploadDropZone
         onFilesAdded={(files) => processFiles(files)}
         onUrlPasted={importFromUrl}
-        allowedFileTypes={allowedFileTypes}
+        allowedFileTypes={[...allowedFileTypes, '.zip', '.json', '.csv', '.txt']}
         isPreparing={isPreparing}
         preparingFileCount={preparingFileCount}
         preparingTotalSize={preparingTotalSize}
