@@ -29,8 +29,10 @@ check failed or a page error was captured). Console errors never silently
 pass: they are listed per walk and flagged next to the verdict.
 
 Useful flags: `--gates` adds lint + type-check as checks; `--base-url` reuses
-a running server; `--no-seed` skips seeding; `--viewports 1440x900,390x844`
-is the default.
+a running server; `--no-seed` skips seeding; `--seed-count 60` seeds above a
+feature threshold; `--expect-piles --piles-min-assets 50` records and validates
+the authenticated `/api/piles` response; `--viewports 1440x900,390x844` is the
+default.
 
 ## Reading a packet
 

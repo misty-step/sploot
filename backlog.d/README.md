@@ -13,7 +13,6 @@ Status conventions:
 
 | # | Title | Priority | Estimate |
 |---|-------|----------|----------|
-| [025](025-build-automatic-semantic-piles.md) | Build Automatic Semantic Piles | P1 | L |
 | [026](026-ingest-memes-where-they-live.md) | Ingest Memes Where They Live (epic) | P1 | XL |
 | [029](029-build-the-taste-engine.md) | Build The Taste Engine (epic, raw) | P3 | XL |
 | [031](031-storage-based-pricing.md) | Charge For Storage With A Generous Free Tier (epic, raw) | P2 | XL |
@@ -25,6 +24,7 @@ Status conventions:
 See `_done/` for completed tickets with their `## What Was Built` notes.
 
 Recently completed:
+- [025](_done/025-build-automatic-semantic-piles.md) Build Automatic Semantic Piles
 - [028](_done/028-make-animated-memes-first-class.md) Make Animated Memes First-Class
 - [027](_done/027-delete-dead-enterprise-infrastructure.md) Delete Dead Enterprise Infrastructure
 - [030](_done/030-retriage-resurfaced-dependabot-alerts.md) Re-Triage Resurfaced Dependabot Alerts
