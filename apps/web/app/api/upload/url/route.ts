@@ -1,0 +1,100 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+import { ingestImage } from '@/lib/upload/ingest-image';
+import { validateImportUrl, fetchRemoteImage } from '@/lib/upload/url-import';
+import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
+import {
+  storageQuotaError,
+  StorageQuotaExceededError,
+} from '@/lib/quota/storage-quota-policy';
+import { logger } from '@/lib/logger';
+import { withObservability } from '@/lib/with-observability';
+
+/**
+ * URL import endpoint: POST { url } fetches a remote image server-side and
+ * ingests it through the shared pipeline (same dedupe/quota semantics and
+ * response contracts as /api/upload).
+ */
+
+export const maxDuration = 60;
+
+const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { principal }) => {
+  const userId = principal.userId;
+
+  const uploadGate = getRuntimeGate('uploads');
+  if (!uploadGate.enabled) {
+    return runtimeGateResponse(uploadGate);
+  }
+
+  let rawUrl: unknown;
+  try {
+    const body = await req.json();
+    rawUrl = body?.url;
+  } catch {
+    rawUrl = undefined;
+  }
+
+  if (typeof rawUrl !== 'string' || rawUrl.length === 0) {
+    return NextResponse.json(
+      { success: false, error: 'paste an image url to import' },
+      { status: 400 }
+    );
+  }
+
+  const validation = validateImportUrl(rawUrl);
+  if (!validation.ok) {
+    return NextResponse.json({ success: false, error: validation.reason }, { status: 400 });
+  }
+
+  const fetched = await fetchRemoteImage(validation.url);
+  if (!fetched.ok) {
+    logger.info('URL import fetch rejected', { userId, reason: fetched.reason });
+    return NextResponse.json({ success: false, error: fetched.reason }, { status: 422 });
+  }
+
+  try {
+    const result = await ingestImage({ userId, file: fetched.file });
+
+    if (result.kind === 'invalid') {
+      return NextResponse.json(
+        { success: false, error: result.error.userMessage },
+        { status: result.error.statusCode }
+      );
+    }
+
+    if (result.kind === 'duplicate') {
+      return NextResponse.json(
+        {
+          success: true,
+          isDuplicate: true,
+          asset: result.asset,
+          message: 'This image already exists in your library',
+        },
+        { status: 409 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: true,
+        isDuplicate: false,
+        asset: result.asset,
+        message: 'Upload successful',
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    if (error instanceof StorageQuotaExceededError) {
+      return NextResponse.json(storageQuotaError(error.snapshot), { status: 403 });
+    }
+
+    logger.error('URL import failed', {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return NextResponse.json({ success: false, error: 'Upload failed' }, { status: 500 });
+  }
+});
+
+export const POST = withObservability(postHandler, { operation: 'upload:url' });

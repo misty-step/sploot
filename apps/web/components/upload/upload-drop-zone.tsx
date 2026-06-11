@@ -11,6 +11,9 @@ interface UploadDropZoneProps {
   /** Callback when files are added (via drop, paste, or file input) */
   onFilesAdded: (files: File[]) => void;
 
+  /** Callback when an http(s) URL is pasted instead of image data */
+  onUrlPasted?: (url: string) => void;
+
   /** List of allowed MIME types (defaults to shared upload policy) */
   allowedFileTypes?: string[];
 
@@ -34,6 +37,7 @@ interface UploadDropZoneProps {
  */
 export function UploadDropZone({
   onFilesAdded,
+  onUrlPasted,
   allowedFileTypes = [...UPLOAD.allowedTypes],
   isPreparing = false,
   preparingFileCount = 0,
@@ -101,8 +105,19 @@ export function UploadDropZone({
       setIsProcessingPulse(true);
       setTimeout(() => setIsProcessingPulse(false), 1000);
       onFilesAdded(files);
+      return;
     }
-  }, [onFilesAdded]);
+
+    // No image data — a pasted http(s) URL imports the remote image.
+    if (onUrlPasted) {
+      const text = e.clipboardData?.getData('text')?.trim() ?? '';
+      if (/^https?:\/\/\S+$/i.test(text)) {
+        setIsProcessingPulse(true);
+        setTimeout(() => setIsProcessingPulse(false), 1000);
+        onUrlPasted(text);
+      }
+    }
+  }, [onFilesAdded, onUrlPasted]);
 
   // File input handler
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -175,7 +190,7 @@ export function UploadDropZone({
             )}
           </h2>
           <p className="font-mono text-sm text-muted-foreground mb-4 uppercase tracking-wider">
-            or click to browse • paste from clipboard
+            or click to browse • paste an image or its url
           </p>
           <p className="font-mono text-xs text-muted-foreground/60 uppercase tracking-wider">
             JPEG, PNG, WebP, GIF • Max {UPLOAD.maxSizeMB}MB per file

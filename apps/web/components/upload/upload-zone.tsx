@@ -964,6 +964,31 @@ export function UploadZone({
 
   const processFiles = processFilesWithQueue;
 
+  // Pasted URLs import server-side through /api/upload/url (shared ingest
+  // pipeline), then reuse the normal completion callback to refresh the grid.
+  const importFromUrl = useCallback(async (url: string) => {
+    showToast('importing from url...', 'info');
+    try {
+      const response = await fetch('/api/upload/url', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.status === 201) {
+        onUploadComplete?.({ uploaded: 1, duplicates: 0, failed: 0 });
+      } else if (response.status === 409) {
+        showToast('already in your library', 'info');
+        onUploadComplete?.({ uploaded: 0, duplicates: 1, failed: 0 });
+      } else {
+        showToast(typeof data?.error === 'string' ? data.error : 'url import failed', 'error');
+      }
+    } catch {
+      showToast('url import failed', 'error');
+    }
+  }, [onUploadComplete]);
+
   // Check for interrupted uploads on mount
   useUploadRecovery(
     async (recoveredFiles) => {
@@ -1126,6 +1151,7 @@ export function UploadZone({
       {/* Drop Zone */}
       <UploadDropZone
         onFilesAdded={(files) => processFiles(files)}
+        onUrlPasted={importFromUrl}
         allowedFileTypes={allowedFileTypes}
         isPreparing={isPreparing}
         preparingFileCount={preparingFileCount}
