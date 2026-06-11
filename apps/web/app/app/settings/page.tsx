@@ -25,7 +25,7 @@ function formatBytes(bytes: number): string {
 export default function SettingsPage() {
   const { user } = useAuthUser();
   const { signOut } = useAuthActions();
-  const { installable, installed, promptInstall } = usePwaInstallPrompt();
+  const { installable, installed, requiresManualInstall, promptInstall } = usePwaInstallPrompt();
   const [signOutLoading, setSignOutLoading] = useState(false);
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
   const [appVersion, setAppVersion] = useState<string>(APP_VERSION_FALLBACK);
@@ -144,25 +144,30 @@ export default function SettingsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={handleInstall}
-            disabled={!installable}
-            className={cn(
-              'inline-flex items-center gap-2  px-4 py-2 text-sm font-medium transition-colors',
-              installable
-                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                : 'bg-muted text-muted-foreground cursor-not-allowed'
-            )}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8l-8-8-8 8" />
-            </svg>
-            {installed ? 'Already installed 🔒' : 'Install Sploot PWA'}
-          </button>
+          {installable && (
+            <button
+              onClick={handleInstall}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8l-8-8-8 8" />
+              </svg>
+              Install Sploot PWA
+            </button>
+          )}
 
-          {!installable && !installed && (
+          {!installable && !installed && requiresManualInstall && (
+            <p className="text-sm text-muted-foreground">
+              iPhones don&apos;t do install buttons — tap the share icon in your
+              browser, then <span className="text-foreground font-medium">Add to Home Screen</span>.
+              Works in Safari and Chrome.
+            </p>
+          )}
+
+          {!installable && !installed && !requiresManualInstall && (
             <span className="text-xs text-muted-foreground">
-              Browser not vibing? Try in Chrome/Edge/Android for install button energy.
+              No install prompt in this browser — try Chrome or Edge, or look
+              for &ldquo;Add to Home Screen&rdquo; in the browser menu.
             </span>
           )}
 
@@ -172,6 +177,13 @@ export default function SettingsPage() {
             </span>
           )}
         </div>
+
+        <p className="text-xs text-muted-foreground">
+          Heads up: sharing images into Sploot from other apps&apos; share
+          sheets works on Android. iPhones don&apos;t let web apps into the
+          share sheet — copy an image and paste it into the upload zone
+          instead.
+        </p>
       </section>
 
       <section className="bg-card border border-border p-5 space-y-3">

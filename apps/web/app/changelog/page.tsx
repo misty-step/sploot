@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import sanitizeHtml from "sanitize-html";
 import { getReleases, type Release } from "@/lib/releases";
+import { markdownToHtml } from "@/lib/changelog-markdown";
 
 export const metadata: Metadata = {
   title: "Changelog - Sploot",
@@ -48,50 +49,6 @@ function formatDate(dateString: string): string {
   });
 }
 
-function markdownToHtml(text: string): string {
-  const lines = text.split("\n");
-  const result: string[] = [];
-  let inList = false;
-
-  for (const line of lines) {
-    if (line.startsWith("### ")) {
-      if (inList) {
-        result.push("</ul>");
-        inList = false;
-      }
-      result.push(
-        `<h4 class="text-base font-semibold mt-4 mb-2">${line.slice(4)}</h4>`
-      );
-    } else if (line.startsWith("## ")) {
-      if (inList) {
-        result.push("</ul>");
-        inList = false;
-      }
-      result.push(
-        `<h3 class="text-lg font-semibold mt-4 mb-2">${line.slice(3)}</h3>`
-      );
-    } else if (line.startsWith("- ")) {
-      if (!inList) {
-        result.push('<ul class="list-disc ml-4">');
-        inList = true;
-      }
-      result.push(`<li>${line.slice(2)}</li>`);
-    } else if (line.trim() === "") {
-      if (inList) {
-        result.push("</ul>");
-        inList = false;
-      }
-    } else {
-      if (inList) {
-        result.push("</ul>");
-        inList = false;
-      }
-      result.push(`<p>${line}</p>`);
-    }
-  }
-  if (inList) result.push("</ul>");
-  return result.join("");
-}
 
 function ReleaseCard({ release }: { release: Release }) {
   // Extract user-friendly notes if present, otherwise use raw body
@@ -120,7 +77,7 @@ function ReleaseCard({ release }: { release: Release }) {
         </a>
       </div>
       {displayBody && (
-        <div className="prose prose-sm dark:prose-invert max-w-none">
+        <div className="prose prose-sm dark:prose-invert max-w-none break-words">
           <div
             dangerouslySetInnerHTML={{
               __html: sanitizeHtml(markdownToHtml(displayBody), {

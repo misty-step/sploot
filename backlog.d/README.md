@@ -20,6 +20,7 @@ Status conventions:
 | [029](029-build-the-taste-engine.md) | Build The Taste Engine (epic, raw) | P3 | XL |
 | [031](031-storage-based-pricing.md) | Charge For Storage With A Generous Free Tier (epic, raw) | P2 | XL |
 | [032](032-adopt-design-system-and-landing-pass.md) | Adopt Design System And Re-Cut Landing (epic, blocked) | P2 | XL |
+| [033](033-ios-share-sheet-ingestion.md) | Get Sploot Into The iPhone Share Sheet Via A Shortcut | P2 | M |
 
 ## Done
 
