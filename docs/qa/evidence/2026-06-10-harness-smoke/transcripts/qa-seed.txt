@@ -1,0 +1,7 @@
+
+> web@0.1.0 qa:seed /Users/phaedrus/Development/sploot/apps/web
+> tsx scripts/qa-seed.ts
+
+Seeded 24 assets for user "qa-design-user".
+Images in public/qa-blob-seed/; rows point at https://sploot-qa-seed.public.blob.vercel-storage.com.
+Run the dev server with SPLOOT_QA_AUTH_MODE=enabled so the QA image loader is active.

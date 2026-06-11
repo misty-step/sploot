@@ -15,6 +15,7 @@
     "test:coverage": "vitest run --coverage",
     "e2e:auth": "playwright test --config playwright.config.ts",
     "qa:seed": "tsx scripts/qa-seed.ts",
+    "qa:evidence": "tsx scripts/qa-evidence.ts",
     "auth:guard": "node scripts/check-auth-boundary.mjs",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
