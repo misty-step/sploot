@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { verifyBearerOrThrow } from '@/lib/auth/verify-bearer';
+import { authenticateRequest } from '@/lib/auth/request-auth';
 import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { blobConfigured } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -36,8 +36,12 @@ async function postHandler(req: NextRequest) {
     const url = new URL(req.url);
     const syncEmbeddings = url.searchParams.get('sync_embeddings') === 'true';
 
-    // Authenticate user (supports both Bearer token and cookies)
-    const userId = await verifyBearerOrThrow(req);
+    // Authenticate user (Clerk bearer/cookies, or the qa-local harness)
+    const auth = await authenticateRequest(req);
+    if (auth.status !== 'authenticated') {
+      return unauthorizedResponse();
+    }
+    const userId = auth.principal.userId;
 
     const uploadGate = getRuntimeGate('uploads');
     if (!uploadGate.enabled) {
@@ -131,15 +135,9 @@ async function postHandler(req: NextRequest) {
  * GET endpoint for checking upload service status
  */
 async function getHandler(req: NextRequest) {
-  try {
-    await verifyBearerOrThrow(req);
-  } catch (error) {
-    unstable_rethrow(error);
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
-    throw error;
+  const auth = await authenticateRequest(req);
+  if (auth.status !== 'authenticated') {
+    return unauthorizedResponse();
   }
 
   return NextResponse.json({
