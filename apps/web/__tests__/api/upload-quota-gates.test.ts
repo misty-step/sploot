@@ -29,6 +29,17 @@ vi.mock('@/lib/auth/verify-bearer', () => ({
   verifyBearerOrThrow: mocks.verifyBearerOrThrow,
 }));
 
+vi.mock('@/lib/auth/request-auth', () => ({
+  authenticateRequest: async (...args: any[]) => {
+    try {
+      const userId = await mocks.verifyBearerOrThrow(...args);
+      return { status: 'authenticated', principal: { userId }, syncStatus: 'skipped' };
+    } catch {
+      return { status: 'unauthenticated', reason: 'test' };
+    }
+  },
+}));
+
 vi.mock('@/lib/auth/api', () => ({
   isUnauthorizedAuthError: () => false,
   unauthorizedResponse: () => Response.json({ error: 'Unauthorized' }, { status: 401 }),

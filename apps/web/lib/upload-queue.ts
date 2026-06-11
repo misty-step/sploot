@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { logger } from '@/lib/observability-logger';
 
 /**
@@ -324,15 +324,16 @@ export class UploadQueueManager {
       }
     }
 
-    // Convert persisted uploads back to Files
+    // Convert persisted uploads back to Files and dequeue them: the caller
+    // feeds recovered files straight back into the upload pipeline, which
+    // re-persists them under fresh ids. Leaving the old records behind made
+    // every recovery pass duplicate them.
     const files: File[] = [];
     for (const upload of pendingUploads) {
       try {
         const file = await this.toFile(upload);
         files.push(file);
-
-        // Update status to uploading
-        await this.updateUploadStatus(upload.id, 'uploading');
+        await this.removeUpload(upload.id);
       } catch (error) {
         console.error(`[UploadQueue] Failed to restore upload ${upload.filename}:`, error);
         await this.updateUploadStatus(upload.id, 'failed', String(error));
@@ -402,6 +403,16 @@ export function useUploadRecovery(
   const [checking, setChecking] = useState(true);
   const [recoveredCount, setRecoveredCount] = useState(0);
 
+  // Callers pass inline callbacks/options whose identity changes every
+  // render; keep the latest in refs so the recovery pass runs exactly once
+  // per mount. Re-running it per render restarted the auto-resume wait
+  // forever on pages that re-render continuously, so recovery never fired
+  // (and the queue was re-read on every render).
+  const onFilesRecoveredRef = useRef(onFilesRecovered);
+  onFilesRecoveredRef.current = onFilesRecovered;
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
   useEffect(() => {
     let mounted = true;
 
@@ -410,14 +421,14 @@ export function useUploadRecovery(
         const manager = getUploadQueueManager();
         await manager.init();
 
-        const files = await manager.checkForInterruptedUploads(options);
+        const files = await manager.checkForInterruptedUploads(optionsRef.current);
 
         if (mounted) {
           setRecoveredCount(files.length);
           setChecking(false);
 
-          if (files.length > 0 && onFilesRecovered) {
-            onFilesRecovered(files);
+          if (files.length > 0 && onFilesRecoveredRef.current) {
+            onFilesRecoveredRef.current(files);
           }
         }
       } catch (error) {
@@ -433,7 +444,7 @@ export function useUploadRecovery(
     return () => {
       mounted = false;
     };
-  }, [onFilesRecovered, options]); // Run once on mount
+  }, []); // One recovery pass per mount; latest callback/options via refs
 
   return { checking, recoveredCount };
 }
