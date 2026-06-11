@@ -40,7 +40,7 @@ graph TB
 - Routes and UI (`apps/web/app`, `apps/web/components`)
 - API handlers (`apps/web/app/api/**`)
 - Upload pipeline + embedding orchestration (`apps/web/lib/upload`, `apps/web/lib/embeddings.ts`)
-- Observability and metrics (`apps/web/lib/with-observability.ts`, `apps/web/lib/metrics-collector.ts`)
+- Observability and telemetry (`apps/web/lib/with-observability.ts`, `apps/web/lib/observability-logger.ts`, `apps/web/lib/performance-metrics.ts`)
 - Database access (`apps/web/lib/db.ts`, `apps/web/prisma`)
 
 ### apps/extension (WXT + React)
