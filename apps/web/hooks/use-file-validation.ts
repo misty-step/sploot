@@ -22,7 +22,7 @@ export interface FileValidationResult {
 /**
  * Hook for validating files before upload
  *
- * Validates file type (JPEG, PNG, WebP, GIF) and size (max 10MB).
+ * Validates file type (JPEG, PNG, WebP, GIF, MP4, WebM) and size (max 10MB).
  * Returns separate arrays of valid and invalid files with error messages.
  *
  * @example
@@ -48,7 +48,7 @@ export function useFileValidation() {
    */
   const validateFile = (file: File): string | null => {
     if (!isValidMimeType(file.type)) {
-      return `Invalid file type: ${file.name}. Only JPEG, PNG, WebP, and GIF are allowed.`;
+      return `Invalid file type: ${file.name}. Only JPEG, PNG, WebP, GIF, MP4, and WebM are allowed.`;
     }
     if (!isValidFileSize(file.size)) {
       if (file.size === 0) {

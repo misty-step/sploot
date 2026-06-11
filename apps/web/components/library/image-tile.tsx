@@ -14,6 +14,8 @@ import type { Asset } from '@/lib/types';
 import { ShareButton } from './share-button';
 import { logger } from '@/lib/observability-logger';
 import { BangerStamp } from '@/components/sploot';
+import { isAnimatedImageMimeType, isVideoMimeType } from '@sploot/common';
+import { resolveQaSeedSrc } from '@/lib/qa/qa-image-loader';
 
 interface ImageTileProps {
   asset: Asset;
@@ -40,10 +42,14 @@ function ImageTileComponent({
   onAssetUpdate,
   showSimilarityScore = false,
 }: ImageTileProps) {
+  const isVideo = isVideoMimeType(asset.mime);
+  const isAnimatedImage = isAnimatedImageMimeType(asset.mime);
   const [isLoading, setIsLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageSrc, setImageSrc] = useState(asset.thumbnailUrl || asset.blobUrl);
+  const [imageSrc, setImageSrc] = useState(() =>
+    getTileImageSrc(asset.mime, asset.blobUrl, asset.thumbnailUrl)
+  );
   const [hasTriedFallback, setHasTriedFallback] = useState(false);
   const [isGeneratingEmbedding, setIsGeneratingEmbedding] = useState(false);
   const [hasEmbedding, setHasEmbedding] = useState(!!asset.embedding);
@@ -71,11 +77,11 @@ function ImageTileComponent({
 
   // Reset image src when asset changes (e.g., component reused)
   useEffect(() => {
-    setImageSrc(asset.thumbnailUrl || asset.blobUrl);
+    setImageSrc(getTileImageSrc(asset.mime, asset.blobUrl, asset.thumbnailUrl));
     setHasTriedFallback(false);
     setImageError(false);
     setImageLoaded(false);
-  }, [asset.id, asset.blobUrl, asset.thumbnailUrl]);
+  }, [asset.id, asset.blobUrl, asset.thumbnailUrl, asset.mime]);
 
   // Simulate queue position in debug mode
   useEffect(() => {
@@ -335,6 +341,25 @@ function ImageTileComponent({
 
   const embeddingStatusInfo = getEmbeddingStatusIcon();
 
+  const handleMediaLoadError = (failedUrl: string) => {
+    setImageError(true);
+    setImageLoaded(true);
+    recordBlobError(404);
+
+    // Send telemetry (fire-and-forget)
+    fetch('/api/telemetry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        assetId: asset.id,
+        blobUrl: failedUrl,
+        errorType: 'blob_load_failure',
+        timestamp: Date.now(),
+        fallbackAttempted: hasTriedFallback,
+      }),
+    }).catch(() => {});
+  };
+
   return (
     <>
       <div
@@ -377,52 +402,62 @@ function ImageTileComponent({
                     <div className="h-full w-full bg-muted animate-pulse" />
                   </div>
                 )}
-                <Image
-                  key={imageSrc}
-                  src={imageSrc}
-                  alt={asset.filename || asset.pathname?.split('/').pop() || 'Uploaded image'}
-                  fill
-                  sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
-                  className={cn(
-                    'h-full w-full',
-                    preserveAspectRatio ? 'object-contain' : 'object-cover'
-                  )}
-                  loading="lazy"
-                  onLoad={() => {
-                    setImageLoaded(true);
-                    recordBlobSuccess();
-                  }}
-                  onError={(e) => {
-                    // If thumbnail failed and we haven't tried the main blob yet
-                    if (imageSrc === asset.thumbnailUrl && asset.blobUrl && !hasTriedFallback) {
-                      logger.logInfo('image-tile.thumbnail-fallback', {
-                        assetId: asset.id,
-                      });
-                      setHasTriedFallback(true);
-                      setImageSrc(asset.blobUrl);
-                      // Don't set imageError yet - give the fallback a chance
-                      return;
-                    }
+                {isVideo ? (
+                  <video
+                    key={asset.blobUrl}
+                    aria-label={`play ${asset.filename || asset.pathname?.split('/').pop() || 'meme'}`}
+                    className={cn(
+                      'h-full w-full',
+                      preserveAspectRatio ? 'object-contain' : 'object-cover'
+                    )}
+                    poster={asset.thumbnailUrl ? resolveQaSeedSrc(asset.thumbnailUrl) : undefined}
+                    muted
+                    loop
+                    playsInline
+                    preload="metadata"
+                    onLoadedData={() => {
+                      setImageLoaded(true);
+                      recordBlobSuccess();
+                    }}
+                    onError={() => {
+                      handleMediaLoadError(asset.blobUrl);
+                    }}
+                  >
+                    <source src={resolveQaSeedSrc(asset.blobUrl)} type={asset.mime} />
+                  </video>
+                ) : (
+                  <Image
+                    key={imageSrc}
+                    src={imageSrc}
+                    alt={asset.filename || asset.pathname?.split('/').pop() || 'Uploaded image'}
+                    fill
+                    sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
+                    className={cn(
+                      'h-full w-full',
+                      preserveAspectRatio ? 'object-contain' : 'object-cover'
+                    )}
+                    loading="lazy"
+                    unoptimized={isAnimatedImage}
+                    onLoad={() => {
+                      setImageLoaded(true);
+                      recordBlobSuccess();
+                    }}
+                    onError={() => {
+                      // If thumbnail failed and we haven't tried the main blob yet
+                      if (imageSrc === asset.thumbnailUrl && asset.blobUrl && !hasTriedFallback) {
+                        logger.logInfo('image-tile.thumbnail-fallback', {
+                          assetId: asset.id,
+                        });
+                        setHasTriedFallback(true);
+                        setImageSrc(asset.blobUrl);
+                        // Don't set imageError yet - give the fallback a chance
+                        return;
+                      }
 
-                    // Both failed (or only had one URL)
-                    setImageError(true);
-                    setImageLoaded(true);
-                    recordBlobError(404);
-
-                    // Send telemetry (fire-and-forget)
-                    fetch('/api/telemetry', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        assetId: asset.id,
-                        blobUrl: imageSrc,
-                        errorType: 'blob_load_failure',
-                        timestamp: Date.now(),
-                        fallbackAttempted: hasTriedFallback,
-                      }),
-                    }).catch(() => {});
-                  }}
-                />
+                      handleMediaLoadError(imageSrc);
+                    }}
+                  />
+                )}
               </>
             )}
 
@@ -625,6 +660,7 @@ function arePropsEqual(prevProps: ImageTileProps, nextProps: ImageTileProps) {
   // Re-render if URLs changed
   if (prevProps.asset.blobUrl !== nextProps.asset.blobUrl) return false;
   if (prevProps.asset.thumbnailUrl !== nextProps.asset.thumbnailUrl) return false;
+  if (prevProps.asset.mime !== nextProps.asset.mime) return false;
 
   // Re-render if favorite status changed
   if (prevProps.asset.favorite !== nextProps.asset.favorite) return false;
@@ -656,3 +692,15 @@ function arePropsEqual(prevProps: ImageTileProps, nextProps: ImageTileProps) {
 
 // Export memoized version to prevent unnecessary re-renders
 export const ImageTile = memo(ImageTileComponent, arePropsEqual);
+
+function getTileImageSrc(
+  mimeType: string,
+  blobUrl: string,
+  thumbnailUrl?: string | null
+): string {
+  if (isAnimatedImageMimeType(mimeType)) {
+    return resolveQaSeedSrc(blobUrl);
+  }
+
+  return resolveQaSeedSrc(thumbnailUrl || blobUrl);
+}

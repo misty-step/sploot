@@ -53,9 +53,14 @@ describe('UploadValidationService', () => {
       expect(result.valid).toBe(false);
     });
 
-    it('rejects video files', () => {
+    it('accepts MP4 videos', () => {
       const result = validator.validateFileType('video/mp4');
-      expect(result.valid).toBe(false);
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts WebM videos', () => {
+      const result = validator.validateFileType('video/webm');
+      expect(result.valid).toBe(true);
     });
   });
 

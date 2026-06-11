@@ -64,9 +64,9 @@ export class UploadValidationService {
       return {
         valid: false,
         error: new ValidationError(
-          `Invalid file type: ${mimeType}. Only JPEG, PNG, WebP, and GIF images are allowed.`,
+          `Invalid file type: ${mimeType}. Only JPEG, PNG, WebP, GIF, MP4, and WebM memes are allowed.`,
           'invalid_type',
-          'File type not supported. Use JPEG, PNG, WebP, or GIF'
+          'File type not supported. Use JPEG, PNG, WebP, GIF, MP4, or WebM'
         ),
       };
     }

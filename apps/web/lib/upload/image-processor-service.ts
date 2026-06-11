@@ -1,11 +1,14 @@
 import {
   processUploadedImage,
   isValidImage,
-  ImageProcessingResult,
-  MAX_IMAGE_DIMENSION,
-  THUMBNAIL_SIZE,
+  generateImagePoster,
+  getImageMetadata,
+  type ProcessedImage,
+  type ImageProcessingResult,
 } from '@/lib/image-processing';
 import { logger } from '@/lib/logger';
+import { isAnimatedImageMimeType, isStaticImageMimeType, isVideoMimeType } from '@sploot/common';
+import { extractVideoPoster } from '@/lib/video-processing';
 
 /**
  * Image processing error with retry information
@@ -35,9 +38,15 @@ export interface ImageProcessorConfig {
  */
 export interface ProcessingResult {
   success: boolean;
-  processed: ImageProcessingResult | null;
+  processed: ImageProcessingResult | MediaProcessingRenditions | null;
+  metadata?: { width: number | null; height: number | null };
   error?: ImageProcessingError;
   usedFallback: boolean;
+}
+
+export interface MediaProcessingRenditions {
+  main?: ProcessedImage | null;
+  thumbnail?: ProcessedImage | null;
 }
 
 /**
@@ -69,6 +78,23 @@ export class ImageProcessorService {
     buffer: Buffer,
     mimeType: string
   ): Promise<ProcessingResult> {
+    if (isVideoMimeType(mimeType)) {
+      return await this.processVideo(buffer, mimeType);
+    }
+
+    if (isAnimatedImageMimeType(mimeType)) {
+      return await this.processAnimatedImage(buffer, mimeType);
+    }
+
+    if (!isStaticImageMimeType(mimeType)) {
+      return {
+        success: false,
+        processed: null,
+        error: new ImageProcessingError(`Unsupported media type: ${mimeType}`, false),
+        usedFallback: false,
+      };
+    }
+
     // Validate buffer contains valid image data
     const isValid = await this.validateImageBuffer(buffer);
     if (!isValid) {
@@ -109,6 +135,10 @@ export class ImageProcessorService {
         return {
           success: true,
           processed,
+          metadata: {
+            width: processed.main.width,
+            height: processed.main.height,
+          },
           usedFallback: false,
         };
       } catch (error) {
@@ -164,6 +194,116 @@ export class ImageProcessorService {
     }
   }
 
+  private async processAnimatedImage(
+    buffer: Buffer,
+    mimeType: string
+  ): Promise<ProcessingResult> {
+    const isValid = await this.validateImageBuffer(buffer);
+    if (!isValid) {
+      const error = new ImageProcessingError(
+        'Invalid image buffer: unable to read image data',
+        false
+      );
+
+      logger.error('Image validation failed', {
+        mimeType,
+        bufferSize: buffer.length,
+        error: error.message,
+      });
+
+      return {
+        success: false,
+        processed: null,
+        error,
+        usedFallback: false,
+      };
+    }
+
+    try {
+      const metadata = await getImageMetadata(buffer);
+      const poster = await generateImagePoster(buffer);
+
+      logger.debug('Animated image poster generated', {
+        mimeType,
+        posterSize: poster.size,
+        dimensions: `${metadata.width ?? poster.width}x${metadata.height ?? poster.height}`,
+      });
+
+      return {
+        success: true,
+        processed: { thumbnail: poster },
+        metadata: {
+          width: metadata.width ?? poster.width,
+          height: metadata.height ?? poster.height,
+        },
+        usedFallback: true,
+      };
+    } catch (error) {
+      const processingError = new ImageProcessingError(
+        'Animated image poster generation failed',
+        false,
+        error instanceof Error ? error : new Error(String(error))
+      );
+
+      logger.error('Animated image poster generation failed', {
+        mimeType,
+        bufferSize: buffer.length,
+        error: processingError.cause?.message ?? processingError.message,
+      });
+
+      return {
+        success: false,
+        processed: null,
+        error: processingError,
+        usedFallback: false,
+      };
+    }
+  }
+
+  private async processVideo(
+    buffer: Buffer,
+    mimeType: string
+  ): Promise<ProcessingResult> {
+    try {
+      const poster = await extractVideoPoster(buffer, mimeType);
+
+      logger.debug('Video poster generated', {
+        mimeType,
+        posterSize: poster.size,
+        dimensions: `${poster.width}x${poster.height}`,
+      });
+
+      return {
+        success: true,
+        processed: { thumbnail: poster },
+        metadata: {
+          width: poster.width,
+          height: poster.height,
+        },
+        usedFallback: true,
+      };
+    } catch (error) {
+      const processingError = new ImageProcessingError(
+        'Video poster generation failed',
+        false,
+        error instanceof Error ? error : new Error(String(error))
+      );
+
+      logger.error('Video poster generation failed', {
+        mimeType,
+        bufferSize: buffer.length,
+        error: processingError.cause?.message ?? processingError.message,
+      });
+
+      return {
+        success: false,
+        processed: null,
+        error: processingError,
+        usedFallback: false,
+      };
+    }
+  }
+
   /**
    * Sleep utility for retry delays
    */
@@ -200,6 +340,6 @@ export function getImageProcessor(): ImageProcessorService {
  */
 export function isSuccessfulProcessing(
   result: ProcessingResult
-): result is ProcessingResult & { processed: ImageProcessingResult } {
+): result is ProcessingResult & { processed: ImageProcessingResult | MediaProcessingRenditions } {
   return result.success && result.processed !== null;
 }

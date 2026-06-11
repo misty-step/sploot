@@ -91,7 +91,38 @@ describe('fetchRemoteImage', () => {
     }
   });
 
-  it('rejects non-image content types', async () => {
+  it('requests images and short videos from remote URLs', async () => {
+    const fetch = vi.fn().mockResolvedValue(imageResponse(new Uint8Array([1])));
+    vi.stubGlobal('fetch', fetch);
+
+    await fetchRemoteImage(new URL('https://cdn.example.com/meme.png'));
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://cdn.example.com/meme.png'),
+      expect.objectContaining({
+        headers: { accept: 'image/*,video/mp4,video/webm' },
+      })
+    );
+  });
+
+  it('accepts video content types', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        imageResponse(new Uint8Array([0, 0, 0, 1]), 'video/mp4', 'https://cdn.example.com/meme.mp4')
+      )
+    );
+
+    const result = await fetchRemoteImage(new URL('https://cdn.example.com/meme.mp4'));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.file.name).toBe('meme.mp4');
+      expect(result.file.type).toBe('video/mp4');
+    }
+  });
+
+  it('rejects non-media content types', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(imageResponse(new Uint8Array([1]), 'text/html'))

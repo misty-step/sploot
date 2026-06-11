@@ -98,6 +98,18 @@ export async function processUploadedImage(
   };
 }
 
+export async function generateImagePoster(buffer: Buffer): Promise<ProcessedImage> {
+  const thumbnailBuffer = await generateThumbnail(buffer, 'jpeg');
+
+  return {
+    buffer: thumbnailBuffer,
+    format: 'jpeg',
+    width: THUMBNAIL_SIZE,
+    height: THUMBNAIL_SIZE,
+    size: thumbnailBuffer.length,
+  };
+}
+
 /**
  * Process the main image, resizing if necessary.
  * Preserves aspect ratio when resizing.

@@ -133,8 +133,11 @@ Quota error example:
 }
 ```
 
-upload an image through the api. this is the `SplootApiUploadResponse` contract
-used by the chrome extension.
+upload a meme through the api. this is the `SplootApiUploadResponse` contract
+used by the chrome extension. accepted media types are JPEG, PNG, WebP, GIF,
+MP4, and WebM. static images get optimized main/thumbnail blobs; animated GIFs
+and videos keep the original blob as the playback source and store a poster
+thumbnail for previews and embedding.
 
 **Authentication:** Required
 
@@ -142,7 +145,8 @@ used by the chrome extension.
 
 **Form Fields:**
 
-- `file` (file, required): Image file to upload
+- `file` (file, required): meme file to upload (`image/jpeg`, `image/jpg`,
+  `image/png`, `image/webp`, `image/gif`, `video/mp4`, or `video/webm`)
 - `tags` (json string array, optional): Tag names to attach
 
 **Success Response (201):**
@@ -156,7 +160,7 @@ used by the chrome extension.
     "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
     "pathname": "user123/funny-meme.jpg",
     "filename": "funny-meme.jpg",
-    "mimeType": "image/jpeg",
+    "mimeType": "video/mp4",
     "size": 2048576,
     "checksum": "sha256:abc123...",
     "createdAt": "2026-05-14T12:00:00.000Z",
@@ -177,7 +181,7 @@ used by the chrome extension.
     "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
     "pathname": "user123/funny-meme.jpg",
     "filename": "funny-meme.jpg",
-    "mimeType": "image/jpeg",
+    "mimeType": "video/mp4",
     "size": 2048576,
     "checksum": "sha256:abc123...",
     "createdAt": "2026-05-14T12:00:00.000Z",
@@ -227,7 +231,9 @@ embedding generation when Replicate is configured.
 - `blobUrl` (string, required): URL from Vercel Blob storage
 - `pathname` (string, required): Blob pathname to persist
 - `filename` (string, required): Original filename
-- `mimeType` (string, required): MIME type
+- `mimeType` (string, required): MIME type. upload APIs accept JPEG, PNG, WebP,
+  GIF, MP4, and WebM; GIF/video assets should use their original `blobUrl` for
+  playback and `thumbnailUrl` as a poster/embedding image when present.
 - `size` (number, required): File size in bytes
 - `width` (number, optional): Image width in pixels
 - `height` (number, optional): Image height in pixels
@@ -830,7 +836,7 @@ Advanced search with multiple filters and sorting options.
   "query": "reaction",
   "filters": {
     "favorites": true,
-    "mimeTypes": ["image/jpeg", "image/png"],
+    "mimeTypes": ["image/gif", "video/mp4"],
     "tags": ["reaction", "template"],
     "dateFrom": "2025-01-01T00:00:00Z",
     "dateTo": "2025-12-31T23:59:59Z",

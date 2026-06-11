@@ -147,6 +147,35 @@ describe('BlobUploaderService', () => {
       expect(result.thumbnailUrl).toBeNull();
     });
 
+    it('uses the thumbnail rendition format for the thumbnail pathname', async () => {
+      const processedImages = {
+        thumbnail: {
+          buffer: Buffer.from('processed-thumb'),
+          format: 'jpeg',
+          width: 256,
+          height: 256,
+          size: 10000,
+        },
+      };
+
+      vi.mocked(blobUtils.generateUniqueFilename).mockReturnValue('user-123/reaction.mp4');
+      vi.mocked(vercelBlob.put)
+        .mockResolvedValueOnce(mockMainBlob)
+        .mockResolvedValueOnce(mockThumbnailBlob);
+
+      await uploader.upload(mockUserId, 'reaction.mp4', mockBuffer, processedImages);
+
+      expect(vercelBlob.put).toHaveBeenNthCalledWith(
+        2,
+        'user-123/reaction-thumb.jpg',
+        processedImages.thumbnail.buffer,
+        expect.objectContaining({
+          access: 'public',
+          addRandomSuffix: false,
+        })
+      );
+    });
+
     it('logs warning when thumbnail upload fails', async () => {
       const processedImages = {
         main: {

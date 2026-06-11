@@ -22,13 +22,15 @@ export const UPLOAD = {
   minimumCompressionQuality: 0.62,
   /** Upload timeout in milliseconds */
   timeout: 10_000,
-  /** Allowed MIME types for image uploads */
+  /** Allowed MIME types for meme uploads */
   allowedTypes: [
     'image/jpeg',
     'image/jpg',
     'image/png',
     'image/webp',
     'image/gif',
+    'video/mp4',
+    'video/webm',
   ] as const,
 } as const;
 
@@ -57,7 +59,7 @@ export type AllowedMimeType = (typeof UPLOAD.allowedTypes)[number];
 export function isValidMimeType(
   mimeType: string
 ): mimeType is AllowedMimeType {
-  const normalized = mimeType.toLowerCase().split(';')[0].trim();
+  const normalized = normalizeMimeType(mimeType);
   return UPLOAD.allowedTypes.includes(normalized as AllowedMimeType);
 }
 
@@ -66,4 +68,24 @@ export function isValidMimeType(
  */
 export function isValidFileSize(size: number): boolean {
   return size > 0 && size <= UPLOAD.maxSize;
+}
+
+export function normalizeMimeType(mimeType: string): string {
+  return mimeType.toLowerCase().split(';')[0].trim();
+}
+
+export function isVideoMimeType(mimeType: string): boolean {
+  return normalizeMimeType(mimeType).startsWith('video/');
+}
+
+export function isImageMimeType(mimeType: string): boolean {
+  return normalizeMimeType(mimeType).startsWith('image/');
+}
+
+export function isAnimatedImageMimeType(mimeType: string): boolean {
+  return normalizeMimeType(mimeType) === 'image/gif';
+}
+
+export function isStaticImageMimeType(mimeType: string): boolean {
+  return isImageMimeType(mimeType) && !isAnimatedImageMimeType(mimeType);
 }
