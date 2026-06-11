@@ -76,7 +76,7 @@ function parseArgs(argv: string[]): Args {
       case '--intent': args.intent = next() ?? ''; break;
       case '--routes': args.routes = (next() ?? '').split(',').filter(Boolean); break;
       case '--viewports': args.viewports = (next() ?? '').split(',').filter(Boolean); break;
-      case '--tests': args.tests = (next() ?? '').split(',').filter(Boolean); break;
+      case '--tests': args.tests.push(...(next() ?? '').split(',').filter(Boolean)); break;
       case '--gates': args.gates = true; break;
       case '--base-url': args.baseUrl = next(); break;
       case '--no-seed': args.seed = false; break;
