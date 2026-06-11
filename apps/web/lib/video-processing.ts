@@ -1,13 +1,14 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
-import ffmpeg from '@ffmpeg-installer/ffmpeg';
 import type { ProcessedImage } from '@/lib/image-processing';
 
 const VIDEO_POSTER_TIMEOUT_MS = 10_000;
+const require = createRequire(import.meta.url);
 
 export async function extractVideoPoster(
   buffer: Buffer,
@@ -55,8 +56,13 @@ function resolveFfmpegPath(): string {
     return process.env.FFMPEG_BIN;
   }
 
-  if (ffmpeg.path && existsSync(ffmpeg.path)) {
-    return ffmpeg.path;
+  try {
+    const ffmpeg = require('@ffmpeg-installer/ffmpeg') as { path?: string };
+    if (ffmpeg.path && existsSync(ffmpeg.path)) {
+      return ffmpeg.path;
+    }
+  } catch {
+    // Fall through to PATH lookup; callers get the exec error if unavailable.
   }
 
   return 'ffmpeg';
