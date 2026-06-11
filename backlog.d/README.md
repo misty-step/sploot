@@ -18,6 +18,7 @@ Status conventions:
 | [027](027-delete-dead-enterprise-infrastructure.md) | Delete Dead Enterprise Infrastructure | P2 | S |
 | [028](028-make-animated-memes-first-class.md) | Make Animated Memes First-Class (epic) | P2 | L |
 | [029](029-build-the-taste-engine.md) | Build The Taste Engine (epic, raw) | P3 | XL |
+| [030](030-retriage-resurfaced-dependabot-alerts.md) | Re-Triage Resurfaced Dependabot Alerts | P2 | S |
 
 ## Done
 
