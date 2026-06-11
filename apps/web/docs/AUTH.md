@@ -53,6 +53,13 @@ Mint a token for the seeded user with `createQaLocalAuthToken` from
 `lib/auth/qa-local.ts` (default seed user id: `qa-design-user`), set it as the
 `sploot_qa_auth` cookie, and open `/app`.
 
+## Evidence Packets
+
+`pnpm --filter web qa:evidence` composes the auth harness and the seed into a
+one-command verification run: tests, an authenticated dev server, browser
+walks with screenshots, and a structured packet under `docs/qa/evidence/`.
+See `docs/qa/README.md` (repo root) for usage and how to read a packet.
+
 ## Route Migration
 
 New protected JSON API routes should use:

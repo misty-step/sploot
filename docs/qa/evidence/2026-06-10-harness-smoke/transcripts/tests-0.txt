@@ -1,0 +1,9 @@
+
+ RUN  v4.1.7 /Users/phaedrus/Development/sploot/apps/web
+
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  21:33:06
+   Duration  661ms (transform 38ms, setup 136ms, import 9ms, tests 3ms, environment 437ms)
+
