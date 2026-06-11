@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useAuthUser, useAuthActions } from '@/lib/auth/client';
 import { usePwaInstallPrompt } from '@/hooks/use-pwa-install';
 import { cn } from '@/lib/utils';
-const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0';
+// Fallback while /api/version (latest landfall release tag) loads.
+const APP_VERSION_FALLBACK = process.env.NEXT_PUBLIC_APP_VERSION || 'v0';
 
 interface StorageStats {
   storageBytes: number;
@@ -27,9 +28,19 @@ export default function SettingsPage() {
   const { installable, installed, promptInstall } = usePwaInstallPrompt();
   const [signOutLoading, setSignOutLoading] = useState(false);
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
+  const [appVersion, setAppVersion] = useState<string>(APP_VERSION_FALLBACK);
 
   useEffect(() => {
     let cancelled = false;
+
+    fetch('/api/version')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled && typeof data?.version === 'string' && data.version) {
+          setAppVersion(data.version);
+        }
+      })
+      .catch(() => {});
 
     async function loadStorageStats() {
       const response = await fetch('/api/stats');
@@ -174,7 +185,7 @@ export default function SettingsPage() {
         <h2 className="text-lg font-semibold text-foreground">About</h2>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground text-sm">Version</span>
-          <span className="font-mono text-sm text-foreground">{APP_VERSION}</span>
+          <span className="font-mono text-sm text-foreground">{appVersion}</span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground text-sm">What&apos;s new</span>
