@@ -1,0 +1,11 @@
+
+ RUN  v4.1.7 /Users/phaedrus/Development/sploot/apps/web
+
+(node:11527) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  15:10:22
+   Duration  1.42s (transform 103ms, setup 170ms, import 203ms, tests 30ms, environment 829ms)
+

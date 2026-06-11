@@ -85,3 +85,4 @@ sentry.properties
 .spellbook/traces/prompts/
 .spellbook/traces/provider-lanes/
 .pi/state/
+.codex/agents/
