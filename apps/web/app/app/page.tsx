@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { useAssets, useSearchAssets } from '@/hooks/use-assets';
+import { useAutomaticPiles } from '@/hooks/use-piles';
 import { useAuthActions } from '@/lib/auth/client';
 import { ImageGrid } from '@/components/library/image-grid';
 import { getMobileFeedDockPaddingClass } from '@/components/library/image-grid-layout';
@@ -30,7 +31,7 @@ import { FilterChips, type FilterType } from '@/components/chrome/filter-chips';
 import { SortDropdown } from '@/components/chrome/sort-dropdown';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { StickerTab } from '@/components/sploot';
+import { ClusterPile, StickerTab } from '@/components/sploot';
 import { RotateCcw, Shuffle, X, Trash2 } from 'lucide-react';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
 import { track } from '@/lib/analytics';
@@ -156,27 +157,6 @@ function AppPageClient() {
     tagId: tagIdParam ?? undefined,
     shuffleSeed,
   });
-
-  // Listen for asset upload events and refresh the library
-  useEffect(() => {
-    const handleAssetUploaded = (event: CustomEvent) => {
-      logger.logInfo('library.asset-uploaded-refresh', {
-        detail: event.detail,
-      });
-
-      // Refresh the asset list
-      refresh();
-
-      // Note: Toast removed to avoid duplicates - onUploadComplete shows summary toast
-    };
-
-    // Listen for the custom event from upload zone
-    window.addEventListener('assetUploaded', handleAssetUploaded as EventListener);
-
-    return () => {
-      window.removeEventListener('assetUploaded', handleAssetUploaded as EventListener);
-    };
-  }, [refresh]);
 
   const {
     assets: searchAssets,
@@ -454,6 +434,33 @@ function AppPageClient() {
   const trimmedLibraryQuery = libraryQuery.trim();
   const isSearching = trimmedLibraryQuery.length > 0;
   const showMobileSearch = isMobileSearchOpen || isSearching;
+  const {
+    piles: automaticPiles,
+    embeddedAssetCount: pileEmbeddedAssetCount,
+    reload: reloadPiles,
+  } = useAutomaticPiles({
+    enabled: !isSearching && !bangersOnly && !tagIdParam,
+    limit: 6,
+    minAssets: 50,
+  });
+
+  // Listen for asset upload events and refresh library-derived views.
+  useEffect(() => {
+    const handleAssetUploaded = (event: CustomEvent) => {
+      logger.logInfo('library.asset-uploaded-refresh', {
+        detail: event.detail,
+      });
+
+      refresh();
+      void reloadPiles();
+    };
+
+    window.addEventListener('assetUploaded', handleAssetUploaded as EventListener);
+
+    return () => {
+      window.removeEventListener('assetUploaded', handleAssetUploaded as EventListener);
+    };
+  }, [refresh, reloadPiles]);
 
   const activeAssets = useMemo(() => {
     if (isSearching) {
@@ -786,6 +793,7 @@ function AppPageClient() {
                   onUploadComplete={(stats) => {
                     // Refresh the gallery
                     refresh();
+                    void reloadPiles();
 
                     // Show brief success toast
                     if (stats.uploaded > 0) {
@@ -856,6 +864,34 @@ function AppPageClient() {
               <Alert variant="destructive">
                 <AlertDescription>{libraryError}</AlertDescription>
               </Alert>
+            )}
+
+            {!isSearching && automaticPiles.length > 0 && (
+              <section aria-label="automatic piles" className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <StickerTab tone="violet" tilt="left">automatic piles</StickerTab>
+                  <span className="font-mono text-xs uppercase text-muted-foreground sploot-tabular">
+                    {pileEmbeddedAssetCount.toLocaleString()} embedded
+                  </span>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {automaticPiles.map((pile, pileIndex) => (
+                    <ClusterPile
+                      key={pile.id}
+                      label={pile.label}
+                      count={pile.count}
+                      bangers={pile.bangers || undefined}
+                      tone={(['violet', 'cyan', 'coral', 'lime'] as const)[pileIndex % 4]}
+                      items={pile.thumbnailAssets.map((asset, assetIndex) => ({
+                        label: asset.filename.replace(/\.[^.]+$/, '').slice(0, 12),
+                        src: resolveQaSeedSrc(asset.thumbnailUrl || asset.blobUrl),
+                        alt: asset.filename,
+                        tone: (['violet', 'cyan', 'coral', 'lime', 'ink'] as const)[assetIndex % 5],
+                      }))}
+                    />
+                  ))}
+                </div>
+              </section>
             )}
           </header>
         </div>

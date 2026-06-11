@@ -1,0 +1,16 @@
+
+> web@0.1.0 lint /Users/phaedrus/Development/sploot/apps/web
+> next lint && pnpm auth:guard
+
+`next lint` is deprecated and will be removed in Next.js 16.
+For new projects, use create-next-app to choose your preferred linter.
+For existing projects, migrate to the ESLint CLI:
+npx @next/codemod@canary next-lint-to-eslint-cli .
+
+[@sentry/nextjs] DEPRECATION WARNING: disableLogger is deprecated and will be removed in a future version. Use webpack.treeshake.removeDebugLogging instead.
+[@sentry/nextjs] DEPRECATION WARNING: automaticVercelMonitors is deprecated and will be removed in a future version. Use webpack.automaticVercelMonitors instead.
+✔ No ESLint warnings or errors
+
+> web@0.1.0 auth:guard /Users/phaedrus/Development/sploot/apps/web
+> node scripts/check-auth-boundary.mjs
+

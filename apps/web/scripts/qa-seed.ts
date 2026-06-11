@@ -22,15 +22,19 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import ffmpeg from '@ffmpeg-installer/ffmpeg';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import sharp from 'sharp';
 import { QA_SEED_BLOB_HOST } from '../lib/qa/qa-image-loader';
 import { generateImagePoster } from '../lib/image-processing';
 import { extractVideoPoster } from '../lib/video-processing';
+import { CLIP_MODEL } from '../lib/embeddings';
+import { getCacheService } from '../lib/cache';
+import { PILE_ANCHORS } from '../lib/piles/semantic-piles';
 
 const SEED_DIR = join(process.cwd(), 'public', 'qa-blob-seed');
 const DEFAULT_USER_ID = 'qa-design-user';
 const DEFAULT_COUNT = 24;
+const QA_EMBEDDING_DIM = 512;
 const execFileAsync = promisify(execFile);
 
 const PALETTE = [
@@ -207,7 +211,7 @@ async function seed(prisma: PrismaClient, userId: string, count: number) {
       ? `${QA_SEED_BLOB_HOST}/qa-blob-seed/${thumbnail.filename}`
       : null;
 
-    await prisma.asset.upsert({
+    const asset = await prisma.asset.upsert({
       where: { unique_user_checksum: { ownerUserId: userId, checksumSha256: checksum } },
       update: { deletedAt: null },
       create: {
@@ -224,11 +228,81 @@ async function seed(prisma: PrismaClient, userId: string, count: number) {
         favorite: i % 5 === 0,
       },
     });
+
+    await seedAssetEmbedding(prisma, asset.id, i);
   }
 
+  await seedPileAnchorEmbeddings();
+
   console.log(`Seeded ${count} assets for user "${userId}" (including GIF/video fixtures when count >= 2).`);
+  console.log(`Seeded deterministic ${QA_EMBEDDING_DIM}d embeddings for automatic piles.`);
   console.log(`Media in public/qa-blob-seed/; rows point at ${QA_SEED_BLOB_HOST}.`);
   console.log('Run the dev server with SPLOOT_QA_AUTH_MODE=enabled so the QA image loader is active.');
+}
+
+async function seedAssetEmbedding(prisma: PrismaClient, assetId: string, index: number) {
+  const embedding = qaEmbeddingForIndex(index);
+  const vectorSql = Prisma.sql`ARRAY[${Prisma.join(embedding)}]`;
+
+  await prisma.$queryRaw(Prisma.sql`
+    INSERT INTO "asset_embeddings" (
+      "asset_id",
+      "model_name",
+      "model_version",
+      "dim",
+      "image_embedding",
+      "status",
+      "error",
+      "completedAt",
+      "createdAt",
+      "updatedAt"
+    ) VALUES (
+      ${assetId},
+      ${CLIP_MODEL},
+      ${CLIP_MODEL},
+      ${QA_EMBEDDING_DIM},
+      ${vectorSql}::vector,
+      'ready',
+      NULL,
+      NOW(),
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT ("asset_id") DO UPDATE SET
+      "model_name" = EXCLUDED."model_name",
+      "model_version" = EXCLUDED."model_version",
+      "dim" = EXCLUDED."dim",
+      "image_embedding" = EXCLUDED."image_embedding",
+      "status" = 'ready',
+      "error" = NULL,
+      "completedAt" = NOW(),
+      "updatedAt" = NOW()
+    RETURNING "asset_id";
+  `);
+}
+
+async function seedPileAnchorEmbeddings() {
+  const cache = getCacheService();
+  await Promise.all(
+    PILE_ANCHORS.map((anchor, index) =>
+      cache.setTextEmbedding(anchor.query, qaAnchorEmbedding(index), CLIP_MODEL)
+    )
+  );
+}
+
+function qaEmbeddingForIndex(index: number): number[] {
+  const anchorIndex = index % Math.min(PILE_ANCHORS.length, 6);
+  const vector = qaAnchorEmbedding(anchorIndex);
+  // Add a tiny deterministic offset so rows are not identical while preserving
+  // nearest-anchor grouping.
+  vector[(anchorIndex + 17) % QA_EMBEDDING_DIM] = ((index % 7) + 1) / 100;
+  return vector;
+}
+
+function qaAnchorEmbedding(index: number): number[] {
+  const vector = new Array(QA_EMBEDDING_DIM).fill(0);
+  vector[index % QA_EMBEDDING_DIM] = 1;
+  return vector;
 }
 
 async function teardown(prisma: PrismaClient, userId: string) {

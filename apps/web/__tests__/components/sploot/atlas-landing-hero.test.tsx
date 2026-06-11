@@ -10,10 +10,8 @@ describe('AtlasLandingHero', () => {
     expect(screen.getByText('no folders just vibes')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'type the vibe. summon the meme.' })).toBeInTheDocument();
     expect(screen.getByText('messy import pile')).toBeInTheDocument();
-    // Feature-true: sploot does not auto-cluster yet, so piles are framed as
-    // search results, never "automatic piles".
-    expect(screen.getByText('piles on demand')).toBeInTheDocument();
-    expect(screen.queryByText('automatic piles')).not.toBeInTheDocument();
+    expect(screen.getByText('automatic piles')).toBeInTheDocument();
+    expect(screen.queryByText('piles on demand')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'start your pile' })).toHaveAttribute('href', '/sign-up');
   });
 

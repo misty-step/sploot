@@ -20,6 +20,9 @@
  *   --gates              also run lint + type-check as checks
  *   --base-url <url>     use an already-running server instead of booting one
  *   --no-seed            skip qa:seed
+ *   --seed-count <n>     seed this many QA assets when seeding
+ *   --expect-piles       verify /api/piles returns ready piles for the QA user
+ *   --piles-min-assets <n> minimum assets for --expect-piles (default: 50)
  *   --risk <text>        residual risk line (repeatable)
  *
  * DATABASE_URL defaults to the local test container
@@ -55,6 +58,9 @@ interface Args {
   gates: boolean;
   baseUrl?: string;
   seed: boolean;
+  seedCount?: number;
+  expectPiles: boolean;
+  pilesMinAssets: number;
   risks: string[];
 }
 
@@ -67,6 +73,8 @@ function parseArgs(argv: string[]): Args {
     tests: [],
     gates: false,
     seed: true,
+    expectPiles: false,
+    pilesMinAssets: 50,
     risks: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -80,6 +88,23 @@ function parseArgs(argv: string[]): Args {
       case '--gates': args.gates = true; break;
       case '--base-url': args.baseUrl = next(); break;
       case '--no-seed': args.seed = false; break;
+      case '--seed-count': {
+        const value = Number(next());
+        if (!Number.isInteger(value) || value < 1) {
+          throw new Error('--seed-count must be a positive integer');
+        }
+        args.seedCount = value;
+        break;
+      }
+      case '--expect-piles': args.expectPiles = true; break;
+      case '--piles-min-assets': {
+        const value = Number(next());
+        if (!Number.isInteger(value) || value < 1) {
+          throw new Error('--piles-min-assets must be a positive integer');
+        }
+        args.pilesMinAssets = value;
+        break;
+      }
       case '--risk': { const risk = next(); if (risk) args.risks.push(risk); break; }
     }
   }
@@ -213,9 +238,67 @@ async function main() {
     return result.status;
   }
 
+  async function recordPilesProbe(baseUrl: string, token: string) {
+    const url = `${baseUrl}/api/piles?limit=6&minAssets=${args.pilesMinAssets}`;
+    const started = Date.now();
+    let status: EvidenceCheck['status'] = 'pass';
+    let output = '';
+    try {
+      const response = await fetch(url, {
+        headers: { cookie: `sploot_qa_auth=${token}` },
+      });
+      const body = await response.json();
+      output = JSON.stringify({
+        statusCode: response.status,
+        body,
+      }, null, 2);
+
+      const pileCount = Array.isArray(body.piles) ? body.piles.length : 0;
+      if (
+        response.status !== 200 ||
+        body.status !== 'ready' ||
+        typeof body.embeddedAssetCount !== 'number' ||
+        body.embeddedAssetCount < args.pilesMinAssets ||
+        pileCount === 0
+      ) {
+        status = 'fail';
+      }
+    } catch (error) {
+      status = 'fail';
+      output = error instanceof Error ? error.stack ?? error.message : String(error);
+    }
+
+    const transcript = 'transcripts/piles-probe.txt';
+    await writeFile(join(packetDir, transcript), output);
+    checks.push({
+      name: 'api piles probe',
+      command: `GET /api/piles?limit=6&minAssets=${args.pilesMinAssets}`,
+      status,
+      durationMs: Date.now() - started,
+      transcript,
+      ...(status === 'fail'
+        ? { detail: output.split('\n').filter(Boolean).slice(-8).join('\n') }
+        : {}),
+    });
+    console.log(`[qa-evidence] ${status.toUpperCase()} api piles probe`);
+  }
+
   try {
     if (args.seed) {
-      await recordCheck('qa seed', 'pnpm --filter web qa:seed', 'pnpm', ['qa:seed'], 'qa-seed');
+      const seedCommand = 'pnpm';
+      let seedArgs = ['qa:seed'];
+      if (args.seedCount !== undefined) {
+        seedArgs = ['exec', 'tsx', 'scripts/qa-seed.ts', '--count', String(args.seedCount)];
+      }
+      await recordCheck(
+        'qa seed',
+        args.seedCount !== undefined
+          ? `pnpm --filter web exec tsx scripts/qa-seed.ts --count ${args.seedCount}`
+          : 'pnpm --filter web qa:seed',
+        seedCommand,
+        seedArgs,
+        'qa-seed'
+      );
     }
 
     if (args.gates) {
@@ -253,6 +336,10 @@ async function main() {
       expiresInSeconds: 60 * 60,
     });
     await browser('cookies', 'set', 'sploot_qa_auth', token, '--url', baseUrl);
+
+    if (args.expectPiles) {
+      await recordPilesProbe(baseUrl, token);
+    }
 
     for (const viewport of args.viewports) {
       const [width, height] = viewport.split('x');

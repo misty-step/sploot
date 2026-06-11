@@ -15,8 +15,6 @@ const importItems: Array<{ label: string; doodle: MemeDoodleKind; tone: 'cyan' |
   { label: 'chaos', doodle: 'fire', tone: 'coral' },
 ];
 
-// Each pile is a search result: the label is the query you'd type. Sploot
-// does not (yet) cluster unprompted — landing visuals must stay feature-true.
 const piles = [
   {
     label: '“dramatic reactions”',
@@ -142,7 +140,7 @@ export function AtlasLandingHero() {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-sploot-violet" aria-hidden="true" />
-              <StickerTab tone="violet" tilt="right">piles on demand</StickerTab>
+              <StickerTab tone="violet" tilt="right">automatic piles</StickerTab>
             </div>
             <Shuffle className="h-5 w-5 text-sploot-cyan" aria-hidden="true" />
           </div>

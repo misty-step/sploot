@@ -52,6 +52,32 @@ export interface Asset {
   belowThreshold?: boolean;
 }
 
+export interface SemanticPileThumbnailAsset {
+  id: string;
+  blobUrl: string;
+  thumbnailUrl?: string | null;
+  pathname: string;
+  filename: string;
+  mime: string;
+  favorite: boolean;
+}
+
+export interface SemanticPile {
+  id: string;
+  label: string;
+  count: number;
+  bangers: number;
+  confidence: number;
+  thumbnailAssets: SemanticPileThumbnailAsset[];
+}
+
+export interface AutomaticPilesResponse {
+  status: 'ready' | 'insufficient_embedded_assets';
+  minimumAssets: number;
+  embeddedAssetCount: number;
+  piles: SemanticPile[];
+}
+
 export interface UploadFile {
   id: string;
   file: File;

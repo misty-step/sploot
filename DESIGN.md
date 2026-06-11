@@ -238,9 +238,10 @@ Lexicon (use naturally, never all at once):
 Rules:
 
 - **Feature-true copy.** Visible UI and marketing claims describe what ships
-  today. "self-organizing piles" is north-star direction (Meme Atlas); until
-  clustering ships, piles in copy are search results — piles on demand, not
-  automatic piles. Design polish must not launder unshipped features.
+  today. Automatic piles are allowed only where the backed `GET /api/piles`
+  surface can produce named clusters from ready image embeddings. Search-result
+  groupings remain "piles on demand"; do not imply automatic sorting when the
+  pile service is unavailable or a library has too few embedded assets.
 - Deadpan over exclamation. The humor lands because the chrome is Swiss.
   Never more than one slang term per sentence; brainrot is seasoning, not soup.
 - Skip slang with a short shelf life or fellow-kids energy (no "rizz", no
