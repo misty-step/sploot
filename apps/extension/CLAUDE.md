@@ -256,7 +256,7 @@ Provides high compatibility without user intervention.
 - ✅ CORS-aware image fetching
 
 **Not Implemented (Future Phases):**
-- Screenshot crop tool (keyboard shortcut registered but no UI)
+- Screenshot crop tool (not started; the old dead shortcut registration was removed)
 - Offline upload queue (IndexedDB)
 - Upload retry logic
 - Progress indicator
