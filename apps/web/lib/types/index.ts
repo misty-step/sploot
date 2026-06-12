@@ -77,6 +77,7 @@ export interface SemanticPile {
   count: number;
   bangers: number;
   confidence: number;
+  assetIds: string[];
   thumbnailAssets: SemanticPileThumbnailAsset[];
 }
 

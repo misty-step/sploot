@@ -200,6 +200,7 @@ export function ImageGrid({
           {assets.map((asset, index) => (
             <div
               key={asset.id}
+              data-asset-id={asset.id}
               className="masonry-item"
               style={{
                 // Cap the cascade so late/paginated tiles never wait seconds

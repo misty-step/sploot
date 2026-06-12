@@ -23,6 +23,7 @@
  *   --seed-count <n>     seed this many QA assets when seeding
  *   --expect-piles       verify /api/piles returns ready piles for the QA user
  *   --piles-min-assets <n> minimum assets for --expect-piles (default: 50)
+ *   --exercise-pile-filter click one pile filter in /app and verify selection/gallery state
  *   --expect-taste       verify taste ranking differs from seeded shuffle for the QA user
  *   --risk <text>        residual risk line (repeatable)
  *
@@ -62,6 +63,7 @@ interface Args {
   seedCount?: number;
   expectPiles: boolean;
   pilesMinAssets: number;
+  exercisePileFilter: boolean;
   expectTaste: boolean;
   risks: string[];
 }
@@ -77,6 +79,7 @@ function parseArgs(argv: string[]): Args {
     seed: true,
     expectPiles: false,
     pilesMinAssets: 50,
+    exercisePileFilter: false,
     expectTaste: false,
     risks: [],
   };
@@ -100,6 +103,7 @@ function parseArgs(argv: string[]): Args {
         break;
       }
       case '--expect-piles': args.expectPiles = true; break;
+      case '--exercise-pile-filter': args.exercisePileFilter = true; break;
       case '--expect-taste': args.expectTaste = true; break;
       case '--piles-min-assets': {
         const value = Number(next());
@@ -192,11 +196,40 @@ async function waitForImages(timeoutMs = 45_000): Promise<void> {
   // Screenshot proceeds regardless; the packet shows whatever loaded.
 }
 
+async function waitForPileFilters(timeoutMs = 45_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  const probe = `(() => {
+    const all = document.querySelector('[data-pile-filter-id="all"]');
+    const piles = document.querySelectorAll('[data-pile-filter-id]:not([data-pile-filter-id="all"])');
+    return all && piles.length > 0 ? 'ready' : 'loading';
+  })()`;
+  while (Date.now() < deadline) {
+    const result = await browser('eval', probe).catch(() => 'error');
+    if (result.includes('ready')) return;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
 function errorLines(raw: string): string[] {
   return raw
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && /\berror\b/i.test(line));
+}
+
+function parseBrowserJson(raw: string): unknown {
+  const trimmed = raw.trim();
+  const firstJsonLine = trimmed
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.startsWith('{') || line.startsWith('['));
+  let parsed: unknown = JSON.parse(firstJsonLine ?? trimmed);
+  while (typeof parsed === 'string') {
+    const value = parsed.trim();
+    if (!value.startsWith('{') && !value.startsWith('[')) break;
+    parsed = JSON.parse(value);
+  }
+  return parsed;
 }
 
 async function main() {
@@ -372,6 +405,184 @@ async function main() {
     console.log(`[qa-evidence] ${status.toUpperCase()} api taste probe`);
   }
 
+  async function recordPileFilterExercise(baseUrl: string) {
+    const started = Date.now();
+    let status: EvidenceCheck['status'] = 'pass';
+    let output = '';
+    const screenshot = 'pile-filter-selected-1440x900.png';
+
+    try {
+      await browser('set', 'viewport', '1440', '900');
+      await browser('console', '--clear').catch(() => '');
+      await browser('errors', '--clear').catch(() => '');
+      await browser('open', `${baseUrl}/app`);
+      await browser('wait', '2500');
+      await waitForImages();
+      await waitForPileFilters();
+
+      const visibleAssetIdsProbe = `Array.from(document.querySelectorAll('[data-asset-id]'))
+        .map((element) => element.getAttribute('data-asset-id'))
+        .filter(Boolean)
+        .slice(0, 12)`;
+      const beforeRaw = await browser('eval', `(() => JSON.stringify({
+        url: location.href,
+        search: location.search,
+        allPressed: document.querySelector('[data-pile-filter-id="all"]')?.getAttribute('aria-pressed') ?? null,
+        pileCount: document.querySelectorAll('[data-pile-filter-id]:not([data-pile-filter-id="all"])').length,
+        imageCount: Array.from(document.images).filter((image) => image.src).length,
+        tileCount: document.querySelectorAll('[data-asset-id]').length,
+        visibleAssetIds: ${visibleAssetIdsProbe},
+        totalText: document.querySelector('[data-pile-filter-id="all"]')?.textContent ?? null
+      }))()`);
+      const before = parseBrowserJson(beforeRaw) as {
+        search: string;
+        allPressed: string | null;
+        pileCount: number;
+        imageCount: number;
+        tileCount: number;
+        visibleAssetIds: string[];
+      };
+
+      if (
+        before.allPressed !== 'true' ||
+        before.pileCount < 1 ||
+        before.tileCount < 1 ||
+        before.visibleAssetIds.length < 1
+      ) {
+        status = 'fail';
+      }
+
+      const clickRaw = await browser('eval', `(() => {
+        const pile = document.querySelector('[data-pile-filter-id]:not([data-pile-filter-id="all"])');
+        if (!pile) {
+          return JSON.stringify({ ok: false, reason: 'missing pile filter button' });
+        }
+        return JSON.stringify({
+          ok: true,
+          pileId: pile.getAttribute('data-pile-filter-id'),
+          pileText: pile.textContent
+        });
+      })()`);
+      const clicked = parseBrowserJson(clickRaw) as {
+        ok: boolean;
+        pileId?: string;
+        pileText?: string;
+      };
+      if (!clicked.ok || !clicked.pileId) {
+        status = 'fail';
+      }
+
+      await browser('click', '[data-pile-filter-id]:not([data-pile-filter-id="all"])');
+      await browser('wait', '750');
+      await waitForImages();
+
+      const afterRaw = await browser('eval', `(() => {
+        const pileId = ${JSON.stringify(clicked.pileId ?? '')};
+        const all = document.querySelector('[data-pile-filter-id="all"]');
+        const selected = Array.from(document.querySelectorAll('[data-pile-filter-id]'))
+          .find((element) => element.getAttribute('data-pile-filter-id') === pileId);
+        return JSON.stringify({
+          allPressed: all?.getAttribute('aria-pressed') ?? null,
+          selectedPressed: selected?.getAttribute('aria-pressed') ?? null,
+          imageCount: Array.from(document.images).filter((image) => image.src).length,
+          tileCount: document.querySelectorAll('.masonry-item').length,
+          visibleAssetIds: ${visibleAssetIdsProbe},
+          selectedText: selected?.textContent ?? null
+        });
+      })()`);
+      const after = parseBrowserJson(afterRaw) as {
+        allPressed: string | null;
+        selectedPressed: string | null;
+        imageCount: number;
+        tileCount: number;
+        visibleAssetIds: string[];
+      };
+      await browser('screenshot', join(packetDir, screenshot));
+
+      await browser('click', '[data-pile-filter-id="all"]');
+      await browser('wait', '750');
+      await waitForImages();
+      const clearedRaw = await browser('eval', `(() => JSON.stringify({
+        search: location.search,
+        allPressed: document.querySelector('[data-pile-filter-id="all"]')?.getAttribute('aria-pressed') ?? null,
+        selectedPressedCount: Array.from(document.querySelectorAll('[data-pile-filter-id]:not([data-pile-filter-id="all"])'))
+          .filter((element) => element.getAttribute('aria-pressed') === 'true').length,
+        imageCount: Array.from(document.images).filter((image) => image.src).length,
+        tileCount: document.querySelectorAll('[data-asset-id]').length,
+        visibleAssetIds: ${visibleAssetIdsProbe}
+      }))()`);
+      const cleared = parseBrowserJson(clearedRaw) as {
+        search: string;
+        allPressed: string | null;
+        selectedPressedCount: number;
+        imageCount: number;
+        tileCount: number;
+        visibleAssetIds: string[];
+      };
+
+      const [consoleRaw, errorsRaw] = await Promise.all([
+        browser('console').catch(() => ''),
+        browser('errors').catch(() => ''),
+      ]);
+
+      const restoredOrder = before.visibleAssetIds.join(',') === cleared.visibleAssetIds.join(',');
+      if (
+        after.allPressed !== 'false' ||
+        after.selectedPressed !== 'true' ||
+        after.tileCount < 1 ||
+        cleared.allPressed !== 'true' ||
+        cleared.selectedPressedCount !== 0 ||
+        cleared.tileCount < before.tileCount ||
+        cleared.search !== before.search ||
+        !restoredOrder
+      ) {
+        status = 'fail';
+      }
+
+      const consoleErrors = errorLines(consoleRaw);
+      const pageErrors = errorsRaw && !/no errors/i.test(errorsRaw) ? errorLines(errorsRaw) : [];
+      if (pageErrors.length > 0) {
+        status = 'fail';
+      }
+
+      output = JSON.stringify({
+        before,
+        clicked,
+        after,
+        cleared,
+        restoredOrder,
+        consoleErrors,
+        pageErrors,
+        screenshot,
+      }, null, 2);
+
+      walks.push({
+        route: '/app#pile-filter-probe',
+        viewport: '1440x900',
+        screenshot,
+        consoleErrors,
+        pageErrors,
+      });
+    } catch (error) {
+      status = 'fail';
+      output = error instanceof Error ? error.stack ?? error.message : String(error);
+    }
+
+    const transcript = 'transcripts/pile-filter-exercise.txt';
+    await writeFile(join(packetDir, transcript), output);
+    checks.push({
+      name: 'browser pile filter exercise',
+      command: 'agent-browser open /app, click [data-pile-filter-id], verify selected gallery state',
+      status,
+      durationMs: Date.now() - started,
+      transcript,
+      ...(status === 'fail'
+        ? { detail: output.split('\n').filter(Boolean).slice(-12).join('\n') }
+        : {}),
+    });
+    console.log(`[qa-evidence] ${status.toUpperCase()} browser pile filter exercise`);
+  }
+
   try {
     if (args.seed) {
       const seedCommand = 'pnpm';
@@ -432,6 +643,10 @@ async function main() {
 
     if (args.expectTaste) {
       await recordTasteProbe(baseUrl, token);
+    }
+
+    if (args.exercisePileFilter) {
+      await recordPileFilterExercise(baseUrl);
     }
 
     for (const viewport of args.viewports) {
