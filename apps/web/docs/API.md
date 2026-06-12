@@ -52,6 +52,7 @@ Protected product API route inventory:
 - `/api/upload`, `/api/upload/check`
 - `/api/assets`, `/api/assets/{id}`, `/api/assets/{id}/tags`, `/api/assets/audit`, `/api/assets/{id}/share`, `/api/assets/{id}/similar`
 - `/api/assets/{id}/embedding-status`, `/api/assets/batch/embedding-status`, `/api/assets/{id}/generate-embedding`
+- `/api/taste/profile`
 - `/api/search`, `/api/search/advanced`
 - `/api/stats`
 - `/api/tags`, `/api/tags/{tagId}`
@@ -342,7 +343,8 @@ embedding generation when Replicate is configured.
 
 #### GET /api/assets
 
-List assets for the authenticated user with pagination, filtering, and seeded shuffle.
+List assets for the authenticated user with pagination, filtering, seeded shuffle,
+and optional taste ranking from existing CLIP embeddings.
 
 **Authentication:** Required
 
@@ -350,8 +352,8 @@ List assets for the authenticated user with pagination, filtering, and seeded sh
 
 - `limit` (number, optional): number of results (default: 50, min: 1, max: 100)
 - `offset` (number, optional): skip this many results (default: 0, min: 0)
-- `sortBy` (string, optional): `createdAt`, `updatedAt`, `size`, `pathname`, or `shuffle` (default: `createdAt`)
-- `sortOrder` (string, optional): `desc` or `asc` for non-shuffle sorts (default: `desc`)
+- `sortBy` (string, optional): `createdAt`, `updatedAt`, `size`, `pathname`, `shuffle`, or `taste` (API default: `createdAt`; library UI default: `shuffle` with a generated seed)
+- `sortOrder` (string, optional): `desc` or `asc` for non-shuffle, non-taste sorts (default: `desc`)
 - `favorite` (boolean, optional): filter to favorites only
 - `tagId` (string, optional): filter to one tag id
 - `includeTags` (boolean, optional): include tag objects in each asset; enabled automatically with `tagId`
@@ -362,6 +364,15 @@ List assets for the authenticated user with pagination, filtering, and seeded sh
 Use `sortBy=shuffle&shuffleSeed=<seed>&limit=<n>` to fetch a deterministic seeded ring order for the authenticated user's assets. Each asset has a stable `shuffle_key` (`BIGINT`), and the seed maps to a pivot on that keyspace. Results are ordered by walking the ring from the pivot and wrapping at the end. The same seed, filters, limit, and offset return the same order while the matching asset set is unchanged. Shuffle is private to the authenticated user's library and respects `favorite`, `tagId`, `limit`, and `offset`.
 
 Tradeoff: this path is scalable and index-friendly, but it is not a per-request full-table random sort; it is a deterministic rotation over stable shuffle keys.
+
+**Taste Contract:**
+
+Use `sortBy=taste` to rank ready embedded assets by cosine similarity to the
+centroid of the authenticated user's ready embedded bangers (`favorite=true`).
+Taste ranking does not call a new embedding provider and does not change the
+default library order. It respects `favorite`, `tagId`, `limit`, and `offset`.
+If fewer than two ready embedded bangers exist, the response stays `200` with an
+empty asset list and typed `taste.status: "insufficient_bangers"` metadata.
 
 **Success Response (200):**
 
@@ -378,7 +389,8 @@ Tradeoff: this path is scalable and index-friendly, but it is not a per-request 
       "height": 1080,
       "favorite": false,
       "tags": [],
-      "createdAt": "2025-09-16T12:00:00Z"
+      "createdAt": "2025-09-16T12:00:00Z",
+      "tasteScore": 0.912
     }
   ],
   "pagination": {
@@ -386,6 +398,11 @@ Tradeoff: this path is scalable and index-friendly, but it is not a per-request 
     "limit": 50,
     "offset": 0,
     "hasMore": true
+  },
+  "taste": {
+    "status": "ready",
+    "embeddedBangerCount": 8,
+    "minimumBangerEmbeddings": 2
   }
 }
 ```
@@ -396,9 +413,53 @@ Tradeoff: this path is scalable and index-friendly, but it is not a per-request 
 GET /api/assets?sortBy=shuffle&shuffleSeed=424242&limit=30&offset=0
 ```
 
+**Taste Example:**
+
+```http
+GET /api/assets?sortBy=taste&limit=30&offset=0
+```
+
 **Error Responses:**
 
 - 400: Invalid `limit`, `offset`, `sortBy`, or `shuffleSeed`; `shuffleSeed` missing for `sortBy=shuffle`; `shuffleSeed` provided without `sortBy=shuffle`
+- 401: Unauthorized
+- 500: Server error
+
+#### GET /api/taste/profile
+
+Return a minimal taste profile for the authenticated user. The profile is
+derived from existing ready CLIP image embeddings on favorited bangers and does
+not create provider work in the request path.
+
+**Authentication:** Required
+
+**Success Response (200):**
+
+```json
+{
+  "status": "ready",
+  "bangerCount": 12,
+  "embeddedBangerCount": 8,
+  "label": "near your bangers",
+  "summary": "sploot is comparing 8 embedded bangers against the rest of your library.",
+  "representativeAssets": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+      "pathname": "funny-meme.jpg",
+      "mime": "image/jpeg",
+      "favorite": true,
+      "tasteScore": 0.912
+    }
+  ]
+}
+```
+
+When the user has fewer than two ready embedded bangers, the route returns
+`status: "insufficient_bangers"` with an empty `representativeAssets` array.
+
+**Error Responses:**
+
 - 401: Unauthorized
 - 500: Server error
 

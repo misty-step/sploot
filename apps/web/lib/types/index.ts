@@ -50,6 +50,15 @@ export interface Asset {
   similarity?: number;
   relevance?: number;
   belowThreshold?: boolean;
+
+  // Taste-related fields (from taste-ranked library results)
+  tasteScore?: number;
+}
+
+export interface TasteMetadata {
+  status: 'ready' | 'insufficient_bangers';
+  embeddedBangerCount: number;
+  minimumBangerEmbeddings: number;
 }
 
 export interface SemanticPileThumbnailAsset {

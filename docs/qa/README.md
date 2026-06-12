@@ -31,8 +31,9 @@ pass: they are listed per walk and flagged next to the verdict.
 Useful flags: `--gates` adds lint + type-check as checks; `--base-url` reuses
 a running server; `--no-seed` skips seeding; `--seed-count 60` seeds above a
 feature threshold; `--expect-piles --piles-min-assets 50` records and validates
-the authenticated `/api/piles` response; `--viewports 1440x900,390x844` is the
-default.
+the authenticated `/api/piles` response; `--expect-taste` records and validates
+that taste-ranked assets differ from seeded shuffle and that `/api/taste/profile`
+is ready; `--viewports 1440x900,390x844` is the default.
 
 ## Reading a packet
 

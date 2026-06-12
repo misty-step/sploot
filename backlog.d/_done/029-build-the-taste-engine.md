@@ -1,6 +1,6 @@
 # Build the taste engine
 
-Priority: P3 · Status: pending · Estimate: XL
+Priority: P3 · Status: done · Estimate: XL
 
 ## Goal
 
@@ -10,17 +10,17 @@ taste-matched generation.
 
 ## Oracle
 
-- [ ] Shuffle has a taste-weighted mode: assets similar (cosine, existing
+- [x] Shuffle has a taste-weighted mode: assets similar (cosine, existing
       CLIP embeddings) to the user's favorited bangers surface more often
       than uniform random, behind a visible toggle; uniform shuffle remains
       default.
-- [ ] A "your taste" surface exists (even minimal): what the app thinks the
+- [x] A "your taste" surface exists (even minimal): what the app thinks the
       user finds funny, derived from banger embedding centroids — lowercase
       product voice, no new embedding provider.
-- [ ] A written feasibility verdict on taste-matched generation (provider,
+- [x] A written feasibility verdict on taste-matched generation (provider,
       cost per image, prompt-from-centroid approach) lives in `docs/adr/`
       before any generation code is written.
-- [ ] Full web suite green; live evidence of taste-weighted shuffle
+- [x] Full web suite green; live evidence of taste-weighted shuffle
       returning visibly different results from uniform on a seeded library.
 
 ## Notes
@@ -40,3 +40,24 @@ generation is killed. Raw idea — needs `/shape` before any child is built.
 2. Minimal taste profile surface ("sploot thinks you like…").
 3. Generation feasibility ADR (providers, cost, safety, prompt strategy).
 4. Taste-matched generation v1 — only if the ADR survives.
+
+## What Was Built
+
+- Added `sortBy=taste` for `/api/assets`, backed by a banger embedding centroid
+  over existing ready CLIP vectors. The response includes typed `taste`
+  metadata and rounded per-asset `tasteScore` values.
+- Kept seeded uniform shuffle as the default library order for new/reset users,
+  with taste as an explicit sort option in desktop and mobile controls.
+- Added `/api/taste/profile` for a minimal "near your bangers" profile derived
+  from the same taste signal.
+- Added ADR 0004 deferring taste-matched generation until recommendation
+  quality proves itself.
+- Hardened pgvector writes in the app helper and QA seed path by casting
+  embedding arrays through `double precision[]`.
+- Extended `qa:evidence` with `--expect-taste`; evidence lives in
+  `docs/qa/evidence/2026-06-11-taste-engine/packet.md`.
+
+## Closure
+
+Backlog: backlog.d/029-build-the-taste-engine.md
+Ships-backlog: backlog.d/029-build-the-taste-engine.md

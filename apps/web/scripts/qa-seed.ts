@@ -242,7 +242,7 @@ async function seed(prisma: PrismaClient, userId: string, count: number) {
 
 async function seedAssetEmbedding(prisma: PrismaClient, assetId: string, index: number) {
   const embedding = qaEmbeddingForIndex(index);
-  const vectorSql = Prisma.sql`ARRAY[${Prisma.join(embedding)}]`;
+  const vectorSql = Prisma.sql`ARRAY[${Prisma.join(embedding)}]::double precision[]`;
 
   await prisma.$queryRaw(Prisma.sql`
     INSERT INTO "asset_embeddings" (

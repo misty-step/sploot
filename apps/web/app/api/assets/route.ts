@@ -24,6 +24,10 @@ import {
   storageQuotaError,
   StorageQuotaExceededError,
 } from "@/lib/quota/storage-quota-policy";
+import {
+  getTasteWeightedAssets,
+  MIN_TASTE_BANGER_EMBEDDINGS,
+} from "@/lib/taste/taste-engine";
 
 // Shuffle seed range: 0-1000000 for user-friendly integer values
 // Asset shuffle keys are stable signed BIGINT values.
@@ -418,7 +422,7 @@ async function getHandler(req: NextRequest) {
   // Declare params outside try block so they're accessible in catch for logging
   let limit = 50;
   let offset = 0;
-  let sortBy: "createdAt" | "updatedAt" | "size" | "pathname" | "shuffle" =
+  let sortBy: "createdAt" | "updatedAt" | "size" | "pathname" | "shuffle" | "taste" =
     "createdAt";
   let sortOrder: "asc" | "desc" = "desc";
   let favorite: string | null = null;
@@ -489,7 +493,7 @@ async function getHandler(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Invalid sortBy parameter. Must be one of: createdAt, updatedAt, size, pathname, shuffle.",
+            "Invalid sortBy parameter. Must be one of: createdAt, updatedAt, size, pathname, shuffle, taste.",
         },
         { status: 400 },
       );
@@ -497,6 +501,7 @@ async function getHandler(req: NextRequest) {
 
     sortBy = sortByParam;
     const isShuffle = sortByParam === "shuffle";
+    const isTaste = sortByParam === "taste";
 
     // Validate and type-cast sortOrder to Prisma's expected literal type
     const sortOrderParam = searchParams.get("sortOrder") || "desc";
@@ -559,45 +564,57 @@ async function getHandler(req: NextRequest) {
     const shufflePivot =
       shuffleSeed !== undefined ? shuffleSeedToPivot(shuffleSeed) : null;
 
-    const [assets, total] = await Promise.all([
-      shuffleSeed !== undefined
-        ? fetchSeededShuffleAssets({
-            userId,
-            favorite,
-            tagId,
-            pivot: shufflePivot!,
-            limit,
-            offset,
-          })
-        : // Normal query with Prisma ORM
-          prisma.asset.findMany({
-            where,
-            take: limit,
-            skip: offset,
-            orderBy: { [sortBy]: sortOrder },
-            select: {
-              id: true,
-              blobUrl: true,
-              pathname: true,
-              mime: true,
-              width: true,
-              height: true,
-              favorite: true,
-              size: true,
-              createdAt: true,
-              embedding: {
+    const tasteResult = isTaste
+      ? await getTasteWeightedAssets({
+          userId,
+          favorite,
+          tagId,
+          limit,
+          offset,
+        })
+      : null;
+
+    const [assets, total] = tasteResult
+      ? [tasteResult.assets, tasteResult.total]
+      : await Promise.all([
+          shuffleSeed !== undefined
+            ? fetchSeededShuffleAssets({
+                userId,
+                favorite,
+                tagId,
+                pivot: shufflePivot!,
+                limit,
+                offset,
+              })
+            : // Normal query with Prisma ORM
+              prisma.asset.findMany({
+                where,
+                take: limit,
+                skip: offset,
+                orderBy: { [sortBy]: sortOrder },
                 select: {
-                  status: true,
-                  modelName: true,
-                  modelVersion: true,
+                  id: true,
+                  blobUrl: true,
+                  pathname: true,
+                  mime: true,
+                  width: true,
+                  height: true,
+                  favorite: true,
+                  size: true,
                   createdAt: true,
-                  updatedAt: true,
+                  embedding: {
+                    select: {
+                      status: true,
+                      modelName: true,
+                      modelVersion: true,
+                      createdAt: true,
+                      updatedAt: true,
+                    },
+                  },
                 },
-              },
-            },
-          }),
-      prisma.asset.count({ where }),
-    ]);
+              }),
+          prisma.asset.count({ where }),
+        ]);
 
     let tagsByAssetId: Record<string, Array<{ id: string; name: string }>> = {};
 
@@ -644,6 +661,9 @@ async function getHandler(req: NextRequest) {
             }
           : undefined),
       embeddingStatus: asset.embeddingStatus || asset.embedding?.status,
+      ...(typeof asset.tasteScore === "number"
+        ? { tasteScore: Number(asset.tasteScore.toFixed(3)) }
+        : {}),
       ...(includeTags
         ? {
             tags: tagsByAssetId[asset.id] || [],
@@ -652,7 +672,7 @@ async function getHandler(req: NextRequest) {
     }));
 
     // Drift detector: zero assets for known user hints at wrong DB branch
-    if (total === 0) {
+    if (total === 0 && !isTaste) {
       try {
         const Sentry = await import("@sentry/nextjs");
         Sentry.captureMessage("zero-assets-for-user", {
@@ -683,6 +703,15 @@ async function getHandler(req: NextRequest) {
           offset,
           hasMore: offset + limit < total,
         },
+        ...(tasteResult
+          ? {
+              taste: {
+                status: tasteResult.status,
+                embeddedBangerCount: tasteResult.embeddedBangerCount,
+                minimumBangerEmbeddings: MIN_TASTE_BANGER_EMBEDDINGS,
+              },
+            }
+          : {}),
       },
       {
         headers: {

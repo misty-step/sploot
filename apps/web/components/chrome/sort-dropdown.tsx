@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { ArrowDown, ArrowUp, ArrowDownAZ, ArrowUpAZ, Shuffle } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowDownAZ, ArrowUpAZ, Heart, Shuffle } from 'lucide-react';
 import type { AssetSortBy, AssetSortDirection } from '@sploot/common';
 
 export type SortOption = AssetSortBy;
@@ -35,11 +35,12 @@ export function SortDropdown({
   className,
 }: SortDropdownProps) {
   // Sort option configurations
-  const sortOptions: Array<{ value: SortOption; label: string }> = [
+  const sortOptions: Array<{ value: Exclude<SortOption, 'shuffle'>; label: string }> = [
     { value: 'createdAt', label: 'RECENT' },
     { value: 'updatedAt', label: 'UPDATED' },
     { value: 'size', label: 'SIZE' },
     { value: 'pathname', label: 'NAME' },
+    { value: 'taste', label: 'TASTE' },
   ];
 
   // Handle sort option selection
@@ -49,7 +50,9 @@ export function SortDropdown({
     // If selecting the same option, toggle direction
     // Otherwise, use default direction for that option
     const newDirection =
-      option === value
+      option === 'taste'
+        ? 'desc'
+        : option === value
         ? direction === 'desc' ? 'asc' : 'desc'
         : option === 'pathname' ? 'asc' : 'desc'; // Name defaults to A-Z, others to newest/largest first
 
@@ -65,7 +68,7 @@ export function SortDropdown({
   };
 
   // Get arrow icon component for current direction
-  const ArrowIcon = value === 'shuffle' ? Shuffle : direction === 'desc' ? ArrowDown : ArrowUp;
+  const ArrowIcon = value === 'taste' ? Heart : value === 'shuffle' ? Shuffle : direction === 'desc' ? ArrowDown : ArrowUp;
 
   return (
     <DropdownMenu>
@@ -95,7 +98,7 @@ export function SortDropdown({
               className="gap-2"
             >
               <span className="flex-1">{option.label}</span>
-              {value === option.value && option.value !== 'shuffle' && (
+              {value === option.value && option.value !== 'taste' && (
                 <span className="text-xs text-muted-foreground">
                   {direction === 'desc' ? '↓' : '↑'}
                 </span>
@@ -129,7 +132,9 @@ export function SortButtonCompact({
   onClick?: () => void;
   className?: string;
 }) {
-  const Icon = direction === 'desc'
+  const Icon = value === 'taste'
+    ? Heart
+    : direction === 'desc'
     ? (value === 'pathname' ? ArrowDownAZ : ArrowDown)
     : (value === 'pathname' ? ArrowUpAZ : ArrowUp);
 

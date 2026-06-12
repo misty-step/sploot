@@ -47,6 +47,7 @@ const sortOptions: Array<{ value: Exclude<AssetSortBy, 'shuffle'>; label: string
   { value: 'updatedAt', label: 'updated' },
   { value: 'size', label: 'size' },
   { value: 'pathname', label: 'name' },
+  { value: 'taste', label: 'taste' },
 ];
 
 function getSortLabel(sortBy: AssetSortBy) {
@@ -56,6 +57,7 @@ function getSortLabel(sortBy: AssetSortBy) {
 
 function getSortIcon(sortBy: AssetSortBy, sortOrder: AssetSortDirection) {
   if (sortBy === 'shuffle') return ArrowDown;
+  if (sortBy === 'taste') return Heart;
   if (sortBy === 'pathname') {
     return sortOrder === 'desc' ? ArrowDownAZ : ArrowUpAZ;
   }
@@ -155,7 +157,9 @@ export function MobileCommandDock({
               onValueChange={(value) => {
                 const option = value as Exclude<AssetSortBy, 'shuffle'>;
                 const nextDirection =
-                  option === sortBy
+                  option === 'taste'
+                    ? 'desc'
+                    : option === sortBy
                     ? sortOrder === 'desc' ? 'asc' : 'desc'
                     : option === 'pathname' ? 'asc' : 'desc';
                 onSortChange(option, nextDirection);
@@ -164,7 +168,7 @@ export function MobileCommandDock({
               {sortOptions.map((option) => (
                 <DropdownMenuRadioItem key={option.value} value={option.value}>
                   <span className="flex-1">{option.label}</span>
-                  {sortBy === option.value && (
+                  {sortBy === option.value && option.value !== 'taste' && (
                     <span className="text-xs text-muted-foreground">
                       {sortOrder === 'desc' ? '↓' : '↑'}
                     </span>

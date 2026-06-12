@@ -1,0 +1,115 @@
+{
+  "taste": {
+    "statusCode": 200,
+    "ids": [
+      "cmq8vna5500135qadjlzjljl0",
+      "cmq8vn9qx000r5qadz1u7c7dv",
+      "cmqa4s5i300335qztcs394i1n",
+      "cmqa4s2ot001f5qztrd13mxcc",
+      "cmqa4s30f001r5qztqytq6whx",
+      "cmqa4s40n00235qztu65x4ph2",
+      "cmq8vn8op00095qadx3ix3t4v",
+      "cmqa4s4sm002l5qzt6euegjqu",
+      "cmqa4s4q100295qztmyhcnexp",
+      "cmq8vn9fs000l5qad1riw50tt",
+      "cmqa4s5gv002x5qzte1my7hta",
+      "cmqa4s36v001x5qztncdpvaai"
+    ],
+    "metadata": {
+      "status": "ready",
+      "embeddedBangerCount": 12,
+      "minimumBangerEmbeddings": 2
+    },
+    "tasteScores": [
+      0.409,
+      0.409,
+      0.409,
+      0.409,
+      0.409,
+      0.408,
+      0.408,
+      0.408,
+      0.408,
+      0.408,
+      0.408,
+      0.408
+    ]
+  },
+  "shuffle": {
+    "statusCode": 200,
+    "ids": [
+      "cmq8vna6a00155qad9wod3h3q",
+      "cmqa4s5gv002x5qzte1my7hta",
+      "cmq8vna4w00115qadjktntlw6",
+      "cmqa4s2ot001f5qztrd13mxcc",
+      "cmq8vnaa600195qad6x75dp8g",
+      "cmq8vn9fs000l5qad1riw50tt",
+      "cmqa4s5if00355qzt9x1gmmpb",
+      "cmq8vnabz001b5qad7s9dlqjn",
+      "cmqa4s2vp001h5qzt0fzuu9de",
+      "cmq8vna1c000v5qad46w23pbd",
+      "cmqa4s4rj002f5qztlvucgxzq",
+      "cmq8vn8tr000f5qadshn0hglj"
+    ]
+  },
+  "profile": {
+    "statusCode": 200,
+    "body": {
+      "status": "ready",
+      "bangerCount": 13,
+      "embeddedBangerCount": 12,
+      "label": "near your bangers",
+      "summary": "sploot is comparing 12 embedded bangers against the rest of your library.",
+      "representativeAssets": [
+        {
+          "id": "cmq8vna5500135qadjlzjljl0",
+          "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-020.png",
+          "pathname": "qa-blob-seed/qa-meme-020.png",
+          "mime": "image/png",
+          "favorite": false,
+          "tasteScore": 0.409
+        },
+        {
+          "id": "cmq8vn9qx000r5qadz1u7c7dv",
+          "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-014.png",
+          "pathname": "qa-blob-seed/qa-meme-014.png",
+          "mime": "image/png",
+          "favorite": false,
+          "tasteScore": 0.409
+        },
+        {
+          "id": "cmqa4s5i300335qztcs394i1n",
+          "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-056.png",
+          "pathname": "qa-blob-seed/qa-meme-056.png",
+          "mime": "image/png",
+          "favorite": true,
+          "tasteScore": 0.409
+        },
+        {
+          "id": "cmqa4s2ot001f5qztrd13mxcc",
+          "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-026.png",
+          "pathname": "qa-blob-seed/qa-meme-026.png",
+          "mime": "image/png",
+          "favorite": true,
+          "tasteScore": 0.409
+        },
+        {
+          "id": "cmqa4s30f001r5qztqytq6whx",
+          "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-032.png",
+          "pathname": "qa-blob-seed/qa-meme-032.png",
+          "mime": "image/png",
+          "favorite": false,
+          "tasteScore": 0.409
+        },
+        {
+          "id": "cmqa4s40n00235qztu65x4ph2",
+          "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-038.png",
+          "pathname": "qa-blob-seed/qa-meme-038.png",
+          "mime": "image/png",
+          "favorite": false,
+          "tasteScore": 0.408
+        }
+      ]
+    }
+  }
+}

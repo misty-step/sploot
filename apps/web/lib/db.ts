@@ -621,7 +621,7 @@ export async function upsertAssetEmbedding(
   }
 
   // Construct ARRAY[...] literal so Postgres can parameterize each element
-  const vectorSql = Prisma.sql`ARRAY[${Prisma.join(embedding)}]`;
+  const vectorSql = Prisma.sql`ARRAY[${Prisma.join(embedding)}]::double precision[]`;
 
   try {
     const rows = await prisma.$queryRaw<Array<AssetEmbeddingRecord>>(Prisma.sql`

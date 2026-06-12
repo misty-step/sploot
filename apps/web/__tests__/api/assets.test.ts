@@ -218,9 +218,94 @@ describe("GET /api/assets", () => {
 
     expect(response.status).toBe(400);
     expect(body.error).toBe(
-      "Invalid sortBy parameter. Must be one of: createdAt, updatedAt, size, pathname, shuffle.",
+      "Invalid sortBy parameter. Must be one of: createdAt, updatedAt, size, pathname, shuffle, taste.",
     );
     expect(mocks.prisma.asset.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns typed taste metadata when the user has insufficient embedded bangers", async () => {
+    mocks.prisma.$queryRaw.mockReset();
+    mocks.prisma.$queryRaw.mockResolvedValueOnce([{ count: BigInt(1) }]);
+
+    const response = await GET(
+      request({
+        sortBy: "taste",
+        limit: "10",
+        offset: "0",
+      }),
+      { params: Promise.resolve({}) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.assets).toEqual([]);
+    expect(body.pagination).toEqual({
+      total: 0,
+      limit: 10,
+      offset: 0,
+      hasMore: false,
+    });
+    expect(body.taste).toEqual({
+      status: "insufficient_bangers",
+      embeddedBangerCount: 1,
+      minimumBangerEmbeddings: 2,
+    });
+    expect(mocks.prisma.asset.findMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.asset.count).not.toHaveBeenCalled();
+  });
+
+  it("returns taste-ranked assets with taste scores when enough bangers are embedded", async () => {
+    mocks.prisma.$queryRaw.mockReset();
+    mocks.prisma.$queryRaw
+      .mockResolvedValueOnce([{ count: BigInt(2) }])
+      .mockResolvedValueOnce([
+        {
+          id: "asset-near",
+          blobUrl: "https://blob.test/near.png",
+          pathname: "memes/near.png",
+          mime: "image/png",
+          width: 640,
+          height: 480,
+          favorite: false,
+          size: 2048,
+          createdAt: new Date("2026-05-15T12:00:00.000Z"),
+          updatedAt: new Date("2026-05-15T12:00:00.000Z"),
+          tasteScore: 0.8764,
+          embeddingId: "asset-near",
+          embeddingModelName: "clip",
+          embeddingModelVersion: "v1",
+          embeddingStatus: "ready",
+          embeddingCreatedAt: new Date("2026-05-15T12:00:00.000Z"),
+        },
+      ])
+      .mockResolvedValueOnce([{ count: BigInt(1) }]);
+
+    const response = await GET(
+      request({
+        sortBy: "taste",
+        limit: "10",
+        offset: "0",
+      }),
+      { params: Promise.resolve({}) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.assets).toEqual([
+      expect.objectContaining({
+        id: "asset-near",
+        tasteScore: 0.876,
+        embeddingStatus: "ready",
+      }),
+    ]);
+    expect(body.pagination.total).toBe(1);
+    expect(body.taste).toEqual({
+      status: "ready",
+      embeddedBangerCount: 2,
+      minimumBangerEmbeddings: 2,
+    });
+    expect(mocks.prisma.asset.findMany).not.toHaveBeenCalled();
+    expect(mocks.prisma.asset.count).not.toHaveBeenCalled();
   });
 
   it("rejects shuffleSeed outside the supported range", async () => {
