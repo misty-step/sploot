@@ -1,0 +1,460 @@
+{
+  "statusCode": 200,
+  "body": {
+    "status": "ready",
+    "minimumAssets": 50,
+    "embeddedAssetCount": 60,
+    "piles": [
+      {
+        "id": "gaming",
+        "label": "gaming",
+        "count": 10,
+        "bangers": 2,
+        "confidence": 0.999,
+        "assetIds": [
+          "cmq8vn9fs000l5qad1riw50tt",
+          "cmqa4s4q100295qztmyhcnexp",
+          "cmq8vn8op00095qadx3ix3t4v",
+          "cmq8vna33000x5qadi3f1xru6",
+          "cmq8vnaa600195qad6x75dp8g",
+          "cmqa4s2y0001l5qztzonotdrm",
+          "cmqa4s36v001x5qztncdpvaai",
+          "cmqa4s4sm002l5qzt6euegjqu",
+          "cmqa4s5gv002x5qzte1my7hta",
+          "cmqa4s5j600395qztwzjgazr7"
+        ],
+        "thumbnailAssets": [
+          {
+            "id": "cmq8vn9fs000l5qad1riw50tt",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-011.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-011.png",
+            "filename": "qa-meme-011.png",
+            "mime": "image/png",
+            "favorite": true
+          },
+          {
+            "id": "cmqa4s4q100295qztmyhcnexp",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-041.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-041.png",
+            "filename": "qa-meme-041.png",
+            "mime": "image/png",
+            "favorite": true
+          },
+          {
+            "id": "cmq8vn8op00095qadx3ix3t4v",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-005.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-005.png",
+            "filename": "qa-meme-005.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmq8vna33000x5qadi3f1xru6",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-017.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-017.png",
+            "filename": "qa-meme-017.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmq8vnaa600195qad6x75dp8g",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-023.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-023.png",
+            "filename": "qa-meme-023.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmqa4s2y0001l5qztzonotdrm",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-029.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-029.png",
+            "filename": "qa-meme-029.png",
+            "mime": "image/png",
+            "favorite": false
+          }
+        ]
+      },
+      {
+        "id": "pets",
+        "label": "pets",
+        "count": 10,
+        "bangers": 2,
+        "confidence": 0.999,
+        "assetIds": [
+          "cmqa4s2ot001f5qztrd13mxcc",
+          "cmqa4s5i300335qztcs394i1n",
+          "cmq8vn8tr000f5qadshn0hglj",
+          "cmq8vn9qx000r5qadz1u7c7dv",
+          "cmq8vna5500135qadjlzjljl0",
+          "cmqa138sb00035qeg19rne13r",
+          "cmqa4s30f001r5qztqytq6whx",
+          "cmqa4s40n00235qztu65x4ph2",
+          "cmqa4s4rj002f5qztlvucgxzq",
+          "cmqa4s5ak002r5qztbtd6199v"
+        ],
+        "thumbnailAssets": [
+          {
+            "id": "cmqa4s2ot001f5qztrd13mxcc",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-026.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-026.png",
+            "filename": "qa-meme-026.png",
+            "mime": "image/png",
+            "favorite": true
+          },
+          {
+            "id": "cmqa4s5i300335qztcs394i1n",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-056.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-056.png",
+            "filename": "qa-meme-056.png",
+            "mime": "image/png",
+            "favorite": true
+          },
+          {
+            "id": "cmq8vn8tr000f5qadshn0hglj",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-008.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-008.png",
+            "filename": "qa-meme-008.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmq8vn9qx000r5qadz1u7c7dv",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-014.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-014.png",
+            "filename": "qa-meme-014.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmq8vna5500135qadjlzjljl0",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-020.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-020.png",
+            "filename": "qa-meme-020.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmqa138sb00035qeg19rne13r",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-002.mp4",
+            "thumbnailUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-002-poster.jpg",
+            "pathname": "qa-blob-seed/qa-meme-002.mp4",
+            "filename": "qa-meme-002.mp4",
+            "mime": "video/mp4",
+            "favorite": false
+          }
+        ]
+      },
+      {
+        "id": "reaction-faces",
+        "label": "reaction faces",
+        "count": 10,
+        "bangers": 2,
+        "confidence": 0.999,
+        "assetIds": [
+          "cmqa138md00015qeg1zm3042b",
+          "cmqa4s2zv001p5qztf0ulga1p",
+          "cmq8vn8tg000d5qadd03p27ug",
+          "cmq8vn9iv000p5qaduzk9a92q",
+          "cmq8vna4w00115qadjktntlw6",
+          "cmqa4s2ob001d5qzt7mh90o5f",
+          "cmqa4s40800215qzt0c99tid6",
+          "cmqa4s4r4002d5qztafki2sdj",
+          "cmqa4s5a2002p5qztjklmpizq",
+          "cmqa4s5ht00315qztz1no1or3"
+        ],
+        "thumbnailAssets": [
+          {
+            "id": "cmqa138md00015qeg1zm3042b",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-001.gif",
+            "thumbnailUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-001-poster.jpg",
+            "pathname": "qa-blob-seed/qa-meme-001.gif",
+            "filename": "qa-meme-001.gif",
+            "mime": "image/gif",
+            "favorite": true
+          },
+          {
+            "id": "cmqa4s2zv001p5qztf0ulga1p",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-031.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-031.png",
+            "filename": "qa-meme-031.png",
+            "mime": "image/png",
+            "favorite": true
+          },
+          {
+            "id": "cmq8vn8tg000d5qadd03p27ug",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-007.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-007.png",
+            "filename": "qa-meme-007.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmq8vn9iv000p5qaduzk9a92q",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-013.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-013.png",
+            "filename": "qa-meme-013.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmq8vna4w00115qadjktntlw6",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-019.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-019.png",
+            "filename": "qa-meme-019.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmqa4s2ob001d5qzt7mh90o5f",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-025.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-025.png",
+            "filename": "qa-meme-025.png",
+            "mime": "image/png",
+            "favorite": false
+          }
+        ]
+      },
+      {
+        "id": "screenshots",
+        "label": "screenshots",
+        "count": 10,
+        "bangers": 2,
+        "confidence": 0.999,
+        "assetIds": [
+          "cmq8vna6a00155qad9wod3h3q",
+          "cmqa4s5g4002t5qztl0xh6oji",
+          "cmq8vn8gq00055qad6malkciw",
+          "cmq8vn8zr000h5qadkjjlrw0w",
+          "cmq8vn9rd000t5qadvrt50rzc",
+          "cmqa4s2vp001h5qzt0fzuu9de",
+          "cmqa4s30x001t5qztg99fe0kt",
+          "cmqa4s4h300255qzti38uow5o",
+          "cmqa4s4rw002h5qztrmokj9ss",
+          "cmqa4s5if00355qzt9x1gmmpb"
+        ],
+        "thumbnailAssets": [
+          {
+            "id": "cmq8vna6a00155qad9wod3h3q",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-021.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-021.png",
+            "filename": "qa-meme-021.png",
+            "mime": "image/png",
+            "favorite": true
+          },
+          {
+            "id": "cmqa4s5g4002t5qztl0xh6oji",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-051.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-051.png",
+            "filename": "qa-meme-051.png",
+            "mime": "image/png",
+            "favorite": true
+          },
+          {
+            "id": "cmq8vn8gq00055qad6malkciw",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-003.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-003.png",
+            "filename": "qa-meme-003.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmq8vn8zr000h5qadkjjlrw0w",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-009.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-009.png",
+            "filename": "qa-meme-009.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmq8vn9rd000t5qadvrt50rzc",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-015.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-015.png",
+            "filename": "qa-meme-015.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmqa4s2vp001h5qzt0fzuu9de",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-027.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-027.png",
+            "filename": "qa-meme-027.png",
+            "mime": "image/png",
+            "favorite": false
+          }
+        ]
+      },
+      {
+        "id": "sports",
+        "label": "sports",
+        "count": 10,
+        "bangers": 2,
+        "confidence": 0.999,
+        "assetIds": [
+          "cmq8vn8pt000b5qadxl8p323h",
+          "cmqa4s3nx001z5qzttkz3ys3z",
+          "cmq8vn9hj000n5qad770vi53z",
+          "cmq8vna4m000z5qadlgm0allo",
+          "cmq8vnabz001b5qad7s9dlqjn",
+          "cmqa4s2zd001n5qztq99n8o7j",
+          "cmqa4s4ql002b5qzt9gcvt1vm",
+          "cmqa4s54q002n5qzt8nkg3mv7",
+          "cmqa4s5hh002z5qztzydq6ouo",
+          "cmqa4s5jm003b5qzt8pocnaly"
+        ],
+        "thumbnailAssets": [
+          {
+            "id": "cmq8vn8pt000b5qadxl8p323h",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-006.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-006.png",
+            "filename": "qa-meme-006.png",
+            "mime": "image/png",
+            "favorite": true
+          },
+          {
+            "id": "cmqa4s3nx001z5qzttkz3ys3z",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-036.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-036.png",
+            "filename": "qa-meme-036.png",
+            "mime": "image/png",
+            "favorite": true
+          },
+          {
+            "id": "cmq8vn9hj000n5qad770vi53z",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-012.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-012.png",
+            "filename": "qa-meme-012.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmq8vna4m000z5qadlgm0allo",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-018.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-018.png",
+            "filename": "qa-meme-018.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmq8vnabz001b5qad7s9dlqjn",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-024.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-024.png",
+            "filename": "qa-meme-024.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmqa4s2zd001n5qztq99n8o7j",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-030.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-030.png",
+            "filename": "qa-meme-030.png",
+            "mime": "image/png",
+            "favorite": false
+          }
+        ]
+      },
+      {
+        "id": "work-chaos",
+        "label": "work chaos",
+        "count": 10,
+        "bangers": 2,
+        "confidence": 0.999,
+        "assetIds": [
+          "cmq8vna1c000v5qad46w23pbd",
+          "cmqa4s4s8002j5qztujzl0fiw",
+          "cmq8vn8ki00075qadpv6gtnpy",
+          "cmq8vn9c9000j5qadtatf7fwh",
+          "cmq8vna9x00175qad0660k2cs",
+          "cmqa4s2w7001j5qzt8wf15lxu",
+          "cmqa4s31b001v5qzt7z9wnwqq",
+          "cmqa4s4ph00275qzt1dg5mnim",
+          "cmqa4s5gi002v5qztrrbpd30k",
+          "cmqa4s5it00375qztr6q0kqne"
+        ],
+        "thumbnailAssets": [
+          {
+            "id": "cmq8vna1c000v5qad46w23pbd",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-016.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-016.png",
+            "filename": "qa-meme-016.png",
+            "mime": "image/png",
+            "favorite": true
+          },
+          {
+            "id": "cmqa4s4s8002j5qztujzl0fiw",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-046.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-046.png",
+            "filename": "qa-meme-046.png",
+            "mime": "image/png",
+            "favorite": true
+          },
+          {
+            "id": "cmq8vn8ki00075qadpv6gtnpy",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-004.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-004.png",
+            "filename": "qa-meme-004.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmq8vn9c9000j5qadtatf7fwh",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-010.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-010.png",
+            "filename": "qa-meme-010.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmq8vna9x00175qad0660k2cs",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-022.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-022.png",
+            "filename": "qa-meme-022.png",
+            "mime": "image/png",
+            "favorite": false
+          },
+          {
+            "id": "cmqa4s2w7001j5qzt8wf15lxu",
+            "blobUrl": "https://sploot-qa-seed.public.blob.vercel-storage.com/qa-blob-seed/qa-meme-028.png",
+            "thumbnailUrl": null,
+            "pathname": "qa-blob-seed/qa-meme-028.png",
+            "filename": "qa-meme-028.png",
+            "mime": "image/png",
+            "favorite": false
+          }
+        ]
+      }
+    ]
+  }
+}

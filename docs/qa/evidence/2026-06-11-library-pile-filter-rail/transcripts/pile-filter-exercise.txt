@@ -1,0 +1,77 @@
+{
+  "before": {
+    "url": "http://localhost:3378/app",
+    "search": "",
+    "allPressed": "true",
+    "pileCount": 6,
+    "imageCount": 61,
+    "tileCount": 62,
+    "visibleAssetIds": [
+      "cmq8vn88o00035qadwf1qrv50",
+      "cmq8vn8gq00055qad6malkciw",
+      "cmqa4s4h300255qzti38uow5o",
+      "cmqa4s5hh002z5qztzydq6ouo",
+      "cmqa4s5ak002r5qztbtd6199v",
+      "cmqa4s5gv002x5qzte1my7hta",
+      "cmq8vn9fs000l5qad1riw50tt",
+      "cmq8vna1c000v5qad46w23pbd",
+      "cmq8vn8tg000d5qadd03p27ug",
+      "cmqa4s40n00235qztu65x4ph2",
+      "cmqa4s4ql002b5qzt9gcvt1vm",
+      "cmqa4s2ob001d5qzt7mh90o5f"
+    ],
+    "totalText": "all memes62 total"
+  },
+  "clicked": {
+    "ok": true,
+    "pileId": "gaming",
+    "pileText": "gaming10 in pile · 60 embedded"
+  },
+  "after": {
+    "allPressed": "false",
+    "selectedPressed": "true",
+    "imageCount": 10,
+    "tileCount": 10,
+    "visibleAssetIds": [
+      "cmq8vna33000x5qadi3f1xru6",
+      "cmqa4s5gv002x5qzte1my7hta",
+      "cmqa4s2y0001l5qztzonotdrm",
+      "cmqa4s5j600395qztwzjgazr7",
+      "cmq8vnaa600195qad6x75dp8g",
+      "cmqa4s4sm002l5qzt6euegjqu",
+      "cmqa4s36v001x5qztncdpvaai",
+      "cmq8vn9fs000l5qad1riw50tt",
+      "cmq8vn8op00095qadx3ix3t4v",
+      "cmqa4s4q100295qztmyhcnexp"
+    ],
+    "selectedText": "gaming10 in pile · 60 embedded"
+  },
+  "cleared": {
+    "search": "",
+    "allPressed": "true",
+    "selectedPressedCount": 0,
+    "imageCount": 61,
+    "tileCount": 62,
+    "visibleAssetIds": [
+      "cmq8vn88o00035qadwf1qrv50",
+      "cmq8vn8gq00055qad6malkciw",
+      "cmqa4s4h300255qzti38uow5o",
+      "cmqa4s5hh002z5qztzydq6ouo",
+      "cmqa4s5ak002r5qztbtd6199v",
+      "cmqa4s5gv002x5qzte1my7hta",
+      "cmq8vn9fs000l5qad1riw50tt",
+      "cmq8vna1c000v5qad46w23pbd",
+      "cmq8vn8tg000d5qadd03p27ug",
+      "cmqa4s40n00235qztu65x4ph2",
+      "cmqa4s4ql002b5qzt9gcvt1vm",
+      "cmqa4s2ob001d5qzt7mh90o5f"
+    ]
+  },
+  "restoredOrder": true,
+  "consoleErrors": [
+    "[error] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:",
+    "[error] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:"
+  ],
+  "pageErrors": [],
+  "screenshot": "pile-filter-selected-1440x900.png"
+}
