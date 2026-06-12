@@ -128,10 +128,13 @@ mechanic: the user's saves sort themselves.
 
 Desktop `/app` should prioritize repeated use:
 
-- Top command/search bar.
+- Tight top command/search bar that leaves the viewport to the image feed.
 - Left or top filter controls for upload, search, shuffle, bangers, tags, and
   sort.
-- Central image grid or cluster surface.
+- Central shuffled all-memes image grid as the default browse surface.
+- Automatic piles as compact suggestion filters over that feed, never as a
+  replacement for the full library. Counts must distinguish the true library
+  total from per-pile subsets, and weak labels should read as tentative.
 - Optional right inspector for selected asset or selected group.
 - Bottom or top status line for counts, queue, storage, and embedding state.
 
@@ -162,7 +165,7 @@ Canonical component grammar:
 | Command bar | Search, upload, shuffle, route actions | Square, border-led, cyan focus |
 | Command dock | Mobile primary actions | Fixed positions, icon-first, 44px minimum targets |
 | Image tile | Product object | Image dominates; metadata is secondary and compact |
-| Pile / cluster | Automatic grouping | Thumbnail stack or bounded group, violet/cyan relation cues |
+| Pile filter / cluster | Automatic grouping | Compact suggestion filter first; thumbnail stack only for previews |
 | Similarity line | Shows relationship | Thin cyan or violet line, never decorative alone |
 | Sticker tab | Label, tag, status | Square or slight offset, mono uppercase when compact |
 | Banger stamp | Favorite or top-ranked marker | Coral, high contrast, visually different from system alerts |
@@ -217,6 +220,8 @@ Interaction rules:
   stateful rather than theatrical.
 - Cluster labels are suggestions, not user-owned taxonomy. Avoid implying the
   system creates fixed folders unless the user explicitly saves one.
+- The library should feel feed-like and thumbable, but not social or addictive:
+  reduce persistent header chrome before adding decorative motion.
 
 ## 7. Content Voice
 

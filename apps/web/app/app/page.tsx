@@ -31,7 +31,7 @@ import { FilterChips, type FilterType } from '@/components/chrome/filter-chips';
 import { SortDropdown } from '@/components/chrome/sort-dropdown';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ClusterPile, StickerTab } from '@/components/sploot';
+import { PileFilterRail, StickerTab } from '@/components/sploot';
 import { RotateCcw, Shuffle, X, Trash2 } from 'lucide-react';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
 import { track } from '@/lib/analytics';
@@ -100,6 +100,7 @@ function AppPageClient() {
   const libraryQuery = localSearchQuery;
   const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(Boolean(queryParam));
+  const [selectedPileId, setSelectedPileId] = useState<string | null>(null);
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollTopRef = useRef<number | null>(null);
   const filtersRef = useRef<LibraryFilterSnapshot | undefined>(undefined);
@@ -272,27 +273,6 @@ function AppPageClient() {
     };
   }, []);
 
-  // Calculate stats
-  const stats = useMemo(() => {
-    const favoriteCount = assets.filter(a => a.favorite).length;
-    const totalSize = assets.reduce((sum, asset) => sum + (asset.size || 0), 0);
-
-    // Format file size
-    const formatSize = (bytes: number) => {
-      if (bytes === 0) return '0 B';
-      if (bytes < 1024) return `${bytes} B`;
-      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-      if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-      return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-    };
-
-    return {
-      total,
-      favorites: favoriteCount,
-      sizeFormatted: formatSize(totalSize)
-    };
-  }, [assets, total]);
-
   const filteredSearchAssets = useMemo(() => {
     let results = searchAssets;
     if (bangersOnly) {
@@ -452,6 +432,16 @@ function AppPageClient() {
     minAssets: 50,
   });
 
+  const selectedPile = useMemo(
+    () => automaticPiles.find((pile) => pile.id === selectedPileId) ?? null,
+    [automaticPiles, selectedPileId]
+  );
+
+  const selectedPileAssetIds = useMemo(
+    () => new Set(selectedPile?.assetIds ?? []),
+    [selectedPile]
+  );
+
   // Listen for asset upload events and refresh library-derived views.
   useEffect(() => {
     const handleAssetUploaded = (event: CustomEvent) => {
@@ -474,8 +464,11 @@ function AppPageClient() {
     if (isSearching) {
       return filteredSearchAssets;
     }
+    if (selectedPile && selectedPileAssetIds.size > 0) {
+      return sortedAssets.filter((asset) => selectedPileAssetIds.has(asset.id));
+    }
     return sortedAssets;
-  }, [isSearching, filteredSearchAssets, sortedAssets]);
+  }, [isSearching, filteredSearchAssets, selectedPile, selectedPileAssetIds, sortedAssets]);
 
   const activeLoading = isSearching ? searchLoading : loading;
   const activeHasMore = hasMore;
@@ -646,6 +639,18 @@ function AppPageClient() {
   }, [tagIdParam, bangersOnly, actualSortBy, actualSortOrder, sortBy, shuffleSeed, isSearching, refresh]);
 
   useEffect(() => {
+    if (isSearching || bangersOnly || tagIdParam) {
+      setSelectedPileId(null);
+    }
+  }, [bangersOnly, isSearching, tagIdParam]);
+
+  useEffect(() => {
+    if (selectedPileId && automaticPiles.length > 0 && !automaticPiles.some((pile) => pile.id === selectedPileId)) {
+      setSelectedPileId(null);
+    }
+  }, [automaticPiles, selectedPileId]);
+
+  useEffect(() => {
     if (!trimmedLibraryQuery) {
       return;
     }
@@ -659,35 +664,10 @@ function AppPageClient() {
 
   return (
     <div className="flex h-[calc(100vh-48px)] md:h-[calc(100vh-56px)] flex-col">
-      {/* Container with ultra-wide support - max-width at 1920px+ */}
-      <div className="border-b-[3px] border-sploot-cyan px-3 pb-3 pt-3 md:px-10 md:pb-4 md:pt-4 2xl:px-12">
+      <div className="border-b-[3px] border-sploot-cyan bg-background px-2 pb-2 pt-2 md:px-6 2xl:px-10">
         <div className="mx-auto w-full max-w-7xl 2xl:max-w-[1920px]">
-          <header className="flex flex-col gap-2 md:gap-3">
-            {/* Terminal-style status bar */}
-            {stats.total > 0 && (
-              <div className="hidden md:flex font-mono text-xs brutalist-border border-border bg-card px-3 py-1.5 items-center gap-4 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground uppercase">MEMES:</span>
-                  <span className="font-bold text-sploot-cyan">{stats.total.toLocaleString()}</span>
-                </div>
-                {stats.favorites > 0 && (
-                  <>
-                    <span className="text-border">|</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground uppercase">BANGERS:</span>
-                      <span className="font-bold text-sploot-coral">{stats.favorites.toLocaleString()}</span>
-                    </div>
-                  </>
-                )}
-                <span className="text-border">|</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground uppercase">SIZE:</span>
-                  <span className="font-bold text-sploot-violet">{stats.sizeFormatted}</span>
-                </div>
-              </div>
-            )}
-
-            <div className={cn('md:block', showMobileSearch ? 'block' : 'hidden')}>
+          <header className="flex flex-col gap-2">
+            <div className="hidden items-center gap-2 md:grid md:grid-cols-[minmax(20rem,1fr)_auto]">
               <SearchBar
                 onSearch={handleInlineSearch}
                 inline
@@ -701,16 +681,11 @@ function AppPageClient() {
                             'idle'
                 }
                 resultCount={searchAssets.length}
-                className="w-full"
+                className="min-w-0"
                 placeholder="search your memes..."
-                autoFocus={showMobileSearch && !isSearching}
               />
-            </div>
 
-            {/* Action toolbar */}
-            <div className="hidden flex-wrap items-center justify-between gap-2 md:flex md:gap-3">
-              {/* Left group: Primary actions */}
-              <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 <UploadButton
                   onClick={() => setShowUploadPanel((prev) => !prev)}
                   isActive={showUploadPanel}
@@ -723,7 +698,6 @@ function AppPageClient() {
                   isActive={showUploadPanel}
                   size="lg"
                   showLabel={true}
-                  className="hidden md:inline-flex"
                 />
                 {failedEmbeddings.length > 0 && (
                   <Button
@@ -741,17 +715,11 @@ function AppPageClient() {
                   onFilterChange={handleBangersFilterChange}
                   size="lg"
                   showLabels={true}
-                  className="hidden md:flex"
                 />
-              </div>
-
-              {/* Right group: View controls */}
-              <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
                 <SortDropdown
                   value={sortBy}
                   direction={sortOrder}
                   onChange={handleSortChange}
-                  className="hidden md:inline-flex"
                 />
 
                 <Button
@@ -763,7 +731,7 @@ function AppPageClient() {
                       gridScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                     });
                   }}
-                  className="hidden gap-2 font-mono uppercase tracking-wider md:inline-flex"
+                  className="gap-2 font-mono uppercase tracking-wider"
                   aria-pressed={sortBy === 'shuffle'}
                 >
                   <Shuffle className="h-4 w-4" />
@@ -783,8 +751,45 @@ function AppPageClient() {
                   </Button>
                 )}
               </div>
-
             </div>
+
+            <div className={cn('md:hidden', showMobileSearch ? 'block' : 'hidden')}>
+              <SearchBar
+                onSearch={handleInlineSearch}
+                inline
+                initialQuery={queryParam}
+                searchState={
+                  searchLoading ? 'loading' :
+                    isTypingRef.current ? 'typing' :
+                      searchError ? 'error' :
+                        libraryQuery && searchAssets.length > 0 ? 'success' :
+                          libraryQuery && searchAssets.length === 0 ? 'no-results' :
+                            'idle'
+                }
+                resultCount={searchAssets.length}
+                className="w-full"
+                placeholder="search your memes..."
+                autoFocus={showMobileSearch && !isSearching}
+              />
+            </div>
+
+            {!isSearching && !bangersOnly && !tagIdParam && (
+              <div className="flex items-center gap-2">
+                <PileFilterRail
+                  piles={automaticPiles}
+                  total={total}
+                  embeddedAssetCount={pileEmbeddedAssetCount}
+                  selectedPileId={selectedPileId}
+                  onSelectPile={(pileId) => {
+                    setSelectedPileId(pileId);
+                    requestAnimationFrame(() => {
+                      gridScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                    });
+                  }}
+                  className="min-w-0 flex-1"
+                />
+              </div>
+            )}
 
             {(!isSearching && tagIdParam) && (
               <div className="flex flex-wrap items-center gap-2">
@@ -890,34 +895,6 @@ function AppPageClient() {
                 <AlertDescription>{libraryError}</AlertDescription>
               </Alert>
             )}
-
-            {!isSearching && automaticPiles.length > 0 && (
-              <section aria-label="automatic piles" className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <StickerTab tone="violet" tilt="left">automatic piles</StickerTab>
-                  <span className="font-mono text-xs uppercase text-muted-foreground sploot-tabular">
-                    {pileEmbeddedAssetCount.toLocaleString()} embedded
-                  </span>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {automaticPiles.map((pile, pileIndex) => (
-                    <ClusterPile
-                      key={pile.id}
-                      label={pile.label}
-                      count={pile.count}
-                      bangers={pile.bangers || undefined}
-                      tone={(['violet', 'cyan', 'coral', 'lime'] as const)[pileIndex % 4]}
-                      items={pile.thumbnailAssets.map((asset, assetIndex) => ({
-                        label: asset.filename.replace(/\.[^.]+$/, '').slice(0, 12),
-                        src: resolveQaSeedSrc(asset.thumbnailUrl || asset.blobUrl),
-                        alt: asset.filename,
-                        tone: (['violet', 'cyan', 'coral', 'lime', 'ink'] as const)[assetIndex % 5],
-                      }))}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
           </header>
         </div>
       </div>
@@ -955,7 +932,7 @@ function AppPageClient() {
                   onUploadClick={() => setShowUploadPanel(true)}
                   showSimilarityScores={isSearching}
                   emptyStateVariant={
-                    isSearching ? 'search' : (bangersOnly || tagIdParam) ? 'filtered' : 'first-use'
+                    isSearching ? 'search' : (bangersOnly || tagIdParam || selectedPile) ? 'filtered' : 'first-use'
                   }
                   emptyStateSearchQuery={isSearching ? trimmedLibraryQuery : undefined}
                 />

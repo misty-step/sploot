@@ -63,6 +63,7 @@ describe('GET /api/piles', () => {
           count: 12,
           bangers: 2,
           confidence: 0.78,
+          assetIds: ['asset-1', 'asset-2'],
           thumbnailAssets: [],
         },
       ],
@@ -76,6 +77,7 @@ describe('GET /api/piles', () => {
     expect(response.status).toBe(200);
     expect(body.status).toBe('ready');
     expect(body.piles[0].label).toBe('reaction faces');
+    expect(body.piles[0].assetIds).toEqual(['asset-1', 'asset-2']);
     expect(mocks.getAutomaticPiles).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'user-1',

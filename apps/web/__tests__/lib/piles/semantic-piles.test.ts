@@ -54,6 +54,7 @@ describe('buildSemanticPiles', () => {
       label: 'reaction faces',
       count: 2,
       bangers: 1,
+      assetIds: ['reaction-1', 'reaction-2'],
     });
     expect(piles[0].thumbnailAssets.map((item) => item.id)).toEqual([
       'reaction-1',
@@ -64,6 +65,7 @@ describe('buildSemanticPiles', () => {
       label: 'pets',
       count: 2,
       bangers: 0,
+      assetIds: ['pet-1', 'pet-2'],
     });
   });
 

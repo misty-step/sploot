@@ -64,6 +64,7 @@ export interface SemanticPile {
   count: number;
   bangers: number;
   confidence: number;
+  assetIds: string[];
   thumbnailAssets: SemanticPileThumbnailAsset[];
 }
 
@@ -209,6 +210,7 @@ export function buildSemanticPiles({
         count: group.assets.length,
         bangers: group.assets.filter((asset) => asset.favorite).length,
         confidence: Number(Math.max(0, Math.min(1, averageScore)).toFixed(3)),
+        assetIds: sortedAssets.map((asset) => asset.id),
         thumbnailAssets: sortedAssets.slice(0, THUMBNAILS_PER_PILE).map(toThumbnailAsset),
       };
     })

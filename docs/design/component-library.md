@@ -12,7 +12,7 @@ primitives. It is not a separate package yet.
 | Command dock | Mobile primary actions | `apps/web/components/chrome/mobile-command-dock.tsx` | Stable icon positions, safe-area padding, optional cluster tab row |
 | Image tile | Atomic saved object | `apps/web/components/library/image-tile.tsx` | Image-first tile with compact metadata and coral banger stamp |
 | Image grid | Primary library browse surface | `apps/web/components/library/image-grid.tsx` | Grid remains canonical fallback for cluster views |
-| Pile / cluster | Automatic semantic group | Not implemented | Thumbnail stack or bounded group with violet/cyan relation cues |
+| Pile filter / cluster | Automatic semantic group | `apps/web/components/sploot/pile-filter-rail.tsx`, `apps/web/components/sploot/cluster-pile.tsx` | Compact filter rail over the all-memes feed first; thumbnail stack previews only where they do not replace browsing |
 | Similarity line | Relationship between piles/items | Not implemented | Thin semantic line, never decorative by itself |
 | Sticker tab | Label, tag, status, callout | Partial via badges/chips | Square label with hard offset shadow and mono compact text |
 | Banger stamp | Favorite/top-ranked marker | `favorite` affordance in image tile | Coral stamp distinct from system alerts |
@@ -78,6 +78,10 @@ Purpose: automatic organization without manual folders.
 Rules:
 
 - Label reads as a suggestion, not a permanent folder.
+- `/app` defaults to the all-memes shuffled gallery; automatic piles filter that
+  gallery instead of becoming the primary library surface.
+- Show the real library total separately from per-pile subset counts.
+- Low-confidence automatic labels should be hidden or phrased as tentative.
 - Use thumbnail overlap, bounded lanes, or small stacks to imply grouping.
 - Use violet for semantic grouping and cyan for active search relation.
 - Provide a list fallback for keyboard and screen-reader access.
@@ -139,6 +143,7 @@ These wrappers are canonical starting points for new product surfaces:
 | `StickerTab` | `apps/web/components/sploot/sticker-tab.tsx` | implemented | Short labels, tags, status tabs, and zine annotations |
 | `BangerStamp` | `apps/web/components/sploot/banger-stamp.tsx` | implemented | Favorite/top-ranked marker distinct from alerts |
 | `ClusterPile` | `apps/web/components/sploot/cluster-pile.tsx` | implemented | Automatic semantic group preview with text or thumbnail tiles |
+| `PileFilterRail` | `apps/web/components/sploot/pile-filter-rail.tsx` | implemented | Compact automatic pile filters over the primary all-memes gallery |
 | `PileMark` | `apps/web/components/sploot/pile-mark.tsx` | implemented | Compact brand mark for navigation and tight chrome |
 | `AtlasLandingHero` | `apps/web/components/sploot/atlas-landing-hero.tsx` | implemented | Landing first viewport showing messy saves becoming piles |
 
