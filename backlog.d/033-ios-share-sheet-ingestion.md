@@ -1,6 +1,6 @@
 # Get Sploot into the iPhone share sheet via a Shortcut
 
-Priority: P2 · Status: pending · Estimate: M
+Priority: P2 · Status: blocked · Estimate: M
 
 ## Goal
 
@@ -10,17 +10,31 @@ Sploot — despite iOS never supporting PWA share targets — via an official
 
 ## Oracle
 
-- [ ] A user can mint (and revoke) a personal upload token from settings;
+- [x] A user can mint (and revoke) a personal upload token from settings;
       tokens authenticate upload-only API calls (scoped: no read/delete),
       stored hashed.
-- [ ] A documented Apple Shortcut accepts images from the share sheet and
+- [x] A documented Apple Shortcut accepts images from the share sheet and
       POSTs them to the upload API with the token; a shared .shortcut file
       or step-by-step recipe lives in docs and is linked from settings on
       iOS.
 - [ ] Sharing a photo from the iOS share sheet through the Shortcut lands
       the asset in the library (dedupe applies); verified on a real device.
-- [ ] Token misuse paths return the stable 401 contract; evidence packet
+- [x] Token misuse paths return the stable 401 contract; evidence packet
       with the live token mint → POST → revoke → 401 cycle.
+
+## Progress
+
+Implemented the repo-side Shortcut foundation on
+`deliver-033-ios-shortcut-upload`: hashed personal upload tokens, upload-only
+auth for `POST /api/upload`, token list/create/revoke APIs, settings controls,
+Shortcut setup docs, and a rendered setup page.
+
+Evidence packet:
+`docs/qa/evidence/2026-06-11-ios-shortcut-upload-token/packet.md`.
+
+Blocked on the remaining real-device oracle: a physical iPhone must run the
+Save to Sploot Shortcut from the native share sheet and prove the shared image
+lands in the library with dedupe plus revoke → 401 behavior.
 
 ## Notes
 

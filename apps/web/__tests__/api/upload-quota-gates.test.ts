@@ -4,6 +4,7 @@ import { UPLOAD } from '@sploot/common';
 
 const mocks = vi.hoisted(() => ({
   verifyBearerOrThrow: vi.fn(),
+  authenticateRequest: vi.fn(),
   uploadGateEnabled: true,
   reserveUploadBytes: vi.fn(),
   upload: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock('@/lib/auth/verify-bearer', () => ({
 
 vi.mock('@/lib/auth/request-auth', () => ({
   authenticateRequest: async (...args: any[]) => {
+    mocks.authenticateRequest(...args);
     try {
       const userId = await mocks.verifyBearerOrThrow(...args);
       return { status: 'authenticated', principal: { userId }, syncStatus: 'skipped' };
@@ -186,6 +188,15 @@ describe('POST /api/upload quota and runtime gates', () => {
     expect(body.code).toBe('quota_exceeded');
     expect(mocks.processImage).not.toHaveBeenCalled();
     expect(mocks.upload).not.toHaveBeenCalled();
+  });
+
+  it('allows personal upload token auth through the upload endpoint only', async () => {
+    await POST(uploadRequest());
+
+    expect(mocks.authenticateRequest).toHaveBeenCalledWith(
+      expect.any(NextRequest),
+      { allowPersonalUploadToken: true }
+    );
   });
 });
 

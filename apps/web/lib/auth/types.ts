@@ -1,6 +1,6 @@
-export type AuthProvider = 'clerk' | 'qa-local';
-export type AuthSource = 'clerk-request' | 'qa-local';
-export type AuthCredentialKind = 'cookie-or-bearer' | 'qa-local';
+export type AuthProvider = 'clerk' | 'qa-local' | 'personal-upload-token';
+export type AuthSource = 'clerk-request' | 'qa-local' | 'personal-upload-token';
+export type AuthCredentialKind = 'cookie-or-bearer' | 'qa-local' | 'personal-upload-token';
 export type AuthSyncStatus = 'success' | 'failed' | 'skipped';
 
 export interface AuthenticatedPrincipal {
@@ -39,5 +39,6 @@ export interface AuthPolicy {
   allowClerk?: boolean;
   allowQaLocal?: boolean;
   requireUserSync?: boolean;
+  allowPersonalUploadToken?: boolean;
   env?: Record<string, string | undefined>;
 }

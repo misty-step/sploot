@@ -37,7 +37,7 @@ async function postHandler(req: NextRequest) {
     const syncEmbeddings = url.searchParams.get('sync_embeddings') === 'true';
 
     // Authenticate user (Clerk bearer/cookies, or the qa-local harness)
-    const auth = await authenticateRequest(req);
+    const auth = await authenticateRequest(req, { allowPersonalUploadToken: true });
     if (auth.status !== 'authenticated') {
       return unauthorizedResponse();
     }

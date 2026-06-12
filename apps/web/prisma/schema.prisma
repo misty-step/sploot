@@ -28,10 +28,27 @@ model User {
   assets                   Asset[]
   tags                     Tag[]
   identities               UserIdentity[]
+  personalUploadTokens     PersonalUploadToken[]
   storageQuota             UserStorageQuota?
   storageQuotaReservations StorageQuotaReservation[]
 
   @@map("users")
+}
+
+model PersonalUploadToken {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  name       String
+  tokenHash  String    @unique @map("token_hash")
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@map("personal_upload_tokens")
 }
 
 model UserIdentity {

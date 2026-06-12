@@ -21,6 +21,12 @@ tests may use the signed `qa-local` mode documented in `apps/web/docs/AUTH.md`.
 Operational routes such as health and cron endpoints define their own auth
 contracts.
 
+Personal upload tokens are scoped to image ingestion. They authenticate
+`POST /api/upload` for Apple Shortcuts and other write-only ingestion clients,
+but they do not authenticate read, delete, search, tag, asset, or upload-check
+routes. Tokens are shown once, stored only as SHA-256 hashes, and can be
+revoked from settings.
+
 ### Auth Boundary
 
 - browser page traffic on `https://sploot.app` redirects to
@@ -50,6 +56,7 @@ with status `401`.
 Protected product API route inventory:
 
 - `/api/upload`, `/api/upload/check`
+- `/api/upload-tokens`, `/api/upload-tokens/{id}`
 - `/api/assets`, `/api/assets/{id}`, `/api/assets/{id}/tags`, `/api/assets/audit`, `/api/assets/{id}/share`, `/api/assets/{id}/similar`
 - `/api/assets/{id}/embedding-status`, `/api/assets/batch/embedding-status`, `/api/assets/{id}/generate-embedding`
 - `/api/search`, `/api/search/advanced`
@@ -139,7 +146,9 @@ MP4, and WebM. static images get optimized main/thumbnail blobs; animated GIFs
 and videos keep the original blob as the playback source and store a poster
 thumbnail for previews and embedding.
 
-**Authentication:** Required
+**Authentication:** Required. Clerk session/cookie auth and personal upload
+tokens are accepted. Personal upload tokens are upload-only and do not grant
+read/delete access elsewhere.
 
 **Request:** `multipart/form-data`
 
@@ -199,6 +208,76 @@ thumbnail for previews and embedding.
 - 413: Image too large
 - 429: Too many uploads
 - 500: Server error
+
+---
+
+#### GET /api/upload-tokens
+
+List personal upload tokens for the signed-in user. Token secrets are never
+returned after creation.
+
+**Authentication:** Required (Clerk/qa-local only)
+
+**Success Response (200):**
+
+```json
+{
+  "tokens": [
+    {
+      "id": "cmqa...",
+      "name": "Save to Sploot Shortcut",
+      "createdAt": "2026-06-12T00:00:00.000Z",
+      "lastUsedAt": null,
+      "revokedAt": null
+    }
+  ]
+}
+```
+
+#### POST /api/upload-tokens
+
+Mint a personal upload token. The `token` field is shown once; Sploot stores
+only its SHA-256 hash.
+
+**Authentication:** Required (Clerk/qa-local only)
+
+**Request Body:**
+
+```json
+{
+  "name": "Save to Sploot Shortcut"
+}
+```
+
+**Success Response (201):**
+
+```json
+{
+  "token": "sploot_upload_...",
+  "record": {
+    "id": "cmqa...",
+    "name": "Save to Sploot Shortcut",
+    "createdAt": "2026-06-12T00:00:00.000Z",
+    "lastUsedAt": null,
+    "revokedAt": null
+  }
+}
+```
+
+#### DELETE /api/upload-tokens/{id}
+
+Revoke a personal upload token. Revoked tokens return the standard
+`401 {"error":"Unauthorized"}` response when used against upload endpoints.
+
+**Authentication:** Required (Clerk/qa-local only)
+
+**Success Response (200):**
+
+```json
+{
+  "revoked": true
+}
+```
 
 ---
 

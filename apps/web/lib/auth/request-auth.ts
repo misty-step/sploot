@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { isUnauthorizedAuthError } from './api';
+import { verifyPersonalUploadToken } from './personal-upload-token';
 import { verifyQaLocalAuthHeaders } from './qa-local';
 import type {
   AuthPolicy,
@@ -8,10 +9,11 @@ import type {
 } from './types';
 import { verifyBearerOrThrow } from './verify-bearer';
 
-const DEFAULT_AUTH_POLICY: Required<Pick<AuthPolicy, 'allowClerk' | 'allowQaLocal' | 'requireUserSync'>> = {
+const DEFAULT_AUTH_POLICY: Required<Pick<AuthPolicy, 'allowClerk' | 'allowQaLocal' | 'requireUserSync' | 'allowPersonalUploadToken'>> = {
   allowClerk: true,
   allowQaLocal: true,
   requireUserSync: false,
+  allowPersonalUploadToken: false,
 };
 
 export async function authenticateRequest(
@@ -23,6 +25,16 @@ export async function authenticateRequest(
     ...policy,
   };
   const env = resolvedPolicy.env ?? process.env;
+
+  if (resolvedPolicy.allowPersonalUploadToken) {
+    const uploadTokenResult = await verifyPersonalUploadToken(req);
+    if (
+      uploadTokenResult.status !== 'unauthenticated' ||
+      uploadTokenResult.reason !== 'personal-upload-token-missing'
+    ) {
+      return uploadTokenResult;
+    }
+  }
 
   if (resolvedPolicy.allowQaLocal) {
     const qaResult = await verifyQaLocalAuthHeaders(req.headers, env);

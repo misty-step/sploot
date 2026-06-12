@@ -15,6 +15,14 @@ interface StorageStats {
   storageUsagePercent: number;
 }
 
+interface UploadTokenSummary {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -28,6 +36,10 @@ export default function SettingsPage() {
   const { installable, installed, requiresManualInstall, promptInstall } = usePwaInstallPrompt();
   const [signOutLoading, setSignOutLoading] = useState(false);
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
+  const [uploadTokens, setUploadTokens] = useState<UploadTokenSummary[]>([]);
+  const [newUploadToken, setNewUploadToken] = useState<string | null>(null);
+  const [uploadTokenBusy, setUploadTokenBusy] = useState<string | null>(null);
+  const [uploadTokenError, setUploadTokenError] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string>(APP_VERSION_FALLBACK);
 
   useEffect(() => {
@@ -56,7 +68,17 @@ export default function SettingsPage() {
       }
     }
 
+    async function loadUploadTokens() {
+      const response = await fetch('/api/upload-tokens');
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!cancelled) {
+        setUploadTokens(Array.isArray(data.tokens) ? data.tokens : []);
+      }
+    }
+
     loadStorageStats().catch(() => {});
+    loadUploadTokens().catch(() => {});
 
     return () => {
       cancelled = true;
@@ -74,6 +96,50 @@ export default function SettingsPage() {
 
   const handleInstall = async () => {
     await promptInstall();
+  };
+
+  const createUploadToken = async () => {
+    setUploadTokenBusy('create');
+    setUploadTokenError(null);
+    setNewUploadToken(null);
+    try {
+      const response = await fetch('/api/upload-tokens', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Save to Sploot Shortcut' }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.token || !data.record) {
+        throw new Error(data.error ?? 'Could not create upload token');
+      }
+      setNewUploadToken(data.token);
+      setUploadTokens((tokens) => [data.record, ...tokens]);
+    } catch (error) {
+      setUploadTokenError(error instanceof Error ? error.message : 'Could not create upload token');
+    } finally {
+      setUploadTokenBusy(null);
+    }
+  };
+
+  const revokeUploadToken = async (tokenId: string) => {
+    setUploadTokenBusy(tokenId);
+    setUploadTokenError(null);
+    try {
+      const response = await fetch(`/api/upload-tokens/${tokenId}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error ?? 'Could not revoke upload token');
+      }
+      setUploadTokens((tokens) => tokens.map((token) => (
+        token.id === tokenId
+          ? { ...token, revokedAt: new Date().toISOString() }
+          : token
+      )));
+    } catch (error) {
+      setUploadTokenError(error instanceof Error ? error.message : 'Could not revoke upload token');
+    } finally {
+      setUploadTokenBusy(null);
+    }
   };
 
   return (
@@ -179,11 +245,82 @@ export default function SettingsPage() {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Heads up: sharing images into Sploot from other apps&apos; share
-          sheets works on Android. iPhones don&apos;t let web apps into the
-          share sheet — copy an image and paste it into the upload zone
-          instead.
+          Heads up: sharing images into Sploot from other apps&apos; share sheets
+          works on Android. iPhones need the Save to Sploot Shortcut below.
         </p>
+      </section>
+
+      <section className="bg-card border border-border p-5 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Save to Sploot Shortcut</h2>
+          <p className="text-muted-foreground text-sm mt-1">
+            Mint an upload-only token for Apple Shortcuts. It can add memes but
+            cannot read, edit, or delete your library.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void createUploadToken()}
+            disabled={uploadTokenBusy !== null}
+            className={cn(
+              'px-4 py-2 text-sm font-medium transition-colors bg-primary text-primary-foreground hover:bg-primary/90',
+              uploadTokenBusy !== null && 'opacity-60 cursor-not-allowed'
+            )}
+          >
+            {uploadTokenBusy === 'create' ? 'Creating...' : 'Create upload token'}
+          </button>
+          <Link
+            href="/docs/ios/save-to-sploot-shortcut"
+            className="text-sm text-accent-cyan hover:underline"
+          >
+            Shortcut setup
+          </Link>
+        </div>
+
+        {newUploadToken && (
+          <div className="border border-border bg-background p-3 space-y-2">
+            <p className="text-xs font-medium uppercase text-muted-foreground">Copy this token now</p>
+            <code className="block break-all text-xs text-foreground">{newUploadToken}</code>
+            <p className="text-xs text-muted-foreground">
+              Sploot stores only a hash. This token will not be shown again.
+            </p>
+          </div>
+        )}
+
+        {uploadTokenError && (
+          <p className="text-sm text-destructive">{uploadTokenError}</p>
+        )}
+
+        <div className="space-y-2">
+          {uploadTokens.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No Shortcut tokens yet.</p>
+          ) : uploadTokens.map((token) => (
+            <div key={token.id} className="flex flex-wrap items-center justify-between gap-3 border border-border bg-background p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">{token.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {token.revokedAt
+                    ? `Revoked ${new Date(token.revokedAt).toLocaleDateString()}`
+                    : token.lastUsedAt
+                      ? `Last used ${new Date(token.lastUsedAt).toLocaleDateString()}`
+                      : `Created ${new Date(token.createdAt).toLocaleDateString()}`}
+                </p>
+              </div>
+              {!token.revokedAt && (
+                <button
+                  type="button"
+                  onClick={() => void revokeUploadToken(token.id)}
+                  disabled={uploadTokenBusy !== null}
+                  className="border border-border px-3 py-2 text-xs font-medium uppercase text-foreground hover:bg-muted disabled:opacity-60"
+                >
+                  {uploadTokenBusy === token.id ? 'Revoking...' : 'Revoke'}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="bg-card border border-border p-5 space-y-3">
