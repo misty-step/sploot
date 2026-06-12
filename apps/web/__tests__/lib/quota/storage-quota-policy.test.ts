@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
+  const freeLimitBytes = 1024 * 1024 * 1024;
+  const plusLimitBytes = 20 * freeLimitBytes;
   const tx = {
     userStorageQuota: {
       upsert: vi.fn(),
       findUniqueOrThrow: vi.fn(),
+      update: vi.fn(),
+    },
+    user: {
+      findUnique: vi.fn(),
     },
     storageQuotaReservation: {
       aggregate: vi.fn(),
@@ -24,7 +30,7 @@ const mocks = vi.hoisted(() => {
     },
   };
 
-  return { prisma, tx };
+  return { freeLimitBytes, plusLimitBytes, prisma, tx };
 });
 
 vi.mock('@/lib/db', () => ({
@@ -44,6 +50,8 @@ describe('storage quota policy', () => {
     vi.clearAllMocks();
     mocks.tx.userStorageQuota.upsert.mockResolvedValue({});
     mocks.tx.userStorageQuota.findUniqueOrThrow.mockResolvedValue({ limitBytes: 1000n });
+    mocks.tx.userStorageQuota.update.mockResolvedValue({});
+    mocks.tx.user.findUnique.mockResolvedValue({ plan: 'free' });
     mocks.tx.asset.aggregate.mockResolvedValue({ _sum: { size: 400 } });
     mocks.tx.storageQuotaReservation.aggregate.mockResolvedValue({ _sum: { bytes: 100n } });
     mocks.tx.storageQuotaReservation.create.mockResolvedValue({ id: 'reservation-1' });
@@ -54,8 +62,8 @@ describe('storage quota policy', () => {
       id: 'reservation-1',
       snapshot: {
         usedBytes: 400,
-        limitBytes: 1000,
-        remainingBytes: 0,
+        limitBytes: mocks.freeLimitBytes,
+        remainingBytes: mocks.freeLimitBytes - 400 - 100 - 500,
         reservedBytes: 100,
         incomingBytes: 500,
       },
@@ -79,6 +87,8 @@ describe('storage quota policy', () => {
   });
 
   it('rejects over-quota uploads before creating a reservation', async () => {
+    mocks.tx.asset.aggregate.mockResolvedValue({ _sum: { size: mocks.freeLimitBytes - 400 } });
+
     await expect(reserveUploadBytes('user-1', 501)).rejects.toBeInstanceOf(StorageQuotaExceededError);
     expect(mocks.tx.storageQuotaReservation.create).not.toHaveBeenCalled();
   });
@@ -86,7 +96,7 @@ describe('storage quota policy', () => {
   it('checks upload bytes without creating a reservation', async () => {
     await expect(checkUploadBytesAllowed('user-1', 500)).resolves.toMatchObject({
       usedBytes: 400,
-      limitBytes: 1000,
+      limitBytes: mocks.freeLimitBytes,
       incomingBytes: 500,
     });
 
@@ -112,8 +122,8 @@ describe('storage quota policy', () => {
       .mockImplementationOnce((callback) => callback(mocks.tx));
     await expect(getStorageQuotaSnapshot('user-1')).resolves.toEqual({
       usedBytes: 400,
-      limitBytes: 1000,
-      remainingBytes: 500,
+      limitBytes: mocks.freeLimitBytes,
+      remainingBytes: mocks.freeLimitBytes - 400 - 100,
       reservedBytes: 100,
     });
     expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(2);
@@ -127,11 +137,27 @@ describe('storage quota policy', () => {
 
     await expect(getStorageQuotaSnapshot('user-1')).resolves.toEqual({
       usedBytes: 400,
-      limitBytes: 1000,
-      remainingBytes: 500,
+      limitBytes: mocks.freeLimitBytes,
+      remainingBytes: mocks.freeLimitBytes - 400 - 100,
       reservedBytes: 100,
     });
     expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('raises the quota snapshot to the active plan limit', async () => {
+    mocks.tx.user.findUnique.mockResolvedValue({ plan: 'plus' });
+
+    await expect(getStorageQuotaSnapshot('user-1')).resolves.toEqual({
+      usedBytes: 400,
+      limitBytes: mocks.plusLimitBytes,
+      remainingBytes: mocks.plusLimitBytes - 400 - 100,
+      reservedBytes: 100,
+    });
+
+    expect(mocks.tx.userStorageQuota.update).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+      data: { limitBytes: BigInt(mocks.plusLimitBytes) },
+    });
   });
 
   it('degrades to the default snapshot when the users row is missing (quota FK violation)', async () => {
@@ -144,8 +170,8 @@ describe('storage quota policy', () => {
 
     await expect(getStorageQuotaSnapshot('user-without-row')).resolves.toEqual({
       usedBytes: 0,
-      limitBytes: 1024 * 1024 * 1024,
-      remainingBytes: 1024 * 1024 * 1024,
+      limitBytes: mocks.freeLimitBytes,
+      remainingBytes: mocks.freeLimitBytes,
       reservedBytes: 0,
     });
   });

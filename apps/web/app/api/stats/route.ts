@@ -5,6 +5,8 @@ import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
 import { getStorageQuotaSnapshot } from '@/lib/quota/storage-quota-policy';
+import { getBillingPlanSnapshot } from '@/lib/billing/subscription-sync';
+import { STORAGE_PLANS } from '@/lib/billing/plans';
 
 /**
  * GET /api/stats
@@ -42,7 +44,10 @@ async function getHandler(_req: NextRequest) {
 
     const assetCount = aggregate._count.id;
     const storageBytes = aggregate._sum.size ?? 0;
-    const quota = await getStorageQuotaSnapshot(userId);
+    const [quota, billing] = await Promise.all([
+      getStorageQuotaSnapshot(userId),
+      getBillingPlanSnapshot(userId),
+    ]);
     const storageLimitBytes = quota.limitBytes;
     const storageRemainingBytes = Math.max(0, quota.limitBytes - storageBytes - (quota.reservedBytes ?? 0));
     const storageUsagePercent = storageLimitBytes > 0
@@ -59,6 +64,10 @@ async function getHandler(_req: NextRequest) {
         storageLimitBytes,
         storageRemainingBytes,
         storageUsagePercent,
+        plan: billing.plan,
+        planName: STORAGE_PLANS[billing.plan].name,
+        billingStatus: billing.billingStatus,
+        billingCurrentPeriodEnd: billing.billingCurrentPeriodEnd?.toISOString() ?? null,
         lastUploadAt,
       },
       { status: 200 }

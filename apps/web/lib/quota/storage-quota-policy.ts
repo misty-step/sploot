@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import type { StorageQuotaSnapshot } from '@sploot/common';
 import { prisma } from '@/lib/db';
+import { getPlanLimitBytes } from '@/lib/billing/plans';
 
 export const DEFAULT_STORAGE_QUOTA_BYTES = 1024 * 1024 * 1024;
 const RESERVATION_TTL_MS = 15 * 60 * 1000;
@@ -34,7 +35,7 @@ export function storageQuotaError(snapshot: StorageQuotaSnapshot) {
     quota: snapshot,
     action: {
       type: 'manage_storage' as const,
-      label: 'Manage storage',
+      label: 'Upgrade storage',
       href: '/app/settings',
     },
   };
@@ -69,6 +70,12 @@ async function readSnapshot(tx: any, userId: string, incomingBytes?: bigint): Pr
 
   await tx.$executeRaw`SELECT "user_id" FROM "user_storage_quotas" WHERE "user_id" = ${userId} FOR UPDATE`;
 
+  const user = await tx.user.findUnique({
+    where: { id: userId },
+    select: { plan: true },
+  });
+  const planLimitBytes = BigInt(getPlanLimitBytes(user?.plan));
+
   await tx.storageQuotaReservation.deleteMany({
     where: {
       ownerUserId: userId,
@@ -80,6 +87,13 @@ async function readSnapshot(tx: any, userId: string, incomingBytes?: bigint): Pr
     where: { userId },
     select: { limitBytes: true },
   });
+
+  if (BigInt(quota.limitBytes) !== planLimitBytes) {
+    await tx.userStorageQuota.update({
+      where: { userId },
+      data: { limitBytes: planLimitBytes },
+    });
+  }
 
   const assetAggregate = await tx.asset.aggregate({
     where: {
@@ -98,7 +112,7 @@ async function readSnapshot(tx: any, userId: string, incomingBytes?: bigint): Pr
 
   const usedBytes = BigInt(assetAggregate._sum.size ?? 0);
   const reservedBytes = BigInt(reservationAggregate._sum.bytes ?? 0);
-  const limitBytes = BigInt(quota.limitBytes);
+  const limitBytes = planLimitBytes;
   const requested = incomingBytes ?? BigInt(0);
   const remainingBytes = limitBytes - usedBytes - reservedBytes - requested;
 

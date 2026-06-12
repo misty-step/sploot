@@ -13,6 +13,23 @@ interface StorageStats {
   storageLimitBytes: number;
   storageRemainingBytes: number;
   storageUsagePercent: number;
+  plan: string;
+  planName: string;
+  billingStatus: string;
+  billingCurrentPeriodEnd: string | null;
+}
+
+interface BillingPlan {
+  id: string;
+  name: string;
+  priceUsd: number;
+  limitBytes: number;
+  limitLabel: string;
+  description: string;
+}
+
+interface BillingState {
+  plans: BillingPlan[];
 }
 
 function formatBytes(bytes: number): string {
@@ -28,6 +45,9 @@ export default function SettingsPage() {
   const { installable, installed, requiresManualInstall, promptInstall } = usePwaInstallPrompt();
   const [signOutLoading, setSignOutLoading] = useState(false);
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
+  const [billing, setBilling] = useState<BillingState | null>(null);
+  const [billingAction, setBillingAction] = useState<string | null>(null);
+  const [billingError, setBillingError] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string>(APP_VERSION_FALLBACK);
 
   useEffect(() => {
@@ -52,11 +72,25 @@ export default function SettingsPage() {
           storageLimitBytes: data.storageLimitBytes ?? 0,
           storageRemainingBytes: data.storageRemainingBytes ?? 0,
           storageUsagePercent: data.storageUsagePercent ?? 0,
+          plan: data.plan ?? 'free',
+          planName: data.planName ?? 'Free',
+          billingStatus: data.billingStatus ?? 'none',
+          billingCurrentPeriodEnd: data.billingCurrentPeriodEnd ?? null,
         });
       }
     }
 
+    async function loadBilling() {
+      const response = await fetch('/api/billing');
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!cancelled) {
+        setBilling({ plans: data.plans ?? [] });
+      }
+    }
+
     loadStorageStats().catch(() => {});
+    loadBilling().catch(() => {});
 
     return () => {
       cancelled = true;
@@ -74,6 +108,44 @@ export default function SettingsPage() {
 
   const handleInstall = async () => {
     await promptInstall();
+  };
+
+  const startCheckout = async (planId: string) => {
+    setBillingAction(planId);
+    setBillingError(null);
+    try {
+      const response = await fetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ planId }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.url) {
+        throw new Error(data.error ?? 'Checkout is not available right now');
+      }
+      window.location.href = data.url;
+    } catch (error) {
+      setBillingError(error instanceof Error ? error.message : 'Checkout is not available right now');
+    } finally {
+      setBillingAction(null);
+    }
+  };
+
+  const openBillingPortal = async () => {
+    setBillingAction('portal');
+    setBillingError(null);
+    try {
+      const response = await fetch('/api/billing/portal', { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok || !data.url) {
+        throw new Error(data.error ?? 'Billing portal is not available right now');
+      }
+      window.location.href = data.url;
+    } catch (error) {
+      setBillingError(error instanceof Error ? error.message : 'Billing portal is not available right now');
+    } finally {
+      setBillingAction(null);
+    }
   };
 
   return (
@@ -113,12 +185,26 @@ export default function SettingsPage() {
 
       <section className="bg-card border border-border p-5 space-y-4">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Storage</h2>
-          <p className="text-muted-foreground text-sm mt-1">
-            {storageStats
-              ? `${formatBytes(storageStats.storageBytes)} of ${formatBytes(storageStats.storageLimitBytes)} used`
-              : 'Checking storage usage...'}
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Storage</h2>
+              <p className="text-muted-foreground text-sm mt-1">
+                {storageStats
+                  ? `${formatBytes(storageStats.storageBytes)} of ${formatBytes(storageStats.storageLimitBytes)} used`
+                  : 'Checking storage usage...'}
+              </p>
+            </div>
+            {storageStats && (
+              <div className="text-right">
+                <span className="inline-flex border border-border bg-background px-2 py-1 font-mono text-xs uppercase text-muted-foreground">
+                  {storageStats.planName}
+                </span>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {storageStats.billingStatus === 'none' ? 'free tier' : storageStats.billingStatus}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -132,6 +218,75 @@ export default function SettingsPage() {
             <span>{storageStats ? `${storageStats.storageUsagePercent}% used` : 'Usage unavailable'}</span>
             <span>{storageStats ? `${formatBytes(storageStats.storageRemainingBytes)} remaining` : ''}</span>
           </div>
+        </div>
+
+        {billing?.plans && billing.plans.length > 0 && (
+          <div className="grid gap-3 sm:grid-cols-3">
+            {billing.plans.map((plan) => {
+              const isCurrent = storageStats?.plan === plan.id;
+              const hasPaidPlan = storageStats !== null && storageStats.plan !== 'free';
+              const isDisabled = billingAction !== null || isCurrent;
+              const actionLabel = isCurrent
+                ? 'Current plan'
+                : billingAction === plan.id || billingAction === 'portal'
+                  ? 'Opening...'
+                  : hasPaidPlan
+                    ? 'Manage'
+                    : 'Upgrade';
+              return (
+                <div key={plan.id} className="border border-border bg-background p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="font-semibold text-foreground">{plan.name}</h3>
+                      <p className="text-xs text-muted-foreground">{plan.description}</p>
+                    </div>
+                    <span className="font-mono text-xs text-muted-foreground">{plan.limitLabel}</span>
+                  </div>
+                  <p className="text-sm text-foreground">
+                    {plan.priceUsd === 0 ? 'Free' : `$${plan.priceUsd}/mo`}
+                  </p>
+                  {plan.priceUsd > 0 && (
+                    <button
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => {
+                        if (hasPaidPlan) {
+                          void openBillingPortal();
+                          return;
+                        }
+                        void startCheckout(plan.id);
+                      }}
+                      className={cn(
+                        'w-full border border-border px-3 py-2 text-xs font-medium uppercase transition-colors',
+                        isCurrent
+                          ? 'bg-muted text-muted-foreground'
+                          : 'bg-primary text-primary-foreground hover:bg-primary/90',
+                        isDisabled && 'opacity-60 cursor-not-allowed'
+                      )}
+                    >
+                      {actionLabel}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {storageStats && storageStats.plan !== 'free' && (
+            <button
+              type="button"
+              disabled={billingAction !== null}
+              onClick={() => void openBillingPortal()}
+              className="border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-60"
+            >
+              {billingAction === 'portal' ? 'Opening billing...' : 'Manage billing'}
+            </button>
+          )}
+          {billingError && (
+            <p className="text-sm text-destructive">{billingError}</p>
+          )}
         </div>
       </section>
 

@@ -11,6 +11,7 @@ import { ProcessTimeline } from "@/components/landing/process-timeline";
 import { SectionDivider } from "@/components/landing/section-divider";
 import { GlobalFooter } from "@/components/global-footer";
 import { AtlasLandingHero } from "@/components/sploot";
+import { PAID_STORAGE_PLANS, STORAGE_PLANS, formatPlanLimit } from "@/lib/billing/plans";
 
 export default async function Home() {
   const { userId } = await getAuth();
@@ -124,13 +125,63 @@ export default async function Home() {
           </div>
           <ProcessTimeline />
         </div>
-        <ScrollChevron targetId="section-benefits" />
+        <ScrollChevron targetId="section-pricing" />
       </section>
 
       {/* Section Divider */}
       <SectionDivider color="lime" />
 
-      {/* Section 4: Benefits - Center text with icons and CTA */}
+      {/* Section 4: Pricing */}
+      <section id="section-pricing" className="relative min-h-screen flex items-center px-6 py-20 md:py-32 bg-background">
+        <div className="max-w-6xl mx-auto w-full space-y-12">
+          <div className="max-w-3xl space-y-6">
+            <h2
+              className="text-5xl md:text-6xl lg:text-7xl leading-tight tracking-wider"
+              style={{ fontFamily: "var(--font-bebas-neue)" }}
+            >
+              FREE UNTIL
+              <br />
+              THE PILE GETS HEAVY
+            </h2>
+            <p className="text-xl text-muted-foreground leading-relaxed">
+              Storage is the real cost, so storage is what pays. Keep reading
+              and exporting your library either way.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            {[STORAGE_PLANS.free, ...PAID_STORAGE_PLANS].map((plan) => (
+              <div key={plan.id} className="border border-border bg-card p-5 space-y-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-2xl font-semibold text-foreground">{plan.name}</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">{plan.description}</p>
+                  </div>
+                  <span className="font-mono text-xs uppercase text-muted-foreground">
+                    {formatPlanLimit(plan)}
+                  </span>
+                </div>
+                <p
+                  className="text-4xl tracking-wider"
+                  style={{ fontFamily: "var(--font-bebas-neue)" }}
+                >
+                  {plan.priceUsd === 0 ? "$0" : `$${plan.priceUsd}`}
+                  <span className="ml-1 font-mono text-sm text-muted-foreground">/mo</span>
+                </p>
+                <Button asChild variant={plan.id === "free" ? "outline" : "accent"} className="w-full">
+                  <Link href="/sign-up">{plan.id === "free" ? "start free" : "upgrade storage"}</Link>
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <ScrollChevron targetId="section-benefits" />
+      </section>
+
+      {/* Section Divider */}
+      <SectionDivider color="cyan" />
+
+      {/* Section 5: Benefits - Center text with icons and CTA */}
       <section id="section-benefits" className="relative min-h-screen flex items-center justify-center px-6 py-20 md:py-32 bg-grid">
         <div className="max-w-5xl mx-auto w-full text-center space-y-16">
           <div className="space-y-8">

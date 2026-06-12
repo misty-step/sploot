@@ -108,7 +108,8 @@ Uploads are guarded by the same runtime and quota policy:
 
 - `SPLOOT_UPLOADS_ENABLED=false` pauses uploads before server-side Blob writes and returns `503` with `code: "uploads_disabled"`.
 - Per-user storage quota is checked after validation/deduplication and before image processing or Blob writes.
-- Quota denials return `403` with `code: "quota_exceeded"`, a `quota` snapshot, and an action pointing to `/app/settings`.
+- Quota denials return `403` with `code: "quota_exceeded"`, a `quota`
+  snapshot, and an upgrade action pointing to `/app/settings`.
 - `POST /api/upload` is the supported upload contract for web, extension, and future queued replay clients. Direct client-upload URL generation is not a supported product API.
 
 Quota error example:
@@ -127,7 +128,7 @@ Quota error example:
   },
   "action": {
     "type": "manage_storage",
-    "label": "Manage storage",
+    "label": "Upgrade storage",
     "href": "/app/settings"
   }
 }
@@ -553,7 +554,9 @@ Run a blob-url audit for the authenticated user's non-deleted assets.
 
 #### GET /api/stats
 
-Return per-user aggregate stats (`assetCount`, `storageBytes`, `storageLimitBytes`, `storageRemainingBytes`, `storageUsagePercent`, `lastUploadAt`).
+Return per-user aggregate stats (`assetCount`, `storageBytes`,
+`storageLimitBytes`, `storageRemainingBytes`, `storageUsagePercent`, `plan`,
+`planName`, `billingStatus`, `billingCurrentPeriodEnd`, `lastUploadAt`).
 
 **Authentication:** Required
 
@@ -562,6 +565,117 @@ Return per-user aggregate stats (`assetCount`, `storageBytes`, `storageLimitByte
 - 401: `{"error":"Unauthorized"}`
 - 500: Failed to fetch stats
 - 503: Database not available
+
+---
+
+### Billing
+
+Storage billing is subscription-based. Stripe is the billing source of truth;
+Sploot stores local plan state only to enforce upload quotas and render
+settings.
+
+#### GET /api/billing
+
+Return the authenticated user's current billing state and available storage
+plans.
+
+**Authentication:** Required
+
+**Success Response (200):**
+
+```json
+{
+  "current": {
+    "plan": "free",
+    "limitBytes": 1073741824,
+    "billingStatus": "none",
+    "stripeCustomerId": null,
+    "stripeSubscriptionId": null,
+    "stripePriceId": null,
+    "billingCurrentPeriodEnd": null
+  },
+  "plans": [
+    {
+      "id": "plus",
+      "name": "Plus",
+      "priceUsd": 5,
+      "limitBytes": 21474836480,
+      "limitLabel": "20 GB",
+      "description": "20 GB for a serious meme pile"
+    }
+  ]
+}
+```
+
+#### POST /api/billing/checkout
+
+Create a Stripe Checkout Session for a first paid storage plan. Users with an
+active paid subscription manage plan changes in the Stripe Billing Portal
+instead of creating a second subscription.
+
+**Authentication:** Required
+
+**Request Body:**
+
+```json
+{
+  "planId": "plus"
+}
+```
+
+**Success Response (200):**
+
+```json
+{
+  "url": "https://checkout.stripe.com/c/pay/cs_test_..."
+}
+```
+
+**Error Responses:**
+
+- 400: Invalid storage plan
+- 401: Unauthorized
+- 409: Account sync is not ready (`user_not_ready`) or an active subscription already exists (`billing_subscription_exists`)
+- 503: Stripe is not configured
+
+#### POST /api/billing/portal
+
+Create a Stripe Billing Portal session for an existing Stripe customer.
+
+**Authentication:** Required
+
+**Success Response (200):**
+
+```json
+{
+  "url": "https://billing.stripe.com/p/session/..."
+}
+```
+
+**Error Responses:**
+
+- 400: No billing customer exists yet
+- 401: Unauthorized
+- 503: Stripe is not configured
+
+#### POST /api/billing/webhook
+
+Receive Stripe webhooks and synchronize local plan/quota state.
+
+**Authentication:** Stripe signature (`stripe-signature`), not Clerk.
+
+Handled events:
+
+- `checkout.session.completed`
+- `customer.subscription.created`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `customer.deleted`
+
+**Error Responses:**
+
+- 400: Missing or invalid Stripe signature
+- 503: Stripe webhook secret is not configured
 
 ---
 

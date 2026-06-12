@@ -206,6 +206,9 @@ importers:
       sonner:
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      stripe:
+        specifier: ^19.3.0
+        version: 19.3.0(@types/node@20.19.41)
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
@@ -7214,6 +7217,10 @@ packages:
     engines: {node: '>=10.13.0'}
     hasBin: true
 
+  qs@6.15.2:
+    resolution: {integrity: sha512-Rzq0KEyX/w/tEybncDgdkZrJgVUsUMk3xjh3t5bv3S1HTAtg+uOYt72+ZfwiQwKdysThkTBdL/rTi6HDmX9Ddw==}
+    engines: {node: '>=0.6'}
+
   quansync@0.2.11:
     resolution: {integrity: sha512-AifT7QEbW9Nri4tAwR5M/uzpBuqfZf+zwaEM/QkzEjj7NBuFD2rBuy0K3dE+8wltbezDV7JMA0WfnCPYRSYbXA==}
 
@@ -7870,6 +7877,15 @@ packages:
 
   strip-literal@3.1.0:
     resolution: {integrity: sha512-8r3mkIM/2+PpjHoOtiAW8Rg3jJLHaV7xPwG+YRGrv6FP0wwk/toTpATxWYOW0BKdWwl82VT2tFYi5DlROa0Mxg==}
+
+  stripe@19.3.0:
+    resolution: {integrity: sha512-3MbqRkw5LXb4LWP1LgIEYxUAYhYDDU5pcHZj4Xha6VWPnN1wrUmQ7Htsgm8wR584s0hn1aQg1lYD0Hi+F37E5g==}
+    engines: {node: '>=16'}
+    peerDependencies:
+      '@types/node': '>=16'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
 
   stubborn-fs@2.0.0:
     resolution: {integrity: sha512-Y0AvSwDw8y+nlSNFXMm2g6L51rBGdAQT20J3YSOqxC53Lo3bjWRtr2BKcfYoAf352WYpsZSTURrA0tqhfgudPA==}
@@ -16123,6 +16139,10 @@ snapshots:
       pngjs: 5.0.0
       yargs: 15.4.1
 
+  qs@6.15.2:
+    dependencies:
+      side-channel: 1.1.0
+
   quansync@0.2.11: {}
 
   queue-microtask@1.2.3: {}
@@ -16978,6 +16998,12 @@ snapshots:
   strip-literal@3.1.0:
     dependencies:
       js-tokens: 9.0.1
+
+  stripe@19.3.0(@types/node@20.19.41):
+    dependencies:
+      qs: 6.15.2
+    optionalDependencies:
+      '@types/node': 20.19.41
 
   stubborn-fs@2.0.0:
     dependencies:

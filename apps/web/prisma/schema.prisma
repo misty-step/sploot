@@ -18,11 +18,17 @@ datasource db {
 
 // User model - synced with Clerk
 model User {
-  id        String   @id // Matches Clerk userId
-  email     String   @unique
-  role      String   @default("user")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                      String    @id // Matches Clerk userId
+  email                   String    @unique
+  role                    String    @default("user")
+  plan                    String    @default("free")
+  stripeCustomerId        String?   @unique @map("stripe_customer_id")
+  stripeSubscriptionId    String?   @unique @map("stripe_subscription_id")
+  stripePriceId           String?   @map("stripe_price_id")
+  billingStatus           String    @default("none") @map("billing_status")
+  billingCurrentPeriodEnd DateTime? @map("billing_current_period_end")
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   // Relations
   assets                   Asset[]
@@ -31,6 +37,7 @@ model User {
   storageQuota             UserStorageQuota?
   storageQuotaReservations StorageQuotaReservation[]
 
+  @@index([plan])
   @@map("users")
 }
 
