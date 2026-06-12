@@ -11,6 +11,10 @@ const DEBOUNCE_DELAY = 100; // 100ms as specified
 // Normalized to 0.0-1.0 for PostgreSQL setseed() in API/DB layer
 const MAX_SHUFFLE_SEED = 1000000;
 
+function createShuffleSeed(): number {
+  return Math.floor(Math.random() * MAX_SHUFFLE_SEED);
+}
+
 function normalizeStoredSort(value: unknown): SortOption | null {
   if (typeof value !== 'string') return null;
   if (value === 'recent' || value === 'date') return 'createdAt';
@@ -34,9 +38,9 @@ interface SortPreferences {
  */
 export function useSortPreferences() {
   // Initialize state with defaults
-  const [sortBy, setSortBy] = useState<SortOption>('createdAt');
+  const [sortBy, setSortBy] = useState<SortOption>('shuffle');
   const [direction, setDirection] = useState<SortDirection>('desc');
-  const [shuffleSeed, setShuffleSeed] = useState<number | undefined>(undefined);
+  const [shuffleSeed, setShuffleSeed] = useState<number | undefined>(() => createShuffleSeed());
   const [isLoading, setIsLoading] = useState(true);
   const isMountedRef = useRef(false);
 
@@ -119,8 +123,7 @@ export function useSortPreferences() {
 
       // Generate new seed when shuffle activated
       if (newSortBy === 'shuffle') {
-        const newSeed = Math.floor(Math.random() * MAX_SHUFFLE_SEED);
-        setShuffleSeed(newSeed);
+        setShuffleSeed(createShuffleSeed());
       } else {
         setShuffleSeed(undefined); // Clear seed for other sorts
       }
@@ -131,11 +134,12 @@ export function useSortPreferences() {
   /**
    * Reset all sort preferences to default values.
    *
-   * Clears localStorage and resets to: sortBy='createdAt', direction='desc', shuffleSeed=undefined
+   * Clears localStorage and resets to uniform seeded shuffle.
    */
   const resetPreferences = useCallback(() => {
-    setSortBy('createdAt');
+    setSortBy('shuffle');
     setDirection('desc');
+    setShuffleSeed(createShuffleSeed());
     if (typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
     }
@@ -168,7 +172,7 @@ export function useSortPreferencesWithDefaults() {
 
   return {
     ...preferences,
-    sortBy: preferences.sortBy || 'createdAt',
+    sortBy: preferences.sortBy || 'shuffle',
     direction: preferences.direction || 'desc',
   };
 }

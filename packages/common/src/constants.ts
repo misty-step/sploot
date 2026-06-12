@@ -35,7 +35,7 @@ export const UPLOAD = {
 } as const;
 
 export const ASSET_SORT = {
-  values: ['createdAt', 'updatedAt', 'size', 'pathname', 'shuffle'] as const,
+  values: ['createdAt', 'updatedAt', 'size', 'pathname', 'shuffle', 'taste'] as const,
   directions: ['asc', 'desc'] as const,
 } as const;
 

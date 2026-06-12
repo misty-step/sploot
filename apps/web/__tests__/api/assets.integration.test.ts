@@ -20,7 +20,7 @@ vi.mock("@/lib/auth/server", () => ({
 }));
 
 import { GET } from "@/app/api/assets/route";
-import { prisma } from "@/lib/db";
+import { prisma, upsertAssetEmbedding } from "@/lib/db";
 
 const OWNER_ID = "shuffle-owner-user";
 const OTHER_ID = "shuffle-other-user";
@@ -155,6 +155,74 @@ describe("GET /api/assets seeded shuffle integration", () => {
       "shuffle-b",
     ]);
   });
+
+  it("ranks embedded assets by similarity to embedded bangers in taste mode", async () => {
+    await prisma.asset.updateMany({
+      where: { id: { in: ["shuffle-b", "shuffle-c"] } },
+      data: { favorite: true },
+    });
+
+    await Promise.all([
+      upsertAssetEmbedding({
+        assetId: "shuffle-a",
+        modelName: "clip-test",
+        modelVersion: "v1",
+        dim: 512,
+        embedding: vector512(0.95, 0.05),
+      }),
+      upsertAssetEmbedding({
+        assetId: "shuffle-b",
+        modelName: "clip-test",
+        modelVersion: "v1",
+        dim: 512,
+        embedding: vector512(1, 0),
+      }),
+      upsertAssetEmbedding({
+        assetId: "shuffle-c",
+        modelName: "clip-test",
+        modelVersion: "v1",
+        dim: 512,
+        embedding: vector512(0.9, 0.1),
+      }),
+      upsertAssetEmbedding({
+        assetId: "shuffle-d",
+        modelName: "clip-test",
+        modelVersion: "v1",
+        dim: 512,
+        embedding: vector512(0, 1),
+      }),
+    ]);
+
+    const response = await GET(
+      request({
+        sortBy: "taste",
+        limit: "4",
+        offset: "0",
+      }),
+      { params: Promise.resolve({}) },
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.taste).toEqual({
+      status: "ready",
+      embeddedBangerCount: 2,
+      minimumBangerEmbeddings: 2,
+    });
+    expect(body.pagination).toMatchObject({
+      total: 4,
+      limit: 4,
+      offset: 0,
+      hasMore: false,
+    });
+    expect(body.assets.map((asset: any) => asset.id).slice(0, 3)).toEqual([
+      "shuffle-a",
+      "shuffle-b",
+      "shuffle-c",
+    ]);
+    expect(body.assets.at(-1).id).toBe("shuffle-d");
+    expect(body.assets[0].tasteScore).toBeGreaterThan(body.assets.at(-1).tasteScore);
+  });
 });
 
 function asset(
@@ -174,4 +242,11 @@ function asset(
     checksumSha256: `${ownerUserId}-${filename}`,
     shuffleKey,
   };
+}
+
+function vector512(x: number, y: number) {
+  const vector = Array.from({ length: 512 }, () => 0);
+  vector[0] = x;
+  vector[1] = y;
+  return vector;
 }

@@ -79,7 +79,14 @@ function AppPageClient() {
   } = useDeleteConfirmation();
 
   // Use sort preferences hook with localStorage persistence and debouncing
-  const { sortBy, direction: sortOrder, shuffleSeed, handleSortChange, getSortColumn } = useSortPreferences();
+  const {
+    sortBy,
+    direction: sortOrder,
+    shuffleSeed,
+    isLoading: sortPreferencesLoading,
+    handleSortChange,
+    getSortColumn,
+  } = useSortPreferences();
   const [failedEmbeddings, setFailedEmbeddings] = useState<EmbeddingQueueItem[]>([]);
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [retryProgress, setRetryProgress] = useState({ current: 0, total: 0, processing: false });
@@ -144,6 +151,7 @@ function AppPageClient() {
     total,
     integrityIssue,
     error: libraryError,
+    tasteMetadata,
     loadAssets,
     updateAsset,
     deleteAsset,
@@ -152,7 +160,7 @@ function AppPageClient() {
     initialLimit: 100,
     sortBy: sortBy,
     sortOrder: sortOrder,
-    autoLoad: true,
+    autoLoad: !sortPreferencesLoading,
     filterFavorites: bangersOnly ? true : undefined,
     tagId: tagIdParam ?? undefined,
     shuffleSeed,
@@ -784,6 +792,23 @@ function AppPageClient() {
                   filtering tag #{activeTagName ?? tagIdParam.slice(0, 6)}
                 </StickerTab>
               </div>
+            )}
+
+            {(!isSearching && sortBy === 'taste' && tasteMetadata) && (
+              <Alert>
+                <AlertDescription className="flex flex-wrap items-center gap-2">
+                  <Heart className="h-4 w-4 text-sploot-coral" />
+                  {tasteMetadata.status === 'ready' ? (
+                    <span>
+                      taste mode: {tasteMetadata.embeddedBangerCount.toLocaleString()} embedded bangers are ranking this feed.
+                    </span>
+                  ) : (
+                    <span>
+                      taste mode needs {tasteMetadata.minimumBangerEmbeddings.toLocaleString()} embedded bangers; {tasteMetadata.embeddedBangerCount.toLocaleString()} ready.
+                    </span>
+                  )}
+                </AlertDescription>
+              </Alert>
             )}
 
             {showUploadPanel && (

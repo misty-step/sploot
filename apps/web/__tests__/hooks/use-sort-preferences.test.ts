@@ -16,6 +16,18 @@ describe('useSortPreferences', () => {
   });
 
   describe('shuffleSeed generation', () => {
+    it('defaults new users to uniform seeded shuffle', async () => {
+      const { result } = renderHook(() => useSortPreferences());
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.sortBy).toBe('shuffle');
+      expect(result.current.direction).toBe('desc');
+      expect(result.current.shuffleSeed).toBeDefined();
+      expect(result.current.shuffleSeed).toBeGreaterThanOrEqual(0);
+      expect(result.current.shuffleSeed).toBeLessThanOrEqual(1000000);
+    });
+
     it('should generate shuffleSeed between 0 and 1000000 when shuffle selected', () => {
       const { result } = renderHook(() => useSortPreferences());
 
@@ -150,8 +162,8 @@ describe('useSortPreferences', () => {
 
       const { result } = renderHook(() => useSortPreferences());
 
-      expect(result.current.sortBy).toBe('createdAt');
-      expect(JSON.parse(localStorage.getItem('sploot-sort-preferences')!).sortBy).toBe('createdAt');
+      expect(result.current.sortBy).toBe('shuffle');
+      expect(result.current.shuffleSeed).toBeDefined();
     });
 
     it('should persist seed cleared state when switching away from shuffle', async () => {
@@ -174,6 +186,24 @@ describe('useSortPreferences', () => {
       const parsed = JSON.parse(stored!);
       expect(parsed.sortBy).toBe('createdAt');
       expect(parsed.shuffleSeed).toBeUndefined();
+    });
+
+    it('should reset preferences back to seeded shuffle', () => {
+      const { result } = renderHook(() => useSortPreferences());
+
+      act(() => {
+        result.current.handleSortChange('createdAt', 'desc');
+      });
+      expect(result.current.shuffleSeed).toBeUndefined();
+
+      act(() => {
+        result.current.resetPreferences();
+      });
+
+      expect(result.current.sortBy).toBe('shuffle');
+      expect(result.current.direction).toBe('desc');
+      expect(result.current.shuffleSeed).toBeDefined();
+      expect(localStorage.getItem('sploot-sort-preferences')).toBeNull();
     });
   });
 

@@ -23,6 +23,7 @@
  *   --seed-count <n>     seed this many QA assets when seeding
  *   --expect-piles       verify /api/piles returns ready piles for the QA user
  *   --piles-min-assets <n> minimum assets for --expect-piles (default: 50)
+ *   --expect-taste       verify taste ranking differs from seeded shuffle for the QA user
  *   --risk <text>        residual risk line (repeatable)
  *
  * DATABASE_URL defaults to the local test container
@@ -61,6 +62,7 @@ interface Args {
   seedCount?: number;
   expectPiles: boolean;
   pilesMinAssets: number;
+  expectTaste: boolean;
   risks: string[];
 }
 
@@ -75,6 +77,7 @@ function parseArgs(argv: string[]): Args {
     seed: true,
     expectPiles: false,
     pilesMinAssets: 50,
+    expectTaste: false,
     risks: [],
   };
   for (let i = 0; i < argv.length; i++) {
@@ -97,6 +100,7 @@ function parseArgs(argv: string[]): Args {
         break;
       }
       case '--expect-piles': args.expectPiles = true; break;
+      case '--expect-taste': args.expectTaste = true; break;
       case '--piles-min-assets': {
         const value = Number(next());
         if (!Number.isInteger(value) || value < 1) {
@@ -283,6 +287,91 @@ async function main() {
     console.log(`[qa-evidence] ${status.toUpperCase()} api piles probe`);
   }
 
+  async function recordTasteProbe(baseUrl: string, token: string) {
+    const tasteUrl = `${baseUrl}/api/assets?sortBy=taste&limit=12&offset=0`;
+    const shuffleUrl = `${baseUrl}/api/assets?sortBy=shuffle&shuffleSeed=424242&limit=12&offset=0`;
+    const profileUrl = `${baseUrl}/api/taste/profile`;
+    const started = Date.now();
+    let status: EvidenceCheck['status'] = 'pass';
+    let output = '';
+    try {
+      const headers = { cookie: `sploot_qa_auth=${token}` };
+      const [tasteResponse, shuffleResponse, profileResponse] = await Promise.all([
+        fetch(tasteUrl, { headers }),
+        fetch(shuffleUrl, { headers }),
+        fetch(profileUrl, { headers }),
+      ]);
+      const [tasteBody, shuffleBody, profileBody] = await Promise.all([
+        tasteResponse.json(),
+        shuffleResponse.json(),
+        profileResponse.json(),
+      ]);
+
+      const tasteIds = Array.isArray(tasteBody.assets)
+        ? tasteBody.assets.map((asset: { id: string }) => asset.id)
+        : [];
+      const shuffleIds = Array.isArray(shuffleBody.assets)
+        ? shuffleBody.assets.map((asset: { id: string }) => asset.id)
+        : [];
+      const tasteScores = Array.isArray(tasteBody.assets)
+        ? tasteBody.assets.map((asset: { tasteScore?: number }) => asset.tasteScore)
+        : [];
+      const scoresDescending = tasteScores.every((score: number | undefined, index: number) => {
+        if (typeof score !== 'number') return false;
+        const next = tasteScores[index + 1];
+        return typeof next !== 'number' || score >= next;
+      });
+
+      output = JSON.stringify({
+        taste: {
+          statusCode: tasteResponse.status,
+          ids: tasteIds,
+          metadata: tasteBody.taste,
+          tasteScores,
+        },
+        shuffle: {
+          statusCode: shuffleResponse.status,
+          ids: shuffleIds,
+        },
+        profile: {
+          statusCode: profileResponse.status,
+          body: profileBody,
+        },
+      }, null, 2);
+
+      if (
+        tasteResponse.status !== 200 ||
+        shuffleResponse.status !== 200 ||
+        profileResponse.status !== 200 ||
+        tasteBody.taste?.status !== 'ready' ||
+        profileBody.status !== 'ready' ||
+        tasteIds.length === 0 ||
+        shuffleIds.length === 0 ||
+        tasteIds.join(',') === shuffleIds.join(',') ||
+        !scoresDescending
+      ) {
+        status = 'fail';
+      }
+    } catch (error) {
+      status = 'fail';
+      output = error instanceof Error ? error.stack ?? error.message : String(error);
+    }
+
+    const transcript = 'transcripts/taste-probe.txt';
+    await writeFile(join(packetDir, transcript), output);
+    checks.push({
+      name: 'api taste probe',
+      command: 'GET /api/assets?sortBy=taste plus seeded shuffle and /api/taste/profile',
+      status,
+      durationMs: Date.now() - started,
+      transcript,
+      ...(status === 'fail'
+        ? { detail: output.split('\n').filter(Boolean).slice(-12).join('\n') }
+        : {}),
+    });
+    console.log(`[qa-evidence] ${status.toUpperCase()} api taste probe`);
+  }
+
   try {
     if (args.seed) {
       const seedCommand = 'pnpm';
@@ -339,6 +428,10 @@ async function main() {
 
     if (args.expectPiles) {
       await recordPilesProbe(baseUrl, token);
+    }
+
+    if (args.expectTaste) {
+      await recordTasteProbe(baseUrl, token);
     }
 
     for (const viewport of args.viewports) {

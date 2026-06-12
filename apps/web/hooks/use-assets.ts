@@ -4,25 +4,41 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { error as logError } from '@/lib/logger';
 import { track } from '@/lib/analytics';
 import { logger } from '@/lib/observability-logger';
-import type { Asset, UseAssetsOptions } from '@/lib/types';
+import type { Asset, TasteMetadata, UseAssetsOptions } from '@/lib/types';
 import { isAssetSortBy } from '@sploot/common';
 
+const MAX_SHUFFLE_SEED = 1000000;
+
+function createShuffleSeed(): number {
+  return Math.floor(Math.random() * MAX_SHUFFLE_SEED);
+}
+
 export function useAssets(options: UseAssetsOptions = {}) {
+  const defaultShuffleSeedRef = useRef<number | null>(null);
+  if (defaultShuffleSeedRef.current === null) {
+    defaultShuffleSeedRef.current = createShuffleSeed();
+  }
+
   const {
     initialLimit = 50,
-    sortBy = 'createdAt',
+    sortBy = 'shuffle',
     sortOrder = 'desc',
     filterFavorites,
     autoLoad = true,
     tagId,
-    shuffleSeed,
+    shuffleSeed: providedShuffleSeed,
   } = options;
+  const shuffleSeed =
+    sortBy === 'shuffle'
+      ? providedShuffleSeed ?? defaultShuffleSeedRef.current
+      : providedShuffleSeed;
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
+  const [tasteMetadata, setTasteMetadata] = useState<TasteMetadata | null>(null);
   const [offset, setOffset] = useState(0);
   const [integrityIssue, setIntegrityIssue] = useState(false);
   const integrityCheckDoneRef = useRef(false);
@@ -168,6 +184,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
         setTotal(data.pagination?.total || 0);
         setHasMore(data.pagination?.hasMore || false);
+        setTasteMetadata(data.taste || null);
 
         // Reset auth retry count on successful load
         authRetryCountRef.current = 0;
@@ -419,6 +436,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
     error,
     total,
     integrityIssue,
+    tasteMetadata,
     loadAssets,
     updateAsset,
     deleteAsset,
