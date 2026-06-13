@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@misty-step/aesthetic" layer(base);
 
 @custom-variant dark (&:is(.dark *));
 
@@ -82,7 +83,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-jetbrains-mono);
-  --font-display: var(--font-bebas-neue);
+  --font-display: var(--font-geist-sans); /* aesthetic: one family — loud by weight, not a display face */
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -661,4 +662,65 @@ select:focus-visible {
 
 .to-cyber-blue {
   --tw-gradient-to: var(--accent-violet) var(--tw-gradient-to-position);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   @misty-step/aesthetic adoption
+
+   Sploot is the loud consumer — it keeps its cyan/coral/violet
+   personality, but the bones become the design system. Every semantic
+   token resolves to the aesthetic substrate (--ae-*), so all 24
+   components re-skin to ink-on-paper at once; the cyan is the steered
+   accent, coral and violet stay as project tokens (each AA on both
+   surfaces). Radius is already 0. This block is last in the cascade,
+   so it wins over the legacy oklch token sets above.
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  /* steering: sploot's cyan, on the system's accent */
+  --ae-accent: #0c6a84; /* AA 6.00 on #fcfcfc */
+  --ae-accent-dark: #00f0ff; /* AA 13.30 on #121212 */
+  /* wire Geist through the kit */
+  --ae-font: var(--font-geist-sans), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --ae-font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+:root,
+.dark {
+  /* the semantic layer points at the substrate; --ae-* flips by mode */
+  --background: var(--ae-surface);
+  --foreground: var(--ae-ink);
+  --card: var(--ae-surface);
+  --card-foreground: var(--ae-ink);
+  --popover: var(--ae-surface);
+  --popover-foreground: var(--ae-ink);
+  --primary: var(--ae-accent);
+  --primary-foreground: var(--ae-surface);
+  --secondary: var(--ae-wash);
+  --secondary-foreground: var(--ae-ink);
+  --muted: var(--ae-wash);
+  --muted-foreground: var(--ae-ink-muted);
+  --accent: var(--ae-accent);
+  --accent-foreground: var(--ae-surface);
+  --destructive: var(--ae-err);
+  --border: var(--ae-line);
+  --input: var(--ae-line);
+  --ring: var(--ae-ink);
+  --sidebar: var(--ae-surface);
+  --sidebar-foreground: var(--ae-ink);
+  --sidebar-border: var(--ae-line);
+  --sidebar-accent: var(--ae-wash);
+  --sidebar-accent-foreground: var(--ae-ink);
+  --sidebar-ring: var(--ae-ink);
+  /* the cyan accent token sploot reads directly = the steered accent */
+  --accent-cyan: var(--ae-accent);
+  --sploot-ink: var(--ae-ink);
+  --sploot-paper: var(--ae-surface);
+  --sploot-void: var(--ae-surface);
+  --sploot-command-surface: var(--ae-surface);
+  --sploot-command-surface-contrast: var(--ae-ink);
+}
+
+.dark {
+  /* re-assert the steered accent's mode flip after our :root above */
+  --ae-accent: var(--ae-accent-dark);
 }

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { DM_Sans, JetBrains_Mono, Bebas_Neue } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth/client";
 import { Toaster } from "@/components/ui/toast";
@@ -8,19 +8,15 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
-const dmSans = DM_Sans({
+// aesthetic: one family. Geist for chrome, Geist Mono for figures and
+// code; the variable names are kept so the existing @theme mappings and
+// component utilities resolve unchanged.
+const geist = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
-  weight: ["400", "500", "700"],
 });
 
-const bebasNeue = Bebas_Neue({
-  variable: "--font-bebas-neue",
-  subsets: ["latin"],
-  weight: ["400"],
-});
-
-const jetbrainsMono = JetBrains_Mono({
+const geistMono = Geist_Mono({
   variable: "--font-jetbrains-mono",
   subsets: ["latin"],
 });
@@ -124,7 +120,7 @@ export default function RootLayout({
             <meta name="theme-color" content="#000000" />
           </head>
           <body
-            className={`${dmSans.variable} ${bebasNeue.variable} ${jetbrainsMono.variable} font-sans antialiased`}
+            className={`${geist.variable} ${geistMono.variable} font-sans antialiased`}
           >
             <ThemeProvider
               attribute="class"
