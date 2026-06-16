@@ -122,7 +122,7 @@ pnpm --filter web db:studio       # Open Prisma Studio
 - `DATABASE_URL` - Neon postgres with pooler
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY`
 - `BLOB_READ_WRITE_TOKEN` - Vercel Blob
-- `SENTRY_DSN` / `SENTRY_AUTH_TOKEN`
+- `CANARY_ENDPOINT` / `CANARY_API_KEY` / `CANARY_SERVICE_NAME`
 
 **Extension** (`.env` for dev, `.env.production` for prod):
 - `VITE_CLERK_PUBLISHABLE_KEY` - Must match environment (pk_test_ vs pk_live_)

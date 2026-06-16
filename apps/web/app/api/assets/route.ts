@@ -16,6 +16,7 @@ import logger from "@/lib/logger";
 import { logError } from "@/lib/vercel-logger";
 import { createErrorResponse } from "@/lib/error-response";
 import { withObservability } from "@/lib/with-observability";
+import { logger as observabilityLogger } from "@/lib/observability-logger";
 import { getDbFingerprint } from "@/lib/db-fingerprint";
 import { getRuntimeGate, runtimeGateResponse } from "@/lib/runtime-gates";
 import {
@@ -674,15 +675,11 @@ async function getHandler(req: NextRequest) {
     // Drift detector: zero assets for known user hints at wrong DB branch
     if (total === 0 && !isTaste) {
       try {
-        const Sentry = await import("@sentry/nextjs");
-        Sentry.captureMessage("zero-assets-for-user", {
-          level: "warning",
-          tags: {
-            userId,
-            db_host: fp.host || "unknown",
-            migration_hash: fp.hash,
-            suspect: "db-drift",
-          },
+        observabilityLogger.logError("assets:zero-count", new Error("zero assets for user"), {
+          userId,
+          dbHost: fp.host || "unknown",
+          migrationHash: fp.hash,
+          suspect: "db-drift",
         });
         logger.warn("assets:zero-count", {
           userId,

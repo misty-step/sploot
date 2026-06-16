@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { captureException } from '@sentry/nextjs';
 
 import { getAuth } from '@/lib/auth/server';
 import { unauthorizedResponse } from '@/lib/auth/api';
@@ -17,8 +16,17 @@ interface ErrorPayload {
   message: string;
   stack?: string;
   componentStack?: string;
-  url: string;
+  url?: string;
+  location?: {
+    origin: string;
+    pathname: string;
+  };
+  boundary?: string;
+  hasStack?: boolean;
+  hasComponentStack?: boolean;
+  digest?: string;
   timestamp: number;
+  metadata?: Record<string, unknown>;
 }
 
 interface PerformancePayload {
@@ -88,28 +96,20 @@ function forwardErrorTelemetry(payload: ErrorPayload, userId: string): void {
       error.stack = payload.stack;
     }
 
-    captureException(error, {
-      contexts: {
-        telemetry: {
-          name: payload.name,
-          stack: payload.stack,
-          componentStack: payload.componentStack,
-          url: payload.url,
-          timestamp: payload.timestamp,
-        },
-      },
-      user: { id: userId },
-    });
-
     logger.logError('client:error', error, {
       userId,
+      name: payload.name,
       url: payload.url,
+      location: payload.location,
+      boundary: payload.boundary,
+      digest: payload.digest,
       timestamp: payload.timestamp,
-      hasStack: Boolean(payload.stack),
-      hasComponentStack: Boolean(payload.componentStack),
+      hasStack: payload.hasStack ?? Boolean(payload.stack),
+      hasComponentStack: payload.hasComponentStack ?? Boolean(payload.componentStack),
+      metadata: payload.metadata,
     });
   } catch (error) {
-    logger.logError('telemetry:sentry-failure', error, { userId, payload });
+    logger.logError('telemetry:canary-forwarding-failed', error, { userId, payload });
   }
 }
 
@@ -175,11 +175,16 @@ function isErrorPayload(value: unknown): value is ErrorPayload {
   }
 
   const payload = value as Partial<Record<keyof ErrorPayload, unknown>>;
+  const hasLocation =
+    typeof payload.location === 'object' &&
+    payload.location !== null &&
+    typeof (payload.location as { origin?: unknown }).origin === 'string' &&
+    typeof (payload.location as { pathname?: unknown }).pathname === 'string';
 
   return (
     typeof payload.name === 'string' &&
     typeof payload.message === 'string' &&
-    typeof payload.url === 'string' &&
+    (typeof payload.url === 'string' || hasLocation) &&
     typeof payload.timestamp === 'number'
   );
 }

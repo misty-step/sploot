@@ -115,7 +115,7 @@ export default function PrivacyPolicy() {
               <li><strong>Vercel Analytics and Speed Insights</strong>: Product usage and performance measurement</li>
               <li><strong>Neon</strong>: Database (see <a href="https://neon.tech/privacy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">Neon Privacy Policy</a>)</li>
               <li><strong>Replicate</strong>: AI embedding generation for image and text search</li>
-              <li><strong>Sentry</strong>: Error monitoring and diagnostics</li>
+              <li><strong>Canary</strong>: Error monitoring, health checks, and diagnostics</li>
             </ul>
           </section>
 

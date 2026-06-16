@@ -21,7 +21,7 @@ This runbook guides on-call engineers through diagnosing and resolving database 
 - Prisma error: `Authentication failed against database server, the provided database credentials for '(not available)' are not valid`
 - **Key indicator**: `(not available)` means Prisma **cannot parse** the connection string (not an authentication failure)
 - Health check logs showing database connection failed
-- Sentry errors with database connectivity issues
+- Canary errors with database connectivity issues
 
 ### Vercel Dashboard
 - Recent deployment shows elevated error rate
@@ -215,11 +215,11 @@ open https://www.sploot.app/app
 # Verify upload works (if permissions allow)
 ```
 
-### Step 6: Check Sentry
+### Step 6: Check Canary
 
-1. Go to [Sentry Sploot Issues](https://sentry.io/organizations/misty-step/issues/?project=sploot)
-2. Verify no new database errors appearing
-3. Check error rate graph shows decline
+1. Query `GET /api/v1/query?service=sploot-web&window=1h`
+2. Verify no new database errors are appearing
+3. Check grouped error counts decline after the fix
 
 ---
 
@@ -265,7 +265,7 @@ printf '%s' "<previous-value>" | vercel env add DATABASE_URL production
 
 ### Follow-up (< 1 day)
 - [ ] Run `pnpm validate:env` locally to verify configuration
-- [ ] Review Sentry for any residual errors
+- [ ] Review Canary for any residual errors
 - [ ] Check Vercel logs for any warnings
 - [ ] Update this runbook if new insights discovered
 
@@ -302,8 +302,8 @@ pnpm test
 Set up alerts for:
 - Health check failures (consecutive 3+ failures)
 - Database connection latency > 500ms
-- Sentry error: "Authentication failed"
-- Sentry error: "(not available)"
+- Canary error: "Authentication failed"
+- Canary error: "(not available)"
 
 ### Documentation
 
@@ -322,7 +322,7 @@ Keep these docs updated:
 - [Health Check API](../../app/api/health/route.ts)
 - [Neon Console](https://console.neon.tech/)
 - [Vercel Dashboard](https://vercel.com/moomooskycow/sploot)
-- [Sentry Issues](https://sentry.io/organizations/misty-step/issues/?project=sploot)
+- [Canary](https://canary-obs.fly.dev)
 
 ---
 

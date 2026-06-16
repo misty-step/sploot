@@ -2,7 +2,7 @@
 
 ## Stack & Boundaries
 
-Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 15 app, App Router API routes, Clerk auth, Prisma/Neon pgvector, Vercel Blob, Replicate embeddings, Sentry, deployed smoke, and Vercel release posture. `apps/extension` owns the WXT/React Chrome extension, popup/background capture, Clerk extension auth, API client, store assets, and Chrome Web Store release packet. `packages/common` owns shared upload constants and API types consumed by both apps.
+Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 15 app, App Router API routes, Clerk auth, Prisma/Neon pgvector, Vercel Blob, Replicate embeddings, Canary diagnostics, deployed smoke, and Vercel release posture. `apps/extension` owns the WXT/React Chrome extension, popup/background capture, Clerk extension auth, API client, store assets, and Chrome Web Store release packet. `packages/common` owns shared upload constants and API types consumed by both apps.
 
 ## Ground Truth Pointers
 
@@ -37,7 +37,7 @@ Lefthook runs gitleaks, web lint, extension lint, and turbo type-check before lo
 | Tracker | Surface | Debt |
 |---|---|---|
 | `backlog.d/_done/007-publish-extension-web-store-release.md` | `apps/extension`, Chrome Web Store | Current unpacked build is loaded, but authenticated right-click upload/duplicate proof and Web Store dashboard receipt remain. |
-| Sentry #7117400497 / PR #151 | `apps/web/app/api/health/route.ts` | Stale Prisma serverless connections need runtime health evidence on future DB health changes. |
+| PR #151 | `apps/web/app/api/health/route.ts` | Stale Prisma serverless connections need runtime health evidence on future DB health changes. |
 | PR #142 | embedding scheduler/rate-limit modules | Embedding spikes and duplicate job pressure are production risks; test scheduling and cost controls directly. |
 | PR #153 | `.github/workflows/release.yml` | Semantic-release depends on `GH_RELEASE_TOKEN`; release fixes must prove token path without weakening permissions. |
 | Backlog refs required | `apps/web/docs/API.md` | API docs are hand maintained and can drift from route behavior. |

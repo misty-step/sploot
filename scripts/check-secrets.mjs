@@ -31,7 +31,6 @@ const SECRET_ENV_NAMES = [
   'POSTGRES_URL',
   'POSTGRES_URL_NON_POOLING',
   'REPLICATE_API_TOKEN',
-  'SENTRY_AUTH_TOKEN',
   'UPSTASH_REDIS_REST_TOKEN',
 ];
 
@@ -136,7 +135,7 @@ function isRealTokenAssignment(name, rawValue) {
   if (name === 'BLOB_READ_WRITE_TOKEN') {
     return /^vercel_blob_[A-Za-z0-9_-]{12,}$/.test(value);
   }
-  if (name === 'SENTRY_AUTH_TOKEN' || name === 'UPSTASH_REDIS_REST_TOKEN') {
+  if (name === 'UPSTASH_REDIS_REST_TOKEN') {
     return value.length >= 20 && /^[A-Za-z0-9_./+=:-]+$/.test(value);
   }
 

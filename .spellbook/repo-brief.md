@@ -6,7 +6,7 @@ Sploot is a personal meme library for people with saved images scattered across 
 
 ## Stack & Boundaries
 
-Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 15 app, App Router API routes, Clerk auth, Prisma/Neon Postgres with pgvector, Vercel Blob, Replicate embeddings, Sentry, deployed smoke, and Vercel release posture. `apps/extension` owns the WXT/React Chrome extension, popup, background context-menu capture, Clerk extension auth, API upload client, store listing assets, and Chrome Web Store release packet. `packages/common` owns shared upload constants and API types consumed by web and extension.
+Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 15 app, App Router API routes, Clerk auth, Prisma/Neon Postgres with pgvector, Vercel Blob, Replicate embeddings, Canary diagnostics, deployed smoke, and Vercel release posture. `apps/extension` owns the WXT/React Chrome extension, popup, background context-menu capture, Clerk extension auth, API upload client, store listing assets, and Chrome Web Store release packet. `packages/common` owns shared upload constants and API types consumed by web and extension.
 
 ## Load-Bearing Gate
 
@@ -26,7 +26,7 @@ Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web t
 ## Known Debts
 
 - `backlog.d/007-publish-extension-web-store-release.md`: active release blocker. Current worktree extension is loaded in Chrome, but authenticated upload/duplicate QA needs a fresh login and Chrome Web Store dashboard receipt.
-- Sentry #7117400497 / PR #151: stale Prisma serverless connection risk around `apps/web/app/api/health/route.ts`; future DB health changes need runtime proof.
+- PR #151: stale Prisma serverless connection risk around `apps/web/app/api/health/route.ts`; future DB health changes need runtime proof.
 - Embedding scheduler/rate-limit pressure around `apps/web/lib/embeddings.ts`, embedding guard/rate-limit modules, and scheduler routes; cost and duplicate jobs are production risks.
 - Release automation depends on `GH_RELEASE_TOKEN` in `.github/workflows/release.yml`; fixes must prove the token path without weakening permissions.
 - `apps/web/docs/API.md` is hand-maintained and can drift from route behavior.
@@ -37,4 +37,4 @@ Use web app for `apps/web`, extension for `apps/extension`, common package for `
 
 ## Session Signal
 
-Recurring corrections: use Computer Use for real Chrome UI including `chrome://extensions`; do not stop at signed-out checks when authenticated production QA is the real oracle; do not call GitHub Issues the tracker; do not claim DB-backed paths without pgvector evidence; do not conflate web deploy with extension release. Validated patterns: pnpm-first commands, backlog.d lifecycle, master as base, Sentry/deployed smoke as production inputs, release checker as local Chrome Web Store gate, and explicit blocker reporting when credentials or dashboard access are needed.
+Recurring corrections: use Computer Use for real Chrome UI including `chrome://extensions`; do not stop at signed-out checks when authenticated production QA is the real oracle; do not call GitHub Issues the tracker; do not claim DB-backed paths without pgvector evidence; do not conflate web deploy with extension release. Validated patterns: pnpm-first commands, backlog.d lifecycle, master as base, Canary/deployed smoke as production inputs, release checker as local Chrome Web Store gate, and explicit blocker reporting when credentials or dashboard access are needed.

@@ -52,7 +52,7 @@ vercel env add POSTGRES_URL_NON_POOLING preview
 ```
 
 ### bust a suspected drift
-- Check `/api/health` and look for db_drift Sentry tags.
+- Check `/api/health` and Canary for `assets:zero-count` / `db-drift` metadata.
 - If drift: update Vercel env vars, redeploy.
 
 ## invariants

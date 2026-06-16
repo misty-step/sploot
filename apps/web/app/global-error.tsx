@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect } from 'react';
-import * as Sentry from '@sentry/nextjs';
 import Link from 'next/link';
 import { sendClientErrorTelemetry } from '@/lib/client-error-telemetry';
 
@@ -13,7 +12,6 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    Sentry.captureException(error);
     sendClientErrorTelemetry('app-global-error', error, {
       metadata: error.digest ? { digest: error.digest } : undefined,
     });

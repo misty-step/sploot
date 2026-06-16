@@ -42,8 +42,9 @@ require_command node
 echo "checking production environment variables..."
 REQUIRED_VARS=(
   "DATABASE_URL"
-  "SENTRY_DSN"
-  "NEXT_PUBLIC_SENTRY_DSN"
+  "CANARY_ENDPOINT"
+  "CANARY_API_KEY"
+  "CANARY_SERVICE_NAME"
   "CLERK_SECRET_KEY"
   "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"
 )

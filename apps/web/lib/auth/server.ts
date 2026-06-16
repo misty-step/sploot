@@ -59,7 +59,6 @@ export async function getAuthWithUser(): Promise<AuthWithUserResult> {
   }
   const clerk = await import('@clerk/nextjs/server');
   const { logger } = await import('../observability-logger');
-  const Sentry = await import('@sentry/nextjs');
 
   const authResult = await clerk.auth();
 
@@ -106,24 +105,6 @@ export async function getAuthWithUser(): Promise<AuthWithUserResult> {
           circuitBreakerOpen: isCircuitOpen,
         });
 
-        // Report to Sentry with critical tag for alerting
-        Sentry.captureException(dbError, {
-          level: 'error',
-          tags: {
-            'auth.action': 'user-sync',
-            'auth.userId': authResult.userId,
-            'critical': 'true', // Tag for alerting
-            'circuit-breaker': isCircuitOpen ? 'open' : 'closed',
-          },
-          contexts: {
-            user: {
-              id: authResult.userId,
-              email,
-            },
-          },
-          fingerprint: ['user-sync-failure', authResult.userId], // Group by user
-        });
-
         // Allow authentication to proceed but expose sync failure
         logger.logInfo('auth:proceeding-without-db-sync', {
           userId: authResult.userId,
@@ -155,14 +136,6 @@ export async function getAuthWithUser(): Promise<AuthWithUserResult> {
     // Log unexpected error in auth flow
     logger.logError('auth:unexpected-error', error as Error, {
       userId: authResult.userId,
-    });
-
-    // Report to Sentry
-    Sentry.captureException(error, {
-      tags: {
-        'auth.action': 'get-user',
-        'auth.userId': authResult.userId,
-      },
     });
 
     // Re-throw to trigger error boundary

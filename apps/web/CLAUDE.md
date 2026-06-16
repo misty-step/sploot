@@ -373,10 +373,10 @@ On **2025-11-25**, production went down for 20 minutes because:
 
 ### Dashboard Links
 
-**Sentry (Error Tracking):**
-- Production Issues: https://sentry.io/organizations/misty-step/issues/?project=sploot
-- Performance: https://sentry.io/organizations/misty-step/performance/?project=sploot
-- Alerts: https://sentry.io/organizations/misty-step/alerts/sploot/
+**Canary (agent-facing diagnostics):**
+- Endpoint: https://canary-obs.fly.dev
+- Query: `GET /api/v1/query?service=sploot-web&window=1h`
+- Health target: `https://www.sploot.app/api/health`
 
 **Vercel (Hosting & Analytics):**
 - Deployments: https://vercel.com/moomooskycow/sploot
@@ -398,14 +398,14 @@ On **2025-11-25**, production went down for 20 minutes because:
 curl https://sploot.app/api/health | jq
 ```
 
-Returns database connectivity, Sentry configuration, and response times.
+Returns database connectivity, Canary configuration, and response times.
 
 **Deployment Validation:**
 ```bash
 pnpm validate:deployment
 ```
 
-Checks environment variables, database, Sentry, TypeScript compilation, and performance.
+Checks environment variables, database, Canary, TypeScript compilation, and performance.
 
 ### Database Environment Separation
 
@@ -419,15 +419,15 @@ Checks environment variables, database, Sentry, TypeScript compilation, and perf
 
 ### Error Tracking
 
-**Sentry Configuration:**
-- Server-side: Captures via `instrumentation.ts` and `lib/auth/server.ts`
-- Client-side: Error boundaries in `app/error.tsx` and `app/app/error.tsx`
-- Session replay: 0% routine, 100% error sessions
-- PII scrubbing: Emails, tokens, sensitive headers automatically redacted
+**Canary configuration:**
+- Server-side: `lib/observability-logger.ts` forwards errors through `lib/canary-reporter.ts`
+- Client-side: error boundaries send sanitized payloads to `/api/telemetry`
+- Request errors: `instrumentation.ts` logs through the same Canary-facing logger
+- PII scrubbing: token, cookie, secret, session, and API-key shaped metadata keys are redacted
 
 **Auth Error Handling:**
 - Database sync failures don't block authentication
-- Errors logged and reported to Sentry
+- Errors logged and reported to Canary when configured
 - Graceful degradation allows users to continue
 
 ### Analytics
@@ -437,27 +437,12 @@ Checks environment variables, database, Sentry, TypeScript compilation, and perf
 - Web Vitals: CLS, LCP, FCP, FID, TTFB
 - Type-safe event tracking via `lib/analytics.ts`
 
-### Alert Configuration
-
-**Sentry Alerts:**
-```bash
-export SENTRY_AUTH_TOKEN="your_token"
-bash scripts/configure-sentry-alerts.sh
-```
-
-Configured:
-- New error types in production (email notification)
-
-Manual configuration required (Sentry UI):
-- High error rate (>10/hour)
-- Crash-free sessions (<98%)
-
 ### Troubleshooting
 
 See `docs/observability.md` for comprehensive troubleshooting guide covering:
 - Deployment failures
 - Database connection issues
-- Sentry not capturing errors
+- Canary not receiving errors
 - Performance degradation
 
 ### Maintenance Scripts
@@ -465,9 +450,6 @@ See `docs/observability.md` for comprehensive troubleshooting guide covering:
 ```bash
 # Validate deployment readiness
 pnpm validate:deployment
-
-# Configure Sentry alerts
-bash scripts/configure-sentry-alerts.sh
 
 # List Neon branches
 neonctl branches list --project-id "lively-lake-63852609" --api-key "$NEON_API_KEY"

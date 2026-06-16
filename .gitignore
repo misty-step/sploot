@@ -69,10 +69,6 @@ next-env.d.ts
 # Prisma
 /apps/web/lib/generated/prisma
 
-# Sentry
-.sentryclirc
-sentry.properties
-
 # Clerk
 .clerk/
 

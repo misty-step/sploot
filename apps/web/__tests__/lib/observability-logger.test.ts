@@ -13,16 +13,12 @@ type ConsoleSpy = ReturnType<typeof vi.spyOn>;
 let consoleLogSpy: ConsoleSpy;
 let consoleErrorSpy: ConsoleSpy;
 
-async function importLogger(sentryFactory?: () => unknown) {
-  vi.doUnmock('@sentry/nextjs');
-  vi.doMock('@/lib/canary-reporter', () => ({
-    reportCanaryError: vi.fn(),
-  }));
+async function importLogger(canaryFactory?: () => unknown) {
   vi.doMock(
-    '@sentry/nextjs',
-    sentryFactory ??
+    '@/lib/canary-reporter',
+    canaryFactory ??
       (() => ({
-        captureException: vi.fn(),
+        reportCanaryError: vi.fn(),
       }))
   );
 
@@ -84,7 +80,7 @@ afterEach(() => {
     process.env.CANARY_ENABLE_IN_TEST = originalEnv.CANARY_ENABLE_IN_TEST;
   }
 
-  vi.doUnmock('@sentry/nextjs');
+  vi.doUnmock('@/lib/canary-reporter');
 });
 
 describe('observability logger', () => {
@@ -129,25 +125,6 @@ describe('observability logger', () => {
       message: 'the vibes imploded',
     });
     expect(entry.error.stack).toContain('Error: the vibes imploded');
-  });
-
-  it('pipes errors into sentry with context metadata', async () => {
-    const { logger } = await importLogger();
-    const sentry = await import('@sentry/nextjs');
-    const err = new Error('double-fudge meltdown');
-
-    logger.logError('sentry-scream', err, { requestId: 'req-9000' });
-    await flushAsync();
-
-    expect(vi.mocked(sentry.captureException)).toHaveBeenCalledWith(err, {
-      contexts: {
-        custom: {
-          context: 'sentry-scream',
-          traceId: undefined,
-          requestId: 'req-9000',
-        },
-      },
-    });
   });
 
   it('pipes server-side errors into Canary with sanitized context metadata', async () => {
@@ -240,13 +217,13 @@ describe('observability logger', () => {
     });
   });
 
-  it('falls back to console logging when sentry import explodes', async () => {
+  it('falls back to console logging when Canary import explodes', async () => {
     const { logger } = await importLogger(() => {
-      throw new Error('sentry unplugged');
+      throw new Error('canary unplugged');
     });
     const kaboom = new Error('goodbye telemetry');
 
-    expect(() => logger.logError('sentry-offline', kaboom)).not.toThrow();
+    expect(() => logger.logError('canary-offline', kaboom)).not.toThrow();
 
     expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
     const entry = parseCall(consoleErrorSpy);

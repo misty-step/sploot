@@ -5,7 +5,6 @@ import { createMockRequest } from '../utils/test-helpers';
 import { getAuth } from '@/lib/auth/server';
 import { trackTiming } from '@/lib/analytics';
 import { logger } from '@/lib/observability-logger';
-import { captureException } from '@sentry/nextjs';
 
 vi.mock('@/lib/auth/server', () => ({
   getAuth: vi.fn(),
@@ -27,14 +26,9 @@ vi.mock('@/lib/observability-logger', () => ({
   withTraceId: vi.fn(() => observabilityLoggerMock),
 }));
 
-vi.mock('@sentry/nextjs', () => ({
-  captureException: vi.fn(),
-}));
-
 const mockGetAuth = vi.mocked(getAuth);
 const mockTrackTiming = vi.mocked(trackTiming);
 const mockLogger = vi.mocked(logger);
-const mockCaptureException = vi.mocked(captureException);
 const defaultContext = { params: Promise.resolve({}) };
 
 const AUTH_USER = {
@@ -105,7 +99,7 @@ describe('/api/telemetry', () => {
     expect(body).toEqual({ success: false, message: 'invalid payload' });
   });
 
-  it('forwards error telemetry to Sentry', async () => {
+  it('forwards error telemetry to Canary through the logger', async () => {
     const payload = {
       type: 'error' as const,
       payload: {
@@ -124,22 +118,12 @@ describe('/api/telemetry', () => {
 
     expect(response.status).toBe(200);
     expect(body).toEqual({ success: true });
-    expect(mockCaptureException).toHaveBeenCalledTimes(1);
-    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
-      contexts: {
-        telemetry: expect.objectContaining({
-          name: payload.payload.name,
-          url: payload.payload.url,
-          componentStack: payload.payload.componentStack,
-        }),
-      },
-      user: { id: AUTH_USER.userId },
-    });
     expect(mockLogger.logError).toHaveBeenCalledWith(
       'client:error',
       expect.any(Error),
       expect.objectContaining({
         userId: AUTH_USER.userId,
+        name: payload.payload.name,
         url: payload.payload.url,
         hasStack: true,
         hasComponentStack: true,
@@ -147,9 +131,47 @@ describe('/api/telemetry', () => {
     );
   });
 
-  it('logs when Sentry forwarding fails but still returns success', async () => {
-    mockCaptureException.mockImplementationOnce(() => {
-      throw new Error('Sentry unavailable');
+  it('accepts sanitized client error boundary telemetry', async () => {
+    const payload = {
+      type: 'error' as const,
+      payload: {
+        name: 'RenderError',
+        message: 'tile went sideways',
+        boundary: 'image-tile-error-boundary',
+        location: {
+          origin: 'https://www.sploot.app',
+          pathname: '/app',
+        },
+        timestamp: Date.now(),
+        hasStack: true,
+        digest: 'digest-123',
+        metadata: { assetId: 'asset-123' },
+      },
+    };
+
+    const request = createMockRequest('POST', payload);
+    const response = await POST(request, defaultContext);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ success: true });
+    expect(mockLogger.logError).toHaveBeenCalledWith(
+      'client:error',
+      expect.any(Error),
+      expect.objectContaining({
+        userId: AUTH_USER.userId,
+        boundary: 'image-tile-error-boundary',
+        location: payload.payload.location,
+        hasStack: true,
+        digest: 'digest-123',
+        metadata: { assetId: 'asset-123' },
+      })
+    );
+  });
+
+  it('logs when Canary forwarding fails but still returns success', async () => {
+    mockLogger.logError.mockImplementationOnce(() => {
+      throw new Error('canary unavailable');
     });
 
     const payload = {
@@ -169,7 +191,7 @@ describe('/api/telemetry', () => {
     expect(response.status).toBe(200);
     expect(body).toEqual({ success: true });
     expect(mockLogger.logError).toHaveBeenCalledWith(
-      'telemetry:sentry-failure',
+      'telemetry:canary-forwarding-failed',
       expect.any(Error),
       expect.objectContaining({ userId: AUTH_USER.userId })
     );
@@ -291,9 +313,6 @@ describe('/api/telemetry', () => {
   });
 
   it('swallows unexpected handler errors and returns success', async () => {
-    mockCaptureException.mockImplementationOnce(() => {
-      throw new Error('Sentry down hard');
-    });
     mockLogger.logError.mockImplementationOnce(() => {
       throw new Error('Logger also down');
     });

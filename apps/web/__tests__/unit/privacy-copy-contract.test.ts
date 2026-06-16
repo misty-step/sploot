@@ -63,7 +63,7 @@ describe('privacy copy contract', () => {
     expect(privacy).toContain('Replicate');
     expect(privacy).toContain('Processed by Replicate');
     expect(privacy).toContain('Vercel Analytics');
-    expect(privacy).toContain('Sentry');
+    expect(privacy).toContain('Canary');
     expect(privacy).toContain('Shareable through public links when you choose to share them');
   });
 
