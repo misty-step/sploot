@@ -61,10 +61,6 @@ vi.mock('@/lib/embeddings', () => ({
   },
 }));
 
-vi.mock('@sentry/nextjs', () => ({
-  captureException: vi.fn(),
-}));
-
 vi.mock('@/lib/analytics', () => ({
   trackTiming: vi.fn(),
 }));

@@ -271,11 +271,12 @@ vercel domains add yourdomain.com
 - Automatically enabled
 - Check Analytics tab for metrics
 
-#### Error Tracking (Optional)
+#### canary diagnostics
 ```env
 # Add to environment variables
-NEXT_PUBLIC_SENTRY_DSN=https://...
-SENTRY_AUTH_TOKEN=...
+CANARY_ENDPOINT=https://canary-obs.fly.dev
+CANARY_API_KEY=...
+CANARY_SERVICE_NAME=sploot-web
 ```
 
 ### 2. Database Maintenance

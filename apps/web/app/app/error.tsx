@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import * as Sentry from '@sentry/nextjs';
 import Link from 'next/link';
+import { sendClientErrorTelemetry } from '@/lib/client-error-telemetry';
 
 export default function AppError({
   error,
@@ -12,17 +12,11 @@ export default function AppError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Capture exception with additional context
-    Sentry.captureException(error, {
-      tags: {
-        'error.boundary': 'app-layout',
-        'error.location': '/app',
-      },
-      contexts: {
-        app: {
-          section: 'authenticated-app',
-          action: 'layout-render',
-        },
+    sendClientErrorTelemetry('app-layout-error', error, {
+      metadata: {
+        section: 'authenticated-app',
+        action: 'layout-render',
+        ...(error.digest ? { digest: error.digest } : {}),
       },
     });
   }, [error]);
@@ -51,7 +45,7 @@ export default function AppError({
         <p className="max-w-md text-sm text-muted-foreground">
           {isDatabaseError && 'Unable to connect to the database. This is usually temporary. Try refreshing in a moment.'}
           {isAuthError && 'There was an issue with authentication. Try signing out and back in.'}
-          {!isDatabaseError && !isAuthError && 'Something went sideways. The squad already got pinged via Sentry.'}
+          {!isDatabaseError && !isAuthError && 'something went sideways. the squad already got pinged.'}
         </p>
         {error.digest && (
           <p className="text-xs font-mono text-muted-foreground/70">

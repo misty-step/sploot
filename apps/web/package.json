@@ -61,7 +61,6 @@
     "@radix-ui/react-toggle": "^1.1.10",
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
-    "@sentry/nextjs": "^10.54.0",
     "@sploot/common": "workspace:*",
     "@tanstack/react-virtual": "^3.13.26",
     "@vercel/analytics": "^1.6.1",

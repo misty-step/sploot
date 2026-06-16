@@ -64,10 +64,6 @@ next-env.d.ts
 
 /lib/generated/prisma
 
-# Sentry
-.sentryclirc
-sentry.properties
-
 # clerk configuration (can include secrets)
 /.clerk/
 

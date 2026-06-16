@@ -51,10 +51,6 @@ vi.mock("@/lib/embeddings", () => ({
   EmbeddingError: class EmbeddingError extends Error {},
 }));
 
-vi.mock("@sentry/nextjs", () => ({
-  captureMessage: vi.fn(),
-}));
-
 import { GET } from "@/app/api/assets/route";
 
 function request(searchParams: Record<string, string> = {}) {

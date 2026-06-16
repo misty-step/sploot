@@ -39,12 +39,8 @@ interface SerializedError {
 
 type ConsoleWriter = ((message?: any, ...optionalParams: any[]) => void) | undefined;
 
-interface SentryModule {
-  captureException: (error: unknown, context?: Record<string, unknown>) => void;
-}
-
 /**
- * Structured logger that writes JSON logs, forwards errors to Sentry, and preserves trace context.
+ * Structured logger that writes JSON logs, forwards errors to Canary, and preserves trace context.
  *
  * @public
  */
@@ -53,18 +49,6 @@ export interface ObservabilityLogger {
   logError(context: string, error: unknown, metadata?: Record<string, any>): void;
   logTiming(operation: string, duration: number, success: boolean, metadata?: Record<string, any>): void;
   getTraceId(): string | undefined;
-}
-
-let sentryLoader: Promise<SentryModule | null> | null = null;
-
-function loadSentry(): Promise<SentryModule | null> {
-  if (sentryLoader === null) {
-    sentryLoader = import('@sentry/nextjs')
-      .then(module => module as SentryModule)
-      .catch(() => null);
-  }
-
-  return sentryLoader;
 }
 
 function getEnvironment() {
@@ -132,22 +116,6 @@ class ObservabilityLoggerImpl implements ObservabilityLogger {
     };
 
     this.emit(entry, getConsoleWriter('error'));
-
-    const sentryContext = {
-      context,
-      traceId: this.traceId,
-      ...metadata,
-    };
-
-    void loadSentry().then(sentry => {
-      try {
-        sentry?.captureException(error, {
-          contexts: { custom: sentryContext },
-        });
-      } catch {
-        // Sentry capture should never throw for callers
-      }
-    });
 
     void import('./canary-reporter')
       .then(({ reportCanaryError }) =>
@@ -248,7 +216,7 @@ export function logInfo(context: string, metadata?: Record<string, any>): void {
 }
 
 /**
- * Log an error, serialize it for JSON output, and forward it to Sentry.
+ * Log an error, serialize it for JSON output, and forward it to Canary.
  *
  * @param context - Short description of the failure.
  * @param error - Error object or primitive describing the failure.

@@ -2,7 +2,7 @@
  * Error Scenario Tests
  *
  * Validates graceful degradation when external services fail:
- * - Sentry unavailable
+ * - Canary unavailable
  * - Network offline
  * - Database connection lost
  * - External APIs down (Vercel Blob, Replicate)
@@ -22,34 +22,34 @@ describe('Error Scenarios - System Resilience', () => {
     vi.clearAllMocks();
   });
 
-  describe('Sentry unavailable', () => {
-    it('should not crash when Sentry is down', () => {
-      // Simulate Sentry failure by creating a mock that throws
+  describe('Canary unavailable', () => {
+    it('should not crash when Canary is down', () => {
+      // Simulate Canary failure by creating a mock that throws
       const mockCaptureException = () => {
-        throw new Error('Sentry service unavailable');
+        throw new Error('Canary service unavailable');
       };
 
-      // Application code should handle Sentry failures gracefully
+      // Application code should handle Canary failures gracefully
       const testError = new Error('Test error');
 
       expect(() => {
         try {
           mockCaptureException();
         } catch (err) {
-          // Sentry failure should be caught and logged, not re-thrown
-          console.error('[Sentry] Failed to capture exception:', err);
+          // Canary failure should be caught and logged, not re-thrown
+          console.error('[Canary] Failed to capture exception:', err);
         }
       }).not.toThrow();
     });
 
-    it('should continue logging to console when Sentry fails', () => {
+    it('should continue logging to console when Canary fails', () => {
       const consoleSpy = vi.spyOn(console, 'error');
 
       logger.logError('test-operation', new Error('Test error'), {
         context: 'error-scenario-test',
       });
 
-      // Logger should still work even if Sentry fails
+      // Logger should still work even if Canary fails
       expect(consoleSpy).toHaveBeenCalled();
       consoleSpy.mockRestore();
     });

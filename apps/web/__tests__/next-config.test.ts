@@ -7,13 +7,6 @@ vi.mock('@ducanh2912/next-pwa', () => ({
   }),
 }));
 
-vi.mock('@sentry/nextjs', () => ({
-  withSentryConfig: (config: Record<string, unknown>, options: Record<string, unknown>) => ({
-    ...config,
-    __sentryOptions: options,
-  }),
-}));
-
 describe('next config auth-sensitive pwa caching', () => {
   it('does not cache the auth-dependent start url document', async () => {
     const config = (await import('../next.config')).default as {

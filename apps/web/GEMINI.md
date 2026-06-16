@@ -82,5 +82,5 @@ This file serves as a context guide for Gemini agents working in the `sploot-ext
 ## Critical Configuration Files
 *   `next.config.ts`: Next.js configuration.
 *   `prisma/schema.prisma`: Database models (User, Asset, AssetEmbedding, Tag).
-*   `instrumentation.ts`: Observability setup (Sentry).
+*   `instrumentation.ts`: Observability setup (Canary).
 *   `middleware.ts`: Auth and routing middleware.

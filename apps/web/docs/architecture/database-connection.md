@@ -380,7 +380,7 @@ DATABASE_URL="postgresql://user:pass@ep-xxx-pooler.neon.tech/neondb?sslmode=requ
 **Timeline**:
 - **00:00 UTC**: Deployment to production with custom `POSTGRES_URL` env var
 - **00:01 UTC**: Health check failures begin, 503 errors site-wide
-- **00:05 UTC**: Sentry shows: `Authentication failed... '(not available)'`
+- **00:05 UTC**: production diagnostics show: `Authentication failed... '(not available)'`
 - **00:15 UTC**: Root cause identified: Prisma can't read `POSTGRES_URL`
 - **00:20 UTC**: Fix deployed: Changed to `DATABASE_URL`
 - **00:21 UTC**: Site recovered, health checks green

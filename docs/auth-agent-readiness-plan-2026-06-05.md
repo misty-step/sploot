@@ -163,7 +163,7 @@ Responsibilities hidden inside the module:
   `NODE_ENV !== 'production'`.
 - Optional user sync for write policies.
 - Typed unauthorized/forbidden responses.
-- Sentry/logging metadata redaction.
+- Canary/logging metadata redaction.
 
 ### 2. Route Wrapper
 
@@ -265,7 +265,7 @@ Acceptance:
 
 - Extract `syncAuthenticatedUser(principal)` from `getAuthWithUser`.
 - Make `writeWithUserSync` compose identity resolution with sync.
-- Keep the circuit breaker, Sentry, and logging behavior, but move it behind
+- Keep the circuit breaker, Canary, and logging behavior, but move it behind
   the policy implementation.
 
 ### Phase 3: Migrate Product Routes
