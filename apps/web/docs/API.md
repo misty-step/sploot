@@ -19,7 +19,10 @@ User-facing product APIs require authentication through Sploot's auth boundary.
 Production requests are still Clerk-backed. Local and CI authenticated smoke
 tests may use the signed `qa-local` mode documented in `apps/web/docs/AUTH.md`.
 Operational routes such as health and cron endpoints define their own auth
-contracts.
+contracts. The upload routes (`/api/upload`, `/api/upload/url`) additionally
+accept a personal **upload token** (`Authorization: Bearer splt_…`) for
+non-session clients like the iPhone shortcut — see [Personal Upload
+Tokens](#personal-upload-tokens) below.
 
 ### Auth Boundary
 
@@ -49,7 +52,8 @@ with status `401`.
 
 Protected product API route inventory:
 
-- `/api/upload`, `/api/upload/check`
+- `/api/upload`, `/api/upload/url`, `/api/upload/check`
+- `/api/upload-tokens`, `/api/upload-tokens/{id}` (session-only; manage upload tokens)
 - `/api/assets`, `/api/assets/{id}`, `/api/assets/{id}/tags`, `/api/assets/audit`, `/api/assets/{id}/share`, `/api/assets/{id}/similar`
 - `/api/assets/{id}/embedding-status`, `/api/assets/batch/embedding-status`, `/api/assets/{id}/generate-embedding`
 - `/api/taste/profile`
@@ -272,6 +276,65 @@ If the user has too few ready embedded assets:
 - 503: Embeddings are paused or the text-anchor embedding service is
   unavailable and anchors are not cached
 - 500: Server error
+
+---
+
+### Personal Upload Tokens
+
+Hashed, revocable, **upload-only** credentials for non-session clients (the
+iPhone "Save to Sploot" shortcut, CLIs, automation). See
+`apps/web/docs/shortcuts/save-to-sploot.md` for the end-user recipe and
+`apps/web/docs/AUTH.md` for the auth model.
+
+These management endpoints are **session-authenticated** (Clerk/qa-local). An
+upload token cannot mint, list, or revoke tokens.
+
+#### POST /api/upload-tokens
+
+Mint a token. The plaintext `token` is returned **once** and never again; only
+its hash is stored.
+
+**Request:** `{ "name": "iphone" }` (1–64 chars)
+
+**Response `201`:**
+
+```json
+{
+  "id": "ckxyz…",
+  "name": "iphone",
+  "prefix": "splt_ab12cd",
+  "createdAt": "2026-06-18T00:00:00Z",
+  "token": "splt_…"
+}
+```
+
+`400` if the name is missing/blank; `422` if you already have the maximum (10)
+active tokens.
+
+#### GET /api/upload-tokens
+
+List your active tokens — metadata only, never the secret or its hash.
+
+```json
+{ "tokens": [ { "id": "…", "name": "iphone", "prefix": "splt_ab12cd", "lastUsedAt": null, "createdAt": "…" } ] }
+```
+
+#### DELETE /api/upload-tokens/{id}
+
+Revoke a token (soft delete). Ownership-checked and idempotent: revoking a
+missing or already-revoked token still returns `{ "success": true }`.
+
+#### Using a token
+
+```bash
+curl -X POST https://www.sploot.app/api/upload \
+  -H "Authorization: Bearer splt_…" \
+  -F "file=@meme.png"
+```
+
+`/api/upload` and `/api/upload/url` accept upload tokens; every other route
+returns `401` for one. Dedupe, quota, and the `201`/`409` contracts are
+identical to a session upload.
 
 ---
 

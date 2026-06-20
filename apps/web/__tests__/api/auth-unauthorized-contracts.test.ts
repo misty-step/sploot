@@ -132,6 +132,13 @@ function makeRequest(pathname: string, method: string): NextRequest {
   return new NextRequest(`http://localhost:3000${pathname}`, { method });
 }
 
+function makeTokenRequest(pathname: string, method: string): NextRequest {
+  return new NextRequest(`http://localhost:3000${pathname}`, {
+    method,
+    headers: { authorization: 'Bearer splt_smoke_token' },
+  });
+}
+
 describe('auth error contracts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -256,5 +263,38 @@ describe('auth error contracts', () => {
       expect(response.status).toBe(401);
       await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' });
     }
+  });
+});
+
+// End-to-end confirmation of the upload-only guarantee proven at the unit level
+// in upload-token-scope.test.ts: a personal upload token is inert on every route
+// that did not opt in with `allowUploadToken`. A `splt_` bearer presented to a
+// door-2 route (server.ts, which never reaches the verifier) and to an
+// upload-adjacent route that stayed Clerk-only must still return the stable 401.
+describe('personal upload tokens authenticate only on opt-in routes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getAuth.mockResolvedValue({ userId: null, sessionId: null, getToken: vi.fn() });
+    mocks.getAuthWithUser.mockResolvedValue({
+      userId: null,
+      sessionId: null,
+      getToken: vi.fn(),
+      syncStatus: 'skipped',
+    });
+    mocks.requireUserIdWithSync.mockRejectedValue(new Error('Unauthorized'));
+    mocks.verifyBearerOrThrow.mockRejectedValue(new Error('Unauthorized'));
+  });
+
+  it('rejects a splt_ token on the door-2 route DELETE /api/assets/[id]', async () => {
+    const context = { params: Promise.resolve({ id: 'asset-123' }) };
+    const response = await deleteAsset(makeTokenRequest('/api/assets/asset-123', 'DELETE'), context);
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' });
+  });
+
+  it('rejects a splt_ token on the Clerk-only route POST /api/upload/check', async () => {
+    const response = await checkUpload(makeTokenRequest('/api/upload/check', 'POST'));
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' });
   });
 });

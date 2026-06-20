@@ -36,8 +36,10 @@ async function postHandler(req: NextRequest) {
     const url = new URL(req.url);
     const syncEmbeddings = url.searchParams.get('sync_embeddings') === 'true';
 
-    // Authenticate user (Clerk bearer/cookies, or the qa-local harness)
-    const auth = await authenticateRequest(req);
+    // Authenticate user: Clerk bearer/cookies, the qa-local harness, or a
+    // personal upload token (Apple Shortcut / CLI). allowUploadToken is what
+    // makes this an upload-only credential — no other route opts in.
+    const auth = await authenticateRequest(req, { allowUploadToken: true });
     if (auth.status !== 'authenticated') {
       return unauthorizedResponse();
     }
