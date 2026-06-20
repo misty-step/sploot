@@ -10,6 +10,7 @@ request APIs directly.
 |---|---|---|---|
 | `clerk` | default | Clerk cookies or Clerk session bearer token | local, preview, production |
 | `qa-local` | `SPLOOT_QA_AUTH_MODE=enabled` plus `SPLOOT_QA_AUTH_SECRET` | signed Sploot QA token | local and CI only |
+| `upload-token` | always available | hashed personal upload token (`Authorization: Bearer splt_…`) | **upload routes only** (`/api/upload`, `/api/upload/url`) |
 
 `qa-local` is rejected when `NODE_ENV=production` or `VERCEL_ENV=production`,
 even if the mode and secret are present.
@@ -29,6 +30,33 @@ pnpm --filter web e2e:auth
 The smoke starts a local Next server with `qa-local` enabled and opens `/app`
 with a signed deterministic principal. Passing the smoke proves the app auth
 boundary can be crossed without manual Clerk login.
+
+## Upload Tokens
+
+Personal upload tokens let a non-session client (the iPhone "Save to Sploot"
+shortcut, a CLI, automation) authenticate **upload-only** API calls. They exist
+because Apple Shortcuts cannot carry a Clerk session.
+
+- Format: `splt_` + 32 random bytes (base64url). Only `sha256(token)` is stored
+  (`upload_tokens` table); the plaintext is returned once at mint and never
+  again.
+- Scope is enforced by policy, not by a scope field: `authenticateRequest`
+  checks an upload token only when a route passes `allowUploadToken: true`.
+  Just the two upload routes opt in, so a token presented anywhere else returns
+  the stable `401`. The `lib/auth/server.ts` auth path (`getAuth*`, used by
+  read/delete routes) never calls the verifier at all.
+- Verification is throw-safe: a DB error (including a not-yet-migrated table)
+  resolves to `401`, never `500`. Revoked and unknown tokens are
+  indistinguishable.
+- Managed at `/api/upload-tokens` (mint/list) and `/api/upload-tokens/{id}`
+  (revoke), which are **session-authenticated** — an upload token cannot manage
+  tokens. UI: **Settings → Upload tokens**.
+- Implementation: `lib/auth/upload-token.ts`. User recipe:
+  `docs/shortcuts/save-to-sploot.md`.
+
+Because the token is verified against the `upload_tokens` table, the migration
+must be applied to an environment (`prisma migrate deploy`) before the mint
+route works there.
 
 ## QA Data Seeding
 

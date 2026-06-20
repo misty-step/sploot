@@ -95,6 +95,6 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
 
     return NextResponse.json({ success: false, error: 'Upload failed' }, { status: 500 });
   }
-});
+}, { allowUploadToken: true });
 
 export const POST = withObservability(postHandler, { operation: 'upload:url' });

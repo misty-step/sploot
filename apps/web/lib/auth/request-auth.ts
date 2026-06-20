@@ -6,11 +6,15 @@ import type {
   AuthenticatedPrincipal,
   RequestAuthResult,
 } from './types';
+import { extractUploadToken, verifyUploadToken } from './upload-token';
 import { verifyBearerOrThrow } from './verify-bearer';
 
-const DEFAULT_AUTH_POLICY: Required<Pick<AuthPolicy, 'allowClerk' | 'allowQaLocal' | 'requireUserSync'>> = {
+const DEFAULT_AUTH_POLICY: Required<
+  Pick<AuthPolicy, 'allowClerk' | 'allowQaLocal' | 'allowUploadToken' | 'requireUserSync'>
+> = {
   allowClerk: true,
   allowQaLocal: true,
+  allowUploadToken: false,
   requireUserSync: false,
 };
 
@@ -28,6 +32,19 @@ export async function authenticateRequest(
     const qaResult = await verifyQaLocalAuthHeaders(req.headers, env);
     if (qaResult.status !== 'unauthenticated' && qaResult.status !== 'forbidden') {
       return qaResult;
+    }
+  }
+
+  if (resolvedPolicy.allowUploadToken) {
+    const uploadToken = extractUploadToken(req.headers);
+    if (uploadToken) {
+      const principal = await verifyUploadToken(uploadToken);
+      if (principal) {
+        return { status: 'authenticated', principal, syncStatus: 'skipped' };
+      }
+      // A splt_ bearer was presented but is invalid or revoked. It is
+      // unambiguously an upload-token attempt, so do not fall through to Clerk.
+      return { status: 'unauthenticated', reason: 'upload-token-invalid' };
     }
   }
 

@@ -1,6 +1,6 @@
 # Get Sploot into the iPhone share sheet via a Shortcut
 
-Priority: P2 · Status: pending · Estimate: M
+Priority: P2 · Status: in-progress · Estimate: M
 
 ## Goal
 
