@@ -57,11 +57,15 @@ structurally agent-native.
 
 ## Children
 
-1. **Migrate-on-deploy (the immediate fix; do first).** Add a release/CI step
-   that runs `prisma migrate deploy` against prod on merge to `master`, with the
-   prod `DATABASE_URL` held as a GitHub Actions secret (or Vercel deploy hook)
-   the agent never reads. One-time human secret placement; permanent agent
-   autonomy after. Directly unblocks 033's pending prod migration.
+1. **Migrate-on-deploy (the immediate fix; do first).** ✅ **Delivered** (PR for
+   `deliver-036-migrate-on-deploy`): `migrate-prod` job in
+   `.github/workflows/ci.yml` runs `prisma migrate deploy` on push to `master`
+   after the merge gate, with the prod URL held as the `PRODUCTION_DATABASE_URL`
+   repo secret — the agent never reads it. ADR-007 records the decision; the job
+   is inert-but-loud until activated. **Activation (one-time, operator):**
+   `gh secret set PRODUCTION_DATABASE_URL` with the same value as Vercel's prod
+   `DATABASE_URL`. After that the next merge applies pending migrations and
+   unblocks 033 automatically.
 2. **Agent-readable secret store.** Put the boundary secrets (DB, Blob, Clerk,
    Canary) behind a token-on-disk store (1Password **service-account** token, or
    Doppler) so the agent can run the live QA loop and reach every boundary
