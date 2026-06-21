@@ -14,11 +14,18 @@ Status conventions:
 | # | Title | Priority | Estimate |
 |---|-------|----------|----------|
 | [026](026-ingest-memes-where-they-live.md) | Ingest Memes Where They Live (epic) | P1 | XL |
-| [031](031-storage-based-pricing.md) | Charge For Storage With A Generous Free Tier (epic, raw) | P2 | XL |
+| [037](037-make-taste-and-piles-actually-know-your-taste.md) | Make The Taste And Piles Actually Know Your Taste (epic) | P1 | XL |
+| [031](031-storage-based-pricing.md) | Charge For Storage With A Generous Free Tier (epic; reframe → L, see note) | P2 | XL |
 | [032](032-adopt-design-system-and-landing-pass.md) | Adopt Design System And Re-Cut Landing (epic, blocked) | P2 | XL |
 | [033](033-ios-share-sheet-ingestion.md) | Get Sploot Into The iPhone Share Sheet Via A Shortcut (merged; blocked on prod migration — see 036) | P2 | M |
+| [036](036-make-schema-to-prod-fully-agent-deployable.md) | Make Schema-To-Prod Fully Agent-Deployable (epic; child 1 shipped) | P2 | L |
+| [038](038-share-the-actual-meme-file.md) | Share The Actual Meme File, Not A Sploot Link | P2 | S |
+| [039](039-debounce-search-and-honest-zero-results.md) | Debounce Search And Make Zero-Results Honest | P2 | S |
+| [040](040-detect-near-duplicate-memes-perceptual-hash.md) | Detect Near-Duplicate Memes With A Perceptual Hash | P2 | M |
+| [041](041-make-sploot-agent-operable-verify-read-recover.md) | Make Sploot Agent-Operable: Verify, Read, Recover (epic) | P2 | M |
+| [042](042-delete-dead-realtime-and-orphan-upload-infra.md) | Delete Dead Realtime And Orphan-Upload Infrastructure | P2 | S |
 | [035](035-unify-auth-doors-on-policy-boundary.md) | Unify The Two Auth Doors On The Policy Boundary | P3 | M |
-| [036](036-make-schema-to-prod-fully-agent-deployable.md) | Make Schema-To-Prod Fully Agent-Deployable (epic) | P2 | L |
+| [043](043-fix-standing-red-lint-design-gate.md) | Fix The Standing-Red lint:design Gate | P3 | S |
 
 ## Done
 
