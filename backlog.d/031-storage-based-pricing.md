@@ -2,6 +2,15 @@
 
 Priority: P2 · Status: pending · Estimate: XL
 
+> **Groom reframe (2026-06-21):** the *enforcement* half is already built —
+> per-user byte metering and cap (`lib/quota/storage-quota-policy.ts`, 1GB
+> default), the settings meter, `StorageQuotaExceededError`, and an upgrade-prompt
+> hook. What's missing is the strategic half: the measured cost model, price
+> points, and a thin Stripe layer wired to the existing hooks. Re-estimate **XL →
+> L**, and **sequence after** the shareability/onboarding gaps (038, first-10
+> on-ramp) that serve today's lone user — don't monetize a tool nobody else can
+> yet delightfully share out of. Premise verdict: **keep, but shrink and defer.**
+
 ## Goal
 
 Sploot has a real pricing model aligned with its real cost structure:
