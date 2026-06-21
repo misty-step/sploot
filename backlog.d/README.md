@@ -16,8 +16,9 @@ Status conventions:
 | [026](026-ingest-memes-where-they-live.md) | Ingest Memes Where They Live (epic) | P1 | XL |
 | [031](031-storage-based-pricing.md) | Charge For Storage With A Generous Free Tier (epic, raw) | P2 | XL |
 | [032](032-adopt-design-system-and-landing-pass.md) | Adopt Design System And Re-Cut Landing (epic, blocked) | P2 | XL |
-| [033](033-ios-share-sheet-ingestion.md) | Get Sploot Into The iPhone Share Sheet Via A Shortcut (in progress) | P2 | M |
+| [033](033-ios-share-sheet-ingestion.md) | Get Sploot Into The iPhone Share Sheet Via A Shortcut (merged; blocked on prod migration — see 036) | P2 | M |
 | [035](035-unify-auth-doors-on-policy-boundary.md) | Unify The Two Auth Doors On The Policy Boundary | P3 | M |
+| [036](036-make-schema-to-prod-fully-agent-deployable.md) | Make Schema-To-Prod Fully Agent-Deployable (epic) | P2 | L |
 
 ## Done
 
