@@ -7,7 +7,12 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded PR runs to save CI, but never cancel an in-flight master
+  # run — the migrate-prod job below must not be killed mid-DDL by a newer push
+  # (a non-transactional migration could be left half-applied). Concurrent
+  # migrate-prod runs are still safe: prisma migrate deploy serializes on a
+  # Postgres advisory lock.
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   secrets:

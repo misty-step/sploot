@@ -40,6 +40,11 @@ value as Vercel's prod `DATABASE_URL` (the script derives the direct URL itself)
 - `migrate deploy` is idempotent, so running on every `master` push is a cheap
   no-op when nothing is pending. A `paths: prisma/migrations/**` filter is a
   possible later optimization.
+- The workflow's `concurrency.cancel-in-progress` is disabled for `push` events,
+  so a newer master push never cancels an in-flight `migrate-prod` mid-DDL (a
+  non-transactional `CREATE INDEX CONCURRENTLY` could otherwise be left
+  half-applied). Two `migrate-prod` runs that overlap are still safe — Prisma's
+  advisory lock serializes them.
 - The Vercel build's migrate step stays as a harmless skip; the runtime app is
   unaffected.
 - **Rejected:** un-marking `DATABASE_URL` as Sensitive so the build could migrate
