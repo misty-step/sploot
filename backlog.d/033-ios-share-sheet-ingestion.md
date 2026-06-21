@@ -1,6 +1,6 @@
 # Get Sploot into the iPhone share sheet via a Shortcut
 
-Priority: P2 · Status: in-progress · Estimate: M
+Priority: P2 · Status: blocked · Estimate: M
 
 ## Goal
 
@@ -33,3 +33,14 @@ cookies aren't available to Shortcuts, hence the upload-token feature
 (which also unlocks future CLI/automation ingestion). Until this ships,
 the iOS path is copy → paste into the upload zone (documented in
 settings).
+
+Status (2026-06-20): the feature code merged to master (PR #231, squash
+`73238ff`, `Closes-backlog: 033`). **Blocked, not done** — the user-facing
+oracle (lands on a real device; live mint→POST→revoke→401 cycle) is not yet
+green because the `upload_tokens` table is not applied to prod. Vercel does
+not run migrations on deploy and the prod `DATABASE_URL` is sequestered, so
+applying it is a manual step → owned by epic 036 (make schema-to-prod fully
+agent-deployable). Until the table exists, the settings card degrades
+gracefully ("tokens aren't available") and any `splt_` token returns the
+throw-safe 401. Archive to `_done/` once the migration is applied and the
+device test passes.
