@@ -6,7 +6,7 @@ Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 15 app, App Rou
 
 ## Ground Truth Pointers
 
-- Product: `vision.md`
+- Product: `VISION.md` — north star, audience, the capture→retrieval→taste→generation arc, and the agent-operability principle
 - Architecture: `ARCHITECTURE.md`, `apps/web/ARCHITECTURE.md`, `apps/extension/ARCHITECTURE.md`
 - Web API docs: `apps/web/docs/API.md` must stay synced with route behavior
 - Shared upload/API contract: `packages/common/src/*`
