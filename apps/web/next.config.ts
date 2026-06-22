@@ -1,5 +1,11 @@
 import type { NextConfig } from "next";
 import withPWA from "@ducanh2912/next-pwa";
+import {
+  IMAGE_DEVICE_SIZES,
+  IMAGE_IMAGE_SIZES,
+  IMAGE_FORMATS,
+  IMAGE_MINIMUM_CACHE_TTL,
+} from "./lib/image-config";
 
 const nextConfig: NextConfig = {
   eslint: {
@@ -25,12 +31,13 @@ const nextConfig: NextConfig = {
         hostname: '*.blob.vercel-storage.com',
       }
     ],
-    // Enable WebP and AVIF formats for better compression
-    formats: ['image/avif', 'image/webp'],
-    // Set device sizes for responsive images
-    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
-    // Set image sizes for different breakpoints
-    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    // Cost-safe optimization settings (ADR-008). The grid serves thumbnails
+    // unoptimized; these govern the optimized detail/landing surfaces only.
+    formats: [...IMAGE_FORMATS],
+    deviceSizes: IMAGE_DEVICE_SIZES,
+    imageSizes: IMAGE_IMAGE_SIZES,
+    // Optimized meme variants are immutable — cache long to cut cache-write churn.
+    minimumCacheTTL: IMAGE_MINIMUM_CACHE_TTL,
   },
   // Compiler optimizations for production
   compiler: {
