@@ -159,6 +159,7 @@ async function postHandler(req: NextRequest) {
         return {
           id: result.id,
           blobUrl: result.blob_url,
+          thumbnailUrl: result.thumbnail_url ?? null,
           pathname: result.pathname,
           filename: result.pathname.split('/').pop() || result.pathname,
           mime: result.mime,

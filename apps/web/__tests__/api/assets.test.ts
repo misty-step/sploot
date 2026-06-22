@@ -81,6 +81,7 @@ describe("GET /api/assets", () => {
         {
           id: "asset-b",
           blobUrl: "https://blob.test/b.png",
+          thumbnailUrl: "https://blob.test/thumb-b.png",
           pathname: "memes/b.png",
           mime: "image/png",
           width: 640,
@@ -132,6 +133,8 @@ describe("GET /api/assets", () => {
       "asset-b",
       "asset-a",
     ]);
+    // 048: the shuffle mapping must carry the stored thumbnail through to the grid.
+    expect(body.assets[0].thumbnailUrl).toBe("https://blob.test/thumb-b.png");
     expect(body.pagination).toEqual({
       total: 2,
       limit: 2,
@@ -185,6 +188,9 @@ describe("GET /api/assets", () => {
     expect(mocks.prisma.asset.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         orderBy: { size: "asc" },
+        // 048: the regular-list path must SELECT the thumbnail so the grid can
+        // serve it directly instead of optimizing the full original.
+        select: expect.objectContaining({ thumbnailUrl: true }),
       }),
     );
   });

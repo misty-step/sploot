@@ -716,6 +716,7 @@ export async function vectorSearch(
       Array<{
         id: string;
         blob_url: string;
+        thumbnail_url: string | null;
         pathname: string;
         mime: string;
         width: number | null;
@@ -729,6 +730,7 @@ export async function vectorSearch(
       SELECT
         a.id,
         a.blob_url,
+        a.thumbnail_url,
         a.pathname,
         a.mime,
         a.width,

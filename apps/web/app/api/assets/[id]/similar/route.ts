@@ -56,10 +56,10 @@ async function getHandler(
       .filter((r: { id: string }) => r.id !== id)
       .slice(0, limit);
 
-    const formattedResults = filtered.map((result: { id: string; blob_url: string; pathname: string; mime: string; width: number | null; height: number | null; favorite: boolean; size: number; created_at: Date; distance: number }) => ({
+    const formattedResults = filtered.map((result: { id: string; blob_url: string; thumbnail_url: string | null; pathname: string; mime: string; width: number | null; height: number | null; favorite: boolean; size: number; created_at: Date; distance: number }) => ({
       id: result.id,
       blobUrl: result.blob_url,
-      thumbnailUrl: null,
+      thumbnailUrl: result.thumbnail_url,
       pathname: result.pathname,
       filename: result.pathname.split('/').pop() || result.pathname,
       mime: result.mime,

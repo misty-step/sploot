@@ -437,12 +437,12 @@ function ImageTileComponent({
                       preserveAspectRatio ? 'object-contain' : 'object-cover'
                     )}
                     loading="lazy"
-                    // NOTE: the grid currently sources the full original, not the
-                    // 256px thumbnail (the list/search/similar read paths don't
-                    // SELECT thumbnailUrl) — so it must stay optimized for now, or
-                    // it would ship full-res originals. Wiring the thumbnail into
-                    // those reads + serving unoptimized is ticket 048. See ADR-008.
-                    unoptimized={isAnimatedImage}
+                    // Grid tiles source the pre-built ~256px thumbnail (the
+                    // list/shuffle/search/similar reads return thumbnailUrl as of
+                    // 048), so the optimizer would add transform + cache-write cost
+                    // for no benefit — serve it directly. The detail/share pages
+                    // stay optimized. See ADR-008.
+                    unoptimized
                     onLoad={() => {
                       setImageLoaded(true);
                       recordBlobSuccess();

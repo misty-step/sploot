@@ -118,6 +118,25 @@ describe("GET /api/assets seeded shuffle integration", () => {
     });
   });
 
+  // 048: the grid must source the stored thumbnail, not the full original. This
+  // exercises the real shuffle SQL against pgvector so a missing/mistyped
+  // `thumbnail_url` alias is caught (unit mocks + tsc cannot see raw-SQL columns).
+  it("returns the stored thumbnailUrl on each shuffle tile", async () => {
+    const res = await GET(
+      request({ sortBy: "shuffle", shuffleSeed: "7", limit: "4", offset: "0" }),
+      { params: Promise.resolve({}) },
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.assets.length).toBeGreaterThan(0);
+    for (const tile of body.assets) {
+      expect(tile.thumbnailUrl).toBe(
+        `https://sploot-test.public.blob.vercel-storage.com/thumb-${tile.pathname}`,
+      );
+    }
+  });
+
   it("uses seeded ring order over stable shuffle keys", async () => {
     const fullPage = await GET(
       request({
@@ -236,6 +255,7 @@ function asset(
     id,
     ownerUserId,
     blobUrl: `https://sploot-test.public.blob.vercel-storage.com/${filename}`,
+    thumbnailUrl: `https://sploot-test.public.blob.vercel-storage.com/thumb-${filename}`,
     pathname: filename,
     mime: "image/png",
     size,

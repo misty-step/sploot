@@ -8,6 +8,7 @@ export type TasteProfileStatus = 'ready' | 'insufficient_bangers';
 export interface TasteAssetRow {
   id: string;
   blobUrl: string;
+  thumbnailUrl: string | null;
   pathname: string;
   mime: string;
   width: number | null;
@@ -212,6 +213,7 @@ async function fetchTasteAssets(options: TasteAssetQueryOptions): Promise<TasteA
     SELECT
       a.id,
       a.blob_url AS "blobUrl",
+      a.thumbnail_url AS "thumbnailUrl",
       a.pathname,
       a.mime,
       a.width,
