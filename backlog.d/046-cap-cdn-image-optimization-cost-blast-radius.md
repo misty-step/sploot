@@ -19,9 +19,11 @@ the operator senses — and it's fixable in hours, in place.
 ## Oracle
 
 - [ ] Vercel Spend Management cap + auto-pause webhook is set (a hard ceiling).
-- [ ] Grid thumbnails are served without per-request optimization (pre-built
-      256px thumbnails / `unoptimized`), `deviceSizes` is trimmed to 2–3 entries,
-      and `minimumCacheTTL` is raised. (The single biggest cost lever.)
+- [x] `deviceSizes` trimmed to 3 + `minimumCacheTTL` raised (31 days), via a
+      testable `lib/image-config.ts` + guard test. **Split (2026-06-22):** serving
+      grid thumbnails `unoptimized` moved to **048** — review found the grid reads
+      omit `thumbnailUrl`, so it sources the full original; `unoptimized` without
+      first wiring the thumbnail would ship full-res originals.
 - [ ] The embeddings cron (`process-embeddings`, every 5 min, batch 10) has a hard
       daily ceiling + a kill-switch on `includeRecent`, so a reprocess loop can't
       run Replicate spend unbounded.

@@ -437,6 +437,11 @@ function ImageTileComponent({
                       preserveAspectRatio ? 'object-contain' : 'object-cover'
                     )}
                     loading="lazy"
+                    // NOTE: the grid currently sources the full original, not the
+                    // 256px thumbnail (the list/search/similar read paths don't
+                    // SELECT thumbnailUrl) — so it must stay optimized for now, or
+                    // it would ship full-res originals. Wiring the thumbnail into
+                    // those reads + serving unoptimized is ticket 048. See ADR-008.
                     unoptimized={isAnimatedImage}
                     onLoad={() => {
                       setImageLoaded(true);

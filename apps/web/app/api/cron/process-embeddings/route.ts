@@ -6,6 +6,12 @@ import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
 import { getRuntimeGate, runtimeGateError } from '@/lib/runtime-gates';
 
+// Hard per-run cap on embeddings generated — the bound on Replicate spend per
+// invocation. With the */5 * * * * schedule this ceilings throughput at
+// ~10/5min. The kill-switch for embedding spend is the `embeddings` runtime
+// gate (checked below); flipping it off halts this cron. See ADR-008.
+const EMBEDDINGS_BATCH_SIZE = 10;
+
 // Performance tracking
 interface ProcessingStats {
   totalProcessed: number;
@@ -90,7 +96,7 @@ async function getHandler(request: NextRequest) {
         ownerUserId: true,
         createdAt: true,
       },
-      take: 10, // Process in batches of 10
+      take: EMBEDDINGS_BATCH_SIZE,
       orderBy: {
         createdAt: 'asc', // Process oldest first
       },
@@ -208,25 +214,11 @@ async function getHandler(request: NextRequest) {
   }
 }
 
-/**
- * POST /api/cron/process-embeddings
- *
- * Manual trigger for processing embeddings with specific options.
- */
-async function postHandler(request: NextRequest) {
-  // For manual triggering with specific parameters
-  const body = await request.json();
-  const { batchSize = 10, includeRecent = false } = body;
-
-  // Similar processing logic but with configurable parameters
-  // This allows for manual testing and different processing strategies
-  return getHandler(request);
-}
-
+// GET only: Vercel Cron invokes this on the */5 schedule, and a manual run is
+// the same idempotent, CRON_SECRET-gated call. There is deliberately no POST
+// variant — it would just duplicate GET and invite an "options" knob, and the
+// only knob worth having (re-embed everything) is the runaway this route must
+// never expose. See ADR-008.
 export const GET = withObservability(getHandler, {
-  operation: 'cron:process-embeddings',
-});
-
-export const POST = withObservability(postHandler, {
   operation: 'cron:process-embeddings',
 });
