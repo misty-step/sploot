@@ -1,6 +1,6 @@
 # Make Schema-To-Prod Fully Agent-Deployable
 
-Priority: P2 · Status: ready · Estimate: L
+Priority: P2 · Status: in-progress · Estimate: L
 
 ## Goal
 
@@ -70,14 +70,13 @@ structurally agent-native.
    Canary) behind a token-on-disk store (1Password **service-account** token, or
    Doppler) so the agent can run the live QA loop and reach every boundary
    without an interactive login. Document the bootstrap in AGENTS/CLAUDE.
-3. **Platform-fit spike + ADR.** Evaluate three futures against the criteria
-   below: (a) **stay + glue** — Vercel+Neon+Clerk with children 1–2; (b) **move
-   to Fly** — `FLY_API_TOKEN` is already on this disk, migrations ride
-   `release_command`, pgvector supported, aligns with the Canary-on-Fly
-   footprint and the Rust-by-default doctrine; (c) **consolidate on Supabase** —
-   DB + pgvector + auth + storage behind one CLI/key, but replaces Clerk and
-   Vercel Blob. Output an ADR with a recommendation and, if a move is chosen, a
-   sequenced migration epic.
+3. **Platform-fit spike + ADR.** → **SUPERSEDED by epic 044** (2026-06-22). The
+   2026-06-22 research swarm did this evaluation (Cloudflare / Fly / DigitalOcean
+   / embeddings / cost / portability) and turned the paper ADR into a measured,
+   port-first spike. Lead candidate is Fly; Supabase fell away (the swarm's
+   verdict: keep Clerk + pgvector, change only host/storage/embeddings-host, no
+   self-hosted Postgres). See 044 for the children and the spike. This child is
+   closed here.
 
 ## Notes
 
