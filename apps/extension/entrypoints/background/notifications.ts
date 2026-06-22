@@ -53,7 +53,7 @@ export function showSuccessNotification(
   _thumbnailUrl?: string, // Kept for API compatibility but unused
   options?: { isDuplicate?: boolean }
 ): void {
-  const notificationId = `success-${Date.now()}`;
+  const notificationId = `success-${crypto.randomUUID()}`;
 
   chrome.notifications.create(notificationId, {
     type: 'basic',
@@ -103,7 +103,7 @@ export function toErrorNotificationMessage(errorMessage: string): string {
  * Show error feedback (notification + badge).
  */
 export function showErrorNotification(error: string | ErrorNotificationInput): void {
-  const notificationId = `error-${Date.now()}`;
+  const notificationId = `error-${crypto.randomUUID()}`;
   const errorMessage = typeof error === 'string' ? error : error.message;
   const userMessage = toErrorNotificationMessage(errorMessage);
   const actionHref = typeof error === 'string' ? undefined : error.actionHref;

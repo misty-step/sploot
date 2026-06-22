@@ -66,9 +66,11 @@ describe('notifications', () => {
 
     setupNotificationFeedback();
     showSuccessNotification('meme.jpg');
-    clickListeners[0]('success-1779105600000');
+    const id = chromeMock.notifications.create.mock.calls[0][0] as string;
+    expect(id).toMatch(/^success-/);
+    clickListeners[0](id);
 
-    expect(chromeMock.notifications.create).toHaveBeenCalledWith('success-1779105600000', {
+    expect(chromeMock.notifications.create).toHaveBeenCalledWith(id, {
       type: 'basic',
       iconUrl: 'chrome-extension://extension-id/icon-128.png',
       title: 'Saved to Sploot',
@@ -77,7 +79,7 @@ describe('notifications', () => {
       isClickable: true,
     });
     expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/app' });
-    expect(chromeMock.notifications.clear).toHaveBeenCalledWith('success-1779105600000');
+    expect(chromeMock.notifications.clear).toHaveBeenCalledWith(id);
   });
 
   it('flashes the success badge on save', async () => {
@@ -104,7 +106,7 @@ describe('notifications', () => {
     setupNotificationFeedback();
     showSuccessNotification('meme.jpg', undefined, { isDuplicate: true });
 
-    expect(chromeMock.notifications.create).toHaveBeenCalledWith('success-1779105600000', {
+    expect(chromeMock.notifications.create).toHaveBeenCalledWith(expect.stringMatching(/^success-/), {
       type: 'basic',
       iconUrl: 'chrome-extension://extension-id/icon-128.png',
       title: 'Already in Sploot',
@@ -123,7 +125,7 @@ describe('notifications', () => {
     expect(toErrorNotificationMessage('Network error: offline')).toBe('Network error. Check your connection.');
     showErrorNotification('Authentication required');
 
-    expect(chromeMock.notifications.create).toHaveBeenCalledWith('error-1779105600000', {
+    expect(chromeMock.notifications.create).toHaveBeenCalledWith(expect.stringMatching(/^error-/), {
       type: 'basic',
       iconUrl: 'chrome-extension://extension-id/icon-128.png',
       title: 'Save Failed',
@@ -150,9 +152,11 @@ describe('notifications', () => {
       message: 'Storage quota exceeded. Open Sploot settings to manage storage.',
       actionHref: '/app/settings',
     });
-    clickListeners[0]('error-1779105600000');
+    const id = chromeMock.notifications.create.mock.calls[0][0] as string;
+    expect(id).toMatch(/^error-/);
+    clickListeners[0](id);
 
-    expect(chromeMock.notifications.create).toHaveBeenCalledWith('error-1779105600000', {
+    expect(chromeMock.notifications.create).toHaveBeenCalledWith(id, {
       type: 'basic',
       iconUrl: 'chrome-extension://extension-id/icon-128.png',
       title: 'Save Failed',
@@ -161,6 +165,6 @@ describe('notifications', () => {
       isClickable: true,
     });
     expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/app/settings' });
-    expect(chromeMock.notifications.clear).toHaveBeenCalledWith('error-1779105600000');
+    expect(chromeMock.notifications.clear).toHaveBeenCalledWith(id);
   });
 });
