@@ -214,23 +214,11 @@ async function getHandler(request: NextRequest) {
   }
 }
 
-/**
- * POST /api/cron/process-embeddings
- *
- * Manual trigger. Runs the same bounded batch as GET — it does NOT accept a
- * larger batch or a "re-embed recent/all" option on purpose: an unbounded
- * re-embed is the runaway Replicate-spend vector this route must never expose.
- * (Earlier `batchSize`/`includeRecent` body params were inert and were removed
- * so they can't be mistaken for a working knob. See ADR-008.)
- */
-async function postHandler(request: NextRequest) {
-  return getHandler(request);
-}
-
+// GET only: Vercel Cron invokes this on the */5 schedule, and a manual run is
+// the same idempotent, CRON_SECRET-gated call. There is deliberately no POST
+// variant — it would just duplicate GET and invite an "options" knob, and the
+// only knob worth having (re-embed everything) is the runaway this route must
+// never expose. See ADR-008.
 export const GET = withObservability(getHandler, {
-  operation: 'cron:process-embeddings',
-});
-
-export const POST = withObservability(postHandler, {
   operation: 'cron:process-embeddings',
 });
