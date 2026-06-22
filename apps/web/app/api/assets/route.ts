@@ -66,6 +66,7 @@ function shuffleSeedToPivot(seed: number): bigint {
 type AssetListRow = {
   id: string;
   blobUrl: string;
+  thumbnailUrl: string | null;
   pathname: string;
   mime: string;
   width: number | null;
@@ -136,6 +137,7 @@ async function fetchShuffleSegment(
       SELECT
         a.id,
         a.blob_url,
+        a.thumbnail_url,
         a.pathname,
         a.mime,
         a.width,
@@ -160,6 +162,7 @@ async function fetchShuffleSegment(
     SELECT
       a.id,
       a.blob_url as "blobUrl",
+      a.thumbnail_url as "thumbnailUrl",
       a.pathname,
       a.mime,
       a.width,
@@ -596,6 +599,7 @@ async function getHandler(req: NextRequest) {
                 select: {
                   id: true,
                   blobUrl: true,
+                  thumbnailUrl: true,
                   pathname: true,
                   mime: true,
                   width: true,
@@ -642,6 +646,7 @@ async function getHandler(req: NextRequest) {
     const formattedAssets = assets.map((asset: any) => ({
       id: asset.id,
       blobUrl: asset.blobUrl,
+      thumbnailUrl: asset.thumbnailUrl ?? null,
       pathname: asset.pathname,
       filename: asset.pathname,
       mime: asset.mime,

@@ -684,6 +684,20 @@ export async function upsertAssetEmbedding(
  * Helper function to execute vector similarity search
  * Note: This uses raw SQL since Prisma doesn't natively support pgvector operations
  */
+export interface VectorSearchRow {
+  id: string;
+  blob_url: string;
+  thumbnail_url: string | null;
+  pathname: string;
+  mime: string;
+  width: number | null;
+  height: number | null;
+  favorite: boolean;
+  size: number;
+  created_at: Date;
+  distance: number;
+}
+
 export async function vectorSearch(
   userId: string,
   queryEmbedding: number[],
@@ -712,23 +726,11 @@ export async function vectorSearch(
   try {
     // ALWAYS order by similarity (preserve semantic ranking)
     // Shuffle happens in application code after fetching top results
-    const results = await prisma.$queryRaw<
-      Array<{
-        id: string;
-        blob_url: string;
-        pathname: string;
-        mime: string;
-        width: number | null;
-        height: number | null;
-        favorite: boolean;
-        size: number;
-        created_at: Date;
-        distance: number;
-      }>
-    >(Prisma.sql`
+    const results = await prisma.$queryRaw<VectorSearchRow[]>(Prisma.sql`
       SELECT
         a.id,
         a.blob_url,
+        a.thumbnail_url,
         a.pathname,
         a.mime,
         a.width,

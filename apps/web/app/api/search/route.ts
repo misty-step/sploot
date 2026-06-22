@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { prisma, vectorSearch, logSearch } from '@/lib/db';
+import { prisma, vectorSearch, logSearch, type VectorSearchRow } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
 import { getAuthWithUser } from '@/lib/auth/server';
@@ -149,7 +149,7 @@ async function postHandler(req: NextRequest) {
 
     // Format results with additional metadata
     const formattedResults = await Promise.all(
-      searchResults.map(async (result: any) => {
+      searchResults.map(async (result: VectorSearchRow) => {
         // Get tags for each asset
         const assetTags = await prisma!.assetTag.findMany({
           where: { assetId: result.id },
@@ -159,6 +159,7 @@ async function postHandler(req: NextRequest) {
         return {
           id: result.id,
           blobUrl: result.blob_url,
+          thumbnailUrl: result.thumbnail_url ?? null,
           pathname: result.pathname,
           filename: result.pathname.split('/').pop() || result.pathname,
           mime: result.mime,
