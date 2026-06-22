@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { prisma, vectorSearch } from '@/lib/db';
+import { prisma, vectorSearch, type VectorSearchRow } from '@/lib/db';
 import { getAuth } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
@@ -56,7 +56,7 @@ async function getHandler(
       .filter((r: { id: string }) => r.id !== id)
       .slice(0, limit);
 
-    const formattedResults = filtered.map((result: { id: string; blob_url: string; thumbnail_url: string | null; pathname: string; mime: string; width: number | null; height: number | null; favorite: boolean; size: number; created_at: Date; distance: number }) => ({
+    const formattedResults = filtered.map((result: VectorSearchRow) => ({
       id: result.id,
       blobUrl: result.blob_url,
       thumbnailUrl: result.thumbnail_url,
