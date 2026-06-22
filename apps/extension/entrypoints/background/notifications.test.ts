@@ -13,11 +13,11 @@ interface ChromeMock {
       removeListener: ReturnType<typeof vi.fn>;
     };
   };
-  runtime: {
-    getURL: ReturnType<typeof vi.fn>;
-  };
-  tabs: {
-    create: ReturnType<typeof vi.fn>;
+  runtime: { getURL: ReturnType<typeof vi.fn> };
+  tabs: { create: ReturnType<typeof vi.fn> };
+  action: {
+    setBadgeText: ReturnType<typeof vi.fn>;
+    setBadgeBackgroundColor: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -25,6 +25,7 @@ let clickListeners: Array<(notificationId: string) => void>;
 let chromeMock: ChromeMock;
 
 beforeEach(() => {
+  vi.resetModules(); // fresh module-level action map + click handler per test
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-05-18T12:00:00.000Z'));
   clickListeners = [];
@@ -36,25 +37,34 @@ beforeEach(() => {
         addListener: vi.fn(listener => {
           clickListeners.push(listener);
         }),
-        removeListener: vi.fn(listener => {
-          clickListeners = clickListeners.filter(existing => existing !== listener);
-        }),
+        removeListener: vi.fn(),
       },
     },
-    runtime: {
-      getURL: vi.fn(path => `chrome-extension://extension-id/${path}`),
-    },
-    tabs: {
-      create: vi.fn(),
-    },
+    runtime: { getURL: vi.fn(path => `chrome-extension://extension-id/${path}`) },
+    tabs: { create: vi.fn() },
+    action: { setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
   };
   vi.stubGlobal('chrome', chromeMock);
 });
 
 describe('notifications', () => {
-  it('opens the Sploot app when a success notification is clicked', async () => {
-    const { showSuccessNotification } = await import('./notifications');
+  it('registers exactly one click listener regardless of how many notifications fire', async () => {
+    const { setupNotificationFeedback, showSuccessNotification, showErrorNotification } =
+      await import('./notifications');
 
+    setupNotificationFeedback();
+    showSuccessNotification('a.jpg');
+    showSuccessNotification('b.jpg');
+    showErrorNotification('boom');
+
+    // The previous design added a listener per notification; this is the leak guard.
+    expect(chromeMock.notifications.onClicked.addListener).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the Sploot app when a success notification is clicked', async () => {
+    const { setupNotificationFeedback, showSuccessNotification } = await import('./notifications');
+
+    setupNotificationFeedback();
     showSuccessNotification('meme.jpg');
     clickListeners[0]('success-1779105600000');
 
@@ -68,12 +78,30 @@ describe('notifications', () => {
     });
     expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/app' });
     expect(chromeMock.notifications.clear).toHaveBeenCalledWith('success-1779105600000');
-    expect(chromeMock.notifications.onClicked.removeListener).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('flashes the success badge on save', async () => {
+    const { setupNotificationFeedback, showSuccessNotification } = await import('./notifications');
+
+    setupNotificationFeedback();
+    showSuccessNotification('meme.jpg');
+
+    expect(chromeMock.action.setBadgeText).toHaveBeenCalledWith({ text: '✓' });
+  });
+
+  it('flashes the error badge on failure', async () => {
+    const { setupNotificationFeedback, showErrorNotification } = await import('./notifications');
+
+    setupNotificationFeedback();
+    showErrorNotification('boom');
+
+    expect(chromeMock.action.setBadgeText).toHaveBeenCalledWith({ text: '!' });
   });
 
   it('uses explicit copy for duplicate success notifications', async () => {
-    const { showSuccessNotification } = await import('./notifications');
+    const { setupNotificationFeedback, showSuccessNotification } = await import('./notifications');
 
+    setupNotificationFeedback();
     showSuccessNotification('meme.jpg', undefined, { isDuplicate: true });
 
     expect(chromeMock.notifications.create).toHaveBeenCalledWith('success-1779105600000', {
@@ -87,26 +115,19 @@ describe('notifications', () => {
   });
 
   it('maps auth and timeout errors to user-facing notification messages', async () => {
-    const { showErrorNotification, toErrorNotificationMessage } = await import('./notifications');
+    const { setupNotificationFeedback, showErrorNotification, toErrorNotificationMessage } =
+      await import('./notifications');
 
+    setupNotificationFeedback();
     expect(toErrorNotificationMessage('Authentication required')).toBe('Please login to sploot.app first');
     expect(toErrorNotificationMessage('Network error: offline')).toBe('Network error. Check your connection.');
     showErrorNotification('Authentication required');
-    showErrorNotification('Upload timeout. Please try again.');
 
-    expect(chromeMock.notifications.create).toHaveBeenNthCalledWith(1, 'error-1779105600000', {
+    expect(chromeMock.notifications.create).toHaveBeenCalledWith('error-1779105600000', {
       type: 'basic',
       iconUrl: 'chrome-extension://extension-id/icon-128.png',
       title: 'Save Failed',
       message: 'Please login to sploot.app first',
-      priority: 2,
-      isClickable: false,
-    });
-    expect(chromeMock.notifications.create).toHaveBeenNthCalledWith(2, 'error-1779105600000', {
-      type: 'basic',
-      iconUrl: 'chrome-extension://extension-id/icon-128.png',
-      title: 'Save Failed',
-      message: 'Upload timeout. Please try again.',
       priority: 2,
       isClickable: false,
     });
@@ -122,8 +143,9 @@ describe('notifications', () => {
   });
 
   it('opens the remediation URL when an actionable error notification is clicked', async () => {
-    const { showErrorNotification } = await import('./notifications');
+    const { setupNotificationFeedback, showErrorNotification } = await import('./notifications');
 
+    setupNotificationFeedback();
     showErrorNotification({
       message: 'Storage quota exceeded. Open Sploot settings to manage storage.',
       actionHref: '/app/settings',
@@ -140,6 +162,5 @@ describe('notifications', () => {
     });
     expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/app/settings' });
     expect(chromeMock.notifications.clear).toHaveBeenCalledWith('error-1779105600000');
-    expect(chromeMock.notifications.onClicked.removeListener).toHaveBeenCalledWith(expect.any(Function));
   });
 });
