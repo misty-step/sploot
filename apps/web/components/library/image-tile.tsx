@@ -437,10 +437,12 @@ function ImageTileComponent({
                       preserveAspectRatio ? 'object-contain' : 'object-cover'
                     )}
                     loading="lazy"
-                    // Grid tiles source a pre-built ~256px thumbnail, so the
-                    // optimizer adds cost with no benefit — serve it directly.
-                    // The detail view keeps next/image optimization. See ADR-008.
-                    unoptimized
+                    // NOTE: the grid currently sources the full original, not the
+                    // 256px thumbnail (the list/search/similar read paths don't
+                    // SELECT thumbnailUrl) — so it must stay optimized for now, or
+                    // it would ship full-res originals. Wiring the thumbnail into
+                    // those reads + serving unoptimized is ticket 048. See ADR-008.
+                    unoptimized={isAnimatedImage}
                     onLoad={() => {
                       setImageLoaded(true);
                       recordBlobSuccess();
