@@ -31,7 +31,6 @@ Status conventions:
 | [047](047-fix-vector-dimension-drift.md) | Fix Vector-Dimension Drift And Version The Embedding Migration | P2 | S |
 | [048](048-serve-grid-thumbnails-not-full-originals.md) | Serve The Grid 256px Thumbnails, Not Full Originals | P2 | S |
 | [049](049-unify-asset-dto-mappers.md) | Unify The Hand-Rolled Asset→DTO Mappers Behind One Canonical Mapper | P3 | M |
-| [050](050-extract-shared-extension-save-flow.md) | Extract A Shared Extension Save-Flow Helper | P3 | S |
 | [043](043-fix-standing-red-lint-design-gate.md) | Fix The Standing-Red lint:design Gate (→ folded into 032 child 3) | P3 | S |
 
 ## Done

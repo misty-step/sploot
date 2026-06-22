@@ -50,14 +50,19 @@ unpacked) and:
 3. **Feedback**: right-click-save and screenshot both show the badge + the
    notification; clicking the success notification opens the library.
 
+## Refactor (thermo-nuclear pass)
+
+The right-click and screenshot flows shared the auth-prompt + upload + error
+pattern. Extracted **`background/save-flow.ts` `saveToSploot(produce, retryLabel)`**;
+both `context-menu.ts` and `screenshot.ts` now delegate to it (only the
+"produce the image" step differs). Added `save-flow.test.ts` (4 cases) and a
+`context-menu.test.ts` (2 cases) that exercises the shipped right-click path
+end-to-end through the real shared pipeline — so the primary path is verified,
+not just compiled. (This folds in what was ticket 050.)
+
 ## Residual
 
 - Live extension behavior is operator-verified (no headless Chrome here); the
-  unit tests + build cover compilation and the pure flows.
-- **Filed 050**: `background/context-menu.ts` and `background/screenshot.ts`
-  share the auth-prompt + error-handling pattern. A shared `saveToSploot`
-  helper would DRY them — deferred (it refactors the untested primary
-  right-click path; do it with a context-menu test, not smuggled into this
-  feature).
+  34 unit tests + build cover compilation and the pure flows.
 - A keyboard shortcut (`chrome.commands`) for screenshot is a natural fast
   follow to the popup button.

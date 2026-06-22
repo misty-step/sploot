@@ -5,10 +5,10 @@
  * Handles image capture and upload coordination.
  */
 
-import { isAuthenticated, promptUserSignIn, runAuthDiagnostics } from './auth-manager';
+import { runAuthDiagnostics } from './auth-manager';
 import { fetchImage } from './image-fetcher';
-import { uploadImage } from '../../shared/api-client';
-import { showSuccessNotification, showErrorNotification } from './notifications';
+import { showErrorNotification } from './notifications';
+import { saveToSploot } from './save-flow';
 
 const MENU_ID_SAVE = 'save-to-sploot';
 const MENU_ID_DIAGNOSTICS = 'sploot-debug-auth';
@@ -65,57 +65,18 @@ async function handleImageSave(
   imageUrl: string | undefined,
   tab: chrome.tabs.Tab | undefined
 ): Promise<void> {
-  console.log('[ContextMenu] handleImageSave invoked', {
-    imageUrl,
-    tabId: tab?.id,
-    tabTitle: tab?.title,
-  });
-
   if (!imageUrl) {
     showErrorNotification('No image URL found');
     return;
   }
 
-  try {
-    // Check authentication
-    const authenticated = await isAuthenticated();
-    if (!authenticated) {
-      showErrorNotification('Opening Sploot sign-in. Try saving again after signing in.');
-      const signedIn = await promptUserSignIn();
-      if (!signedIn) {
-        showErrorNotification('Sign in on Sploot, then try saving again.');
-        return;
-      }
-    }
-
-    // Fetch image (handles CORS)
-    console.log('[ContextMenu] Fetching image:', imageUrl);
-    const imageBlob = await fetchImage(imageUrl);
-
-    // Extract filename from URL or tab title
-    const filename = extractFilename(imageUrl, tab?.title);
-
-    // Upload to Sploot
-    console.log('[ContextMenu] Uploading image:', filename);
-    const result = await uploadImage(imageBlob, filename);
-
-    // Show success notification
-    showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
-
-    console.log('[ContextMenu] Image saved successfully:', result.assetId);
-  } catch (error) {
-    console.error('[ContextMenu] Failed to save image:', error);
-
-    if (error instanceof Error && 'actionHref' in error && typeof error.actionHref === 'string') {
-      showErrorNotification({
-        message: error.message,
-        actionHref: error.actionHref,
-      });
-      return;
-    }
-
-    showErrorNotification(error instanceof Error ? error.message : 'Failed to save image');
-  }
+  await saveToSploot(
+    async () => ({
+      blob: await fetchImage(imageUrl), // handles CORS
+      filename: extractFilename(imageUrl, tab?.title),
+    }),
+    'saving'
+  );
 }
 
 async function handleDiagnostics(): Promise<void> {

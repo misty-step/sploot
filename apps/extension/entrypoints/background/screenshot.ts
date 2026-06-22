@@ -8,9 +8,7 @@
  * because the popup closes the moment it loses focus.
  */
 
-import { isAuthenticated, promptUserSignIn } from './auth-manager';
-import { uploadImage } from '../../shared/api-client';
-import { showSuccessNotification, showErrorNotification } from './notifications';
+import { saveToSploot } from './save-flow';
 import { CAPTURE_MESSAGES } from '../../shared/capture-messages';
 
 /**
@@ -25,39 +23,19 @@ export function setupScreenshotCapture(): void {
   });
 }
 
-export async function captureAndSaveVisibleTab(): Promise<void> {
-  try {
-    const authenticated = await isAuthenticated();
-    if (!authenticated) {
-      showErrorNotification('Opening Sploot sign-in. Try the screenshot again after signing in.');
-      const signedIn = await promptUserSignIn();
-      if (!signedIn) {
-        showErrorNotification('Sign in on Sploot, then try the screenshot again.');
-        return;
-      }
-    }
-
+export function captureAndSaveVisibleTab(): Promise<void> {
+  return saveToSploot(async () => {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (!tab || tab.windowId === undefined) {
-      showErrorNotification('No active tab to screenshot.');
-      return;
+      throw new Error('No active tab to screenshot.');
     }
 
     // Fails on restricted pages (chrome://, the Web Store, the PDF viewer) —
-    // the rejection message is surfaced to the user.
+    // the rejection message is surfaced to the user by saveToSploot.
     const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
     const blob = await (await fetch(dataUrl)).blob();
-    const filename = screenshotFilename(tab.url);
-
-    const result = await uploadImage(blob, filename);
-    showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
-  } catch (error) {
-    if (error instanceof Error && 'actionHref' in error && typeof error.actionHref === 'string') {
-      showErrorNotification({ message: error.message, actionHref: error.actionHref });
-      return;
-    }
-    showErrorNotification(error instanceof Error ? error.message : 'Screenshot failed');
-  }
+    return { blob, filename: screenshotFilename(tab.url) };
+  }, 'the screenshot');
 }
 
 /** e.g. "screenshot-twitter.com-1750000000000.png". */
