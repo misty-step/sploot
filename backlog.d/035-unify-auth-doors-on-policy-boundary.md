@@ -1,6 +1,13 @@
 # Unify the two auth doors on the policy boundary
 
-Priority: P3 · Status: pending · Estimate: M
+Priority: P2 · Status: pending · Estimate: M
+
+> **Groom note (2026-06-22):** bumped P3 → P2. The 2026-06-22 portability audit
+> found Clerk is the **stickiest boundary and the true long pole** of any stack
+> migration (~10 files, all layers, + the extension). Unifying the doors here is
+> the first, load-bearing step of isolating Clerk behind one adapter (044 child
+> 4) — finishing it converts a future identity migration from a rewrite into an
+> adapter swap. No longer just hygiene; it's on the migration critical path.
 
 ## Goal
 

@@ -1,12 +1,30 @@
-# Adopt the new design system package and re-cut the landing page
+# Adopt the design system substrate and re-cut the landing: "Swiss chrome, feral contents"
 
-Priority: P2 · Status: blocked · Estimate: XL
+Priority: P2 · Status: ready · Estimate: XL
+
+> **Groom reframe (2026-06-22) — UNBLOCKED.** The package exists: PR #228 wires
+> `@misty-step/aesthetic` (v2.6.0). A design investigation found the tension and
+> its resolution: the aesthetic is *instrument-panel restraint* (it forbids
+> oversized hero type, filled colored pills, and ambient motion) — structurally
+> opposed to "hyper-maximalist," **and** opposed to sploot's own shipped grammar
+> (`StickerTab`/`BangerStamp` are filled pills; the Bebas hero is oversized
+> display; `splootStamp` overshoots). BUT the aesthetic *names sploot as its
+> canonical "loud" adopter*. Resolution → **"Swiss chrome, feral contents":**
+> adopt the disciplined substrate for free quality (AA contrast contracts,
+> light/dark flip, hairline primitives, Geist), and concentrate ALL maximalism
+> into high-variance **content objects** (meme tiles, sticker tabs, stamps, pile
+> borders) + **three earned motion beats** — the frame is disciplined; the stuff
+> inside the frame is unhinged. The operator wants delight, fun, hyper-maximalism;
+> this is how to get it *without* fighting the substrate on every upstream bump.
+> The vibe is already codified in DESIGN.md §7 ("density of delight, not density
+> of words").
 
 ## Goal
 
-Sploot's visual layer comes from the user's new aesthetic design system
-package instead of the current bespoke token set, and the landing page is
-rebuilt on it — cohesive, distinctive, and honest about shipped features.
+Sploot's visual layer is built on the `@misty-step/aesthetic` substrate with a
+documented sploot "loud layer" on top, and the landing page is re-cut as a
+maximalist showcase — cohesive, distinctive, goofy-maximalist, and honest about
+shipped features.
 
 ## Oracle
 
@@ -23,19 +41,56 @@ rebuilt on it — cohesive, distinctive, and honest about shipped features.
 - [ ] Evidence packets with before/after screenshots, desktop + mobile, for
       each surface.
 
-## Notes
+## Art direction — "Swiss chrome, feral contents" (concrete)
 
-BLOCKED on the design system package existing/being publishable — the user
-is building it separately and will import it here (see memory: design work
-deliberately punted until then). When it lands, `/shape` the adoption order
-(probably landing first as the showcase, then app chrome, then tiles).
-Until unblocked, avoid speculative restyling; DESIGN.md and
-docs/design/tokens.md remain the live contract.
+- **Type:** keep aesthetic's Geist body (weight-driven hierarchy) for ~95% of
+  surfaces; reintroduce ONE sploot display register — a fat grotesque, jet-black
+  weight, tightly packed, with an occasional hard offset shadow
+  (`--sploot-sticker-shadow`) — used only on the landing hero + section stamps.
+  Geist Mono carries all chrome/stats/labels (the "terminally online terminal"
+  voice). This is a *declared deviation* from the aesthetic's no-display-type
+  invariant.
+- **Color:** ink-on-paper is the resting state; sploot spends loudness as
+  *frequency, not new hues* — cyan/coral/violet liberally on tiles, sticker tabs,
+  pile borders, stamps; lime as the rare highlighter beat (one thing per
+  viewport).
+- **Density:** the landing is a bento **wall of real meme tiles** at high
+  variance (the `ClusterPile` ±1–2° jitter), not stacked SaaS hero sections.
+- **Motion budget = exactly three beats, all already built, all resolve-once
+  (no loops, no ambient drift):** (a) `splootStamp` overshoot on banger-mark;
+  (b) staggered tile cascade on pile reshuffle; (c) a "summon" beat — typing a
+  query physically pulls the matching tile out of the messy pile into focus.
 
 ## Children
 
-1. Package lands: integrate as dependency, token mapping doc.
-2. Landing rebuild on the new system.
-3. App chrome + workbench migration.
-4. Tile/detail/settings migration + changelog markdown rendering fix.
-5. Retire dead bespoke tokens; update lint:design to the new system.
+1. **Land the substrate + the sploot loud-layer mapping doc (M).** Merge #228;
+   write the token-mapping doc this epic requires, declaring sploot's *permitted
+   deviations* (the one display register, the filled-pill sticker/stamp
+   exception, the three motion beats) as named project-token overrides on top of
+   the aesthetic invariants. Pin the tag (v2.6.0); retire legacy
+   `electric-lime`/`hot-pink`/`cyber-blue` names. This turns an ambiguous re-skin
+   into a contract and stops #228 from silently flattening the brand.
+2. **Re-cut the landing as Summon hero + PileWall (L).** Replace the 4-section
+   SaaS scroll (`app/page.tsx`) with a two-screen loud-on-quiet narrative: Summon
+   hero (query pulls the meme out of the pile) → PileWall (a real, scrollable
+   meme bento proving the product) → one mono "how" strip → CTA stamp. New
+   components `SummonField`, `PileWall`, `EndOfPileMarker`. Reuse
+   `AtlasLandingHero` + real seeded landing memes (021).
+3. **Harden the component library into the delight system + fix the gate (M).**
+   Complete state matrices (hover/focus/active/loading/empty/error/reduced-motion)
+   for the five wrappers, add `EndOfPileMarker` + the three motion beats as
+   documented utilities, and **fix `lint:design`** (one-char mismatch:
+   `scripts/check-design-system.mjs:113` wants `"Pile / cluster"` but
+   `component-library.md:74` reads `"Pile / Cluster"`). **Absorbs ticket 043.**
+4. App chrome + workbench + tile/detail/settings migration onto the substrate;
+   fold in the /changelog markdown-rendering fix.
+
+## Notes
+
+No longer blocked — the package exists and #228 wires it. **Gate #228 behind
+child 1's deviation doc**: merging it as-is swaps Bebas→Geist and deletes the
+display face, shipping a *quieter* sploot (the opposite of the brief). Do not let
+#228 be the final landing state. Design investigation 2026-06-22; relates to the
+goofy-maximalist vibe in VISION.md and DESIGN.md §7. Risk: "delightful motion" +
+meme content is one bad call from "meme casino" (anti-goal, DESIGN.md:52) — hold
+the resolve-once rule and the three-beat budget.
