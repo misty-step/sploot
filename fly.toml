@@ -1,0 +1,34 @@
+# Fly substrate spike (backlog 044 child 6). Throwaway app — destroyed after the
+# evidence is captured (see docs/qa/evidence/2026-06-23-fly-spike/ + ADR-009).
+#
+# The headline is [deploy].release_command: `fly deploy` applies all Prisma
+# migrations in a temp machine with the app's own DATABASE_URL, atomically,
+# before traffic cutover — the agent-ops loop Vercel's build-withheld Sensitive
+# secret model structurally can't do. Proven against Neon (pgvector enabled from
+# the terminal); Fly Managed Postgres was rejected (pgvector enable is dashboard-
+# only — see ADR-009).
+#
+# `fly launch` generates a unique app name if "sploot-fly-spike" is taken.
+app = "sploot-fly-spike"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  release_command = "pnpm --filter web exec prisma migrate deploy"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

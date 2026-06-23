@@ -1,0 +1,19 @@
+# Keep host build artifacts out of the image. node_modules is the critical one:
+# host (macOS) sharp/ffmpeg/prisma binaries would break the linux runtime.
+**/node_modules
+**/.next
+**/.turbo
+**/.output
+**/dist
+**/coverage
+**/.vercel
+.git
+.github
+# Extension is not part of the web deploy; its source rides along harmlessly but
+# its build output should not.
+apps/extension/.output
+# Never bake secrets into the image; Fly injects them as runtime secrets.
+**/.env
+**/.env.*
+!**/.env.example
+docs/qa/evidence

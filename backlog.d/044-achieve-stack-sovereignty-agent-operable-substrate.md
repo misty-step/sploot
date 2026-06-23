@@ -44,6 +44,25 @@ biggest rewrite (no image-embedding model → CLIP stays off-platform; Clerk×
 OpenNext friction). **DigitalOcean** is the lowest-lock-in middle (~$39/mo,
 droplet + managed PG + R2). The spike decides; don't pre-commit.
 
+## Spike result (2026-06-23) — child 6 done
+
+The Fly spike ran (token on disk only). Verdict: **leave Vercel, keep Neon — do
+NOT adopt Fly Managed Postgres.** See ADR-009 + `docs/qa/evidence/2026-06-23-fly-spike/`.
+
+- Proven agent-only: host-agnostic build, `release_command` atomic migrate-on-deploy
+  (all 9 migrations), pgvector cosine search on the substrate, and the verify/recover
+  loop (`fly logs`/`status`/`releases`/`machine restart`).
+- **The DB was never the blocker — Vercel was** (Sensitive `DATABASE_URL`, no
+  migrate-on-deploy). **Neon** is fully agent-operable (API + CLI + MCP) and enables
+  pgvector from the terminal as the owner role.
+- **Fly MPG is out:** its app role can't `CREATE EXTENSION vector` (needs superuser),
+  and pgvector enable is **dashboard-only** (no CLI/API flag — PostGIS has one, vector
+  doesn't). A human-gated step that defeats the migration's point; also $38/mo, no
+  scale-to-zero.
+- New target: **app off Vercel (Fly/Railway/Render) + keep Neon** — no data move, no
+  new gate, ~$2–25/mo. Children 2/4/5 (storage port, Clerk isolation, platform-svc
+  ports) still gate a real cutover.
+
 ## Oracle
 
 - [ ] Cost blast-radius capped in place first (046) — no uncapped image/CDN bill.
@@ -77,9 +96,8 @@ droplet + managed PG + R2). The spike decides; don't pre-commit.
 5. **Port Vercel platform services** — KV (rate-limit, slug cache), cron (4 jobs),
    analytics — behind portable adapters; drop the unused `@vercel/functions` dep.
    Size: M.
-6. **Spike the lead target (Fly) and decide.** Stand up web + Fly MPG (pgvector) +
-   R2 + hosted embeddings in a branch; prove agent deploy/migrate/verify + search
-   + cost; write the ADR; go/no-go. Size: L.
+6. **Spike the lead target (Fly) and decide.** ✅ DONE (2026-06-23) — see
+   "Spike result" above + ADR-009. Verdict: app off Vercel + keep Neon; not Fly MPG.
 
 ## Verification System
 
