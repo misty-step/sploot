@@ -1,5 +1,7 @@
 import { setupAuthBridge } from './background/auth-manager';
 import { setupContextMenu, ensureContextMenus } from './background/context-menu';
+import { setupNotificationFeedback } from './background/notifications';
+import { setupScreenshotCapture } from './background/screenshot';
 import { checkApiHealth } from '../shared/api-health';
 
 export default defineBackground(() => {
@@ -32,11 +34,18 @@ export default defineBackground(() => {
     setupAuthBridge();
     console.log('[Background] ✅ Auth bridge initialized');
 
+    // Register the single notifications click handler (once, at startup)
+    setupNotificationFeedback();
+
     // Initialize context menu
     console.log('[Background] Initializing context menu...');
     ensureContextMenus(); // idempotent create
     setupContextMenu();
     console.log('[Background] ✅ Context menu initialized');
+
+    // Screenshot-the-visible-tab → save (triggered from the popup)
+    setupScreenshotCapture();
+    console.log('[Background] ✅ Screenshot capture initialized');
 
 
     console.log('[Background] ========================================');

@@ -1,28 +1,59 @@
 /**
- * Notifications
+ * Save feedback — the OS notification plus the action badge.
  *
- * Shows browser notifications for upload success/errors.
+ * `showSuccessNotification` / `showErrorNotification` are the single feedback
+ * points every save flow (right-click, screenshot) calls. They fire a Chrome
+ * notification AND flash the toolbar badge, so an outcome is visible even when
+ * notifications are suppressed.
  */
 
 import { getSplootAppUrl } from '../../shared/app-url';
+import { flashErrorBadge, flashSuccessBadge } from './badge';
 
 export interface ErrorNotificationInput {
   message: string;
   actionHref?: string;
 }
 
+const SUCCESS_DISMISS_MS = 5000;
+const ERROR_DISMISS_MS = 10000;
+
+// Maps a live notification id to the URL its click should open. A single
+// onClicked listener (registered once via setupNotificationFeedback) reads this
+// — replacing the previous per-notification addListener, which leaked a listener
+// on every notification that auto-dismissed without ever being clicked.
+const notificationActions = new Map<string, string>();
+
 /**
- * Show success notification
+ * Register the one notifications click handler. Call once at worker startup.
+ */
+export function setupNotificationFeedback(): void {
+  chrome.notifications.onClicked.addListener((notificationId) => {
+    const url = notificationActions.get(notificationId);
+    if (url) {
+      chrome.tabs.create({ url });
+    }
+    dismiss(notificationId);
+  });
+}
+
+function dismiss(notificationId: string): void {
+  notificationActions.delete(notificationId);
+  chrome.notifications.clear(notificationId);
+}
+
+/**
+ * Show success feedback (notification + badge).
  *
- * Note: Chrome MV3 doesn't support remote URLs for notification icons.
- * Always use local extension icon.
+ * Note: Chrome MV3 doesn't support remote URLs for notification icons, so the
+ * local extension icon is always used.
  */
 export function showSuccessNotification(
   filename: string,
   _thumbnailUrl?: string, // Kept for API compatibility but unused
   options?: { isDuplicate?: boolean }
 ): void {
-  const notificationId = `success-${Date.now()}`;
+  const notificationId = `success-${crypto.randomUUID()}`;
 
   chrome.notifications.create(notificationId, {
     type: 'basic',
@@ -33,21 +64,10 @@ export function showSuccessNotification(
     isClickable: true,
   });
 
-  // Auto-dismiss after 5 seconds
-  setTimeout(() => {
-    chrome.notifications.clear(notificationId);
-  }, 5000);
+  notificationActions.set(notificationId, getSplootAppUrl());
+  flashSuccessBadge();
 
-  // Handle notification click - open library
-  const clickHandler = (clickedId: string) => {
-    if (clickedId === notificationId) {
-      chrome.tabs.create({ url: getSplootAppUrl() });
-      chrome.notifications.clear(notificationId);
-      chrome.notifications.onClicked.removeListener(clickHandler);
-    }
-  };
-
-  chrome.notifications.onClicked.addListener(clickHandler);
+  setTimeout(() => dismiss(notificationId), SUCCESS_DISMISS_MS);
 }
 
 /**
@@ -80,10 +100,10 @@ export function toErrorNotificationMessage(errorMessage: string): string {
 }
 
 /**
- * Show error notification
+ * Show error feedback (notification + badge).
  */
 export function showErrorNotification(error: string | ErrorNotificationInput): void {
-  const notificationId = `error-${Date.now()}`;
+  const notificationId = `error-${crypto.randomUUID()}`;
   const errorMessage = typeof error === 'string' ? error : error.message;
   const userMessage = toErrorNotificationMessage(errorMessage);
   const actionHref = typeof error === 'string' ? undefined : error.actionHref;
@@ -99,19 +119,9 @@ export function showErrorNotification(error: string | ErrorNotificationInput): v
   });
 
   if (actionUrl) {
-    const clickHandler = (clickedId: string) => {
-      if (clickedId === notificationId) {
-        chrome.tabs.create({ url: actionUrl });
-        chrome.notifications.clear(notificationId);
-        chrome.notifications.onClicked.removeListener(clickHandler);
-      }
-    };
-
-    chrome.notifications.onClicked.addListener(clickHandler);
+    notificationActions.set(notificationId, actionUrl);
   }
+  flashErrorBadge();
 
-  // Auto-dismiss after 10 seconds
-  setTimeout(() => {
-    chrome.notifications.clear(notificationId);
-  }, 10000);
+  setTimeout(() => dismiss(notificationId), ERROR_DISMISS_MS);
 }

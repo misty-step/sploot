@@ -10,6 +10,7 @@ import {
   useUser,
 } from '@clerk/chrome-extension'
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
+import { CAPTURE_MESSAGES } from '../../shared/capture-messages'
 import { EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
 import { getSplootAppUrl, getSplootSignInUrl } from '../../shared/app-url'
 import './style.css'
@@ -113,6 +114,12 @@ function SignedInPanel() {
     chrome.tabs.create({ url: getSplootAppUrl() })
   }
 
+  const handleScreenshot = () => {
+    // The capture + upload runs in the background worker (the popup closes the
+    // moment it loses focus). Outcome is confirmed via badge + notification.
+    chrome.runtime.sendMessage({ type: CAPTURE_MESSAGES.VISIBLE_TAB })
+  }
+
   const handleDiagnostics = () => {
     chrome.runtime.sendMessage({ type: AUTH_MESSAGES.RUN_DIAGNOSTICS })
   }
@@ -145,6 +152,9 @@ function SignedInPanel() {
       )}
       <div className="actions">
         <button onClick={handleViewLibrary}>View My Library</button>
+        <button className="secondary" onClick={handleScreenshot}>
+          Screenshot this tab
+        </button>
         {isDev && (
           <button className="debug" onClick={handleDiagnostics}>
             Debug Auth
