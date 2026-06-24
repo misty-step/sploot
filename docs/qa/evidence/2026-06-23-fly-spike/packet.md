@@ -79,7 +79,7 @@ Same non-superuser app role, opposite outcome:
 
 ## 5. pgvector semantic search on the substrate (Layer B) ✅
 
-`scripts/spike-fly-pgvector-proof.mjs` — seeds interpretable 512-dim concept vectors, runs the app's
+`spike-fly-pgvector-proof.mjs` (in this dir; run from `apps/web` so `pg` resolves) — seeds interpretable 512-dim concept vectors, runs the app's
 EXACT cosine query (`image_embedding <=> ARRAY[…]::vector`, ordered by similarity) against Neon:
 
 ```

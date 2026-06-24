@@ -78,5 +78,6 @@ adopt Fly Managed Postgres.
   port to R2/Tigris (child 2), Clerk isolation (child 4), `output: 'standalone'`
   image, and a pooled `DATABASE_URL` + direct-for-migrations split.
 - Spike resources (Fly app, Fly MPG cluster, Neon project) were destroyed after
-  evidence capture; the throwaway `Dockerfile`/`fly.toml`/proof script remain on
-  the spike branch as the reproduction.
+  evidence capture; the throwaway `Dockerfile`/`fly.toml`/proof script are kept
+  under `docs/qa/evidence/2026-06-23-fly-spike/` as the reproduction (not at the
+  repo root — sploot still deploys on Vercel).
