@@ -15,7 +15,7 @@ Status conventions:
 |---|-------|----------|----------|
 | [026](026-ingest-memes-where-they-live.md) | Ingest Memes Where They Live (epic) | P1 | XL |
 | [037](037-make-taste-and-piles-actually-know-your-taste.md) | Make The Taste And Piles Actually Know Your Taste (epic) | P1 | XL |
-| [044](044-achieve-stack-sovereignty-agent-operable-substrate.md) | Achieve Stack Sovereignty: Agent-Operable Substrate (epic) | P1 | XL |
+| [044](044-achieve-stack-sovereignty-agent-operable-substrate.md) | Achieve Stack Sovereignty: A Reversible, Agent-Operable Substrate (epic) | P1 | XL |
 | [046](046-cap-cdn-image-optimization-cost-blast-radius.md) | Cap The CDN / Image-Optimization Cost Blast Radius | P1 | S |
 | [031](031-storage-based-pricing.md) | Charge For Storage With A Generous Free Tier (epic; reframe → L, see note) | P2 | XL |
 | [032](032-adopt-design-system-and-landing-pass.md) | Adopt Design Substrate & Re-Cut Landing: "Swiss Chrome, Feral Contents" (epic, ready) | P2 | XL |
