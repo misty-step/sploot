@@ -85,6 +85,17 @@ shipped features.
 4. App chrome + workbench + tile/detail/settings migration onto the substrate;
    fold in the /changelog markdown-rendering fix.
 
+## Progress 2026-06-26
+
+The neo-brutalist search-console landing, `/styleguide`, live wrapper docs,
+token docs, and `pnpm lint:design` repair shipped as the first visual-system
+slice. This closes absorbed ticket 043 and gives the remaining epic a real
+surface to extend.
+
+Still open: package/substrate dependency mapping, `/app` workbench,
+detail/settings/changelog migration, pricing after 031, and full-surface
+before/after evidence.
+
 ## Notes
 
 No longer blocked — the package exists and #228 wires it. **Gate #228 behind

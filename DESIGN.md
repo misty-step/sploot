@@ -36,77 +36,94 @@ Design priorities:
 
 ## 3. Brand Attributes
 
+Sploot is **neo-brutalist**: it admits it is a database, and it is loud about it.
+
 Sploot should feel:
 
-- Goofy, direct, and personal.
+- Loud, blunt, and deadpan-funny.
+- Like a machine on display: structure exposed, the search mechanic and its
+  machinery (index, scorer/model, route, status) shown, not hidden behind soft
+  chrome.
+- Built from thick ink borders, hard offset shadows, square corners, and
+  saturated color blocks on unbleached paper.
 - Technically capable without sounding like generic AI infrastructure.
-- Zine-like and tactile, with real product state doing the visual work.
 - Private by default.
 
 Sploot should not feel:
 
-- Like a generic centered SaaS hero.
-- Like a creator monetization dashboard.
-- Like enterprise file management.
-- Like purple-on-black AI glassmorphism.
+- Like a generic centered SaaS hero, or calm minimal-SaaS.
+- Like soft, rounded, drop-shadowed product chrome.
+- Like purple-on-black AI glassmorphism, gradient decoration, or pastel.
+- Like a creator monetization dashboard or enterprise file management.
 - Like a meme casino or engagement-maximizing social feed.
 
 ## 4. Visual Language
 
 ### Core Metaphor
 
-Use a "self-organizing zine archive" language:
+Use an "exposed database" language: the interface admits it is a machine that
+finds your memes, and shows its work.
 
-- Piles: grouped thumbnails with imperfect but readable boundaries.
-- Atlas: optional semantic lines and neighborhood labels when showing
-  relationships.
-- Stickers: labels, banger marks, status stamps, and short annotations.
-- Workbench: dense command surfaces for repeated use.
+- Console: the search box is a labeled console with an ink titlebar; the
+  machinery (index size, scorer/model, route, and status) is on display, not
+  hidden. Signed-out demos must label sample data as demo data.
+- Cells: meme tiles are bordered cells with a filename + vector-index header and
+  match / near / dim / default states.
+- Stamps and stickers: banger marks, labels, and status are saturated blocks
+  slammed on with thick borders and hard offset shadows.
+- Piles: self-organizing piles of cells, grouped by what they mean (the durable
+  product metaphor; see §1).
 
 ### Color
 
-Canonical colors are semantic, not decorative.
+Canonical colors are semantic, and they arrive as flat saturated blocks, never
+as tints or gradients.
 
-| Role | Token | Use |
-|---|---|---|
-| Ink | `--sploot-ink` | Primary text, hard borders, linework |
-| Paper | `--sploot-paper` | Main light-mode surface |
-| Paper warm | `--sploot-paper-warm` | Secondary surface or landing bands |
-| Void | `--sploot-void` | Dark-mode surface |
-| Cyan | `--sploot-cyan` | Search, active controls, similarity lines |
-| Coral | `--sploot-coral` | Bangers, favorite stamps, destructive-adjacent attention |
-| Violet | `--sploot-violet` | Semantic matches, related groups, secondary AI affordance |
-| Lime | `--sploot-lime` | Small discovery callouts only |
-| Grid | `--sploot-grid-line` | Grid paper and low-emphasis structure |
+| Role | Token | Value | Use |
+|---|---|---|---|
+| Ink | `--sploot-ink` | `#0a0a0a` | Text, all 4-6px borders, linework |
+| Paper | `--sploot-paper` | `#f3efe4` | Unbleached resting surface |
+| Paper warm | `--sploot-paper-warm` | `#e9e4d6` | Secondary surface / workbench grid |
+| Void | `--sploot-void` | `#0a0a0a` | Dark surface (status bar, dark mode) |
+| Blue | `--sploot-blue` | `#1f4cff` | Primary action, the search console field |
+| Cyan | `--sploot-cyan` | `#00e5d4` | Brand through-line, secondary accent |
+| Magenta | `--sploot-magenta` | `#ff2d9b` | Bangers, favorites, attention (`--sploot-coral` aliases here) |
+| Yellow | `--sploot-yellow` | `#ffe600` | The single highlight per viewport (the query shelf) |
+| Orange | `--sploot-orange` | `#ff5a1f` | Near-match / warning |
+| Lime | `--sploot-lime` | `#9cff2e` | The found / match ring (`--sploot-match-ring`) |
+| Grid | `--sploot-grid-line` | — | Grid paper and low-emphasis structure |
 
 Color rules:
 
-- Default UI is ink plus paper, with one accent per local interaction cluster.
-- Cyan is the primary product action color.
-- Coral is for bangers/favorites and important human judgment.
-- Violet is for similarity, relatedness, and automatic organization.
-- Lime is rare. Use it like a sticky-note highlight, not a second primary.
-- Neon intensity belongs to active states, not idle backgrounds.
+- Resting state is ink on unbleached paper. Color is a flat block behind a
+  border, never a tint, gradient, or glow.
+- Blue is the primary action color; cyan is the brand through-line.
+- Magenta is bangers / favorites / attention. Yellow is the ONE highlight per
+  viewport. Lime is reserved for the match ring; orange for near-match.
+- Saturation is full. No pastels, no gradients, no neon glow.
 
 ### Typography
 
-- Sans: Geist Sans for readable product copy and controls.
-- Mono: JetBrains Mono for stats, status labels, command hints, and technical
-  metadata.
-- Display: Bebas Neue for brand headers and section labels only.
+- Display: Archivo Black for headlines, section heads, and stat numbers
+  (uppercase, letter spacing `0`).
+- Mono: Space Mono for all chrome, labels, stats, command hints, and technical
+  metadata (uppercase, letter spacing `0`).
+- Body: Space Grotesk for readable product copy and controls.
 
 Do not use display type for dense control labels, table content, metadata, or
 long explanatory copy.
 
 ### Shape and Line
 
-- Default radius is square.
-- Small rounded exceptions are allowed only for external widgets, avatars,
-  native media masks, or Radix/shadcn primitives waiting on migration.
-- Borders carry structure. Shadows are rare and should imply elevation, not
-  softness.
-- Thick borders are reserved for active docks, selected clusters, upload
-  targets, and destructive confirmation surfaces.
+- Default radius is square (`0`). The only rounded exceptions are full circles
+  (status dots, avatars) and unmigrated third-party widgets.
+- Borders carry ALL structure: `--sploot-border` (4px ink) standard,
+  `--sploot-border-thick` (6px ink) for primary / active surfaces.
+- Shadows are hard offset only: `--sploot-shadow` / `-sm` / `-lg` is a solid
+  ink block offset down and right. Never blurred, never soft. No elevation by
+  blur. Buttons press: lift on hover, slam on active.
+- The found state is the lime match-ring (`--sploot-match-ring`); near-match is
+  an inset orange ring.
 
 ## 5. Layout and Density
 
@@ -120,9 +137,11 @@ Preferred structure:
 - Automatic semantic piles on the other side.
 - The next section should be visible below the fold on desktop and mobile.
 
-Landing copy should be short, literal, and product-owned. "No folders. Just
-vibes." is the current directional headline. Supporting copy explains the
-mechanic: the user's saves sort themselves.
+Landing copy should be short, literal, and product-owned. The landing leads
+with the literal mechanic — "type words. get the picture." over "it's a search
+box. for memes." — deadpan inside Swiss chrome. "No folders. Just vibes."
+remains the product label and supporting line; the copy explains the mechanic:
+the user's saves are searchable without folders.
 
 ### App Workbench
 
@@ -162,29 +181,28 @@ Canonical component grammar:
 
 | Component | Purpose | Visual Rule |
 |---|---|---|
-| Command bar | Search, upload, shuffle, route actions | Square, border-led, cyan focus |
+| Search console | The centerpiece: type, find the match | Ink titlebar + LED squares; yellow query shelf; live match reveal with lime ring |
+| Meme cell | One tile in the pile | Thick ink border; filename + vector-index header; match / near / dim / default states |
+| Stat block | A library readout | Mono key over Archivo-Black value; bordered, hard offset shadow |
+| Status bar | The machinery on display | Dark row: index / scorer-model / route / status |
+| Button | Actions | Thick border, hard offset shadow; lift on hover, slam on active |
 | Command dock | Mobile primary actions | Fixed positions, icon-first, 44px minimum targets |
-| Image tile | Product object | Image dominates; metadata is secondary and compact |
-| Pile filter / cluster | Automatic grouping | Compact suggestion filter first; thumbnail stack only for previews |
-| Similarity line | Shows relationship | Thin cyan or violet line, never decorative alone |
-| Sticker tab | Label, tag, status | Square or slight offset, mono uppercase when compact |
-| Banger stamp | Favorite or top-ranked marker | Coral, high contrast, visually different from system alerts |
-| Inspector | Selected asset/group detail | Dense facts, actions, tags, related items |
-| Upload inbox | Pending import state | Workbench panel with queue and failure recovery |
+| Pile filter / cluster | Self-organizing grouping | Bordered pile of cells; selected reads as a thick border |
+| Sticker tab | Label, tag, status | Saturated block, thick border, hard shadow, mono uppercase |
+| Banger stamp | Favorite or top-ranked marker | Magenta block slammed on like a rubber stamp |
 | Empty state | First-use and zero-result education | Show product action and example pile, not generic illustration |
 
 Implemented product wrappers live in `apps/web/components/sploot`:
 
-- `StickerTab` for labels, tags, status, and playful annotations.
-- `BangerStamp` for favorite or top-ranked markers.
-- `ClusterPile` for automatic semantic group previews, including real
-  thumbnail-backed piles when image URLs are available.
-- `PileMark` for compact brand/navigation surfaces where the product mechanic
-  needs to replace abstract circle marks.
-- `AtlasLandingHero` for the landing first viewport.
+- `SearchField` — the search console; the landing and app centerpiece.
+- `MemeCell` — one bordered tile in the pile, with match / near / dim states.
+- `StatBlock` — a bordered, hard-shadow library readout (demo vectors / folders / scorer).
+- `StatusBar` — the machinery row (index / scorer / mode / route / status).
+- `StickerTab`, `BangerStamp`, `ClusterPile`, `PileMark`, `AtlasLandingHero` —
+  re-skinned neo-brutalist.
 
 New product surfaces should compose these wrappers before creating one-off
-sticker, pile, banger, or atlas treatments.
+console, cell, sticker, pile, banger, or stat treatments.
 
 ### Motion
 
@@ -234,7 +252,7 @@ personality; density of delight, not density of words.
 Lexicon (use naturally, never all at once):
 
 - "no folders. just vibes."
-- "type the vibe. summon the meme."
+- "type words. get the picture." / "it's a search box. for memes."
 - "bangers", "goated", "unhinged", "feral", "cursed", "brainrot"
 - "the pile" (the library is always the pile)
 - "go touch grass", "zero thoughts", "hall of fame"
@@ -308,10 +326,13 @@ Governance rules:
 Do not add:
 
 - Gradient text.
-- Purple-on-black AI hero gradients.
-- Glassmorphism as decoration.
+- Purple-on-black AI hero gradients, or any gradient as decoration.
+- Glassmorphism / `backdrop-blur` as decoration.
 - Decorative blobs, bokeh, or mesh gradients.
-- Generic centered hero pages when the product surface can lead.
-- Rounded SaaS cards as the default grammar.
-- Uniform fade/float motion for every element.
-- Stock illustrations where real thumbnails or product state would be clearer.
+- Soft or blurred shadows. Shadows are hard offset ink blocks only.
+- Rounded corners on product surfaces (square is the default; full circles and
+  unmigrated third-party widgets are the only exceptions).
+- Pastel or muted palettes. Color is full-saturation flat blocks.
+- Calm minimal-SaaS, or a generic centered hero when the product surface can lead.
+- Uniform fade/float motion. Motion is hard and on-interaction (press, match lock).
+- Stock illustrations where real product state or the doodle stand-ins are clearer.

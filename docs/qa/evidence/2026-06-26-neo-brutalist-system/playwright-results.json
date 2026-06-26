@@ -1,0 +1,67 @@
+{
+  "baseUrl": "http://localhost:3001",
+  "checks": [
+    {
+      "ok": true,
+      "name": "landing copy is demo-scoped 1440x1000",
+      "detail": "no fake corpus, latency, or model claims visible"
+    },
+    {
+      "ok": true,
+      "name": "styleguide copy is demo-scoped 1440x1000",
+      "detail": "no fake corpus, latency, or model claims visible"
+    },
+    {
+      "ok": true,
+      "name": "landing copy is demo-scoped 390x844",
+      "detail": "no fake corpus, latency, or model claims visible"
+    },
+    {
+      "ok": true,
+      "name": "styleguide copy is demo-scoped 390x844",
+      "detail": "no fake corpus, latency, or model claims visible"
+    },
+    {
+      "ok": true,
+      "name": "no page errors",
+      "detail": "0 page errors"
+    },
+    {
+      "ok": true,
+      "name": "no browser console errors",
+      "detail": "4 warning/error messages"
+    }
+  ],
+  "consoleMessages": [
+    {
+      "route": "http://localhost:3001/",
+      "type": "warning",
+      "text": "Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview"
+    },
+    {
+      "route": "http://localhost:3001/styleguide",
+      "type": "warning",
+      "text": "Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview"
+    },
+    {
+      "route": "http://localhost:3001/",
+      "type": "warning",
+      "text": "Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview"
+    },
+    {
+      "route": "http://localhost:3001/styleguide",
+      "type": "warning",
+      "text": "Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview"
+    }
+  ],
+  "pageErrors": [],
+  "screenshots": [
+    "docs/qa/evidence/2026-06-26-neo-brutalist-system/landing-1440x1000.png",
+    "docs/qa/evidence/2026-06-26-neo-brutalist-system/styleguide-1440x1000.png",
+    "docs/qa/evidence/2026-06-26-neo-brutalist-system/landing-390x844.png",
+    "docs/qa/evidence/2026-06-26-neo-brutalist-system/styleguide-390x844.png"
+  ],
+  "qaNotes": [
+    "dev-only Clerk helper elements hidden before screenshots with [class*=\"cl-internal\"]"
+  ]
+}

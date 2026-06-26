@@ -81,6 +81,15 @@ for (const token of [
   '--sploot-coral',
   '--sploot-violet',
   '--sploot-lime',
+  // neo-brutalist structural tokens
+  '--sploot-blue',
+  '--sploot-magenta',
+  '--sploot-yellow',
+  '--sploot-orange',
+  '--sploot-border',
+  '--sploot-shadow',
+  '--sploot-shadow-lg',
+  '--sploot-match-ring',
   '--sploot-grid-line',
   '--sploot-sticker-shadow',
   '--sploot-active-border-width',
@@ -106,11 +115,33 @@ for (const token of [
   assertIncludes(cssPath, token, 'Sploot motion system');
 }
 
-for (const phrase of ['--sploot-ink', '--sploot-cyan', '--sploot-touch-target', '--sploot-ease-snap', 'animate-sploot-stamp']) {
+for (const phrase of [
+  '--sploot-ink',
+  '--sploot-blue',
+  '--sploot-magenta',
+  '--sploot-yellow',
+  '--sploot-orange',
+  '--sploot-border',
+  '--sploot-shadow-lg',
+  '--sploot-match-ring',
+  '--sploot-touch-target',
+  '--sploot-ease-snap',
+  'tracking-normal',
+  'animate-sploot-stamp',
+]) {
   assertIncludes('docs/design/tokens.md', phrase, 'documented design token');
 }
 
-for (const phrase of ['Command dock', 'Pile / cluster', 'Sticker tab', 'Banger stamp', 'Implemented wrappers']) {
+for (const phrase of [
+  'Search Console',
+  'Meme Cell',
+  'Stat Block',
+  'Status Bar',
+  'Pile / Cluster',
+  'Sticker Tab',
+  'Banger Stamp',
+  'Implemented Wrappers',
+]) {
   assertIncludes('docs/design/component-library.md', phrase, 'documented component grammar');
 }
 
@@ -118,7 +149,12 @@ for (const [path, phrases] of Object.entries({
   'apps/web/components/sploot/sticker-tab.tsx': ['sploot-sticker-shadow', 'border-sploot-cyan'],
   'apps/web/components/sploot/banger-stamp.tsx': ['border-sploot-coral', 'sploot-tabular'],
   'apps/web/components/sploot/cluster-pile.tsx': ['bg-sploot-pile-surface', 'StickerTab', 'src?: string'],
-  'apps/web/components/sploot/atlas-landing-hero.tsx': ['ClusterPile', 'no folders just vibes'],
+  'apps/web/components/sploot/atlas-landing-hero.tsx': ['SearchField', 'StatusBar', 'StatBlock'],
+  'apps/web/components/sploot/search-field.tsx': ['role="search"', 'MemeCell'],
+  'apps/web/components/sploot/meme-cell.tsx': ['sploot-match-ring', 'MemeCellState'],
+  'apps/web/components/sploot/stat-block.tsx': ['font-display', 'border-sploot-ink'],
+  'apps/web/components/sploot/status-bar.tsx': ['bg-sploot-void', 'system status'],
+  'apps/web/app/styleguide/page.tsx': ['MemeCell', 'StatBlock', 'StatusBar'],
   'apps/web/components/sploot/pile-mark.tsx': ['--sploot-sticker-cyan', '--sploot-sticker-violet'],
   'apps/web/components/chrome/navbar.tsx': ['PileMark'],
   'apps/web/components/chrome/filter-chips.tsx': ['bg-sploot-coral', 'border-sploot-coral'],
@@ -138,10 +174,16 @@ for (const [path, phrases] of Object.entries({
 
 const landingSystemFiles = [
   'apps/web/app/page.tsx',
+  'apps/web/app/styleguide/page.tsx',
   'apps/web/components/sploot/atlas-landing-hero.tsx',
+  'apps/web/components/sploot/search-field.tsx',
+  'apps/web/components/sploot/meme-cell.tsx',
+  'apps/web/components/sploot/stat-block.tsx',
+  'apps/web/components/sploot/status-bar.tsx',
   'apps/web/components/sploot/sticker-tab.tsx',
   'apps/web/components/sploot/banger-stamp.tsx',
   'apps/web/components/sploot/cluster-pile.tsx',
+  'apps/web/components/ui/button.tsx',
 ];
 
 for (const file of landingSystemFiles) {
@@ -155,6 +197,19 @@ for (const file of landingSystemFiles) {
     if (content.includes(tokenName)) {
       fail(`${file}: new landing design-system code must use sploot-* tokens, not ${tokenName}`);
     }
+  }
+  // neo-brutalist DNA: surfaces are SQUARE. No rounded corners except a full
+  // circle (avatars/dots) or an explicit reset.
+  const rounded = (content.match(/rounded-[a-z0-9[\]]+/g) || []).filter(
+    (r) => r !== 'rounded-none' && r !== 'rounded-full'
+  );
+  if (rounded.length > 0) {
+    fail(`${file}: neo-brutalist surfaces are square — remove ${rounded[0]}`);
+  }
+
+  const nonZeroTracking = (content.match(/tracking-(?!normal\b)[a-z0-9[\]./-]+/g) || []);
+  if (nonZeroTracking.length > 0) {
+    fail(`${file}: letter spacing must stay at 0 — remove ${nonZeroTracking[0]}`);
   }
 }
 
@@ -186,13 +241,18 @@ const migrationExceptions = new Map([
   ['apps/web/app/not-found.tsx', ['bg-clip-text']],
   ['apps/web/app/sign-in/[[...sign-in]]/page.tsx', ['bg-gradient-', 'backdrop-blur']],
   ['apps/web/app/sign-up/[[...sign-up]]/page.tsx', ['bg-gradient-', 'backdrop-blur']],
-  ['apps/web/components/landing/landing-footer.tsx', ['bg-gradient-']],
   ['apps/web/components/library/image-skeleton.tsx', ['bg-gradient-']],
   ['apps/web/components/ui/delete-confirmation-modal.tsx', ['bg-gradient-']],
   ['apps/web/app/app/page.tsx', ['backdrop-blur']],
   ['apps/web/components/chrome/navbar.tsx', ['backdrop-blur']],
   ['apps/web/components/library/image-tile.tsx', ['backdrop-blur']],
 ]);
+
+for (const file of migrationExceptions.keys()) {
+  if (!existsSync(join(repoRoot, file))) {
+    fail(`${file}: stale design migration exception points at a missing file`);
+  }
+}
 
 const bannedPatterns = [
   { label: 'gradient text', pattern: 'bg-clip-text' },

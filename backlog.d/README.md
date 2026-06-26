@@ -31,13 +31,13 @@ Status conventions:
 | [047](047-fix-vector-dimension-drift.md) | Fix Vector-Dimension Drift And Version The Embedding Migration | P2 | S |
 | [048](048-serve-grid-thumbnails-not-full-originals.md) | Serve The Grid 256px Thumbnails, Not Full Originals | P2 | S |
 | [049](049-unify-asset-dto-mappers.md) | Unify The Hand-Rolled Asset→DTO Mappers Behind One Canonical Mapper | P3 | M |
-| [043](043-fix-standing-red-lint-design-gate.md) | Fix The Standing-Red lint:design Gate (→ folded into 032 child 3) | P3 | S |
 
 ## Done
 
 See `_done/` for completed tickets with their `## What Was Built` notes.
 
 Recently completed:
+- [043](_done/043-fix-standing-red-lint-design-gate.md) Fix The Standing-Red lint:design Gate
 - [025](_done/025-build-automatic-semantic-piles.md) Build Automatic Semantic Piles
 - [028](_done/028-make-animated-memes-first-class.md) Make Animated Memes First-Class
 - [027](_done/027-delete-dead-enterprise-infrastructure.md) Delete Dead Enterprise Infrastructure
