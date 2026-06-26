@@ -1,24 +1,27 @@
 # Sploot Component Library
 
-This is the component grammar for the self-organizing zine archive direction.
-It describes product components that should sit on top of shadcn/Radix
-primitives. It is not a separate package yet.
+This is the component grammar for the neo-brutalist exposed-database direction.
+It describes product wrappers that sit on top of shadcn/Radix primitives. It is
+not a separate package yet.
 
-## Component Families
+## Product Grammar
 
-| Family | Product Role | Current Source | Future Direction |
+| Family | Product Role | Current Source | Rule |
 |---|---|---|---|
-| Command bar | Search, upload, shuffle, global actions | `apps/web/components/chrome/*`, `apps/web/components/search/*` | One canonical desktop command bar with search-first hierarchy |
-| Command dock | Mobile primary actions | `apps/web/components/chrome/mobile-command-dock.tsx` | Stable icon positions, safe-area padding, optional cluster tab row |
-| Image tile | Atomic saved object | `apps/web/components/library/image-tile.tsx` | Image-first tile with compact metadata and coral banger stamp |
-| Image grid | Primary library browse surface | `apps/web/components/library/image-grid.tsx` | Grid remains canonical fallback for cluster views |
-| Pile filter / cluster | Automatic semantic group | `apps/web/components/sploot/pile-filter-rail.tsx`, `apps/web/components/sploot/cluster-pile.tsx` | Compact filter rail over the all-memes feed first; thumbnail stack previews only where they do not replace browsing |
-| Similarity line | Relationship between piles/items | Not implemented | Thin semantic line, never decorative by itself |
-| Sticker tab | Label, tag, status, callout | Partial via badges/chips | Square label with hard offset shadow and mono compact text |
-| Banger stamp | Favorite/top-ranked marker | `favorite` affordance in image tile | Coral stamp distinct from system alerts |
-| Inspector | Selected asset or group details | Selected-asset modal, detail routes | Dense side panel with tags, scores, related saves, actions |
-| Upload inbox | Import queue and recovery | `apps/web/components/upload/*` | Queue as visible workbench state, not hidden progress toast |
-| Empty state | First-use education | `apps/web/components/library/empty-state.tsx` | Show upload chaos becoming semantic piles |
+| Search console | Signed-out and app search centerpiece | `apps/web/components/sploot/search-field.tsx` | Ink titlebar, yellow query shelf, live match reveal |
+| Meme cell | Atomic saved object or demo stand-in | `apps/web/components/sploot/meme-cell.tsx` | Filename header, doodle/image body, match/near/dim/default states |
+| Stat block | Short machine/library readout | `apps/web/components/sploot/stat-block.tsx` | Mono label over display value, hard border and shadow |
+| Status bar | Machinery on display | `apps/web/components/sploot/status-bar.tsx` | Dark row for index, scorer/model, route, and status |
+| Button | Product action slab | `apps/web/components/ui/button.tsx` | Thick border, hard offset shadow, press motion |
+| Pile filter / cluster | Automatic semantic group | `apps/web/components/sploot/pile-filter-rail.tsx`, `apps/web/components/sploot/cluster-pile.tsx` | Compact filters over the all-memes feed; pile previews only where they do not replace browsing |
+| Sticker tab | Label, tag, status, callout | `apps/web/components/sploot/sticker-tab.tsx` | Saturated square label, thick border, hard shadow |
+| Banger stamp | Favorite/top-ranked marker | `apps/web/components/sploot/banger-stamp.tsx` | Magenta stamp distinct from alerts |
+| Pile mark | Compact brand/mechanic mark | `apps/web/components/sploot/pile-mark.tsx` | Three square pile cells, no abstract circles |
+| Styleguide | Rendered component catalog | `apps/web/app/styleguide/page.tsx` | Uses the live wrappers and tokens |
+
+The Chrome extension popup is also a product surface. It mirrors the same
+paper/ink/cyan/magenta/blue token meanings, square shape grammar, and 44px
+minimum button targets in `apps/extension/entrypoints/popup/style.css`.
 
 ## State Requirements
 
@@ -37,39 +40,64 @@ as design-system complete:
 
 ## Canonical Patterns
 
-### Command Bar
+### Search Console
 
-Purpose: a fast route into search, upload, and shuffle.
-
-Rules:
-
-- Search input gets first hierarchy.
-- Upload and shuffle are icon-plus-label on desktop, icon-only with tooltip on
-  mobile dock.
-- Focus ring uses cyan.
-- Status values use mono and tabular numbers.
-
-### Command Dock
-
-Purpose: one-hand mobile operation.
+Purpose: type a natural-language memory and reveal the matching meme.
 
 Rules:
 
-- Stable button order: upload, search, filter/bangers, sort/cluster, shuffle.
-- Minimum target is 44px.
-- Active state uses cyan fill or border, not layout shift.
-- Retry/upload status row must not cover feed content.
+- The search input gets first hierarchy.
+- The console titlebar exposes the machine surface instead of hiding it.
+- Signed-out examples must label sample/demo data as demo data.
+- The found tile uses `--sploot-match-ring`; near matches use orange.
+- Empty or no-overlap queries must show no fake match.
+- Focus ring uses the Sploot focus token and remains visible.
 
-### Image Tile
+### Meme Cell
 
-Purpose: the saved meme itself.
+Purpose: one image or demo stand-in in the pile.
 
 Rules:
 
-- Image dominates. Metadata never competes with the thumbnail.
-- Banger state is coral and visible without relying only on color.
+- Image or doodle dominates. Metadata never competes with the thumbnail.
+- Header shows filename and optional vector index.
+- Match, near, dim, and default states are visually distinct without relying
+  only on color.
 - Similarity score is visible only in search/related contexts.
-- Technical embedding states are compact labels, not hero badges.
+- Captions stay short and lowercase.
+
+### Stat Block
+
+Purpose: a short readout for library, search, or machine state.
+
+Rules:
+
+- Mono label over display value.
+- Use tabular numerals for counts and scores.
+- Demo stats must be named as demo stats.
+- Do not use stat blocks for speculative product claims.
+
+### Status Bar
+
+Purpose: the machinery row.
+
+Rules:
+
+- Show only truthful details: index, scorer/model, mode, route, status.
+- Keep cells compact and scannable.
+- The "ok/live" state can use a lime dot, with reduced-motion handled globally.
+- Avoid fake latency, fake corpus size, or implementation roadmap copy.
+
+### Button
+
+Purpose: clear product commands.
+
+Rules:
+
+- Product actions are square slabs with thick border and hard offset shadow.
+- The press utility owns hover/active motion.
+- Icon-only buttons need a label or tooltip in the owning surface.
+- Link buttons remain flat.
 
 ### Pile / Cluster
 
@@ -83,7 +111,6 @@ Rules:
 - Show the real library total separately from per-pile subset counts.
 - Low-confidence automatic labels should be hidden or phrased as tentative.
 - Use thumbnail overlap, bounded lanes, or small stacks to imply grouping.
-- Use violet for semantic grouping and cyan for active search relation.
 - Provide a list fallback for keyboard and screen-reader access.
 
 ### Sticker Tab
@@ -92,21 +119,20 @@ Purpose: tags, statuses, and playful annotations.
 
 Rules:
 
-- Square or slightly rotated only when non-interactive.
 - Interactive tabs must stay aligned and predictable.
 - Use hard offset shadow sparingly.
 - Text is short and direct.
+- Color is a solid token block, not a tint.
 
-### Inspector
+### Banger Stamp
 
-Purpose: selected image or selected pile detail.
+Purpose: favorite or top-ranked marker.
 
 Rules:
 
-- Dense facts before prose.
-- Actions are grouped by intent: keep, organize, share, delete.
-- Related saves use a horizontal filmstrip or compact list.
-- Destructive actions remain visually separate.
+- Use magenta/coral alias and tabular count figures.
+- Keep it visually different from destructive/error states.
+- Use the stamp animation only when the state changes.
 
 ## Anti-Components
 
@@ -117,39 +143,28 @@ Do not create:
 - Glass panels as visual identity.
 - Gradient hero text.
 - Rounded SaaS cards as the default wrapper.
-- Abstract illustrations where real saved thumbnails can explain the state.
+- Abstract illustrations where real saved thumbnails or demo cells can explain
+  the state.
+- Signed-out stats that imply a real production corpus, measured latency, or
+  shipped model path that the surface is not exercising.
 
-## Migration Notes
-
-Current shadcn primitives remain valid base components. Product surfaces should
-wrap them with Sploot-specific roles instead of scattering one-off classes.
-
-Good future wrappers:
-
-- `StickerTab`
-- `BangerStamp`
-- `ClusterPile`
-- `SimilarityLine`
-- `CommandDockButton`
-- `AssetInspector`
-- `UploadInbox`
-
-## Implemented wrappers
+## Implemented Wrappers
 
 These wrappers are canonical starting points for new product surfaces:
 
 | Component | Source | Status | Use |
 |---|---|---|---|
+| `SearchField` | `apps/web/components/sploot/search-field.tsx` | implemented | Search console and live match demo |
+| `MemeCell` | `apps/web/components/sploot/meme-cell.tsx` | implemented | Bordered tile with match, near, dim, and default states |
+| `StatBlock` | `apps/web/components/sploot/stat-block.tsx` | implemented | Library/machine readout |
+| `StatusBar` | `apps/web/components/sploot/status-bar.tsx` | implemented | Exposed machine status row |
 | `StickerTab` | `apps/web/components/sploot/sticker-tab.tsx` | implemented | Short labels, tags, status tabs, and zine annotations |
 | `BangerStamp` | `apps/web/components/sploot/banger-stamp.tsx` | implemented | Favorite/top-ranked marker distinct from alerts |
-| `ClusterPile` | `apps/web/components/sploot/cluster-pile.tsx` | implemented | Automatic semantic group preview with text or thumbnail tiles |
+| `ClusterPile` | `apps/web/components/sploot/cluster-pile.tsx` | implemented | Automatic semantic group preview with text, doodle, or thumbnail tiles |
 | `PileFilterRail` | `apps/web/components/sploot/pile-filter-rail.tsx` | implemented | Compact automatic pile filters over the primary all-memes gallery |
 | `PileMark` | `apps/web/components/sploot/pile-mark.tsx` | implemented | Compact brand mark for navigation and tight chrome |
-| `AtlasLandingHero` | `apps/web/components/sploot/atlas-landing-hero.tsx` | implemented | Landing first viewport showing messy saves becoming piles |
+| `AtlasLandingHero` | `apps/web/components/sploot/atlas-landing-hero.tsx` | implemented | Landing first viewport driven by the search console |
 
 New product code should import these wrappers from `apps/web/components/sploot`
-before inventing local sticker, pile, or banger treatments.
-
-The Chrome extension popup is also a product surface. It should use the same
-paper/ink/cyan/coral/violet token meanings, square shape grammar, and 44px
-minimum button targets even though it owns a standalone CSS file.
+before inventing local console, cell, sticker, pile, banger, stat, or status
+treatments.
