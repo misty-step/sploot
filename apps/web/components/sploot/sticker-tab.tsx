@@ -2,12 +2,13 @@ import { cn } from '@/lib/utils';
 
 type StickerTone = 'cyan' | 'coral' | 'violet' | 'lime' | 'ink';
 
+// Solid color blocks keep labels loud without adding new component states.
 const stickerToneClass: Record<StickerTone, string> = {
-  cyan: 'border-sploot-cyan bg-[var(--sploot-sticker-cyan)] text-sploot-ink dark:text-sploot-ink',
-  coral: 'border-sploot-coral bg-[var(--sploot-sticker-coral)] text-sploot-ink dark:text-sploot-ink',
-  violet: 'border-sploot-violet bg-[var(--sploot-sticker-violet)] text-sploot-ink dark:text-sploot-ink',
-  lime: 'border-sploot-lime bg-[var(--sploot-sticker-lime)] text-sploot-ink dark:text-sploot-ink',
-  ink: 'border-sploot-ink bg-sploot-paper text-sploot-ink',
+  cyan: 'border-sploot-cyan bg-[var(--sploot-sticker-cyan)] text-sploot-ink',
+  coral: 'border-sploot-coral bg-[var(--sploot-sticker-coral)] text-white',
+  violet: 'border-sploot-violet bg-[var(--sploot-sticker-violet)] text-white',
+  lime: 'border-sploot-ink bg-[var(--sploot-sticker-lime)] text-sploot-ink',
+  ink: 'border-sploot-ink bg-sploot-ink text-sploot-lime',
 };
 
 interface StickerTabProps {
@@ -26,7 +27,7 @@ export function StickerTab({
   return (
     <span
       className={cn(
-        'sploot-sticker-shadow inline-flex min-h-7 items-center border px-2.5 py-1 font-mono text-[0.68rem] font-bold uppercase tracking-normal',
+        'sploot-sticker-shadow inline-flex min-h-7 items-center border-[3px] px-2.5 py-1 font-mono text-[0.68rem] font-bold uppercase tracking-normal',
         stickerToneClass[tone],
         tilt === 'left' && '-rotate-2',
         tilt === 'right' && 'rotate-2',

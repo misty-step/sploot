@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { DM_Sans, JetBrains_Mono, Bebas_Neue } from "next/font/google";
+import { Archivo_Black, Space_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth/client";
 import { Toaster } from "@/components/ui/toast";
@@ -8,21 +8,27 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
-const dmSans = DM_Sans({
+// Neo-brutalist type: Space Grotesk for body, Space Mono for all chrome/labels/
+// stats/meta, Archivo Black for the shouting display headlines + stat numbers.
+// The next/font `variable` names are kept stable (the old --font-* slots) so
+// existing consumers that reference them directly keep resolving — only the
+// font behind each slot moves to the brutalist family.
+const spaceGrotesk = Space_Grotesk({
   variable: "--font-geist-sans",
   subsets: ["latin"],
-  weight: ["400", "500", "700"],
+  weight: ["400", "500", "600", "700"],
 });
 
-const bebasNeue = Bebas_Neue({
+const archivoBlack = Archivo_Black({
   variable: "--font-bebas-neue",
   subsets: ["latin"],
   weight: ["400"],
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const spaceMono = Space_Mono({
   variable: "--font-jetbrains-mono",
   subsets: ["latin"],
+  weight: ["400", "700"],
 });
 
 export const metadata: Metadata = {
@@ -124,7 +130,7 @@ export default function RootLayout({
             <meta name="theme-color" content="#000000" />
           </head>
           <body
-            className={`${dmSans.variable} ${bebasNeue.variable} ${jetbrainsMono.variable} font-sans antialiased`}
+            className={`${spaceGrotesk.variable} ${archivoBlack.variable} ${spaceMono.variable} font-sans antialiased`}
           >
             <ThemeProvider
               attribute="class"

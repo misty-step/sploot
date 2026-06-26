@@ -4,31 +4,36 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
+// Sploot buttons use the shared hard-shadow press utility so hover/active
+// feedback stays consistent across app and landing surfaces.
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-none text-sm font-medium transition-colors duration-150 cursor-pointer disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-background aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  "sploot-press inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-none border-[length:var(--sploot-active-border-width)] border-sploot-ink font-mono text-sm font-bold uppercase tracking-normal cursor-pointer disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:outline focus-visible:outline-[5px] focus-visible:outline-offset-[3px] focus-visible:outline-sploot-magenta aria-invalid:border-destructive",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
-        outline:
-          "border border-border bg-background hover:bg-muted hover:text-foreground hover:border-accent-cyan",
-        secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost:
-          "hover:bg-muted hover:text-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
-        accent:
-          "bg-accent-cyan text-black font-bold tracking-wide hover:bg-black hover:text-accent-cyan border border-accent-cyan",
+        // primary action: electric blue block
+        default: "bg-sploot-blue text-white sploot-shadow-sm",
+        primary: "bg-sploot-blue text-white sploot-shadow-sm",
+        // attention: hot magenta block (bangers / favorites / destructive-lite)
+        attention: "bg-sploot-magenta text-white sploot-shadow-sm",
+        destructive: "bg-sploot-orange text-sploot-ink sploot-shadow-sm",
+        // ghost: paper block with the same structure (still bordered + shadowed)
+        ghost: "bg-sploot-paper text-sploot-ink sploot-shadow-sm",
+        outline: "bg-sploot-paper text-sploot-ink sploot-shadow-sm",
+        secondary: "bg-sploot-yellow text-sploot-ink sploot-shadow-sm",
+        // ink: the inverted slab (dark fill, lime label)
+        ink: "bg-sploot-ink text-sploot-lime sploot-shadow-sm",
+        // link stays flat — no block, no shadow, no press lift
+        link: "border-0 bg-transparent text-sploot-ink shadow-none normal-case tracking-normal underline-offset-4 hover:underline hover:bg-transparent",
+        accent: "bg-sploot-cyan text-sploot-ink sploot-shadow-sm",
       },
       size: {
-        default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        sm: "h-8 gap-1.5 px-3 has-[>svg]:px-2.5",
-        lg: "h-10 px-6 has-[>svg]:px-4",
-        icon: "size-9",
-        "icon-sm": "size-8",
-        "icon-lg": "size-10",
+        default: "min-h-[var(--sploot-touch-target)] px-4 py-2 has-[>svg]:px-3",
+        sm: "h-9 gap-1.5 px-3 text-xs has-[>svg]:px-2.5",
+        lg: "min-h-[var(--sploot-touch-target)] px-6 py-3 text-base has-[>svg]:px-4",
+        icon: "size-11",
+        "icon-sm": "size-9",
+        "icon-lg": "size-12",
       },
     },
     defaultVariants: {

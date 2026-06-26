@@ -7,13 +7,14 @@ interface BangerStampProps {
   className?: string;
 }
 
+// Counts use tabular figures so repeated stamps do not jitter.
 export function BangerStamp({ active = true, count, className }: BangerStampProps) {
   return (
     <span
       className={cn(
-        'inline-flex min-h-8 items-center gap-1 border px-2 py-1 font-mono text-[0.68rem] font-bold uppercase sploot-tabular',
+        'sploot-sticker-shadow inline-flex min-h-8 items-center gap-1 border-[3px] px-2 py-1 font-mono text-[0.68rem] font-bold uppercase tracking-normal sploot-tabular',
         active
-          ? 'border-sploot-coral bg-sploot-coral text-black'
+          ? 'border-sploot-coral bg-sploot-magenta text-white'
           : 'border-sploot-ink bg-sploot-paper text-sploot-ink',
         className
       )}

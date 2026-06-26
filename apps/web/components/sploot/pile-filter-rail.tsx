@@ -45,10 +45,10 @@ export function PileFilterRail({
         aria-pressed={selectedPileId === null}
         data-pile-filter-id="all"
         className={cn(
-          'shrink-0 border px-3 py-2 text-left font-mono text-xs uppercase tracking-wider transition-colors',
+          'sploot-press shrink-0 border-[3px] border-sploot-ink px-3 py-2 text-left font-mono text-xs font-bold uppercase tracking-normal',
           selectedPileId === null
-            ? 'border-sploot-cyan bg-sploot-cyan text-black'
-            : 'border-border bg-background text-foreground hover:border-sploot-cyan'
+            ? 'bg-sploot-cyan text-sploot-ink sploot-shadow-sm'
+            : 'bg-sploot-paper text-sploot-ink'
         )}
       >
         <span className="block font-bold">all memes</span>
@@ -67,10 +67,10 @@ export function PileFilterRail({
             aria-pressed={selected}
             data-pile-filter-id={pile.id}
             className={cn(
-              'shrink-0 border px-3 py-2 text-left font-mono text-xs uppercase tracking-wider transition-colors',
+              'sploot-press shrink-0 border-[3px] border-sploot-ink px-3 py-2 text-left font-mono text-xs font-bold uppercase tracking-normal',
               selected
-                ? 'border-sploot-violet bg-sploot-violet text-white'
-                : 'border-border bg-card text-foreground hover:border-sploot-violet'
+                ? 'bg-sploot-violet text-white sploot-shadow-sm'
+                : 'bg-sploot-paper text-sploot-ink'
             )}
           >
             <span className="block max-w-[11rem] truncate font-bold">
