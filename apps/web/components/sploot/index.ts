@@ -1,6 +1,11 @@
 export { AtlasLandingHero } from './atlas-landing-hero';
 export { BangerStamp } from './banger-stamp';
 export { ClusterPile } from './cluster-pile';
+export { MemeCell, type MemeCellState } from './meme-cell';
+export { MemeDoodle } from './meme-doodle';
 export { PileFilterRail, visiblePileFilters } from './pile-filter-rail';
 export { PileMark } from './pile-mark';
+export { SearchField } from './search-field';
+export { StatBlock } from './stat-block';
+export { StatusBar, type StatusCell } from './status-bar';
 export { StickerTab } from './sticker-tab';

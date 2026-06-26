@@ -1,41 +1,49 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+const mockPush = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
+}));
 
 import { AtlasLandingHero } from '@/components/sploot';
 
 describe('AtlasLandingHero', () => {
-  it('renders the No Folders Just Vibes mechanism in the first viewport', () => {
+  it('renders the search-box pitch above the fold', () => {
     render(<AtlasLandingHero />);
 
-    expect(screen.getByText('no folders just vibes')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'type the vibe. summon the meme.' })).toBeInTheDocument();
-    expect(screen.getByText('messy import pile')).toBeInTheDocument();
-    expect(screen.getByText('automatic piles')).toBeInTheDocument();
+    expect(screen.getByText(/a search box\. for memes/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'type words. get the picture.' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: /describe what is in the meme/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /run search/i })).toBeInTheDocument();
+    expect(screen.getByText(/no social feed.*no ads.*export stays yours/i)).toBeInTheDocument();
+  });
+
+  it('shows the pile and drops the old summon/SaaS copy', () => {
+    render(<AtlasLandingHero />);
+
+    // The console renders real meme cells from the pile. The matching file can
+    // also appear in the machinery readout (hit: ...), so assert on a cell that
+    // is not the current hit to prove the grid itself rendered.
+    expect(screen.getByText('IMG_9013.png')).toBeInTheDocument();
+    expect(screen.getByText('8 in the demo pile')).toBeInTheDocument();
+    expect(screen.getByText('demo vectors')).toBeInTheDocument();
+    expect(screen.queryByText('12,408 in the pile')).not.toBeInTheDocument();
+    expect(screen.queryByText(/summon/i)).not.toBeInTheDocument();
     expect(screen.queryByText('piles on demand')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'start your pile' })).toHaveAttribute('href', '/sign-up');
   });
 
-  it('frames pile previews as typed queries with banger state', () => {
+  it('lights up the match live as the query changes', () => {
     render(<AtlasLandingHero />);
 
-    expect(screen.getByLabelText('“dramatic reactions”, 128 saves')).toBeInTheDocument();
-    expect(screen.getByLabelText('“tiny wins”, 74 saves')).toBeInTheDocument();
-    expect(screen.getByLabelText('“unhinged office”, 46 saves')).toBeInTheDocument();
-    expect(screen.getByLabelText('17 bangers')).toBeInTheDocument();
-  });
+    const input = screen.getByRole('searchbox', { name: /describe what is in the meme/i });
 
-  it('renders command stats without fabricating feature claims', () => {
-    render(<AtlasLandingHero />);
+    // A query with no overlap leaves nothing matched.
+    fireEvent.change(input, { target: { value: 'zzzzz nonsense xyzzy' } });
+    expect(screen.queryByText('match')).not.toBeInTheDocument();
 
-    expect(screen.getByText('memes')).toBeInTheDocument();
-    expect(screen.getByText('bangers')).toBeInTheDocument();
-    expect(screen.getByText('brainrot')).toBeInTheDocument();
-    expect(screen.getByText('1,312')).toBeInTheDocument();
-    expect(screen.getByText('91')).toBeInTheDocument();
-    expect(screen.getByText('∞')).toBeInTheDocument();
-    // The old strip claimed a fake search latency and a pile count for a
-    // clustering feature that does not exist.
-    expect(screen.queryByText('0.18s')).not.toBeInTheDocument();
-    expect(screen.queryByText('piles')).not.toBeInTheDocument();
+    // The literal query lights up the matching cell with the match badge.
+    fireEvent.change(input, { target: { value: 'two cats arguing at a table' } });
+    expect(screen.getByText('match')).toBeInTheDocument();
   });
 });

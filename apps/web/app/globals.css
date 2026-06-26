@@ -48,31 +48,51 @@
   /* Background pattern color */
   --pattern-color: rgba(0, 0, 0, 0.03);
 
-  /* Sploot semantic design tokens: self-organizing zine archive */
-  --sploot-ink: oklch(0.1 0 0);
-  --sploot-paper: oklch(0.98 0 0);
-  --sploot-paper-warm: oklch(0.96 0.01 88);
-  --sploot-void: oklch(0 0 0);
-  --sploot-cyan: var(--accent-cyan);
-  --sploot-coral: var(--accent-coral);
-  --sploot-violet: var(--accent-violet);
-  --sploot-lime: oklch(0.84 0.18 126);
-  --sploot-grid-line: var(--pattern-color);
-  --sploot-sticker-shadow: 2px 2px 0 var(--sploot-ink);
-  --sploot-active-border-width: 3px;
+  /* Sploot NEO-BRUTALIST design system — light / default.
+     The interface admits it is a machine: thick ink borders carry structure,
+     hard offset shadows (no blur), square corners, saturated color blocks on
+     unbleached documentation paper. Names are kept stable (lint references
+     them); only the VALUES move to the brutalist palette. */
+  --sploot-ink: #0a0a0a;            /* structural black — every border, every shadow */
+  --sploot-paper: #f3efe4;          /* unbleached documentation paper — the resting bg */
+  --sploot-paper-warm: #e9e4d6;
+  --sploot-void: #0a0a0a;
+  /* Saturated color BLOCKS */
+  --sploot-blue: #1f4cff;           /* electric — PRIMARY action / search section */
+  --sploot-cyan: #00e5d4;           /* brand through-line / secondary accent */
+  --sploot-magenta: #ff2d9b;        /* hot — bangers / favorites / attention */
+  --sploot-yellow: #ffe600;         /* acid — the ONE highlight per viewport */
+  --sploot-orange: #ff5a1f;         /* near-match / warning */
+  --sploot-lime: #9cff2e;           /* the FOUND / match ring */
+  /* Back-compat aliases — old component code & lint still reference these names */
+  --sploot-coral: var(--sploot-magenta);
+  --sploot-violet: var(--sploot-blue);
+  /* Structure: borders are thick, shadows are hard offsets (no blur) */
+  --sploot-border: 4px solid var(--sploot-ink);
+  --sploot-border-thick: 6px solid var(--sploot-ink);
+  --sploot-active-border-width: 6px;
+  --sploot-shadow: 8px 8px 0 var(--sploot-ink);
+  --sploot-shadow-sm: 5px 5px 0 var(--sploot-ink);
+  --sploot-shadow-lg: 12px 12px 0 var(--sploot-ink);
+  --sploot-sticker-shadow: 5px 5px 0 var(--sploot-ink);
+  --sploot-match-ring: 0 0 0 5px var(--sploot-lime), 10px 10px 0 var(--sploot-ink);
+  /* The faint engineering grid drawn on the paper substrate */
+  --sploot-grid-line: rgba(10, 10, 10, 0.05);
   --sploot-touch-target: 44px;
-  --sploot-command-surface: oklch(1 0 0);
-  --sploot-command-surface-contrast: oklch(0.1 0 0);
-  --sploot-pile-surface: oklch(0.96 0.01 88);
-  --sploot-pile-selected: color-mix(in srgb, var(--sploot-violet) 16%, transparent);
-  --sploot-sticker-cyan: color-mix(in srgb, var(--sploot-cyan) 18%, white);
-  --sploot-sticker-coral: color-mix(in srgb, var(--sploot-coral) 18%, white);
-  --sploot-sticker-violet: color-mix(in srgb, var(--sploot-violet) 16%, white);
-  --sploot-sticker-lime: color-mix(in srgb, var(--sploot-lime) 24%, white);
-  --sploot-motion-fast: 75ms;
-  --sploot-motion-base: 150ms;
-  --sploot-motion-panel: 240ms;
-  --sploot-motion-cluster: 360ms;
+  --sploot-command-surface: var(--sploot-paper);
+  --sploot-command-surface-contrast: var(--sploot-ink);
+  --sploot-pile-surface: var(--sploot-paper);
+  --sploot-pile-selected: var(--sploot-yellow);
+  /* Sticker fills are now solid saturated blocks, not pastels */
+  --sploot-sticker-cyan: var(--sploot-cyan);
+  --sploot-sticker-coral: var(--sploot-magenta);
+  --sploot-sticker-violet: var(--sploot-blue);
+  --sploot-sticker-lime: var(--sploot-yellow);
+  /* Motion: hard and mechanical, on interaction only */
+  --sploot-motion-fast: 80ms;
+  --sploot-motion-base: 120ms;
+  --sploot-motion-panel: 160ms;
+  --sploot-motion-cluster: 200ms;
   --sploot-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --sploot-ease-snap: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -80,6 +100,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  /* Slots kept stable; the families behind them are now Space Grotesk (sans),
+     Space Mono (mono), and Archivo Black (display) — wired in app/layout.tsx. */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-jetbrains-mono);
   --font-display: var(--font-bebas-neue);
@@ -123,7 +145,11 @@
   --color-sploot-paper: var(--sploot-paper);
   --color-sploot-paper-warm: var(--sploot-paper-warm);
   --color-sploot-void: var(--sploot-void);
+  --color-sploot-blue: var(--sploot-blue);
   --color-sploot-cyan: var(--sploot-cyan);
+  --color-sploot-magenta: var(--sploot-magenta);
+  --color-sploot-yellow: var(--sploot-yellow);
+  --color-sploot-orange: var(--sploot-orange);
   --color-sploot-coral: var(--sploot-coral);
   --color-sploot-violet: var(--sploot-violet);
   --color-sploot-lime: var(--sploot-lime);
@@ -326,8 +352,8 @@ details:focus-visible,
 [role="menuitem"]:focus-visible,
 [role="option"]:focus-visible,
 [contenteditable]:focus-visible {
-  outline: 2px solid var(--accent-cyan);
-  outline-offset: 2px;
+  outline: 5px solid var(--sploot-magenta);
+  outline-offset: 3px;
   border-radius: 0;
 }
 
@@ -335,7 +361,7 @@ details:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 2px solid var(--accent-cyan);
+  outline: 5px solid var(--sploot-magenta);
   outline-offset: 0;
 }
 
@@ -383,31 +409,43 @@ select:focus-visible {
   /* Background pattern color */
   --pattern-color: rgba(255, 255, 255, 0.02);
 
-  /* Sploot semantic design tokens: dark mode */
-  --sploot-ink: oklch(0.985 0 0);
-  --sploot-paper: oklch(0 0 0);
-  --sploot-paper-warm: oklch(0.08 0.01 88);
-  --sploot-void: oklch(0 0 0);
-  --sploot-cyan: var(--accent-cyan);
-  --sploot-coral: var(--accent-coral);
-  --sploot-violet: var(--accent-violet);
-  --sploot-lime: oklch(0.86 0.18 126);
-  --sploot-grid-line: var(--pattern-color);
-  --sploot-sticker-shadow: 2px 2px 0 oklch(0 0 0);
-  --sploot-active-border-width: 3px;
+  /* Sploot NEO-BRUTALIST design system — dark (void) variant.
+     Same saturated palette; structure inverts to a near-white ink line on the
+     void so borders and hard shadows stay legible on black. */
+  --sploot-ink: #f3efe4;            /* near-paper ink — borders/shadows on the void */
+  --sploot-paper: #141414;          /* the void as resting surface */
+  --sploot-paper-warm: #1d1d1d;
+  --sploot-void: #0a0a0a;
+  --sploot-blue: #4d72ff;           /* electric blue lifted for contrast on black */
+  --sploot-cyan: #00e5d4;
+  --sploot-magenta: #ff2d9b;
+  --sploot-yellow: #ffe600;
+  --sploot-orange: #ff7a45;
+  --sploot-lime: #9cff2e;
+  --sploot-coral: var(--sploot-magenta);
+  --sploot-violet: var(--sploot-blue);
+  --sploot-border: 4px solid var(--sploot-ink);
+  --sploot-border-thick: 6px solid var(--sploot-ink);
+  --sploot-active-border-width: 6px;
+  --sploot-shadow: 8px 8px 0 var(--sploot-ink);
+  --sploot-shadow-sm: 5px 5px 0 var(--sploot-ink);
+  --sploot-shadow-lg: 12px 12px 0 var(--sploot-ink);
+  --sploot-sticker-shadow: 5px 5px 0 var(--sploot-ink);
+  --sploot-match-ring: 0 0 0 5px var(--sploot-lime), 10px 10px 0 var(--sploot-ink);
+  --sploot-grid-line: rgba(243, 239, 228, 0.06);
   --sploot-touch-target: 44px;
-  --sploot-command-surface: oklch(0.06 0 0);
-  --sploot-command-surface-contrast: oklch(0.985 0 0);
-  --sploot-pile-surface: oklch(0.08 0.01 88);
-  --sploot-pile-selected: color-mix(in srgb, var(--sploot-violet) 22%, transparent);
-  --sploot-sticker-cyan: color-mix(in srgb, var(--sploot-cyan) 26%, black);
-  --sploot-sticker-coral: color-mix(in srgb, var(--sploot-coral) 26%, black);
-  --sploot-sticker-violet: color-mix(in srgb, var(--sploot-violet) 28%, black);
-  --sploot-sticker-lime: color-mix(in srgb, var(--sploot-lime) 24%, black);
-  --sploot-motion-fast: 75ms;
-  --sploot-motion-base: 150ms;
-  --sploot-motion-panel: 240ms;
-  --sploot-motion-cluster: 360ms;
+  --sploot-command-surface: var(--sploot-paper);
+  --sploot-command-surface-contrast: var(--sploot-ink);
+  --sploot-pile-surface: var(--sploot-paper);
+  --sploot-pile-selected: var(--sploot-yellow);
+  --sploot-sticker-cyan: var(--sploot-cyan);
+  --sploot-sticker-coral: var(--sploot-magenta);
+  --sploot-sticker-violet: var(--sploot-blue);
+  --sploot-sticker-lime: var(--sploot-yellow);
+  --sploot-motion-fast: 80ms;
+  --sploot-motion-base: 120ms;
+  --sploot-motion-panel: 160ms;
+  --sploot-motion-cluster: 200ms;
 }
 
 @layer base {
@@ -541,11 +579,64 @@ select:focus-visible {
   background-image:
     linear-gradient(var(--sploot-grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--sploot-grid-line) 1px, transparent 1px);
-  background-size: 24px 24px;
+  background-size: 32px 32px;
 }
 
 .sploot-sticker-shadow {
   box-shadow: var(--sploot-sticker-shadow);
+}
+
+/* Neo-brutalist structural utilities. Borders carry structure; shadows are
+   hard offsets with NO blur. Square corners are the default. */
+.sploot-border {
+  border: var(--sploot-border);
+}
+
+.sploot-border-thick {
+  border: var(--sploot-border-thick);
+}
+
+.sploot-shadow {
+  box-shadow: var(--sploot-shadow);
+}
+
+.sploot-shadow-sm {
+  box-shadow: var(--sploot-shadow-sm);
+}
+
+.sploot-shadow-lg {
+  box-shadow: var(--sploot-shadow-lg);
+}
+
+/* The match ring: a found tile gets a lime halo + hard ink shadow. */
+.sploot-match-ring {
+  box-shadow: var(--sploot-match-ring);
+}
+
+/* Press motion: hover lifts the block toward the cursor and grows the shadow;
+   active slams it down and shrinks the shadow. Mechanical, on interaction only. */
+.sploot-press {
+  transition:
+    transform var(--sploot-motion-fast) var(--sploot-ease-out),
+    box-shadow var(--sploot-motion-fast) var(--sploot-ease-out);
+}
+
+.sploot-press:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--sploot-shadow);
+}
+
+.sploot-press:active {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 var(--sploot-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sploot-press,
+  .sploot-press:hover,
+  .sploot-press:active {
+    transform: none;
+  }
 }
 
 .sploot-tabular {

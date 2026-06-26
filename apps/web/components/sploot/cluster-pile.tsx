@@ -20,12 +20,13 @@ interface ClusterPileProps {
   className?: string;
 }
 
+// Keep pile previews on the same solid-block palette as the rest of Sploot.
 const tileToneClass = {
-  cyan: 'bg-[var(--sploot-sticker-cyan)]',
-  coral: 'bg-[var(--sploot-sticker-coral)]',
-  violet: 'bg-[var(--sploot-sticker-violet)]',
-  lime: 'bg-[var(--sploot-sticker-lime)]',
-  ink: 'bg-sploot-paper-warm',
+  cyan: 'bg-sploot-cyan text-sploot-ink',
+  coral: 'bg-sploot-magenta text-white',
+  violet: 'bg-sploot-blue text-white',
+  lime: 'bg-sploot-yellow text-sploot-ink',
+  ink: 'bg-sploot-ink text-sploot-paper',
 };
 
 export function ClusterPile({
@@ -40,8 +41,8 @@ export function ClusterPile({
   return (
     <section
       className={cn(
-        'relative min-w-0 overflow-hidden border bg-sploot-pile-surface p-3 transition-colors',
-        selected ? 'border-[3px] border-sploot-cyan bg-sploot-pile-selected' : 'border-sploot-ink',
+        'sploot-shadow relative min-w-0 border-[length:var(--sploot-active-border-width)] bg-sploot-pile-surface p-3',
+        selected ? 'border-sploot-cyan bg-sploot-pile-selected' : 'border-sploot-ink',
         className
       )}
       aria-label={`${label}, ${count} saves`}
@@ -50,7 +51,7 @@ export function ClusterPile({
         <StickerTab tone={tone} tilt={selected ? 'right' : 'none'}>
           {label}
         </StickerTab>
-        <span className="font-mono text-xs text-muted-foreground sploot-tabular">
+        <span className="font-mono text-xs font-bold text-sploot-ink sploot-tabular">
           {count.toLocaleString()}
         </span>
       </div>
@@ -60,7 +61,7 @@ export function ClusterPile({
           <div
             key={`${item.label}-${index}`}
             className={cn(
-              'relative flex aspect-square min-w-0 items-end overflow-hidden border border-sploot-ink p-1 font-mono text-[0.58rem] font-bold uppercase leading-none text-sploot-ink',
+              'relative flex aspect-square min-w-0 items-end overflow-hidden border-[3px] border-sploot-ink p-1 font-mono text-[0.58rem] font-bold uppercase leading-none',
               tileToneClass[item.tone ?? tone],
               index % 2 === 0 ? '-rotate-1' : 'rotate-1'
             )}
@@ -74,7 +75,7 @@ export function ClusterPile({
                   sizes="96px"
                   className="object-cover"
                 />
-                <span className="absolute bottom-1 left-1 bg-black/80 px-1 text-white">
+                <span className="absolute bottom-1 left-1 border-2 border-sploot-ink bg-sploot-paper px-1 text-sploot-ink">
                   {item.label}
                 </span>
               </>

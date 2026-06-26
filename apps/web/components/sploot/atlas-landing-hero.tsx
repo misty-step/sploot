@@ -1,156 +1,73 @@
 import Link from 'next/link';
-import { Shuffle, Sparkles, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ClusterPile } from './cluster-pile';
+import { SearchField } from './search-field';
 import { StickerTab } from './sticker-tab';
-import { MemeDoodle, type MemeDoodleKind } from './meme-doodle';
-import { cn } from '@/lib/utils';
+import { StatBlock } from './stat-block';
+import { StatusBar } from './status-bar';
 
-const importItems: Array<{ label: string; doodle: MemeDoodleKind; tone: 'cyan' | 'coral' | 'violet' | 'lime' | 'ink' }> = [
-  { label: 'reaction', doodle: 'sob', tone: 'cyan' },
-  { label: 'groupchat', doodle: 'bubble', tone: 'coral' },
-  { label: 'cat?', doodle: 'cat', tone: 'lime' },
-  { label: 'cursed', doodle: 'skull', tone: 'violet' },
-  { label: 'screenshot', doodle: 'eyes', tone: 'ink' },
-  { label: 'chaos', doodle: 'fire', tone: 'coral' },
-];
-
-const piles = [
-  {
-    label: '“dramatic reactions”',
-    count: 128,
-    tone: 'violet' as const,
-    selected: true,
-    bangers: 17,
-    items: [
-      { label: 'nope', doodle: 'skull' as const, tone: 'violet' as const },
-      { label: 'sigh', doodle: 'sob' as const, tone: 'cyan' as const },
-      { label: 'panic', doodle: 'fire' as const, tone: 'coral' as const },
-      { label: 'same', doodle: 'eyes' as const, tone: 'lime' as const },
-      { label: 'why', doodle: 'bubble' as const, tone: 'violet' as const },
-      { label: 'fine', doodle: 'fire' as const, tone: 'ink' as const },
-    ],
-  },
-  {
-    label: '“tiny wins”',
-    count: 74,
-    tone: 'cyan' as const,
-    items: [
-      { label: 'yes', doodle: 'sparkle' as const, tone: 'cyan' as const },
-      { label: 'chef', doodle: 'hundred' as const, tone: 'lime' as const },
-      { label: 'done', doodle: 'check' as const, tone: 'cyan' as const },
-      { label: 'ship', doodle: 'check' as const, tone: 'violet' as const },
-      { label: 'clean', doodle: 'sparkle' as const, tone: 'ink' as const },
-      { label: 'nice', doodle: 'hundred' as const, tone: 'coral' as const },
-    ],
-  },
-  {
-    label: '“unhinged office”',
-    count: 46,
-    tone: 'coral' as const,
-    items: [
-      { label: 'email', doodle: 'bubble' as const, tone: 'coral' as const },
-      { label: 'slack', doodle: 'eyes' as const, tone: 'violet' as const },
-      { label: 'zoom', doodle: 'sob' as const, tone: 'ink' as const },
-      { label: 'oops', doodle: 'fire' as const, tone: 'lime' as const },
-      { label: 'later', doodle: 'zzz' as const, tone: 'cyan' as const },
-      { label: 'wild', doodle: 'cat' as const, tone: 'coral' as const },
-    ],
-  },
-];
-
+/**
+ * The neo-brutalist landing hero: search console first, with the retrieval
+ * machinery visible instead of hidden behind soft product chrome.
+ */
 export function AtlasLandingHero() {
   return (
-    <section className="min-h-[92svh] overflow-x-clip bg-sploot-workbench px-5 pb-16 pt-24 sm:px-6 md:px-8 md:pb-20 md:pt-24">
-      <div className="mx-auto grid w-full min-w-0 max-w-7xl gap-6 lg:grid-cols-[0.9fr_0.72fr_1.08fr] lg:items-center">
-        <div className="order-2 mx-auto w-full max-w-[21.5rem] min-w-0 space-y-4 lg:order-1 lg:max-w-none">
-          <div className="flex items-center gap-2">
-            <Upload className="h-4 w-4 text-sploot-cyan" aria-hidden="true" />
-            <StickerTab tone="lime" tilt="left">upload chaos</StickerTab>
-          </div>
-          <div className="w-full max-w-full overflow-hidden border border-sploot-ink bg-sploot-paper p-3">
-            <div className="mb-3 flex items-center justify-between font-mono text-xs uppercase text-muted-foreground">
-              <span>messy import pile</span>
-              <span className="sploot-tabular">312 saves</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {importItems.map((item, index) => (
-                <div
-                  key={`${item.label}-${index}`}
-                  className={cn(
-                    'relative min-w-0 overflow-hidden border border-sploot-ink bg-sploot-paper-warm p-2 font-mono text-[0.62rem] font-bold uppercase text-sploot-ink aspect-[4/5]',
-                    index % 2 === 0 ? 'rotate-1' : '-rotate-1'
-                  )}
-                >
-                  <div className="absolute inset-0 p-3 pb-6 text-sploot-ink">
-                    <MemeDoodle kind={item.doodle} />
-                  </div>
-                  <span className="absolute bottom-1 left-1 bg-sploot-ink px-1 text-sploot-paper">
-                    {item.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="order-1 mx-auto w-full max-w-[21.5rem] space-y-5 text-center lg:order-2 lg:max-w-none lg:text-left">
-          <StickerTab tone="cyan" className="mx-auto lg:mx-0">
-            no folders just vibes
+    <section className="relative min-h-screen bg-sploot-workbench text-sploot-ink">
+      <div className="mx-auto flex max-w-5xl flex-col gap-9 px-5 pb-16 pt-24 sm:px-8">
+        <div className="flex flex-col items-start gap-5">
+          <StickerTab tone="cyan" tilt="left">
+            it&rsquo;s a search box. for memes.
           </StickerTab>
-          <div className="space-y-4">
-            <h1
-              aria-label="type the vibe. summon the meme."
-              className="font-display text-[3.25rem] leading-[0.92] tracking-normal text-sploot-ink min-[390px]:text-6xl md:text-8xl lg:text-7xl"
-            >
-              <span className="block">type the vibe.</span>
-              <span className="block">summon</span>
-              <span className="block">the meme.</span>
-            </h1>
-            <p className="mx-auto max-w-xl text-base leading-7 text-muted-foreground md:text-lg lg:mx-0">
-              dump years of reaction pics into sploot, type &ldquo;sad cat thumbs up,&rdquo; and
-              the exact one materializes. zero folders. zero scrolling. zero thoughts.
-            </p>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:justify-center lg:justify-start">
-            <Button asChild variant="accent" size="lg" className="min-h-[var(--sploot-touch-target)] w-full px-6 sm:w-auto">
-              <Link href="/sign-up">start your pile</Link>
-            </Button>
-            <Button asChild variant="outline" size="lg" className="min-h-[var(--sploot-touch-target)] w-full px-6 sm:w-auto">
-              <Link href="/sign-in">sign in</Link>
-            </Button>
-          </div>
-          <div className="grid min-w-0 grid-cols-3 overflow-hidden border border-sploot-ink bg-sploot-command-surface text-left font-mono text-[0.68rem] sploot-tabular sm:text-xs">
-            <div className="min-w-0 border-r border-sploot-ink p-3">
-              <span className="block truncate text-muted-foreground">memes</span>
-              <span className="font-bold text-sploot-cyan">1,312</span>
-            </div>
-            <div className="min-w-0 border-r border-sploot-ink p-3">
-              <span className="block truncate text-muted-foreground">bangers</span>
-              <span className="font-bold text-sploot-coral">91</span>
-            </div>
-            <div className="min-w-0 p-3">
-              <span className="block truncate text-muted-foreground">brainrot</span>
-              <span className="font-bold text-sploot-violet">∞</span>
-            </div>
-          </div>
+          <h1
+            aria-label="type words. get the picture."
+            className="font-display text-[3.4rem] uppercase leading-[0.84] tracking-normal text-sploot-ink min-[420px]:text-7xl md:text-8xl"
+          >
+            <span className="block">type words.</span>
+            <span className="block">
+              get the{' '}
+              <span className="box-decoration-clone bg-sploot-yellow px-2 text-sploot-ink">
+                picture.
+              </span>
+            </span>
+          </h1>
+          <p className="max-w-xl font-sans text-base leading-7 text-sploot-ink/80 md:text-lg">
+            a private library for screenshots and reaction pics. type what is in the
+            image, and sploot pulls the one you mean out of the pile. no folders, no tags.
+          </p>
         </div>
 
-        <div className="order-3 mx-auto w-full max-w-[21.5rem] min-w-0 space-y-3 lg:max-w-none">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-sploot-violet" aria-hidden="true" />
-              <StickerTab tone="violet" tilt="right">automatic piles</StickerTab>
-            </div>
-            <Shuffle className="h-5 w-5 text-sploot-cyan" aria-hidden="true" />
-          </div>
-          <div className="space-y-4">
-            {piles.map((pile) => (
-              <ClusterPile key={pile.label} {...pile} />
-            ))}
-          </div>
+        {/* the centerpiece: a search console that admits it is a database */}
+        <SearchField />
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatBlock label="demo vectors" value="8" tone="magenta" />
+          <StatBlock label="folders required" value="0" tone="blue" />
+          <StatBlock
+            label="scorer mode"
+            value="local"
+            tone="paper"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+          <Button asChild variant="primary" size="lg">
+            <Link href="/sign-up">claim your library</Link>
+          </Button>
+          <p className="font-mono text-xs uppercase tracking-normal text-sploot-ink/60">
+            no social feed / no ads / export stays yours
+          </p>
         </div>
       </div>
+
+      {/* the product truth, on display */}
+      <StatusBar
+        cells={[
+          { label: 'index', value: '8 demo vec' },
+          { label: 'scorer', value: 'token overlap' },
+          { label: 'mode', value: 'signed-out demo' },
+          { label: 'route', value: '/styleguide' },
+          { label: 'status', value: 'live', ok: true },
+        ]}
+      />
     </section>
   );
 }
