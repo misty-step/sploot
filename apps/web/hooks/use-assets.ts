@@ -594,7 +594,8 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
     setTotal((prev) => Math.max(0, prev - 1));
   }, []);
 
-  // Auto-search when query changes - no debouncing here as SearchBar handles it
+  // Auto-search when the settled query changes. The app page passes a debounced
+  // query so typing does not trigger one embedding call per keystroke.
   useEffect(() => {
     if (enabled && query) {
       search();

@@ -7,8 +7,6 @@ import { getAuthWithUser } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 
-const MIN_SIMILAR_RESULTS = 10;
-
 async function postHandler(req: NextRequest) {
   const startTime = Date.now();
   let query: string = '';
@@ -35,7 +33,7 @@ async function postHandler(req: NextRequest) {
       );
     }
 
-    const effectiveLimit = Math.max(limit, MIN_SIMILAR_RESULTS);
+    const effectiveLimit = limit;
 
     if (query.length > 500) {
       return NextResponse.json(
@@ -103,46 +101,13 @@ async function postHandler(req: NextRequest) {
     // Generate text embedding for the query
     const embeddingResult = await embeddingService.embedText(query);
 
-    // Perform vector similarity search
-    let appliedThreshold = threshold;
-    let usedFallbackThreshold = false;
-
+    // Perform vector similarity search. Keep zero-results honest: callers asked
+    // for a similarity floor, so do not pad misses with threshold-0 results.
     let searchResults = await vectorSearch(
       userId,
       embeddingResult.embedding,
-      { limit: effectiveLimit, threshold: appliedThreshold, shuffleSeed }
+      { limit: effectiveLimit, threshold, shuffleSeed }
     );
-
-    if ((searchResults.length === 0 || searchResults.length < MIN_SIMILAR_RESULTS) && appliedThreshold > 0) {
-      const fallbackLimit = Math.max(effectiveLimit, MIN_SIMILAR_RESULTS);
-      const fallbackResults = await vectorSearch(
-        userId,
-        embeddingResult.embedding,
-        { limit: fallbackLimit, threshold: 0, shuffleSeed }
-      );
-
-      const mergedResults: typeof searchResults = [];
-      const seen = new Set<string>();
-
-      for (const result of searchResults) {
-        mergedResults.push(result);
-        seen.add(result.id);
-      }
-
-      for (const result of fallbackResults) {
-        if (seen.has(result.id)) {
-          continue;
-        }
-        mergedResults.push(result);
-        seen.add(result.id);
-      }
-
-      if (mergedResults.length > searchResults.length) {
-        usedFallbackThreshold = true;
-      }
-
-      searchResults = mergedResults.slice(0, fallbackLimit);
-    }
 
     // Ensure we only return up to the effective limit
     searchResults = searchResults.slice(0, effectiveLimit);
@@ -173,7 +138,7 @@ async function postHandler(req: NextRequest) {
           embeddingStatus: 'ready' as const,
           similarity: result.distance, // 0-1 score, higher is better
           relevance: Math.round(result.distance * 100), // Percentage for UI
-          belowThreshold: appliedThreshold > 0 && result.distance < appliedThreshold,
+          belowThreshold: false,
           tags: assetTags.map((at: any) => ({
             id: at.tag.id,
             name: at.tag.name,
@@ -205,12 +170,12 @@ async function postHandler(req: NextRequest) {
       total: formattedResults.length,
       limit: effectiveLimit,
       requestedLimit: limit,
-      threshold: appliedThreshold,
+      threshold,
       requestedThreshold: threshold,
       processingTime: queryTime,
       embeddingModel: embeddingResult.model,
       cached: false,
-      thresholdFallback: usedFallbackThreshold,
+      thresholdFallback: false,
     });
 
   } catch (error) {

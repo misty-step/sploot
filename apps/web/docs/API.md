@@ -945,10 +945,10 @@ Perform semantic search using text queries.
 **Parameters:**
 
 - `query` (string, required): Search text (max 500 characters)
-- `limit` (number, optional): requested result count (default: 30). the server
-  searches for at least 10 similar results, so `limit` in the response may be
-  higher than the requested value.
+- `limit` (number, optional): requested result count (default: 30).
 - `threshold` (number, optional): Minimum similarity score (0-1, default: 0.2)
+  Results below this score are not returned; a real miss returns an empty
+  `results` array rather than low-similarity padding.
 - `shuffleSeed` (number, optional): Seed used by vector search when supported
 
 **Success Response (200):**
@@ -990,8 +990,8 @@ Perform semantic search using text queries.
 }
 ```
 
-When Replicate is not configured, the route returns `200` with an empty
-`results` array and an `error` explaining search is unavailable.
+When Replicate is not configured, the route returns `503` with an `error`
+explaining search is unavailable.
 
 #### GET /api/search
 

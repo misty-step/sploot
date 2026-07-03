@@ -1,0 +1,4 @@
+
+> web@0.1.0 type-check /Users/phaedrus/Development/sploot/apps/web
+> tsc --noEmit
+
