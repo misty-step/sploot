@@ -30,6 +30,7 @@ function asset(id: string, embedding: number[], favorite = false): EmbeddedPileA
     favorite,
     size: 1024,
     createdAt: new Date('2026-06-11T00:00:00.000Z'),
+    phash: null,
     embedding,
   };
 }
@@ -87,5 +88,26 @@ describe('buildSemanticPiles', () => {
       'alpha',
       'zeta',
     ]);
+  });
+
+  it('keeps near-identical perceptual hashes from filling pile thumbnails', () => {
+    const first = asset('reaction-original', [0.99, 0.02, 0]);
+    first.phash = '0000000000000000';
+    const nearDuplicate = asset('reaction-reencode', [0.98, 0.03, 0]);
+    nearDuplicate.phash = '0000000000000001';
+    const distinct = asset('reaction-distinct', [0.9, 0.1, 0]);
+    distinct.phash = 'ffffffffffffffff';
+
+    const piles = buildSemanticPiles({
+      assets: [first, nearDuplicate, distinct],
+      anchors: [reactionAnchor],
+      maxPiles: 1,
+      minPileSize: 2,
+    });
+
+    expect(piles).toHaveLength(1);
+    expect(piles[0].assetIds).toEqual(expect.arrayContaining(['reaction-original', 'reaction-distinct']));
+    expect(piles[0].assetIds).not.toContain('reaction-reencode');
+    expect(piles[0].thumbnailAssets.map((item) => item.id)).not.toContain('reaction-reencode');
   });
 });

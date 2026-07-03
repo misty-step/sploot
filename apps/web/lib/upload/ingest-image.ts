@@ -5,6 +5,7 @@ import { DeduplicationService } from '@/lib/upload/deduplication-service';
 import { BlobUploaderService } from '@/lib/upload/blob-uploader-service';
 import { AssetRecorderService } from '@/lib/upload/asset-recorder-service';
 import { EmbeddingSchedulerService } from '@/lib/upload/embedding-scheduler-service';
+import { PerceptualHashService, type NearDuplicateAsset } from '@/lib/upload/perceptual-hash-service';
 import {
   releaseStorageQuotaReservation,
   reserveUploadBytes,
@@ -30,6 +31,8 @@ export interface IngestedAsset {
   mimeType: string;
   size: number;
   checksum: string;
+  phash?: string | null;
+  nearDuplicate?: NearDuplicateAsset | null;
   createdAt: Date | string;
   needsEmbedding: boolean;
 }
@@ -58,6 +61,7 @@ export async function ingestImage({
   const validator = new UploadValidationService();
   const processor = new ImageProcessorService();
   const deduplicator = new DeduplicationService();
+  const perceptualHasher = new PerceptualHashService();
   const uploader = new BlobUploaderService();
   const recorder = new AssetRecorderService();
   const scheduler = new EmbeddingSchedulerService();
@@ -119,18 +123,24 @@ export async function ingestImage({
         mimeType: deduplicationResult.existingAsset.mime,
         size: deduplicationResult.existingAsset.size,
         checksum: deduplicationResult.checksum,
+        phash: null,
+        nearDuplicate: null,
         createdAt: deduplicationResult.existingAsset.createdAt,
         needsEmbedding: !deduplicationResult.existingAsset.hasEmbedding,
       },
     };
   }
 
+  // Step 3: Compute perceptual hash and look for visually-near duplicates.
+  // This is advisory: exact checksum duplicates block, near-duplicates warn.
+  const perceptualResult = await perceptualHasher.inspect(userId, fileBuffer);
+
   try {
-    // Step 3: Reserve quota before image processing and Blob writes.
+    // Step 4: Reserve quota before image processing and Blob writes.
     const quotaReservation = await reserveUploadBytes(userId, file.size);
     quotaReservationId = quotaReservation.id;
 
-    // Step 4: Process image
+    // Step 5: Process image
     const processingResult = await processor.processImage(fileBuffer, file.type);
     const processedImages = processingResult.processed;
 
@@ -141,7 +151,7 @@ export async function ingestImage({
       usedFallback: processingResult.usedFallback,
     });
 
-    // Step 5: Upload to blob storage
+    // Step 6: Upload to blob storage
     const uploadResult = await uploader.upload(userId, file.name, fileBuffer, processedImages);
 
     logger.info('Blobs uploaded', {
@@ -150,7 +160,7 @@ export async function ingestImage({
       hasThumbnail: !!uploadResult.thumbnailUrl,
     });
 
-    // Step 6: Record asset in database
+    // Step 7: Record asset in database
     try {
       const recordResult = await recorder.recordAsset(
         {
@@ -164,6 +174,7 @@ export async function ingestImage({
           height: processingResult.metadata?.height ?? processedImages?.main?.height ?? null,
           size: file.size,
           checksumSha256: deduplicationResult.checksum,
+          phash: perceptualResult.phash,
         },
         tags
       );
@@ -179,7 +190,7 @@ export async function ingestImage({
       await releaseStorageQuotaReservation(quotaReservationId);
       quotaReservationId = null;
 
-      // Step 7: Schedule embedding generation
+      // Step 8: Schedule embedding generation
       await scheduler.scheduleEmbedding({
         assetId: recordResult.asset.id,
         blobUrl: uploadResult.thumbnailUrl ?? uploadResult.mainUrl,
@@ -197,6 +208,8 @@ export async function ingestImage({
           mimeType: file.type,
           size: file.size,
           checksum: deduplicationResult.checksum,
+          phash: perceptualResult.phash,
+          nearDuplicate: perceptualResult.nearDuplicate,
           createdAt: recordResult.asset.createdAt,
           needsEmbedding: true,
         },
@@ -239,6 +252,8 @@ export async function ingestImage({
               mimeType: existingAsset.mime,
               size: existingAsset.size,
               checksum: existingAsset.checksumSha256,
+              phash: null,
+              nearDuplicate: null,
               createdAt: existingAsset.createdAt,
               needsEmbedding: !existingAsset.hasEmbedding,
             },

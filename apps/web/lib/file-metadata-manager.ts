@@ -20,6 +20,12 @@ export interface FileMetadata {
   assetId?: string;
   blobUrl?: string;
   isDuplicate?: boolean;
+  nearDuplicate?: {
+    id: string;
+    distance: number;
+    blobUrl?: string;
+    thumbnailUrl?: string | null;
+  } | null;
   needsEmbedding?: boolean;
   embeddingStatus?: 'pending' | 'processing' | 'ready' | 'failed';
   embeddingError?: string;

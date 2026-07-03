@@ -4,6 +4,7 @@ import { prisma, vectorSearch, type VectorSearchRow } from '@/lib/db';
 import { getAuth } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
+import { DEFAULT_NEAR_DUPLICATE_DISTANCE, hammingDistanceHex } from '@/lib/upload/perceptual-hash-service';
 
 async function getHandler(
   req: NextRequest,
@@ -19,6 +20,15 @@ async function getHandler(
     const id = params?.id;
 
     if (!id || !prisma) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    const sourceAsset = await prisma.asset.findFirst({
+      where: { id, ownerUserId: userId, deletedAt: null },
+      select: { phash: true },
+    });
+
+    if (!sourceAsset) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
@@ -52,8 +62,19 @@ async function getHandler(
     const results = await vectorSearch(userId, vector, { limit: limit + 1 });
 
     // Filter out the current asset
-    const filtered = results
-      .filter((r: { id: string }) => r.id !== id)
+    const withoutSource = results.filter((r: { id: string }) => r.id !== id);
+    const phashes = await prisma.asset.findMany({
+      where: { id: { in: withoutSource.map((result) => result.id) } },
+      select: { id: true, phash: true },
+    });
+    const phashById = new Map(phashes.map((asset) => [asset.id, asset.phash]));
+
+    const filtered = withoutSource
+      .filter((result) => {
+        const candidatePhash = phashById.get(result.id);
+        if (!sourceAsset.phash || !candidatePhash) return true;
+        return hammingDistanceHex(sourceAsset.phash, candidatePhash) > DEFAULT_NEAR_DUPLICATE_DISTANCE;
+      })
       .slice(0, limit);
 
     const formattedResults = filtered.map((result: VectorSearchRow) => ({

@@ -50,6 +50,17 @@ export interface SplootApiUploadResponse {
     mimeType: string;
     size: number;
     checksum: string;
+    phash?: string | null;
+    nearDuplicate?: {
+      id: string;
+      blobUrl: string;
+      thumbnailUrl?: string | null;
+      pathname: string;
+      mime: string;
+      phash: string;
+      distance: number;
+      createdAt: string;
+    } | null;
     createdAt: string;
     needsEmbedding?: boolean;
   };
