@@ -139,15 +139,22 @@ export function UploadFileList({
                     )}
 
                     {file.status === 'success' && (
-                      <EmbeddingStatusIndicator
-                        file={file}
-                        onStatusChange={(status, error) => {
-                          onFileUpdate(file.id, {
-                            embeddingStatus: status,
-                            embeddingError: error
-                          });
-                        }}
-                      />
+                      <>
+                        {file.nearDuplicate && (
+                          <Badge variant="secondary" className="text-yellow-600">
+                            looks similar
+                          </Badge>
+                        )}
+                        <EmbeddingStatusIndicator
+                          file={file}
+                          onStatusChange={(status, error) => {
+                            onFileUpdate(file.id, {
+                              embeddingStatus: status,
+                              embeddingError: error
+                            });
+                          }}
+                        />
+                      </>
                     )}
 
                     {file.status === 'duplicate' && (

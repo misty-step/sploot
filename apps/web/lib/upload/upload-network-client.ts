@@ -23,6 +23,16 @@ export interface UploadResult {
     id: string;
     blobUrl: string;
     needsEmbedding: boolean;
+    nearDuplicate?: {
+      id: string;
+      blobUrl: string;
+      thumbnailUrl?: string | null;
+      pathname: string;
+      mime: string;
+      phash: string;
+      distance: number;
+      createdAt: string;
+    } | null;
   };
   isDuplicate?: boolean;
   error?: string;

@@ -62,6 +62,12 @@ interface FileMetadata {
   assetId?: string;
   blobUrl?: string;
   isDuplicate?: boolean;
+  nearDuplicate?: {
+    id: string;
+    distance: number;
+    blobUrl?: string;
+    thumbnailUrl?: string | null;
+  } | null;
   needsEmbedding?: boolean;
   embeddingStatus?: 'pending' | 'processing' | 'ready' | 'failed';
   embeddingError?: string;
@@ -435,6 +441,14 @@ export function UploadZone({
               assetId: result.asset?.id,
               blobUrl: result.asset?.blobUrl,
               isDuplicate,
+              nearDuplicate: result.asset?.nearDuplicate
+                ? {
+                    id: result.asset.nearDuplicate.id,
+                    distance: result.asset.nearDuplicate.distance,
+                    blobUrl: result.asset.nearDuplicate.blobUrl,
+                    thumbnailUrl: result.asset.nearDuplicate.thumbnailUrl ?? null,
+                  }
+                : null,
               needsEmbedding,
               embeddingStatus: (needsEmbedding ? 'pending' : 'ready') as
                 | 'pending'

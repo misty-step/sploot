@@ -30,6 +30,7 @@ export interface AssetMetadata {
   height: number | null;
   size: number;
   checksumSha256: string;
+  phash?: string | null;
 }
 
 /**
@@ -92,6 +93,7 @@ export class AssetRecorderService {
             height: metadata.height,
             size: metadata.size,
             checksumSha256: metadata.checksumSha256,
+            phash: metadata.phash ?? null,
             favorite: false,
           },
         });

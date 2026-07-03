@@ -3,6 +3,7 @@ import { CLIP_MODEL, createEmbeddingService } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
 import { prisma } from '@/lib/db';
 import { getRuntimeGate } from '@/lib/runtime-gates';
+import { DEFAULT_NEAR_DUPLICATE_DISTANCE, hammingDistanceHex } from '@/lib/upload/perceptual-hash-service';
 import logger from '@/lib/logger';
 
 export const DEFAULT_MINIMUM_PILE_ASSETS = 50;
@@ -39,6 +40,7 @@ export interface EmbeddedPileAsset {
   favorite: boolean;
   size: number;
   createdAt: Date;
+  phash: string | null;
   embedding: number[];
 }
 
@@ -106,6 +108,7 @@ interface EmbeddedAssetRow {
   favorite: boolean;
   size: number;
   createdAt: Date;
+  phash: string | null;
   embeddingText: string;
 }
 
@@ -175,8 +178,16 @@ export function buildSemanticPiles({
   }
 
   const groups = new Map<string, { anchor: PileAnchorEmbedding; assets: EmbeddedPileAsset[]; scores: number[] }>();
+  const acceptedPhashes: string[] = [];
 
   for (const asset of assets) {
+    if (
+      asset.phash &&
+      acceptedPhashes.some((phash) => hammingDistanceHex(asset.phash!, phash) <= DEFAULT_NEAR_DUPLICATE_DISTANCE)
+    ) {
+      continue;
+    }
+
     const normalizedAsset = normalize(asset.embedding);
     if (normalizedAsset.length === 0) continue;
 
@@ -194,6 +205,9 @@ export function buildSemanticPiles({
     group.assets.push(asset);
     group.scores.push(bestScore);
     groups.set(bestAnchor.id, group);
+    if (asset.phash) {
+      acceptedPhashes.push(asset.phash);
+    }
   }
 
   return Array.from(groups.values())
@@ -246,6 +260,7 @@ async function listReadyEmbeddedAssets(userId: string, limit: number): Promise<E
       a.favorite,
       a.size,
       a."createdAt",
+      a.phash,
       ae.image_embedding::text AS "embeddingText"
     FROM "assets" a
     INNER JOIN "asset_embeddings" ae ON ae.asset_id = a.id
