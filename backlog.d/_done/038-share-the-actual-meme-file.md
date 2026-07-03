@@ -1,6 +1,6 @@
 # Share the actual meme file, not a sploot link
 
-Priority: P2 · Status: ready · Estimate: S
+Priority: P2 · Status: done · Estimate: S
 
 ## Goal
 
@@ -9,15 +9,40 @@ chat, etc.), not a sploot.app link with a marketing CTA.
 
 ## Oracle
 
-- [ ] Where `navigator.canShare({ files })` is true, the share button shares the
+- [x] Where `navigator.canShare({ files })` is true, the share button shares the
       image via `navigator.share({ files })`; the URL share is fallback only.
-- [ ] Sharing into a messaging app shows the meme inline — no tap-through to a
+- [x] Sharing into a messaging app shows the meme inline — no tap-through to a
       landing page.
-- [ ] On desktop (where Web Share's file variant is unsupported in most
+- [x] On desktop (where Web Share's file variant is unsupported in most
       browsers), a "copy image" action writes the actual pixels to the
       clipboard via `navigator.clipboard.write([new ClipboardItem(...)])`, so
       pasting into Slack/Discord/iMessage-on-Mac drops the image inline —
       today desktop only offers "copy link" (`share-button.tsx:94`).
+
+## What Was Built
+
+- Changed the share button to fetch the meme blob and call
+  `navigator.share({ files })` when file-capable Web Share is available. The
+  sploot share URL is now a fallback, not the primary path.
+- Added desktop image-copy behavior using
+  `navigator.clipboard.write([new ClipboardItem(...)])`. Non-PNG image blobs are
+  converted through canvas to PNG for browser clipboard compatibility.
+- Preserved URL copy/share as fallback when image file share or image clipboard
+  support is unavailable.
+- Added component tests proving the file-share path avoids the share-link API
+  and the desktop clipboard path writes image bytes before falling back.
+
+Evidence:
+
+- `pnpm lint`
+- `pnpm type-check`
+- `DATABASE_URL=postgresql://test:test@localhost:5432/sploot_test pnpm --filter web test -- --run`
+- `pnpm --filter extension build`
+- `docs/qa/evidence/2026-07-02-backlog-038-share-file/packet.md`
+
+Residual risk: the inline paste outcome was proven at the browser API boundary
+with `ClipboardItem` tests, not by pasting into a live Slack/Discord/iMessage
+client in this run.
 
 ## Notes
 
