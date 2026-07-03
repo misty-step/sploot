@@ -21,6 +21,13 @@ interface CanaryReportInput {
   severity?: Severity;
 }
 
+interface CanaryCheckInInput {
+  status?: 'alive' | 'in_progress' | 'ok' | 'error';
+  summary: string;
+  ttlMs?: number;
+  context?: Record<string, any>;
+}
+
 interface CanaryStatus {
   configured: boolean;
   reachable: boolean | null;
@@ -125,6 +132,45 @@ export async function checkCanaryStatus(): Promise<CanaryStatus> {
       status: 'degraded',
       message: error instanceof Error ? error.message : 'Canary unreachable',
     };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function reportCanaryCheckIn(input: CanaryCheckInInput): Promise<void> {
+  const config = getCanaryConfig();
+  if (!config) {
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+
+  try {
+    await fetch(`${config.endpoint}/api/v1/check-ins`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'X-API-Key': config.apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        monitor: config.service,
+        status: input.status ?? 'alive',
+        summary: input.summary,
+        ttl_ms: input.ttlMs ?? 300_000,
+        context: sanitizeValue({
+          source: 'sploot-web',
+          environment: config.environment,
+          vercel_region: process.env.VERCEL_REGION,
+          vercel_url: process.env.VERCEL_URL,
+          ...input.context,
+        }),
+      }),
+      signal: controller.signal,
+    });
+  } catch {
+    // Canary must never affect the user flow or primary health route.
   } finally {
     clearTimeout(timeout);
   }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { kv } from '@vercel/kv';
-import { canaryConfigured } from '@/lib/canary-reporter';
+import { canaryConfigured, reportCanaryCheckIn } from '@/lib/canary-reporter';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
 import pkg from '@/package.json';
@@ -179,6 +179,12 @@ async function getHandler(_req: NextRequest) {
         version: pkg.version,
       };
 
+      await reportHealthCheckIn('alive', 'sploot-web health route ok', {
+        database: 'up',
+        redis: 'up',
+        connection_latency_ms: results.db.latency_ms,
+      });
+
       return NextResponse.json(payload, {
         status: 200,
         headers: {
@@ -203,6 +209,12 @@ async function getHandler(_req: NextRequest) {
           env_vars: envVars,
         },
       };
+
+      await reportHealthCheckIn('error', 'sploot-web health route degraded', {
+        database: results.db.success ? 'up' : 'down',
+        redis: results.redis ? 'up' : 'down',
+        error: errorMsg.join(', '),
+      });
 
       return NextResponse.json(payload, {
         status: 503,
@@ -230,6 +242,10 @@ async function getHandler(_req: NextRequest) {
       },
     };
 
+    await reportHealthCheckIn('error', 'sploot-web health route failed', {
+      error: payload.error,
+    });
+
     return NextResponse.json(payload, {
       status: 503,
       headers: {
@@ -246,6 +262,22 @@ async function headHandler(req: NextRequest) {
     headers: {
       'Cache-Control': res.headers.get('Cache-Control') || 'no-cache, no-store, must-revalidate',
       'Content-Type': res.headers.get('Content-Type') || 'application/json',
+    },
+  });
+}
+
+async function reportHealthCheckIn(
+  status: 'alive' | 'error',
+  summary: string,
+  context: Record<string, any>
+) {
+  await reportCanaryCheckIn({
+    status,
+    summary,
+    ttlMs: 300_000,
+    context: {
+      route: '/api/health',
+      ...context,
     },
   });
 }

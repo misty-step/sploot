@@ -21,6 +21,7 @@ vi.mock('@/lib/with-observability', () => ({
 
 vi.mock('@/lib/canary-reporter', () => ({
   canaryConfigured: vi.fn(() => false),
+  reportCanaryCheckIn: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('@/package.json', () => ({
