@@ -99,4 +99,48 @@ describe('canary reporter', () => {
       status: 'not_configured',
     });
   });
+
+  it('posts health check-ins to Canary ingest', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { reportCanaryCheckIn } = await import('@/lib/canary-reporter');
+
+    await reportCanaryCheckIn({
+      status: 'alive',
+      summary: 'sploot-web health route ok',
+      ttlMs: 300_000,
+      context: {
+        route: '/api/health',
+        authorization: 'Bearer secret',
+      },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://canary.example.test/api/v1/check-ins',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer test-canary-key',
+          'X-API-Key': 'test-canary-key',
+        }),
+      })
+    );
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init.body);
+
+    expect(body).toMatchObject({
+      monitor: 'sploot-test',
+      status: 'alive',
+      summary: 'sploot-web health route ok',
+      ttl_ms: 300_000,
+      context: {
+        source: 'sploot-web',
+        environment: 'test',
+        route: '/api/health',
+        authorization: '[redacted]',
+      },
+    });
+  });
 });
