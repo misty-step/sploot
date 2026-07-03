@@ -1,6 +1,6 @@
 # Debounce search and make zero-results honest
 
-Priority: P2 · Status: ready · Estimate: S
+Priority: P2 · Status: done · Estimate: S
 
 ## Goal
 
@@ -10,12 +10,31 @@ memes.
 
 ## Oracle
 
-- [ ] Typing a query issues at most one `/api/search` after input settles (~300ms),
+- [x] Typing a query issues at most one `/api/search` after input settles (~300ms),
       matching the documented contract; verified by counting calls in a test or
       network trace.
-- [ ] When no result clears the similarity threshold, the UI shows an empty /
+- [x] When no result clears the similarity threshold, the UI shows an empty /
       "no matches yet" state (or a clearly separated "loose matches" section), not
       threshold-0 padding presented as matches.
+
+## What Was Built
+
+- Routed the library search hook through the existing 300ms `useDebounce` helper
+  so typing updates the UI immediately while `/api/search` waits for settled
+  input.
+- Removed the `/api/search` threshold-0 fallback padding path. The route now
+  returns only matches that clear the requested similarity threshold, preserving
+  the requested limit and reporting `thresholdFallback: false`.
+- Updated API docs and added regression coverage proving below-threshold misses
+  do not trigger a second threshold-0 vector search.
+
+Evidence:
+
+- `DATABASE_URL=postgresql://test:test@localhost:5432/sploot_test pnpm --filter web test -- --run`
+- `pnpm lint`
+- `pnpm type-check`
+- `pnpm --filter extension build`
+- `docs/qa/evidence/2026-07-02-backlog-039-search/packet.md`
 
 ## Notes
 

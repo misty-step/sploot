@@ -6,7 +6,11 @@ const mocks = vi.hoisted(() => ({
   getAuthWithUser: vi.fn(),
   createEmbeddingService: vi.fn(),
   getSearchResults: vi.fn(),
+  setSearchResults: vi.fn(),
   findFirst: vi.fn(),
+  findManyAssetTags: vi.fn(),
+  vectorSearch: vi.fn(),
+  logSearch: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/server', () => ({
@@ -26,6 +30,7 @@ vi.mock('@/lib/embeddings', () => ({
 vi.mock('@/lib/cache', () => ({
   getCacheService: () => ({
     getSearchResults: mocks.getSearchResults,
+    setSearchResults: mocks.setSearchResults,
   }),
 }));
 
@@ -34,9 +39,12 @@ vi.mock('@/lib/db', () => ({
     asset: {
       findFirst: mocks.findFirst,
     },
+    assetTag: {
+      findMany: mocks.findManyAssetTags,
+    },
   },
-  vectorSearch: vi.fn(),
-  logSearch: vi.fn(),
+  vectorSearch: mocks.vectorSearch,
+  logSearch: mocks.logSearch,
   upsertAssetEmbedding: vi.fn(),
 }));
 
@@ -97,7 +105,9 @@ describe('search degraded-service honesty', () => {
     vi.clearAllMocks();
     vi.stubEnv('SPLOOT_EMBEDDINGS_ENABLED', 'true');
     mocks.getAuth.mockResolvedValue({ userId: 'user-1' });
+    mocks.getAuthWithUser.mockResolvedValue({ userId: 'user-1' });
     mocks.getSearchResults.mockResolvedValue(null);
+    mocks.logSearch.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -115,5 +125,38 @@ describe('search degraded-service honesty', () => {
     expect(response.status).toBe(503);
     expect(body.error).toMatch(/unavailable/i);
     expect(body.results).toBeUndefined();
+  });
+
+  it('POST /api/search does not pad below-threshold misses with threshold-zero fallback results', async () => {
+    mocks.createEmbeddingService.mockReturnValue({
+      embedText: vi.fn().mockResolvedValue({
+        embedding: [0.1, 0.2, 0.3],
+        model: 'test-embedding-model',
+      }),
+    });
+    mocks.vectorSearch.mockResolvedValue([]);
+
+    const response = await search(jsonRequest('/api/search', {
+      query: 'impossible tiny hat query',
+      limit: 5,
+      threshold: 0.9,
+    }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      results: [],
+      total: 0,
+      limit: 5,
+      requestedLimit: 5,
+      threshold: 0.9,
+      thresholdFallback: false,
+    });
+    expect(mocks.vectorSearch).toHaveBeenCalledTimes(1);
+    expect(mocks.vectorSearch).toHaveBeenCalledWith(
+      'user-1',
+      [0.1, 0.2, 0.3],
+      { limit: 5, threshold: 0.9, shuffleSeed: undefined }
+    );
   });
 });

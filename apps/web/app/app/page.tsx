@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { useAssets, useSearchAssets } from '@/hooks/use-assets';
+import { useDebounce } from '@/hooks/use-debounce';
 import { useAutomaticPiles } from '@/hooks/use-piles';
 import { useAuthActions } from '@/lib/auth/client';
 import { ImageGrid } from '@/components/library/image-grid';
@@ -167,6 +168,8 @@ function AppPageClient() {
     shuffleSeed,
   });
 
+  const debouncedLibraryQuery = useDebounce(libraryQuery, 300);
+
   const {
     assets: searchAssets,
     loading: searchLoading,
@@ -175,7 +178,7 @@ function AppPageClient() {
     deleteAsset: deleteSearchAsset,
     search: runInlineSearch,
     metadata: searchMetadata,
-  } = useSearchAssets(libraryQuery, { limit: 50, threshold: 0.2, shuffleSeed });
+  } = useSearchAssets(debouncedLibraryQuery, { limit: 50, threshold: 0.2, shuffleSeed });
 
   // Set isClient flag once mounted
   useEffect(() => {
@@ -869,11 +872,6 @@ function AppPageClient() {
                         <span>
                           showing <span className="font-semibold">{searchHitCount}</span> matches for &quot;<span className="font-medium">{trimmedLibraryQuery}</span>&quot;
                         </span>
-                        {searchMetadata?.thresholdFallback && (
-                          <span className="text-xs text-muted-foreground">
-                            pulled a few low-similarity results to avoid empty results.
-                          </span>
-                        )}
                       </AlertDescription>
                     </Alert>
                     <SimilarityScoreLegend />
