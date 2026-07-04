@@ -121,8 +121,10 @@ drift), **049** (asset→DTO mapper). This epic is the umbrella that sequences t
    Size: M.
 3. **Embeddings provider seam.** Export an `EmbeddingService` *interface* (consumers
    currently type against the concrete `ReplicateEmbeddingService`); widen the factory;
-   un-leak `CLIP_MODEL`/`768` from cache keys. Then a provider behind env is a drop-in.
-   (Pairs with 047, the dim-drift fix.) Size: S–M.
+   un-leak `CLIP_MODEL` and the dimension contract from cache keys. Any model dimension
+   change must start at `packages/common/src/embeddings.ts` (`EMBEDDING_DIMENSION`) and
+   ship with a matching Prisma migration/backfill plan. Then a provider behind env is a
+   drop-in. (Pairs with 047, the dim-drift fix.) Size: S–M.
 4. **Isolate Clerk / finish the auth policy boundary** — extends **035**. Migrate the
    leaky `lib/auth/server.ts` path (~13 RSC callers) + 4 inline `auth()` routes onto
    the `AuthenticatedPrincipal` seam; stop using the Clerk ID as the `users` PK (the

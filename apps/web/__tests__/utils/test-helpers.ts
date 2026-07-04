@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { vi } from 'vitest';
+import { EMBEDDING_DIMENSION } from '@sploot/common';
 
 // Mock Prisma client
 export const mockPrisma = () => {
@@ -23,7 +24,7 @@ export const mockPrisma = () => {
   const mockAssetEmbedding = {
     id: 'embedding-123',
     assetId: 'asset-123',
-    imageEmbedding: Array(1152).fill(0.1),
+    imageEmbedding: Array(EMBEDDING_DIMENSION).fill(0.1),
     createdAt: new Date(),
   };
 
@@ -149,22 +150,22 @@ export const mockBlobStorage = () => {
 export const mockEmbeddingService = () => {
   return {
     embedText: vi.fn<() => Promise<any>>().mockResolvedValue({
-      embedding: Array(1152).fill(0.1),
+      embedding: Array(EMBEDDING_DIMENSION).fill(0.1),
       model: 'siglip-large',
-      dimension: 1152,
+      dimension: EMBEDDING_DIMENSION,
       processingTime: 100,
     }),
     embedImage: vi.fn<() => Promise<any>>().mockResolvedValue({
-      embedding: Array(1152).fill(0.1),
+      embedding: Array(EMBEDDING_DIMENSION).fill(0.1),
       model: 'siglip-large',
-      dimension: 1152,
+      dimension: EMBEDDING_DIMENSION,
       processingTime: 150,
     }),
     embedBatch: vi.fn<() => Promise<any[]>>().mockResolvedValue([
       {
-        embedding: Array(1152).fill(0.1),
+        embedding: Array(EMBEDDING_DIMENSION).fill(0.1),
         model: 'siglip-large',
-        dimension: 1152,
+        dimension: EMBEDDING_DIMENSION,
         processingTime: 100,
       },
     ]),

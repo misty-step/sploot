@@ -8,6 +8,7 @@ import {
   vi,
 } from "vitest";
 import { NextRequest } from "next/server";
+import { EMBEDDING_DIMENSION } from "@sploot/common";
 
 const auth = vi.hoisted(() => ({
   getAuthWithUser: vi.fn(),
@@ -186,29 +187,29 @@ describe("GET /api/assets seeded shuffle integration", () => {
         assetId: "shuffle-a",
         modelName: "clip-test",
         modelVersion: "v1",
-        dim: 512,
-        embedding: vector512(0.95, 0.05),
+        dim: EMBEDDING_DIMENSION,
+        embedding: vectorWithPair(0.95, 0.05),
       }),
       upsertAssetEmbedding({
         assetId: "shuffle-b",
         modelName: "clip-test",
         modelVersion: "v1",
-        dim: 512,
-        embedding: vector512(1, 0),
+        dim: EMBEDDING_DIMENSION,
+        embedding: vectorWithPair(1, 0),
       }),
       upsertAssetEmbedding({
         assetId: "shuffle-c",
         modelName: "clip-test",
         modelVersion: "v1",
-        dim: 512,
-        embedding: vector512(0.9, 0.1),
+        dim: EMBEDDING_DIMENSION,
+        embedding: vectorWithPair(0.9, 0.1),
       }),
       upsertAssetEmbedding({
         assetId: "shuffle-d",
         modelName: "clip-test",
         modelVersion: "v1",
-        dim: 512,
-        embedding: vector512(0, 1),
+        dim: EMBEDDING_DIMENSION,
+        embedding: vectorWithPair(0, 1),
       }),
     ]);
 
@@ -264,8 +265,8 @@ function asset(
   };
 }
 
-function vector512(x: number, y: number) {
-  const vector = Array.from({ length: 512 }, () => 0);
+function vectorWithPair(x: number, y: number) {
+  const vector = Array.from({ length: EMBEDDING_DIMENSION }, () => 0);
   vector[0] = x;
   vector[1] = y;
   return vector;

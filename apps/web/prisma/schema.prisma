@@ -136,7 +136,8 @@ model AssetEmbedding {
   modelName       String                 @map("model_name")
   modelVersion    String                 @map("model_version")
   dim             Int // Embedding dimensions
-  imageEmbedding  Unsupported("vector")? @map("image_embedding")
+  // Must match packages/common/src/embeddings.ts EMBEDDING_DIMENSION.
+  imageEmbedding  Unsupported("vector(768)")? @map("image_embedding")
   status          String?                @default("pending") // pending, processing, ready, failed
   error           String? // Error message if failed
   completedAt     DateTime?              @map("completedAt") // When embedding was completed

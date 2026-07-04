@@ -1,9 +1,11 @@
 import { PrismaClient, Prisma } from '@prisma/client';
+import { EMBEDDING_DIMENSION } from '@sploot/common';
 import { databaseConfigured } from './env';
 import logger from './logger';
 import { shuffleWithSeed } from './seeded-random';
 import { getPerformanceMonitor } from './performance-monitor';
 import { logger as observabilityLogger } from './observability-logger';
+import { embeddingVectorSql } from './embedding-vector-sql';
 
 // Declare global type for PrismaClient to prevent multiple instances in development
 declare global {
@@ -606,22 +608,20 @@ export interface AssetEmbeddingRecord {
 export async function upsertAssetEmbedding(
   data: AssetEmbeddingWriteArgs
 ): Promise<AssetEmbeddingRecord | null> {
-  if (!prisma) {
-    return null;
-  }
-
   const { assetId, modelName, modelVersion, dim, embedding } = data;
-
-  if (!Array.isArray(embedding) || embedding.length === 0) {
-    throw new Error('Embedding vector must be a non-empty array');
-  }
+  const vectorSql = embeddingVectorSql(embedding, 'asset embedding');
 
   if (embedding.length !== dim) {
     throw new Error('Embedding dimension does not match provided dim value');
   }
 
-  // Construct ARRAY[...] literal so Postgres can parameterize each element
-  const vectorSql = Prisma.sql`ARRAY[${Prisma.join(embedding)}]::double precision[]`;
+  if (dim !== EMBEDDING_DIMENSION) {
+    throw new Error(`Embedding dimension expected ${EMBEDDING_DIMENSION}, got ${dim}`);
+  }
+
+  if (!prisma) {
+    return null;
+  }
 
   try {
     const rows = await prisma.$queryRaw<Array<AssetEmbeddingRecord>>(Prisma.sql`
@@ -641,7 +641,7 @@ export async function upsertAssetEmbedding(
         ${modelName},
         ${modelVersion},
         ${dim},
-        ${vectorSql}::vector,
+        ${vectorSql},
         'ready',
         NULL,
         NOW(),
@@ -713,8 +713,7 @@ export async function vectorSearch(
 
   const { limit = 30, threshold, shuffleSeed } = options || {};
 
-  // Convert embedding array to pgvector format
-  const vectorSql = Prisma.sql`ARRAY[${Prisma.join(queryEmbedding)}]::vector`;
+  const vectorSql = embeddingVectorSql(queryEmbedding, 'search query embedding');
 
   // Fetch more candidates when shuffling or thresholding for better pool
   const fetchLimit = shuffleSeed !== undefined

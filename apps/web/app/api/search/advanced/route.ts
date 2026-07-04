@@ -7,6 +7,8 @@ import { getCacheService } from '@/lib/cache';
 import { getAuth } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
+import { embeddingVectorSql as createEmbeddingVectorSql } from '@/lib/embedding-vector-sql';
+import { logError } from '@/lib/observability-logger';
 
 interface SearchFilters {
   favorites?: boolean;
@@ -123,15 +125,23 @@ async function postHandler(req: NextRequest) {
     // Generate text embedding
     const embeddingResult = await embeddingService.embedText(query);
 
-    // Validate embedding array contains only finite numbers (defense-in-depth)
-    if (!Array.isArray(embeddingResult.embedding) ||
-        !embeddingResult.embedding.every(n => typeof n === 'number' && isFinite(n))) {
+    let embeddingVectorSql: Prisma.Sql;
+    try {
+      embeddingVectorSql = createEmbeddingVectorSql(
+        embeddingResult.embedding,
+        'advanced search query embedding'
+      );
+    } catch (error) {
+      logError('advanced-search:invalid-query-embedding', error, {
+        embeddingLength: Array.isArray(embeddingResult.embedding)
+          ? embeddingResult.embedding.length
+          : 'invalid',
+      });
       return NextResponse.json(
         { error: 'Invalid embedding format from service' },
         { status: 500 }
       );
     }
-    const embeddingStr = `[${embeddingResult.embedding.join(',')}]`;
 
     // Build parameterized query using Prisma.sql to prevent SQL injection
     // All user inputs are properly parameterized
@@ -161,13 +171,10 @@ async function postHandler(req: NextRequest) {
     const validSortOptions = ['relevance', 'date', 'favorite'] as const;
     const validatedSortBy = validSortOptions.includes(sortBy as any) ? sortBy : 'relevance';
 
-    // Build ORDER BY clause with Prisma.raw for embedding vector
-    // embeddingStr is safe - generated from embedding API as numeric array
-    const embeddingVectorLiteral = Prisma.raw(`'${embeddingStr}'::vector`);
     const orderByClauses: Record<string, Prisma.Sql> = {
       date: Prisma.sql`a.created_at DESC`,
-      favorite: Prisma.sql`a.favorite DESC, ae.image_embedding <=> ${embeddingVectorLiteral}`,
-      relevance: Prisma.sql`ae.image_embedding <=> ${embeddingVectorLiteral}`,
+      favorite: Prisma.sql`a.favorite DESC, ae.image_embedding <=> ${embeddingVectorSql}`,
+      relevance: Prisma.sql`ae.image_embedding <=> ${embeddingVectorSql}`,
     };
     const orderByClause = orderByClauses[validatedSortBy];
 
@@ -200,13 +207,13 @@ async function postHandler(req: NextRequest) {
         a.favorite,
         a.created_at,
         a.updated_at,
-        1 - (ae.image_embedding <=> ${embeddingVectorLiteral}) as similarity,
+        1 - (ae.image_embedding <=> ${embeddingVectorSql}) as similarity,
         COUNT(*) OVER() as total_count
       FROM assets a
       INNER JOIN asset_embeddings ae ON a.id = ae.asset_id
       WHERE a.owner_user_id = ${userId}
         AND a.deleted_at IS NULL
-        AND 1 - (ae.image_embedding <=> ${embeddingVectorLiteral}) > ${threshold}
+        AND 1 - (ae.image_embedding <=> ${embeddingVectorSql}) > ${threshold}
         ${filters.favorites === true ? Prisma.sql`AND a.favorite = true` : Prisma.empty}
         ${validatedMimeTypes.length > 0 ? Prisma.sql`AND a.mime = ANY(${validatedMimeTypes})` : Prisma.empty}
         ${validatedDateFrom ? Prisma.sql`AND a.created_at >= ${validatedDateFrom}` : Prisma.empty}
