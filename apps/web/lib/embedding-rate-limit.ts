@@ -8,12 +8,32 @@ export const EMBEDDING_USER_CONCURRENCY_LIMIT = 1;
 export const EMBEDDING_GLOBAL_CONCURRENCY_LIMIT = 3;
 export const EMBEDDING_INFLIGHT_TTL_SECONDS = 180;
 
+// Daily ceiling on embedding *generation attempts*, independent of the
+// per-minute burst/concurrency limits above. Bounds worst-case daily
+// Replicate spend against a bulk-import or retry-loop spike, the same way
+// docs/adr/008-cap-image-optimization-cost.md caps CDN spend with a named,
+// testable constant instead of an unbounded surface. Replicate embedding
+// calls run well under $0.01 each; 2,000/day keeps worst-case daily spend
+// in the single digits regardless of upload volume.
+export const EMBEDDING_DAILY_BUDGET = 2000;
+export const EMBEDDING_DAILY_BUDGET_TTL_SECONDS = 26 * 60 * 60; // covers UTC-day rollover drift
+
 export type EmbeddingRateLimitReason =
   | 'user_rate'
   | 'global_rate'
   | 'user_concurrency'
   | 'global_concurrency'
   | 'kv_unavailable';
+
+export type EmbeddingDailyBudgetReason = 'daily_budget' | 'kv_unavailable';
+
+export interface EmbeddingDailyBudgetResult {
+  allowed: boolean;
+  reason?: EmbeddingDailyBudgetReason;
+  count: number;
+  limit: number;
+  retryAfterSec?: number;
+}
 
 export interface EmbeddingRateLimitLease {
   userId: string;
@@ -106,6 +126,14 @@ export async function acquireEmbeddingRateLimit(
         decrementSafe(inflightUserKey),
         decrementSafe(inflightGlobalKey),
       ]);
+      // Global (not per-user) pressure means the queue depth floor was
+      // crossed system-wide, not one user hitting their own throttle —
+      // that is worth an operator's attention.
+      logger.logError(
+        'embedding-rate-limit.global-concurrency-breach',
+        new Error('Embedding global concurrency limit exceeded'),
+        { globalInflight, limit: EMBEDDING_GLOBAL_CONCURRENCY_LIMIT }
+      );
       return {
         allowed: false,
         reason: 'global_concurrency',
@@ -147,6 +175,11 @@ export async function acquireEmbeddingRateLimit(
         decrementSafe(inflightUserKey),
         decrementSafe(inflightGlobalKey),
       ]);
+      logger.logError(
+        'embedding-rate-limit.global-rate-breach',
+        new Error('Embedding global rate limit exceeded'),
+        { globalWindow, limit: EMBEDDING_GLOBAL_WINDOW_LIMIT }
+      );
       return {
         allowed: false,
         reason: 'global_rate',
@@ -199,4 +232,60 @@ export async function releaseEmbeddingRateLimit(
     decrementSafe(lease.inflightUserKey),
     decrementSafe(lease.inflightGlobalKey),
   ]);
+}
+
+function getUtcDateKey(nowMs: number): string {
+  return new Date(nowMs).toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function secondsUntilNextUtcDay(nowMs: number): number {
+  const now = new Date(nowMs);
+  const nextDayMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  return Math.max(1, Math.round((nextDayMs - nowMs) / 1000));
+}
+
+/**
+ * Global daily ceiling on embedding generation attempts. Independent of
+ * (and checked in addition to) the per-minute rate/concurrency limits
+ * above — those bound bursts, this bounds total daily Replicate spend.
+ *
+ * Fails closed on KV outage, matching acquireEmbeddingRateLimit: an
+ * unreachable limiter must not become an unbounded spend surface.
+ */
+export async function acquireEmbeddingDailyBudget(
+  nowMs: number = Date.now()
+): Promise<EmbeddingDailyBudgetResult> {
+  const dateKey = getUtcDateKey(nowMs);
+  const dailyKey = `embedding:daily:${dateKey}`;
+
+  try {
+    const count = await incrementWithExpiry(dailyKey, EMBEDDING_DAILY_BUDGET_TTL_SECONDS);
+
+    if (count > EMBEDDING_DAILY_BUDGET) {
+      await decrementSafe(dailyKey);
+      logger.logError(
+        'embedding-rate-limit.daily-budget-breach',
+        new Error('Embedding daily budget exceeded'),
+        { dateKey, count: count - 1, limit: EMBEDDING_DAILY_BUDGET }
+      );
+      return {
+        allowed: false,
+        reason: 'daily_budget',
+        count: count - 1,
+        limit: EMBEDDING_DAILY_BUDGET,
+        retryAfterSec: secondsUntilNextUtcDay(nowMs),
+      };
+    }
+
+    return { allowed: true, count, limit: EMBEDDING_DAILY_BUDGET };
+  } catch (error) {
+    logger.logError('embedding-rate-limit.daily-budget-kv-unavailable', error, { dateKey });
+    return {
+      allowed: false,
+      reason: 'kv_unavailable',
+      count: 0,
+      limit: EMBEDDING_DAILY_BUDGET,
+      retryAfterSec: 30,
+    };
+  }
 }

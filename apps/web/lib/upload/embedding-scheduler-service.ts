@@ -2,6 +2,12 @@ import { after } from 'next/server';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { acquireEmbeddingProcessing, resolveEmbeddingGateState } from '@/lib/embedding-guard';
+import {
+  acquireEmbeddingDailyBudget,
+  acquireEmbeddingRateLimit,
+  releaseEmbeddingRateLimit,
+  type EmbeddingRateLimitLease,
+} from '@/lib/embedding-rate-limit';
 import { getRuntimeGate } from '@/lib/runtime-gates';
 import { logger } from '@/lib/logger';
 
@@ -32,6 +38,8 @@ export interface EmbeddingScheduleParams {
   blobUrl: string;
   checksum: string;
   mode: EmbeddingScheduleMode;
+  /** Asset owner, for the per-user embedding rate limit lease. */
+  ownerUserId: string;
 }
 
 /**
@@ -67,7 +75,7 @@ export class EmbeddingSchedulerService {
   async scheduleEmbedding(
     params: EmbeddingScheduleParams
   ): Promise<EmbeddingScheduleResult> {
-    const { assetId, blobUrl, checksum, mode } = params;
+    const { assetId, blobUrl, checksum, mode, ownerUserId } = params;
 
     logger.info('Scheduling embedding generation', {
       assetId,
@@ -87,7 +95,7 @@ export class EmbeddingSchedulerService {
     if (mode === 'sync') {
       // Synchronous mode: generate embedding immediately
       try {
-        await this.generateEmbedding(assetId, blobUrl, checksum);
+        await this.generateEmbedding(assetId, blobUrl, checksum, ownerUserId);
         logger.info('Embedding generated synchronously', { assetId });
         return { scheduled: true, mode: 'sync', assetId };
       } catch (error) {
@@ -110,7 +118,7 @@ export class EmbeddingSchedulerService {
       // Asynchronous mode: schedule with Next.js after()
       after(async () => {
         try {
-          await this.generateEmbedding(assetId, blobUrl, checksum);
+          await this.generateEmbedding(assetId, blobUrl, checksum, ownerUserId);
           logger.info('Embedding generated asynchronously', { assetId });
         } catch (error) {
           logger.error('Async embedding generation failed', {
@@ -135,7 +143,8 @@ export class EmbeddingSchedulerService {
   private async generateEmbedding(
     assetId: string,
     blobUrl: string,
-    checksum: string
+    checksum: string,
+    ownerUserId: string
   ): Promise<void> {
     logger.debug('Starting embedding generation', { assetId });
 
@@ -169,83 +178,116 @@ export class EmbeddingSchedulerService {
       }
     }
 
-    const lock = await acquireEmbeddingProcessing(assetId);
-    if (!lock.acquired) {
-      logger.info('Embedding lock not acquired, skipping generation', {
+    // Concurrency cap + backpressure on the Replicate embedding path: acquire
+    // a rate-limit lease (per-user + global concurrency/window) and a slot in
+    // the global daily budget before touching the DB processing lock or
+    // Replicate. Checked ahead of the lock so a throttled attempt leaves no
+    // "processing" row behind — the upload just falls back to the
+    // process-embeddings cron's retry sweep.
+    const rateLimit = await acquireEmbeddingRateLimit(ownerUserId);
+    if (!rateLimit.allowed) {
+      logger.info('Embedding scheduling throttled by rate limit', {
         assetId,
-        state: lock.state,
-        retryAfterMs: lock.retryAfterMs,
+        reason: rateLimit.reason,
+        retryAfterSec: rateLimit.retryAfterSec,
       });
       return;
     }
 
-    // Initialize embedding service
-    let embeddingService;
+    let rateLimitLease: EmbeddingRateLimitLease | null = rateLimit.lease ?? null;
+
     try {
-      embeddingService = createEmbeddingService();
-    } catch (error) {
-      logger.error('Failed to initialize embedding service', {
-        assetId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      // Mark as failed in database
-      await this.markEmbeddingFailed(
-        assetId,
-        'Failed to initialize embedding service'
-      );
-      throw new EmbeddingScheduleError(
-        'Failed to initialize embedding service',
-        false,
-        error instanceof Error ? error : undefined
-      );
-    }
-
-    // Generate image embedding
-    try {
-      logger.debug('Calling embedding service', { assetId });
-      const result = await embeddingService.embedImage(blobUrl, checksum);
-
-      // Store embedding in database
-      await upsertAssetEmbedding({
-        assetId,
-        modelName: result.model,
-        modelVersion: result.model,
-        dim: result.dimension,
-        embedding: result.embedding,
-      });
-
-      logger.info('Embedding stored successfully', {
-        assetId,
-        model: result.model,
-        dimension: result.dimension,
-      });
-    } catch (error) {
-      // Log error and update status
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-      if (error instanceof EmbeddingError) {
-        logger.error('Embedding generation failed', {
+      const dailyBudget = await acquireEmbeddingDailyBudget();
+      if (!dailyBudget.allowed) {
+        logger.info('Embedding scheduling blocked by daily budget', {
           assetId,
-          error: errorMessage,
-          retryable: error.retryable,
+          reason: dailyBudget.reason,
+          count: dailyBudget.count,
+          limit: dailyBudget.limit,
         });
-      } else {
-        logger.error('Unexpected error generating embedding', {
-          assetId,
-          error: errorMessage,
-        });
+        return;
       }
 
-      // Mark as failed in database
-      await this.markEmbeddingFailed(assetId, errorMessage);
+      const lock = await acquireEmbeddingProcessing(assetId);
+      if (!lock.acquired) {
+        logger.info('Embedding lock not acquired, skipping generation', {
+          assetId,
+          state: lock.state,
+          retryAfterMs: lock.retryAfterMs,
+        });
+        return;
+      }
 
-      // Re-throw for sync mode error handling
-      throw new EmbeddingScheduleError(
-        `Embedding generation failed: ${errorMessage}`,
-        error instanceof EmbeddingError ? error.retryable : false,
-        error instanceof Error ? error : undefined
-      );
+      // Initialize embedding service
+      let embeddingService;
+      try {
+        embeddingService = createEmbeddingService();
+      } catch (error) {
+        logger.error('Failed to initialize embedding service', {
+          assetId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        // Mark as failed in database
+        await this.markEmbeddingFailed(
+          assetId,
+          'Failed to initialize embedding service'
+        );
+        throw new EmbeddingScheduleError(
+          'Failed to initialize embedding service',
+          false,
+          error instanceof Error ? error : undefined
+        );
+      }
+
+      // Generate image embedding
+      try {
+        logger.debug('Calling embedding service', { assetId });
+        const result = await embeddingService.embedImage(blobUrl, checksum);
+
+        // Store embedding in database
+        await upsertAssetEmbedding({
+          assetId,
+          modelName: result.model,
+          modelVersion: result.model,
+          dim: result.dimension,
+          embedding: result.embedding,
+        });
+
+        logger.info('Embedding stored successfully', {
+          assetId,
+          model: result.model,
+          dimension: result.dimension,
+        });
+      } catch (error) {
+        // Log error and update status
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+        if (error instanceof EmbeddingError) {
+          logger.error('Embedding generation failed', {
+            assetId,
+            error: errorMessage,
+            retryable: error.retryable,
+          });
+        } else {
+          logger.error('Unexpected error generating embedding', {
+            assetId,
+            error: errorMessage,
+          });
+        }
+
+        // Mark as failed in database
+        await this.markEmbeddingFailed(assetId, errorMessage);
+
+        // Re-throw for sync mode error handling
+        throw new EmbeddingScheduleError(
+          `Embedding generation failed: ${errorMessage}`,
+          error instanceof EmbeddingError ? error.retryable : false,
+          error instanceof Error ? error : undefined
+        );
+      }
+    } finally {
+      await releaseEmbeddingRateLimit(rateLimitLease);
     }
   }
 
