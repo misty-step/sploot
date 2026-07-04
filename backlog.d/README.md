@@ -26,7 +26,6 @@ Status conventions:
 | [039](039-debounce-search-and-honest-zero-results.md) | Debounce Search And Make Zero-Results Honest | P2 | S |
 | [040](040-detect-near-duplicate-memes-perceptual-hash.md) | Detect Near-Duplicate Memes With A Perceptual Hash | P2 | M |
 | [041](041-make-sploot-agent-operable-verify-read-recover.md) | Make Sploot Agent-Operable: Verify, Read, Recover (epic) | P2 | M |
-| [042](042-delete-dead-realtime-and-orphan-upload-infra.md) | Delete Dead Realtime And Orphan-Upload Infrastructure | P2 | S |
 | [045](045-extension-ux-auth-screenshot-feedback.md) | Extension UX: Reachable Auth, Screenshot Capture, Unmissable Feedback (epic) | P2 | M |
 | [047](047-fix-vector-dimension-drift.md) | Fix Vector-Dimension Drift And Version The Embedding Migration | P2 | S |
 | [048](048-serve-grid-thumbnails-not-full-originals.md) | Serve The Grid 256px Thumbnails, Not Full Originals | P2 | S |
@@ -37,6 +36,7 @@ Status conventions:
 See `_done/` for completed tickets with their `## What Was Built` notes.
 
 Recently completed:
+- [042](_done/042-delete-dead-realtime-and-orphan-upload-infra.md) Delete Dead Realtime And Orphan-Upload Infrastructure
 - [043](_done/043-fix-standing-red-lint-design-gate.md) Fix The Standing-Red lint:design Gate
 - [025](_done/025-build-automatic-semantic-piles.md) Build Automatic Semantic Piles
 - [028](_done/028-make-animated-memes-first-class.md) Make Animated Memes First-Class
