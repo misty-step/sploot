@@ -14,6 +14,7 @@
 
 import { Client } from 'pg';
 import { PrismaClient } from '@prisma/client';
+import { EMBEDDING_DIMENSION } from '@sploot/common';
 // Load environment variables
 // Note: dotenv is not installed in production, using process.env directly
 
@@ -90,7 +91,7 @@ async function testPgNotify() {
         assetId: testAsset.id,
         modelName: 'test-model',
         modelVersion: '1.0',
-        dim: 512,
+        dim: EMBEDDING_DIMENSION,
         status: 'pending'
       }
     });
@@ -144,7 +145,7 @@ async function testPgNotify() {
         assetId: failAsset.id,
         modelName: 'test-model',
         modelVersion: '1.0',
-        dim: 512,
+        dim: EMBEDDING_DIMENSION,
         status: 'processing'
       }
     });

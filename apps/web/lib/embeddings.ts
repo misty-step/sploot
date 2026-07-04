@@ -4,7 +4,6 @@ import { getRuntimeGate } from './runtime-gates';
 
 // Updated to working CLIP model (SigLIP model was deprecated)
 export const CLIP_MODEL = 'krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4';
-export const EMBEDDING_DIMENSION = 768; // CLIP embedding dimension
 export const MAX_RETRY_ATTEMPTS = 3;
 export const DEFAULT_TIMEOUT = 20000;
 

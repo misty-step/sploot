@@ -23,6 +23,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import ffmpeg from '@ffmpeg-installer/ffmpeg';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { EMBEDDING_DIMENSION } from '@sploot/common';
 import sharp from 'sharp';
 import { QA_SEED_BLOB_HOST } from '../lib/qa/qa-image-loader';
 import { generateImagePoster } from '../lib/image-processing';
@@ -30,11 +31,12 @@ import { extractVideoPoster } from '../lib/video-processing';
 import { CLIP_MODEL } from '../lib/embeddings';
 import { getCacheService } from '../lib/cache';
 import { PILE_ANCHORS } from '../lib/piles/semantic-piles';
+import { embeddingVectorSql } from '../lib/embedding-vector-sql';
 
 const SEED_DIR = join(process.cwd(), 'public', 'qa-blob-seed');
 const DEFAULT_USER_ID = 'qa-design-user';
 const DEFAULT_COUNT = 24;
-const QA_EMBEDDING_DIM = 512;
+const QA_EMBEDDING_DIM = EMBEDDING_DIMENSION;
 const execFileAsync = promisify(execFile);
 
 const PALETTE = [
@@ -242,7 +244,7 @@ async function seed(prisma: PrismaClient, userId: string, count: number) {
 
 async function seedAssetEmbedding(prisma: PrismaClient, assetId: string, index: number) {
   const embedding = qaEmbeddingForIndex(index);
-  const vectorSql = Prisma.sql`ARRAY[${Prisma.join(embedding)}]::double precision[]`;
+  const vectorSql = embeddingVectorSql(embedding, 'qa seed asset embedding');
 
   await prisma.$queryRaw(Prisma.sql`
     INSERT INTO "asset_embeddings" (
@@ -261,7 +263,7 @@ async function seedAssetEmbedding(prisma: PrismaClient, assetId: string, index: 
       ${CLIP_MODEL},
       ${CLIP_MODEL},
       ${QA_EMBEDDING_DIM},
-      ${vectorSql}::vector,
+      ${vectorSql},
       'ready',
       NULL,
       NOW(),

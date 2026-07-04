@@ -24,6 +24,10 @@ export {
 } from './constants';
 
 export {
+  EMBEDDING_DIMENSION,
+} from './embeddings';
+
+export {
   prepareImageForUpload,
   isCompressibleImageType,
   shouldPrepareImage,

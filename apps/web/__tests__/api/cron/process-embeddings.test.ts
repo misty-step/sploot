@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GET } from '@/app/api/cron/process-embeddings/route';
 import { NextRequest } from 'next/server';
+import { EMBEDDING_DIMENSION } from '@sploot/common';
 
 // Mock next/headers
 const mockHeaders = vi.fn();
@@ -71,9 +72,9 @@ describe('/api/cron/process-embeddings', () => {
     });
 
     mockEmbedImage.mockResolvedValue({
-      embedding: Array(1152).fill(0.1),
+      embedding: Array(EMBEDDING_DIMENSION).fill(0.1),
       model: 'siglip-large',
-      dimension: 1152,
+      dimension: EMBEDDING_DIMENSION,
       processingTime: 100,
     });
 
@@ -81,7 +82,7 @@ describe('/api/cron/process-embeddings', () => {
     mockUpsertAssetEmbedding.mockResolvedValue({
       id: 'embedding-123',
       assetId: 'asset-123',
-      imageEmbedding: Array(1152).fill(0.1),
+      imageEmbedding: Array(EMBEDDING_DIMENSION).fill(0.1),
       createdAt: new Date(),
     });
   });
@@ -310,9 +311,9 @@ describe('/api/cron/process-embeddings', () => {
       mockEmbedImage
         .mockRejectedValueOnce(new Error('Generation failed'))
         .mockResolvedValueOnce({
-          embedding: Array(1152).fill(0.2),
+          embedding: Array(EMBEDDING_DIMENSION).fill(0.2),
           model: 'siglip-large',
-          dimension: 1152,
+          dimension: EMBEDDING_DIMENSION,
           processingTime: 100,
         });
 
@@ -444,16 +445,16 @@ describe('/api/cron/process-embeddings', () => {
 
       // Make 3 fail
       mockEmbedImage
-        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: 1152, processingTime: 100 })
-        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: 1152, processingTime: 100 })
+        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: EMBEDDING_DIMENSION, processingTime: 100 })
+        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: EMBEDDING_DIMENSION, processingTime: 100 })
         .mockRejectedValueOnce(new Error('Fail'))
-        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: 1152, processingTime: 100 })
+        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: EMBEDDING_DIMENSION, processingTime: 100 })
         .mockRejectedValueOnce(new Error('Fail'))
-        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: 1152, processingTime: 100 })
-        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: 1152, processingTime: 100 })
-        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: 1152, processingTime: 100 })
+        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: EMBEDDING_DIMENSION, processingTime: 100 })
+        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: EMBEDDING_DIMENSION, processingTime: 100 })
+        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: EMBEDDING_DIMENSION, processingTime: 100 })
         .mockRejectedValueOnce(new Error('Fail'))
-        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: 1152, processingTime: 100 });
+        .mockResolvedValueOnce({ embedding: [], model: 'test', dimension: EMBEDDING_DIMENSION, processingTime: 100 });
 
       // Suppress console.error
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

@@ -6,6 +6,7 @@ import {
 } from '@/lib/upload/embedding-scheduler-service';
 import * as db from '@/lib/db';
 import * as embeddings from '@/lib/embeddings';
+import { EMBEDDING_DIMENSION } from '@sploot/common';
 import { EmbeddingError } from '@/lib/embeddings';
 import * as nextServer from 'next/server';
 import { acquireEmbeddingProcessing } from '@/lib/embedding-guard';
@@ -88,9 +89,9 @@ describe('EmbeddingSchedulerService', () => {
         // Setup: mock embedding service
         const mockEmbeddingService = {
           embedImage: vi.fn().mockResolvedValue({
-            embedding: new Array(512).fill(0.1),
+            embedding: new Array(EMBEDDING_DIMENSION).fill(0.1),
             model: 'test-model',
-            dimension: 512,
+            dimension: EMBEDDING_DIMENSION,
           }),
         };
         mockCreateEmbeddingService.mockReturnValue(mockEmbeddingService);
@@ -113,7 +114,7 @@ describe('EmbeddingSchedulerService', () => {
           assetId: 'asset-123',
           modelName: 'test-model',
           modelVersion: 'test-model',
-          dim: 512,
+          dim: EMBEDDING_DIMENSION,
           embedding: expect.any(Array),
         });
         expect(mockAfter).not.toHaveBeenCalled();
@@ -127,7 +128,7 @@ describe('EmbeddingSchedulerService', () => {
           status: 'ready',
           completedAt: new Date(),
           updatedAt: new Date(),
-          dim: 768,
+          dim: EMBEDDING_DIMENSION,
         });
 
         // Execute
@@ -264,9 +265,9 @@ describe('EmbeddingSchedulerService', () => {
 
         const mockEmbeddingService = {
           embedImage: vi.fn().mockResolvedValue({
-            embedding: new Array(512).fill(0.1),
+            embedding: new Array(EMBEDDING_DIMENSION).fill(0.1),
             model: 'test-model',
-            dimension: 512,
+            dimension: EMBEDDING_DIMENSION,
           }),
         };
         mockCreateEmbeddingService.mockReturnValue(mockEmbeddingService);
@@ -322,7 +323,7 @@ describe('EmbeddingSchedulerService', () => {
           status: 'ready',
           completedAt: new Date(),
           updatedAt: new Date(),
-          dim: 768,
+          dim: EMBEDDING_DIMENSION,
         });
 
         // Execute
@@ -421,12 +422,12 @@ describe('EmbeddingSchedulerService', () => {
       it('should handle full successful flow with model metadata', async () => {
         // Setup
         mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
-        const mockEmbedding = new Array(768).fill(0.5);
+        const mockEmbedding = new Array(EMBEDDING_DIMENSION).fill(0.5);
         const mockEmbeddingService = {
           embedImage: vi.fn().mockResolvedValue({
             embedding: mockEmbedding,
             model: 'siglip-base-patch16-384',
-            dimension: 768,
+            dimension: EMBEDDING_DIMENSION,
           }),
         };
         mockCreateEmbeddingService.mockReturnValue(mockEmbeddingService);
@@ -448,7 +449,7 @@ describe('EmbeddingSchedulerService', () => {
           assetId: 'asset-123',
           modelName: 'siglip-base-patch16-384',
           modelVersion: 'siglip-base-patch16-384',
-          dim: 768,
+          dim: EMBEDDING_DIMENSION,
           embedding: mockEmbedding,
         });
       });
