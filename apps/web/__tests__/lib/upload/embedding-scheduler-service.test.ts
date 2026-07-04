@@ -10,6 +10,11 @@ import { EMBEDDING_DIMENSION } from '@sploot/common';
 import { EmbeddingError } from '@/lib/embeddings';
 import * as nextServer from 'next/server';
 import { acquireEmbeddingProcessing } from '@/lib/embedding-guard';
+import {
+  acquireEmbeddingDailyBudget,
+  acquireEmbeddingRateLimit,
+  releaseEmbeddingRateLimit,
+} from '@/lib/embedding-rate-limit';
 
 // Mock dependencies
 vi.mock('next/server');
@@ -22,6 +27,22 @@ vi.mock('@/lib/embedding-guard', async () => {
     acquireEmbeddingProcessing: vi.fn().mockResolvedValue({
       acquired: true,
       state: 'processing',
+    }),
+  };
+});
+vi.mock('@/lib/embedding-rate-limit', async () => {
+  const actual = await vi.importActual<any>('@/lib/embedding-rate-limit');
+  return {
+    ...actual,
+    acquireEmbeddingRateLimit: vi.fn().mockResolvedValue({
+      allowed: true,
+      lease: { userId: 'user-123', inflightUserKey: 'k1', inflightGlobalKey: 'k2' },
+    }),
+    releaseEmbeddingRateLimit: vi.fn().mockResolvedValue(undefined),
+    acquireEmbeddingDailyBudget: vi.fn().mockResolvedValue({
+      allowed: true,
+      count: 1,
+      limit: 2000,
     }),
   };
 });
@@ -67,6 +88,16 @@ describe('EmbeddingSchedulerService', () => {
       acquired: true,
       state: 'processing',
     });
+    vi.mocked(acquireEmbeddingRateLimit).mockResolvedValue({
+      allowed: true,
+      lease: { userId: 'user-123', inflightUserKey: 'k1', inflightGlobalKey: 'k2' },
+    });
+    vi.mocked(releaseEmbeddingRateLimit).mockResolvedValue(undefined);
+    vi.mocked(acquireEmbeddingDailyBudget).mockResolvedValue({
+      allowed: true,
+      count: 1,
+      limit: 2000,
+    });
   });
 
   afterEach(() => {
@@ -79,6 +110,7 @@ describe('EmbeddingSchedulerService', () => {
       blobUrl: 'https://example.com/image.jpg',
       checksum: 'abc123',
       mode: 'sync',
+      ownerUserId: 'user-123',
     };
 
     describe('sync mode', () => {
@@ -159,6 +191,72 @@ describe('EmbeddingSchedulerService', () => {
         });
         expect(mockCreateEmbeddingService).not.toHaveBeenCalled();
         expect(mockUpsertAssetEmbedding).not.toHaveBeenCalled();
+        // Lease acquired before the lock check must still be released.
+        expect(releaseEmbeddingRateLimit).toHaveBeenCalledTimes(1);
+      });
+
+      it('should skip generation when the rate limiter throttles the request', async () => {
+        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
+        vi.mocked(acquireEmbeddingRateLimit).mockResolvedValue({
+          allowed: false,
+          reason: 'global_concurrency',
+          retryAfterSec: 180,
+        });
+
+        const result = await service.scheduleEmbedding(baseParams);
+
+        expect(result).toEqual({
+          scheduled: true,
+          mode: 'sync',
+          assetId: 'asset-123',
+        });
+        expect(acquireEmbeddingDailyBudget).not.toHaveBeenCalled();
+        expect(acquireEmbeddingProcessing).not.toHaveBeenCalled();
+        expect(mockCreateEmbeddingService).not.toHaveBeenCalled();
+        // No lease was granted, so there is nothing to release.
+        expect(releaseEmbeddingRateLimit).not.toHaveBeenCalled();
+      });
+
+      it('should skip generation when the daily embedding budget is exhausted', async () => {
+        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
+        vi.mocked(acquireEmbeddingDailyBudget).mockResolvedValue({
+          allowed: false,
+          reason: 'daily_budget',
+          count: 2000,
+          limit: 2000,
+          retryAfterSec: 3600,
+        });
+
+        const result = await service.scheduleEmbedding(baseParams);
+
+        expect(result).toEqual({
+          scheduled: true,
+          mode: 'sync',
+          assetId: 'asset-123',
+        });
+        expect(acquireEmbeddingProcessing).not.toHaveBeenCalled();
+        expect(mockCreateEmbeddingService).not.toHaveBeenCalled();
+        // The granted rate-limit lease must still be released even though
+        // generation never reached the processing lock.
+        expect(releaseEmbeddingRateLimit).toHaveBeenCalledTimes(1);
+      });
+
+      it('should release the rate-limit lease after a successful generation', async () => {
+        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
+        const mockEmbeddingService = {
+          embedImage: vi.fn().mockResolvedValue({
+            embedding: new Array(EMBEDDING_DIMENSION).fill(0.1),
+            model: 'test-model',
+            dimension: EMBEDDING_DIMENSION,
+          }),
+        };
+        mockCreateEmbeddingService.mockReturnValue(mockEmbeddingService);
+        mockUpsertAssetEmbedding.mockResolvedValue(undefined);
+
+        await service.scheduleEmbedding(baseParams);
+
+        expect(acquireEmbeddingRateLimit).toHaveBeenCalledWith('user-123');
+        expect(releaseEmbeddingRateLimit).toHaveBeenCalledTimes(1);
       });
 
       it('should throw EmbeddingScheduleError on embedding service init failure', async () => {
@@ -190,6 +288,10 @@ describe('EmbeddingSchedulerService', () => {
             error: 'Failed to initialize embedding service',
           }),
         });
+
+        // The lease must be released on the thrown-error path too (one
+        // release per scheduleEmbedding call above).
+        expect(releaseEmbeddingRateLimit).toHaveBeenCalledTimes(2);
       });
 
       it('should throw EmbeddingScheduleError on embedding generation failure', async () => {

@@ -110,6 +110,7 @@ export async function ingestImage({
         blobUrl: deduplicationResult.existingAsset.blobUrl,
         checksum: deduplicationResult.checksum,
         mode: syncEmbeddings ? 'sync' : 'async',
+        ownerUserId: userId,
       });
     }
 
@@ -196,6 +197,7 @@ export async function ingestImage({
         blobUrl: uploadResult.thumbnailUrl ?? uploadResult.mainUrl,
         checksum: deduplicationResult.checksum,
         mode: syncEmbeddings ? 'sync' : 'async',
+        ownerUserId: userId,
       });
 
       return {

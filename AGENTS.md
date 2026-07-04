@@ -183,7 +183,7 @@ Lefthook runs gitleaks, web lint, extension lint, and turbo type-check before lo
 |---|---|---|
 | `backlog.d/_done/007-publish-extension-web-store-release.md` | `apps/extension`, Chrome Web Store | Current unpacked build is loaded, but authenticated right-click upload/duplicate proof and Web Store dashboard receipt remain. |
 | PR #151 | `apps/web/app/api/health/route.ts` | Stale Prisma serverless connections need runtime health evidence on future DB health changes. |
-| PR #142 | embedding scheduler/rate-limit modules | Embedding spikes and duplicate job pressure are production risks; test scheduling and cost controls directly. |
+| PR #142 (bounded further, sploot-050) | `apps/web/lib/upload/embedding-scheduler-service.ts`, `apps/web/lib/embedding-rate-limit.ts` | Duplicate/concurrent job pressure was bounded by #142's DB lock + KV rate limiter, but the upload-path scheduler never consulted the limiter — only the manual regenerate-embedding route did. sploot-050 wires `acquireEmbeddingRateLimit`/`acquireEmbeddingDailyBudget` into `EmbeddingSchedulerService`, adds an `EMBEDDING_DAILY_BUDGET` ceiling, and reports global-scope breaches (not routine per-user throttling) to Canary via `logger.logError`. Residual: the cron (`process-embeddings`) and manual regenerate route are unaffected — cron was already bounded per ADR-008; the manual route already had its own rate-limit call. |
 | PR #153 | `.github/workflows/release.yml` | Semantic-release depends on `GH_RELEASE_TOKEN`; release fixes must prove token path without weakening permissions. |
 | Backlog refs required | `apps/web/docs/API.md` | API docs are hand maintained and can drift from route behavior. |
 
