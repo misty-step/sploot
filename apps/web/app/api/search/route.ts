@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { prisma, vectorSearch, logSearch, type VectorSearchRow } from '@/lib/db';
-import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
+import { CLIP_MODEL, createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
 import { getAuthWithUser } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
@@ -75,37 +75,47 @@ async function postHandler(req: NextRequest) {
       });
     }
 
-    const embeddingGate = getRuntimeGate('embeddings');
-    if (!embeddingGate.enabled) {
-      return runtimeGateResponse(embeddingGate);
-    }
+    // Cache-first query embedding: the Postgres text-embedding store outlives
+    // processes (qa:seed and prior searches populate it), so a hit needs no
+    // Replicate service and no generation gate — nothing is being generated.
+    let queryEmbedding = await cache.getTextEmbedding(query, CLIP_MODEL);
+    let embeddingModel = CLIP_MODEL;
 
-    // Initialize embedding service
-    let embeddingService;
-    try {
-      embeddingService = createEmbeddingService();
-    } catch (error) {
-      // Failed to initialize embedding service. A degraded backend must not
-      // masquerade as an honest empty result set (HTTP 200 + results: []
-      // renders as "no matches" in the client).
-      return NextResponse.json(
-        {
-          error: 'Search is temporarily unavailable: embedding service is not configured.',
-          query,
-          processingTime: Date.now() - startTime,
-        },
-        { status: 503 }
-      );
-    }
+    if (!queryEmbedding) {
+      const embeddingGate = getRuntimeGate('embeddings');
+      if (!embeddingGate.enabled) {
+        return runtimeGateResponse(embeddingGate);
+      }
 
-    // Generate text embedding for the query
-    const embeddingResult = await embeddingService.embedText(query);
+      // Initialize embedding service
+      let embeddingService;
+      try {
+        embeddingService = createEmbeddingService();
+      } catch (error) {
+        // Failed to initialize embedding service. A degraded backend must not
+        // masquerade as an honest empty result set (HTTP 200 + results: []
+        // renders as "no matches" in the client).
+        return NextResponse.json(
+          {
+            error: 'Search is temporarily unavailable: embedding service is not configured.',
+            query,
+            processingTime: Date.now() - startTime,
+          },
+          { status: 503 }
+        );
+      }
+
+      // Generate text embedding for the query
+      const embeddingResult = await embeddingService.embedText(query);
+      queryEmbedding = embeddingResult.embedding;
+      embeddingModel = embeddingResult.model;
+    }
 
     // Perform vector similarity search. Keep zero-results honest: callers asked
     // for a similarity floor, so do not pad misses with threshold-0 results.
     let searchResults = await vectorSearch(
       userId,
-      embeddingResult.embedding,
+      queryEmbedding,
       { limit: effectiveLimit, threshold, shuffleSeed }
     );
 
@@ -173,7 +183,7 @@ async function postHandler(req: NextRequest) {
       threshold,
       requestedThreshold: threshold,
       processingTime: queryTime,
-      embeddingModel: embeddingResult.model,
+      embeddingModel,
       cached: false,
       thresholdFallback: false,
     });

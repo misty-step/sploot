@@ -95,7 +95,6 @@ UPSTASH_REDIS_REST_TOKEN=...
 
 # Feature Flags
 NEXT_PUBLIC_ENABLE_PWA=true
-MOCK_MODE=false
 ```
 
 ## Vercel Deployment

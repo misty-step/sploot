@@ -1,0 +1,379 @@
+/**
+ * Push-button local boot: one command from clone to a browsable, searchable,
+ * seeded pile — no Clerk/Neon/Blob/Replicate credentials required.
+ *
+ * Composes the existing harness pieces (docker pgvector Postgres, prisma
+ * migrations, qa:seed fixtures, qa-local auth from docs/AUTH.md) and ends
+ * with a doctor pass that emits evidence, not just a green exit code.
+ *
+ * Usage (repo root):
+ *   pnpm dev:local              # provision + migrate + seed + serve + doctor
+ *   pnpm dev:local:down         # remove the local database + generated files
+ *
+ * Flags / env:
+ *   --down                      teardown (same as dev:local:down)
+ *   --port <n>                  dev server port        (default 3001, or PORT)
+ *   --db-port <n>               host Postgres port     (default 5432, or SPLOOT_LOCAL_PG_PORT)
+ *   --no-doctor                 skip the verify pass
+ *
+ * The doctor writes an evidence packet to .sploot-local/doctor/<timestamp>/
+ * (gitignored): health probe, signed-in /app fetch, seeded-assets readback,
+ * cached-query search response, and — when the agent-browser CLI is on PATH —
+ * a rendered-grid screenshot.
+ *
+ * Requires: docker (for the pgvector Postgres). Everything else is pnpm.
+ */
+
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import { promisify } from 'node:util';
+import { createQaLocalAuthToken } from '../lib/auth/qa-local';
+
+const execFileAsync = promisify(execFile);
+
+const CONTAINER = 'sploot-local-pg';
+const IMAGE = 'pgvector/pgvector:pg16';
+const QA_USER_ID = 'qa-design-user';
+const SEARCH_PROBE_QUERY = 'reaction face meme'; // a PILE_ANCHORS query: qa:seed caches its embedding
+const MIN_SEEDED_ASSETS = 20;
+const APP_ROOT = process.cwd();
+const LOCAL_STATE_DIR = join(APP_ROOT, '..', '..', '.sploot-local');
+
+interface Args {
+  down: boolean;
+  port: number;
+  dbPort: number;
+  doctor: boolean;
+}
+
+function parseArgs(argv: string[]): Args {
+  const args: Args = {
+    down: false,
+    port: Number(process.env.PORT ?? 3001),
+    dbPort: Number(process.env.SPLOOT_LOCAL_PG_PORT ?? 5432),
+    doctor: true,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
+      case '--down': args.down = true; break;
+      case '--port': args.port = Number(argv[++i]); break;
+      case '--db-port': args.dbPort = Number(argv[++i]); break;
+      case '--no-doctor': args.doctor = false; break;
+    }
+  }
+  if (!Number.isInteger(args.port) || !Number.isInteger(args.dbPort)) {
+    throw new Error('--port and --db-port must be integers');
+  }
+  return args;
+}
+
+function log(message: string) {
+  console.log(`[dev-local] ${message}`);
+}
+
+function fail(message: string): never {
+  console.error(`[dev-local] FAIL ${message}`);
+  process.exit(1);
+}
+
+async function docker(...dockerArgs: string[]): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync('docker', dockerArgs);
+}
+
+async function ensureDockerUp() {
+  try {
+    await docker('info');
+  } catch {
+    fail('docker is not available. Install/start Docker Desktop (or colima), then re-run `pnpm dev:local`.');
+  }
+}
+
+async function containerState(): Promise<'running' | 'stopped' | 'absent'> {
+  try {
+    const { stdout } = await docker('inspect', '--format', '{{.State.Running}}', CONTAINER);
+    return stdout.trim() === 'true' ? 'running' : 'stopped';
+  } catch {
+    return 'absent';
+  }
+}
+
+async function ensurePostgres(dbPort: number) {
+  const state = await containerState();
+  if (state === 'absent') {
+    log(`provisioning pgvector Postgres (${IMAGE}) as ${CONTAINER} on port ${dbPort}...`);
+    try {
+      await docker(
+        'run', '-d', '--name', CONTAINER,
+        '-e', 'POSTGRES_USER=test',
+        '-e', 'POSTGRES_PASSWORD=test',
+        '-e', 'POSTGRES_DB=sploot_test',
+        '-p', `${dbPort}:5432`,
+        IMAGE
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('port is already allocated') || message.includes('address already in use')) {
+        fail(`port ${dbPort} is taken by another service. Re-run with --db-port <free-port> (DATABASE_URL follows it automatically).`);
+      }
+      fail(`could not start Postgres container: ${message}`);
+    }
+  } else if (state === 'stopped') {
+    log(`starting existing ${CONTAINER} container...`);
+    await docker('start', CONTAINER);
+  } else {
+    log(`reusing running ${CONTAINER} container.`);
+  }
+
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    try {
+      await docker('exec', CONTAINER, 'pg_isready', '-U', 'test', '-d', 'sploot_test');
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+  fail(`Postgres in ${CONTAINER} did not become ready within 60s (docker logs ${CONTAINER}).`);
+}
+
+function runStep(name: string, command: string, commandArgs: string[], env: NodeJS.ProcessEnv): Promise<void> {
+  log(`${name}: ${command} ${commandArgs.join(' ')}`);
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(command, commandArgs, { env, cwd: APP_ROOT, stdio: 'inherit' });
+    child.on('close', (code) => {
+      if (code === 0) resolvePromise();
+      else reject(new Error(`${name} exited with code ${code}`));
+    });
+    child.on('error', reject);
+  });
+}
+
+async function waitForServer(baseUrl: string, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(baseUrl, { redirect: 'manual' });
+      if (response.status < 500) return;
+    } catch {
+      // not up yet
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(`dev server at ${baseUrl} not ready within ${timeoutMs / 1000}s`);
+}
+
+async function hasAgentBrowser(): Promise<boolean> {
+  try {
+    await execFileAsync('agent-browser', ['--version'], { timeout: 10_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+interface DoctorCheck {
+  name: string;
+  status: 'pass' | 'fail';
+  detail: string;
+  evidence?: string;
+}
+
+async function runDoctor(baseUrl: string, secret: string): Promise<boolean> {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const evidenceDir = join(LOCAL_STATE_DIR, 'doctor', stamp);
+  await mkdir(evidenceDir, { recursive: true });
+  const checks: DoctorCheck[] = [];
+
+  const token = await createQaLocalAuthToken({
+    userId: QA_USER_ID,
+    email: `${QA_USER_ID}@sploot.test`,
+    secret,
+    expiresInSeconds: 30 * 60,
+  });
+  const authHeaders = { cookie: `sploot_qa_auth=${token}` };
+
+  async function record(name: string, evidenceFile: string | undefined, run: () => Promise<{ pass: boolean; detail: string; body?: string }>) {
+    try {
+      const result = await run();
+      if (evidenceFile && result.body !== undefined) {
+        await writeFile(join(evidenceDir, evidenceFile), result.body);
+      }
+      checks.push({ name, status: result.pass ? 'pass' : 'fail', detail: result.detail, evidence: evidenceFile });
+      log(`doctor ${result.pass ? 'PASS' : 'FAIL'} ${name} — ${result.detail}`);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      checks.push({ name, status: 'fail', detail, evidence: evidenceFile });
+      log(`doctor FAIL ${name} — ${detail}`);
+    }
+  }
+
+  await record('health green', 'health.json', async () => {
+    const response = await fetch(`${baseUrl}/api/health`);
+    const body = await response.json();
+    return {
+      pass: response.status === 200 && body.dependencies?.database === 'up',
+      detail: `GET /api/health → ${response.status}, database=${body.dependencies?.database}`,
+      body: JSON.stringify(body, null, 2),
+    };
+  });
+
+  await record('browser sign-in path', 'qa-auth-login.txt', async () => {
+    const response = await fetch(`${baseUrl}/api/qa-auth/login`, { redirect: 'manual' });
+    const setCookie = response.headers.get('set-cookie') ?? '';
+    const pass = response.status === 307 && setCookie.includes('sploot_qa_auth=');
+    return {
+      pass,
+      detail: `GET /api/qa-auth/login → ${response.status}, cookie ${setCookie ? 'set' : 'missing'}, location=${response.headers.get('location')}`,
+      body: `status: ${response.status}\nlocation: ${response.headers.get('location')}\nset-cookie: ${setCookie ? 'sploot_qa_auth=<redacted>' : '(none)'}\n`,
+    };
+  });
+
+  await record('signed-in /app', 'app.txt', async () => {
+    const response = await fetch(`${baseUrl}/app`, { headers: authHeaders, redirect: 'manual' });
+    const html = await response.text();
+    const signedIn = response.status === 200 && !html.includes('/sign-in');
+    return {
+      pass: signedIn,
+      detail: `GET /app with qa cookie → ${response.status} (${signedIn ? 'app shell' : 'sign-in wall'})`,
+      body: `status: ${response.status}\nbytes: ${html.length}\nfirst 500 chars:\n${html.slice(0, 500)}\n`,
+    };
+  });
+
+  await record(`seeded pile ≥ ${MIN_SEEDED_ASSETS} assets`, 'assets.json', async () => {
+    const response = await fetch(`${baseUrl}/api/assets?limit=100`, { headers: authHeaders });
+    const body = await response.json();
+    const count = Array.isArray(body.assets) ? body.assets.length : 0;
+    return {
+      pass: response.status === 200 && count >= MIN_SEEDED_ASSETS,
+      detail: `GET /api/assets → ${response.status}, ${count} assets`,
+      body: JSON.stringify({ statusCode: response.status, count, ids: body.assets?.map((a: { id: string }) => a.id) }, null, 2),
+    };
+  });
+
+  await record('search returns results', 'search.json', async () => {
+    const response = await fetch(`${baseUrl}/api/search`, {
+      method: 'POST',
+      headers: { ...authHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ query: SEARCH_PROBE_QUERY, limit: 10 }),
+    });
+    const body = await response.json();
+    const count = Array.isArray(body.results) ? body.results.length : 0;
+    return {
+      pass: response.status === 200 && count >= 1,
+      detail: `POST /api/search "${SEARCH_PROBE_QUERY}" → ${response.status}, ${count} results`,
+      body: JSON.stringify(body, null, 2),
+    };
+  });
+
+  if (await hasAgentBrowser()) {
+    await record('rendered grid screenshot', 'app-grid.png', async () => {
+      const browser = (...browserArgs: string[]) =>
+        execFileAsync('agent-browser', browserArgs, { timeout: 60_000 });
+      await browser('cookies', 'set', 'sploot_qa_auth', token, '--url', baseUrl);
+      await browser('open', `${baseUrl}/app`);
+      await new Promise((r) => setTimeout(r, 6000));
+      await browser('screenshot', join(evidenceDir, 'app-grid.png'));
+      return { pass: true, detail: `screenshot of signed-in /app grid` };
+    });
+  } else {
+    log('doctor SKIP rendered-grid screenshot (agent-browser CLI not on PATH; HTTP evidence above still proves the loop)');
+  }
+
+  const failed = checks.filter((check) => check.status === 'fail');
+  const summary = [
+    `# dev:local doctor — ${new Date().toISOString()}`,
+    '',
+    `Base URL: ${baseUrl}`,
+    `Verdict: ${failed.length === 0 ? 'PASS' : `FAIL (${failed.length} of ${checks.length} checks)`}`,
+    '',
+    '| Check | Status | Detail | Evidence |',
+    '|---|---|---|---|',
+    ...checks.map((check) => `| ${check.name} | ${check.status.toUpperCase()} | ${check.detail.replace(/\|/g, '\\|')} | ${check.evidence ?? '—'} |`),
+    '',
+  ].join('\n');
+  await writeFile(join(evidenceDir, 'doctor.md'), summary);
+  log(`doctor evidence: ${evidenceDir}`);
+
+  return failed.length === 0;
+}
+
+async function teardown() {
+  const state = await containerState();
+  if (state === 'absent') {
+    log(`no ${CONTAINER} container to remove.`);
+  } else {
+    log(`removing ${CONTAINER} container and its database volume...`);
+    await docker('rm', '--force', '--volumes', CONTAINER);
+  }
+  log('removing generated local files (.sploot-local/, public/qa-blob-seed/)...');
+  await rm(LOCAL_STATE_DIR, { recursive: true, force: true });
+  await rm(join(APP_ROOT, 'public', 'qa-blob-seed'), { recursive: true, force: true });
+  log('teardown complete. `git status` should show no dev:local artifacts.');
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+
+  if (args.down) {
+    await teardown();
+    return;
+  }
+
+  await ensureDockerUp();
+  await ensurePostgres(args.dbPort);
+
+  const secret = process.env.SPLOOT_QA_AUTH_SECRET ?? randomBytes(24).toString('hex');
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    DATABASE_URL: `postgresql://test:test@localhost:${args.dbPort}/sploot_test?sslmode=disable`,
+    SPLOOT_QA_AUTH_MODE: 'enabled',
+    SPLOOT_QA_AUTH_SECRET: secret,
+    PORT: String(args.port),
+  };
+
+  await runStep('migrate', 'pnpm', ['db:migrate'], env);
+  await runStep('seed', 'pnpm', ['qa:seed'], env);
+
+  const baseUrl = `http://localhost:${args.port}`;
+  log(`starting dev server on ${baseUrl}...`);
+  const server: ChildProcess = spawn('pnpm', ['dev'], { env, cwd: APP_ROOT, stdio: 'inherit' });
+  const serverExit = new Promise<number | null>((resolvePromise) => {
+    server.on('close', (code) => resolvePromise(code));
+  });
+
+  const stop = () => {
+    if (!server.killed) server.kill('SIGINT');
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+
+  try {
+    await waitForServer(baseUrl);
+  } catch (error) {
+    stop();
+    fail(error instanceof Error ? error.message : String(error));
+  }
+
+  let healthy = true;
+  if (args.doctor) {
+    healthy = await runDoctor(baseUrl, secret);
+    if (!healthy) {
+      stop();
+      await serverExit;
+      fail('doctor found failing checks — see the evidence packet above.');
+    }
+  }
+
+  log('');
+  log(`ready. open ${baseUrl}/api/qa-auth/login to land signed-in on /app with the seeded pile.`);
+  log(`teardown later with: pnpm dev:local:down`);
+  log('Ctrl-C stops the server; the database container keeps running for fast restarts.');
+
+  await serverExit;
+}
+
+main().catch((error) => {
+  fail(error instanceof Error ? error.stack ?? error.message : String(error));
+});
