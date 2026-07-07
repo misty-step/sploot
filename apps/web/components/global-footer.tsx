@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { OverlappingCircles } from "@/components/landing/overlapping-circles"
+import { SPLOOT_EXTENSION_STORE_URL } from "@/components/library/empty-state"
 
 export function GlobalFooter() {
   return (
@@ -33,6 +34,14 @@ export function GlobalFooter() {
             className="text-white/40 hover:text-white transition-colors"
           >
             privacy
+          </Link>
+          <Link
+            href={SPLOOT_EXTENSION_STORE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-white/40 hover:text-white transition-colors"
+          >
+            extension
           </Link>
         </div>
 
