@@ -1,5 +1,10 @@
 # Save to Sploot — iPhone Share-Sheet Shortcut
 
+> This walkthrough is also published where users can actually find it:
+> `/help/ios-shortcut` on the live product, linked from Settings and the
+> Getting Started guide (`/help`). This file is the source copy for
+> repo/operator reference — keep both in sync if you edit either.
+
 iOS (WebKit) does not implement the Web Share Target API, so an installed Sploot
 PWA can never appear in the iPhone share sheet the way it does on Android. The
 sanctioned workaround is an **Apple Shortcut**: it can sit in the share sheet,

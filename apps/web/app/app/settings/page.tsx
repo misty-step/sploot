@@ -184,8 +184,11 @@ export default function SettingsPage() {
         <p className="text-xs text-muted-foreground">
           Heads up: sharing images into Sploot from other apps&apos; share
           sheets works on Android. iPhones can&apos;t put web apps in the share
-          sheet — mint an upload token above and wire up the &ldquo;Save to
-          Sploot&rdquo; shortcut to share images from any iOS app.
+          sheet — mint an upload token above and wire up the{" "}
+          <Link href="/help/ios-shortcut" className="text-accent-cyan hover:underline">
+            &ldquo;Save to Sploot&rdquo; shortcut
+          </Link>{" "}
+          to share images from any iOS app.
         </p>
       </section>
 
@@ -212,6 +215,9 @@ export default function SettingsPage() {
           </Link>
         </div>
         <div className="pt-2 border-t border-border flex gap-4 text-sm">
+          <Link href="/help" className="text-muted-foreground hover:text-foreground transition-colors">
+            Getting started
+          </Link>
           <Link href="/support" className="text-muted-foreground hover:text-foreground transition-colors">
             Support
           </Link>
