@@ -5,6 +5,14 @@
 
 **[sploot.app](https://www.sploot.app)**
 
+Type words. Get the picture — a stranger goes from the landing page to a real
+semantic search in about half a minute (opt-in starter pile with precomputed
+CLIP vectors; see `docs/design/lab-053-stranger-aha.html`):
+
+![Stranger to aha: landing → starter pile → plain-words search locks the right meme](./docs/demo/stranger-to-aha.gif)
+
+This monorepo consolidates the Sploot web application, browser extension, and shared packages.
+
 Sploot is a personal meme library with text→image semantic search: save a
 meme once (right-click, share sheet, or iOS shortcut) and later find it by
 describing what's in it — no tags, no folders, no remembering filenames.
