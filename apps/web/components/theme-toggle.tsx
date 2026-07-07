@@ -12,7 +12,7 @@ export function ThemeToggle() {
 
   // Avoid hydration mismatch by only rendering after mount
   React.useEffect(() => {
-    setMounted(true);
+    queueMicrotask(() => setMounted(true));
   }, []);
 
   if (!mounted) {

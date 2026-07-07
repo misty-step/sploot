@@ -35,7 +35,7 @@ export function SearchBar({
 
   // Sync with initialQuery only when it changes externally (e.g., from URL navigation)
   useEffect(() => {
-    setQuery(initialQuery);
+    queueMicrotask(() => setQuery(initialQuery));
   }, [initialQuery]); // Only depend on initialQuery, not query
 
   // Handle clicks outside dropdown to close it

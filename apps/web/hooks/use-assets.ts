@@ -51,6 +51,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
   const abortControllerRef = useRef<AbortController | null>(null);
   const authRetryCountRef = useRef(0); // Track auth retry attempts
   const authRetryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const loadAssetsRef = useRef<((reset?: boolean) => Promise<void>) | null>(null);
 
   // Keep hasMore ref in sync with state
   useEffect(() => {
@@ -228,7 +229,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
               // Schedule retry
               authRetryTimeoutRef.current = setTimeout(() => {
-                loadAssets(true);
+                void loadAssetsRef.current?.(true);
               }, retryDelay);
             } else if (process.env.NODE_ENV === 'development') {
               console.warn('[useAssets] Max auth retry attempts reached. User may need to refresh.');
@@ -247,6 +248,10 @@ export function useAssets(options: UseAssetsOptions = {}) {
     },
     [offset, initialLimit, sortBy, sortOrder, filterFavorites, tagId, shuffleSeed] // Removed loading and hasMore from dependencies
   );
+
+  useEffect(() => {
+    loadAssetsRef.current = loadAssets;
+  }, [loadAssets]);
 
   const updateAsset = useCallback((id: string, updates: Partial<Asset>) => {
     // Collect analytics events to emit after state update completes
@@ -398,7 +403,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
         console.warn(
           `[Asset Integrity] ${brokenCount}/${sample.length} assets have invalid blob URLs (${brokenPercentage.toFixed(1)}%)`
         );
-        setIntegrityIssue(true);
+        queueMicrotask(() => setIntegrityIssue(true));
       }
     }
   }, [assets]);
@@ -408,7 +413,9 @@ export function useAssets(options: UseAssetsOptions = {}) {
   useEffect(() => {
     if (autoLoad && !hasLoadedRef.current) {
       hasLoadedRef.current = true;
-      loadAssets(true);
+      queueMicrotask(() => {
+        void loadAssets(true);
+      });
     }
   }, [autoLoad, loadAssets]);
 
@@ -598,16 +605,25 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
   // Auto-search when the settled query changes. The app page passes a debounced
   // query so typing does not trigger one embedding call per keystroke.
   useEffect(() => {
-    if (enabled && query) {
-      search();
-    } else if (!enabled || !query) {
-      setAssets([]);
-      setTotal(0);
-      setError(null);
-    }
+    let cancelled = false;
+
+    queueMicrotask(() => {
+      if (cancelled) {
+        return;
+      }
+
+      if (enabled && query) {
+        void search();
+      } else if (!enabled || !query) {
+        setAssets([]);
+        setTotal(0);
+        setError(null);
+      }
+    });
 
     // Cleanup function to cancel request on unmount or query change
     return () => {
+      cancelled = true;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }

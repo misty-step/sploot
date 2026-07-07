@@ -15,7 +15,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "types": ["chrome"],
-    "baseUrl": ".",
     "paths": {
       "@sploot/common": ["../../packages/common/src"],
       "@sploot/common/*": ["../../packages/common/src/*"]

@@ -78,17 +78,21 @@ function ImageTileComponent({
 
   // Reset image src when asset changes (e.g., component reused)
   useEffect(() => {
-    setImageSrc(getTileImageSrc(asset.mime, asset.blobUrl, asset.thumbnailUrl));
-    setHasTriedFallback(false);
-    setImageError(false);
-    setImageLoaded(false);
+    queueMicrotask(() => {
+      setImageSrc(getTileImageSrc(asset.mime, asset.blobUrl, asset.thumbnailUrl));
+      setHasTriedFallback(false);
+      setImageError(false);
+      setImageLoaded(false);
+    });
   }, [asset.id, asset.blobUrl, asset.thumbnailUrl, asset.mime]);
 
   // Simulate queue position in debug mode
   useEffect(() => {
     if (isDebugMode && embeddingStatus === 'processing' && !debugInfo.queuePosition) {
       const simulatedPosition = Math.floor(Math.random() * 5) + 1;
-      setDebugInfo((prev) => ({ ...prev, queuePosition: simulatedPosition }));
+      queueMicrotask(() => {
+        setDebugInfo((prev) => ({ ...prev, queuePosition: simulatedPosition }));
+      });
       logger.logInfo('image-tile.debug.queue-position', {
         assetId: asset.id,
         simulatedPosition,

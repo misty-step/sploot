@@ -57,12 +57,20 @@ export function ImageGrid({
   // Handle transition from skeleton to empty state
   useEffect(() => {
     if (!loading && assets.length === 0) {
+      let cancelled = false;
       // Start transition: show skeleton fading out
-      setShowingTransition(true);
+      queueMicrotask(() => {
+        if (!cancelled) {
+          setShowingTransition(true);
+        }
+      });
       const timer = setTimeout(() => {
         setShowingTransition(false);
       }, 300); // Match the fade-out duration
-      return () => clearTimeout(timer);
+      return () => {
+        cancelled = true;
+        clearTimeout(timer);
+      };
     }
   }, [loading, assets.length]);
 

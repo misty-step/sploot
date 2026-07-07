@@ -27,7 +27,7 @@ export function SimilarityScoreLegend({ className }: SimilarityScoreLegendProps)
   useEffect(() => {
     // Check localStorage on mount
     const dismissed = localStorage.getItem(STORAGE_KEY);
-    setIsDismissed(dismissed === 'true');
+    queueMicrotask(() => setIsDismissed(dismissed === 'true'));
   }, []);
 
   const handleDismiss = () => {

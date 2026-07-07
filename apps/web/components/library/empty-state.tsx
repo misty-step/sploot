@@ -93,19 +93,12 @@ function SurfaceRow({
  * docs/design/lab-074-capture-activation.html (option 01, two-lane capture rig).
  */
 function CaptureSurfaces() {
-  const [device, setDevice] = useState<CaptureDevice | null>(null);
+  const [device] = useState<CaptureDevice>(() =>
+    typeof window === 'undefined'
+      ? 'desktop'
+      : detectCaptureDevice(window.navigator.userAgent, window.navigator.maxTouchPoints ?? 0)
+  );
   const { installable, installed, requiresManualInstall, promptInstall } = usePwaInstallPrompt();
-
-  useEffect(() => {
-    setDevice(
-      detectCaptureDevice(window.navigator.userAgent, window.navigator.maxTouchPoints ?? 0)
-    );
-  }, []);
-
-  if (device === null) {
-    // One frame of unknown device: render nothing rather than the wrong pitch.
-    return <div aria-hidden="true" className="min-h-[120px]" />;
-  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -254,14 +247,16 @@ export function EmptyState({
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef(0);
-  const mountTimeRef = useRef(performance.now());
+  const mountTimeRef = useRef<number | null>(null);
 
   // Performance measurement
   useEffect(() => {
     const renderEnd = performance.now();
-    const renderTime = renderEnd - mountTimeRef.current;
+    const mountTime = mountTimeRef.current ?? renderEnd;
+    mountTimeRef.current = mountTime;
+    const renderTime = renderEnd - mountTime;
 
-    trackEmptyStateRender(mountTimeRef.current);
+    trackEmptyStateRender(mountTime);
 
     if (process.env.NODE_ENV === 'development') {
       logger.logInfo('library-empty-state.render-timing', {

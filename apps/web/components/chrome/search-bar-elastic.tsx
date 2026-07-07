@@ -29,23 +29,15 @@ export function SearchBarElastic({
   onSearch,
   autoCollapse = true,
 }: SearchBarElasticProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialQuery = searchParams.get('q') ?? '';
   const [isFocused, setIsFocused] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [query, setQuery] = useState('');
+  const [isExpanded, setIsExpanded] = useState(() => initialQuery.length > 0);
+  const [query, setQuery] = useState(() => initialQuery);
   const [isSearching, setIsSearching] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
-  // Initialize query from URL
-  useEffect(() => {
-    const urlQuery = searchParams.get('q');
-    if (urlQuery) {
-      setQuery(urlQuery);
-      setIsExpanded(true);
-    }
-  }, [searchParams]);
 
   // Add "/" keyboard shortcut to focus search
   useSlashSearchShortcut(() => {

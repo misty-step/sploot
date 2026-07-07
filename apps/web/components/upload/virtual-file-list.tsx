@@ -342,17 +342,13 @@ export function useComponentPool<T extends object>(
   factory: () => T,
   options?: { initialSize?: number; maxSize?: number }
 ) {
-  const poolRef = useRef<ComponentPool<T> | undefined>(undefined);
-
-  if (!poolRef.current) {
-    poolRef.current = new ComponentPool(factory, options);
-  }
+  const [pool] = useState(() => new ComponentPool(factory, options));
 
   useEffect(() => {
     return () => {
-      poolRef.current?.clear();
+      pool.clear();
     };
-  }, []);
+  }, [pool]);
 
-  return poolRef.current;
+  return pool;
 }

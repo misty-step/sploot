@@ -205,7 +205,7 @@ export function UploadZone({
   useEffect(() => {
     const filesArray = Array.from(fileMetadata.values());
     if (filesArray.length === 0) {
-      setUploadStats(null);
+      queueMicrotask(() => setUploadStats(null));
       return;
     }
 
@@ -235,7 +235,7 @@ export function UploadZone({
 
     const allReady = ready + failed === filesArray.length;
 
-    setUploadStats({
+    const nextUploadStats = {
       totalFiles: filesArray.length,
       uploaded: successful,
       processingEmbeddings,
@@ -243,7 +243,9 @@ export function UploadZone({
       failed,
       estimatedTimeRemaining:
         pending > 0 || uploading > 0 ? (pending + uploading) * 2000 : 0, // Rough estimate
-    });
+    };
+
+    queueMicrotask(() => setUploadStats(nextUploadStats));
 
     // Auto-clear stats and file list 3 seconds after everything is complete
     if (allReady && filesArray.length > 0) {
@@ -574,77 +576,81 @@ export function UploadZone({
       const backoffDelays = [1000, 3000, 9000]; // 1s, 3s, 9s
 
       for (const fileId of retryFileIds) {
-        // Use ref to get current metadata, avoiding stale closures
-        const metadata = fileMetadataRef.current.get(fileId);
+        let retryCount = fileMetadataRef.current.get(fileId)?.retryCount || 1;
 
-        // Guard: Skip if metadata is missing (file was removed or reference lost)
-        if (!metadata) {
-          logger.warn(
-            `[Upload] Skipping retry for ${fileId} - metadata not found`,
-          );
-          continue;
-        }
+        while (retryCount <= 3) {
+          // Use ref to get current metadata, avoiding stale closures
+          const metadata = fileMetadataRef.current.get(fileId);
 
-        const retryCount = metadata.retryCount || 1;
-        const delay = backoffDelays[retryCount - 1] || 9000;
-
-        logger.debug(
-          `[Upload] Retrying ${metadata.name} after ${delay}ms delay (attempt ${retryCount}/3)`,
-        );
-
-        // Wait for backoff delay
-        await new Promise((resolve) => setTimeout(resolve, delay));
-
-        // Update file status to indicate retry
-        setFileMetadata((prev) => {
-          const newMap = new Map(prev);
-          const meta = newMap.get(fileId);
-          if (meta) {
-            newMap.set(fileId, {
-              ...meta,
-              status: 'pending',
-              error: `Retrying (attempt ${retryCount}/3)...`,
-            });
-          }
-          return newMap;
-        });
-
-        try {
-          await uploadFileToServer(fileId);
-          logger.debug(`[Upload] Retry successful for ${metadata.name}`);
-        } catch (error) {
-          // Re-check metadata exists before retry logic (may have been removed)
-          const currentMeta = fileMetadataRef.current.get(fileId);
-          if (!currentMeta) {
+          // Guard: Skip if metadata is missing (file was removed or reference lost)
+          if (!metadata) {
             logger.warn(
-              `[Upload] File ${fileId} metadata lost during retry, marking as failed`,
+              `[Upload] Skipping retry for ${fileId} - metadata not found`,
             );
-            uploadStatsRef.current.failed++;
-            continue;
+            break;
           }
 
-          if (retryCount < 3) {
-            // Still have retries left, update retry count and recurse
-            setFileMetadata((prev) => {
-              const newMap = new Map(prev);
-              const meta = newMap.get(fileId);
-              if (meta) {
-                newMap.set(fileId, { ...meta, retryCount: retryCount + 1 });
-              }
-              return newMap;
-            });
-            // Recursively retry (will use updated metadata from ref)
-            await processRetryQueue([fileId]);
-          } else {
-            // Max retries reached
-            uploadStatsRef.current.failed++;
-            console.error(
-              `[Upload] File ${metadata.name} failed permanently after 3 retries:`,
-              error,
-            );
-            // Clean up file object to prevent memory leak
-            fileObjects.current.delete(fileId);
-            progressThrottleMap.current.delete(fileId);
+          const delay = backoffDelays[retryCount - 1] || 9000;
+
+          logger.debug(
+            `[Upload] Retrying ${metadata.name} after ${delay}ms delay (attempt ${retryCount}/3)`,
+          );
+
+          // Wait for backoff delay
+          await new Promise((resolve) => setTimeout(resolve, delay));
+
+          // Update file status to indicate retry
+          setFileMetadata((prev) => {
+            const newMap = new Map(prev);
+            const meta = newMap.get(fileId);
+            if (meta) {
+              newMap.set(fileId, {
+                ...meta,
+                status: 'pending',
+                error: `Retrying (attempt ${retryCount}/3)...`,
+              });
+            }
+            return newMap;
+          });
+
+          try {
+            await uploadFileToServer(fileId);
+            logger.debug(`[Upload] Retry successful for ${metadata.name}`);
+            break;
+          } catch (error) {
+            // Re-check metadata exists before retry logic (may have been removed)
+            const currentMeta = fileMetadataRef.current.get(fileId);
+            if (!currentMeta) {
+              logger.warn(
+                `[Upload] File ${fileId} metadata lost during retry, marking as failed`,
+              );
+              uploadStatsRef.current.failed++;
+              break;
+            }
+
+            if (retryCount < 3) {
+              retryCount += 1;
+              // Still have retries left, update retry count and keep looping
+              setFileMetadata((prev) => {
+                const newMap = new Map(prev);
+                const meta = newMap.get(fileId);
+                if (meta) {
+                  newMap.set(fileId, { ...meta, retryCount });
+                }
+                return newMap;
+              });
+            } else {
+              // Max retries reached
+              uploadStatsRef.current.failed++;
+              console.error(
+                `[Upload] File ${metadata.name} failed permanently after 3 retries:`,
+                error,
+              );
+              // Clean up file object to prevent memory leak
+              fileObjects.current.delete(fileId);
+              progressThrottleMap.current.delete(fileId);
+              break;
+            }
           }
         }
       }

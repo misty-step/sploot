@@ -26,7 +26,7 @@ export function useSearchHistory() {
           .filter(item => item.query && typeof item.query === 'string' && item.timestamp)
           .sort((a, b) => b.timestamp - a.timestamp)
           .slice(0, MAX_HISTORY_ITEMS);
-        setHistory(valid);
+        queueMicrotask(() => setHistory(valid));
       }
     } catch (error) {
       console.error('Failed to load search history:', error);

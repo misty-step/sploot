@@ -65,7 +65,9 @@ export function useAutomaticPiles({
   }, [enabled, limit, minAssets]);
 
   useEffect(() => {
-    void loadPiles();
+    queueMicrotask(() => {
+      void loadPiles();
+    });
   }, [loadPiles]);
 
   return {

@@ -43,7 +43,7 @@ export function SearchOverlay({
   useEffect(() => {
     const urlQuery = searchParams.get('q');
     if (urlQuery) {
-      setQuery(urlQuery);
+      queueMicrotask(() => setQuery(urlQuery));
     }
   }, [searchParams]);
 

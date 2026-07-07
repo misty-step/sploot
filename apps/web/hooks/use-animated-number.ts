@@ -96,25 +96,12 @@ export function useAnimatedSize(
   bytes: number,
   options: Omit<AnimatedNumberOptions, 'formatter'> = {}
 ): string {
-  const [unit, setUnit] = useState('MB');
-  const [divisor, setDivisor] = useState(1024 * 1024);
-
-  // Determine the unit and divisor based on size
-  useEffect(() => {
-    if (bytes === 0) {
-      setUnit('MB');
-      setDivisor(1024 * 1024);
-    } else if (bytes < 1024 * 1024) {
-      setUnit('KB');
-      setDivisor(1024);
-    } else if (bytes >= 1024 * 1024 * 1024) {
-      setUnit('GB');
-      setDivisor(1024 * 1024 * 1024);
-    } else {
-      setUnit('MB');
-      setDivisor(1024 * 1024);
-    }
-  }, [bytes]);
+  const { unit, divisor } =
+    bytes > 0 && bytes < 1024 * 1024
+      ? { unit: 'KB', divisor: 1024 }
+      : bytes >= 1024 * 1024 * 1024
+        ? { unit: 'GB', divisor: 1024 * 1024 * 1024 }
+        : { unit: 'MB', divisor: 1024 * 1024 };
 
   const value = bytes / divisor;
   const animatedValue = useAnimatedNumber(value, {

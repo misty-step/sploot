@@ -34,9 +34,11 @@ export function useUploadQueue() {
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        setQueue(parsed.filter((item: QueuedUpload) =>
-          item.status === 'queued' || item.status === 'error'
-        ));
+        queueMicrotask(() => {
+          setQueue(parsed.filter((item: QueuedUpload) =>
+            item.status === 'queued' || item.status === 'error'
+          ));
+        });
       } catch (error) {
         logError('Error loading upload queue:', error);
       }
@@ -186,7 +188,9 @@ export function useUploadQueue() {
   // Process queue when coming back online
   useEffect(() => {
     if (!isOffline && queue.length > 0) {
-      processQueue();
+      queueMicrotask(() => {
+        void processQueue();
+      });
     }
   }, [isOffline, queue.length, processQueue]);
 

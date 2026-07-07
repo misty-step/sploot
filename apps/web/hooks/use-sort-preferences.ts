@@ -32,17 +32,72 @@ interface SortPreferences {
   shuffleSeed?: number;
 }
 
+interface InitialSortPreferences extends SortPreferences {
+  shouldClearStoredPreferences: boolean;
+}
+
+function createDefaultSortPreferences(): InitialSortPreferences {
+  return {
+    sortBy: 'shuffle',
+    direction: 'desc',
+    shuffleSeed: createShuffleSeed(),
+    shouldClearStoredPreferences: false,
+  };
+}
+
+function readInitialSortPreferences(): InitialSortPreferences {
+  const defaults = createDefaultSortPreferences();
+
+  if (typeof window === 'undefined') return defaults;
+
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return defaults;
+
+    const parsed = JSON.parse(stored) as Partial<SortPreferences>;
+    const normalizedSort = normalizeStoredSort(parsed.sortBy);
+    const normalizedDirection = normalizeStoredDirection(parsed.direction);
+
+    if (!normalizedSort || !normalizedDirection) {
+      return {
+        ...defaults,
+        shouldClearStoredPreferences: true,
+      };
+    }
+
+    const storedSeed =
+      normalizedSort === 'shuffle' && typeof parsed.shuffleSeed === 'number'
+        ? parsed.shuffleSeed
+        : undefined;
+
+    return {
+      sortBy: normalizedSort,
+      direction: normalizedDirection,
+      shuffleSeed: normalizedSort === 'shuffle' ? storedSeed ?? createShuffleSeed() : undefined,
+      shouldClearStoredPreferences: false,
+    };
+  } catch (error) {
+    console.error('Failed to load sort preferences:', error);
+    return {
+      ...defaults,
+      shouldClearStoredPreferences: true,
+    };
+  }
+}
+
 /**
  * Hook to manage sort preferences with localStorage persistence
  * Includes 100ms debounced writes to avoid excessive localStorage updates
  */
 export function useSortPreferences() {
-  // Initialize state with defaults
-  const [sortBy, setSortBy] = useState<SortOption>('shuffle');
-  const [direction, setDirection] = useState<SortDirection>('desc');
-  const [shuffleSeed, setShuffleSeed] = useState<number | undefined>(() => createShuffleSeed());
-  const [isLoading, setIsLoading] = useState(true);
+  const [initialPreferences] = useState(() => readInitialSortPreferences());
+  const [sortBy, setSortBy] = useState<SortOption>(initialPreferences.sortBy);
+  const [direction, setDirection] = useState<SortDirection>(initialPreferences.direction);
+  const [shuffleSeed, setShuffleSeed] = useState<number | undefined>(
+    initialPreferences.shuffleSeed
+  );
   const isMountedRef = useRef(false);
+  const isLoading = false;
 
   // Debounce the preferences for localStorage writes
   const debouncedPreferences = useDebounce(
@@ -50,48 +105,19 @@ export function useSortPreferences() {
     DEBOUNCE_DELAY
   );
 
-  // Load preferences from localStorage on mount
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as SortPreferences;
-        // Validate the parsed data
-        if (
-          parsed.sortBy &&
-          parsed.direction
-        ) {
-          const normalizedSort = normalizeStoredSort(parsed.sortBy);
-          const normalizedDirection = normalizeStoredDirection(parsed.direction);
-
-          if (!normalizedSort || !normalizedDirection) {
-            localStorage.removeItem(STORAGE_KEY);
-            return;
-          }
-
-          setSortBy(normalizedSort);
-          setDirection(normalizedDirection);
-          if (parsed.shuffleSeed !== undefined) {
-            setShuffleSeed(parsed.shuffleSeed);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load sort preferences:', error);
-      // Clear corrupted data
+    if (initialPreferences.shouldClearStoredPreferences && typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
-    } finally {
-      setIsLoading(false);
-      isMountedRef.current = true;
     }
-  }, []);
+  }, [initialPreferences.shouldClearStoredPreferences]);
 
   // Save debounced preferences to localStorage
   useEffect(() => {
     // Skip saving on initial mount to avoid overwriting loaded preferences
-    if (!isMountedRef.current || isLoading) return;
+    if (!isMountedRef.current) {
+      isMountedRef.current = true;
+      return;
+    }
 
     if (typeof window === 'undefined') return;
 
@@ -105,7 +131,7 @@ export function useSortPreferences() {
     } catch (error) {
       console.error('Failed to save sort preferences:', error);
     }
-  }, [debouncedPreferences, isLoading]);
+  }, [debouncedPreferences]);
 
   /**
    * Update sort preferences and generate new shuffle seed if needed.

@@ -55,8 +55,10 @@ export function FilterProvider({ children }: FilterProviderProps) {
     const newTagId = searchParams.get('tagId');
 
     const newFilterType: FilterType = newBangers ? 'bangers' : 'all';
-    setFilterTypeState(newFilterType);
-    setTagIdState(newTagId);
+    queueMicrotask(() => {
+      setFilterTypeState(newFilterType);
+      setTagIdState(newTagId);
+    });
   }, [searchParams]);
 
   // Helper to update URL params

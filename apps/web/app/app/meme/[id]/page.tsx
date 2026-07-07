@@ -59,7 +59,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
   // Fetch similar memes
   useEffect(() => {
     if (!assetId || !similarAssetId) {
-      setSimilarLoading(false);
+      queueMicrotask(() => setSimilarLoading(false));
       return;
     }
 

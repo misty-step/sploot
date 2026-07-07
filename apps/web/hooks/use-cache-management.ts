@@ -233,7 +233,9 @@ export function useCacheManagement() {
   // Auto-refresh cache status on mount
   useEffect(() => {
     if (swRegistration) {
-      getCacheStatus();
+      queueMicrotask(() => {
+        void getCacheStatus();
+      });
     }
   }, [swRegistration, getCacheStatus]);
 
