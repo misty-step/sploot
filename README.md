@@ -1,15 +1,43 @@
-# Sploot Monorepo 🏷️
+# Sploot 🏷️
 
-> **A Vercel-first meme library with text→image semantic search.**
+> **A private library for your memes and screenshots.** Save from anywhere in
+> one click, then find any of them by typing what's in the picture.
 
-This monorepo consolidates the Sploot web application, browser extension, and shared packages.
+**[sploot.app](https://www.sploot.app)**
 
-![Sploot Architecture](https://img.shields.io/badge/Architecture-Monorepo-black?style=flat-square&logo=turborepo)
-![Next.js](https://img.shields.io/badge/Next.js-15.5-black?style=flat-square&logo=next.js)
-![WXT](https://img.shields.io/badge/Extension-WXT-blue?style=flat-square&logo=googlechrome)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square&logo=typescript)
+Sploot is a personal meme library with text→image semantic search: save a
+meme once (right-click, share sheet, or iOS shortcut) and later find it by
+describing what's in it — no tags, no folders, no remembering filenames.
 
-## 📦 Workspaces
+![Search results for "reaction face meme" returning four ranked matches with confidence scores](./docs/qa/evidence/2026-07-07-sploot-051-readme-frontdoor/app-search-in-action-1440x900.png)
+
+*Search-in-action against a seeded local library — type a description, get
+ranked matches with confidence scores. Full walk:
+[QA evidence](./docs/qa/evidence/2026-07-07-sploot-051-readme-frontdoor/).*
+
+## ✨ What it does today
+
+- **Save from anywhere**: right-click → "Save to Sploot" (Chrome extension),
+  iOS share sheet / shortcut, or drag-and-drop upload on the web app.
+- **Find by description**: type what's in the image — text→image semantic
+  search (pgvector + CLIP embeddings), not keyword/tag matching.
+- **Bangers and piles**: favorite the ones you'll reuse; automatic piles
+  group your library by rough theme.
+
+Sploot does not yet learn *your* taste or generate new memes — see
+[VISION.md](./VISION.md) for what's shipped versus what's ahead.
+
+## 🧩 Browser extension
+
+Chrome extension (WXT) for one-click "Save to Sploot" from a right-click
+context menu. Published listing:
+[Chrome Web Store](https://chromewebstore.google.com/detail/sploot/fbhkflbcnllfogefckablkafjknmcfnd).
+Source: [`apps/extension`](./apps/extension).
+
+## 🛠️ For developers
+
+This is a Turborepo/pnpm monorepo: web app, browser extension, and shared
+packages.
 
 | Workspace | Path | Description |
 |-----------|------|-------------|
@@ -17,19 +45,24 @@ This monorepo consolidates the Sploot web application, browser extension, and sh
 | **Extension** | [`apps/extension`](./apps/extension) | Chrome Extension (WXT) for one-click saving. |
 | **Common** | [`packages/common`](./packages/common) | Shared constants, types, and utilities. |
 
-## 🚀 Quick Start
+![Sploot Architecture](https://img.shields.io/badge/Architecture-Monorepo-black?style=flat-square&logo=turborepo)
+![Next.js](https://img.shields.io/badge/Next.js-15.5-black?style=flat-square&logo=next.js)
+![WXT](https://img.shields.io/badge/Extension-WXT-blue?style=flat-square&logo=googlechrome)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square&logo=typescript)
 
-### Prerequisites
+### Quick Start
+
+#### Prerequisites
 - Node.js 20+
 - pnpm 10+ (`npm i -g pnpm`)
 
-### Installation
+#### Installation
 
 ```bash
 pnpm install
 ```
 
-### Local loop, no vendor credentials (recommended first run)
+#### Local loop, no vendor credentials (recommended first run)
 
 One command from clone to a signed-in, seeded, searchable library — no
 Clerk/Neon/Blob/Replicate keys. Requires Docker for the local pgvector
@@ -51,7 +84,7 @@ Teardown (removes the database container and generated files):
 pnpm dev:local:down
 ```
 
-### Development against real services
+#### Development against real services
 
 Run all apps simultaneously (Web: localhost:3001, Extension: hot-reload) —
 requires `apps/web/.env.local` with real vendor credentials
@@ -68,7 +101,7 @@ pnpm dev:web
 pnpm dev:extension
 ```
 
-## 🛠️ Commands
+### Commands
 
 We use **Turborepo** to orchestrate tasks.
 
@@ -78,7 +111,7 @@ We use **Turborepo** to orchestrate tasks.
 - **Test**: `pnpm test`
 - **Clean**: `pnpm clean`
 
-## 🏗️ Architecture
+### Architecture
 
 - **Monorepo Tooling**: Turborepo + pnpm workspaces.
 - **Shared Code**: `@sploot/common` is consumed by both `web` and `extension`.
@@ -88,13 +121,13 @@ We use **Turborepo** to orchestrate tasks.
   - Extension: Manual submission to Chrome Web Store.
 - **Details**: See [ARCHITECTURE.md](./ARCHITECTURE.md).
 
-## 🔐 Configuration
+### Configuration
 
 Each app has its own env setup:
 - Web app: see [`apps/web/README.md`](./apps/web/README.md)
 - Extension: see [`apps/extension/README.md`](./apps/extension/README.md)
 
-## 📄 Documentation
+### Documentation
 
 - [Developer Guide](./CLAUDE.md) - Guidelines for AI agents and developers.
 - [Web App Docs](./apps/web/README.md)
