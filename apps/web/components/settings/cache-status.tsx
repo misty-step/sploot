@@ -55,7 +55,7 @@ export function CacheStatus() {
               'disabled:opacity-50 disabled:cursor-not-allowed'
             )}
           >
-            {isLoading ? 'Loading...' : 'Refresh'}
+            {isLoading ? 'checking cache...' : 'Refresh'}
           </button>
         </div>
 

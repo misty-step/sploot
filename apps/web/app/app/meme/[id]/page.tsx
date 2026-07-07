@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Heart, Download, ImageOff, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ShareButton } from '@/components/library/share-button';
 import { ImageGrid } from '@/components/library/image-grid';
+import { StateSurface } from '@/components/sploot/state-surface';
 import { cn } from '@/lib/utils';
 import type { Asset } from '@/lib/types';
 import { error as logError } from '@/lib/logger';
@@ -27,6 +27,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
   const [similarLoading, setSimilarLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
+  const similarAssetId = asset?.id;
 
   // Resolve params
   useEffect(() => {
@@ -57,11 +58,15 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
 
   // Fetch similar memes
   useEffect(() => {
-    if (!assetId) return;
+    if (!assetId || !similarAssetId) {
+      setSimilarLoading(false);
+      return;
+    }
 
     async function fetchSimilar() {
+      setSimilarLoading(true);
       try {
-        const res = await fetch(`/api/assets/${assetId}/similar?limit=12`);
+        const res = await fetch(`/api/assets/${similarAssetId}/similar?limit=12`);
         if (!res.ok) {
           setSimilarLoading(false);
           return;
@@ -75,7 +80,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
       }
     }
     fetchSimilar();
-  }, [assetId]);
+  }, [assetId, similarAssetId]);
 
   const handleFavoriteToggle = useCallback(async () => {
     if (!asset || favoriteLoading) return;
@@ -138,8 +143,11 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
   // Loading state
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="sploot-shadow-sm border-[length:var(--sploot-active-border-width)] border-sploot-ink bg-sploot-paper px-5 py-4 font-mono text-sm font-bold lowercase tracking-normal text-sploot-ink">
+          <Loader2 className="mr-2 inline-block size-4 animate-spin text-sploot-cyan" />
+          loading this save...
+        </div>
       </div>
     );
   }
@@ -147,13 +155,19 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
   // Not found
   if (!asset) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <ImageOff className="h-16 w-16 text-muted-foreground" />
-        <h1 className="text-xl font-medium text-foreground">Meme not found</h1>
-        <Link href="/app" className="text-accent-cyan hover:underline text-sm">
-          Back to library
-        </Link>
-      </div>
+      <StateSurface
+        size="panel"
+        eyebrow="detail 404"
+        title="that save left the pile."
+        description="the detail route loaded, but this meme is gone, private, or never belonged to this library."
+        primaryAction={{ href: '/app', label: 'open the pile' }}
+        doodle="zzz"
+        status={[
+          { label: 'route', value: '/app/meme/:id' },
+          { label: 'asset', value: 'miss' },
+          { label: 'recovery', value: 'library', ok: true },
+        ]}
+      />
     );
   }
 

@@ -1221,8 +1221,10 @@ function AppPageClient() {
 export default function AppPage() {
   return (
     <Suspense fallback={
-      <div className="flex h-[calc(100vh-56px)] flex-col items-center justify-center">
-        <div className="text-muted-foreground">Loading...</div>
+      <div className="flex h-[calc(100vh-56px)] flex-col items-center justify-center bg-sploot-workbench">
+        <div className="sploot-shadow-sm border-[length:var(--sploot-active-border-width)] border-sploot-ink bg-sploot-paper px-5 py-4 font-mono text-sm font-bold lowercase tracking-normal text-sploot-ink">
+          loading the pile...
+        </div>
       </div>
     }>
       <AppPageClient />

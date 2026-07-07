@@ -22,7 +22,7 @@ export function StatusBar({ cells, className }: StatusBarProps) {
       aria-label="system status"
       className={cn('border-y-[length:var(--sploot-active-border-width)] border-sploot-ink bg-sploot-void font-mono', className)}
     >
-      <div className="grid grid-cols-2 gap-px bg-sploot-paper/20 sm:grid-cols-5">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-px bg-sploot-paper/20">
         {cells.map((cell) => (
           <div key={cell.label} className="bg-sploot-void px-4 py-3.5">
             <span className="block text-[0.6rem] uppercase tracking-normal text-sploot-paper/60">

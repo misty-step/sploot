@@ -115,8 +115,8 @@ export default function Help() {
               cluster your library automatically as it grows — no folders to
               maintain by hand. That clustering is a first cut today: it
               sorts into fixed categories and ranks off one averaged signal,
-              not a model of your personal taste yet. The real per-user taste
-              version is on the roadmap.
+              not a model of your personal taste yet. Real per-user taste is
+              tracked as backlog 037, not shipped today.
             </p>
           </section>
 
