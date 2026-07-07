@@ -22,6 +22,12 @@ const pwaState = {
   promptInstall: vi.fn(async () => 'accepted' as const),
 };
 
+const routerPush = vi.fn();
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: routerPush, replace: vi.fn(), prefetch: vi.fn() }),
+}));
+
 vi.mock('@/hooks/use-pwa-install', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/hooks/use-pwa-install')>();
   return {
@@ -102,6 +108,51 @@ describe('EmptyState first-use capture activation', () => {
     expect(screen.getAllByRole('article').length).toBeGreaterThanOrEqual(3);
     // MemeCell's lime "match" badge on the locked demo cell.
     expect(screen.getByText('match')).toBeInTheDocument();
+  });
+
+  it('offers the starter pile: one tap seeds real memes and lands on a working search', async () => {
+    setUserAgent(DESKTOP_UA);
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          seeded: 8,
+          already: 0,
+          failed: [],
+          total: 8,
+          suggestedQueries: ['two cats arguing at a table'],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<EmptyState variant="first-use" />);
+
+    const button = screen.getByRole('button', { name: /load the starter pile/i });
+    await user.click(button);
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/library/starter', { method: 'POST' });
+    // The aha routing: straight into a real search over the seeded pile.
+    expect(routerPush).toHaveBeenCalledWith(
+      `/app?q=${encodeURIComponent('two cats arguing at a table')}`
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it('surfaces a starter-pile failure instead of routing to a dead search', async () => {
+    setUserAgent(DESKTOP_UA);
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async () => new Response('nope', { status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<EmptyState variant="first-use" />);
+
+    await user.click(screen.getByRole('button', { name: /load the starter pile/i }));
+
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(screen.getByText(/didn.t load/i)).toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 
   it('keeps an immediate upload route for the aha path', () => {

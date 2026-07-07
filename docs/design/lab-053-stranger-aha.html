@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lab-053 — stranger-to-aha mechanism (landing → working search &lt; 5 min)</title>
+<style>
+  :root{
+    --ink:#0a0a0a; --paper:#f3efe4; --paper-warm:#e9e4d6; --blue:#1f4cff;
+    --cyan:#00e5d4; --magenta:#ff2d9b; --yellow:#ffe600; --orange:#ff5a1f;
+    --lime:#9cff2e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:"Space Grotesk",system-ui,sans-serif;line-height:1.45}
+  .mono{font-family:"Space Mono",ui-monospace,monospace;text-transform:uppercase;letter-spacing:0}
+  header{border-bottom:6px solid var(--ink);padding:28px 32px;background:var(--paper-warm)}
+  h1{font-family:"Archivo Black","Space Grotesk",sans-serif;font-size:1.7rem;margin:0 0 8px;text-transform:uppercase}
+  h2{font-family:"Archivo Black","Space Grotesk",sans-serif;font-size:1.05rem;margin:0;text-transform:uppercase}
+  main{max-width:1080px;margin:0 auto;padding:32px 32px 80px}
+  .option{border:4px solid var(--ink);background:#fff;margin:28px 0;box-shadow:8px 8px 0 var(--ink)}
+  .option>.bar{display:flex;align-items:center;gap:12px;border-bottom:4px solid var(--ink);
+    padding:10px 14px;background:var(--ink);color:var(--paper)}
+  .option>.bar .num{background:var(--yellow);color:var(--ink);border:3px solid var(--paper);
+    padding:2px 8px;font-weight:700}
+  .option .body{padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:800px){.option .body{grid-template-columns:1fr}}
+  .mock{border:3px solid var(--ink);background:var(--paper);min-height:200px;padding:12px;
+    position:relative;overflow:hidden;font-size:.72rem}
+  .mock .titlebar{border:3px solid var(--ink);background:var(--ink);color:var(--paper);
+    padding:3px 8px;font-family:"Space Mono",monospace;text-transform:uppercase;font-size:.6rem;
+    display:flex;justify-content:space-between;margin-bottom:8px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0}
+  .cell{border:3px solid var(--ink);background:#fff;display:flex;flex-direction:column}
+  .cell .h{border-bottom:3px solid var(--ink);padding:2px 5px;font-family:"Space Mono",monospace;
+    font-size:.5rem;text-transform:uppercase;display:flex;justify-content:space-between}
+  .cell .g{flex:1;display:flex;align-items:center;justify-content:center;font-size:1.4rem;min-height:44px}
+  .cell.dim{opacity:.25;filter:grayscale(1)}
+  .cell.match{box-shadow:0 0 0 4px var(--lime)}
+  .sticker{display:inline-block;border:3px solid var(--ink);padding:3px 8px;
+    font-family:"Space Mono",monospace;font-size:.58rem;font-weight:700;text-transform:uppercase;
+    box-shadow:3px 3px 0 var(--ink)}
+  .sticker.cyan{background:var(--cyan)} .sticker.magenta{background:var(--magenta);color:#fff}
+  .sticker.yellow{background:var(--yellow)} .sticker.lime{background:var(--lime)}
+  .btn{display:inline-block;border:3px solid var(--ink);background:var(--blue);color:#fff;
+    padding:5px 10px;font-family:"Space Mono",monospace;font-size:.6rem;font-weight:700;
+    text-transform:uppercase;box-shadow:4px 4px 0 var(--ink)}
+  .btn.ghost{background:#fff;color:var(--ink)}
+  .btn.lime{background:var(--lime);color:var(--ink)}
+  .row{display:flex;align-items:center;gap:8px;border:3px solid var(--ink);background:#fff;
+    padding:6px 8px;margin:6px 0;font-family:"Space Mono",monospace;font-size:.58rem;text-transform:uppercase}
+  .notes{padding:0 18px 18px}
+  .notes p{margin:8px 0}
+  .verdict{display:inline-block;border:3px solid var(--ink);padding:2px 10px;font-weight:700;
+    font-family:"Space Mono",monospace;text-transform:uppercase;font-size:.7rem}
+  .verdict.win{background:var(--lime)} .verdict.lose{background:var(--paper-warm)}
+  .decision{border:6px solid var(--ink);background:var(--yellow);padding:22px;margin:40px 0 0;
+    box-shadow:10px 10px 0 var(--ink)}
+  table{border-collapse:collapse;width:100%;font-size:.8rem;margin-top:14px}
+  th,td{border:3px solid var(--ink);padding:6px 8px;text-align:left}
+  code{font-family:"Space Mono",monospace;font-size:.85em;background:var(--paper-warm);padding:0 3px}
+</style>
+</head>
+<body>
+<header>
+  <h1>lab-053 — stranger-to-aha mechanism</h1>
+  <p class="mono">card sploot-053 · goal: a stranger goes landing → working plain-words search in &lt; 5 minutes · 7 structurally distinct mechanisms · delegated-mode decision recorded below</p>
+  <p>Constraint set: the aha ("type words → get the picture") requires <b>a populated, embedded library</b>. A fresh account has neither. The landing hero already fakes it honestly (token-overlap sim over doodles, labeled). What's missing is the first <b>real</b> semantic search, on real product machinery, inside the first five minutes — including for a stranger who has zero memes on hand.</p>
+</header>
+<main>
+
+<!-- OPTION 01 -->
+<section class="option">
+  <div class="bar"><span class="num mono">01</span><h2>auto-seed on signup (opt-out)</h2><span class="verdict lose">rejected</span></div>
+  <div class="body">
+    <div class="mock">
+      <div class="titlebar"><span>the.pile — 8 memes</span><span>fresh account</span></div>
+      <div class="grid3">
+        <div class="cell"><div class="h"><span>cats.jpg</span></div><div class="g">🐱</div></div>
+        <div class="cell"><div class="h"><span>dog.jpg</span></div><div class="g">🔥</div></div>
+        <div class="cell"><div class="h"><span>skel.jpg</span></div><div class="g">💀</div></div>
+      </div>
+      <div class="row">library pre-populated before first paint. banner: “we added 8 demo memes — delete them anytime”</div>
+    </div>
+    <div>
+      <p>Signup webhook (or first <code>/app</code> load) silently seeds the starter set into the new library. Zero taps to a searchable pile.</p>
+      <p><b>Why it loses:</b> Sploot's premise is <i>private library, your saves</i> (DESIGN.md §1–3). Pre-populating a private archive without consent contradicts the brand's bluntness-with-honesty; "we put stuff in your library" is the wrong first impression, and cleanup burden lands on every user who didn't want it. Also couples signup to seeding infrastructure.</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION 02 -->
+<section class="option">
+  <div class="bar"><span class="num mono">02</span><h2>opt-in starter pile from the empty state</h2><span class="verdict win">winner</span></div>
+  <div class="body">
+    <div class="mock">
+      <div class="titlebar"><span>the.pile — 0 memes</span><span>status: hungry</span></div>
+      <span class="sticker lime">demo pile — this is the trick</span>
+      <div class="grid3">
+        <div class="cell dim"><div class="h"><span>IMG_0041</span></div><div class="g">💀</div></div>
+        <div class="cell match"><div class="h"><span>cat_scream</span><span>0.91</span></div><div class="g">🐱</div></div>
+        <div class="cell dim"><div class="h"><span>rxn_774</span></div><div class="g">😭</div></div>
+      </div>
+      <span class="btn lime">load the starter pile</span>
+      <span class="mono" style="font-size:.55rem"> 8 demo memes, real vectors — delete anytime</span>
+      <div class="row" style="margin-top:10px">tap → seeds 8 assets + precomputed CLIP vectors → routes to /app?q=two cats arguing at a table → real match lights up</div>
+    </div>
+    <div>
+      <p>One button in the first-run capture rig (lane A, next to the demo pile). It ingests 8 bundled, license-safe, original meme images through the <b>real upload pipeline</b> (blob, dedupe, tags), writes their <b>precomputed real CLIP vectors</b> (committed manifest, built once against the production model), warms the text-embedding cache for the suggested first queries, then routes straight into a live search.</p>
+      <p><b>Why it wins:</b> real product machinery end-to-end (pgvector cosine search, match/near states) with <b>zero Replicate calls on the seed path</b> — no rate limit, no cron, no 5-minute wait, deterministic under 10 seconds. Works for a stranger with no memes on hand. Opt-in respects the private-library premise; the <code>starter-pile</code> tag makes the whole pile one sweep to delete. Smallest new surface: one route + one empty-state lane.</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION 03 -->
+<section class="option">
+  <div class="bar"><span class="num mono">03</span><h2>public read-only demo library (/demo, no auth)</h2><span class="verdict lose">rejected</span></div>
+  <div class="body">
+    <div class="mock">
+      <div class="titlebar"><span>sploot://demo.pile — read only</span><span>no account</span></div>
+      <div class="row">landing → “try the demo pile” → /demo: real search over a shared public corpus, no signup</div>
+      <div class="grid3">
+        <div class="cell dim"><div class="h"><span>a.jpg</span></div><div class="g">🧠</div></div>
+        <div class="cell match"><div class="h"><span>b.jpg</span><span>0.29</span></div><div class="g">🐱</div></div>
+        <div class="cell dim"><div class="h"><span>c.jpg</span></div><div class="g">💯</div></div>
+      </div>
+      <span class="btn">claim your library →</span>
+    </div>
+    <div>
+      <p>An unauthenticated route running real vector search against a curated shared corpus; sign-up CTA rides the results.</p>
+      <p><b>Why it loses:</b> exposes the query-embedding path (Replicate spend) to anonymous traffic — abuse surface needing rate limiting, caching, and monitoring for a demo; and the aha it delivers is "search <i>someone else's</i> pile," which is one metaphor removed from the product promise. The search-your-own-pile aha still needs a separate mechanism after signup, so this doesn't even close the card alone.</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION 04 -->
+<section class="option">
+  <div class="bar"><span class="num mono">04</span><h2>real-search landing hero (replace the sim)</h2><span class="verdict lose">rejected</span></div>
+  <div class="body">
+    <div class="mock">
+      <div class="titlebar"><span>sploot://search.console</span><span>anon, real vectors</span></div>
+      <div class="row">hero search box → POST /api/demo-search → real CLIP query embedding → cosine over public set</div>
+      <div class="row">scan: 8 vectors · top sim: 0.30 · hit: cats-arguing.jpg</div>
+    </div>
+    <div>
+      <p>Swap the landing hero's token-overlap scorer for a real anonymous search API over the public starter corpus.</p>
+      <p><b>Why it loses:</b> same anonymous-Replicate abuse surface as 03, plus latency (a network round-trip per keystroke or per submit) degrading the hero's instant feel. The current sim is honest (labeled "token overlap / signed-out demo" per DESIGN.md's demo-labeling rule) and instant; upgrading it buys authenticity the stranger can't distinguish at the hero, while the post-signup gap remains. Cost without closing the acceptance.</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION 05 -->
+<section class="option">
+  <div class="bar"><span class="num mono">05</span><h2>guided first-capture wizard (sync-embed my own memes)</h2><span class="verdict lose">rejected</span></div>
+  <div class="body">
+    <div class="mock">
+      <div class="titlebar"><span>onboarding 1/3</span><span>upload → embed → search</span></div>
+      <div class="row">step 1: drop 3 images (sync_embeddings=true)</div>
+      <div class="row">step 2: watch vectors land (live status)</div>
+      <div class="row">step 3: “now describe one of them” → search</div>
+    </div>
+    <div>
+      <p>A wizard that walks the new user through uploading 2–3 of their own images with <code>sync_embeddings=true</code> (the upload API already supports it), then prompts a first search over them.</p>
+      <p><b>Why it loses as the primary:</b> it presumes the stranger has memes on hand at the desk they signed up from — often false, and the demo dies there. It also puts live Replicate latency + rate-limit/budget gates (throttled uploads silently fall back to the 5-min cron sweep) inside the 5-minute promise. Right as a <i>follow-up</i> for the user's own first uploads; wrong as the guaranteed path.</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION 06 -->
+<section class="option">
+  <div class="bar"><span class="num mono">06</span><h2>guest sandbox session (ephemeral account)</h2><span class="verdict lose">rejected</span></div>
+  <div class="body">
+    <div class="mock">
+      <div class="titlebar"><span>guest-7f3a — expires in 24h</span><span>no signup</span></div>
+      <div class="row">landing → “try without an account” → ephemeral user, pre-populated pile, full app</div>
+      <div class="row">convert: “keep this pile” → sign up, assets migrate</div>
+    </div>
+    <div>
+      <p>One-tap anonymous session into a pre-populated sandbox library; converting to a real account keeps the pile.</p>
+      <p><b>Why it loses:</b> heaviest machinery in the lab — ephemeral identities beside Clerk, expiry/GC, migration-on-convert, abuse control — for the same felt demo option 02 delivers post-signup with one route. Sign-up is already open and cheap; the card's bottleneck is the empty library after signup, not the signup itself.</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION 07 -->
+<section class="option">
+  <div class="bar"><span class="num mono">07</span><h2>in-app demo overlay (client sim inside /app)</h2><span class="verdict lose">rejected</span></div>
+  <div class="body">
+    <div class="mock">
+      <div class="titlebar"><span>the.pile — 0 memes (demo overlay)</span><span>sample data</span></div>
+      <div class="grid3">
+        <div class="cell dim"><div class="h"><span>demo1</span></div><div class="g">🐱</div></div>
+        <div class="cell match"><div class="h"><span>demo2</span><span>0.88</span></div><div class="g">🔥</div></div>
+        <div class="cell dim"><div class="h"><span>demo3</span></div><div class="g">💀</div></div>
+      </div>
+      <div class="row">real search bar, fake scorer: the landing's token-overlap sim rendered in the app shell until first upload</div>
+    </div>
+    <div>
+      <p>Extend the landing hero's client-side sim into the signed-in empty state: the app's real search bar drives the fake scorer over demo cells until real content exists.</p>
+      <p><b>Why it loses:</b> it is a <i>fake</i> aha in the <i>real</i> app — the one place the machinery on display must be the actual machinery (DESIGN.md: "the interface admits it is a machine"; the readout would have to lie or say "token overlap" inside the product). Zero backend cost, but the acceptance criterion is a <b>successful search returning a correct meme</b>, and a sim doesn't return a meme — it returns theater.</p>
+    </div>
+  </div>
+</section>
+
+<!-- DECISION -->
+<section class="decision" id="decision">
+  <h2>decision — option 02: opt-in starter pile (delegated mode)</h2>
+  <p class="mono" style="margin:6px 0 0">chosen + implemented 2026-07-07 · builder lane sploot-053 · operator may re-verdict; the lab stays live</p>
+  <table>
+    <tr><th>criterion</th><th>02 starter pile</th><th>next best (05 wizard)</th></tr>
+    <tr><td>works for a stranger with no memes on hand</td><td><b>yes</b> — content is bundled</td><td>no — requires own images</td></tr>
+    <tr><td>&lt; 5 min guarantee</td><td><b>deterministic seconds</b> — precomputed vectors, no provider on path</td><td>Replicate latency + rate-limit/budget gates → cron fallback risk</td></tr>
+    <tr><td>real product machinery</td><td><b>yes</b> — real assets, pgvector cosine, real match states</td><td>yes</td></tr>
+    <tr><td>respects private-library premise</td><td><b>yes</b> — opt-in, tagged <code>starter-pile</code>, one-sweep delete</td><td>yes</td></tr>
+    <tr><td>new surface</td><td>1 route + 1 empty-state lane + committed manifest</td><td>wizard flow + progress UI + gating states</td></tr>
+    <tr><td>anonymous abuse surface</td><td>none (auth required)</td><td>none</td></tr>
+  </table>
+  <p><b>Shipped shape:</b> 8 original meme images generated for this card (license-safe, on-palette) in <code>public/starter-pile/</code>; real CLIP vectors + suggested-query text vectors computed once against the production model (<code>scripts/build-starter-pile-manifest.mjs</code>) and committed to <code>lib/starter-pile/manifest.json</code>; <code>POST /api/library/starter</code> ingests through the normal pipeline and writes the vectors directly; the first-run capture rig's demo-pile lane gains <b>load the starter pile</b>, which routes to <code>/app?q=two cats arguing at a table</code> for the live aha. Landing keeps its honest sim (04 rejected); the user's own first uploads still embed via the existing post-response async path (05's goal, without the wizard).</p>
+  <p><b>Composition note:</b> this lab composes with lab-074 (capture-surface activation): 074 wires where memes come <i>from</i>; 053 guarantees the search aha even before any capture surface produces content.</p>
+</section>
+
+</main>
+</body>
+</html>

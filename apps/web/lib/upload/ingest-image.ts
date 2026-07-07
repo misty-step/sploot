@@ -47,6 +47,12 @@ export interface IngestImageOptions {
   file: File;
   tags?: string[];
   syncEmbeddings?: boolean;
+  /**
+   * Set false when the caller writes a precomputed vector itself (e.g. the
+   * starter-pile seed): skips embedding scheduling entirely so no Replicate
+   * call, rate-limit lease, or daily-budget slot is spent on the asset.
+   */
+  scheduleEmbeddings?: boolean;
 }
 
 export async function ingestImage({
@@ -54,6 +60,7 @@ export async function ingestImage({
   file,
   tags = [],
   syncEmbeddings = false,
+  scheduleEmbeddings = true,
 }: IngestImageOptions): Promise<IngestImageResult> {
   const startTime = Date.now();
   let quotaReservationId: string | null = null;
@@ -104,7 +111,7 @@ export async function ingestImage({
       duration: Date.now() - startTime,
     });
 
-    if (!deduplicationResult.existingAsset.hasEmbedding) {
+    if (scheduleEmbeddings && !deduplicationResult.existingAsset.hasEmbedding) {
       await scheduler.scheduleEmbedding({
         assetId: deduplicationResult.existingAsset.id,
         blobUrl: deduplicationResult.existingAsset.blobUrl,
@@ -192,13 +199,15 @@ export async function ingestImage({
       quotaReservationId = null;
 
       // Step 8: Schedule embedding generation
-      await scheduler.scheduleEmbedding({
-        assetId: recordResult.asset.id,
-        blobUrl: uploadResult.thumbnailUrl ?? uploadResult.mainUrl,
-        checksum: deduplicationResult.checksum,
-        mode: syncEmbeddings ? 'sync' : 'async',
-        ownerUserId: userId,
-      });
+      if (scheduleEmbeddings) {
+        await scheduler.scheduleEmbedding({
+          assetId: recordResult.asset.id,
+          blobUrl: uploadResult.thumbnailUrl ?? uploadResult.mainUrl,
+          checksum: deduplicationResult.checksum,
+          mode: syncEmbeddings ? 'sync' : 'async',
+          ownerUserId: userId,
+        });
+      }
 
       return {
         kind: 'created',

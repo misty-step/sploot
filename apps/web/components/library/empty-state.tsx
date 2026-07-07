@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { trackEmptyStateRender } from '@/lib/performance-metrics';
@@ -180,6 +181,61 @@ function CaptureSurfaces() {
 }
 
 /**
+ * One-tap starter pile: seeds 8 bundled, license-safe memes whose real CLIP
+ * vectors are precomputed and committed (POST /api/library/starter), then
+ * routes straight into a live search over them — the aha (type words → get
+ * the picture) on real product machinery, seconds after signup, even for a
+ * stranger with no memes on hand. Every seeded asset is tagged
+ * `starter-pile`, so the whole pile deletes in one sweep. Mechanism chosen in
+ * docs/design/lab-053-stranger-aha.html (option 02, opt-in starter pile).
+ */
+function StarterPileLoader() {
+  const router = useRouter();
+  const [state, setState] = useState<'idle' | 'seeding' | 'failed'>('idle');
+
+  const loadStarterPile = useCallback(async () => {
+    setState('seeding');
+    try {
+      const res = await fetch('/api/library/starter', { method: 'POST' });
+      if (!res.ok) throw new Error(`starter seed returned ${res.status}`);
+      const body = (await res.json()) as { suggestedQueries?: string[] };
+      const query = body.suggestedQueries?.[0] ?? 'two cats arguing at a table';
+      router.push(`/app?q=${encodeURIComponent(query)}`);
+    } catch (error) {
+      logger.logError('library-empty-state.starter-seed-failed', error);
+      setState('failed');
+    }
+  }, [router]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={loadStarterPile}
+          disabled={state === 'seeding'}
+          aria-label="Load the starter pile"
+        >
+          {state === 'seeding' ? 'loading the pile…' : 'load the starter pile'}
+        </Button>
+        <span className="font-mono text-[0.65rem] tracking-normal text-sploot-ink/70">
+          8 demo memes, real vectors — delete anytime
+        </span>
+      </div>
+      {state === 'failed' ? (
+        <p
+          role="alert"
+          className="font-mono text-[0.65rem] font-bold uppercase tracking-normal text-sploot-orange"
+        >
+          the starter pile didn&rsquo;t load — try again
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * Empty state component for the library.
  *
  * First-use is the capture rig (DESIGN.md §6: "show product action and example
@@ -333,9 +389,10 @@ export function EmptyState({
               ))}
             </div>
             <p className="font-mono text-[0.65rem] tracking-normal text-sploot-ink/70">
-              query “screaming cat” → match locked. type words. get the picture. your saves work
-              like this — once the pile has memes in it.
+              query “screaming cat” → match locked. type words. get the picture. no memes on
+              hand? load the starter pile and run a real search right now.
             </p>
+            <StarterPileLoader />
           </div>
 
           {/* Lane B: wire an always-with-you capture surface */}
