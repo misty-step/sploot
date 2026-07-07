@@ -161,6 +161,10 @@ for (const [path, phrases] of Object.entries({
   'apps/web/components/search/search-bar.tsx': ['--sploot-touch-target'],
   'apps/web/components/chrome/mobile-command-dock.tsx': ['--sploot-touch-target'],
   'apps/web/components/library/image-tile.tsx': ['BangerStamp', 'border-sploot-violet', 'text-sploot-cyan'],
+  // sploot-074: the first-use empty state is the capture rig — demo pile of
+  // MemeCells + sticker-labeled capture-surface activation, never a generic
+  // Card/icon illustration (DESIGN.md §6 empty-state rule).
+  'apps/web/components/library/empty-state.tsx': ['MemeCell', 'StickerTab', 'lab-074-capture-activation'],
   // The popup adopts tokens through its stylesheet: App.tsx must import the
   // token-driven style.css and use its semantic panel classes.
   'apps/extension/entrypoints/popup/App.tsx': ["import './style.css'", 'auth-panel'],
@@ -220,6 +224,8 @@ const landingSystemFiles = [
   'apps/web/components/sploot/banger-stamp.tsx',
   'apps/web/components/sploot/cluster-pile.tsx',
   'apps/web/components/ui/button.tsx',
+  // sploot-074: the capture-rig empty state is a product design-system surface.
+  'apps/web/components/library/empty-state.tsx',
 ];
 
 for (const file of landingSystemFiles) {
