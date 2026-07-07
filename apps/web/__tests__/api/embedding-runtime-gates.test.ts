@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   createEmbeddingService: vi.fn(),
   getSearchResults: vi.fn(),
   setSearchResults: vi.fn(),
+  getTextEmbedding: vi.fn(),
   findFirst: vi.fn(),
   findManyAssetTags: vi.fn(),
   vectorSearch: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock('@/lib/auth/server', () => ({
 }));
 
 vi.mock('@/lib/embeddings', () => ({
+  CLIP_MODEL: 'test/clip:model',
   createEmbeddingService: mocks.createEmbeddingService,
   EmbeddingError: class EmbeddingError extends Error {
     constructor(message: string, public statusCode?: number) {
@@ -31,6 +33,7 @@ vi.mock('@/lib/cache', () => ({
   getCacheService: () => ({
     getSearchResults: mocks.getSearchResults,
     setSearchResults: mocks.setSearchResults,
+    getTextEmbedding: mocks.getTextEmbedding,
   }),
 }));
 
