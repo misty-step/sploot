@@ -9,13 +9,15 @@ symlink to this file — they are identical by construction.
 Sploot is a pnpm Turborepo monorepo consolidating:
 - **apps/web** — Next.js 15 meme library: text→image semantic search (CLIP/SigLIP embeddings, pgvector), App Router API routes, Clerk auth, Prisma/Neon pgvector, Vercel Blob, Replicate embeddings, Canary diagnostics, deployed smoke, and Vercel release posture.
 - **apps/extension** — Chrome extension (WXT + React) for one-click image saving: popup/background capture, Clerk extension auth, API client, store assets, and Chrome Web Store release packet.
+- **apps/mcp** — `@sploot/mcp` (`sploot-mcp` bin): MCP server exposing save + search as agent tools over the published token-scoped API contract. Companion skill: `.agents/skills/misty-sploot/`.
 - **packages/common** — `@sploot/common`, shared upload constants and API types consumed by both apps.
 
 ## Ground Truth Pointers
 
 - Product: `VISION.md` — north star, audience, the capture→retrieval→taste→generation arc, and the agent-operability principle
 - Architecture: `ARCHITECTURE.md`, `apps/web/ARCHITECTURE.md`, `apps/extension/ARCHITECTURE.md`
-- Web API docs: `apps/web/docs/API.md` must stay synced with route behavior
+- Web API docs: `apps/web/docs/API.md` must stay synced with route behavior; `apps/web/docs/PUBLIC_API.md` is the published, token-scoped external contract (save + search) — keep both in sync when either changes
+- Agent access: `apps/mcp` (MCP server) + `.agents/skills/misty-sploot/` (skill); five-faces status ledger: `docs/five-faces.md`
 - Shared upload/API contract: `packages/common/src/*`
 - Prisma schema/migrations: `apps/web/prisma`
 - CI: `.github/workflows/ci.yml`; release: `.github/workflows/release.yml`
