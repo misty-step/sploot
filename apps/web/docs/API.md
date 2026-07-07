@@ -1192,17 +1192,15 @@ Clear or warm the cache.
 | 500  | Internal Server Error                       |
 | 503  | Service Unavailable - External service down |
 
-## Mock Mode
+## Local Development Without Vendor Credentials
 
-When running in development without external services configured, the API automatically switches to mock mode. Mock mode provides:
-
-- Simulated authentication (any request is authorized)
-- In-memory storage for assets
-- Fake embeddings for testing
-- Cached example search results
-- No external API calls
-
-To enable mock mode, set `MOCK_MODE=true` in your environment or leave external service environment variables unconfigured.
+There is no mock mode. The credential-free path is the real app against local
+services: `pnpm dev:local` (repo root) provisions a local pgvector Postgres,
+applies migrations, seeds a browsable pile (`qa:seed`), enables qa-local auth
+(`docs/AUTH.md`), boots the dev server, and runs a doctor pass that emits
+evidence. Search works offline for seeded queries because qa:seed populates
+the Postgres text-embedding cache; uncached queries still require
+`REPLICATE_API_TOKEN`.
 
 ## WebSocket Events (Future)
 

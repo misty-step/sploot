@@ -29,9 +29,33 @@ This monorepo consolidates the Sploot web application, browser extension, and sh
 pnpm install
 ```
 
-### Development
+### Local loop, no vendor credentials (recommended first run)
 
-Run all apps simultaneously (Web: localhost:3001, Extension: hot-reload):
+One command from clone to a signed-in, seeded, searchable library — no
+Clerk/Neon/Blob/Replicate keys. Requires Docker for the local pgvector
+Postgres:
+
+```bash
+pnpm dev:local
+```
+
+It provisions the database, applies migrations, seeds 24 browsable assets,
+boots the web app with qa-local auth (see `apps/web/docs/AUTH.md`), and runs a
+doctor pass that writes an evidence packet (health, signed-in `/app`, seeded
+grid, search response) to `.sploot-local/doctor/`. When it finishes, open
+`http://localhost:3001/api/qa-auth/login` to land signed-in on `/app`.
+
+Teardown (removes the database container and generated files):
+
+```bash
+pnpm dev:local:down
+```
+
+### Development against real services
+
+Run all apps simultaneously (Web: localhost:3001, Extension: hot-reload) —
+requires `apps/web/.env.local` with real vendor credentials
+(`apps/web/.env.example`):
 
 ```bash
 pnpm dev

@@ -79,7 +79,20 @@ loader is inert in production builds.
 
 Mint a token for the seeded user with `createQaLocalAuthToken` from
 `lib/auth/qa-local.ts` (default seed user id: `qa-design-user`), set it as the
-`sploot_qa_auth` cookie, and open `/app`.
+`sploot_qa_auth` cookie, and open `/app`. In a browser, `GET
+/api/qa-auth/login` does this in one hop (mints the token, sets the cookie,
+redirects to `/app`) — the route 404s unless qa-local mode is enabled and is
+hard-refused in production like the rest of the harness.
+
+## One-Command Local Boot
+
+`pnpm dev:local` (repo root) composes all of the above: provisions a local
+pgvector Postgres in Docker, applies migrations, runs `qa:seed`, boots the dev
+server with qa-local auth enabled, and finishes with a doctor pass that writes
+an evidence packet (health, signed-in `/app`, seeded grid readback, search
+response, and a grid screenshot when the `agent-browser` CLI is available) to
+`.sploot-local/doctor/`. `pnpm dev:local:down` removes the database container
+and generated files.
 
 ## Evidence Packets
 

@@ -35,6 +35,11 @@ text→image search finds it → favorite/tag. Web routes: `/app`, `/app/search`
 
 ```sh
 pnpm install
+pnpm dev:local      # push-button: docker pgvector + migrate + qa:seed + qa-local
+                    # auth + dev server + doctor evidence (.sploot-local/doctor/);
+                    # sign in via http://localhost:3001/api/qa-auth/login;
+                    # teardown: pnpm dev:local:down
+# — or against real services —
 cp apps/web/.env.example apps/web/.env.local   # fill required vars (below)
 pnpm dev            # web: http://localhost:3001  (turbo runs all apps)
 pnpm dev:web        # web only, same port
