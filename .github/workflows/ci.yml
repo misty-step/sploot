@@ -68,6 +68,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run type-check
 
+  design:
+    name: Design
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Enforces DESIGN.md / design-contract.md (the aesthetic ratchet): fails
+      # the diff on reintroduced banned patterns (e.g. violet-on-black
+      # gradient, backdrop-blur on the auth door) rather than staying
+      # advisory-only. See scripts/check-design-system.mjs.
+      - run: pnpm lint:design
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -132,15 +149,15 @@ jobs:
   merge-gate:
     name: merge-gate
     if: always()
-    needs: [secrets, lint, type-check, test, extension]
+    needs: [secrets, lint, type-check, design, test, extension]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}")
+          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.design.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" ]]; then
-              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }}"
+              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} design=${{ needs.design.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }}"
               exit 1
             fi
           done
