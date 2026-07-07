@@ -33,13 +33,15 @@ export function usePwaInstallPrompt(): UsePwaInstallPromptResult {
   const [requiresManualInstall, setRequiresManualInstall] = useState(false);
 
   useEffect(() => {
-    setRequiresManualInstall(
-      isIosBrowser(window.navigator.userAgent, window.navigator.maxTouchPoints ?? 0)
-    );
+    queueMicrotask(() => {
+      setRequiresManualInstall(
+        isIosBrowser(window.navigator.userAgent, window.navigator.maxTouchPoints ?? 0)
+      );
+    });
 
     const alreadyInstalled = window.matchMedia?.('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
     if (alreadyInstalled) {
-      setInstalled(true);
+      queueMicrotask(() => setInstalled(true));
       return;
     }
 

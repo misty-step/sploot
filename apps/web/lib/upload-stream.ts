@@ -341,8 +341,8 @@ export function createUploadStream(
  * React hook for streaming uploads
  */
 export function useUploadStream(options?: UploadStreamOptions) {
-  const React = require('react');
-  const uploaderRef = React.useRef(null) as { current: UploadStream | null };
+  const React = require('react') as typeof import('react');
+  const uploaderRef = React.useRef<UploadStream | null>(null);
 
   if (typeof window === 'undefined') {
     return {
@@ -352,7 +352,7 @@ export function useUploadStream(options?: UploadStreamOptions) {
     };
   }
 
-  if (!uploaderRef.current) {
+  if (uploaderRef.current == null) {
     uploaderRef.current = new UploadStream(options);
   }
 

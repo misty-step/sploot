@@ -16,21 +16,21 @@ export function useSSEConnection() {
 
   useEffect(() => {
     // Set initial state
-    setConnectionState(client.getState());
+    queueMicrotask(() => setConnectionState(client.getState()));
 
     // Subscribe to state changes
     const unsubscribe = client.onStateChange(setConnectionState);
 
     return unsubscribe;
-  }, []);
+  }, [client]);
 
   const connect = useCallback(() => {
     client.connect();
-  }, []);
+  }, [client]);
 
   const disconnect = useCallback(() => {
     client.disconnect();
-  }, []);
+  }, [client]);
 
   return {
     connectionState,
@@ -85,7 +85,7 @@ export function useSSEEmbeddingUpdates(
     const unsubscribe = client.subscribeToAssets(assetIds, handler);
 
     return unsubscribe;
-  }, [JSON.stringify(assetIds), options?.enabled]);
+  }, [assetIds, client, options?.enabled]);
 
   const getUpdate = useCallback((assetId: string): SSEMessage | undefined => {
     return updates.get(assetId);
@@ -149,7 +149,7 @@ export function useSSEAllUpdates(
     const unsubscribe = client.subscribeToAll(handler);
 
     return unsubscribe;
-  }, [options?.enabled]);
+  }, [client, options?.enabled]);
 
   const clearUpdates = useCallback(() => {
     setUpdates([]);
@@ -200,7 +200,7 @@ export function useSSEEmbeddingStatus(
                       !!assetId;
 
     if (shouldPoll) {
-      setIsPolling(true);
+      queueMicrotask(() => setIsPolling(true));
 
       // Poll for status
       const pollStatus = async () => {
@@ -228,12 +228,14 @@ export function useSSEEmbeddingStatus(
       };
 
       // Initial poll
-      pollStatus();
+      queueMicrotask(() => {
+        void pollStatus();
+      });
 
       // Set up interval
       pollingTimerRef.current = setInterval(pollStatus, options?.pollingInterval || 5000);
     } else {
-      setIsPolling(false);
+      queueMicrotask(() => setIsPolling(false));
       if (pollingTimerRef.current) {
         clearInterval(pollingTimerRef.current);
         pollingTimerRef.current = null;

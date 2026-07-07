@@ -40,7 +40,9 @@ export function useOffline() {
 
   useEffect(() => {
     // Initial check
-    checkConnection();
+    queueMicrotask(() => {
+      void checkConnection();
+    });
 
     // Set up event listeners
     const handleOnline = () => {

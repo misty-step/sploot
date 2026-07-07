@@ -107,9 +107,11 @@ export function useWebShare(): WebShareCapabilities {
     const isSupported = 'share' in navigator && typeof navigator.share === 'function';
 
     if (!isSupported) {
-      setCapabilities({
-        isSupported: false,
-        canShareFiles: false,
+      queueMicrotask(() => {
+        setCapabilities({
+          isSupported: false,
+          canShareFiles: false,
+        });
       });
       return;
     }
@@ -124,9 +126,11 @@ export function useWebShare(): WebShareCapabilities {
       }
     }
 
-    setCapabilities({
-      isSupported,
-      canShareFiles,
+    queueMicrotask(() => {
+      setCapabilities({
+        isSupported,
+        canShareFiles,
+      });
     });
   }, []);
 

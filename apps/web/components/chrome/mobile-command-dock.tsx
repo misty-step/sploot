@@ -55,14 +55,18 @@ function getSortLabel(sortBy: AssetSortBy) {
   return sortOptions.find((option) => option.value === sortBy)?.label ?? 'sort';
 }
 
-function getSortIcon(sortBy: AssetSortBy, sortOrder: AssetSortDirection) {
-  if (sortBy === 'shuffle') return ArrowDown;
-  if (sortBy === 'taste') return Heart;
+function renderSortIcon(sortBy: AssetSortBy, sortOrder: AssetSortDirection) {
+  if (sortBy === 'shuffle') return <ArrowDown className="h-5 w-5" />;
+  if (sortBy === 'taste') return <Heart className="h-5 w-5" />;
   if (sortBy === 'pathname') {
-    return sortOrder === 'desc' ? ArrowDownAZ : ArrowUpAZ;
+    return sortOrder === 'desc'
+      ? <ArrowDownAZ className="h-5 w-5" />
+      : <ArrowUpAZ className="h-5 w-5" />;
   }
 
-  return sortOrder === 'desc' ? ArrowDown : ArrowUp;
+  return sortOrder === 'desc'
+    ? <ArrowDown className="h-5 w-5" />
+    : <ArrowUp className="h-5 w-5" />;
 }
 
 export function MobileCommandDock({
@@ -80,8 +84,6 @@ export function MobileCommandDock({
   sortBy,
   sortOrder,
 }: MobileCommandDockProps) {
-  const SortIcon = getSortIcon(sortBy, sortOrder);
-
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t-[3px] border-accent-cyan bg-background px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 md:hidden">
       <div className="mx-auto grid max-w-md grid-cols-5 gap-1.5">
@@ -146,7 +148,7 @@ export function MobileCommandDock({
               className="h-12 w-full"
               aria-label={`sort memes by ${getSortLabel(sortBy)}`}
             >
-              <SortIcon className="h-5 w-5" />
+              {renderSortIcon(sortBy, sortOrder)}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="center" side="top" className="w-44">

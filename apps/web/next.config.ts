@@ -8,10 +8,6 @@ import {
 } from "./lib/image-config";
 
 const nextConfig: NextConfig = {
-  eslint: {
-    // Allow production builds to succeed even if there are ESLint errors
-    ignoreDuringBuilds: true,
-  },
   // Image optimization configuration
   images: {
     // QA-only: map the reserved seed host to local files so qa-seed fixtures

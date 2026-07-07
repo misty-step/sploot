@@ -138,7 +138,7 @@ export function useEmbeddingStatusSubscription(
     // Get initial status
     const initialStatus = getStatus(assetId);
     if (initialStatus) {
-      setStatus(initialStatus);
+      queueMicrotask(() => setStatus(initialStatus));
     }
 
     // Cleanup subscription on unmount or when assetId changes

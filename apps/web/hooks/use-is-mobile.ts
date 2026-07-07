@@ -54,7 +54,7 @@ export function useIsMobile(): boolean {
     mediaQuery.addEventListener('change', handleChange);
 
     // Sync state with current value (in case it changed during render)
-    setIsMobile(mediaQuery.matches);
+    queueMicrotask(() => setIsMobile(mediaQuery.matches));
 
     // Cleanup listener on unmount
     return () => {

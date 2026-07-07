@@ -409,9 +409,15 @@ export function useUploadRecovery(
   // forever on pages that re-render continuously, so recovery never fired
   // (and the queue was re-read on every render).
   const onFilesRecoveredRef = useRef(onFilesRecovered);
-  onFilesRecoveredRef.current = onFilesRecovered;
   const optionsRef = useRef(options);
-  optionsRef.current = options;
+
+  useEffect(() => {
+    onFilesRecoveredRef.current = onFilesRecovered;
+  }, [onFilesRecovered]);
+
+  useEffect(() => {
+    optionsRef.current = options;
+  }, [options]);
 
   useEffect(() => {
     let mounted = true;

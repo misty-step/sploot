@@ -95,6 +95,7 @@ function AppPageClient() {
 
   // Local state for search query (separate from URL to prevent remounts)
   const [localSearchQuery, setLocalSearchQuery] = useState<string>(queryParam);
+  const [isTyping, setIsTyping] = useState(false);
   const isTypingRef = useRef<boolean>(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -142,8 +143,10 @@ function AppPageClient() {
 
   useEffect(() => {
     if (uploadParam === '1') {
-      setShowUploadPanel(true);
-      updateUrlParams({ upload: null });
+      queueMicrotask(() => {
+        setShowUploadPanel(true);
+        updateUrlParams({ upload: null });
+      });
     }
   }, [uploadParam, updateUrlParams]);
 
@@ -183,7 +186,7 @@ function AppPageClient() {
 
   // Set isClient flag once mounted
   useEffect(() => {
-    setIsClient(true);
+    queueMicrotask(() => setIsClient(true));
   }, []);
 
   // Global keyboard shortcut to focus search (Cmd+K / Ctrl+K)
@@ -315,8 +318,10 @@ function AppPageClient() {
 
     // Set typing flag and clear it after delay
     isTypingRef.current = true;
+    setIsTyping(true);
     setTimeout(() => {
       isTypingRef.current = false;
+      setIsTyping(false);
     }, 1000);
 
     // Update URL only when explicitly requested (on Enter key)
@@ -644,13 +649,13 @@ function AppPageClient() {
 
   useEffect(() => {
     if (isSearching || bangersOnly || tagIdParam) {
-      setSelectedPileId(null);
+      queueMicrotask(() => setSelectedPileId(null));
     }
   }, [bangersOnly, isSearching, tagIdParam]);
 
   useEffect(() => {
     if (selectedPileId && automaticPiles.length > 0 && !automaticPiles.some((pile) => pile.id === selectedPileId)) {
-      setSelectedPileId(null);
+      queueMicrotask(() => setSelectedPileId(null));
     }
   }, [automaticPiles, selectedPileId]);
 
@@ -658,12 +663,12 @@ function AppPageClient() {
     if (!trimmedLibraryQuery) {
       return;
     }
-    setSelectedAsset(null);
+    queueMicrotask(() => setSelectedAsset(null));
   }, [trimmedLibraryQuery]);
 
   // Reset metadata visibility when modal opens/closes
   useEffect(() => {
-    setShowMetadata(false);
+    queueMicrotask(() => setShowMetadata(false));
   }, [selectedAsset]);
 
   return (
@@ -678,7 +683,7 @@ function AppPageClient() {
                 initialQuery={queryParam}
                 searchState={
                   searchLoading ? 'loading' :
-                    isTypingRef.current ? 'typing' :
+                    isTyping ? 'typing' :
                       searchError ? 'error' :
                         libraryQuery && searchAssets.length > 0 ? 'success' :
                           libraryQuery && searchAssets.length === 0 ? 'no-results' :
@@ -764,7 +769,7 @@ function AppPageClient() {
                 initialQuery={queryParam}
                 searchState={
                   searchLoading ? 'loading' :
-                    isTypingRef.current ? 'typing' :
+                    isTyping ? 'typing' :
                       searchError ? 'error' :
                         libraryQuery && searchAssets.length > 0 ? 'success' :
                           libraryQuery && searchAssets.length === 0 ? 'no-results' :

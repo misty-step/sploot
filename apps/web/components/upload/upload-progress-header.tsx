@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -34,8 +34,8 @@ export function UploadProgressHeader({
 }: UploadProgressHeaderProps) {
   const [isCollapsed, setIsCollapsed] = useState(isMinimized);
   const [animationProgress, setAnimationProgress] = useState(0);
-  const operationTimesRef = useRef<number[]>([]);
-  const lastUpdateTimeRef = useRef<number>(Date.now());
+  const [operationTimes, setOperationTimes] = useState<number[]>([]);
+  const lastUpdateTimeRef = useRef<number | null>(null);
 
   // Calculate percentages
   const uploadProgress = stats.totalFiles > 0
@@ -53,37 +53,36 @@ export function UploadProgressHeader({
   // Update operation times for time estimation
   useEffect(() => {
     const now = Date.now();
-    const timeDiff = now - lastUpdateTimeRef.current;
+    const timeDiff = now - (lastUpdateTimeRef.current ?? now);
 
     if (stats.ready > 0 || stats.uploaded > 0) {
       // Track last 5 operation times
-      operationTimesRef.current.push(timeDiff);
-      if (operationTimesRef.current.length > 5) {
-        operationTimesRef.current.shift();
-      }
+      queueMicrotask(() => {
+        setOperationTimes((prev) => [...prev, timeDiff].slice(-5));
+      });
     }
 
     lastUpdateTimeRef.current = now;
   }, [stats.ready, stats.uploaded]);
 
   // Calculate estimated time remaining
-  const getEstimatedTime = (): string => {
+  const estimatedTime = useMemo((): string => {
     if (stats.totalFiles === stats.ready + stats.failed) {
       return 'Complete';
     }
 
-    if (operationTimesRef.current.length === 0) {
+    if (operationTimes.length === 0) {
       return 'Calculating...';
     }
 
-    const avgTime = operationTimesRef.current.reduce((a, b) => a + b, 0) / operationTimesRef.current.length;
+    const avgTime = operationTimes.reduce((a, b) => a + b, 0) / operationTimes.length;
     const remaining = stats.totalFiles - stats.ready - stats.failed;
     const estimatedMs = remaining * avgTime;
 
     if (estimatedMs < 1000) return 'Almost done';
     if (estimatedMs < 60000) return `${Math.ceil(estimatedMs / 1000)}s remaining`;
     return `${Math.ceil(estimatedMs / 60000)}m remaining`;
-  };
+  }, [operationTimes, stats.failed, stats.ready, stats.totalFiles]);
 
   // Smooth progress animation
   useEffect(() => {
@@ -189,7 +188,7 @@ export function UploadProgressHeader({
                 : `Processing ${stats.totalFiles} ${stats.totalFiles === 1 ? 'file' : 'files'}`}
             </h3>
             {!isCollapsed && !isComplete && (
-              <p className="text-xs text-muted-foreground">{getEstimatedTime()}</p>
+              <p className="text-xs text-muted-foreground">{estimatedTime}</p>
             )}
           </div>
         </div>
