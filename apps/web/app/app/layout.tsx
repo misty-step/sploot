@@ -21,9 +21,11 @@ export default async function AppLayout({
   return (
     <OfflineProvider>
       <Suspense fallback={
-        <div className="min-h-screen bg-background">
+        <div className="min-h-screen bg-sploot-workbench">
           <div className="flex h-screen items-center justify-center">
-            <div className="text-muted-foreground">Loading...</div>
+            <div className="sploot-shadow-sm border-[length:var(--sploot-active-border-width)] border-sploot-ink bg-sploot-paper px-5 py-4 font-mono text-sm font-bold lowercase tracking-normal text-sploot-ink">
+              loading the pile...
+            </div>
           </div>
         </div>
       }>

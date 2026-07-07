@@ -200,18 +200,18 @@ describe('Share flow', () => {
       expect(metadata.twitter?.images).toEqual([mockBlobUrl]);
     });
 
-    it('returns 404 metadata for non-existent asset', async () => {
+    it('returns dead-link metadata for non-existent asset', async () => {
       mockPrisma.asset.findFirst.mockResolvedValue(null);
 
       const metadata = await generateMetadata({
         params: Promise.resolve({ id: 'invalid-id' }),
       });
 
-      expect(metadata.title).toBe('Meme not found');
+      expect(metadata.title).toBe('dead meme link | sploot');
       expect(metadata.openGraph).toBeUndefined();
     });
 
-    it('returns 404 metadata for soft-deleted asset', async () => {
+    it('returns dead-link metadata for soft-deleted asset', async () => {
       // Prisma query filters deletedAt, returns null
       mockPrisma.asset.findFirst.mockResolvedValue(null);
 
@@ -219,7 +219,7 @@ describe('Share flow', () => {
         params: Promise.resolve({ id: 'deleted-asset' }),
       });
 
-      expect(metadata.title).toBe('Meme not found');
+      expect(metadata.title).toBe('dead meme link | sploot');
       expect(metadata.openGraph).toBeUndefined();
     });
 
@@ -252,7 +252,7 @@ describe('Share flow', () => {
         params: Promise.resolve({ id: mockAssetId }),
       });
 
-      expect(metadata.title).toBe('Meme not found');
+      expect(metadata.title).toBe('dead meme link | sploot');
     });
   });
 });

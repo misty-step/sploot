@@ -1,0 +1,185 @@
+[
+  {
+    "phase": "before",
+    "route": "/m/00000000-0000-0000-0000-000000000000",
+    "status": 200,
+    "finalUrl": "http://localhost:3002/m/00000000-0000-0000-0000-000000000000",
+    "screenshot": "before/m-bad-id-1440x900.png",
+    "title": "Meme not found",
+    "bodyText": "Meme not found\nGo to Sploot\nConfigure your application\n\nTemporary API keys are enabled so you can get started immediately.\n\nAdd SSO connections (eg. GitHub)\nSet up B2B authentication\nEnable MFA\n\nAccess the dashboard to customize auth settings and explore Clerk features.\n\nConfigure your application",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "networkFailures": []
+  },
+  {
+    "phase": "before",
+    "route": "/s/nonexistent-slug-xyz",
+    "status": 404,
+    "finalUrl": "http://localhost:3002/s/nonexistent-slug-xyz",
+    "screenshot": "before/s-bad-slug-1440x900.png",
+    "title": "",
+    "bodyText": "Not found",
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "pageErrors": [],
+    "networkFailures": [
+      {
+        "status": 404,
+        "url": "http://localhost:3002/s/nonexistent-slug-xyz"
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "route": "/this-route-does-not-exist",
+    "status": 404,
+    "finalUrl": "http://localhost:3002/this-route-does-not-exist",
+    "screenshot": "before/root-404-1440x900.png",
+    "title": "Sploot - Your Personal Meme Library",
+    "bodyText": "404\n404\n404\n> ASSET_NOT_FOUND\n\nThe meme you are looking for has been deleted from the simulation or never existed in this timeline.\n\nRETURN TO BASE\n\nERR_CODE: 0x404\n\nMEM_ADDR: NULL\n\nSTACK_TRACE: CLEARED",
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "pageErrors": [],
+    "networkFailures": [
+      {
+        "status": 404,
+        "url": "http://localhost:3002/this-route-does-not-exist"
+      },
+      {
+        "status": 404,
+        "url": "http://localhost:3002/this-route-does-not-exist"
+      }
+    ]
+  },
+  {
+    "phase": "before",
+    "route": "/app/settings",
+    "status": 200,
+    "finalUrl": "http://localhost:3002/app/settings",
+    "screenshot": "before/settings-1440x900.png",
+    "title": "Sploot - Your Personal Meme Library",
+    "bodyText": "SPLOOT\nlast: 5m\nTOGGLE THEME\n?\nSettings\n\nTune your meme bunker vibes, manage your login, and flex the PWA drip.\n\nAccount lore\n\nSigned in as unknown gremlin\n\nSign out\nStorage\n\n948.1 KB of 1.0 GB used\n\n0.1% used\n1023.1 MB remaining\nUpload tokens\n\nMint a key for the “Save to Sploot” iPhone shortcut (or any uploader). It can only upload — never read or delete your library — and you see the secret exactly once.\n\nmint token\n\nno tokens yet. mint one to wire up the iPhone shortcut below.\n\nhow to set up ",
+    "consoleErrors": [
+      "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:\n\n- A server/client branch `if (typeof window !== 'undefined')`.\n- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n- Date formatting in a user's locale which doesn't match the server.\n- External changing data without sending a snapshot of it along with the HTML.\n- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n\n%s%s https://react.dev/link/hydration-mismatch \n\n  ...\n    <MenuProvider scope={{Menu:[...], ...}} open={false} onOpenChange={function} content={null} ...>\n      <MenuProvider scope={{Menu:[...], ...}} onClose={function Menu.useCallback} isUsingKeyboardRef={{current:false}} ...>\n        <DropdownMenuTrigger asChild={true}>\n          <DropdownMenuTrigger data-slot=\"dropdown-m...\" asChild={true}>\n            <MenuAnchor asChild={true} __scopeMenu={{Menu:[...], ...}}>\n              <PopperAnchor __scopePopper={{Menu:[...], ...}} asChild={true} ref={null}>\n                <Primitive.div asChild={true} ref={function}>\n                  <Primitive.div.Slot ref={function}>\n                    <Primitive.div.SlotClone ref={function}>\n                      <Primitive.button type=\"button\" id=\"radix-_R_6...\" aria-haspopup=\"menu\" aria-expanded={false} ...>\n                        <Primitive.button.Slot type=\"button\" id=\"radix-_R_6...\" aria-haspopup=\"menu\" ...>\n                          <Primitive.button.SlotClone type=\"button\" id=\"radix-_R_6...\" aria-haspopup=\"menu\" ...>\n                            <button\n                              className=\"cursor-pointer focus-visible:outline-none mr-2\"\n                              aria-label=\"User menu\"\n                              type=\"button\"\n+                             id=\"radix-_R_6r6itjblb_\"\n-                             id=\"radix-_R_rcqbmdelb_\"\n                              aria-haspopup=\"menu\"\n                              aria-expanded={false}\n                              aria-controls={undefined}\n                              data-state=\"closed\"\n                              data-disabled={undefined}\n                              disabled={false}\n                              data-slot=\"dropdown-menu-trigger\"\n                              onPointerDown={function handleEvent}\n                              onKeyDown={function handleEvent}\n                              ref={function}\n                            >\n        ...\n"
+    ],
+    "pageErrors": [],
+    "networkFailures": []
+  },
+  {
+    "phase": "before",
+    "route": "/app/meme/00000000-0000-0000-0000-000000000000",
+    "status": 200,
+    "finalUrl": "http://localhost:3002/app/meme/00000000-0000-0000-0000-000000000000",
+    "screenshot": "before/app-meme-bad-id-1440x900.png",
+    "title": "Sploot - Your Personal Meme Library",
+    "bodyText": "SPLOOT\nlast: 5m\nTOGGLE THEME\n?\nMeme not found\nBack to library\nConfigure your application\n\nTemporary API keys are enabled so you can get started immediately.\n\nAdd SSO connections (eg. GitHub)\nSet up B2B authentication\nEnable MFA\n\nAccess the dashboard to customize auth settings and explore Clerk features.\n\nConfigure your application",
+    "consoleErrors": [
+      "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:\n\n- A server/client branch `if (typeof window !== 'undefined')`.\n- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n- Date formatting in a user's locale which doesn't match the server.\n- External changing data without sending a snapshot of it along with the HTML.\n- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n\n%s%s https://react.dev/link/hydration-mismatch \n\n  ...\n    <MenuProvider scope={{Menu:[...], ...}} open={false} onOpenChange={function} content={null} ...>\n      <MenuProvider scope={{Menu:[...], ...}} onClose={function Menu.useCallback} isUsingKeyboardRef={{current:false}} ...>\n        <DropdownMenuTrigger asChild={true}>\n          <DropdownMenuTrigger data-slot=\"dropdown-m...\" asChild={true}>\n            <MenuAnchor asChild={true} __scopeMenu={{Menu:[...], ...}}>\n              <PopperAnchor __scopePopper={{Menu:[...], ...}} asChild={true} ref={null}>\n                <Primitive.div asChild={true} ref={function}>\n                  <Primitive.div.Slot ref={function}>\n                    <Primitive.div.SlotClone ref={function}>\n                      <Primitive.button type=\"button\" id=\"radix-_R_6...\" aria-haspopup=\"menu\" aria-expanded={false} ...>\n                        <Primitive.button.Slot type=\"button\" id=\"radix-_R_6...\" aria-haspopup=\"menu\" ...>\n                          <Primitive.button.SlotClone type=\"button\" id=\"radix-_R_6...\" aria-haspopup=\"menu\" ...>\n                            <button\n                              className=\"cursor-pointer focus-visible:outline-none mr-2\"\n                              aria-label=\"User menu\"\n                              type=\"button\"\n+                             id=\"radix-_R_6r6itjblb_\"\n-                             id=\"radix-_R_rcqbmdelb_\"\n                              aria-haspopup=\"menu\"\n                              aria-expanded={false}\n                              aria-controls={undefined}\n                              data-state=\"closed\"\n                              data-disabled={undefined}\n                              disabled={false}\n                              data-slot=\"dropdown-menu-trigger\"\n                              onPointerDown={function handleEvent}\n                              onKeyDown={function handleEvent}\n                              ref={function}\n                            >\n        ...\n",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "pageErrors": [],
+    "networkFailures": [
+      {
+        "status": 404,
+        "url": "http://localhost:3002/api/assets/00000000-0000-0000-0000-000000000000"
+      },
+      {
+        "status": 404,
+        "url": "http://localhost:3002/api/assets/00000000-0000-0000-0000-000000000000/similar?limit=12"
+      },
+      {
+        "status": 404,
+        "url": "http://localhost:3002/api/assets/00000000-0000-0000-0000-000000000000"
+      },
+      {
+        "status": 404,
+        "url": "http://localhost:3002/api/assets/00000000-0000-0000-0000-000000000000/similar?limit=12"
+      }
+    ]
+  },
+  {
+    "phase": "after",
+    "route": "/m/00000000-0000-0000-0000-000000000000",
+    "status": 200,
+    "finalUrl": "http://localhost:3001/m/00000000-0000-0000-0000-000000000000",
+    "screenshot": "after/m-bad-id-1440x900.png",
+    "title": "dead meme link | sploot",
+    "bodyText": "SHARE URL 404\nSTATE SURFACE\nthis meme left the pile.\n\nthe link survived, but the saved meme is gone or private now. open sploot or ask for a fresh share.\n\nOPEN SPLOOT\nGET HELP\nROUTE\n/m/:id\nRESULT\ndead link\nRECOVERY\nfront door\nRECOVERY\n1 tap",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "networkFailures": []
+  },
+  {
+    "phase": "after",
+    "route": "/s/nonexistent-slug-xyz",
+    "status": 200,
+    "finalUrl": "http://localhost:3001/s/nonexistent-slug-xyz",
+    "screenshot": "after/s-bad-slug-1440x900.png",
+    "title": "dead share link | sploot",
+    "bodyText": "SHARE SLUG 404\nSTATE SURFACE\nthis share link fell out of the pile.\n\nthe short link does not point at a saved meme anymore. open sploot or ask for a fresh share.\n\nOPEN SPLOOT\nGET HELP\nROUTE\n/s/:slug\nRESULT\ndead link\nRECOVERY\nfront door\nRECOVERY\n1 tap",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "networkFailures": []
+  },
+  {
+    "phase": "after",
+    "route": "/this-route-does-not-exist",
+    "status": 404,
+    "finalUrl": "http://localhost:3001/this-route-does-not-exist",
+    "screenshot": "after/root-404-1440x900.png",
+    "title": "route 404 | sploot",
+    "bodyText": "ROUTE 404\nSTATE SURFACE\nno pile here.\n\nthis route never made it into the index. open sploot and search the pile from the front door.\n\nOPEN SPLOOT\nGET HELP\nROUTE\n404\nINDEX\nmiss\nRECOVERY\nfront door\n?!\nRECOVERY\n1 tap",
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)",
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "pageErrors": [],
+    "networkFailures": [
+      {
+        "status": 404,
+        "url": "http://localhost:3001/this-route-does-not-exist"
+      },
+      {
+        "status": 404,
+        "url": "http://localhost:3001/this-route-does-not-exist"
+      }
+    ]
+  },
+  {
+    "phase": "after",
+    "route": "/app/settings",
+    "status": 200,
+    "finalUrl": "http://localhost:3001/app/settings",
+    "screenshot": "after/settings-1440x900.png",
+    "title": "Sploot - Your Personal Meme Library",
+    "bodyText": "SPLOOT\nlast: 7m\nTOGGLE THEME\n?\nSettings\n\nTune your meme bunker vibes, manage your login, and flex the PWA drip.\n\nAccount lore\n\nSigned in as unknown user\n\nSign out\nStorage\n\n948.1 KB of 1.0 GB used\n\n0.1% used\n1023.1 MB remaining\nUpload tokens\n\nMint a key for the “Save to Sploot” iPhone shortcut (or any uploader). It can only upload — never read or delete your library — and you see the secret exactly once.\n\nmint token\n\nno tokens yet. mint one to wire up the iPhone shortcut below.\n\nhow to set up the",
+    "consoleErrors": [],
+    "pageErrors": [],
+    "networkFailures": []
+  },
+  {
+    "phase": "after",
+    "route": "/app/meme/00000000-0000-0000-0000-000000000000",
+    "status": 200,
+    "finalUrl": "http://localhost:3001/app/meme/00000000-0000-0000-0000-000000000000",
+    "screenshot": "after/app-meme-bad-id-1440x900.png",
+    "title": "Sploot - Your Personal Meme Library",
+    "bodyText": "SPLOOT\nlast: 7m\nTOGGLE THEME\n?\nDETAIL 404\nSTATE SURFACE\nthat save left the pile.\n\nthe detail route loaded, but this meme is gone, private, or never belonged to this library.\n\nOPEN THE PILE\nROUTE\n/app/meme/:id\nASSET\nmiss\nRECOVERY\nlibrary\nRECOVERY\n1 tap",
+    "consoleErrors": [
+      "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    ],
+    "pageErrors": [],
+    "networkFailures": [
+      {
+        "status": 404,
+        "url": "http://localhost:3001/api/assets/00000000-0000-0000-0000-000000000000"
+      }
+    ]
+  }
+]

@@ -90,7 +90,7 @@ export default function SettingsPage() {
         <div>
           <h2 className="text-lg font-semibold text-foreground">Account lore</h2>
           <p className="text-muted-foreground text-sm mt-1">
-            Signed in as <span className="text-foreground">{user?.emailAddresses?.[0]?.emailAddress ?? 'unknown gremlin'}</span>
+            Signed in as <span className="text-foreground">{user?.emailAddresses?.[0]?.emailAddress ?? 'unknown user'}</span>
           </p>
         </div>
 
@@ -193,9 +193,11 @@ export default function SettingsPage() {
       </section>
 
       <section className="bg-card border border-border p-5 space-y-3">
-        <h2 className="text-lg font-semibold text-foreground">Coming soon™</h2>
+        <h2 className="text-lg font-semibold text-foreground">What exists now</h2>
         <p className="text-muted-foreground text-sm">
-          Theme switching, notification spam, and squad-sharing are on the roadmap. Ping us with your wildest feature dreams.
+          This settings panel manages your account, storage, install path, upload
+          tokens, version, help, support, and privacy links. No social surface is
+          hiding behind a teaser.
         </p>
       </section>
 
