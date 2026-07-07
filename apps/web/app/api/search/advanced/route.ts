@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
 import { unstable_rethrow } from 'next/navigation';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
@@ -26,7 +27,7 @@ async function postHandler(req: NextRequest) {
   let filters: SearchFilters = {};
   let limit: number = 30;
   let offset: number = 0;
-  let threshold: number = 0.6;
+  let threshold: number = SEARCH_SIMILARITY_FLOOR;
   let sortBy: string = 'relevance';
 
   try {
@@ -44,7 +45,7 @@ async function postHandler(req: NextRequest) {
       filters = {} as SearchFilters,
       limit = 30,
       offset = 0,
-      threshold = 0.6,
+      threshold = SEARCH_SIMILARITY_FLOOR,
       sortBy = 'relevance', // 'relevance', 'date', 'favorite'
     } = body);
 

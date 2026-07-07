@@ -6,6 +6,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
+import { SIMILARITY_MATCH_BOUNDARY, SIMILARITY_NEAR_BOUNDARY } from '@/lib/search-config';
+
+const MATCH_PCT = Math.round(SIMILARITY_MATCH_BOUNDARY * 100);
+const NEAR_PCT = Math.round(SIMILARITY_NEAR_BOUNDARY * 100);
 
 interface SimilarityScoreLegendProps {
   className?: string;
@@ -44,7 +48,7 @@ export function SimilarityScoreLegend({ className }: SimilarityScoreLegendProps)
             <Badge className="bg-green-500 hover:bg-green-500 text-white border-green-500">
               High match
             </Badge>
-            <span className="text-xs text-muted-foreground">(≥85%)</span>
+            <span className="text-xs text-muted-foreground">{`(≥${MATCH_PCT}%)`}</span>
           </div>
 
           <span className="text-muted-foreground/40">•</span>
@@ -54,7 +58,7 @@ export function SimilarityScoreLegend({ className }: SimilarityScoreLegendProps)
             <Badge variant="secondary" className="text-yellow-500">
               Medium
             </Badge>
-            <span className="text-xs text-muted-foreground">(70-85%)</span>
+            <span className="text-xs text-muted-foreground">{`(${NEAR_PCT}-${MATCH_PCT}%)`}</span>
           </div>
 
           <span className="text-muted-foreground/40">•</span>
@@ -64,7 +68,7 @@ export function SimilarityScoreLegend({ className }: SimilarityScoreLegendProps)
             <Badge variant="outline">
               Standard
             </Badge>
-            <span className="text-xs text-muted-foreground">(&lt;70%)</span>
+            <span className="text-xs text-muted-foreground">{`(<${NEAR_PCT}%)`}</span>
           </div>
         </div>
 

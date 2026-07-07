@@ -99,6 +99,12 @@ jobs:
         run: pnpm --filter web db:migrate
       - name: Run tests
         run: pnpm --filter web test
+      # Retrieval-quality gate (apps/web/eval/README.md): deterministic
+      # golden-set eval against the committed baseline. Quality metrics have a
+      # zero noise floor (committed embeddings); latency gates against the
+      # absolute budget in eval/baseline.json. Fails the job on any regression.
+      - name: Retrieval eval (golden-set search quality)
+        run: pnpm --filter web eval:search
 
   extension:
     name: Extension

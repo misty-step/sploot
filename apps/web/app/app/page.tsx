@@ -1,4 +1,5 @@
 'use client';
+import { SEARCH_DEFAULT_LIMIT, SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
 
 import { Suspense } from 'react';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
@@ -178,7 +179,7 @@ function AppPageClient() {
     deleteAsset: deleteSearchAsset,
     search: runInlineSearch,
     metadata: searchMetadata,
-  } = useSearchAssets(debouncedLibraryQuery, { limit: 50, threshold: 0.2, shuffleSeed });
+  } = useSearchAssets(debouncedLibraryQuery, { limit: SEARCH_DEFAULT_LIMIT, threshold: SEARCH_SIMILARITY_FLOOR, shuffleSeed });
 
   // Set isClient flag once mounted
   useEffect(() => {

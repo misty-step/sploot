@@ -306,7 +306,9 @@ async function main() {
         queries: queriesFile.queries.length,
         top1: metrics.top1,
         top5: metrics.top5,
-        mrr: Number(metrics.mrr.toFixed(6)),
+        // Full precision: the gate is exact (EPS covers float representation
+        // only), so a rounded-up stored value would fail an identical re-run.
+        mrr: metrics.mrr,
         latencyBudgetMs: Math.max(250, Math.ceil(p95 * 3)),
         generatedAt: new Date().toISOString(),
         note:

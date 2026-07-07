@@ -16,6 +16,7 @@ import { logger } from '@/lib/observability-logger';
 import { BangerStamp } from '@/components/sploot';
 import { isAnimatedImageMimeType, isVideoMimeType } from '@sploot/common';
 import { resolveQaSeedSrc } from '@/lib/qa/qa-image-loader';
+import { SIMILARITY_MATCH_BOUNDARY, SIMILARITY_NEAR_BOUNDARY } from '@/lib/search-config';
 
 interface ImageTileProps {
   asset: Asset;
@@ -315,9 +316,9 @@ function ImageTileComponent({
     const score = (asset as any).similarity;
     if (typeof score !== 'number') return null;
 
-    if (score > 0.85) {
+    if (score >= SIMILARITY_MATCH_BOUNDARY) {
       return 'border-sploot-cyan shadow-[0_0_0_2px_var(--sploot-cyan),0_0_12px_color-mix(in_srgb,var(--sploot-cyan)_28%,transparent)]';
-    } else if (score >= 0.7) {
+    } else if (score >= SIMILARITY_NEAR_BOUNDARY) {
       return 'border-sploot-violet shadow-[0_0_0_2px_var(--sploot-violet),0_0_12px_color-mix(in_srgb,var(--sploot-violet)_28%,transparent)]';
     }
     return 'border-border shadow-[0_0_0_2px_hsl(var(--border))]';

@@ -1,12 +1,12 @@
 {
   "model": "krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4",
-  "threshold": 0.2,
+  "threshold": 0.12,
   "assets": 100,
   "queries": 88,
-  "top1": 0.9090909090909091,
-  "top5": 0.9545454545454546,
-  "mrr": 0.931818,
+  "top1": 0.9204545454545454,
+  "top5": 0.9772727272727273,
+  "mrr": 0.9472339675828049,
   "latencyBudgetMs": 250,
-  "generatedAt": "2026-07-07T13:22:51.548Z",
+  "generatedAt": "2026-07-07T13:26:07.008Z",
   "note": "Ratcheted baseline for scripts/eval-search.ts. Quality metrics are deterministic (committed embeddings): any drop below these values fails CI. latencyBudgetMs is an absolute p95 budget (3x observed p95 at generation time, min 250ms) — the explicit noise floor for CI-runner latency variance. Update only via --update-baseline in a reviewed commit."
 }
