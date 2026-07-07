@@ -85,3 +85,4 @@ next-env.d.ts
 
 # dev:local doctor evidence + local state
 .sploot-local/
+.env*.local
