@@ -82,3 +82,6 @@ next-env.d.ts
 .spellbook/traces/provider-lanes/
 .pi/state/
 .codex/agents/
+
+# dev:local doctor evidence + local state
+.sploot-local/
