@@ -26,7 +26,7 @@
 
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { createQaLocalAuthToken } from '../lib/auth/qa-local';
@@ -40,6 +40,23 @@ const SEARCH_PROBE_QUERY = 'reaction face meme'; // a PILE_ANCHORS query: qa:see
 const MIN_SEEDED_ASSETS = 20;
 const APP_ROOT = process.cwd();
 const LOCAL_STATE_DIR = join(APP_ROOT, '..', '..', '.sploot-local');
+// Persisted so a separate process (e.g. `pnpm qa:evidence --base-url`) can
+// sign qa-auth tokens that match the secret this server is actually running
+// with, instead of guessing a fresh random one that never verifies.
+const PERSISTED_SECRET_PATH = join(LOCAL_STATE_DIR, 'qa-auth-secret');
+
+async function resolveAuthSecret(): Promise<string> {
+  if (process.env.SPLOOT_QA_AUTH_SECRET) {
+    return process.env.SPLOOT_QA_AUTH_SECRET;
+  }
+  try {
+    const persisted = (await readFile(PERSISTED_SECRET_PATH, 'utf8')).trim();
+    if (persisted) return persisted;
+  } catch {
+    // no persisted secret yet — generate one below.
+  }
+  return randomBytes(24).toString('hex');
+}
 
 interface Args {
   down: boolean;
@@ -324,7 +341,11 @@ async function main() {
   await ensureDockerUp();
   await ensurePostgres(args.dbPort);
 
-  const secret = process.env.SPLOOT_QA_AUTH_SECRET ?? randomBytes(24).toString('hex');
+  const secret = await resolveAuthSecret();
+  await mkdir(LOCAL_STATE_DIR, { recursive: true });
+  await writeFile(PERSISTED_SECRET_PATH, secret);
+  log(`qa-auth secret persisted to ${PERSISTED_SECRET_PATH} (read automatically by \`qa:evidence --base-url\`)`);
+
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     DATABASE_URL: `postgresql://test:test@localhost:${args.dbPort}/sploot_test?sslmode=disable`,

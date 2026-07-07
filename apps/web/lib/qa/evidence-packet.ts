@@ -26,6 +26,13 @@ export interface BrowserWalk {
   screenshot: string;
   consoleErrors: string[];
   pageErrors: string[];
+  /**
+   * True when the walk landed on the sign-in wall instead of the requested
+   * route (e.g. an unauthed request redirected to /sign-in). A walk that
+   * only "proves" the sign-in page rendered cleanly is not evidence the
+   * feature works — it must always force the packet to FAIL.
+   */
+  signInWall?: boolean;
 }
 
 export interface EvidencePacketInput {
@@ -44,7 +51,8 @@ export type Verdict = 'pass' | 'fail';
 export function packetVerdict(input: EvidencePacketInput): Verdict {
   const checkFailed = input.checks.some((check) => check.status === 'fail');
   const pageErrored = input.browser.some((walk) => walk.pageErrors.length > 0);
-  return checkFailed || pageErrored ? 'fail' : 'pass';
+  const signInWalled = input.browser.some((walk) => walk.signInWall);
+  return checkFailed || pageErrored || signInWalled ? 'fail' : 'pass';
 }
 
 const STATUS_LABEL: Record<CheckStatus, string> = {
@@ -81,6 +89,12 @@ function renderWalk(walk: BrowserWalk): string {
     '',
     `![${walk.route} @ ${walk.viewport}](${walk.screenshot})`,
   ];
+  if (walk.signInWall) {
+    lines.push(
+      '',
+      '🛑 Landed on the sign-in wall instead of the requested route — no authenticated evidence was captured.'
+    );
+  }
   if (walk.pageErrors.length > 0) {
     lines.push('', 'Page errors:', ...walk.pageErrors.map((error) => `- ${error}`));
   }
