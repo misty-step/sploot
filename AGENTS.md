@@ -162,14 +162,9 @@ pnpm --filter web db:studio       # Open Prisma Studio
 
 Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or explicit `DB path unverified` evidence. GitHub CI adds frozen install, `pnpm --filter web db:migrate` against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, the retrieval-quality eval (`pnpm --filter web eval:search`, ratcheted against `apps/web/eval/baseline.json` — see `apps/web/eval/README.md`; changes touching embeddings, similarity thresholds, or query SQL must carry their paired eval delta), extension lint/test/build, and the `merge-gate` aggregate job.
 
-<!-- CONFLICT: AGENTS.md described Lefthook as one combined statement ("gitleaks, web lint, extension lint, and turbo type-check before local commit/push"); CLAUDE.md split it by stage (pre-commit: gitleaks, lint, typecheck; pre-push: typecheck only, tests skipped locally). Both are reproduced below — reconcile which stage actually runs what. -->
+### Git Hooks (Lefthook)
 
-Lefthook runs gitleaks, web lint, extension lint, and turbo type-check before local commit/push. Do not lower gates; diagnose env, DB, migration, WXT, or auth setup instead.
-
-### Git Hooks (Lefthook) — per-stage detail
-
-- Pre-commit runs: gitleaks, lint, typecheck
-- Pre-push runs: typecheck (tests skipped locally — require database)
+Pre-commit runs gitleaks, secrets scan, web lint, extension lint, and typecheck (root `lefthook.yml` runs gitleaks + secrets + lint-web + lint-extension + typecheck; `apps/web/lefthook.yml` runs gitleaks + secrets + validate-env + lint + typecheck — both agree on scope). Pre-push runs secrets + gitleaks + typecheck; tests are skipped locally in both configs because they require a pgvector-backed Postgres database (CI runs the full suite against the `pgvector/pgvector:pg15` service). Do not lower gates; diagnose env, DB, migration, WXT, or auth setup instead.
 
 ## CI/CD
 
