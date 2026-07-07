@@ -17,30 +17,36 @@ import { ReactNode } from "react";
  *  borders, steered-cyan primary, mono field labels. No violet, no blur. */
 export const consoleDoorAppearance = {
   variables: {
+    // steered accent (light value; the trailing-! utilities below carry the
+    // dark flip through the semantic tokens)
+    colorPrimary: "#0c6a84",
     borderRadius: "0px",
   },
   elements: {
+    // Clerk injects its own styles at high specificity, so the semantic-token
+    // utilities ride the important flag (Tailwind v4 trailing !) to win.
     rootBox: "w-full",
-    cardBox: "w-full rounded-none border-0 shadow-none",
-    card: "bg-background rounded-none border-0 shadow-none",
-    headerTitle: "text-foreground",
-    headerSubtitle: "text-muted-foreground",
+    cardBox: "w-full rounded-none! border-0! shadow-none!",
+    card: "bg-background! rounded-none! border-0! shadow-none!",
+    headerTitle: "text-foreground!",
+    headerSubtitle: "text-muted-foreground!",
     socialButtonsBlockButton:
-      "bg-secondary hover:bg-muted border border-border text-foreground rounded-none shadow-none",
-    dividerLine: "bg-border",
-    dividerText: "font-mono text-[11px] uppercase text-muted-foreground",
+      "bg-secondary! hover:bg-muted! border! border-border! text-foreground! rounded-none! shadow-none!",
+    dividerLine: "bg-border!",
+    dividerText: "font-mono text-[11px] uppercase text-muted-foreground!",
     formFieldLabel:
-      "font-mono text-[11px] uppercase tracking-wide text-muted-foreground",
+      "font-mono text-[11px] uppercase tracking-wide text-muted-foreground!",
     formFieldInput:
-      "bg-background border-border rounded-none text-foreground shadow-none focus:border-primary",
+      "bg-background! border! border-border! rounded-none! text-foreground! shadow-none! focus:border-primary!",
     formButtonPrimary:
-      "bg-primary hover:bg-primary/90 text-primary-foreground rounded-none shadow-none transition-colors",
+      "bg-primary! hover:bg-primary/90! text-primary-foreground! rounded-none! shadow-none! transition-colors",
     formFieldInputShowPasswordButton:
-      "text-muted-foreground hover:text-foreground",
-    identityPreviewEditButtonIcon: "text-primary",
-    footerActionLink: "text-primary hover:text-primary/80",
-    footer: "bg-background",
-    footerAction: "bg-background",
+      "text-muted-foreground! hover:text-foreground!",
+    identityPreviewEditButtonIcon: "text-primary!",
+    footerActionLink: "text-primary! hover:text-primary/80!",
+    footer: "bg-background!",
+    footerAction: "bg-background!",
+    footerActionText: "text-muted-foreground!",
   },
   layout: {
     socialButtonsPlacement: "top" as const,

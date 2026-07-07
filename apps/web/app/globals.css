@@ -813,3 +813,22 @@ select:focus-visible {
   /* the cyan accent token the workbench chrome reads = the steered accent */
   --accent-cyan: var(--ae-accent);
 }
+
+/* Clerk console door (sploot-032): Clerk injects its own high-specificity
+   styles (instance branding ring, footer surfaces) that the appearance
+   classes cannot reach — pin them to the substrate. */
+.cl-formFieldInput {
+  box-shadow: none !important;
+}
+.cl-formFieldInput:focus,
+.cl-formFieldInput:focus-visible {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 1px var(--primary) !important;
+  outline: none !important;
+}
+.cl-footer,
+.cl-footer > *,
+.cl-footerAction {
+  background: var(--background) !important;
+  background-image: none !important;
+}
