@@ -31,6 +31,15 @@ export default function Support() {
               <p>
                 Sploot is a personal meme library with AI-powered semantic search. Save images from anywhere on the web and find them instantly with natural language queries.
               </p>
+              <p>
+                New here? The{" "}
+                <Link href="/help" className="text-accent-cyan hover:underline">
+                  Getting Started guide
+                </Link>{" "}
+                walks through signing up, every way to save a meme
+                (extension, iPhone shortcut, PWA share, paste/upload), and
+                how your data works.
+              </p>
             </div>
           </section>
 
