@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lab-074 — capture-surface activation (first-run)</title>
+<style>
+  :root{
+    --ink:#0a0a0a; --paper:#f3efe4; --paper-warm:#e9e4d6; --blue:#1f4cff;
+    --cyan:#00e5d4; --magenta:#ff2d9b; --yellow:#ffe600; --orange:#ff5a1f;
+    --lime:#9cff2e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:"Space Grotesk",system-ui,sans-serif;line-height:1.45}
+  .mono{font-family:"Space Mono",ui-monospace,monospace;text-transform:uppercase;letter-spacing:0}
+  header{border-bottom:6px solid var(--ink);padding:28px 32px;background:var(--paper-warm)}
+  h1{font-family:"Archivo Black","Space Grotesk",sans-serif;font-size:1.7rem;margin:0 0 8px;text-transform:uppercase}
+  h2{font-family:"Archivo Black","Space Grotesk",sans-serif;font-size:1.05rem;margin:0;text-transform:uppercase}
+  main{max-width:1080px;margin:0 auto;padding:32px 32px 80px}
+  .option{border:4px solid var(--ink);background:#fff;margin:28px 0;box-shadow:8px 8px 0 var(--ink)}
+  .option>.bar{display:flex;align-items:center;gap:12px;border-bottom:4px solid var(--ink);
+    padding:10px 14px;background:var(--ink);color:var(--paper)}
+  .option>.bar .num{background:var(--yellow);color:var(--ink);border:3px solid var(--paper);
+    padding:2px 8px;font-weight:700}
+  .option .body{padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:800px){.option .body{grid-template-columns:1fr}}
+  .mock{border:3px solid var(--ink);background:var(--paper);min-height:220px;padding:12px;
+    position:relative;overflow:hidden;font-size:.72rem}
+  .mock .titlebar{border:3px solid var(--ink);background:var(--ink);color:var(--paper);
+    padding:3px 8px;font-family:"Space Mono",monospace;text-transform:uppercase;font-size:.6rem;
+    display:flex;justify-content:space-between}
+  .cell{border:3px solid var(--ink);background:#fff;display:flex;flex-direction:column}
+  .cell .h{border-bottom:3px solid var(--ink);padding:2px 5px;font-family:"Space Mono",monospace;
+    font-size:.5rem;text-transform:uppercase;display:flex;justify-content:space-between}
+  .cell .g{flex:1;display:flex;align-items:center;justify-content:center;font-size:1.4rem;min-height:52px}
+  .cell.dim{opacity:.25;filter:grayscale(1)}
+  .cell.match{box-shadow:0 0 0 4px var(--lime)}
+  .sticker{display:inline-block;border:3px solid var(--ink);padding:3px 8px;
+    font-family:"Space Mono",monospace;font-size:.58rem;font-weight:700;text-transform:uppercase;
+    box-shadow:3px 3px 0 var(--ink)}
+  .sticker.cyan{background:var(--cyan)} .sticker.magenta{background:var(--magenta);color:#fff}
+  .sticker.yellow{background:var(--yellow)} .sticker.lime{background:var(--lime)}
+  .btn{display:inline-block;border:3px solid var(--ink);background:var(--blue);color:#fff;
+    padding:5px 10px;font-family:"Space Mono",monospace;font-size:.6rem;font-weight:700;
+    text-transform:uppercase;box-shadow:4px 4px 0 var(--ink)}
+  .btn.ghost{background:#fff;color:var(--ink)}
+  .row{display:flex;align-items:center;gap:8px;border:3px solid var(--ink);background:#fff;
+    padding:6px 8px;margin:6px 0;font-family:"Space Mono",monospace;font-size:.58rem;text-transform:uppercase}
+  .led{width:10px;height:10px;border:2px solid var(--ink);display:inline-block}
+  .led.off{background:#fff} .led.on{background:var(--lime)}
+  .notes{padding:0 18px 18px}
+  .notes p{margin:8px 0}
+  .verdict{display:inline-block;border:3px solid var(--ink);padding:2px 10px;font-weight:700;
+    font-family:"Space Mono",monospace;text-transform:uppercase;font-size:.7rem}
+  .verdict.win{background:var(--lime)} .verdict.lose{background:var(--paper-warm)}
+  .decision{border:6px solid var(--ink);background:var(--yellow);padding:22px;margin:40px 0 0;
+    box-shadow:10px 10px 0 var(--ink)}
+  table{border-collapse:collapse;width:100%;font-size:.8rem;margin-top:14px}
+  th,td{border:3px solid var(--ink);padding:6px 8px;text-align:left}
+  th{background:var(--ink);color:var(--paper);font-family:"Space Mono",monospace;text-transform:uppercase;font-size:.65rem}
+  code{background:var(--paper-warm);border:1px solid var(--ink);padding:0 3px;font-size:.85em}
+</style>
+</head>
+<body>
+<header>
+  <h1>lab-074 · capture-surface activation</h1>
+  <p class="mono" style="margin:0;font-size:.7rem">
+    card sploot-074 · first-run (0-asset) user must be led to wire an always-with-you capture surface —
+    desktop: chrome extension (live: chromewebstore.google.com/detail/sploot/fbhkflbcnllfogefckablkafjknmcfnd) ·
+    android: share sheet via installed PWA · iOS: "save to sploot" shortcut + upload token.
+    constraint set: DESIGN.md §6 empty state = "show product action and example pile, not generic illustration";
+    sploot-053 shares the criterion "empty state actively routes to the aha path"; passes pnpm lint:design.
+  </p>
+</header>
+<main>
+
+<!-- OPTION 1 -->
+<section class="option" id="opt1">
+  <div class="bar"><span class="num mono">01</span><h2>two-lane capture rig</h2><span class="verdict win">winner</span></div>
+  <div class="body">
+    <div class="mock">
+      <div class="titlebar"><span>the.pile — 0 memes</span><span>■ ■ ■</span></div>
+      <div style="display:grid;grid-template-columns:1.1fr 1fr;gap:10px;margin-top:8px">
+        <div>
+          <span class="sticker yellow">demo pile — this is the trick</span>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px">
+            <div class="cell dim"><div class="h"><span>IMG_0041</span></div><div class="g">💀</div></div>
+            <div class="cell match"><div class="h"><span>cat_scream</span></div><div class="g">🐱</div></div>
+            <div class="cell dim"><div class="h"><span>rxn_774</span></div><div class="g">😭</div></div>
+          </div>
+          <div class="mono" style="font-size:.55rem;margin-top:6px">query: "screaming cat" → match locked. your saves work like this.</div>
+        </div>
+        <div>
+          <span class="sticker cyan">wire a capture surface</span>
+          <div class="row"><span class="led off"></span>chrome ext <span class="btn" style="margin-left:auto">get it</span></div>
+          <div class="row"><span class="led off"></span>share sheet <span class="btn" style="margin-left:auto">install</span></div>
+          <div class="row"><span class="led on"></span>paste / drag — already live</div>
+          <div class="btn ghost" style="margin-top:4px">or upload chaos now</div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <p><strong>Structure.</strong> The empty grid is replaced by a two-lane rig: left lane is an example pile of
+      doodle <code>MemeCell</code>s with one lime match — the product action demonstrated statically (serves 053's
+      aha routing). Right lane is a console-styled "capture surfaces" panel: one bordered row per surface with an
+      LED (wired / not wired) and a one-tap action. Rows are device-aware: desktop leads with the extension
+      (store link), Android leads with the PWA install prompt (share sheet unlocks with install), iOS leads with
+      the shortcut (routes to the token minting anchor). Paste/drag row is pre-lit — something already works.</p>
+      <p><strong>Why it can win.</strong> Activation is in the first viewport, unmissable, but framed as the
+      machine's own setup panel — exposed database, not onboarding chrome. Satisfies the DESIGN.md empty-state
+      rule literally. Both cards' criteria in one surface.</p>
+      <p><strong>Risk.</strong> Densest option; must stay legible on a 375px viewport (lanes stack).</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION 2 -->
+<section class="option" id="opt2">
+  <div class="bar"><span class="num mono">02</span><h2>setup ticket checklist</h2><span class="verdict lose">rejected</span></div>
+  <div class="body">
+    <div class="mock">
+      <div class="titlebar"><span>setup.ticket #0001</span><span>0/3</span></div>
+      <div style="margin-top:8px">
+        <div class="row">☐ 1. install the extension <span class="btn" style="margin-left:auto">go</span></div>
+        <div class="row">☐ 2. save your first meme</div>
+        <div class="row">☐ 3. search it back out</div>
+        <span class="sticker magenta" style="margin-top:6px">progress: zero thoughts</span>
+      </div>
+    </div>
+    <div class="notes">
+      <p><strong>Structure.</strong> A numbered work-ticket card (checklist + progress sticker) sits where the grid
+      would be; each step has a one-tap action; completing steps checks them off across sessions.</p>
+      <p><strong>Why rejected.</strong> Gamified onboarding checklists are the most SaaS-coded pattern in the
+      candidate set — DESIGN.md bans "corporate AI-search sameness" and the voice is deadpan, not
+      achievement-driven. Also serializes the surfaces into steps when the real decision is per-device (an iPhone
+      user should never see "install the chrome extension" as step 1). No example pile, so it fails the
+      empty-state grammar rule on its own.</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION 3 -->
+<section class="option" id="opt3">
+  <div class="bar"><span class="num mono">03</span><h2>full-bleed demo pile + sticker cluster</h2><span class="verdict lose">rejected</span></div>
+  <div class="body">
+    <div class="mock">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;opacity:.9">
+        <div class="cell dim"><div class="g">💀</div></div><div class="cell dim"><div class="g">🔥</div></div>
+        <div class="cell dim"><div class="g">😭</div></div><div class="cell dim"><div class="g">👀</div></div>
+        <div class="cell dim"><div class="g">✨</div></div><div class="cell dim"><div class="g">💯</div></div>
+        <div class="cell dim"><div class="g">🐱</div></div><div class="cell dim"><div class="g">💤</div></div>
+      </div>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px">
+        <span class="sticker yellow" style="transform:rotate(-2deg);font-size:.75rem">this could be your pile</span>
+        <span class="btn">get the extension</span>
+        <span class="btn ghost">upload now</span>
+      </div>
+    </div>
+    <div class="notes">
+      <p><strong>Structure.</strong> The whole workbench fills with a dim doodle pile (what the library will look
+      like); a stamped sticker cluster floats over it carrying the device-appropriate CTA pair.</p>
+      <p><strong>Why rejected.</strong> Visually the loudest, but the activation content is a two-button overlay —
+      there's no room to show per-surface state (wired / not wired), no path for the secondary surfaces
+      (iOS shortcut AND pwa AND paste), and the overlay-over-decoration structure buries the one-tap paths the
+      card requires for <em>each</em> surface. The dim pile also reads as fake content at full-bleed scale —
+      demo-data labeling would fight the composition.</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION 4 -->
+<section class="option" id="opt4">
+  <div class="bar"><span class="num mono">04</span><h2>status-bar machinery hook</h2><span class="verdict lose">rejected</span></div>
+  <div class="body">
+    <div class="mock">
+      <div style="display:flex;align-items:center;justify-content:center;min-height:150px" class="mono">
+        <span style="font-size:.6rem">[ drop zone — drag in the chaos ]</span>
+      </div>
+      <div class="titlebar" style="position:absolute;left:8px;right:8px;bottom:8px">
+        <span>index: 0 · capture: <span style="background:var(--orange);color:var(--ink);padding:0 4px">0 surfaces wired ▲</span></span>
+        <span>status: idle</span>
+      </div>
+    </div>
+    <div class="notes">
+      <p><strong>Structure.</strong> The machinery status bar gains a <code>capture: 0 surfaces wired</code> cell
+      in warning orange; tapping it slides up (<code>animate-sploot-slide-up</code>) a capture panel with the
+      per-surface rows. Empty grid center stays a minimal drop zone.</p>
+      <p><strong>Why rejected.</strong> Most on-brand idea in the set (the machine reporting its own missing
+      inputs), but it's activation behind a click — a first-run user has to notice and interpret a status cell.
+      Card criterion is "presented … without visiting settings"; a hidden slide-up is settings-lite. Keep the
+      status-cell idea as a <em>persistent reminder</em> follow-up once assets exist, not as the first-run
+      mechanism.</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION 5 -->
+<section class="option" id="opt5">
+  <div class="bar"><span class="num mono">05</span><h2>post-first-capture interstitial</h2><span class="verdict lose">rejected</span></div>
+  <div class="body">
+    <div class="mock">
+      <div style="display:flex;align-items:center;justify-content:center;min-height:170px">
+        <div style="border:4px solid var(--ink);background:#fff;padding:14px;box-shadow:6px 6px 0 var(--ink);text-align:center">
+          <span class="sticker lime">first meme secured</span>
+          <p class="mono" style="font-size:.6rem;margin:8px 0">now make it one tap from anywhere:</p>
+          <span class="btn">extension</span> <span class="btn ghost">not now</span>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <p><strong>Structure.</strong> Day-one empty state stays minimal (drag/paste/upload); the moment the first
+      upload lands, a stamped interstitial celebrates and pitches the always-with-you surface at the moment of
+      proven intent.</p>
+      <p><strong>Why rejected (as the primary).</strong> Best conversion psychology per tap, but it abandons the
+      0-asset user: the card's first criterion is that a <em>0-asset</em> first-run user is presented activation.
+      It also leaves the off-grammar empty state untouched. Strong as a future layer-2 reinforcement; not the
+      mechanism.</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION 6 -->
+<section class="option" id="opt6">
+  <div class="bar"><span class="num mono">06</span><h2>contextual dock hints</h2><span class="verdict lose">rejected</span></div>
+  <div class="body">
+    <div class="mock">
+      <div style="display:flex;align-items:center;justify-content:center;min-height:130px" class="mono">
+        <span style="font-size:.6rem">[ empty grid unchanged ]</span>
+      </div>
+      <div style="position:absolute;left:8px;right:8px;bottom:8px;border:3px solid var(--ink);background:#fff;padding:6px;display:flex;gap:10px;justify-content:center" class="mono">
+        <span style="font-size:.6rem">⌂</span><span style="font-size:.6rem">🔍</span>
+        <span style="font-size:.6rem;position:relative">＋<span class="sticker magenta" style="position:absolute;bottom:130%;left:-40px;white-space:nowrap;font-size:.5rem">wire the share sheet →</span></span>
+        <span style="font-size:.6rem">★</span>
+      </div>
+    </div>
+    <div class="notes">
+      <p><strong>Structure.</strong> Coach-mark stickers pinned to the existing chrome: a magenta hint on the
+      mobile command dock's upload slot, a beacon on the desktop toolbar pointing at an "add capture" menu.
+      Grid untouched.</p>
+      <p><strong>Why rejected.</strong> Coach marks over unchanged chrome are decoration, not structure — the
+      empty state stays the generic shadcn card the card explicitly indicts, and hint dismissal state is a whole
+      persistence surface for weak payoff. Tooltips are also the pattern most likely to be reflex-dismissed.</p>
+    </div>
+  </div>
+</section>
+
+<!-- OPTION 7 -->
+<section class="option" id="opt7">
+  <div class="bar"><span class="num mono">07</span><h2>auto-typing console teaser</h2><span class="verdict lose">rejected</span></div>
+  <div class="body">
+    <div class="mock">
+      <div class="titlebar"><span>sploot.search</span><span>■ ■ ■</span></div>
+      <div style="border:3px solid var(--ink);background:var(--yellow);padding:6px;margin:8px 0" class="mono">
+        <span style="font-size:.65rem">screaming ca█</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+        <div class="cell dim"><div class="g">💀</div></div>
+        <div class="cell match"><div class="g">🐱</div></div>
+        <div class="cell dim"><div class="g">🔥</div></div>
+      </div>
+      <div style="margin-top:8px"><span class="btn">get memes in here → extension</span></div>
+    </div>
+    <div class="notes">
+      <p><strong>Structure.</strong> The empty state is a live demo: the search console auto-types a query, the
+      doodle pile reshuffles, the match ring locks — then the CTA row pitches the capture surfaces. The full
+      landing-hero mechanic, replayed in-app.</p>
+      <p><strong>Why rejected (as scoped here).</strong> Highest aha-density and the natural home for
+      sploot-053's mechanism — but ambient auto-typing animation on an idle surface violates DESIGN.md motion
+      rules ("do not animate idle data"), and the capture CTAs become a footer to a demo rather than the subject.
+      053 should decide the live-demo question; 074 takes the <em>static</em> match tableau (option 1's left
+      lane) which delivers the same story without idle motion.</p>
+    </div>
+  </div>
+</section>
+
+<!-- DECISION -->
+<section class="decision" id="decision">
+  <h2 style="margin-bottom:10px">decision — option 01: two-lane capture rig</h2>
+  <p><strong>Rationale.</strong> Only options 1 and 3 put per-surface activation in the 0-asset first viewport
+  (criterion 1); of those, only 1 gives every surface its own one-tap row with wired/unwired state
+  (criterion 3) while composing the component grammar — <code>MemeCell</code> demo pile with a match ring +
+  sticker labels + console rows — instead of decoration (criterion 2). The demo-pile lane doubles as the
+  sploot-053 hook: the empty state demonstrates type-words-get-the-picture and offers "upload now" as the
+  direct aha route, so one empty-state design serves both cards as required. Options 4 and 5 survive as noted
+  follow-up layers (status-bar reminder cell; post-first-capture reinforcement) but fail the first-run
+  criterion standalone.</p>
+  <table>
+    <tr><th>device</th><th>lead surface</th><th>one-tap action</th><th>fallback rows</th></tr>
+    <tr><td>desktop (non-touch)</td><td>chrome extension</td><td>open Chrome Web Store listing (live item)</td><td>paste ⌘V · drag · upload</td></tr>
+    <tr><td>android</td><td>share sheet via PWA</td><td><code>beforeinstallprompt</code> native install prompt</td><td>upload · manual A2HS copy when no prompt</td></tr>
+    <tr><td>iOS</td><td>"save to sploot" shortcut</td><td>route to <code>/app/settings#upload-tokens</code> (mint token + recipe)</td><td>A2HS note · upload</td></tr>
+  </table>
+  <p class="mono" style="font-size:.65rem;margin-top:14px">
+    delegated-mode verdict (operator delegation 2026-07-07) · decided by builder lane sploot-074 ·
+    re-verdict anytime: this file is the lab; the implementation is apps/web/components/library/empty-state.tsx.
+  </p>
+</section>
+</main>
+</body>
+</html>

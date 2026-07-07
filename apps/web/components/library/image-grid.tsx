@@ -168,7 +168,9 @@ export function ImageGrid({
   }
 
   // Empty state
-  // Hide upload button since the main page toolbar already has a prominent one
+  // First-use renders the capture rig (demo pile + capture-surface activation,
+  // docs/design/lab-074-capture-activation.html); its compact "upload chaos"
+  // row is part of the rig, so the upload button stays on.
   // Fade in after skeleton transition completes
   if (assets.length === 0 && !loading) {
     return (
@@ -177,7 +179,6 @@ export function ImageGrid({
           variant={emptyStateVariant}
           searchQuery={emptyStateSearchQuery}
           onUploadClick={onUploadClick}
-          showUploadButton={false}
         />
       </div>
     );

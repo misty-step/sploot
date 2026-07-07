@@ -116,7 +116,7 @@ export function UploadTokensCard() {
   };
 
   return (
-    <section className="bg-card border border-border p-5 space-y-4">
+    <section id="upload-tokens" className="bg-card border border-border p-5 space-y-4 scroll-mt-6">
       <div>
         <h2 className="text-lg font-semibold text-foreground">Upload tokens</h2>
         <p className="text-muted-foreground text-sm mt-1">
