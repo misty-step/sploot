@@ -6,12 +6,13 @@ import { getCacheService } from '@/lib/cache';
 import { getAuthWithUser } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
+import { SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
 
 async function postHandler(req: NextRequest) {
   const startTime = Date.now();
   let query: string = '';
   let limit: number = 30;
-  let threshold: number = 0.2;
+  let threshold: number = SEARCH_SIMILARITY_FLOOR;
   let shuffleSeed: number | undefined = undefined;
 
   try {
@@ -24,7 +25,7 @@ async function postHandler(req: NextRequest) {
     }
 
     const body = await req.json();
-    ({ query, limit = 30, threshold = 0.2, shuffleSeed } = body);
+    ({ query, limit = 30, threshold = SEARCH_SIMILARITY_FLOOR, shuffleSeed } = body);
 
     if (!query || typeof query !== 'string') {
       return NextResponse.json(

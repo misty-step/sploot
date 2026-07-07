@@ -160,7 +160,7 @@ pnpm --filter web db:studio       # Open Prisma Studio
 
 ## Gate Contract
 
-Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or explicit `DB path unverified` evidence. GitHub CI adds frozen install, `pnpm --filter web db:migrate` against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, extension lint/test/build, and the `merge-gate` aggregate job.
+Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web test && pnpm --filter extension build`, with Prisma/pgvector DB-backed paths requiring `DATABASE_URL` against a pgvector-capable Postgres or explicit `DB path unverified` evidence. GitHub CI adds frozen install, `pnpm --filter web db:migrate` against `pgvector/pgvector:pg15`, turbo lint/type-check, web tests, the retrieval-quality eval (`pnpm --filter web eval:search`, ratcheted against `apps/web/eval/baseline.json` — see `apps/web/eval/README.md`; changes touching embeddings, similarity thresholds, or query SQL must carry their paired eval delta), extension lint/test/build, and the `merge-gate` aggregate job.
 
 <!-- CONFLICT: AGENTS.md described Lefthook as one combined statement ("gitleaks, web lint, extension lint, and turbo type-check before local commit/push"); CLAUDE.md split it by stage (pre-commit: gitleaks, lint, typecheck; pre-push: typecheck only, tests skipped locally). Both are reproduced below — reconcile which stage actually runs what. -->
 

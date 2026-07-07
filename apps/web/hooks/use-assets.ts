@@ -1,4 +1,5 @@
 'use client';
+import { SEARCH_DEFAULT_LIMIT, SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { error as logError } from '@/lib/logger';
@@ -455,7 +456,7 @@ interface SearchMetadata {
 }
 
 export function useSearchAssets(query: string, options: { limit?: number; threshold?: number; enabled?: boolean; shuffleSeed?: number } = {}) {
-  const { limit = 50, threshold = 0.2, enabled = true, shuffleSeed } = options;
+  const { limit = SEARCH_DEFAULT_LIMIT, threshold = SEARCH_SIMILARITY_FLOOR, enabled = true, shuffleSeed } = options;
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(false);
