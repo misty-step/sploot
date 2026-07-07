@@ -60,6 +60,15 @@ describe('packetVerdict', () => {
     };
     expect(packetVerdict(input)).toBe('fail');
   });
+
+  it('fails when a browser walk landed on the sign-in wall, even with no other errors', () => {
+    const input = baseInput();
+    input.browser[0] = {
+      ...input.browser[0],
+      signInWall: true,
+    };
+    expect(packetVerdict(input)).toBe('fail');
+  });
 });
 
 describe('renderEvidencePacket', () => {
@@ -113,6 +122,19 @@ describe('renderEvidencePacket', () => {
     const md = renderEvidencePacket(input);
     expect(md).toContain('## Verdict: PASS');
     expect(md).toContain('2 console error(s) captured');
+  });
+
+  it('renders FAIL and a loud note when a walk landed on the sign-in wall', () => {
+    const input = baseInput();
+    input.browser[0] = {
+      ...input.browser[0],
+      signInWall: true,
+    };
+
+    const md = renderEvidencePacket(input);
+
+    expect(md).toContain('## Verdict: FAIL');
+    expect(md).toMatch(/sign-in wall/i);
   });
 
   it('renders a skipped check without affecting the verdict', () => {

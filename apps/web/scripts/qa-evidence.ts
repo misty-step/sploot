@@ -33,7 +33,7 @@
 
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { createQaLocalAuthToken } from '../lib/auth/qa-local';
@@ -50,6 +50,32 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_DB_URL = 'postgresql://test:test@localhost:5432/sploot_test?sslmode=disable';
 const QA_USER_ID = 'qa-design-user';
 const REPO_ROOT = resolve(process.cwd(), '..', '..');
+// Written by `pnpm dev:local` (scripts/dev-local.ts) so a --base-url run
+// against that server can sign qa-auth tokens with the secret the server is
+// actually running with, instead of a fresh random secret that never verifies.
+const PERSISTED_SECRET_PATH = join(REPO_ROOT, '.sploot-local', 'qa-auth-secret');
+
+async function resolveAuthSecret(baseUrl: string | undefined): Promise<string> {
+  if (process.env.SPLOOT_QA_AUTH_SECRET) {
+    return process.env.SPLOOT_QA_AUTH_SECRET;
+  }
+  if (baseUrl) {
+    try {
+      const persisted = (await readFile(PERSISTED_SECRET_PATH, 'utf8')).trim();
+      if (persisted) {
+        console.log(`[qa-evidence] using persisted qa-auth secret from ${PERSISTED_SECRET_PATH}`);
+        return persisted;
+      }
+    } catch {
+      console.warn(
+        `[qa-evidence] no persisted qa-auth secret at ${PERSISTED_SECRET_PATH} — ` +
+          `signing a fresh secret that will NOT match ${baseUrl}'s server unless it was booted with the same SPLOOT_QA_AUTH_SECRET. ` +
+          'Authenticated walks will land on the sign-in wall and the packet will FAIL loudly rather than reporting a false PASS.'
+      );
+    }
+  }
+  return randomBytes(24).toString('hex');
+}
 
 interface Args {
   slug: string;
@@ -196,6 +222,16 @@ async function waitForImages(timeoutMs = 45_000): Promise<void> {
   // Screenshot proceeds regardless; the packet shows whatever loaded.
 }
 
+// A walk landing here instead of the requested route means the qa-auth
+// cookie never authenticated (wrong/missing secret, disabled qa-auth mode
+// against a deployed/production URL, etc). That is not evidence the route
+// works — the caller must record it and force the packet to FAIL.
+async function detectSignInWall(): Promise<boolean> {
+  const probe = `(() => location.pathname.startsWith('/sign-in') ? 'sign-in-wall' : 'authed')()`;
+  const result = await browser('eval', probe).catch(() => 'unknown');
+  return result.includes('sign-in-wall');
+}
+
 async function waitForPileFilters(timeoutMs = 45_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   const probe = `(() => {
@@ -244,7 +280,7 @@ async function main() {
     ...process.env,
     DATABASE_URL: process.env.DATABASE_URL ?? DEFAULT_DB_URL,
     SPLOOT_QA_AUTH_MODE: 'enabled',
-    SPLOOT_QA_AUTH_SECRET: process.env.SPLOOT_QA_AUTH_SECRET ?? randomBytes(24).toString('hex'),
+    SPLOOT_QA_AUTH_SECRET: await resolveAuthSecret(args.baseUrl),
     CI: '1',
   };
 
@@ -410,6 +446,7 @@ async function main() {
     let status: EvidenceCheck['status'] = 'pass';
     let output = '';
     const screenshot = 'pile-filter-selected-1440x900.png';
+    let signInWall = false;
 
     try {
       await browser('set', 'viewport', '1440', '900');
@@ -417,6 +454,34 @@ async function main() {
       await browser('errors', '--clear').catch(() => '');
       await browser('open', `${baseUrl}/app`);
       await browser('wait', '2500');
+
+      signInWall = await detectSignInWall();
+      if (signInWall) {
+        await browser('screenshot', join(packetDir, screenshot));
+        output = JSON.stringify({ signInWall: true, note: 'landed on /sign-in instead of /app' }, null, 2);
+        status = 'fail';
+        walks.push({
+          route: '/app#pile-filter-probe',
+          viewport: '1440x900',
+          screenshot,
+          consoleErrors: [],
+          pageErrors: [],
+          signInWall: true,
+        });
+        const transcript = 'transcripts/pile-filter-exercise.txt';
+        await writeFile(join(packetDir, transcript), output);
+        checks.push({
+          name: 'browser pile filter exercise',
+          command: 'agent-browser open /app, click [data-pile-filter-id], verify selected gallery state',
+          status,
+          durationMs: Date.now() - started,
+          transcript,
+          detail: 'landed on the sign-in wall instead of /app — qa-auth token did not authenticate',
+        });
+        console.log('[qa-evidence] FAIL browser pile filter exercise — SIGN-IN WALL');
+        return;
+      }
+
       await waitForImages();
       await waitForPileFilters();
 
@@ -657,7 +722,10 @@ async function main() {
         await browser('errors', '--clear').catch(() => '');
         await browser('open', `${baseUrl}${route}`);
         await browser('wait', '2500');
-        await waitForImages();
+        const signInWall = await detectSignInWall();
+        if (!signInWall) {
+          await waitForImages();
+        }
         const screenshot = `${route.replace(/\W+/g, '-').replace(/^-|-$/g, '') || 'root'}-${viewport}.png`;
         await browser('screenshot', join(packetDir, screenshot));
         const [consoleRaw, errorsRaw] = await Promise.all([
@@ -670,8 +738,9 @@ async function main() {
           screenshot,
           consoleErrors: errorLines(consoleRaw),
           pageErrors: errorsRaw && !/no errors/i.test(errorsRaw) ? errorLines(errorsRaw) : [],
+          signInWall,
         });
-        console.log(`[qa-evidence] walked ${route} @ ${viewport}`);
+        console.log(`[qa-evidence] walked ${route} @ ${viewport}${signInWall ? ' — SIGN-IN WALL (will FAIL)' : ''}`);
       }
     }
   } finally {
