@@ -90,11 +90,11 @@ describe('Navbar', () => {
       expect(nav).toHaveClass('bg-background', 'border-b', 'border-border');
     });
 
-    it('should have backdrop blur effect', () => {
+    it('should be opaque chrome with no backdrop blur (DESIGN.md bans soft chrome)', () => {
       render(<Navbar />);
 
       const nav = screen.getByRole('navigation');
-      expect(nav).toHaveClass('backdrop-blur-sm');
+      expect(nav.className).not.toMatch(/backdrop-blur/);
     });
 
     it('should apply custom className when provided', () => {

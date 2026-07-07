@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sploot-032 lab — auth door + workbench on the aesthetic substrate</title>
+<style>
+  /* ── substrate: @misty-step/aesthetic v2.24.0 tokens (verbatim) ── */
+  :root{
+    --ae-surface:#fcfcfc; --ae-wash:#f3f3f3; --ae-ink:#151515;
+    --ae-ink-muted:#737373; --ae-ink-faint:#a3a3a3; --ae-line:#e9e9e9;
+    --ae-accent:#0c6a84; /* sploot cyan steered, AA 6.00 on surface */
+    --ae-err:#a84138; --ae-ok:#15714b;
+    --ae-font:'Geist','Helvetica Neue',Helvetica,Arial,sans-serif;
+    --ae-font-mono:'Geist Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --ae-w-regular:400; --ae-w-medium:550; --ae-w-black:800;
+    /* ── sploot loud layer (declared deviations, from globals.css) ── */
+    --sploot-ink:#0a0a0a; --sploot-paper:#f3efe4; --sploot-paper-warm:#e9e4d6;
+    --sploot-blue:#1f4cff; --sploot-cyan:#00e5d4; --sploot-magenta:#ff2d9b;
+    --sploot-yellow:#ffe600; --sploot-lime:#9cff2e; --sploot-orange:#ff5a1f;
+    --sploot-border:4px solid var(--sploot-ink);
+    --sploot-shadow-sm:5px 5px 0 var(--sploot-ink);
+    --font-display:'Bebas Neue','Arial Narrow',Impact,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{font-family:var(--ae-font);font-size:16px;color:var(--ae-ink);
+       background:var(--ae-wash);line-height:1.5;-webkit-font-smoothing:antialiased}
+  .mono{font-family:var(--ae-font-mono);font-size:.8em;letter-spacing:.02em}
+  header.lab{padding:1.5em 2em;border-bottom:1px solid var(--ae-line);background:var(--ae-surface)}
+  header.lab h1{font-size:1em;font-weight:var(--ae-w-black)}
+  header.lab p{color:var(--ae-ink-muted);max-width:68rem}
+  nav.pager{display:flex;gap:.5em;flex-wrap:wrap;padding:1em 2em;background:var(--ae-surface);
+            border-bottom:1px solid var(--ae-line);position:sticky;top:0;z-index:5}
+  nav.pager button{font:inherit;font-family:var(--ae-font-mono);font-size:13px;padding:.4em .8em;
+            border:1px solid var(--ae-line);background:var(--ae-surface);cursor:pointer}
+  nav.pager button.on{background:var(--ae-ink);color:var(--ae-surface);border-color:var(--ae-ink)}
+  section.opt{display:none;padding:2em;max-width:80rem;margin:0 auto}
+  section.opt.on{display:block}
+  .meta{margin-bottom:1.5em}
+  .meta h2{font-size:1em;font-weight:var(--ae-w-black)}
+  .meta p{color:var(--ae-ink-muted);max-width:68rem}
+  .meta .verdictline{margin-top:.5em;font-family:var(--ae-font-mono);font-size:12px;color:var(--ae-ink)}
+  .stage{display:grid;grid-template-columns:minmax(0,26rem) minmax(0,1fr);gap:2em;align-items:start}
+  @media(max-width:64rem){.stage{grid-template-columns:1fr}}
+  .surface-label{font-family:var(--ae-font-mono);font-size:11px;text-transform:uppercase;
+                 color:var(--ae-ink-faint);margin:0 0 .5em}
+  /* shared clerk-ish form guts */
+  .f label{display:block;font-family:var(--ae-font-mono);font-size:11px;text-transform:uppercase;
+           color:var(--ae-ink-muted);margin:1em 0 .3em}
+  .f input{width:100%;font:inherit;padding:.5em .6em;border:1px solid var(--ae-line);
+           background:var(--ae-surface);color:var(--ae-ink)}
+  .f input:focus{outline:2px solid var(--ae-accent);outline-offset:-1px}
+  .f .btn{width:100%;margin-top:1.2em;font:inherit;font-weight:var(--ae-w-medium);padding:.6em;
+          border:1px solid var(--ae-accent);background:var(--ae-accent);color:#fff;cursor:pointer}
+  .f .alt{margin-top:.8em;text-align:center;font-size:.85em;color:var(--ae-ink-muted)}
+  .f .alt a{color:var(--ae-accent)}
+  .f .social{width:100%;font:inherit;padding:.5em;border:1px solid var(--ae-line);
+             background:var(--ae-wash);cursor:pointer;margin-bottom:.5em}
+  /* workbench mock guts */
+  .wb{border:1px solid var(--ae-line);background:var(--ae-surface);min-height:22rem}
+  .wb .bar{display:flex;align-items:center;gap:1em;padding:.6em 1em;border-bottom:1px solid var(--ae-line)}
+  .wb .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(7rem,1fr));gap:.8em;padding:1em}
+  .tile{aspect-ratio:1;border:3px solid var(--sploot-ink);box-shadow:4px 4px 0 var(--sploot-ink);
+        background:linear-gradient(135deg,var(--sploot-cyan),var(--sploot-magenta));position:relative}
+  .tile:nth-child(2){background:linear-gradient(45deg,var(--sploot-yellow),var(--sploot-orange));transform:rotate(-1.2deg)}
+  .tile:nth-child(3){background:linear-gradient(200deg,var(--sploot-blue),var(--sploot-cyan));transform:rotate(.8deg)}
+  .tile:nth-child(4){background:linear-gradient(320deg,var(--sploot-magenta),var(--sploot-blue))}
+  .tile:nth-child(5){background:linear-gradient(10deg,var(--sploot-lime),var(--sploot-cyan));transform:rotate(-.6deg)}
+  .tile:nth-child(6){background:linear-gradient(250deg,var(--sploot-orange),var(--sploot-magenta));transform:rotate(1.4deg)}
+  .tile .fn{position:absolute;left:0;right:0;bottom:0;background:var(--sploot-ink);color:#fff;
+            font-family:var(--ae-font-mono);font-size:9px;padding:2px 4px;text-transform:lowercase}
+  .banger{position:absolute;top:-8px;right:-8px;background:var(--sploot-magenta);color:var(--sploot-ink);
+          border:3px solid var(--sploot-ink);font-family:var(--ae-font-mono);font-size:9px;
+          font-weight:700;padding:2px 5px;transform:rotate(6deg)}
+  .wordmark{font-family:var(--font-display);font-size:1.5em;letter-spacing:.06em;color:var(--ae-ink)}
+  .status{margin-left:auto;font-family:var(--ae-font-mono);font-size:11px;color:var(--ae-ink-muted)}
+  footer.verdict{max-width:80rem;margin:0 auto;padding:2em;border-top:1px solid var(--ae-line)}
+  footer.verdict h2{font-size:1em;font-weight:var(--ae-w-black);margin-bottom:.5em}
+  footer.verdict p{color:var(--ae-ink-muted);max-width:68rem;margin-bottom:.6em}
+</style>
+</head>
+<body>
+<header class="lab">
+  <h1>sploot-032 design lab — the auth door &amp; the workbench chrome</h1>
+  <p>Direction is locked by ADR 0005: <strong>Swiss chrome, feral contents</strong> on the
+  <span class="mono">@misty-step/aesthetic</span> v2.24.0 substrate — quiet ink-on-paper chrome,
+  cyan steered as the accent, all loudness spent inside content objects. Six structurally
+  distinct cuts of the two DESIGN.md-violating surfaces: the violet-glassmorphism auth door and
+  the generic-shadcn workbench. Every option uses real substrate tokens. Delegated mode:
+  winner picked below with rationale; operator can re-verdict.</p>
+</header>
+<nav class="pager" id="pager"></nav>
+
+<!-- ═══════════ OPTION 1 — CONSOLE DOOR ═══════════ -->
+<section class="opt" data-name="1 · console door">
+  <div class="meta">
+    <h2>Option 1 — the console door</h2>
+    <p>The auth door is a labeled instrument console: mono titlebar, hairline card, the machinery
+    (route, mode, build) on display in a footer strip. Straight out of DESIGN.md §4 — “the search
+    box is a labeled console with an ink titlebar; the machinery is on display.” The workbench
+    chrome is the same instrument panel: hairline bar, mono status line, zero decoration; the meme
+    grid supplies every drop of loudness.</p>
+    <p class="verdictline">chrome loudness: none · deviation spend: display wordmark only</p>
+  </div>
+  <div class="stage">
+    <div>
+      <p class="surface-label">/sign-in</p>
+      <div style="border:1px solid var(--ae-ink);background:var(--ae-surface)">
+        <div style="display:flex;justify-content:space-between;background:var(--ae-ink);color:var(--ae-surface);padding:.35em .7em" class="mono">
+          <span>sploot / auth.console</span><span>● ready</span>
+        </div>
+        <div class="f" style="padding:1.2em 1.4em">
+          <button class="social mono">CONTINUE WITH GOOGLE</button>
+          <label>email</label><input value="you@example.com">
+          <label>password</label><input type="password" value="••••••••">
+          <button class="btn">Sign in</button>
+          <p class="alt">No account? <a href="#">Sign up</a></p>
+        </div>
+        <div class="mono" style="display:flex;gap:1.2em;border-top:1px solid var(--ae-line);padding:.4em .7em;color:var(--ae-ink-muted)">
+          <span>route: /sign-in</span><span>auth: clerk</span><span>mode: private</span>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="surface-label">/app workbench</p>
+      <div class="wb">
+        <div class="bar">
+          <span class="wordmark">SPLOOT</span>
+          <span class="mono" style="border:1px solid var(--ae-line);padding:.2em .6em;flex:1;max-width:20rem;color:var(--ae-ink-faint)">search your memes…</span>
+          <span class="status">1,204 indexed · siglip2 · 12ms</span>
+        </div>
+        <div class="grid">
+          <div class="tile"><span class="fn">cat_scream.png</span></div>
+          <div class="tile"><span class="banger">BANGER</span><span class="fn">deal_with_it.gif</span></div>
+          <div class="tile"><span class="fn">this_is_fine.jpg</span></div>
+          <div class="tile"><span class="fn">galaxy_brain.png</span></div>
+          <div class="tile"><span class="fn">stonks.webp</span></div>
+          <div class="tile"><span class="fn">sploot_irl.jpg</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ OPTION 2 — STAMPED PAPER ═══════════ -->
+<section class="opt" data-name="2 · stamped paper">
+  <div class="meta">
+    <h2>Option 2 — stamped paper</h2>
+    <p>The door sits on sploot’s unbleached paper with the grid faintly printed; the card wears a
+    thick ink border, a hard offset shadow, and one filled sticker tab — the landing’s zine
+    grammar walks right into the door. Workbench keeps the paper field and stamps the wordmark.
+    Loudest chrome of the six; spends the filled-pill deviation on a first-touch surface.</p>
+    <p class="verdictline">chrome loudness: high · deviation spend: display face + filled pill + hard shadow</p>
+  </div>
+  <div class="stage">
+    <div>
+      <p class="surface-label">/sign-in</p>
+      <div style="background:var(--sploot-paper);background-image:repeating-linear-gradient(0deg,rgba(10,10,10,.05) 0 1px,transparent 1px 24px),repeating-linear-gradient(90deg,rgba(10,10,10,.05) 0 1px,transparent 1px 24px);padding:2em 1.5em">
+        <div style="position:relative;border:var(--sploot-border);box-shadow:var(--sploot-shadow-sm);background:var(--ae-surface)">
+          <span class="mono" style="position:absolute;top:-14px;left:14px;background:var(--sploot-cyan);border:3px solid var(--sploot-ink);padding:1px 8px;font-weight:700">MEMBERS</span>
+          <div class="f" style="padding:1.6em 1.4em 1.2em">
+            <span class="wordmark" style="font-size:2.2em">SPLOOT</span>
+            <label>email</label><input value="you@example.com">
+            <label>password</label><input type="password" value="••••••••">
+            <button class="btn" style="background:var(--sploot-blue);border-color:var(--sploot-ink);border-width:3px;box-shadow:3px 3px 0 var(--sploot-ink)">SIGN IN</button>
+            <p class="alt">No account? <a href="#">Sign up</a></p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="surface-label">/app workbench</p>
+      <div class="wb" style="background:var(--sploot-paper-warm)">
+        <div class="bar" style="background:var(--ae-surface)">
+          <span class="wordmark" style="color:var(--sploot-blue)">SPLOOT</span>
+          <span class="mono" style="border:3px solid var(--sploot-ink);padding:.2em .6em;flex:1;max-width:20rem;background:#fff">search your memes…</span>
+          <span class="status">1,204 indexed</span>
+        </div>
+        <div class="grid">
+          <div class="tile"><span class="fn">cat_scream.png</span></div>
+          <div class="tile"><span class="banger">BANGER</span><span class="fn">deal_with_it.gif</span></div>
+          <div class="tile"><span class="fn">this_is_fine.jpg</span></div>
+          <div class="tile"><span class="fn">galaxy_brain.png</span></div>
+          <div class="tile"><span class="fn">stonks.webp</span></div>
+          <div class="tile"><span class="fn">sploot_irl.jpg</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ OPTION 3 — SPLIT BRAND WALL ═══════════ -->
+<section class="opt" data-name="3 · split brand wall">
+  <div class="meta">
+    <h2>Option 3 — split brand wall</h2>
+    <p>The door is a diptych: the left half is feral contents (a jittered pile of meme cells with a
+    banger stamp — the product proving itself before sign-in), the right half is a pure-substrate
+    quiet form. The frame/contents split becomes literal architecture. Workbench chrome stays
+    quiet; the pile rail carries the color.</p>
+    <p class="verdictline">chrome loudness: contained to left panel · deviation spend: content objects only</p>
+  </div>
+  <div class="stage">
+    <div style="grid-column:1/-1">
+      <p class="surface-label">/sign-in</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--ae-ink);min-height:20rem">
+        <div style="background:var(--sploot-paper);padding:1.5em;display:grid;grid-template-columns:repeat(3,1fr);gap:.9em;align-content:center">
+          <div class="tile"><span class="fn">cat_scream.png</span></div>
+          <div class="tile"><span class="banger">BANGER</span><span class="fn">deal_with_it.gif</span></div>
+          <div class="tile"><span class="fn">this_is_fine.jpg</span></div>
+          <div class="tile"><span class="fn">galaxy_brain.png</span></div>
+          <div class="tile"><span class="fn">stonks.webp</span></div>
+          <div class="tile"><span class="fn">sploot_irl.jpg</span></div>
+        </div>
+        <div class="f" style="background:var(--ae-surface);padding:2em 2.5em;align-self:center">
+          <p style="font-weight:var(--ae-w-black)">Your memes. Findable.</p>
+          <label>email</label><input value="you@example.com">
+          <label>password</label><input type="password" value="••••••••">
+          <button class="btn">Sign in</button>
+          <p class="alt">No account? <a href="#">Sign up</a></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ OPTION 4 — PURE INSTRUMENT PANEL ═══════════ -->
+<section class="opt" data-name="4 · pure instrument panel">
+  <div class="meta">
+    <h2>Option 4 — pure instrument panel</h2>
+    <p>The most Swiss pole: no display face anywhere in chrome, weight-only hierarchy
+    (400/550/800), wash panels, hairlines. The wordmark is Geist 800 caps. The full aesthetic
+    orthodoxy — which means it spends zero of sploot’s permitted deviations and reads closest to a
+    generic Misty Step product. Included as the control arm.</p>
+    <p class="verdictline">chrome loudness: none · deviation spend: zero (control)</p>
+  </div>
+  <div class="stage">
+    <div>
+      <p class="surface-label">/sign-in</p>
+      <div style="background:var(--ae-wash);padding:2em 1.5em">
+        <div class="f" style="border:1px solid var(--ae-line);background:var(--ae-surface);padding:1.6em 1.4em">
+          <p style="font-weight:var(--ae-w-black);letter-spacing:.04em">SPLOOT</p>
+          <p style="color:var(--ae-ink-muted);font-size:.85em">Sign in to your archive</p>
+          <label>email</label><input value="you@example.com">
+          <label>password</label><input type="password" value="••••••••">
+          <button class="btn">Sign in</button>
+          <p class="alt">No account? <a href="#">Sign up</a></p>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="surface-label">/app workbench</p>
+      <div class="wb">
+        <div class="bar">
+          <span style="font-weight:var(--ae-w-black);letter-spacing:.04em">SPLOOT</span>
+          <span class="mono" style="border:1px solid var(--ae-line);padding:.2em .6em;flex:1;max-width:20rem;color:var(--ae-ink-faint)">search…</span>
+          <span class="status">1,204</span>
+        </div>
+        <div class="grid">
+          <div class="tile"><span class="fn">cat_scream.png</span></div>
+          <div class="tile"><span class="banger">BANGER</span><span class="fn">deal_with_it.gif</span></div>
+          <div class="tile"><span class="fn">this_is_fine.jpg</span></div>
+          <div class="tile"><span class="fn">galaxy_brain.png</span></div>
+          <div class="tile"><span class="fn">stonks.webp</span></div>
+          <div class="tile"><span class="fn">sploot_irl.jpg</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ OPTION 5 — INDEX CARD ═══════════ -->
+<section class="opt" data-name="5 · index card">
+  <div class="meta">
+    <h2>Option 5 — index card / archive drawer</h2>
+    <p>The door is a catalog index card: corner brackets, numbered mono field labels
+    (“FIELD 01 — EMAIL”), a ruled header line. The workbench header becomes a drawer label —
+    “DRAWER A — ALL MEMES” — with the same brackets. The archive/database metaphor carried by
+    typographic apparatus instead of ink weight; chrome stays substrate-quiet.</p>
+    <p class="verdictline">chrome loudness: none · deviation spend: display wordmark only</p>
+  </div>
+  <div class="stage">
+    <div>
+      <p class="surface-label">/sign-in</p>
+      <div style="position:relative;border:1px solid var(--ae-ink);background:var(--ae-surface);padding:1.6em 1.4em">
+        <span style="position:absolute;top:-1px;left:-1px;width:14px;height:14px;border-top:3px solid var(--ae-ink);border-left:3px solid var(--ae-ink)"></span>
+        <span style="position:absolute;top:-1px;right:-1px;width:14px;height:14px;border-top:3px solid var(--ae-ink);border-right:3px solid var(--ae-ink)"></span>
+        <span style="position:absolute;bottom:-1px;left:-1px;width:14px;height:14px;border-bottom:3px solid var(--ae-ink);border-left:3px solid var(--ae-ink)"></span>
+        <span style="position:absolute;bottom:-1px;right:-1px;width:14px;height:14px;border-bottom:3px solid var(--ae-ink);border-right:3px solid var(--ae-ink)"></span>
+        <div class="mono" style="display:flex;justify-content:space-between;border-bottom:2px solid var(--ae-ink);padding-bottom:.4em">
+          <span>CARD № 001</span><span>SPLOOT ARCHIVE</span>
+        </div>
+        <div class="f">
+          <label>FIELD 01 — EMAIL</label><input value="you@example.com">
+          <label>FIELD 02 — PASSWORD</label><input type="password" value="••••••••">
+          <button class="btn">FILE REQUEST → SIGN IN</button>
+          <p class="alt">Unregistered? <a href="#">Open a card</a></p>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="surface-label">/app workbench</p>
+      <div class="wb">
+        <div class="bar mono" style="text-transform:uppercase">
+          <span style="font-weight:700">Drawer A — All Memes</span>
+          <span style="border:1px solid var(--ae-line);padding:.2em .6em;flex:1;max-width:20rem;color:var(--ae-ink-faint);text-transform:none">search…</span>
+          <span class="status">1,204 cards</span>
+        </div>
+        <div class="grid">
+          <div class="tile"><span class="fn">cat_scream.png</span></div>
+          <div class="tile"><span class="banger">BANGER</span><span class="fn">deal_with_it.gif</span></div>
+          <div class="tile"><span class="fn">this_is_fine.jpg</span></div>
+          <div class="tile"><span class="fn">galaxy_brain.png</span></div>
+          <div class="tile"><span class="fn">stonks.webp</span></div>
+          <div class="tile"><span class="fn">sploot_irl.jpg</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ OPTION 6 — TICKET STUB ═══════════ -->
+<section class="opt" data-name="6 · ticket stub">
+  <div class="meta">
+    <h2>Option 6 — ticket stub</h2>
+    <p>The door is an admission ticket: perforated divider, a single acid-yellow “ADMIT ONE” block
+    (the one highlight per viewport, per the color law), mono serial number. Playful and deadpan,
+    but the metaphor is entry-event, not archive — it doesn’t generalize to the workbench, which
+    falls back to quiet chrome plus one yellow selected-pile beat.</p>
+    <p class="verdictline">chrome loudness: one yellow beat · deviation spend: display face + highlight block</p>
+  </div>
+  <div class="stage">
+    <div>
+      <p class="surface-label">/sign-in</p>
+      <div style="display:flex;border:2px solid var(--ae-ink);background:var(--ae-surface)">
+        <div style="writing-mode:vertical-rl;background:var(--sploot-yellow);border-right:2px dashed var(--ae-ink);padding:.6em .3em;font-family:var(--ae-font-mono);font-size:11px;font-weight:700;text-transform:uppercase">Admit one · № 0451</div>
+        <div class="f" style="padding:1.4em;flex:1">
+          <span class="wordmark" style="font-size:1.8em">SPLOOT</span>
+          <label>email</label><input value="you@example.com">
+          <label>password</label><input type="password" value="••••••••">
+          <button class="btn" style="background:var(--ae-ink);border-color:var(--ae-ink)">Tear here → sign in</button>
+          <p class="alt">No ticket? <a href="#">Sign up</a></p>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="surface-label">/app workbench</p>
+      <div class="wb">
+        <div class="bar">
+          <span class="wordmark">SPLOOT</span>
+          <span class="mono" style="background:var(--sploot-yellow);border:1px solid var(--ae-ink);padding:.2em .6em">pile: reaction cats</span>
+          <span class="mono" style="border:1px solid var(--ae-line);padding:.2em .6em;flex:1;max-width:16rem;color:var(--ae-ink-faint)">search…</span>
+          <span class="status">1,204</span>
+        </div>
+        <div class="grid">
+          <div class="tile"><span class="fn">cat_scream.png</span></div>
+          <div class="tile"><span class="banger">BANGER</span><span class="fn">deal_with_it.gif</span></div>
+          <div class="tile"><span class="fn">this_is_fine.jpg</span></div>
+          <div class="tile"><span class="fn">galaxy_brain.png</span></div>
+          <div class="tile"><span class="fn">stonks.webp</span></div>
+          <div class="tile"><span class="fn">sploot_irl.jpg</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="verdict">
+  <h2>Verdict (delegated) — Option 1, the console door</h2>
+  <p><strong>Why it wins:</strong> it is the only option that extends DESIGN.md’s core metaphor
+  (“exposed database — a labeled console with an ink titlebar, machinery on display”) to both
+  broken surfaces with one grammar. The auth door becomes the first instrument the user touches;
+  the workbench bar is the same instrument at working density. It honors the substrate (hairlines,
+  wash, steered cyan, mono chrome register) while spending exactly one deviation — the display
+  wordmark — so the feral contents (tiles, stamps, piles) stay the loudest thing on every screen,
+  which is the whole “Swiss chrome, feral contents” bet.</p>
+  <p><strong>Why not the others:</strong> 2 (stamped paper) is the strongest runner-up but spends
+  loudness on chrome at the door, competing with content and fighting Clerk’s DOM at its most
+  brittle point; 3 (split wall) is a landing-page move, weak on mobile where the pile collapses;
+  4 (pure panel) erases sploot’s voice — the control arm proves the deviations earn their keep;
+  5 (index card) is charming but its apparatus (numbered fields) fights Clerk’s fixed field
+  markup; 6 (ticket) doesn’t generalize past the door.</p>
+  <p class="mono">constraint: ADR 0005 · substrate v2.24.0 · options 6 · winner 1 · 2026-07-07 ·
+  operator may re-verdict; each option is implementable from this file</p>
+</footer>
+
+<script>
+  const opts=[...document.querySelectorAll('section.opt')],pager=document.getElementById('pager');
+  opts.forEach((s,i)=>{const b=document.createElement('button');b.textContent=s.dataset.name;
+    b.onclick=()=>{opts.forEach(o=>o.classList.remove('on'));pager.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+    s.classList.add('on');b.classList.add('on')};pager.appendChild(b);if(i===0){s.classList.add('on');b.classList.add('on')}});
+</script>
+</body>
+</html>
