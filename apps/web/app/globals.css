@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@misty-step/aesthetic" layer(base);
 
 @custom-variant dark (&:is(.dark *));
 
@@ -752,4 +753,63 @@ select:focus-visible {
 
 .to-cyber-blue {
   --tw-gradient-to: var(--accent-violet) var(--tw-gradient-to-position);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   @misty-step/aesthetic substrate adoption (ADR 0005, card sploot-032)
+
+   Swiss chrome, feral contents: the shadcn semantic layer — everything
+   the /app workbench, the auth door, dialogs, and settings read — is
+   repointed at the aesthetic --ae-* substrate, so quiet chrome gets the
+   kit's ink-on-paper discipline, AA contrast contracts, and light/dark
+   flip for free. Sploot's cyan is steered as the system accent.
+
+   The --sploot-* loud layer above is deliberately NOT remapped: paper,
+   stickers, stamps, hard shadows, and the display register are declared
+   deviations that live on top of the substrate. The full mapping and
+   deviation list: docs/design/aesthetic-adoption.md.
+
+   This block is last in the cascade, so it wins over the legacy oklch
+   token sets above. Dark mode needs no second block: the kit itself
+   flips every --ae-* under :root.dark (next-themes sets that class).
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  /* steering: sploot's cyan, on the system's accent (AA on both surfaces) */
+  --ae-accent: #0c6a84;
+  --ae-accent-dark: #00f0ff;
+  /* wire the kit's font slots to the app's next/font families — the
+     brutalist type (Space Grotesk / Space Mono) is a declared deviation
+     from the kit's Geist default */
+  --ae-font: var(--font-geist-sans), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --ae-font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+:root,
+.dark {
+  --background: var(--ae-surface);
+  --foreground: var(--ae-ink);
+  --card: var(--ae-surface);
+  --card-foreground: var(--ae-ink);
+  --popover: var(--ae-surface);
+  --popover-foreground: var(--ae-ink);
+  --primary: var(--ae-accent);
+  --primary-foreground: var(--ae-surface);
+  --secondary: var(--ae-wash);
+  --secondary-foreground: var(--ae-ink);
+  --muted: var(--ae-wash);
+  --muted-foreground: var(--ae-ink-muted);
+  --accent: var(--ae-accent);
+  --accent-foreground: var(--ae-surface);
+  --destructive: var(--ae-err);
+  --border: var(--ae-line);
+  --input: var(--ae-line);
+  --ring: var(--ae-ink);
+  --sidebar: var(--ae-surface);
+  --sidebar-foreground: var(--ae-ink);
+  --sidebar-border: var(--ae-line);
+  --sidebar-accent: var(--ae-wash);
+  --sidebar-accent-foreground: var(--ae-ink);
+  --sidebar-ring: var(--ae-ink);
+  /* the cyan accent token the workbench chrome reads = the steered accent */
+  --accent-cyan: var(--ae-accent);
 }

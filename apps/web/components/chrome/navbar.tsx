@@ -43,8 +43,10 @@ export function Navbar({
         'pt-[env(safe-area-inset-top)]',
         'pl-[env(safe-area-inset-left)]',
         'pr-[env(safe-area-inset-right)]',
-        // Background and border - using shadcn design tokens
-        'bg-background border-b border-border backdrop-blur-sm',
+        // Background and border - semantic tokens on the aesthetic substrate.
+        // No backdrop blur: DESIGN.md bans soft chrome; the bar is opaque
+        // paper with a hairline rule (sploot-032 console-door grammar).
+        'bg-background border-b border-border',
         // Layout
         'flex items-center',
         // Padding - progressive increase for larger screens

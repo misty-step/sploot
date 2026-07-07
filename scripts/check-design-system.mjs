@@ -172,6 +172,42 @@ for (const [path, phrases] of Object.entries({
   }
 }
 
+// sploot-032: the @misty-step/aesthetic substrate is wired and documented.
+// The semantic layer must resolve to --ae-*, the deviation doc must exist,
+// and the auth door must be the substrate console (no violet glassmorphism).
+assertFile('docs/design/aesthetic-adoption.md');
+for (const phrase of ['@misty-step/aesthetic', 'declared deviations', 'Swiss chrome']) {
+  assertIncludes('docs/design/aesthetic-adoption.md', phrase, 'substrate deviation contract');
+}
+for (const phrase of [
+  '@import "@misty-step/aesthetic" layer(base)',
+  '--ae-accent',
+  '--background: var(--ae-surface)',
+  '--accent-cyan: var(--ae-accent)',
+]) {
+  assertIncludes(cssPath, phrase, 'aesthetic substrate wiring');
+}
+for (const [doorPath, phrases] of Object.entries({
+  'apps/web/components/auth/console-door.tsx': ['auth.console', 'consoleDoorAppearance'],
+  'apps/web/app/sign-in/[[...sign-in]]/page.tsx': ['ConsoleDoor'],
+  'apps/web/app/sign-up/[[...sign-up]]/page.tsx': ['ConsoleDoor'],
+})) {
+  for (const phrase of phrases) {
+    assertIncludes(doorPath, phrase, 'substrate console auth door');
+  }
+}
+for (const doorPath of [
+  'apps/web/app/sign-in/[[...sign-in]]/page.tsx',
+  'apps/web/app/sign-up/[[...sign-up]]/page.tsx',
+]) {
+  const content = read(doorPath);
+  for (const forbidden of ['violet', 'backdrop-blur', 'bg-gradient-']) {
+    if (content.includes(forbidden)) {
+      fail(`${doorPath}: auth door must stay on the substrate console — found ${forbidden} (DESIGN.md bans glassmorphism)`);
+    }
+  }
+}
+
 const landingSystemFiles = [
   'apps/web/app/page.tsx',
   'apps/web/app/styleguide/page.tsx',
@@ -239,12 +275,13 @@ const trackedUiFiles = execSync(
 
 const migrationExceptions = new Map([
   ['apps/web/app/not-found.tsx', ['bg-clip-text']],
-  ['apps/web/app/sign-in/[[...sign-in]]/page.tsx', ['bg-gradient-', 'backdrop-blur']],
-  ['apps/web/app/sign-up/[[...sign-up]]/page.tsx', ['bg-gradient-', 'backdrop-blur']],
+  // sploot-032 ratchet: the auth door (sign-in/sign-up) and the navbar lost
+  // their gradient/blur exceptions when they moved onto the aesthetic
+  // substrate — do not re-add them. app/page.tsx + image-tile blur is the
+  // lightbox scrim (content overlay), not chrome glassmorphism.
   ['apps/web/components/library/image-skeleton.tsx', ['bg-gradient-']],
   ['apps/web/components/ui/delete-confirmation-modal.tsx', ['bg-gradient-']],
   ['apps/web/app/app/page.tsx', ['backdrop-blur']],
-  ['apps/web/components/chrome/navbar.tsx', ['backdrop-blur']],
   ['apps/web/components/library/image-tile.tsx', ['backdrop-blur']],
 ]);
 
