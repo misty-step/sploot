@@ -19,10 +19,13 @@ User-facing product APIs require authentication through Sploot's auth boundary.
 Production requests are still Clerk-backed. Local and CI authenticated smoke
 tests may use the signed `qa-local` mode documented in `apps/web/docs/AUTH.md`.
 Operational routes such as health and cron endpoints define their own auth
-contracts. The upload routes (`/api/upload`, `/api/upload/url`) additionally
-accept a personal **upload token** (`Authorization: Bearer splt_…`) for
-non-session clients like the iPhone shortcut — see [Personal Upload
-Tokens](#personal-upload-tokens) below.
+contracts. The upload routes (`/api/upload`, `/api/upload/url`) and the search
+route (`/api/search`) additionally accept a personal **API token**
+(`Authorization: Bearer splt_…`) for non-session clients like the iPhone
+shortcut, the sploot MCP server, and other agents — see [Personal Upload
+Tokens](#personal-upload-tokens) below for minting/managing tokens, and
+**[`PUBLIC_API.md`](./PUBLIC_API.md) for the published, token-scoped external
+contract** (save + search) this section's internal detail feeds.
 
 ### Auth Boundary
 
@@ -281,9 +284,11 @@ If the user has too few ready embedded assets:
 
 ### Personal Upload Tokens
 
-Hashed, revocable, **upload-only** credentials for non-session clients (the
-iPhone "Save to Sploot" shortcut, CLIs, automation). See
-`apps/web/docs/shortcuts/save-to-sploot.md` for the end-user recipe and
+Hashed, revocable credentials for non-session clients (the iPhone "Save to
+Sploot" shortcut, the sploot MCP server, other agents/automation), scoped to
+**save + search** — never asset reads/deletes or token management. See
+`apps/web/docs/shortcuts/save-to-sploot.md` for the end-user recipe,
+`apps/web/docs/PUBLIC_API.md` for the published external contract, and
 `apps/web/docs/AUTH.md` for the auth model.
 
 These management endpoints are **session-authenticated** (Clerk/qa-local). An
@@ -332,9 +337,10 @@ curl -X POST https://www.sploot.app/api/upload \
   -F "file=@meme.png"
 ```
 
-`/api/upload` and `/api/upload/url` accept upload tokens; every other route
-returns `401` for one. Dedupe, quota, and the `201`/`409` contracts are
-identical to a session upload.
+`/api/upload`, `/api/upload/url`, and `/api/search` accept a personal API
+token; every other route returns `401` for one. Dedupe, quota, and the
+`201`/`409` contracts are identical to a session upload. See
+[`PUBLIC_API.md`](./PUBLIC_API.md) for the full token-scoped contract.
 
 ---
 

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
-  getAuthWithUser: vi.fn(),
+  authenticatedUserId: 'qa-design-user',
   createEmbeddingService: vi.fn(),
   getSearchResults: vi.fn(),
   setSearchResults: vi.fn(),
@@ -12,8 +12,24 @@ const mocks = vi.hoisted(() => ({
   logSearch: vi.fn(),
 }));
 
-vi.mock('@/lib/auth/server', () => ({
-  getAuthWithUser: mocks.getAuthWithUser,
+// POST /api/search now resolves auth through withAuthenticatedApi (sploot-071:
+// opted into allowUploadToken so a personal API token can drive search), not
+// getAuthWithUser directly — see search-upload-token-opt-in.test.ts for the
+// wiring proof.
+vi.mock('@/lib/auth/with-authenticated-api', () => ({
+  withAuthenticatedApi: (handler: any) => async (req: any, context: any = {}) => {
+    if (!mocks.authenticatedUserId) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+
+    return handler(req, context, {
+      principal: { userId: mocks.authenticatedUserId },
+      auth: { status: 'authenticated' },
+    });
+  },
 }));
 
 vi.mock('@/lib/embeddings', () => ({
@@ -61,7 +77,7 @@ function searchRequest(body: unknown): NextRequest {
 describe('/api/search with a cached query embedding', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getAuthWithUser.mockResolvedValue({ userId: 'qa-design-user' });
+    mocks.authenticatedUserId = 'qa-design-user';
     mocks.getSearchResults.mockResolvedValue(null);
     mocks.setSearchResults.mockResolvedValue(undefined);
     mocks.findManyAssetTags.mockResolvedValue([]);

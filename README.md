@@ -51,7 +51,19 @@ packages.
 |-----------|------|-------------|
 | **Web App** | [`apps/web`](./apps/web) | Next.js 15 App Router, Vercel Blob, pgvector, Clerk Auth. |
 | **Extension** | [`apps/extension`](./apps/extension) | Chrome Extension (WXT) for one-click saving. |
+| **MCP Server** | [`apps/mcp`](./apps/mcp) | `sploot-mcp` — save + search as agent tools over the [published API](./apps/web/docs/PUBLIC_API.md). |
 | **Common** | [`packages/common`](./packages/common) | Shared constants, types, and utilities. |
+
+## 🤖 Agent access
+
+Agents (and the operator's agent fleet) save and search Sploot without a
+browser: the **sploot MCP server** (`apps/mcp`) exposes `sploot_search` and
+`sploot_save` as tools over a personal API token, and the
+**`misty-sploot`** skill teaches the verbs. See
+[`apps/web/docs/PUBLIC_API.md`](./apps/web/docs/PUBLIC_API.md) for the
+published contract and [`docs/five-faces.md`](./docs/five-faces.md) for
+Sploot's face-by-face status (UI/API/MCP/skill shipped; CLI explicitly
+waived, rationale in that doc).
 
 ![Sploot Architecture](https://img.shields.io/badge/Architecture-Monorepo-black?style=flat-square&logo=turborepo)
 ![Next.js](https://img.shields.io/badge/Next.js-15.5-black?style=flat-square&logo=next.js)

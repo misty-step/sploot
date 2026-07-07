@@ -4,11 +4,15 @@ import { prisma, vectorSearch, logSearch, type VectorSearchRow } from '@/lib/db'
 import { CLIP_MODEL, createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
 import { getAuthWithUser } from '@/lib/auth/server';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import { withObservability } from '@/lib/with-observability';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 import { SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
 
-async function postHandler(req: NextRequest) {
+// POST opts into upload-token auth (allowUploadToken: true) so a personal API
+// token can drive search — the read half of the token-scoped external
+// contract in apps/web/docs/PUBLIC_API.md. See sploot-071.
+const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { principal }) => {
   const startTime = Date.now();
   let query: string = '';
   let limit: number = 30;
@@ -16,13 +20,7 @@ async function postHandler(req: NextRequest) {
   let shuffleSeed: number | undefined = undefined;
 
   try {
-    const { userId } = await getAuthWithUser();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     const body = await req.json();
     ({ query, limit = 30, threshold = SEARCH_SIMILARITY_FLOOR, shuffleSeed } = body);
@@ -215,7 +213,7 @@ async function postHandler(req: NextRequest) {
       { status: 500 }
     );
   }
-}
+}, { allowUploadToken: true });
 
 export const POST = withObservability(postHandler, { operation: 'search:query' });
 

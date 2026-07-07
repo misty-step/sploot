@@ -10,7 +10,7 @@ request APIs directly.
 |---|---|---|---|
 | `clerk` | default | Clerk cookies or Clerk session bearer token | local, preview, production |
 | `qa-local` | `SPLOOT_QA_AUTH_MODE=enabled` plus `SPLOOT_QA_AUTH_SECRET` | signed Sploot QA token | local and CI only |
-| `upload-token` | always available | hashed personal upload token (`Authorization: Bearer splt_…`) | **upload routes only** (`/api/upload`, `/api/upload/url`) |
+| `upload-token` | always available | hashed personal API token (`Authorization: Bearer splt_…`) | **opt-in routes only**: save (`/api/upload`, `/api/upload/url`) + search (`/api/search`) |
 
 `qa-local` is rejected when `NODE_ENV=production` or `VERCEL_ENV=production`,
 even if the mode and secret are present.
@@ -31,20 +31,26 @@ The smoke starts a local Next server with `qa-local` enabled and opens `/app`
 with a signed deterministic principal. Passing the smoke proves the app auth
 boundary can be crossed without manual Clerk login.
 
-## Upload Tokens
+## Upload Tokens (personal API tokens)
 
-Personal upload tokens let a non-session client (the iPhone "Save to Sploot"
-shortcut, a CLI, automation) authenticate **upload-only** API calls. They exist
-because Apple Shortcuts cannot carry a Clerk session.
+Personal API tokens (still called "upload tokens" in the code/table names —
+`upload_tokens`, `/api/upload-tokens` — for continuity with sploot-033) let a
+non-session client (the iPhone "Save to Sploot" shortcut, the sploot MCP
+server, other agents/automation) authenticate save + search API calls without
+a Clerk session.
 
 - Format: `splt_` + 32 random bytes (base64url). Only `sha256(token)` is stored
   (`upload_tokens` table); the plaintext is returned once at mint and never
   again.
 - Scope is enforced by policy, not by a scope field: `authenticateRequest`
   checks an upload token only when a route passes `allowUploadToken: true`.
-  Just the two upload routes opt in, so a token presented anywhere else returns
-  the stable `401`. The `lib/auth/server.ts` auth path (`getAuth*`, used by
-  read/delete routes) never calls the verifier at all.
+  Three routes opt in — the two upload routes plus `POST /api/search`
+  (sploot-071) — so a token presented anywhere else returns the stable `401`.
+  The `lib/auth/server.ts` auth path (`getAuth*`, used by most read/delete
+  routes) never calls the verifier at all; `POST /api/search` itself moved off
+  that path onto `withAuthenticatedApi` to make the opt-in possible (partial,
+  route-scoped step toward the full migration tracked in
+  `backlog.d/035-unify-auth-doors-on-policy-boundary.md`).
 - Verification is throw-safe: a DB error (including a not-yet-migrated table)
   resolves to `401`, never `500`. Revoked and unknown tokens are
   indistinguishable.
