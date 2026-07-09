@@ -167,7 +167,7 @@ describe('BlobUploaderService', () => {
 
       expect(vercelBlob.put).toHaveBeenNthCalledWith(
         2,
-        'user-123/reaction-thumb.jpg',
+        'user-123/reaction-preview-v2.jpg',
         processedImages.thumbnail.buffer,
         expect.objectContaining({
           access: 'public',

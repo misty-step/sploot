@@ -74,10 +74,10 @@ export function SortDropdown({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="outline"
-          size="lg"
+          variant="compact"
+          size="default"
           className={cn(
-            'gap-1 border border-border font-mono uppercase tracking-wider hover:border-accent-cyan',
+            'h-10 gap-1 border border-border px-3 font-mono uppercase tracking-normal hover:border-sploot-ink hover:bg-muted',
             className
           )}
           aria-label="Sort options"
@@ -140,7 +140,7 @@ export function SortButtonCompact({
 
   return (
     <Button
-      variant="ghost"
+      variant="compact"
       size="icon"
       onClick={onClick}
       className={className}

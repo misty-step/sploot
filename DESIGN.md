@@ -44,8 +44,9 @@ Sploot should feel:
 - Like a machine on display: structure exposed, the search mechanic and its
   machinery (index, scorer/model, route, status) shown, not hidden behind soft
   chrome.
-- Built from thick ink borders, hard offset shadows, square corners, and
-  saturated color blocks on unbleached paper.
+- Built from ink borders, square corners, and saturated color blocks on
+  unbleached paper. Thick borders and hard offset shadows belong to structural
+  frames and primary actions, not every compact or icon control.
 - Technically capable without sounding like generic AI infrastructure.
 - Private by default.
 
@@ -67,10 +68,10 @@ finds your memes, and shows its work.
 - Console: the search box is a labeled console with an ink titlebar; the
   machinery (index size, scorer/model, route, and status) is on display, not
   hidden. Signed-out demos must label sample data as demo data.
-- Cells: meme tiles are bordered cells with a filename + vector-index header and
-  match / near / dim / default states.
-- Stamps and stickers: banger marks, labels, and status are saturated blocks
-  slammed on with thick borders and hard offset shadows.
+- Cells: meme tiles are bordered cells that preserve the complete source media,
+  with match / near / dim / default states explained outside the image frame.
+- Stamps and stickers: labels and status may use saturated blocks, but banger
+  and relevance metadata never cover the meme itself.
 - Piles: self-organizing piles of cells, grouped by what they mean (the durable
   product metaphor; see §1).
 
@@ -117,11 +118,13 @@ long explanatory copy.
 
 - Default radius is square (`0`). The only rounded exceptions are full circles
   (status dots, avatars) and unmigrated third-party widgets.
-- Borders carry ALL structure: `--sploot-border` (4px ink) standard,
-  `--sploot-border-thick` (6px ink) for primary / active surfaces.
+- Borders encode hierarchy. Hairlines frame compact controls and repeated rows;
+  3-4px ink frames major product objects; 6px is reserved for a rare selected
+  or hero surface.
 - Shadows are hard offset only: `--sploot-shadow` / `-sm` / `-lg` is a solid
   ink block offset down and right. Never blurred, never soft. No elevation by
-  blur. Buttons press: lift on hover, slam on active.
+  blur. Only slab actions and structural objects receive a shadow; compact,
+  icon, navigation, filter, sort, and theme controls stay flat.
 - The found state is the lime match-ring (`--sploot-match-ring`); near-match is
   an inset orange ring.
 
@@ -182,14 +185,15 @@ Canonical component grammar:
 | Component | Purpose | Visual Rule |
 |---|---|---|
 | Search console | The centerpiece: type, find the match | Ink titlebar + LED squares; yellow query shelf; live match reveal with lime ring |
-| Meme cell | One tile in the pile | Thick ink border; filename + vector-index header; match / near / dim / default states |
+| Meme cell | One tile in the pile | Complete uncropped media; quiet frame; match / near / dim / default metadata below the image |
 | Stat block | A library readout | Mono key over Archivo-Black value; bordered, hard offset shadow |
 | Status bar | The machinery on display | Dark row: index / scorer-model / route / status |
-| Button | Actions | Thick border, hard offset shadow; lift on hover, slam on active |
+| Slab button | Primary action | 3px ink border, restrained hard offset shadow; short press feedback |
+| Compact control | Icon, navigation, filter, sort, theme, tile action | Hairline or no border, no offset shadow, stable geometry, semantic fill on hover/active |
 | Command dock | Mobile primary actions | Fixed positions, icon-first, 44px minimum targets |
 | Pile filter / cluster | Self-organizing grouping | Bordered pile of cells; selected reads as a thick border |
 | Sticker tab | Label, tag, status | Saturated block, thick border, hard shadow, mono uppercase |
-| Banger stamp | Favorite or top-ranked marker | Magenta block slammed on like a rubber stamp |
+| Banger marker | Favorite or top-ranked marker | Magenta status beside the media or in its action/metadata rail; never over the image |
 | Empty state | First-use and zero-result education | Show product action and example pile, not generic illustration |
 
 Implemented product wrappers live in `apps/web/components/sploot`:
@@ -220,7 +224,7 @@ timing values:
 
 Named utilities:
 
-- `.animate-sploot-stamp`: banger/favorite stamp punch (scale-down rotate-in).
+- `.animate-sploot-stamp`: optional status-mark punch outside the media frame.
 - `.animate-sploot-pop`: sticker tabs and labels appearing.
 - `.animate-sploot-slide-up`: panels, sheets, and docks entering.
 - Grid tiles cascade with `fadeInScale` staggered at 30ms per tile, capped at
@@ -335,4 +339,5 @@ Do not add:
 - Pastel or muted palettes. Color is full-saturation flat blocks.
 - Calm minimal-SaaS, or a generic centered hero when the product surface can lead.
 - Uniform fade/float motion. Motion is hard and on-interaction (press, match lock).
-- Stock illustrations where real product state or the doodle stand-ins are clearer.
+- Hand-drawn or CSS-doodle substitutes when real product media, generated meme
+  fixtures, or an honest empty state can carry the surface.

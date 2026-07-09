@@ -172,131 +172,143 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
   }
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-4rem)]">
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-3 sm:px-6 border-b border-border">
+    <main aria-label="meme detail" className="min-h-[calc(100vh-4rem)] bg-background">
+      <div className="border-b border-border px-4 py-2 sm:px-6">
         <Button
-          variant="ghost"
+          variant="compact"
           size="sm"
           onClick={() => router.back()}
           className="gap-2 text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          <span className="hidden sm:inline">Back</span>
+          back to the pile
         </Button>
+      </div>
 
-        <div className="flex items-center gap-1">
-          {/* Favorite */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleFavoriteToggle}
-            disabled={favoriteLoading}
-            className={cn(
-              'h-8 w-8 transition-colors',
-              asset.favorite
-                ? 'text-accent-coral hover:text-accent-coral/80'
-                : 'text-muted-foreground hover:text-accent-coral'
+      <div className="grid min-h-[calc(100vh-7rem)] lg:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.55fr)]">
+        <section
+          role="group"
+          aria-label="full meme"
+          className="flex min-h-[55vh] items-center justify-center bg-sploot-paper-warm p-3 sm:p-6 lg:min-h-[calc(100vh-7rem)]"
+        >
+          <div className="relative flex h-full w-full items-center justify-center">
+            {imageError ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-20">
+                <ImageOff className="h-16 w-16 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">image unavailable</p>
+              </div>
+            ) : isVideoMimeType(asset.mime) ? (
+              <video
+                src={resolveQaSeedSrc(asset.blobUrl)}
+                poster={asset.thumbnailUrl ? resolveQaSeedSrc(asset.thumbnailUrl) : undefined}
+                controls
+                autoPlay
+                loop
+                playsInline
+                className="h-auto max-h-[82vh] w-full object-contain"
+                onError={() => setImageError(true)}
+              />
+            ) : (
+              <Image
+                src={resolveQaSeedSrc(asset.blobUrl)}
+                alt={asset.filename || 'meme'}
+                width={asset.width || 1200}
+                height={asset.height || 630}
+                sizes="(max-width: 1024px) 100vw, 72vw"
+                className="h-auto max-h-[82vh] w-full object-contain"
+                priority
+                quality={90}
+                unoptimized={isAnimatedImageMimeType(asset.mime)}
+                onError={() => setImageError(true)}
+              />
             )}
-          >
-            <Heart className={cn('h-4 w-4', asset.favorite && 'fill-current')} />
-          </Button>
+          </div>
+        </section>
 
-          {/* Share */}
-          <ShareButton
-            assetId={asset.id}
-            blobUrl={asset.blobUrl}
-            filename={asset.filename}
-            mimeType={asset.mime}
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-accent-cyan"
-          />
+        <aside className="border-t border-sploot-ink bg-sploot-paper p-5 lg:border-l lg:border-t-0 lg:p-8">
+          <p className="font-mono text-xs uppercase text-muted-foreground">from the pile</p>
+          <h1 className="mt-3 break-words font-display text-3xl uppercase leading-none text-sploot-ink text-balance sm:text-4xl">
+            {asset.filename || asset.pathname?.split('/').pop() || 'untitled meme'}
+          </h1>
 
-          {/* Download */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleDownload}
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-          >
-            <Download className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+          <div role="group" aria-label="meme actions" className="mt-6 flex flex-wrap items-center gap-2 border-y border-border py-3">
+            <Button
+              variant="compact"
+              size="default"
+              onClick={handleFavoriteToggle}
+              disabled={favoriteLoading}
+              className={cn(
+                'border border-border px-3',
+                asset.favorite
+                  ? 'border-sploot-magenta bg-sploot-magenta text-white hover:bg-sploot-magenta'
+                  : 'hover:border-sploot-magenta hover:text-sploot-magenta'
+              )}
+              aria-label={asset.favorite ? 'remove banger' : 'mark as banger'}
+              aria-pressed={asset.favorite}
+            >
+              <Heart className={cn('h-4 w-4', asset.favorite && 'fill-current')} />
+              banger
+            </Button>
 
-      {/* Main meme view */}
-      <div className="flex-1 flex items-center justify-center p-4 sm:p-8">
-        <div className="relative max-w-4xl w-full">
-          {imageError ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-20">
-              <ImageOff className="h-16 w-16 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">Image unavailable</p>
-            </div>
-          ) : isVideoMimeType(asset.mime) ? (
-            <video
-              src={resolveQaSeedSrc(asset.blobUrl)}
-              poster={asset.thumbnailUrl ? resolveQaSeedSrc(asset.thumbnailUrl) : undefined}
-              controls
-              autoPlay
-              loop
-              playsInline
-              className="w-full h-auto max-h-[75vh] object-contain"
-              onError={() => setImageError(true)}
+            <ShareButton
+              assetId={asset.id}
+              blobUrl={asset.blobUrl}
+              filename={asset.filename}
+              mimeType={asset.mime}
+              variant="compact"
+              size="icon"
+              className="border border-border text-muted-foreground hover:border-sploot-cyan hover:text-sploot-ink"
             />
-          ) : (
-            <Image
-              src={resolveQaSeedSrc(asset.blobUrl)}
-              alt={asset.filename || 'Meme'}
-              width={asset.width || 1200}
-              height={asset.height || 630}
-              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 80vw, 900px"
-              className="w-full h-auto max-h-[75vh] object-contain"
-              priority
-              quality={90}
-              unoptimized={isAnimatedImageMimeType(asset.mime)}
-              onError={() => setImageError(true)}
-            />
-          )}
-        </div>
+
+            <Button
+              variant="compact"
+              size="icon"
+              onClick={handleDownload}
+              className="border border-border text-muted-foreground hover:border-sploot-ink hover:text-foreground"
+              aria-label="download meme"
+            >
+              <Download className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <section aria-label="meme metadata" className="mt-7">
+            <h2 className="font-mono text-xs font-bold uppercase text-sploot-ink">file notes</h2>
+            <dl className="mt-3 divide-y divide-border border-y border-border font-mono text-xs">
+              {asset.width && asset.height && (
+                <div className="flex items-center justify-between gap-4 py-2">
+                  <dt className="text-muted-foreground">dimensions</dt>
+                  <dd className="tabular-nums text-foreground">{asset.width}x{asset.height}</dd>
+                </div>
+              )}
+              {asset.size > 0 && (
+                <div className="flex items-center justify-between gap-4 py-2">
+                  <dt className="text-muted-foreground">size</dt>
+                  <dd className="tabular-nums text-foreground">{formatFileSize(asset.size)}</dd>
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-4 py-2">
+                <dt className="text-muted-foreground">type</dt>
+                <dd className="text-right text-foreground">{asset.mime}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-2">
+                <dt className="text-muted-foreground">saved</dt>
+                <dd className="text-foreground">{formatDate(asset.createdAt)}</dd>
+              </div>
+              {asset.tags && asset.tags.length > 0 && (
+                <div className="flex items-start justify-between gap-4 py-2">
+                  <dt className="text-muted-foreground">tags</dt>
+                  <dd className="text-right text-foreground">{asset.tags.map((t: { name: string }) => t.name).join(', ')}</dd>
+                </div>
+              )}
+            </dl>
+          </section>
+        </aside>
       </div>
 
-      {/* Metadata bar */}
-      <div className="flex items-center justify-center px-4 py-2 border-t border-border">
-        <div className="flex items-center gap-3 font-mono text-xs text-muted-foreground">
-          {asset.width && asset.height && (
-            <span className="tabular-nums">{asset.width}x{asset.height}</span>
-          )}
-          {asset.size > 0 && (
-            <>
-              <span className="text-muted-foreground/30">|</span>
-              <span className="tabular-nums">{formatFileSize(asset.size)}</span>
-            </>
-          )}
-          <span className="text-muted-foreground/30">|</span>
-          <span>{asset.mime}</span>
-          <span className="text-muted-foreground/30">|</span>
-          <span>{formatDate(asset.createdAt)}</span>
-          {asset.tags && asset.tags.length > 0 && (
-            <>
-              <span className="text-muted-foreground/30">|</span>
-              <span>{asset.tags.map((t: { name: string }) => t.name).join(', ')}</span>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Related memes section */}
-      <div className="border-t border-border">
-        <div className="px-4 sm:px-6 pt-6 pb-2">
-          <h2
-            className="text-2xl tracking-wider text-foreground"
-            style={{ fontFamily: 'var(--font-bebas-neue)' }}
-          >
-            RELATED MEMES
-          </h2>
-          <p className="text-xs text-muted-foreground font-mono mt-1">
-            semantically similar via CLIP embeddings
-          </p>
+      <section aria-label="related memes" className="border-t border-sploot-ink">
+        <div className="px-4 pb-3 pt-6 sm:px-6">
+          <h2 className="font-display text-2xl uppercase text-foreground">related memes</h2>
+          <p className="mt-1 font-mono text-xs text-muted-foreground">nearby in the embedding space</p>
         </div>
 
         {similarLoading ? (
@@ -304,19 +316,13 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : similarAssets.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-sm text-muted-foreground">
-              No related memes found
-            </p>
+          <div className="py-12 text-center">
+            <p className="text-sm text-muted-foreground">no related memes found</p>
           </div>
         ) : (
-          <ImageGrid
-            assets={similarAssets}
-            onAssetSelect={handleSimilarAssetSelect}
-            showSimilarityScores
-          />
+          <ImageGrid assets={similarAssets} onAssetSelect={handleSimilarAssetSelect} showSimilarityScores />
         )}
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

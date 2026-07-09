@@ -160,7 +160,9 @@ for (const [path, phrases] of Object.entries({
   'apps/web/components/chrome/filter-chips.tsx': ['bg-sploot-coral', 'border-sploot-coral'],
   'apps/web/components/search/search-bar.tsx': ['--sploot-touch-target'],
   'apps/web/components/chrome/mobile-command-dock.tsx': ['--sploot-touch-target'],
-  'apps/web/components/library/image-tile.tsx': ['BangerStamp', 'border-sploot-violet', 'text-sploot-cyan'],
+  // Tile chrome keeps banger/search metadata outside the media instead of
+  // overlaying the artwork with the heavier BangerStamp specimen.
+  'apps/web/components/library/image-tile.tsx': ['aria-label="meme metadata"', 'border-sploot-violet', 'text-sploot-cyan'],
   // sploot-074: the first-use empty state is the capture rig — demo pile of
   // MemeCells + sticker-labeled capture-surface activation, never a generic
   // Card/icon illustration (DESIGN.md §6 empty-state rule).
@@ -277,7 +279,8 @@ const trackedUiFiles = execSync(
   { cwd: repoRoot, encoding: 'utf8' }
 )
   .split('\n')
-  .filter(Boolean);
+  .filter(Boolean)
+  .filter((file) => existsSync(join(repoRoot, file)));
 
 const migrationExceptions = new Map([
   ['apps/web/app/not-found.tsx', ['bg-clip-text']],

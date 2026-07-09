@@ -4,12 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight } from 'lucide-react';
 import { MemeCell, type MemeCellState } from './meme-cell';
-import { type MemeDoodleKind } from './meme-doodle';
 
-// Signed-out demo pile: license-safe doodles with enough keywords for the
+// Signed-out demo pile: real meme fixtures with enough keywords for the
 // console to find the intended sample.
 type Tile = {
-  doodle: MemeDoodleKind;
+  src: string;
   file: string;
   index: string;
   caption: string;
@@ -17,14 +16,14 @@ type Tile = {
 };
 
 const TILES: Tile[] = [
-  { doodle: 'cat', file: 'IMG_4471.png', index: 'v#00471', caption: 'two cats arguing at a dinner table, one yelling', kw: 'cat cats kitten arguing argument yelling angry table dinner two pointing screaming fight' },
-  { doodle: 'fire', file: 'screenshot_2019.png', index: 'v#02019', caption: 'cartoon dog drinking coffee in a burning room', kw: 'this is fine dog fire burning room flames coffee calm disaster everything okay' },
-  { doodle: 'eyes', file: 'reaction_022.jpg', index: 'v#00822', caption: 'side-eye, guy looking at another thing', kw: 'distracted boyfriend looking turning other staring side eye jealous walking by' },
-  { doodle: 'skull', file: 'IMG_9013.png', index: 'v#09013', caption: 'dead. skeleton still waiting on a bench', kw: 'skeleton waiting bench still forever dead bones patient reply text back' },
-  { doodle: 'sparkle', file: 'galaxybrain_4.png', index: 'v#04004', caption: 'chef kiss, glowing brain expanding to a galaxy', kw: 'galaxy brain expanding glowing cosmic genius smart big mind ascend stars chef kiss sparkle' },
-  { doodle: 'hundred', file: 'IMG_3120.png', index: 'v#03120', caption: 'no notes. a perfect hundred', kw: 'hundred 100 no notes perfect score keep it agree facts real top marks' },
-  { doodle: 'bubble', file: 'mood_final2.png', index: 'v#08431', caption: 'group chat going off, what is happening', kw: 'group chat groupchat bubble text message reply notification what huh confused' },
-  { doodle: 'sob', file: 'IMG_6004.png', index: 'v#06004', caption: 'crying, it is what it is', kw: 'crying sob tears sad fine mood feelings hiding it is what it is jordan' },
+  { src: '/starter-pile/cats-arguing.jpg', file: 'cats-arguing.jpg', index: 'v#00471', caption: 'two cats arguing at a dinner table, one yelling', kw: 'cat cats kitten arguing argument yelling angry table dinner two pointing screaming fight' },
+  { src: '/starter-pile/dog-burning-room.jpg', file: 'dog-burning-room.jpg', index: 'v#02019', caption: 'dog drinking coffee in a burning room', kw: 'this is fine dog fire burning room flames coffee calm disaster everything okay' },
+  { src: '/starter-pile/side-eye-cat.jpg', file: 'side-eye-cat.jpg', index: 'v#00822', caption: 'side-eye cat looking at another thing', kw: 'cat looking turning other staring side eye jealous walking by' },
+  { src: '/starter-pile/skeleton-bench.jpg', file: 'skeleton-bench.jpg', index: 'v#09013', caption: 'skeleton still waiting on a bench', kw: 'skeleton waiting bench still forever dead bones patient reply text back' },
+  { src: '/starter-pile/galaxy-brain.jpg', file: 'galaxy-brain.jpg', index: 'v#04004', caption: 'glowing brain expanding to a galaxy', kw: 'galaxy brain expanding glowing cosmic genius smart big mind ascend stars chef kiss sparkle' },
+  { src: '/starter-pile/hundred-points.jpg', file: 'hundred-points.jpg', index: 'v#03120', caption: 'no notes. a perfect hundred', kw: 'hundred 100 no notes perfect score keep it agree facts real top marks' },
+  { src: '/starter-pile/group-chat-phone.jpg', file: 'group-chat-phone.jpg', index: 'v#08431', caption: 'group chat going off, what is happening', kw: 'group chat groupchat bubble text message reply notification what huh confused' },
+  { src: '/starter-pile/crying-thumbs-up.jpg', file: 'crying-thumbs-up.jpg', index: 'v#06004', caption: 'crying, it is what it is', kw: 'crying sob tears sad fine mood feelings hiding it is what it is' },
 ];
 
 const STOP = new Set(['a', 'an', 'the', 'of', 'at', 'on', 'in', 'to', 'and', 'with', 'is', 'are', 'that', 'this', 'for', 'by', 'it', 'its', 'one', 'two', 'what', 'whats']);
@@ -122,11 +121,7 @@ export function SearchField() {
         {/* console titlebar with the 3 LED squares */}
         <div className="flex items-center justify-between gap-3 bg-sploot-ink px-3 py-2 font-mono text-[0.7rem] uppercase tracking-normal text-sploot-paper">
           <span>sploot://search.console</span>
-          <span className="flex gap-1.5" aria-hidden="true">
-            <i className="block h-3 w-3 border-2 border-sploot-paper bg-sploot-orange" />
-            <i className="block h-3 w-3 border-2 border-sploot-paper bg-sploot-yellow" />
-            <i className="block h-3 w-3 border-2 border-sploot-paper bg-sploot-lime" />
-          </span>
+          <span className="text-sploot-lime" aria-hidden="true">demo ready</span>
         </div>
 
         {/* the search itself, on an acid-yellow shelf */}
@@ -168,7 +163,7 @@ export function SearchField() {
                   key={chip}
                   type="button"
                   onClick={() => setQuery(chip)}
-                  className="sploot-press border-[3px] border-sploot-ink bg-sploot-paper px-2.5 py-1.5 font-mono text-[0.72rem] font-bold lowercase tracking-normal text-sploot-ink shadow-[3px_3px_0_var(--sploot-ink)] hover:bg-sploot-magenta hover:text-white"
+                  className="border border-sploot-ink bg-sploot-paper px-2.5 py-1.5 font-mono text-[0.72rem] font-bold lowercase tracking-normal text-sploot-ink transition-colors duration-[var(--sploot-motion-fast)] hover:bg-sploot-magenta hover:text-white focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-sploot-cyan"
                 >
                   try: {chip}
                 </button>
@@ -213,7 +208,7 @@ export function SearchField() {
                 <MemeCell
                   file={tile.file}
                   index={tile.index}
-                  doodle={tile.doodle}
+                  src={tile.src}
                   caption={tile.caption}
                   score={cell.score}
                   state={cell.state}

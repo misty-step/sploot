@@ -88,10 +88,10 @@ export function MobileCommandDock({
     <div className="fixed inset-x-0 bottom-0 z-40 border-t-[3px] border-accent-cyan bg-background px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 md:hidden">
       <div className="mx-auto grid max-w-md grid-cols-5 gap-1.5">
         <Button
-          variant={isUploadOpen ? 'accent' : 'outline'}
+          variant="compact"
           size="icon"
           onClick={onUploadClick}
-          className="h-12 w-full"
+          className={cn('h-12 w-full border border-border', isUploadOpen && 'border-sploot-cyan bg-sploot-cyan text-sploot-ink')}
           aria-pressed={isUploadOpen}
           aria-label="upload meme"
         >
@@ -99,10 +99,10 @@ export function MobileCommandDock({
         </Button>
 
         <Button
-          variant={isSearchOpen ? 'accent' : 'outline'}
+          variant="compact"
           size="icon"
           onClick={onSearchToggle}
-          className="h-12 w-full"
+          className={cn('h-12 w-full border border-border', isSearchOpen && 'border-sploot-cyan bg-sploot-cyan text-sploot-ink')}
           aria-pressed={isSearchOpen}
           aria-label={isSearchOpen ? 'hide search' : 'search memes'}
         >
@@ -112,9 +112,9 @@ export function MobileCommandDock({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
-              variant={activeFilter === 'bangers' ? 'accent' : 'outline'}
+              variant="compact"
               size="icon"
-              className="h-12 w-full"
+              className={cn('h-12 w-full border border-border', activeFilter === 'bangers' && 'border-sploot-magenta bg-sploot-magenta text-white')}
               aria-label="filter memes"
             >
               {activeFilter === 'bangers' ? (
@@ -143,9 +143,9 @@ export function MobileCommandDock({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
-              variant="outline"
+              variant="compact"
               size="icon"
-              className="h-12 w-full"
+              className="h-12 w-full border border-border"
               aria-label={`sort memes by ${getSortLabel(sortBy)}`}
             >
               {renderSortIcon(sortBy, sortOrder)}
@@ -182,10 +182,10 @@ export function MobileCommandDock({
         </DropdownMenu>
 
         <Button
-          variant={isShuffleActive ? 'accent' : 'outline'}
+          variant="compact"
           size="icon"
           onClick={onShuffle}
-          className="h-12 w-full"
+          className={cn('h-12 w-full border border-border', isShuffleActive && 'border-sploot-cyan bg-sploot-cyan text-sploot-ink')}
           aria-pressed={isShuffleActive}
           aria-label="shuffle memes"
         >

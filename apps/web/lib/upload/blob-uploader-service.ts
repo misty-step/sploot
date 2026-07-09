@@ -300,8 +300,8 @@ function withThumbnailSuffix(filename: string, format: string): string {
   const extension = format === 'jpeg' ? 'jpg' : format;
 
   if (/\.[^/.]+$/.test(filename)) {
-    return filename.replace(/\.[^/.]+$/, `-thumb.${extension}`);
+    return filename.replace(/\.[^/.]+$/, `-preview-v2.${extension}`);
   }
 
-  return `${filename}-thumb.${extension}`;
+  return `${filename}-preview-v2.${extension}`;
 }

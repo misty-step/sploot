@@ -7,8 +7,8 @@ import sharp from 'sharp';
 export const MAX_IMAGE_DIMENSION = 2048;
 
 /**
- * Thumbnail dimensions for grid view
- * Square thumbnails for consistent grid layout
+ * Maximum thumbnail edge for grid view.
+ * Renditions preserve the source aspect ratio; the masonry grid owns layout.
  */
 export const THUMBNAIL_SIZE = 256;
 
@@ -38,7 +38,7 @@ export interface ImageProcessingResult {
  * Process an uploaded image to create optimized versions.
  * Generates:
  * 1. Main image (resized if > 2048px)
- * 2. Thumbnail (256x256 square for grid view)
+ * 2. Thumbnail (bounded to 256px, with the original aspect ratio)
  *
  * @param buffer - Raw image buffer
  * @param mimeType - Original file mime type
@@ -77,8 +77,9 @@ export async function processUploadedImage(
   // Get processed main image metadata
   const mainMetadata = await sharp(mainImageBuffer).metadata();
 
-  // Generate thumbnail (always square)
+  // Generate an aspect-preserving thumbnail.
   const thumbnailBuffer = await generateThumbnail(buffer, outputFormat);
+  const thumbnailMetadata = await sharp(thumbnailBuffer).metadata();
 
   return {
     main: {
@@ -91,8 +92,8 @@ export async function processUploadedImage(
     thumbnail: {
       buffer: thumbnailBuffer,
       format: outputFormat,
-      width: THUMBNAIL_SIZE,
-      height: THUMBNAIL_SIZE,
+      width: thumbnailMetadata.width!,
+      height: thumbnailMetadata.height!,
       size: thumbnailBuffer.length,
     },
   };
@@ -100,12 +101,13 @@ export async function processUploadedImage(
 
 export async function generateImagePoster(buffer: Buffer): Promise<ProcessedImage> {
   const thumbnailBuffer = await generateThumbnail(buffer, 'jpeg');
+  const thumbnailMetadata = await sharp(thumbnailBuffer).metadata();
 
   return {
     buffer: thumbnailBuffer,
     format: 'jpeg',
-    width: THUMBNAIL_SIZE,
-    height: THUMBNAIL_SIZE,
+    width: thumbnailMetadata.width!,
+    height: thumbnailMetadata.height!,
     size: thumbnailBuffer.length,
   };
 }
@@ -159,18 +161,19 @@ async function processMainImage(
 }
 
 /**
- * Generate a square thumbnail for grid view.
- * Uses smart cropping to focus on the center of the image.
+ * Generate an aspect-preserving thumbnail for grid view.
+ * No pixels are discarded: the longest edge is bounded to THUMBNAIL_SIZE.
  */
 async function generateThumbnail(
   buffer: Buffer,
   format: 'jpeg' | 'webp' | 'png'
 ): Promise<Buffer> {
-  let sharpInstance = sharp(buffer)
-    .resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, {
-      fit: 'cover',
-      position: 'centre',
-    });
+  let sharpInstance = sharp(buffer).resize({
+    width: THUMBNAIL_SIZE,
+    height: THUMBNAIL_SIZE,
+    fit: 'inside',
+    withoutEnlargement: true,
+  });
 
   // Apply format-specific optimizations
   switch (format) {

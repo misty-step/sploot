@@ -28,7 +28,7 @@ export function UploadButton({
 
   return (
     <Button
-      variant="accent"
+      variant="command"
       size={buttonSize}
       onClick={onClick}
       className={cn(
@@ -58,7 +58,7 @@ export function UploadButtonFloating({
 }) {
   return (
     <Button
-      variant="accent"
+      variant="command"
       size="icon-lg"
       onClick={onClick}
       className={className}

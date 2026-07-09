@@ -12,7 +12,7 @@ interface ShareButtonProps {
   blobUrl?: string;
   filename?: string;
   mimeType?: string;
-  variant?: 'ghost' | 'default';
+  variant?: 'ghost' | 'default' | 'compact';
   size?: 'icon' | 'icon-sm';
   className?: string;
 }

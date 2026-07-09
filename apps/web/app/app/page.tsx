@@ -4,7 +4,6 @@ import { SEARCH_DEFAULT_LIMIT, SEARCH_SIMILARITY_FLOOR } from '@/lib/search-conf
 import { Suspense } from 'react';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import Image from 'next/image';
 import { useAssets, useSearchAssets } from '@/hooks/use-assets';
 import { useDebounce } from '@/hooks/use-debounce';
 import { useAutomaticPiles } from '@/hooks/use-piles';
@@ -20,7 +19,6 @@ import { UploadZone } from '@/components/upload/upload-zone';
 import { Heart } from 'lucide-react';
 import { showToast } from '@/components/ui/toast';
 import { getEmbeddingQueueManager } from '@/lib/embedding-queue';
-import { ShareButton } from '@/components/library/share-button';
 import { error as logError } from '@/lib/logger';
 import type { EmbeddingQueueItem } from '@/lib/embedding-queue';
 import { useKeyboardShortcut, useSearchShortcut, useSlashSearchShortcut } from '@/hooks/use-keyboard-shortcut';
@@ -34,13 +32,11 @@ import { SortDropdown } from '@/components/chrome/sort-dropdown';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PileFilterRail, StickerTab } from '@/components/sploot';
-import { RotateCcw, Shuffle, X, Trash2 } from 'lucide-react';
+import { RotateCcw, Shuffle, X } from 'lucide-react';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
 import { track } from '@/lib/analytics';
 import { logger } from '@/lib/observability-logger';
 import { haveFiltersChanged, type LibraryFilterSnapshot } from '@/lib/filter-change';
-import { isAnimatedImageMimeType, isVideoMimeType } from '@sploot/common';
-import { resolveQaSeedSrc } from '@/lib/qa/qa-image-loader';
 
 function AppPageClient() {
   const router = useRouter();
@@ -61,8 +57,6 @@ function AppPageClient() {
   } = useFilter();
 
   const [isClient, setIsClient] = useState(false);
-  const [selectedAsset, setSelectedAsset] = useState<any>(null);
-  const [showMetadata, setShowMetadata] = useState(false);
 
   // Command palette state
   const { isOpen: isCommandPaletteOpen, openPalette, closePalette } = useCommandPalette();
@@ -591,10 +585,6 @@ function AppPageClient() {
         });
 
         if (res.ok) {
-          // Close lightbox modal if open
-          if (selectedAsset?.id === assetId) {
-            setSelectedAsset(null);
-          }
           // Close delete confirmation modal
           closeDeleteConfirmation();
           // Update grid state
@@ -610,7 +600,7 @@ function AppPageClient() {
         setIsDeleting(false);
       }
     },
-    [selectedAsset, setIsDeleting, closeDeleteConfirmation, handleAssetDelete]
+    [setIsDeleting, closeDeleteConfirmation, handleAssetDelete]
   );
 
   // Trigger refresh when filters or sort preferences change
@@ -659,20 +649,8 @@ function AppPageClient() {
     }
   }, [automaticPiles, selectedPileId]);
 
-  useEffect(() => {
-    if (!trimmedLibraryQuery) {
-      return;
-    }
-    queueMicrotask(() => setSelectedAsset(null));
-  }, [trimmedLibraryQuery]);
-
-  // Reset metadata visibility when modal opens/closes
-  useEffect(() => {
-    queueMicrotask(() => setShowMetadata(false));
-  }, [selectedAsset]);
-
   return (
-    <div className="flex h-[calc(100vh-48px)] md:h-[calc(100vh-56px)] flex-col">
+    <div className="flex h-[calc(100vh-48px)] md:h-[calc(100vh-64px)] flex-col">
       <div className="border-b-[3px] border-sploot-cyan bg-background px-2 pb-2 pt-2 md:px-6 2xl:px-10">
         <div className="mx-auto w-full max-w-7xl 2xl:max-w-[1920px]">
           <header className="flex flex-col gap-2">
@@ -732,15 +710,18 @@ function AppPageClient() {
                 />
 
                 <Button
-                  variant={sortBy === 'shuffle' ? 'accent' : 'outline'}
-                  size="lg"
+                  variant="compact"
+                  size="default"
                   onClick={() => {
                     handleSortChange('shuffle', 'desc');
                     requestAnimationFrame(() => {
                       gridScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                     });
                   }}
-                  className="gap-2 font-mono uppercase tracking-wider"
+                  className={cn(
+                    'h-10 gap-2 border border-border px-3 font-mono uppercase tracking-normal hover:border-sploot-ink',
+                    sortBy === 'shuffle' && 'border-sploot-cyan bg-sploot-cyan text-sploot-ink'
+                  )}
                   aria-pressed={sortBy === 'shuffle'}
                 >
                   <Shuffle className="h-4 w-4" />
@@ -973,147 +954,6 @@ function AppPageClient() {
         sortBy={sortBy}
         sortOrder={sortOrder}
       />
-
-      {/* Image Preview Modal */}
-      {selectedAsset && (
-        <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => setSelectedAsset(null)}
-        >
-          {/* Top action bar - all controls in one row */}
-          <div className="fixed top-[calc(1rem+env(safe-area-inset-top))] left-[calc(1rem+env(safe-area-inset-left))] right-[calc(1rem+env(safe-area-inset-right))] flex items-center justify-between z-[60]">
-            {/* Left side: empty for now, could add image counter later */}
-            <div />
-
-            {/* Right side: Action buttons + Close */}
-            <div className="flex items-center gap-2">
-              {/* Favorite button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  'h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-sploot-coral',
-                  selectedAsset.favorite && 'text-sploot-coral hover:text-sploot-coral'
-                )}
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  try {
-                    const res = await fetch(`/api/assets/${selectedAsset.id}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ favorite: !selectedAsset.favorite }),
-                    });
-
-                    if (res.ok) {
-                      // Update modal state
-                      setSelectedAsset({ ...selectedAsset, favorite: !selectedAsset.favorite });
-                      // Update grid state
-                      handleAssetUpdate(selectedAsset.id, { favorite: !selectedAsset.favorite });
-                    }
-                  } catch (error) {
-                    logError('Failed to toggle favorite:', error);
-                  }
-                }}
-                aria-label={selectedAsset.favorite ? 'Remove from bangers' : 'Add to bangers'}
-              >
-                <Heart className={cn('h-5 w-5', selectedAsset.favorite && 'fill-current')} />
-              </Button>
-
-              {/* Share button */}
-              <ShareButton
-                assetId={selectedAsset.id}
-                blobUrl={selectedAsset.blobUrl}
-                filename={selectedAsset.filename}
-                mimeType={selectedAsset.mime}
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-sploot-cyan"
-              />
-
-              {/* Delete button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-red-500"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  // Check if skip confirmation preference is set
-                  const shouldSkip = openDeleteConfirmation({
-                    id: selectedAsset.id,
-                    imageUrl: selectedAsset.thumbnailUrl || selectedAsset.blobUrl,
-                    imageName: selectedAsset.filename,
-                  });
-
-                  // If skip preference is set, delete immediately
-                  if (shouldSkip) {
-                    handleDeleteAsset(selectedAsset.id);
-                  }
-                }}
-                aria-label="Delete meme"
-              >
-                <Trash2 className="h-5 w-5" />
-              </Button>
-
-              {/* Close button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedAsset(null);
-                }}
-                className="h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-white"
-                aria-label="Close preview"
-              >
-                <X className="w-6 h-6" />
-              </Button>
-            </div>
-          </div>
-
-          <div
-            className="max-w-4xl max-h-[90vh] relative"
-            onClick={(e) => e.stopPropagation()}
-            onMouseMove={() => setShowMetadata(true)}
-            onMouseLeave={() => setShowMetadata(false)}
-          >
-            <div className="relative w-full h-full">
-              {isVideoMimeType(selectedAsset.mime) ? (
-                <video
-                  src={resolveQaSeedSrc(selectedAsset.blobUrl)}
-                  poster={selectedAsset.thumbnailUrl ? resolveQaSeedSrc(selectedAsset.thumbnailUrl) : undefined}
-                  controls
-                  autoPlay
-                  loop
-                  playsInline
-                  className="max-w-full max-h-[90vh] object-contain"
-                />
-              ) : (
-                <Image
-                  src={resolveQaSeedSrc(selectedAsset.blobUrl)}
-                  alt={selectedAsset.filename}
-                  width={1920}
-                  height={1080}
-                  className="max-w-full max-h-[90vh] object-contain"
-                  priority
-                  unoptimized={isAnimatedImageMimeType(selectedAsset.mime)}
-                />
-              )}
-            </div>
-
-            {/* Metadata overlay - shows on hover */}
-            <div className={cn(
-              "absolute bottom-4 left-4 right-4 bg-black/50 backdrop-blur-sm p-4 transition-opacity duration-300",
-              showMetadata ? 'opacity-100' : 'opacity-0'
-            )}>
-              <p className="text-white font-medium">{selectedAsset.filename}</p>
-              <p className="text-white/80 text-sm mt-1">
-                {selectedAsset.width && selectedAsset.height ? `${selectedAsset.width}×${selectedAsset.height} • ` : ''}
-                {selectedAsset.mime.split('/')[1].toUpperCase()}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Retry Progress Modal */}
       {showRetryModal && (

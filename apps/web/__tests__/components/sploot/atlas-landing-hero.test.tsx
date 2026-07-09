@@ -25,7 +25,7 @@ describe('AtlasLandingHero', () => {
     // The console renders real meme cells from the pile. The matching file can
     // also appear in the machinery readout (hit: ...), so assert on a cell that
     // is not the current hit to prove the grid itself rendered.
-    expect(screen.getByText('IMG_9013.png')).toBeInTheDocument();
+    expect(screen.getByText('skeleton-bench.jpg')).toBeInTheDocument();
     expect(screen.getByText('8 in the demo pile')).toBeInTheDocument();
     expect(screen.getByText('demo vectors')).toBeInTheDocument();
     expect(screen.queryByText('12,408 in the pile')).not.toBeInTheDocument();

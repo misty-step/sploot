@@ -623,13 +623,13 @@ select:focus-visible {
 }
 
 .sploot-press:hover {
-  transform: translate(-2px, -2px);
-  box-shadow: var(--sploot-shadow);
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--sploot-ink);
 }
 
 .sploot-press:active {
-  transform: translate(3px, 3px);
-  box-shadow: 2px 2px 0 var(--sploot-ink);
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--sploot-ink);
 }
 
 @media (prefers-reduced-motion: reduce) {

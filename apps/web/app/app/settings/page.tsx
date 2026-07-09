@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAuthUser, useAuthActions } from '@/lib/auth/client';
 import { usePwaInstallPrompt } from '@/hooks/use-pwa-install';
 import { UploadTokensCard } from '@/components/settings/upload-tokens-card';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 // Fallback while /api/version (latest landfall release tag) loads.
 const APP_VERSION_FALLBACK = process.env.NEXT_PUBLIC_APP_VERSION || 'v0';
@@ -80,9 +81,9 @@ export default function SettingsPage() {
   return (
     <div className="p-6 md:p-8 space-y-6 max-w-3xl mx-auto">
       <header className="space-y-1">
-        <h1 className="text-3xl font-bold text-foreground">Settings</h1>
+        <h1 className="font-display text-3xl uppercase text-foreground">settings</h1>
         <p className="text-muted-foreground text-sm">
-          Tune your meme bunker vibes, manage your login, and flex the PWA drip.
+          manage your account, storage, install path, and capture keys.
         </p>
       </header>
 
@@ -93,22 +94,22 @@ export default function SettingsPage() {
             Signed in as <span className="text-foreground">{user?.emailAddresses?.[0]?.emailAddress ?? 'unknown user'}</span>
           </p>
         </div>
-
         <div className="flex items-center gap-3">
-          <button
+          <Button
             onClick={handleSignOut}
             disabled={signOutLoading}
+            variant="compact"
+            size="sm"
             className={cn(
-              'inline-flex items-center gap-2  px-4 py-2 text-sm font-medium transition-colors',
-              'bg-destructive/20 text-destructive hover:bg-destructive/30',
+              'gap-2 border border-border px-3 hover:border-sploot-ink',
               signOutLoading && 'opacity-60 cursor-not-allowed'
             )}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
-            {signOutLoading ? 'Yeeting…' : 'Sign out'}
-          </button>
+            {signOutLoading ? 'signing out…' : 'sign out'}
+          </Button>
         </div>
       </section>
 
@@ -155,7 +156,7 @@ export default function SettingsPage() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8l-8-8-8 8" />
               </svg>
-              Install Sploot PWA
+              install sploot
             </button>
           )}
 
@@ -189,15 +190,6 @@ export default function SettingsPage() {
             &ldquo;Save to Sploot&rdquo; shortcut
           </Link>{" "}
           to share images from any iOS app.
-        </p>
-      </section>
-
-      <section className="bg-card border border-border p-5 space-y-3">
-        <h2 className="text-lg font-semibold text-foreground">What exists now</h2>
-        <p className="text-muted-foreground text-sm">
-          This settings panel manages your account, storage, install path, upload
-          tokens, version, help, support, and privacy links. No social surface is
-          hiding behind a teaser.
         </p>
       </section>
 

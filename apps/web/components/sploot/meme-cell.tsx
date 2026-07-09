@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { MemeDoodle, type MemeDoodleKind } from './meme-doodle';
 
@@ -8,8 +9,10 @@ interface MemeCellProps {
   file: string;
   /** Vector index shown next to the filename, e.g. "v#00471" */
   index?: string;
-  /** Inner glyph for the license-safe meme stand-in. */
-  doodle: MemeDoodleKind;
+  /** Real or generated meme fixture used by product-facing surfaces. */
+  src?: string;
+  /** Optional fallback glyph for the internal styleguide only. */
+  doodle?: MemeDoodleKind;
   /** Lowercase caption describing what is in the meme. */
   caption?: string;
   /** Cosine score shown on near/match cells, e.g. "0.91". */
@@ -30,6 +33,7 @@ interface MemeCellProps {
 export function MemeCell({
   file,
   index,
+  src,
   doodle,
   caption,
   score,
@@ -68,24 +72,34 @@ export function MemeCell({
         {index ? <span className="shrink-0 pl-2">{index}</span> : null}
       </div>
 
-      <div className="relative flex flex-1 items-center justify-center p-3 text-sploot-ink">
-        <MemeDoodle kind={doodle} className="max-h-[120px]" />
-        {(isMatch || isNear) && score ? (
-          <span
-            className={cn(
-              'absolute bottom-1 left-1 bg-sploot-ink px-1 py-0.5 font-mono text-[0.58rem] font-bold tracking-normal',
-              isMatch ? 'text-sploot-lime' : 'text-sploot-orange'
-            )}
-          >
-            sim {score}
-          </span>
+      <div className="relative flex min-h-[132px] flex-1 items-center justify-center overflow-hidden bg-white text-sploot-ink">
+        {src ? (
+          <Image
+            src={src}
+            alt={caption || file}
+            fill
+            sizes="(max-width: 640px) 50vw, 240px"
+            className="object-contain"
+            unoptimized
+          />
+        ) : doodle ? (
+          <MemeDoodle kind={doodle} className="max-h-[120px]" />
         ) : null}
       </div>
 
-      {caption ? (
-        <p className="border-t-[3px] border-sploot-ink px-2 py-1.5 font-mono text-[0.62rem] lowercase leading-tight text-sploot-ink">
-          {caption}
-        </p>
+      {caption || ((isMatch || isNear) && score) ? (
+        <div className="flex items-start justify-between gap-2 border-t-[3px] border-sploot-ink px-2 py-1.5">
+          {caption ? (
+            <p className="font-mono text-[0.62rem] lowercase leading-tight text-sploot-ink">
+              {caption}
+            </p>
+          ) : <span />}
+          {(isMatch || isNear) && score ? (
+            <span className={cn('shrink-0 font-mono text-[0.58rem] font-bold', isMatch ? 'text-sploot-ink' : 'text-sploot-orange')}>
+              sim {score}
+            </span>
+          ) : null}
+        </div>
       ) : null}
     </article>
   );

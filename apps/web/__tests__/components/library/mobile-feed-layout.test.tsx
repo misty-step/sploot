@@ -62,7 +62,7 @@ describe('mobile meme feed layout contract', () => {
   it('keeps mobile tile actions thumb-sized and hides technical metadata', () => {
     render(
       <BlobCircuitBreakerProvider>
-        <ImageTile asset={asset} />
+        <ImageTile asset={asset} showSimilarityScore />
       </BlobCircuitBreakerProvider>
     );
 
@@ -78,7 +78,7 @@ describe('mobile meme feed layout contract', () => {
     expect(screen.queryByRole('button', { name: /more meme actions/i })).not.toBeInTheDocument();
 
     expect(screen.getByText('601×178 28.3 KB')).toHaveClass('hidden', 'sm:inline');
-    expect(screen.getByText('87%')).toHaveClass('hidden', 'sm:inline');
+    expect(screen.getByText('87%')).toBeVisible();
     expect(screen.getByText('processing')).toHaveClass('hidden', 'sm:inline');
   });
 });

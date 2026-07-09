@@ -13,7 +13,6 @@ import { Heart, Trash2, ImageOff, Loader2, AlertCircle, Clock } from 'lucide-rea
 import type { Asset } from '@/lib/types';
 import { ShareButton } from './share-button';
 import { logger } from '@/lib/observability-logger';
-import { BangerStamp } from '@/components/sploot';
 import { isAnimatedImageMimeType, isVideoMimeType } from '@sploot/common';
 import { resolveQaSeedSrc } from '@/lib/qa/qa-image-loader';
 import { SIMILARITY_MATCH_BOUNDARY, SIMILARITY_NEAR_BOUNDARY } from '@/lib/search-config';
@@ -49,7 +48,7 @@ function ImageTileComponent({
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageSrc, setImageSrc] = useState(() =>
-    getTileImageSrc(asset.mime, asset.blobUrl, asset.thumbnailUrl)
+    getTileImageSrc(asset.mime, asset.blobUrl, asset.thumbnailUrl, asset.width, asset.height)
   );
   const [hasTriedFallback, setHasTriedFallback] = useState(false);
   const [isGeneratingEmbedding, setIsGeneratingEmbedding] = useState(false);
@@ -79,12 +78,12 @@ function ImageTileComponent({
   // Reset image src when asset changes (e.g., component reused)
   useEffect(() => {
     queueMicrotask(() => {
-      setImageSrc(getTileImageSrc(asset.mime, asset.blobUrl, asset.thumbnailUrl));
+      setImageSrc(getTileImageSrc(asset.mime, asset.blobUrl, asset.thumbnailUrl, asset.width, asset.height));
       setHasTriedFallback(false);
       setImageError(false);
       setImageLoaded(false);
     });
-  }, [asset.id, asset.blobUrl, asset.thumbnailUrl, asset.mime]);
+  }, [asset.id, asset.blobUrl, asset.thumbnailUrl, asset.mime, asset.width, asset.height]);
 
   // Simulate queue position in debug mode
   useEffect(() => {
@@ -306,12 +305,13 @@ function ImageTileComponent({
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
-  // Extract similarity score from search results
-  const similarityScore = useMemo(() => {
+  // Prefer the API's human-readable relevance percentage. Similarity-only
+  // callers still get the same presentation without exposing a raw cosine.
+  const searchConfidence = useMemo(() => {
     if (!showSimilarityScore) return null;
-    const score = (asset as any).similarity;
-    if (typeof score !== 'number') return null;
-    return score.toFixed(2);
+    if (typeof asset.relevance === 'number') return `${Math.round(asset.relevance)}%`;
+    if (typeof asset.similarity !== 'number') return null;
+    return `${Math.round(asset.similarity * 100)}%`;
   }, [showSimilarityScore, asset]);
 
   // Determine border color based on similarity score
@@ -327,6 +327,18 @@ function ImageTileComponent({
     }
     return 'border-border shadow-[0_0_0_2px_hsl(var(--border))]';
   }, [showSimilarityScore, asset]);
+
+  const videoPoster = isVideo
+    ? getAspectSafePreviewSrc(asset.thumbnailUrl, asset.width, asset.height)
+    : undefined;
+
+  const handleOpen = () => {
+    if (onClick) {
+      onClick();
+      return;
+    }
+    onSelect?.(asset);
+  };
 
   // Get embedding status icon and label (minimalist aesthetic)
   const getEmbeddingStatusIcon = () => {
@@ -367,23 +379,14 @@ function ImageTileComponent({
 
   return (
     <>
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label={`open ${asset.filename || asset.pathname?.split('/').pop() || 'meme'}`}
-        onClick={onClick || (() => onSelect?.(asset))}
-        onKeyDown={(e) => {
-          if (e.target !== e.currentTarget) return;
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            (onClick || (() => onSelect?.(asset)))();
-          }
-        }}
+      <article
         className="group overflow-hidden cursor-pointer border border-border transition-all duration-[var(--sploot-motion-base)] hover:-translate-y-0.5 hover:border-sploot-ink hover:shadow-[3px_3px_0_var(--sploot-ink)]"
       >
         <div className="relative">
           {/* Image container */}
           <div
+            role="group"
+            aria-label="meme media"
             className={cn('relative bg-muted overflow-hidden', !preserveAspectRatio && 'aspect-square')}
             style={aspectRatioStyle}
           >
@@ -415,7 +418,7 @@ function ImageTileComponent({
                       'h-full w-full',
                       preserveAspectRatio ? 'object-contain' : 'object-cover'
                     )}
-                    poster={asset.thumbnailUrl ? resolveQaSeedSrc(asset.thumbnailUrl) : undefined}
+                    poster={videoPoster}
                     muted
                     loop
                     playsInline
@@ -447,7 +450,11 @@ function ImageTileComponent({
                     // 048), so the optimizer would add transform + cache-write cost
                     // for no benefit — serve it directly. The detail/share pages
                     // stay optimized. See ADR-008.
-                    unoptimized
+                    // Stored previews are already sized for the grid. When a
+                    // legacy crop forces the original-image fallback, keep the
+                    // Next optimizer on so the grid does not download full-size
+                    // originals.
+                    unoptimized={imageSrc !== resolveQaSeedSrc(asset.blobUrl)}
                     onLoad={() => {
                       setImageLoaded(true);
                       recordBlobSuccess();
@@ -471,26 +478,18 @@ function ImageTileComponent({
               </>
             )}
 
-
-            {/* Banger stamp - slapped on the artwork like a sticker */}
-            {asset.favorite && !imageError && (
-              <div className="absolute top-2 left-2 z-10 -rotate-6">
-                <BangerStamp className="animate-sploot-stamp sploot-sticker-shadow" />
-              </div>
-            )}
-
-            {/* Similarity score overlay */}
-            {similarityScore !== null && (
-              <div className="absolute top-2 right-2 z-10">
-                <div className="border border-sploot-violet bg-black/80 px-2 py-1">
-                  <span className="font-mono text-xs text-sploot-cyan sploot-tabular">{similarityScore}</span>
-                </div>
-              </div>
+            {!imageError && (
+              <button
+                type="button"
+                aria-label={`open ${asset.filename || asset.pathname?.split('/').pop() || 'meme'}`}
+                className="absolute inset-0 z-10 cursor-pointer focus-visible:outline focus-visible:outline-3 focus-visible:-outline-offset-3 focus-visible:outline-sploot-cyan"
+                onClick={handleOpen}
+              />
             )}
           </div>
 
           {/* Action bar below image */}
-          <div className="flex items-center justify-between gap-2 px-2 py-2 bg-card dark:bg-muted border-t border-border sm:py-1.5">
+          <div role="group" aria-label="meme metadata" className="flex items-center justify-between gap-2 px-2 py-2 bg-card dark:bg-muted border-t border-border sm:py-1.5">
             {/* Left: Actions */}
             <div className="flex items-center gap-1.5 sm:gap-1">
               {/* Banger button - always visible */}
@@ -498,7 +497,7 @@ function ImageTileComponent({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
-                      variant="ghost"
+                      variant="compact"
                       size="icon"
                       className={cn(
                         'h-11 w-11 rounded-none transition-colors hover:bg-sploot-coral hover:text-black sm:h-7 sm:w-7',
@@ -531,6 +530,7 @@ function ImageTileComponent({
                       blobUrl={asset.blobUrl}
                       filename={asset.filename}
                       mimeType={asset.mime}
+                      variant="compact"
                       size="icon"
                       className="h-11 w-11 rounded-none transition-colors text-muted-foreground/60 hover:bg-sploot-cyan hover:text-black sm:h-7 sm:w-7"
                     />
@@ -543,7 +543,7 @@ function ImageTileComponent({
 
               {/* Delete button - direct on mobile so there is no one-item overflow menu */}
               <Button
-                variant="ghost"
+                variant="compact"
                 size="icon"
                 className="h-11 w-11 rounded-none transition-colors text-muted-foreground/60 hover:bg-destructive hover:text-white sm:h-7 sm:w-7"
                 onClick={(e) => {
@@ -560,25 +560,24 @@ function ImageTileComponent({
 
             {/* Right: Metadata */}
             <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
+              {asset.favorite && !imageError && (
+                <span className="inline-flex items-center gap-1 font-mono text-[0.68rem] font-bold uppercase text-sploot-magenta">
+                  <Heart className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+                  banger
+                </span>
+              )}
+
+              {searchConfidence !== null && (
+                <span className="font-mono text-xs text-sploot-cyan sploot-tabular" title="cosine similarity">
+                  <span className="mr-1 text-muted-foreground">match</span>
+                  <span>{searchConfidence}</span>
+                </span>
+              )}
+
               {/* Dimensions and size - monospace for technical data */}
               <span className="hidden font-mono text-xs text-muted-foreground tabular-nums whitespace-nowrap sm:inline">
                 {asset.width}×{asset.height} {formatFileSize(asset.size || 0)}
               </span>
-
-              {/* Relevance score - search results only */}
-              {typeof asset.relevance === 'number' && (
-                <>
-                  <span className="hidden text-muted-foreground/30 sm:inline">|</span>
-                  <span
-                    className={cn(
-                      'hidden font-mono text-xs tabular-nums sm:inline',
-                      asset.belowThreshold ? 'text-orange-400' : 'text-green-400'
-                    )}
-                  >
-                    {Math.round(asset.relevance)}%
-                  </span>
-                </>
-              )}
 
               {/* Embedding status - only show if not ready */}
               {embeddingStatusInfo && (
@@ -604,7 +603,7 @@ function ImageTileComponent({
             </div>
           )}
         </div>
-      </div>
+      </article>
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmation.targetAsset && (
@@ -706,11 +705,29 @@ export const ImageTile = memo(ImageTileComponent, arePropsEqual);
 function getTileImageSrc(
   mimeType: string,
   blobUrl: string,
-  thumbnailUrl?: string | null
+  thumbnailUrl?: string | null,
+  width?: number | null,
+  height?: number | null
 ): string {
   if (isAnimatedImageMimeType(mimeType)) {
     return resolveQaSeedSrc(blobUrl);
   }
 
-  return resolveQaSeedSrc(thumbnailUrl || blobUrl);
+  const source = getAspectSafePreviewSrc(thumbnailUrl, width, height) || blobUrl;
+
+  return resolveQaSeedSrc(source);
+}
+
+function getAspectSafePreviewSrc(
+  thumbnailUrl?: string | null,
+  width?: number | null,
+  height?: number | null
+): string | undefined {
+  if (!thumbnailUrl) return undefined;
+
+  const isNonSquare = Boolean(width && height && Math.abs(width / height - 1) > 0.02);
+  const isAspectSafePreview = thumbnailUrl.includes('-preview-v2.');
+  if (isNonSquare && !isAspectSafePreview) return undefined;
+
+  return resolveQaSeedSrc(thumbnailUrl);
 }

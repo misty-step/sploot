@@ -16,11 +16,11 @@ export default async function Home() {
   return (
     <div className="relative min-h-screen bg-background text-foreground">
       {/* Top navigation */}
-      <nav className="fixed top-0 right-0 z-50 flex items-center gap-4 p-6">
+      <nav className="fixed top-0 right-0 z-50 flex items-center gap-2 p-4 sm:p-6">
         <ThemeToggle />
         <Link
           href="/sign-in"
-          className="font-mono text-sm uppercase tracking-normal text-muted-foreground transition-colors hover:text-sploot-cyan"
+          className="border border-transparent px-3 py-2 font-mono text-sm font-bold uppercase tracking-normal text-foreground transition-colors hover:border-sploot-ink hover:bg-sploot-ink hover:text-sploot-paper focus-visible:outline focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-sploot-cyan"
         >
           sign in
         </Link>

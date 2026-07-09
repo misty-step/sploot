@@ -2,8 +2,7 @@
 
 import { ReactNode, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Navbar } from './navbar';
-import { NavbarSpacer } from './chrome-spacers';
+import { Navbar, NavbarSpacer } from './navbar';
 import { StatusLine } from './status-line';
 import { useAuthActions } from '@/lib/auth/client';
 import { useStatusStats } from '@/hooks/use-status-stats';
@@ -47,7 +46,7 @@ export function AppChrome({ children }: AppChromeProps) {
       <NavbarSpacer />
 
       {/* Main content */}
-      <main className="min-h-[calc(100vh-48px)] md:min-h-[calc(100vh-56px)]">
+      <main className="min-h-[calc(100vh-48px)] md:min-h-[calc(100vh-64px)]">
         {children}
       </main>
     </>

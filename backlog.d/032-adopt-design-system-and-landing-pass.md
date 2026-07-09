@@ -96,6 +96,22 @@ Still open: package/substrate dependency mapping, `/app` workbench,
 detail/settings/changelog migration, pricing after 031, and full-surface
 before/after evidence.
 
+## Operator converge 2026-07-09
+
+Round 1 of `explorations/lab-033-full-pass` locked the implementation direction:
+
+- Keep the console landing, command-bar workbench, drop-zone intake, centered
+  auth card, and editorial detail route.
+- Keep neo-brutalist zine as the base; sticker-bomb remains the only challenger.
+  Compact/icon controls get a flat, lighter grammar instead of inheriting slab
+  borders, shadows, and lift motion.
+- Replace CSS doodle media with credible meme fixtures, preserve every source
+  aspect ratio, and move banger/relevance metadata outside the image frame.
+- Settings stays close to shipped, with control-panel toggles where needed and
+  hazard treatment reserved for destructive actions.
+- Lab baselines must reproduce the real product structure before they can be
+  labeled `shipped`.
+
 ## Notes
 
 No longer blocked — the package exists and #228 wires it. **Gate #228 behind

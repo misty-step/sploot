@@ -52,7 +52,7 @@ describe('animated media tile rendering', () => {
     );
   });
 
-  it('renders videos with a video element and poster thumbnail', () => {
+  it('omits legacy cropped posters for non-square videos so the first frame can render uncropped', () => {
     renderTile({
       ...baseAsset,
       blobUrl: 'https://example.com/reaction.mp4',
@@ -64,8 +64,24 @@ describe('animated media tile rendering', () => {
 
     const video = screen.getByLabelText('play reaction.mp4');
     expect(video.tagName).toBe('VIDEO');
-    expect(video).toHaveAttribute('poster', 'https://example.com/reaction-poster.jpg');
+    expect(video).not.toHaveAttribute('poster');
     expect(video.querySelector('source')).toHaveAttribute('src', 'https://example.com/reaction.mp4');
     expect(video.querySelector('source')).toHaveAttribute('type', 'video/mp4');
+  });
+
+  it('uses an aspect-safe v2 poster for non-square videos', () => {
+    renderTile({
+      ...baseAsset,
+      blobUrl: 'https://example.com/reaction.mp4',
+      thumbnailUrl: 'https://example.com/reaction-preview-v2.jpg',
+      filename: 'reaction.mp4',
+      pathname: 'reaction.mp4',
+      mime: 'video/mp4',
+    });
+
+    expect(screen.getByLabelText('play reaction.mp4')).toHaveAttribute(
+      'poster',
+      'https://example.com/reaction-preview-v2.jpg'
+    );
   });
 });
