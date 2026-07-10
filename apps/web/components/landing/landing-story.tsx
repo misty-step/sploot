@@ -67,10 +67,10 @@ export function LandingStory() {
 
         <div className="flex flex-col items-start gap-4 rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink bg-sploot-yellow p-8 sploot-shadow sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-1">
-            <p className="font-display text-2xl leading-tight tracking-normal text-sploot-ink">
+            <p className="font-display text-2xl leading-tight tracking-normal text-[#1c1547]">
               upload chaos. get order for free.
             </p>
-            <p className="font-sans text-base text-sploot-ink/80">
+            <p className="font-sans text-base text-[#1c1547]/80">
               your library is private — only you can see your pile.
             </p>
           </div>

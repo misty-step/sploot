@@ -4,6 +4,7 @@ import { useState, useRef, DragEvent, ClipboardEvent, useEffect, useCallback } f
 import { Upload, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { showToast } from '@/components/ui/toast';
 import { UPLOAD } from '@sploot/common';
 
@@ -179,21 +180,27 @@ export function UploadDropZone({
             <Upload className={cn('size-10 transition-colors', isDragging ? 'text-sploot-blue' : 'text-muted-foreground')} strokeWidth={2.5} />
           </div>
 
-          <h2
-            className="text-4xl md:text-5xl mb-3 tracking-wider"
-            style={{ fontFamily: "var(--font-bebas-neue)" }}
-          >
+          <h2 className="font-display text-4xl md:text-5xl mb-3 tracking-wider lowercase">
             {isDragging ? (
-              <span className="text-sploot-blue">DROP MEMES HERE</span>
+              <span className="text-sploot-blue">drop it in the pile</span>
             ) : (
-              <span className="text-muted-foreground">DRAG & DROP MEMES</span>
+              <span className="text-muted-foreground">drag chaos here</span>
             )}
           </h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            or click to browse • paste an image or its url
+          <p className="font-mono text-xs text-muted-foreground mb-5">
+            jpeg, png, webp, gif, mp4, webm · zips &amp; bookmark exports too · max {UPLOAD.maxSizeMB}mb per file
           </p>
-          <p className="font-mono text-xs text-muted-foreground">
-            JPEG, PNG, WebP, GIF, MP4, WebM • zips & bookmark exports too • Max {UPLOAD.maxSizeMB}MB per file
+          <Button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              fileInputRef.current?.click();
+            }}
+          >
+            pick files
+          </Button>
+          <p className="text-xs text-muted-foreground mt-3">
+            or click anywhere here to browse • paste an image or its url
           </p>
         </CardContent>
       </Card>

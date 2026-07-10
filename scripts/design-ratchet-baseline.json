@@ -24,7 +24,6 @@
     "apps/web/app/styleguide/page.tsx": 4
   },
   "tileActionGrammar": {
-    "apps/web/app/app/page.tsx": 5,
     "apps/web/components/library/share-button.tsx": 2
   },
   "legacyNames": {}

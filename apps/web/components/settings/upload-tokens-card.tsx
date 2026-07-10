@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { StickerTab } from '@/components/sploot';
 
 interface UploadToken {
   id: string;
@@ -174,8 +175,11 @@ export function UploadTokensCard() {
           {tokens.map((token) => (
             <li key={token.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
-                <p className="text-sm text-foreground truncate">{token.name}</p>
-                <p className="text-xs text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-foreground truncate">{token.name}</p>
+                  <StickerTab tone="cyan" className="shrink-0">upload only</StickerTab>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   <span className="font-mono">{token.prefix}…</span> · {formatWhen(token.lastUsedAt)}
                 </p>
               </div>

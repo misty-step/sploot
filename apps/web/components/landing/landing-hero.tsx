@@ -1,52 +1,64 @@
+'use client';
+
+import { useRef } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { SearchField, StatBlock, StatusBar, StickerTab } from '@/components/sploot';
+import { SearchField, type SearchFieldHandle, StatBlock, StatusBar, StickerTab } from '@/components/sploot';
 
 /**
- * The toybox landing hero (lab-034, AFD-8). The first viewport is the product
- * mechanism itself: a search console that ranks a demo pile by meaning, sitting
- * on the dotted candy shelf. No fake window chrome, no centered SaaS emptiness —
- * the machine is on the table, running.
+ * The toybox landing hero (lab-035, IMPEC-LAND-3 convergence). A 5:7 split:
+ * a sticky copy tower on the left sells the claim, a working search console
+ * + demo wall on the right proves it. No fake window chrome — the machine is
+ * on the table, running, and the tower's "shuffle the demo" CTA drives the
+ * same shuffle as the wall header's control (SearchFieldHandle).
  */
 export function LandingHero() {
+  const searchFieldRef = useRef<SearchFieldHandle>(null);
+
   return (
     <section className="relative bg-sploot-workbench text-sploot-ink">
-      <div className="mx-auto flex max-w-5xl flex-col gap-8 px-5 pb-16 pt-24 sm:px-8">
-        <div className="flex flex-col items-start gap-5">
+      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-5 pb-16 pt-24 sm:px-8 lg:grid-cols-12 lg:items-start lg:gap-8">
+        {/* left tower: sticky on large screens, stacks above the console on mobile */}
+        <div className="flex flex-col items-start gap-5 lg:sticky lg:top-24 lg:col-span-5">
           <StickerTab tone="cyan" tilt="left">
             it&rsquo;s a search box. for memes.
           </StickerTab>
           <h1
-            aria-label="type words. get the picture."
+            aria-label="search the pile. live."
             className="font-display text-[3.1rem] leading-[0.95] tracking-normal text-sploot-ink min-[420px]:text-6xl md:text-7xl"
           >
-            <span className="block">type words.</span>
+            <span className="block">search the pile.</span>
             <span className="block">
-              get the <em className="not-italic text-sploot-red">picture.</em>
+              <em className="not-italic text-sploot-red">live.</em>
             </span>
           </h1>
-          <p className="max-w-xl font-sans text-lg font-medium leading-8 text-sploot-ink/80 md:text-xl">
-            drop every meme you own into the machine. it lines them up by meaning, then
-            hands you the one you meant. no folders. just vibes.
+          <p className="max-w-md font-sans text-lg font-medium leading-8 text-sploot-ink/80 md:text-xl">
+            that panel on the right works. type what you half remember, hit find, and
+            eight starter memes re-rank in front of you. no account, no upload — a
+            taste of how your pile answers.
           </p>
+          <div className="flex flex-wrap gap-3">
+            <Button asChild variant="primary" size="lg">
+              <Link href="/sign-up">start your own pile</Link>
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              onClick={() => searchFieldRef.current?.shuffle()}
+            >
+              shuffle the demo
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <StatBlock label="demo classics in the wall" value="8" tone="paper" />
+            <StatBlock label="re-rank on every search" value="instant" tone="magenta" />
+          </div>
         </div>
 
-        {/* the centerpiece: a live search console over a real toy-card pile */}
-        <SearchField />
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <StatBlock label="demo vectors" value="8" tone="magenta" />
-          <StatBlock label="folders required" value="0" tone="blue" />
-          <StatBlock label="scorer mode" value="local" tone="paper" />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
-          <Button asChild variant="primary" size="lg">
-            <Link href="/sign-up">claim your library</Link>
-          </Button>
-          <p className="font-mono text-xs lowercase tracking-normal text-sploot-ink/60">
-            no social feed. no ads. your export stays yours.
-          </p>
+        {/* right column: the working console + demo wall, filling the wide 7-span */}
+        <div className="lg:col-span-7">
+          <SearchField ref={searchFieldRef} className="max-w-none" />
         </div>
       </div>
 

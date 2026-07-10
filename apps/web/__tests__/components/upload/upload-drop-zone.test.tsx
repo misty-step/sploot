@@ -7,7 +7,7 @@ describe('UploadDropZone', () => {
   it('does not advertise unsupported background upload replay', () => {
     render(<UploadDropZone onFilesAdded={vi.fn()} />);
 
-    expect(screen.getByText(/drag & drop memes/i)).toBeInTheDocument();
+    expect(screen.getByText(/drag chaos here/i)).toBeInTheDocument();
     expect(screen.queryByText(new RegExp(`background ${'sync'}`, 'i'))).not.toBeInTheDocument();
     expect(screen.queryByText(new RegExp(`background ${'upload'}`, 'i'))).not.toBeInTheDocument();
   });

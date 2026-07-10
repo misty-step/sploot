@@ -42,6 +42,7 @@ import { logger } from '@/lib/logger';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { StickerTab } from '@/components/sploot';
 import { UPLOAD, prepareImageForUpload } from '@sploot/common';
 
 // Lightweight metadata for display - only ~300 bytes per file vs 5MB for File object
@@ -1227,8 +1228,30 @@ export function UploadZone({
     router.push('/app');
   };
 
+  // "the queue" state summary — mono, right-aligned, only the nonzero buckets.
+  const queuedCount = uploadStats
+    ? Math.max(0, uploadStats.totalFiles - uploadStats.uploaded - uploadStats.failed)
+    : 0;
+  const queueSummary = uploadStats
+    ? [
+        uploadStats.ready > 0 ? `${uploadStats.ready} in the pile` : null,
+        uploadStats.processingEmbeddings > 0 ? `${uploadStats.processingEmbeddings} cooking` : null,
+        queuedCount > 0 ? `${queuedCount} queued` : null,
+        uploadStats.failed > 0 ? `${uploadStats.failed} failed` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
+
   return (
-    <div className="w-full">
+    <div className="w-full space-y-5">
+      <div className="space-y-1.5">
+        <StickerTab tone="violet">upload</StickerTab>
+        <h1 className="font-display text-4xl leading-[0.95] text-foreground sm:text-5xl">
+          feed <em className="not-italic text-sploot-magenta">the pile</em>
+        </h1>
+      </div>
+
       {/* Recovery notification */}
       {showRecoveryNotification && (
         <Alert className="mb-4 animate-in fade-in duration-200">
@@ -1252,7 +1275,14 @@ export function UploadZone({
 
       {/* File list */}
       {filesArray.length > 0 && (
-        <div className="mt-6 space-y-4">
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-display text-2xl tracking-wide text-foreground">the queue</h2>
+            {queueSummary && (
+              <span className="font-mono text-xs lowercase text-muted-foreground">{queueSummary}</span>
+            )}
+          </div>
+
           {/* Batch Upload Progress Header */}
           <UploadBatchProgressCard
             files={filesArray}

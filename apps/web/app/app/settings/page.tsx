@@ -6,10 +6,12 @@ import { useAuthUser, useAuthActions } from '@/lib/auth/client';
 import { usePwaInstallPrompt } from '@/hooks/use-pwa-install';
 import { UploadTokensCard } from '@/components/settings/upload-tokens-card';
 import { Button } from '@/components/ui/button';
+import { StatBlock, StickerTab } from '@/components/sploot';
 // Fallback while /api/version (latest landfall release tag) loads.
 const APP_VERSION_FALLBACK = process.env.NEXT_PUBLIC_APP_VERSION || 'v0';
 
 interface StorageStats {
+  assetCount: number;
   storageBytes: number;
   storageLimitBytes: number;
   storageRemainingBytes: number;
@@ -29,6 +31,7 @@ export default function SettingsPage() {
   const { installable, installed, requiresManualInstall, promptInstall } = usePwaInstallPrompt();
   const [signOutLoading, setSignOutLoading] = useState(false);
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
+  const [embeddedCount, setEmbeddedCount] = useState<number | null>(null);
   const [appVersion, setAppVersion] = useState<string>(APP_VERSION_FALLBACK);
 
   useEffect(() => {
@@ -49,6 +52,7 @@ export default function SettingsPage() {
       const data = await response.json();
       if (!cancelled) {
         setStorageStats({
+          assetCount: data.assetCount ?? 0,
           storageBytes: data.storageBytes ?? 0,
           storageLimitBytes: data.storageLimitBytes ?? 0,
           storageRemainingBytes: data.storageRemainingBytes ?? 0,
@@ -59,10 +63,29 @@ export default function SettingsPage() {
 
     loadStorageStats().catch(() => {});
 
+    // The automatic-piles endpoint always reports the ready-embedding count
+    // (regardless of whether any pile clears the minimum-size bar), which is
+    // the cheapest existing source for "embedded" — no dedicated stats route
+    // for it exists yet.
+    async function loadEmbeddedCount() {
+      const response = await fetch('/api/piles?limit=1');
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!cancelled && typeof data?.embeddedAssetCount === 'number') {
+        setEmbeddedCount(data.embeddedAssetCount);
+      }
+    }
+
+    loadEmbeddedCount().catch(() => {});
+
     return () => {
       cancelled = true;
     };
   }, []);
+
+  const totalCount = storageStats?.assetCount ?? null;
+  const cookingCount =
+    totalCount !== null && embeddedCount !== null ? Math.max(0, totalCount - embeddedCount) : null;
 
   const handleSignOut = async () => {
     setSignOutLoading(true);
@@ -79,12 +102,35 @@ export default function SettingsPage() {
 
   return (
     <div className="p-6 md:p-8 space-y-6 max-w-3xl mx-auto">
-      <header className="space-y-1">
-        <h1 className="text-3xl font-bold text-foreground">Settings</h1>
+      <header className="space-y-2">
+        <StickerTab tone="violet">settings</StickerTab>
+        <h1 className="font-display text-4xl leading-[0.95] text-foreground sm:text-5xl">
+          the knobs
+        </h1>
         <p className="text-muted-foreground text-sm">
           Tune your meme bunker vibes, manage your login, and flex the PWA drip.
         </p>
       </header>
+
+      <div className="flex flex-wrap gap-2.5">
+        <StatBlock
+          label="in the pile"
+          value={totalCount !== null ? totalCount.toLocaleString() : '—'}
+          tone="blue"
+          className="flex-1 min-w-[8.5rem]"
+        />
+        <StatBlock
+          label="embedded"
+          value={embeddedCount !== null ? embeddedCount.toLocaleString() : '—'}
+          className="flex-1 min-w-[8.5rem]"
+        />
+        <StatBlock
+          label="not yet searchable"
+          value={cookingCount !== null ? cookingCount.toLocaleString() : '—'}
+          tone="magenta"
+          className="flex-1 min-w-[8.5rem]"
+        />
+      </div>
 
       <section className="sploot-card p-5 space-y-4">
         <div>
@@ -107,6 +153,23 @@ export default function SettingsPage() {
             {signOutLoading ? 'Yeeting…' : 'Sign out'}
           </Button>
         </div>
+      </section>
+
+      <UploadTokensCard />
+
+      <section className="sploot-card p-5 space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Embeddings</h2>
+          <p className="text-muted-foreground text-sm mt-1">
+            {embeddedCount !== null && totalCount !== null
+              ? `${embeddedCount.toLocaleString()} of ${totalCount.toLocaleString()} saves embedded${cookingCount ? `, ${cookingCount.toLocaleString()} not yet searchable (cooking or awaiting retry).` : '.'}`
+              : 'Checking embedding coverage...'}
+          </p>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Every save gets a CLIP vector on arrival so text search can find it.
+          Failed embeddings retry from the library&apos;s retry banner.
+        </p>
       </section>
 
       <section className="sploot-card p-5 space-y-4">
@@ -132,8 +195,6 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
-
-      <UploadTokensCard />
 
       <section className="sploot-card p-5 space-y-3">
         <div>

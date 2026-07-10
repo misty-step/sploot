@@ -1,14 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Shuffle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { IconButton } from './icon-button';
 import { MemeCell, type MemeCellState } from './meme-cell';
 import { type MemeDoodleKind } from './meme-doodle';
 
 // Signed-out demo pile: license-safe doodles with enough keywords for the
 // console to find the intended sample.
+// TODO(backlog.d/059-live-demo-pile-on-landing.md): swap this static 8-tile
+// pile for the live 1,000-classic public corpus once that ingest ships.
 type Tile = {
   doodle: MemeDoodleKind;
   src?: string;
@@ -73,15 +77,43 @@ const THRESHOLD = 0.2;
 
 type Ranked = { tile: Tile; s: number };
 
+function shuffledOrder(length: number): number[] {
+  const order = Array.from({ length }, (_, i) => i);
+  for (let i = order.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+
+export interface SearchFieldHandle {
+  /** Reshuffles the at-rest tile order — wired to the tower's "shuffle the demo" CTA. */
+  shuffle: () => void;
+}
+
+export interface SearchFieldProps {
+  /** Overrides the default `max-w-2xl` cap (e.g. to fill a wider layout column). */
+  className?: string;
+}
+
 /**
  * The centerpiece: a search console for your own memes. The best tile gets the
  * lime match ring, near matches get an orange inset ring, and everything else
- * recedes.
+ * recedes. Imperatively exposes `shuffle()` so a page-level CTA outside this
+ * card (the landing tower's "shuffle the demo" button) can reorder the wall.
  */
-export function SearchField() {
+export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(function SearchField(
+  { className },
+  ref
+) {
   const router = useRouter();
   const [query, setQuery] = useState('two cats arguing at a table');
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [order, setOrder] = useState<number[]>(() => TILES.map((_, i) => i));
+
+  useImperativeHandle(ref, () => ({
+    shuffle: () => setOrder(shuffledOrder(TILES.length)),
+  }));
 
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return;
@@ -111,6 +143,9 @@ export function SearchField() {
     return {
       states,
       found,
+      // when a search hits, the wall re-ranks to score order — the copy
+      // promises re-ranking, so the tiles actually move
+      rankedOrder: ranked.map((r) => TILES.indexOf(r.tile)),
       topSim: best.s.toFixed(2),
       hit: found ? best.tile.file : 'none',
       scanned: TILES.length,
@@ -119,7 +154,7 @@ export function SearchField() {
   }, [query]);
 
   return (
-    <div className="w-full max-w-2xl">
+    <div className={cn('w-full max-w-2xl', className)}>
       <div className="sploot-shadow-lg overflow-hidden rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink bg-sploot-panel">
         {/* console titlebar with the 3 candy LEDs */}
         <div className="flex items-center justify-between gap-3 bg-sploot-void px-4 py-2.5 font-mono text-[0.7rem] lowercase text-sploot-on-void">
@@ -185,7 +220,7 @@ export function SearchField() {
           className="flex flex-wrap gap-x-6 gap-y-1 bg-sploot-void px-4 py-2.5 font-mono text-[0.72rem] lowercase text-sploot-on-void"
         >
           <span>
-            scan: <b className="text-sploot-yellow sploot-tabular">{result.scanned}</b> vectors
+            scan: <b className="text-sploot-yellow sploot-tabular">{result.scanned}</b> tiles
           </span>
           <span>
             top sim:{' '}
@@ -197,21 +232,30 @@ export function SearchField() {
           </span>
         </output>
 
-        {/* grid head */}
+        {/* wall head: honest scope + a shuffle control for the at-rest order */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b-[3px] border-sploot-ink bg-sploot-magenta px-4 py-3 font-mono text-[0.74rem] font-bold lowercase text-[#1c1547]">
           <span>
-            {result.found ? 'located 1 of 8 demo cells. i had a meme for this.' : '8 demo cells. zero folders.'}
+            {result.found
+              ? 'located 1 of 8 demo classics. every search re-ranks what you see below.'
+              : '8 demo classics. every search re-ranks what you see below.'}
           </span>
-          <span aria-hidden="true">[ showing 8 sample vectors ]</span>
+          <IconButton
+            label="shuffle the demo pile"
+            onClick={() => setOrder(shuffledOrder(TILES.length))}
+            className="!border-[#1c1547] !text-[#1c1547]"
+          >
+            <Shuffle />
+          </IconButton>
         </div>
 
         {/* the pile: search lights up the match, everything else recedes */}
         <div
-          className="grid grid-cols-2 gap-3 bg-sploot-paper-warm p-4 sm:grid-cols-4"
+          className="grid grid-cols-2 gap-3 bg-sploot-paper-warm p-4 sm:grid-cols-3"
           role="list"
           aria-label="sample meme library"
         >
-          {TILES.map((tile) => {
+          {(result.found ? result.rankedOrder : order).map((tileIndex) => {
+            const tile = TILES[tileIndex];
             const cell = result.states.get(tile.file)!;
             return (
               <div role="listitem" key={tile.file}>
@@ -248,4 +292,4 @@ export function SearchField() {
       </div>
     </div>
   );
-}
+});

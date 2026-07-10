@@ -6,7 +6,7 @@ export { MemeCell, type MemeCellState } from './meme-cell';
 export { MemeDoodle } from './meme-doodle';
 export { PileFilterRail, visiblePileFilters } from './pile-filter-rail';
 export { PileMark } from './pile-mark';
-export { SearchField } from './search-field';
+export { SearchField, type SearchFieldHandle, type SearchFieldProps } from './search-field';
 export { StatBlock } from './stat-block';
 export { DeadShareLinkState, StateSurface } from './state-surface';
 export { StatusBar, type StatusCell } from './status-bar';
