@@ -24,6 +24,8 @@ export interface TileActionRailProps {
   children?: React.ReactNode;
   className?: string;
   disabled?: boolean;
+  /** Disables only the share control while a share flow is in flight. */
+  shareLoading?: boolean;
 }
 
 export function TileActionRail({
@@ -34,6 +36,7 @@ export function TileActionRail({
   children,
   className,
   disabled,
+  shareLoading,
 }: TileActionRailProps) {
   return (
     <div
@@ -60,7 +63,7 @@ export function TileActionRail({
       {onShare && (
         <IconButton
           label="share meme"
-          disabled={disabled}
+          disabled={disabled || shareLoading}
           className="max-sm:size-[var(--sploot-touch-target)]"
           onClick={(e) => {
             e.stopPropagation();

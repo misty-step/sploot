@@ -1,4 +1,3 @@
-export { AtlasLandingHero } from './atlas-landing-hero';
 export { BangerStamp } from './banger-stamp';
 export { ClusterPile } from './cluster-pile';
 export { IconButton, type IconButtonProps } from './icon-button';

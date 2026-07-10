@@ -70,6 +70,10 @@
   --sploot-red: #e52347;            /* cherry — error / destructive */
   --sploot-purple: #7547e8;         /* grape — selected */
   --sploot-focus: #4a25c7;          /* focus-visible outline */
+  /* On-color foregrounds: AA text on the candy fills in BOTH themes.
+     Light fills are deep; dark fills lighten, so their text flips dark. */
+  --sploot-on-blue: #ffffff;
+  --sploot-on-red: #ffffff;
   /* Back-compat aliases — old component code & lint still reference these names */
   --sploot-coral: var(--sploot-magenta);
   --sploot-violet: var(--sploot-purple);
@@ -171,6 +175,8 @@
   --color-sploot-lime: var(--sploot-lime);
   --color-sploot-red: var(--sploot-red);
   --color-sploot-purple: var(--sploot-purple);
+  --color-sploot-on-blue: var(--sploot-on-blue);
+  --color-sploot-on-red: var(--sploot-on-red);
   --color-sploot-focus: var(--sploot-focus);
   --color-sploot-panel: var(--sploot-panel);
   --color-sploot-grid-line: var(--sploot-grid-line);
@@ -446,6 +452,8 @@ select:focus-visible {
   --sploot-red: #ff5d73;
   --sploot-purple: #a78aff;
   --sploot-focus: #ffe45c;
+  --sploot-on-blue: #10203a;
+  --sploot-on-red: #3a0d14;
   --sploot-coral: var(--sploot-magenta);
   --sploot-violet: var(--sploot-purple);
   --sploot-shadow-color: #090720;
@@ -874,7 +882,7 @@ select:focus-visible {
   --popover: var(--sploot-panel);
   --popover-foreground: var(--sploot-ink);
   --primary: var(--sploot-blue);
-  --primary-foreground: #ffffff;
+  --primary-foreground: var(--sploot-on-blue);
   --secondary: var(--sploot-paper-warm);
   --secondary-foreground: var(--sploot-ink);
   --muted: var(--sploot-paper-warm);
@@ -893,10 +901,6 @@ select:focus-visible {
   --sidebar-ring: var(--sploot-focus);
   /* the accent token legacy workbench chrome reads */
   --accent-cyan: var(--sploot-blue);
-}
-
-.dark {
-  --primary-foreground: #10203a;
 }
 
 /* Clerk console door (sploot-032): Clerk injects its own high-specificity

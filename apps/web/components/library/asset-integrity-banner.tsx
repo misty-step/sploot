@@ -17,7 +17,7 @@ export function AssetIntegrityBanner({ onAudit }: AssetIntegrityBannerProps) {
   return (
     <div
       role="alert"
-      className="animate-in slide-in-from-top duration-300 flex items-center gap-3 border-b-[3px] border-sploot-ink bg-sploot-red px-4 py-2.5 text-white"
+      className="animate-in slide-in-from-top duration-300 flex items-center gap-3 border-b-[3px] border-sploot-ink bg-sploot-red px-4 py-2.5 text-sploot-on-red"
     >
       <AlertTriangle className="h-4 w-4 shrink-0" />
       <span className="flex-1 font-sans text-sm">

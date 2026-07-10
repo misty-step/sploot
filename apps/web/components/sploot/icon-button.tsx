@@ -50,7 +50,6 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
         {...props}
       >
         {children}
-        <span className="sr-only">{label}</span>
       </button>
     );
   }

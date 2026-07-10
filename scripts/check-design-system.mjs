@@ -35,7 +35,6 @@ assertFile('docs/design/component-library.md');
 assertFile('apps/web/components/sploot/sticker-tab.tsx');
 assertFile('apps/web/components/sploot/banger-stamp.tsx');
 assertFile('apps/web/components/sploot/cluster-pile.tsx');
-assertFile('apps/web/components/sploot/atlas-landing-hero.tsx');
 assertFile('apps/web/components/sploot/pile-mark.tsx');
 assertFile('apps/extension/entrypoints/popup/App.tsx');
 assertFile('apps/extension/entrypoints/popup/style.css');
@@ -149,7 +148,6 @@ for (const [path, phrases] of Object.entries({
   'apps/web/components/sploot/sticker-tab.tsx': ['sploot-sticker-shadow', 'rounded-[var(--sploot-radius-pill)]'],
   'apps/web/components/sploot/banger-stamp.tsx': ['fill-sploot-magenta', 'sploot-tabular'],
   'apps/web/components/sploot/cluster-pile.tsx': ['bg-sploot-pile-surface', 'StickerTab', 'src?: string'],
-  'apps/web/components/sploot/atlas-landing-hero.tsx': ['SearchField', 'StatusBar', 'StatBlock'],
   'apps/web/components/sploot/search-field.tsx': ['role="search"', 'MemeCell'],
   'apps/web/components/sploot/meme-cell.tsx': ['outline-sploot-lime', 'MemeCellState'],
   'apps/web/components/sploot/stat-block.tsx': ['font-display', 'border-sploot-ink'],
@@ -216,7 +214,6 @@ for (const doorPath of [
 const landingSystemFiles = [
   'apps/web/app/page.tsx',
   'apps/web/app/styleguide/page.tsx',
-  'apps/web/components/sploot/atlas-landing-hero.tsx',
   'apps/web/components/sploot/search-field.tsx',
   'apps/web/components/sploot/meme-cell.tsx',
   'apps/web/components/sploot/stat-block.tsx',
@@ -393,8 +390,18 @@ const ratchetRules = [
     label: 'raw/blur shadow — use sploot-shadow* classes/vars or the physics utilities',
     files: productTsx,
     scan: (content) => [
-      // tailwind blur scales (sploot-shadow-* is excluded by the lookbehind)
-      ...linesOf(content, /(?<![\w-])shadow-(?:sm|md|lg|xl|2xl|inner)(?![\w-])/g),
+      // tailwind blur scales, incl. the bare `shadow` class
+      // (sploot-shadow* is excluded by the lookbehind)
+      ...linesOf(
+        content,
+        /(?<![\w-])shadow(?:-(?:sm|md|lg|xl|2xl|inner))?(?![\w[-])/g
+      ),
+      // arbitrary shadow values that don't reference a sploot var
+      ...linesOf(
+        content,
+        /(?<![\w-])shadow-\[[^\]]*\]/g,
+        (m) => !m.includes('var(--sploot')
+      ),
       // tailwind drop-shadow blur (drop-shadow-none stays allowed)
       ...linesOf(content, /(?<![\w-])drop-shadow(?:-(?:sm|md|lg|xl|2xl))?(?![\w-])/g),
       // inline box-shadow literals that don't reference a sploot var
@@ -527,6 +534,17 @@ for (const rule of ratchetRules) {
           `${file}:${line}: [${rule.id}] ${rule.label} — "${match.trim()}" (baseline ${allowed}, found ${found})`
         );
       }
+    }
+  }
+  // Exactness guard: a pinned count above what's actually found means the
+  // baseline is stale (or padded to smuggle budget for future drift). Force
+  // a shrink so files never carry slack that could absorb new violations.
+  for (const [file, allowed] of Object.entries(pinned)) {
+    const found = currentCounts[rule.id][file] ?? 0;
+    if (found < allowed) {
+      fail(
+        `${file}: [${rule.id}] baseline is stale (pinned ${allowed}, found ${found}) — run \`node scripts/check-design-system.mjs --update-baseline\` to ratchet down`
+      );
     }
   }
 }

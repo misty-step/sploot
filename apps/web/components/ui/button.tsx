@@ -13,12 +13,12 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        // primary action: blue toy
-        default: "sploot-press bg-sploot-blue text-white sploot-shadow",
-        primary: "sploot-press bg-sploot-blue text-white sploot-shadow",
+        // primary action: blue toy (on-color text flips with the theme for AA)
+        default: "sploot-press bg-sploot-blue text-sploot-on-blue sploot-shadow",
+        primary: "sploot-press bg-sploot-blue text-sploot-on-blue sploot-shadow",
         // attention: bubblegum toy (bangers / favorites)
         attention: "sploot-press bg-sploot-magenta text-[#1c1547] sploot-shadow",
-        destructive: "sploot-press bg-sploot-red text-white sploot-shadow",
+        destructive: "sploot-press bg-sploot-red text-sploot-on-red sploot-shadow",
         // ghost/outline: panel toy with the same shell + drop
         ghost: "sploot-press bg-sploot-panel text-sploot-ink sploot-shadow",
         outline: "sploot-press bg-sploot-panel text-sploot-ink sploot-shadow",

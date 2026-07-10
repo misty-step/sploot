@@ -14,7 +14,7 @@ export function BlobErrorBanner() {
   return (
     <div
       role="alert"
-      className="animate-in slide-in-from-top duration-300 fixed top-0 left-0 right-0 z-50 flex items-center gap-3 border-b-[3px] border-sploot-ink bg-sploot-red px-4 py-2.5 text-white"
+      className="animate-in slide-in-from-top duration-300 fixed top-0 left-0 right-0 z-50 flex items-center gap-3 border-b-[3px] border-sploot-ink bg-sploot-red px-4 py-2.5 text-sploot-on-red"
     >
       <AlertTriangle className="h-5 w-5 shrink-0 animate-pulse" />
       <span className="flex-1 font-sans text-sm">

@@ -169,7 +169,7 @@ function ImageTileComponent({
     return { aspectRatio: `${asset.width} / ${asset.height}` };
   }, [preserveAspectRatio, asset.width, asset.height]);
 
-  const { share: shareMeme } = useShareMeme({
+  const { share: shareMeme, loading: shareLoading } = useShareMeme({
     assetId: asset.id,
     blobUrl: asset.blobUrl,
     filename: asset.filename,
@@ -535,6 +535,7 @@ function ImageTileComponent({
         <TileActionRail
           banger={!!asset.favorite}
           disabled={isLoading}
+          shareLoading={shareLoading}
           onToggleBanger={handleFavoriteToggle}
           onShare={shareMeme}
           onDelete={handleDelete}

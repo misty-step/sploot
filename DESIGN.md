@@ -253,7 +253,7 @@ Implemented product wrappers live in `apps/web/components/sploot`:
   into the cell's heart / share / trash row.
 - `StatBlock` — the library readout (mono key over display value).
 - `StatusBar` — the machinery row (index / scorer / mode / route / status).
-- `StickerTab`, `ClusterPile`, `PileMark`, `AtlasLandingHero` — pill chips,
+- `StickerTab`, `ClusterPile`, `PileMark` — pill chips,
   pile previews, brand mark, landing hero.
 - `BangerStamp` is legacy: the heart in `TileActionRail` is the only banger
   marker going forward.

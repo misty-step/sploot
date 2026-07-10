@@ -3,8 +3,11 @@
     "apps/web/components/auth/console-door.tsx": 1
   },
   "rawShadow": {
+    "apps/web/app/styleguide/page.tsx": 1,
     "apps/web/components/chrome/keyboard-shortcuts-help.tsx": 1,
+    "apps/web/components/sploot/icon-button.tsx": 2,
     "apps/web/components/ui/alert-dialog.tsx": 1,
+    "apps/web/components/ui/button.tsx": 2,
     "apps/web/components/ui/card.tsx": 1,
     "apps/web/components/ui/dialog.tsx": 1,
     "apps/web/components/ui/dropdown-menu.tsx": 2,

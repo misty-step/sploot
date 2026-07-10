@@ -266,6 +266,9 @@ export default function StyleguidePage() {
           <MemeCell file="reaction_022.jpg" index="v#00822" doodle="eyes" caption="side-eye, looking away" score="0.42" state="near" animate={false} />
           <MemeCell file="screenshot.png" index="v#02019" doodle="fire" caption="this is fine, the room is on fire" score="0.91" state="match" animate={false} />
           <MemeCell file="IMG_9013.png" index="v#09013" doodle="skull" caption="dead. still waiting." state="dim" />
+          <MemeCell file="IMG_0388.jpg" index="v#00388" doodle="cat" caption="full sploot achieved. zero thoughts." state="selected" animate={false} />
+          <MemeCell file="cooking.png" index="v#01101" doodle="eyes" caption="embedding in progress" state="loading" />
+          <MemeCell file="borked.png" index="v#00500" doodle="skull" caption="this one borked" state="error" />
         </div>
       </Section>
 

@@ -69,11 +69,15 @@ describe('mobile meme feed layout contract', () => {
     const image = screen.getByAltText('meme.jpg');
     expect(image).toHaveAttribute('sizes', expect.stringContaining('(max-width: 640px) 100vw'));
 
+    // The 44px mobile touch-target contract: rail controls grow to
+    // --sploot-touch-target below the sm breakpoint (WCAG target size).
     const favorite = screen.getByRole('button', { name: /mark as banger/i });
     expect(favorite).toHaveClass('sploot-ctl');
+    expect(favorite).toHaveClass('max-sm:size-[var(--sploot-touch-target)]');
 
     const deleteButton = screen.getByRole('button', { name: /delete meme/i });
     expect(deleteButton).toHaveClass('sploot-ctl');
+    expect(deleteButton).toHaveClass('max-sm:size-[var(--sploot-touch-target)]');
 
     expect(screen.queryByRole('button', { name: /more meme actions/i })).not.toBeInTheDocument();
 

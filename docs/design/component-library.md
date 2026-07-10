@@ -211,7 +211,6 @@ These wrappers are canonical starting points for new product surfaces:
 | `ClusterPile` | `apps/web/components/sploot/cluster-pile.tsx` | implemented | Automatic semantic group preview with text, doodle, or thumbnail tiles |
 | `PileFilterRail` | `apps/web/components/sploot/pile-filter-rail.tsx` | implemented | Pile chips over the primary all-memes gallery |
 | `PileMark` | `apps/web/components/sploot/pile-mark.tsx` | implemented | Compact brand mark for navigation and tight chrome |
-| `AtlasLandingHero` | `apps/web/components/sploot/atlas-landing-hero.tsx` | implemented | Landing first viewport driven by the search console |
 | `BangerStamp` | `apps/web/components/sploot/banger-stamp.tsx` | legacy | Superseded by the heart in `TileActionRail`; migration surfaces only |
 
 New product code should import these wrappers from `apps/web/components/sploot`
