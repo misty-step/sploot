@@ -9,6 +9,7 @@ import {
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   // Image optimization configuration
   images: {
     // QA-only: map the reserved seed host to local files so qa-seed fixtures

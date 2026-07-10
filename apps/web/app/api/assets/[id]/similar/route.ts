@@ -44,7 +44,11 @@ async function getHandler(
     `;
 
     if (!embedding.length) {
-      return NextResponse.json({ results: [] });
+      // The source asset exists but has no ready vector yet (still embedding,
+      // or embedding failed). This is not an error and not an empty library —
+      // the client renders a quiet "still embedding" note so the section never
+      // looks broken.
+      return NextResponse.json({ results: [], reason: 'source-unembedded' });
     }
 
     // Parse the vector string back to number array
@@ -95,7 +99,11 @@ async function getHandler(
       relevance: Math.round(result.distance * 100),
     }));
 
-    return NextResponse.json({ results: formattedResults });
+    // Source is embedded but the library has nothing else near it. Distinct
+    // from source-unembedded so the client can explain why the grid is empty.
+    const reason = formattedResults.length === 0 ? 'no-neighbors' : null;
+
+    return NextResponse.json({ results: formattedResults, reason });
   } catch (error) {
     unstable_rethrow(error);
     return NextResponse.json(

@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Heart, Download, ImageOff, Loader2 } from 'lucide-react';
+import { ArrowLeft, Heart, Download, ImageOff, Loader2, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ShareButton } from '@/components/library/share-button';
+import { useShareMeme } from '@/components/library/share-button';
 import { ImageGrid } from '@/components/library/image-grid';
 import { StateSurface } from '@/components/sploot/state-surface';
 import { IconButton } from '@/components/sploot';
@@ -23,6 +23,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
   const [assetId, setAssetId] = useState<string | null>(null);
   const [asset, setAsset] = useState<Asset | null>(null);
   const [similarAssets, setSimilarAssets] = useState<Asset[]>([]);
+  const [similarReason, setSimilarReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [similarLoading, setSimilarLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
@@ -73,6 +74,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
         }
         const data = await res.json();
         setSimilarAssets(data.results || []);
+        setSimilarReason(data.reason ?? null);
       } catch (err) {
         logError('Failed to fetch similar assets:', err);
       } finally {
@@ -125,6 +127,16 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
     },
     [router]
   );
+
+  // Share runs the exact same flow as the library tile rail (native file share
+  // → desktop image clipboard → share-link fallback), now driven by the shared
+  // toybox IconButton so the three detail controls share one grammar.
+  const { share: handleShare, loading: shareLoading } = useShareMeme({
+    assetId: asset?.id ?? '',
+    blobUrl: asset?.blobUrl,
+    filename: asset?.filename,
+    mimeType: asset?.mime,
+  });
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + ' B';
@@ -197,14 +209,9 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
           </IconButton>
 
           {/* Share */}
-          <ShareButton
-            assetId={asset.id}
-            blobUrl={asset.blobUrl}
-            filename={asset.filename}
-            mimeType={asset.mime}
-            size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-sploot-blue"
-          />
+          <IconButton label="share meme" onClick={handleShare} disabled={shareLoading}>
+            {shareLoading ? <Loader2 className="animate-spin" /> : <Share2 />}
+          </IconButton>
 
           {/* Download */}
           <IconButton label="download meme" onClick={handleDownload}>
@@ -293,9 +300,11 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : similarAssets.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-sm text-muted-foreground">
-              No related memes found
+          <div className="px-4 sm:px-6 pb-12 pt-2">
+            <p className="font-mono text-xs lowercase text-muted-foreground">
+              {similarReason === 'source-unembedded'
+                ? 'still embedding this one. related memes show up once its vector is ready.'
+                : 'nothing else in the pile lands close yet. save a few more and they will show up here.'}
             </p>
           </div>
         ) : (
