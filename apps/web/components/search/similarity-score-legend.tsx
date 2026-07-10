@@ -45,7 +45,7 @@ export function SimilarityScoreLegend({ className }: SimilarityScoreLegendProps)
 
           {/* High match badge */}
           <div className="flex items-center gap-2">
-            <Badge className="bg-green-500 hover:bg-green-500 text-white border-green-500">
+            <Badge className="bg-sploot-lime hover:bg-sploot-lime text-[#1c1547] border-sploot-lime">
               High match
             </Badge>
             <span className="text-xs text-muted-foreground">{`(≥${MATCH_PCT}%)`}</span>
@@ -55,7 +55,7 @@ export function SimilarityScoreLegend({ className }: SimilarityScoreLegendProps)
 
           {/* Medium match badge */}
           <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="text-yellow-500">
+            <Badge variant="secondary" className="text-sploot-orange">
               Medium
             </Badge>
             <span className="text-xs text-muted-foreground">{`(${NEAR_PCT}-${MATCH_PCT}%)`}</span>

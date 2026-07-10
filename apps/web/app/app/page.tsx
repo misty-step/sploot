@@ -713,7 +713,7 @@ function AppPageClient() {
                     variant="accent"
                     size="lg"
                     onClick={handleBulkRetry}
-                    className="gap-2 uppercase tracking-wider font-mono"
+                    className="gap-2"
                   >
                     <RotateCcw className="h-4 w-4" />
                     RETRY ({failedEmbeddings.length})
@@ -740,7 +740,7 @@ function AppPageClient() {
                       gridScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                     });
                   }}
-                  className="gap-2 font-mono uppercase tracking-wider"
+                  className="gap-2"
                   aria-pressed={sortBy === 'shuffle'}
                 >
                   <Shuffle className="h-4 w-4" />
@@ -826,7 +826,7 @@ function AppPageClient() {
             )}
 
             {showUploadPanel && (
-              <div className="animate-sploot-slide-up border border-dashed border-border bg-muted p-3 md:p-5">
+              <div className="animate-sploot-slide-up border-[3px] border-dashed border-sploot-ink rounded-[var(--sploot-radius)] bg-secondary p-3 md:p-5">
                 <UploadZone
                   isOnDashboard={true}
                   onUploadComplete={(stats) => {
@@ -1034,7 +1034,7 @@ function AppPageClient() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-red-500"
+                className="h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-sploot-red"
                 onClick={(e) => {
                   e.stopPropagation();
                   // Check if skip confirmation preference is set
@@ -1118,7 +1118,7 @@ function AppPageClient() {
       {/* Retry Progress Modal */}
       {showRetryModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card border border-border p-6 max-w-sm w-full shadow-2xl">
+          <div className="bg-card border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] sploot-shadow-lg p-6 max-w-sm w-full">
             <h3 className="text-lg font-semibold text-foreground mb-4">
               regenerating embeddings
             </h3>
@@ -1162,9 +1162,9 @@ function AppPageClient() {
                     {Math.round((retryProgress.current / retryProgress.total) * 100)}%
                   </span>
                 </div>
-                <div className="w-full bg-muted h-2 overflow-hidden">
+                <div className="w-full bg-muted h-2 overflow-hidden rounded-[var(--sploot-radius-pill)] border-2 border-sploot-ink">
                   <div
-                    className="bg-green-600 h-full transition-all duration-500 ease-out"
+                    className="bg-sploot-lime h-full transition-all duration-500 ease-out"
                     style={{ width: `${(retryProgress.current / retryProgress.total) * 100}%` }}
                   />
                 </div>
@@ -1177,7 +1177,7 @@ function AppPageClient() {
               )}
 
               {!retryProgress.processing && retryProgress.current === retryProgress.total && (
-                <p className="text-sm text-green-600 text-center font-medium">
+                <p className="text-sm text-sploot-lime text-center font-medium">
                   ✓ all embeddings regenerated
                 </p>
               )}

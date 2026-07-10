@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 interface UploadToken {
   id: string;
@@ -116,7 +116,7 @@ export function UploadTokensCard() {
   };
 
   return (
-    <section id="upload-tokens" className="bg-card border border-border p-5 space-y-4 scroll-mt-6">
+    <section id="upload-tokens" className="bg-card border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] sploot-shadow p-5 space-y-4 scroll-mt-6">
       <div>
         <h2 className="text-lg font-semibold text-foreground">Upload tokens</h2>
         <p className="text-muted-foreground text-sm mt-1">
@@ -136,36 +136,29 @@ export function UploadTokensCard() {
           }}
           maxLength={64}
           placeholder="name it (e.g. iphone)"
-          className="flex-1 min-w-[12rem] bg-background border border-border px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+          className="flex-1 min-w-[12rem] bg-background border-[3px] border-sploot-ink rounded-[var(--sploot-radius-pill)] px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground"
         />
-        <button
+        <Button
           onClick={mint}
           disabled={minting || name.trim().length === 0}
-          className={cn(
-            'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors',
-            'bg-primary text-primary-foreground hover:bg-primary/90',
-            (minting || name.trim().length === 0) && 'opacity-60 cursor-not-allowed'
-          )}
+          size="sm"
         >
           {minting ? 'minting…' : 'mint token'}
-        </button>
+        </Button>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {justMinted && (
-        <div className="bg-background border border-primary/40 p-3 space-y-2">
+        <div className="bg-secondary border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] p-3 space-y-2">
           <p className="text-xs text-muted-foreground">
             copy it now — this is the only time it&apos;s shown. paste it into your shortcut.
           </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 break-all font-mono text-sm text-foreground">{justMinted.token}</code>
-            <button
-              onClick={copyToken}
-              className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
+            <Button onClick={copyToken} size="sm">
               {copied ? 'copied' : 'copy'}
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -177,7 +170,7 @@ export function UploadTokensCard() {
       ) : tokens.length === 0 ? (
         <p className="text-sm text-muted-foreground">no tokens yet. mint one to wire up the iPhone shortcut below.</p>
       ) : (
-        <ul className="divide-y divide-border border border-border">
+        <ul className="divide-y-2 divide-sploot-ink border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] overflow-hidden">
           {tokens.map((token) => (
             <li key={token.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
@@ -186,12 +179,13 @@ export function UploadTokensCard() {
                   <span className="font-mono">{token.prefix}…</span> · {formatWhen(token.lastUsedAt)}
                 </p>
               </div>
-              <button
+              <Button
                 onClick={() => revoke(token.id)}
-                className="shrink-0 inline-flex items-center px-3 py-1.5 text-xs font-medium bg-destructive/20 text-destructive hover:bg-destructive/30 transition-colors"
+                variant="destructive"
+                size="sm"
               >
                 revoke
-              </button>
+              </Button>
             </li>
           ))}
         </ul>

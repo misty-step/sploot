@@ -33,8 +33,8 @@ function sanitizeReferrer(referrer: string): string {
  * Branded CTA button for share pages.
  *
  * Links to sign-up with UTM tracking for conversion attribution.
- * Neon violet styling with glow hover effect.
- * Touch-optimized with 48px minimum target size.
+ * Composes the shared toybox Button — physics and candy fill come from the
+ * component; this only carries the touch-optimized 48px sizing.
  */
 export function SharePageCTA({ assetId, className }: SharePageCTAProps) {
   // Construct sign-up URL with UTM parameters for tracking
@@ -57,19 +57,9 @@ export function SharePageCTA({ assetId, className }: SharePageCTAProps) {
       asChild
       size="default"
       className={cn(
-        // Neon violet brand styling
-        'bg-primary text-primary-foreground',
-        'hover:bg-primary/90',
-        // Subtle glow effect on hover
-        'hover:shadow-lg hover:shadow-primary/20',
-        'transition-all duration-200',
-        // Touch feedback: scale down on tap (active state)
-        'active:scale-95',
         // Touch-optimized sizing (48px minimum on mobile)
         'h-12 px-4 text-sm',
         'sm:h-10 sm:px-6',
-        // Accessibility
-        'focus-visible:ring-2 focus-visible:ring-primary',
         // Prevent text selection on tap
         'select-none',
         className

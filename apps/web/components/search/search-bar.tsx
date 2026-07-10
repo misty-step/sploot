@@ -173,17 +173,16 @@ export function SearchBar({
             placeholder={placeholder || 'search your memes...'}
             autoFocus={autoFocus}
             className={`
-              w-full min-h-[var(--sploot-touch-target)] md:h-[56px] pl-3 md:pl-6 pr-12 md:pr-14 text-sm md:text-base font-mono
-              bg-card text-foreground placeholder-muted-foreground/60
-              border border-border rounded-none
-              focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-cyan focus-visible:ring-offset-2
+              w-full min-h-[var(--sploot-touch-target)] md:h-[56px] pl-4 md:pl-6 pr-12 md:pr-14 text-sm md:text-base font-mono
+              bg-sploot-panel text-sploot-ink placeholder:text-muted-foreground
+              border-[3px] border-sploot-ink rounded-[var(--sploot-radius-pill)] sploot-shadow-sm
               transition-colors duration-150
-              ${searchState === 'typing' ? 'border-accent-cyan' : ''}
-              ${searchState === 'loading' ? 'border-accent-cyan' : ''}
-              ${searchState === 'success' ? 'border-accent-cyan' : ''}
-              ${searchState === 'no-results' ? 'border-muted-foreground' : ''}
-              ${searchState === 'error' ? 'border-destructive' : ''}
-              ${searchState === 'idle' ? 'border-border focus:border-accent-cyan' : ''}
+              ${searchState === 'typing' ? 'border-sploot-cyan' : ''}
+              ${searchState === 'loading' ? 'border-sploot-cyan' : ''}
+              ${searchState === 'success' ? 'border-sploot-lime' : ''}
+              ${searchState === 'no-results' ? 'border-sploot-ink' : ''}
+              ${searchState === 'error' ? 'border-sploot-red' : ''}
+              ${searchState === 'idle' ? 'border-sploot-ink' : ''}
             `}
           />
 
@@ -222,12 +221,12 @@ export function SearchBar({
           ref={dropdownRef}
           className="
             absolute top-full mt-2 w-full
-            bg-card border border-accent-cyan rounded-none
+            bg-sploot-panel border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] sploot-shadow
             overflow-hidden z-50
           "
         >
           {/* History header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-accent-cyan">
+          <div className="flex items-center justify-between px-4 py-3 border-b-2 border-sploot-ink">
             <span className="font-mono text-xs text-muted-foreground">recent searches</span>
             <button
               onClick={() => {
@@ -248,7 +247,7 @@ export function SearchBar({
                 className={`
                   flex items-center justify-between px-4 py-3
                   hover:bg-muted cursor-pointer group
-                  ${selectedIndex === index ? 'bg-muted border-l-2 border-accent-cyan' : ''}
+                  ${selectedIndex === index ? 'bg-sploot-yellow text-[#1c1547] border-l-[3px] border-sploot-ink' : ''}
                 `}
                 onClick={() => handleHistorySelect(item.query)}
               >

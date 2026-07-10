@@ -1285,7 +1285,7 @@ export function UploadZone({
               <CardContent className="py-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center bg-green-500/10 text-green-500 rounded-lg">
+                    <div className="flex size-10 items-center justify-center bg-sploot-lime/10 text-sploot-lime rounded-lg">
                       <CheckCircle2 className="size-5" />
                     </div>
                     <div>

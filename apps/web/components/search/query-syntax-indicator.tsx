@@ -46,7 +46,7 @@ export function QuerySyntaxIndicator({
 
       {/* Filters Badge */}
       {hasFilters && (
-        <Badge variant="secondary" className="gap-1.5 font-mono text-yellow-500">
+        <Badge variant="secondary" className="gap-1.5 font-mono text-sploot-orange">
           <span className="text-muted-foreground">filters:</span>
           <span>
             {filters.favorites && 'favorites'}
@@ -61,7 +61,7 @@ export function QuerySyntaxIndicator({
         variant={hasResults ? 'default' : 'destructive'}
         className={cn(
           'gap-1.5 font-mono',
-          hasResults && 'bg-green-500 hover:bg-green-500/80 text-white'
+          hasResults && 'bg-sploot-lime hover:bg-sploot-lime/80 text-[#1c1547]'
         )}
       >
         <span className="opacity-80">results:</span>

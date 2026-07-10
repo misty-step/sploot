@@ -107,7 +107,7 @@ export function EmbeddingStatusIndicator({
 
   // If embedding is not needed or status is hidden, show simple success
   if (!file.needsEmbedding || !showStatus) {
-    return <Badge variant="secondary" className="text-green-500 gap-1"><CheckCircle2 className="size-3" />Ready</Badge>;
+    return <Badge variant="secondary" className="text-sploot-lime gap-1"><CheckCircle2 className="size-3" />Ready</Badge>;
   }
 
   // Retry handler for failed embeddings
@@ -122,15 +122,15 @@ export function EmbeddingStatusIndicator({
     case 'pending':
       return (
         <div className="flex items-center gap-2 text-xs">
-          <Badge variant="secondary" className="text-green-500"><CheckCircle2 className="size-3" />Uploaded</Badge>
-          <Badge variant="secondary" className="text-yellow-500">Preparing...</Badge>
+          <Badge variant="secondary" className="text-sploot-lime"><CheckCircle2 className="size-3" />Uploaded</Badge>
+          <Badge variant="secondary" className="text-sploot-orange">Preparing...</Badge>
         </div>
       );
 
     case 'processing':
       return (
         <div className="flex items-center gap-2 text-xs">
-          <Badge variant="secondary" className="text-green-500"><CheckCircle2 className="size-3" />Uploaded</Badge>
+          <Badge variant="secondary" className="text-sploot-lime"><CheckCircle2 className="size-3" />Uploaded</Badge>
           <Badge variant="default" className="gap-1">
             <Loader2 className="size-3 animate-spin" />
             Indexing
@@ -140,7 +140,7 @@ export function EmbeddingStatusIndicator({
 
     case 'ready':
       return (
-        <Badge variant="secondary" className="text-green-500 gap-1 animate-in fade-in duration-200">
+        <Badge variant="secondary" className="text-sploot-lime gap-1 animate-in fade-in duration-200">
           <CheckCircle2 className="size-3" />
           Ready to search
         </Badge>
@@ -149,7 +149,7 @@ export function EmbeddingStatusIndicator({
     case 'failed':
       return (
         <div className="flex items-center gap-2 text-xs">
-          <Badge variant="secondary" className="text-yellow-500"><AlertCircle className="size-3" />Upload complete</Badge>
+          <Badge variant="secondary" className="text-sploot-orange"><AlertCircle className="size-3" />Upload complete</Badge>
           <Badge variant="destructive">Search prep failed</Badge>
           <Button
             onClick={handleRetry}
@@ -164,6 +164,6 @@ export function EmbeddingStatusIndicator({
       );
 
     default:
-      return <Badge variant="secondary" className="text-green-500"><CheckCircle2 className="size-3" /></Badge>;
+      return <Badge variant="secondary" className="text-sploot-lime"><CheckCircle2 className="size-3" /></Badge>;
   }
 }

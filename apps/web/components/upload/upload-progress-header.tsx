@@ -168,7 +168,7 @@ export function UploadProgressHeader({
             <div
               className={cn(
                 'flex h-6 w-6 items-center justify-center rounded-sm',
-                hasFailures ? 'bg-destructive text-destructive-foreground' : 'bg-green-500 text-white'
+                hasFailures ? 'bg-destructive text-destructive-foreground' : 'bg-sploot-lime text-[#1c1547]'
               )}
             >
               {hasFailures ? (
@@ -220,7 +220,7 @@ export function UploadProgressHeader({
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Ready</p>
-              <p className="text-sm font-semibold text-green-500">{stats.ready}</p>
+              <p className="text-sm font-semibold text-sploot-lime">{stats.ready}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Failed</p>
@@ -243,7 +243,7 @@ export function UploadProgressHeader({
                 <span className="text-muted-foreground">Embedding Progress</span>
                 <span className="font-semibold">{embeddingProgress}%</span>
               </div>
-              <Progress value={embeddingProgress} className="h-2 [&>div]:bg-green-500" />
+              <Progress value={embeddingProgress} className="h-2 [&>div]:bg-sploot-lime" />
             </div>
           </div>
 

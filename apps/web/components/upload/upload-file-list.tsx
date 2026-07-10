@@ -141,7 +141,7 @@ export function UploadFileList({
                     {file.status === 'success' && (
                       <>
                         {file.nearDuplicate && (
-                          <Badge variant="secondary" className="text-yellow-600">
+                          <Badge variant="secondary" className="text-sploot-orange">
                             looks similar
                           </Badge>
                         )}
@@ -159,7 +159,7 @@ export function UploadFileList({
 
                     {file.status === 'duplicate' && (
                       <div className="flex items-center gap-2 text-xs">
-                        <Badge variant="secondary" className="text-yellow-500">Already exists</Badge>
+                        <Badge variant="secondary" className="text-sploot-orange">Already exists</Badge>
                         {file.needsEmbedding ? (
                           <Badge variant="default" className="gap-1"><Loader2 className="size-3 animate-spin" />Indexing</Badge>
                         ) : (

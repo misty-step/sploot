@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { ShareButton } from '@/components/library/share-button';
 import { ImageGrid } from '@/components/library/image-grid';
 import { StateSurface } from '@/components/sploot/state-surface';
-import { cn } from '@/lib/utils';
+import { IconButton } from '@/components/sploot';
 import type { Asset } from '@/lib/types';
 import { error as logError } from '@/lib/logger';
 import { isAnimatedImageMimeType, isVideoMimeType } from '@sploot/common';
@@ -185,22 +185,16 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
           <span className="hidden sm:inline">Back</span>
         </Button>
 
-        <div className="flex items-center gap-1">
-          {/* Favorite */}
-          <Button
-            variant="ghost"
-            size="icon"
+        <div className="flex items-center gap-1.5">
+          {/* Favorite — banger heart (filled = banger) */}
+          <IconButton
+            label={asset.favorite ? 'remove banger' : 'mark as banger'}
+            pressed={asset.favorite}
             onClick={handleFavoriteToggle}
             disabled={favoriteLoading}
-            className={cn(
-              'h-8 w-8 transition-colors',
-              asset.favorite
-                ? 'text-accent-coral hover:text-accent-coral/80'
-                : 'text-muted-foreground hover:text-accent-coral'
-            )}
           >
-            <Heart className={cn('h-4 w-4', asset.favorite && 'fill-current')} />
-          </Button>
+            <Heart fill={asset.favorite ? 'currentColor' : 'none'} />
+          </IconButton>
 
           {/* Share */}
           <ShareButton
@@ -209,18 +203,13 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
             filename={asset.filename}
             mimeType={asset.mime}
             size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-accent-cyan"
+            className="h-8 w-8 text-muted-foreground hover:text-sploot-blue"
           />
 
           {/* Download */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleDownload}
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
-          >
-            <Download className="h-4 w-4" />
-          </Button>
+          <IconButton label="download meme" onClick={handleDownload}>
+            <Download />
+          </IconButton>
         </div>
       </div>
 
