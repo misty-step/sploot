@@ -6,7 +6,7 @@ import {
 
 export default function SignUpPage() {
   return (
-    <ConsoleDoor route="/sign-up">
+    <ConsoleDoor>
       <SignUp
         appearance={consoleDoorAppearance}
         signInUrl="/sign-in"
