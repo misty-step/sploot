@@ -9,7 +9,7 @@ const statToneClass: Record<StatTone, string> = {
   blue: 'bg-sploot-blue text-sploot-on-blue',
   magenta: 'bg-sploot-magenta text-[#1c1547]',
   yellow: 'bg-sploot-yellow text-sploot-ink',
-  ink: 'bg-sploot-ink text-sploot-lime',
+  ink: 'bg-sploot-void text-sploot-on-void',
 };
 
 interface StatBlockProps {

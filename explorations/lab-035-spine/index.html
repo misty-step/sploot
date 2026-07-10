@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sploot · lab 035 · the spine · views within the system</title>
+<link rel="stylesheet" href="styles.css?v=1">
+</head>
+<body>
+<header id="topbar">
+  <div class="lab-id">LAB 035 <span>·</span> the spine · views within the system <span>·</span> round 1</div>
+  <div class="vp-controls">
+    <button data-vp="fit" class="vp-btn">fit</button>
+    <button data-vp="1440x900" class="vp-btn">1440×900</button>
+    <button data-vp="1280x800" class="vp-btn">1280×800</button>
+    <button data-vp="1024x768" class="vp-btn">1024×768</button>
+    <button data-vp="768x1024" class="vp-btn">tablet</button>
+    <button data-vp="390x844" class="vp-btn">phone</button>
+    <span class="vp-custom">
+      <input id="vp-w" type="number" min="240" max="3840" placeholder="w">
+      ×
+      <input id="vp-h" type="number" min="240" max="2400" placeholder="h">
+      <button id="vp-apply" class="vp-btn">go</button>
+    </span>
+    <span id="vp-readout"></span>
+  </div>
+</header>
+<div id="layout">
+  <nav id="sidebar" aria-label="registry"></nav>
+  <main id="stage">
+    <div id="frame-wrap">
+      <iframe id="frame" title="option render"></iframe>
+    </div>
+  </main>
+</div>
+<footer id="statusline">
+  <span id="current-opt"></span>
+  <span class="hint">←/→ step options · ↑/↓ step sections · click sidebar to jump</span>
+</footer>
+<script src="app.js?v=1"></script>
+</body>
+</html>

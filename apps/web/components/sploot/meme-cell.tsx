@@ -16,8 +16,12 @@ interface MemeCellProps {
   file: string;
   /** Vector index shown next to the filename, e.g. "v#00471" */
   index?: string;
-  /** Inner glyph for the license-safe meme stand-in. */
-  doodle: MemeDoodleKind;
+  /** Inner glyph for the license-safe meme stand-in (styleguide/state surfaces). */
+  doodle?: MemeDoodleKind;
+  /** Real media source; when set it replaces the doodle, complete and uncropped. */
+  src?: string;
+  /** Alt text for real media (required in spirit whenever src is set). */
+  mediaAlt?: string;
   /** Lowercase caption describing what is in the meme. */
   caption?: string;
   /** Cosine score shown in the caption row, e.g. "0.91". */
@@ -70,6 +74,8 @@ export function MemeCell({
   file,
   index,
   doodle,
+  src,
+  mediaAlt,
   caption,
   score,
   state = 'default',
@@ -119,8 +125,18 @@ export function MemeCell({
         {index ? <span className="shrink-0 pl-2">{index}</span> : null}
       </div>
 
-      <div className="relative m-2 flex flex-1 items-center justify-center rounded-[var(--sploot-radius-inner)] border-2 border-sploot-ink bg-sploot-paper-warm p-3 text-sploot-ink">
-        <MemeDoodle kind={doodle} className={cn('max-h-[120px] object-contain', isLoading && 'opacity-35')} />
+      <div className="relative m-2 flex flex-1 items-center justify-center overflow-hidden rounded-[var(--sploot-radius-inner)] border-2 border-sploot-ink bg-sploot-paper-warm p-3 text-sploot-ink">
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element -- static demo media, no optimizer needed
+          <img
+            src={src}
+            alt={mediaAlt ?? caption ?? file}
+            className={cn('max-h-[220px] w-auto max-w-full object-contain', isLoading && 'opacity-35')}
+            loading="lazy"
+          />
+        ) : (
+          <MemeDoodle kind={doodle ?? 'cat'} className={cn('max-h-[120px] object-contain', isLoading && 'opacity-35')} />
+        )}
       </div>
 
       {isLoading ? (

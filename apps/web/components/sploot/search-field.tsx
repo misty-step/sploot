@@ -11,6 +11,7 @@ import { type MemeDoodleKind } from './meme-doodle';
 // console to find the intended sample.
 type Tile = {
   doodle: MemeDoodleKind;
+  src?: string;
   file: string;
   index: string;
   caption: string;
@@ -18,12 +19,12 @@ type Tile = {
 };
 
 const TILES: Tile[] = [
-  { doodle: 'cat', file: 'IMG_4471.png', index: 'v#00471', caption: 'two cats arguing at a dinner table, one yelling', kw: 'cat cats kitten arguing argument yelling angry table dinner two pointing screaming fight' },
-  { doodle: 'fire', file: 'screenshot_2019.png', index: 'v#02019', caption: 'cartoon dog drinking coffee in a burning room', kw: 'this is fine dog fire burning room flames coffee calm disaster everything okay' },
-  { doodle: 'eyes', file: 'reaction_022.jpg', index: 'v#00822', caption: 'side-eye, guy looking at another thing', kw: 'distracted boyfriend looking turning other staring side eye jealous walking by' },
-  { doodle: 'skull', file: 'IMG_9013.png', index: 'v#09013', caption: 'dead. skeleton still waiting on a bench', kw: 'skeleton waiting bench still forever dead bones patient reply text back' },
-  { doodle: 'sparkle', file: 'galaxybrain_4.png', index: 'v#04004', caption: 'chef kiss, glowing brain expanding to a galaxy', kw: 'galaxy brain expanding glowing cosmic genius smart big mind ascend stars chef kiss sparkle' },
-  { doodle: 'hundred', file: 'IMG_3120.png', index: 'v#03120', caption: 'no notes. a perfect hundred', kw: 'hundred 100 no notes perfect score keep it agree facts real top marks' },
+  { doodle: 'cat', src: '/starter-pile/cats-arguing.jpg', file: 'IMG_4471.png', index: 'v#00471', caption: 'two cats arguing at a dinner table, one yelling', kw: 'cat cats kitten arguing argument yelling angry table dinner two pointing screaming fight' },
+  { doodle: 'fire', src: '/starter-pile/dog-burning-room.jpg', file: 'screenshot_2019.png', index: 'v#02019', caption: 'cartoon dog drinking coffee in a burning room', kw: 'this is fine dog fire burning room flames coffee calm disaster everything okay' },
+  { doodle: 'eyes', src: '/starter-pile/side-eye-cat.jpg', file: 'reaction_022.jpg', index: 'v#00822', caption: 'side-eye, guy looking at another thing', kw: 'distracted boyfriend looking turning other staring side eye jealous walking by' },
+  { doodle: 'skull', src: '/starter-pile/skeleton-bench.jpg', file: 'IMG_9013.png', index: 'v#09013', caption: 'dead. skeleton still waiting on a bench', kw: 'skeleton waiting bench still forever dead bones patient reply text back' },
+  { doodle: 'sparkle', src: '/starter-pile/galaxy-brain.jpg', file: 'galaxybrain_4.png', index: 'v#04004', caption: 'chef kiss, glowing brain expanding to a galaxy', kw: 'galaxy brain expanding glowing cosmic genius smart big mind ascend stars chef kiss sparkle' },
+  { doodle: 'hundred', src: '/starter-pile/hundred-points.jpg', file: 'IMG_3120.png', index: 'v#03120', caption: 'no notes. a perfect hundred', kw: 'hundred 100 no notes perfect score keep it agree facts real top marks' },
   { doodle: 'bubble', file: 'mood_final2.png', index: 'v#08431', caption: 'group chat going off, what is happening', kw: 'group chat groupchat bubble text message reply notification what huh confused' },
   { doodle: 'sob', file: 'IMG_6004.png', index: 'v#06004', caption: 'crying, it is what it is', kw: 'crying sob tears sad fine mood feelings hiding it is what it is jordan' },
 ];
@@ -121,7 +122,7 @@ export function SearchField() {
     <div className="w-full max-w-2xl">
       <div className="sploot-shadow-lg overflow-hidden rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink bg-sploot-panel">
         {/* console titlebar with the 3 candy LEDs */}
-        <div className="flex items-center justify-between gap-3 bg-sploot-ink px-4 py-2.5 font-mono text-[0.7rem] lowercase text-sploot-paper">
+        <div className="flex items-center justify-between gap-3 bg-sploot-void px-4 py-2.5 font-mono text-[0.7rem] lowercase text-sploot-on-void">
           <span>sploot://search.console</span>
           <span className="flex gap-1.5" aria-hidden="true">
             <i className="block h-3 w-3 rounded-full border-2 border-sploot-paper bg-sploot-orange" />
@@ -139,7 +140,7 @@ export function SearchField() {
         >
           <label
             htmlFor="search-input"
-            className="mb-2 block font-mono text-[0.78rem] font-bold lowercase text-sploot-ink"
+            className="mb-2 block font-mono text-[0.78rem] font-bold lowercase text-[#1c1547]"
           >
             find &gt; describe what is in the meme
           </label>
@@ -181,18 +182,18 @@ export function SearchField() {
         <output
           id="search-readout"
           aria-live="polite"
-          className="flex flex-wrap gap-x-6 gap-y-1 bg-sploot-ink px-4 py-2.5 font-mono text-[0.72rem] lowercase text-sploot-paper"
+          className="flex flex-wrap gap-x-6 gap-y-1 bg-sploot-void px-4 py-2.5 font-mono text-[0.72rem] lowercase text-sploot-on-void"
         >
           <span>
-            scan: <b className="text-sploot-lime sploot-tabular">{result.scanned}</b> vectors
+            scan: <b className="text-sploot-yellow sploot-tabular">{result.scanned}</b> vectors
           </span>
           <span>
             top sim:{' '}
-            <b className={result.found ? 'text-sploot-lime' : 'text-sploot-orange'}>{result.topSim}</b>
+            <b className={result.found ? 'text-sploot-yellow' : 'text-sploot-magenta'}>{result.topSim}</b>
           </span>
           <span>
             hit:{' '}
-            <b className={result.found ? 'text-sploot-lime' : 'text-sploot-orange'}>{result.hit}</b>
+            <b className={result.found ? 'text-sploot-yellow' : 'text-sploot-magenta'}>{result.hit}</b>
           </span>
         </output>
 
@@ -218,6 +219,8 @@ export function SearchField() {
                   file={tile.file}
                   index={tile.index}
                   doodle={tile.doodle}
+                  src={tile.src}
+                  mediaAlt={tile.caption}
                   caption={tile.caption}
                   score={cell.score}
                   state={cell.state}
@@ -231,13 +234,13 @@ export function SearchField() {
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="font-mono text-xs font-bold lowercase text-sploot-ink sploot-tabular">
+        <span className="font-mono text-xs font-bold lowercase text-[#1c1547] sploot-tabular">
           8 in the demo pile
         </span>
         <button
           type="button"
           onClick={() => router.push('/sign-up')}
-          className="flex items-center gap-1.5 font-mono text-xs font-bold lowercase text-sploot-ink underline decoration-sploot-magenta decoration-[3px] underline-offset-4 transition-colors duration-[var(--sploot-motion-fast)] hover:text-sploot-magenta"
+          className="flex items-center gap-1.5 font-mono text-xs font-bold lowercase text-[#1c1547] underline decoration-sploot-magenta decoration-[3px] underline-offset-4 transition-opacity duration-[var(--sploot-motion-fast)] hover:opacity-70"
         >
           search your own pile
           <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />

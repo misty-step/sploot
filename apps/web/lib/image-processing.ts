@@ -77,8 +77,9 @@ export async function processUploadedImage(
   // Get processed main image metadata
   const mainMetadata = await sharp(mainImageBuffer).metadata();
 
-  // Generate thumbnail (always square)
+  // Generate thumbnail (aspect-preserving, longest edge <= THUMBNAIL_SIZE)
   const thumbnailBuffer = await generateThumbnail(buffer, outputFormat);
+  const thumbnailMetadata = await sharp(thumbnailBuffer).metadata();
 
   return {
     main: {
@@ -91,8 +92,8 @@ export async function processUploadedImage(
     thumbnail: {
       buffer: thumbnailBuffer,
       format: outputFormat,
-      width: THUMBNAIL_SIZE,
-      height: THUMBNAIL_SIZE,
+      width: thumbnailMetadata.width ?? THUMBNAIL_SIZE,
+      height: thumbnailMetadata.height ?? THUMBNAIL_SIZE,
       size: thumbnailBuffer.length,
     },
   };
@@ -100,12 +101,13 @@ export async function processUploadedImage(
 
 export async function generateImagePoster(buffer: Buffer): Promise<ProcessedImage> {
   const thumbnailBuffer = await generateThumbnail(buffer, 'jpeg');
+  const posterMetadata = await sharp(thumbnailBuffer).metadata();
 
   return {
     buffer: thumbnailBuffer,
     format: 'jpeg',
-    width: THUMBNAIL_SIZE,
-    height: THUMBNAIL_SIZE,
+    width: posterMetadata.width ?? THUMBNAIL_SIZE,
+    height: posterMetadata.height ?? THUMBNAIL_SIZE,
     size: thumbnailBuffer.length,
   };
 }
@@ -159,8 +161,10 @@ async function processMainImage(
 }
 
 /**
- * Generate a square thumbnail for grid view.
- * Uses smart cropping to focus on the center of the image.
+ * Generate an aspect-preserving thumbnail for grid view.
+ * Design law (DESIGN.md, lab-034): meme media is NEVER cropped — the grid
+ * shows the complete image, so the thumbnail must carry the full frame.
+ * fit: 'inside' bounds the longest edge at THUMBNAIL_SIZE without cropping.
  */
 async function generateThumbnail(
   buffer: Buffer,
@@ -168,8 +172,8 @@ async function generateThumbnail(
 ): Promise<Buffer> {
   let sharpInstance = sharp(buffer)
     .resize(THUMBNAIL_SIZE, THUMBNAIL_SIZE, {
-      fit: 'cover',
-      position: 'centre',
+      fit: 'inside',
+      withoutEnlargement: true,
     });
 
   // Apply format-specific optimizations

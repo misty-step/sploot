@@ -74,6 +74,8 @@
      Light fills are deep; dark fills lighten, so their text flips dark. */
   --sploot-on-blue: #ffffff;
   --sploot-on-red: #ffffff;
+  --sploot-on-void: #cfe7ff;        /* text on void chrome (void is dark in BOTH themes) */
+  --sploot-on-purple: #ffffff;
   /* Back-compat aliases — old component code & lint still reference these names */
   --sploot-coral: var(--sploot-magenta);
   --sploot-violet: var(--sploot-purple);
@@ -177,6 +179,8 @@
   --color-sploot-purple: var(--sploot-purple);
   --color-sploot-on-blue: var(--sploot-on-blue);
   --color-sploot-on-red: var(--sploot-on-red);
+  --color-sploot-on-void: var(--sploot-on-void);
+  --color-sploot-on-purple: var(--sploot-on-purple);
   --color-sploot-focus: var(--sploot-focus);
   --color-sploot-panel: var(--sploot-panel);
   --color-sploot-grid-line: var(--sploot-grid-line);
@@ -454,6 +458,8 @@ select:focus-visible {
   --sploot-focus: #ffe45c;
   --sploot-on-blue: #10203a;
   --sploot-on-red: #3a0d14;
+  --sploot-on-void: #fff3dc;
+  --sploot-on-purple: #221546;
   --sploot-coral: var(--sploot-magenta);
   --sploot-violet: var(--sploot-purple);
   --sploot-shadow-color: #090720;
@@ -929,4 +935,10 @@ select:focus-visible {
 .cl-footerAction {
   background: var(--background) !important;
   background-image: none !important;
+}
+/* Clerk's dev "Secured by" badge hardcodes a dark foreground that vanishes
+   on the night shelf — pin it to the theme's muted foreground. */
+.cl-footer [class^='cl-internal'],
+.cl-footer [class^='cl-internal'] * {
+  color: var(--muted-foreground) !important;
 }

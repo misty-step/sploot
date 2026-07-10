@@ -26,13 +26,13 @@ export function StatusBar({ cells, className }: StatusBarProps) {
       <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-px bg-sploot-paper/20">
         {cells.map((cell) => (
           <div key={cell.label} className="bg-sploot-void px-4 py-3.5">
-            <span className="block text-[0.6rem] lowercase text-sploot-paper/60">
+            <span className="block text-[0.6rem] lowercase text-sploot-on-void/60">
               {cell.label}
             </span>
             <span
               className={cn(
                 'flex items-center text-[1.05rem] font-bold lowercase',
-                cell.ok ? 'text-sploot-lime' : 'text-sploot-paper'
+                cell.ok ? 'text-sploot-yellow' : 'text-sploot-on-void'
               )}
             >
               {cell.ok ? (

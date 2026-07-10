@@ -16,6 +16,7 @@ dist/
 .output/
 .wxt/
 .next/
+.next-*/
 out/
 build/
 coverage/
