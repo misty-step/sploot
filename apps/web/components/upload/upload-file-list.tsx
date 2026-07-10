@@ -127,7 +127,7 @@ export function UploadFileList({
                     {file.status === 'uploading' && (
                       <div className="flex items-center gap-2">
                         <Progress value={file.progress} className="w-24 h-1" />
-                        <span className="sploot-sticker-shadow inline-flex items-center gap-1 rounded-[var(--sploot-radius-pill)] border-2 border-sploot-ink bg-sploot-yellow px-2 py-0.5 font-mono text-[0.65rem] font-bold text-sploot-ink">
+                        <span className="sploot-sticker-shadow inline-flex items-center gap-1 rounded-[var(--sploot-radius-pill)] border-2 border-sploot-ink bg-sploot-yellow px-2 py-0.5 font-mono text-[0.65rem] font-bold text-[#1c1547]">
                           <Loader2 className="size-3 animate-spin" />
                           {file.progress}%
                         </span>

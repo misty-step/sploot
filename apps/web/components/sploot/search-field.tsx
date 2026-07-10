@@ -143,6 +143,9 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
     return {
       states,
       found,
+      // when a search hits, the wall re-ranks to score order — the copy
+      // promises re-ranking, so the tiles actually move
+      rankedOrder: ranked.map((r) => TILES.indexOf(r.tile)),
       topSim: best.s.toFixed(2),
       hit: found ? best.tile.file : 'none',
       scanned: TILES.length,
@@ -217,7 +220,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
           className="flex flex-wrap gap-x-6 gap-y-1 bg-sploot-void px-4 py-2.5 font-mono text-[0.72rem] lowercase text-sploot-on-void"
         >
           <span>
-            scan: <b className="text-sploot-yellow sploot-tabular">{result.scanned}</b> vectors
+            scan: <b className="text-sploot-yellow sploot-tabular">{result.scanned}</b> tiles
           </span>
           <span>
             top sim:{' '}
@@ -234,7 +237,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
           <span>
             {result.found
               ? 'located 1 of 8 demo classics. every search re-ranks what you see below.'
-              : '8 demo classics, embedded. every search re-ranks what you see below.'}
+              : '8 demo classics. every search re-ranks what you see below.'}
           </span>
           <IconButton
             label="shuffle the demo pile"
@@ -251,7 +254,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
           role="list"
           aria-label="sample meme library"
         >
-          {order.map((tileIndex) => {
+          {(result.found ? result.rankedOrder : order).map((tileIndex) => {
             const tile = TILES[tileIndex];
             const cell = result.states.get(tile.file)!;
             return (

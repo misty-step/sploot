@@ -33,9 +33,9 @@ export function LandingHero() {
             </span>
           </h1>
           <p className="max-w-md font-sans text-lg font-medium leading-8 text-sploot-ink/80 md:text-xl">
-            that panel on the right is real. type what you half remember, hit find, and
-            eight starter memes re-rank in front of you. no account, no upload — just the
-            machine doing its thing.
+            that panel on the right works. type what you half remember, hit find, and
+            eight starter memes re-rank in front of you. no account, no upload — a
+            taste of how your pile answers.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button asChild variant="primary" size="lg">
@@ -51,7 +51,7 @@ export function LandingHero() {
             </Button>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <StatBlock label="demo classics, embedded" value="8" tone="paper" />
+            <StatBlock label="demo classics in the wall" value="8" tone="paper" />
             <StatBlock label="re-rank on every search" value="instant" tone="magenta" />
           </div>
         </div>

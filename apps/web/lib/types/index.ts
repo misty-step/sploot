@@ -16,6 +16,9 @@ export interface AssetEmbedding {
   assetId: string;
   modelName: string;
   modelVersion?: string;
+  // pending | processing | ready | failed — the API returns the full row,
+  // so a present embedding is NOT necessarily a ready one.
+  status?: string | null;
   createdAt: Date | string;
 }
 

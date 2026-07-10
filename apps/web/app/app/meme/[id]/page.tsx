@@ -151,7 +151,8 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
       const res = await fetch(`/api/assets/${asset.id}`, { method: 'DELETE' });
       if (res.ok) {
         closeDeleteConfirmation();
-        router.push('/app');
+        // replace, not push — Back must not resurrect the deleted meme's URL
+        router.replace('/app');
       } else {
         throw new Error('Delete request failed');
       }
@@ -232,7 +233,11 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
   const sidebarSimilar = similarAssets.slice(0, SIMILAR_SIDEBAR_LIMIT);
   const overflowSimilar = similarAssets.slice(SIMILAR_SIDEBAR_LIMIT);
   const vectorId = asset.embedding?.assetId ?? asset.id;
-  const modelName = asset.embedding?.modelName;
+  // An embedding row exists from the moment processing starts — only call it
+  // "embedded" once its status is ready (legacy rows have no status column).
+  const embeddingReady =
+    !!asset.embedding && (asset.embedding.status == null || asset.embedding.status === 'ready');
+  const modelName = embeddingReady ? asset.embedding?.modelName : undefined;
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-4rem)]">
@@ -331,9 +336,15 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
           </div>
 
           <p className="min-w-0 break-words font-mono text-xs lowercase text-muted-foreground">
-            saved {formatDate(asset.createdAt)}
+            saved {formatDate(asset.createdAt)} · {asset.mime}
             {modelName ? ` · embedded with ${modelName}` : ' · embedding pending'}
           </p>
+
+          {asset.tags && asset.tags.length > 0 && (
+            <p className="min-w-0 break-words font-mono text-xs lowercase text-muted-foreground">
+              tags: {asset.tags.map((t) => t.name).join(', ')}
+            </p>
+          )}
 
           {/* Similar saves — always present; quiet notes cover the not-ready states */}
           <div className="space-y-2.5 border-t-2 border-dashed border-border pt-4">
@@ -364,19 +375,25 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
                       className="sploot-press-sm flex w-full items-center gap-2.5 rounded-[var(--sploot-radius-inner)] border-2 border-sploot-ink bg-sploot-panel p-1.5 text-left"
                     >
                       <span className="relative size-11 shrink-0 overflow-hidden rounded-[calc(var(--sploot-radius-inner)-2px)] bg-sploot-paper-warm">
-                        <Image
-                          src={resolveQaSeedSrc(similar.thumbnailUrl || similar.blobUrl)}
-                          alt={similar.filename || 'Similar meme'}
-                          fill
-                          sizes="44px"
-                          className="object-cover"
-                          unoptimized={isAnimatedImageMimeType(similar.mime)}
-                        />
+                        {isVideoMimeType(similar.mime) && !similar.thumbnailUrl ? (
+                          <span className="flex h-full w-full items-center justify-center font-mono text-[0.6rem] font-bold lowercase text-muted-foreground">
+                            {similar.mime.split('/')[1] ?? 'video'}
+                          </span>
+                        ) : (
+                          <Image
+                            src={resolveQaSeedSrc(similar.thumbnailUrl || similar.blobUrl)}
+                            alt={similar.filename || 'Similar meme'}
+                            fill
+                            sizes="44px"
+                            className="object-cover"
+                            unoptimized={isAnimatedImageMimeType(similar.mime)}
+                          />
+                        )}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
                         {similar.filename || 'untitled save'}
                       </span>
-                      <span className="sploot-sticker-shadow shrink-0 rounded-[var(--sploot-radius-pill)] border-2 border-sploot-ink bg-sploot-yellow px-2 py-0.5 font-mono text-[0.65rem] font-bold text-sploot-ink">
+                      <span className="sploot-sticker-shadow shrink-0 rounded-[var(--sploot-radius-pill)] border-2 border-sploot-ink bg-sploot-yellow px-2 py-0.5 font-mono text-[0.65rem] font-bold text-[#1c1547]">
                         {Math.round(similar.relevance ?? (similar.similarity ?? 0) * 100)}%
                       </span>
                     </button>
