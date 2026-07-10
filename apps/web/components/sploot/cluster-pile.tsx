@@ -20,12 +20,13 @@ interface ClusterPileProps {
   className?: string;
 }
 
-// Keep pile previews on the same solid-block palette as the rest of Sploot.
+// Pile preview tiles ride the same candy palette as the rest of the toybox.
+// Ink text stays dark on the candy fills.
 const tileToneClass = {
-  cyan: 'bg-sploot-cyan text-sploot-ink',
-  coral: 'bg-sploot-magenta text-white',
+  cyan: 'bg-sploot-cyan text-[#1c1547]',
+  coral: 'bg-sploot-magenta text-[#1c1547]',
   violet: 'bg-sploot-blue text-white',
-  lime: 'bg-sploot-yellow text-sploot-ink',
+  lime: 'bg-sploot-yellow text-[#1c1547]',
   ink: 'bg-sploot-ink text-sploot-paper',
 };
 
@@ -41,8 +42,8 @@ export function ClusterPile({
   return (
     <section
       className={cn(
-        'sploot-shadow relative min-w-0 border-[length:var(--sploot-active-border-width)] bg-sploot-pile-surface p-3',
-        selected ? 'border-sploot-cyan bg-sploot-pile-selected' : 'border-sploot-ink',
+        'sploot-shadow relative min-w-0 rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink p-3',
+        selected ? 'bg-sploot-pile-selected' : 'bg-sploot-pile-surface',
         className
       )}
       aria-label={`${label}, ${count} saves`}
@@ -51,9 +52,12 @@ export function ClusterPile({
         <StickerTab tone={tone} tilt={selected ? 'right' : 'none'}>
           {label}
         </StickerTab>
-        <span className="font-mono text-xs font-bold text-sploot-ink sploot-tabular">
-          {count.toLocaleString()}
-        </span>
+        <div className="flex items-center gap-2">
+          {bangers ? <BangerStamp count={bangers} /> : null}
+          <span className="font-mono text-xs font-bold text-sploot-ink sploot-tabular">
+            {count.toLocaleString()}
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" aria-hidden="true">
@@ -61,7 +65,7 @@ export function ClusterPile({
           <div
             key={`${item.label}-${index}`}
             className={cn(
-              'relative flex aspect-square min-w-0 items-end overflow-hidden border-[3px] border-sploot-ink p-1 font-mono text-[0.58rem] font-bold uppercase leading-none',
+              'relative flex aspect-square min-w-0 items-end overflow-hidden rounded-[var(--sploot-radius-inner)] border-2 border-sploot-ink p-1 font-mono text-[0.58rem] font-bold lowercase leading-none',
               tileToneClass[item.tone ?? tone],
               index % 2 === 0 ? '-rotate-1' : 'rotate-1'
             )}
@@ -73,9 +77,9 @@ export function ClusterPile({
                   alt={item.alt ?? item.label}
                   fill
                   sizes="96px"
-                  className="object-cover"
+                  className="object-contain"
                 />
-                <span className="absolute bottom-1 left-1 border-2 border-sploot-ink bg-sploot-paper px-1 text-sploot-ink">
+                <span className="absolute bottom-1 left-1 rounded-[var(--sploot-radius-pill)] border-2 border-sploot-ink bg-sploot-paper px-1.5 text-sploot-ink">
                   {item.label}
                 </span>
               </>
@@ -84,7 +88,7 @@ export function ClusterPile({
                 <div className="absolute inset-0 p-2.5 pb-4">
                   <MemeDoodle kind={item.doodle} />
                 </div>
-                <span className="absolute bottom-1 left-1 bg-sploot-ink px-1 text-sploot-paper">
+                <span className="absolute bottom-1 left-1 rounded-[var(--sploot-radius-pill)] bg-sploot-ink px-1.5 text-sploot-paper">
                   {item.label}
                 </span>
               </>
@@ -94,10 +98,6 @@ export function ClusterPile({
           </div>
         ))}
       </div>
-
-      {bangers ? (
-        <BangerStamp count={bangers} className="absolute -bottom-3 right-2 rotate-2" />
-      ) : null}
     </section>
   );
 }

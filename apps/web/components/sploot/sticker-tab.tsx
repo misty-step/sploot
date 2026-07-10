@@ -2,13 +2,15 @@ import { cn } from '@/lib/utils';
 
 type StickerTone = 'cyan' | 'coral' | 'violet' | 'lime' | 'ink';
 
-// Solid color blocks keep labels loud without adding new component states.
+// Candy pill tags (lab-034 AFD-8): pill radius, 2px ink shell, sticker candy
+// fills, sticker drop. Dark ink text stays dark on the candy fills
+// (cyan / magenta / yellow); grape and ink carry light text.
 const stickerToneClass: Record<StickerTone, string> = {
-  cyan: 'border-sploot-cyan bg-[var(--sploot-sticker-cyan)] text-sploot-ink',
-  coral: 'border-sploot-coral bg-[var(--sploot-sticker-coral)] text-white',
-  violet: 'border-sploot-violet bg-[var(--sploot-sticker-violet)] text-white',
-  lime: 'border-sploot-ink bg-[var(--sploot-sticker-lime)] text-sploot-ink',
-  ink: 'border-sploot-ink bg-sploot-ink text-sploot-lime',
+  cyan: 'bg-[var(--sploot-sticker-cyan)] text-[#1c1547]',
+  coral: 'bg-[var(--sploot-sticker-coral)] text-[#1c1547]',
+  violet: 'bg-[var(--sploot-sticker-violet)] text-white',
+  lime: 'bg-[var(--sploot-sticker-lime)] text-[#1c1547]',
+  ink: 'bg-sploot-ink text-sploot-paper',
 };
 
 interface StickerTabProps {
@@ -27,7 +29,7 @@ export function StickerTab({
   return (
     <span
       className={cn(
-        'sploot-sticker-shadow inline-flex min-h-7 items-center border-[3px] px-2.5 py-1 font-mono text-[0.68rem] font-bold uppercase tracking-normal',
+        'sploot-sticker-shadow inline-flex min-h-7 items-center rounded-[var(--sploot-radius-pill)] border-2 border-sploot-ink px-3 py-1 font-mono text-[0.68rem] font-bold lowercase',
         stickerToneClass[tone],
         tilt === 'left' && '-rotate-2',
         tilt === 'right' && 'rotate-2',

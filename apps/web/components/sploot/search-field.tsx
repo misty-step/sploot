@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { MemeCell, type MemeCellState } from './meme-cell';
 import { type MemeDoodleKind } from './meme-doodle';
 
@@ -118,47 +119,46 @@ export function SearchField() {
 
   return (
     <div className="w-full max-w-2xl">
-      <div className="sploot-shadow-lg border-[length:var(--sploot-active-border-width)] border-sploot-ink bg-sploot-paper">
-        {/* console titlebar with the 3 LED squares */}
-        <div className="flex items-center justify-between gap-3 bg-sploot-ink px-3 py-2 font-mono text-[0.7rem] uppercase tracking-normal text-sploot-paper">
+      <div className="sploot-shadow-lg overflow-hidden rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink bg-sploot-panel">
+        {/* console titlebar with the 3 candy LEDs */}
+        <div className="flex items-center justify-between gap-3 bg-sploot-ink px-4 py-2.5 font-mono text-[0.7rem] lowercase text-sploot-paper">
           <span>sploot://search.console</span>
           <span className="flex gap-1.5" aria-hidden="true">
-            <i className="block h-3 w-3 border-2 border-sploot-paper bg-sploot-orange" />
-            <i className="block h-3 w-3 border-2 border-sploot-paper bg-sploot-yellow" />
-            <i className="block h-3 w-3 border-2 border-sploot-paper bg-sploot-lime" />
+            <i className="block h-3 w-3 rounded-full border-2 border-sploot-paper bg-sploot-orange" />
+            <i className="block h-3 w-3 rounded-full border-2 border-sploot-paper bg-sploot-yellow" />
+            <i className="block h-3 w-3 rounded-full border-2 border-sploot-paper bg-sploot-lime" />
           </span>
         </div>
 
-        {/* the search itself, on an acid-yellow shelf */}
+        {/* the search itself, on a banana shelf */}
         <form
           role="search"
           autoComplete="off"
           onSubmit={(e) => e.preventDefault()}
-          className="border-b-[length:var(--sploot-active-border-width)] border-sploot-ink bg-sploot-yellow p-4"
+          className="border-b-[3px] border-sploot-ink bg-sploot-yellow p-4"
         >
           <label
             htmlFor="search-input"
-            className="mb-2 block font-mono text-[0.78rem] font-bold uppercase tracking-normal text-sploot-ink"
+            className="mb-2 block font-mono text-[0.78rem] font-bold lowercase text-sploot-ink"
           >
-            query &gt;&gt; describe what is in the meme
+            find &gt; describe what is in the meme
           </label>
           <div className="flex flex-wrap gap-3">
-            <input
-              id="search-input"
-              type="search"
-              value={query}
-              spellCheck={false}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="what's that one meme..."
-              aria-describedby="search-readout"
-              className="min-w-0 flex-1 border-[length:var(--sploot-active-border-width)] border-sploot-ink bg-sploot-paper px-4 py-3 font-mono text-lg font-bold text-sploot-ink shadow-[inset_3px_3px_0_rgba(10,10,10,0.12)] outline-none placeholder:text-sploot-ink/55"
-            />
-            <button
-              type="submit"
-              className="sploot-press flex min-h-[var(--sploot-touch-target)] shrink-0 items-center border-[length:var(--sploot-active-border-width)] border-sploot-ink bg-sploot-ink px-4 font-mono text-sm font-bold uppercase tracking-normal text-sploot-lime"
-            >
+            <div className="flex min-w-0 flex-1 items-center rounded-[var(--sploot-radius-pill)] border-[3px] border-sploot-ink bg-sploot-paper px-5 py-3">
+              <input
+                id="search-input"
+                type="search"
+                value={query}
+                spellCheck={false}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="what's that one meme..."
+                aria-describedby="search-readout"
+                className="w-full min-w-0 border-0 bg-transparent font-sans text-lg font-bold text-sploot-ink outline-none placeholder:text-muted-foreground"
+              />
+            </div>
+            <Button type="submit" variant="primary" size="lg" className="shrink-0">
               run search
-            </button>
+            </Button>
           </div>
 
           <div className="mt-3.5 flex flex-wrap gap-2" aria-label="example queries">
@@ -168,7 +168,7 @@ export function SearchField() {
                   key={chip}
                   type="button"
                   onClick={() => setQuery(chip)}
-                  className="sploot-press border-[3px] border-sploot-ink bg-sploot-paper px-2.5 py-1.5 font-mono text-[0.72rem] font-bold lowercase tracking-normal text-sploot-ink shadow-[3px_3px_0_var(--sploot-ink)] hover:bg-sploot-magenta hover:text-white"
+                  className="sploot-press-sm sploot-shadow-sm rounded-[var(--sploot-radius-pill)] border-2 border-sploot-ink bg-sploot-panel px-3 py-1.5 font-sans text-[0.72rem] font-bold lowercase text-sploot-ink hover:bg-sploot-magenta hover:text-[#1c1547]"
                 >
                   try: {chip}
                 </button>
@@ -181,7 +181,7 @@ export function SearchField() {
         <output
           id="search-readout"
           aria-live="polite"
-          className="flex flex-wrap gap-x-6 gap-y-1 bg-sploot-ink px-4 py-2.5 font-mono text-[0.72rem] uppercase tracking-normal text-sploot-paper"
+          className="flex flex-wrap gap-x-6 gap-y-1 bg-sploot-ink px-4 py-2.5 font-mono text-[0.72rem] lowercase text-sploot-paper"
         >
           <span>
             scan: <b className="text-sploot-lime sploot-tabular">{result.scanned}</b> vectors
@@ -197,7 +197,7 @@ export function SearchField() {
         </output>
 
         {/* grid head */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b-[length:var(--sploot-active-border-width)] border-sploot-ink bg-sploot-magenta px-4 py-3 font-mono text-[0.74rem] font-bold uppercase tracking-normal text-white">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b-[3px] border-sploot-ink bg-sploot-magenta px-4 py-3 font-mono text-[0.74rem] font-bold lowercase text-[#1c1547]">
           <span>
             {result.found ? 'located 1 of 8 demo cells. i had a meme for this.' : '8 demo cells. zero folders.'}
           </span>
@@ -205,7 +205,11 @@ export function SearchField() {
         </div>
 
         {/* the pile: search lights up the match, everything else recedes */}
-        <div className="grid grid-cols-2 gap-px bg-sploot-ink sm:grid-cols-4" role="list" aria-label="sample meme library">
+        <div
+          className="grid grid-cols-2 gap-3 bg-sploot-paper-warm p-4 sm:grid-cols-4"
+          role="list"
+          aria-label="sample meme library"
+        >
           {TILES.map((tile) => {
             const cell = result.states.get(tile.file)!;
             return (
@@ -218,7 +222,7 @@ export function SearchField() {
                   score={cell.score}
                   state={cell.state}
                   animate={!reducedMotion}
-                  className="h-full border-0"
+                  className="h-full"
                 />
               </div>
             );
@@ -227,13 +231,13 @@ export function SearchField() {
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="font-mono text-xs font-bold uppercase tracking-normal text-sploot-ink sploot-tabular">
+        <span className="font-mono text-xs font-bold lowercase text-sploot-ink sploot-tabular">
           8 in the demo pile
         </span>
         <button
           type="button"
           onClick={() => router.push('/sign-up')}
-          className="flex items-center gap-1.5 font-mono text-xs font-bold uppercase tracking-normal text-sploot-ink underline decoration-sploot-magenta decoration-[3px] underline-offset-4 transition-colors duration-[var(--sploot-motion-fast)] hover:text-sploot-magenta"
+          className="flex items-center gap-1.5 font-mono text-xs font-bold lowercase text-sploot-ink underline decoration-sploot-magenta decoration-[3px] underline-offset-4 transition-colors duration-[var(--sploot-motion-fast)] hover:text-sploot-magenta"
         >
           search your own pile
           <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />

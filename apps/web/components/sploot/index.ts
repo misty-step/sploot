@@ -1,6 +1,8 @@
 export { AtlasLandingHero } from './atlas-landing-hero';
 export { BangerStamp } from './banger-stamp';
 export { ClusterPile } from './cluster-pile';
+export { IconButton, type IconButtonProps } from './icon-button';
+export { TileActionRail, type TileActionRailProps } from './tile-action-rail';
 export { MemeCell, type MemeCellState } from './meme-cell';
 export { MemeDoodle } from './meme-doodle';
 export { PileFilterRail, visiblePileFilters } from './pile-filter-rail';

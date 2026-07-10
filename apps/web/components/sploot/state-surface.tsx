@@ -98,23 +98,23 @@ export function StateSurface({
             : 'max-w-4xl lg:grid-cols-[minmax(0,1fr)_16rem]'
         )}
       >
-        <div className="sploot-shadow-lg border-[length:var(--sploot-active-border-width)] border-sploot-ink bg-sploot-paper">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b-[length:var(--sploot-active-border-width)] border-sploot-ink bg-sploot-paper-warm px-4 py-3">
+        <div className="sploot-shadow-lg overflow-hidden rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink bg-sploot-panel">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b-[3px] border-sploot-ink bg-sploot-paper-warm px-4 py-3">
             <StickerTab tone="lime">{eyebrow}</StickerTab>
-            <span className="font-mono text-xs font-bold uppercase tracking-normal">
+            <span className="font-mono text-xs font-bold lowercase">
               state surface
             </span>
           </div>
 
           <div className={cn('space-y-5', isPage ? 'p-6 sm:p-8' : 'p-5')}>
-            <h1 className="max-w-3xl font-display text-[clamp(2.6rem,7vw,6rem)] leading-[0.9] tracking-normal">
+            <h1 className="max-w-3xl font-display text-[clamp(2.6rem,7vw,6rem)] leading-[0.9]">
               {title}
             </h1>
-            <p className="max-w-2xl text-base leading-relaxed text-sploot-ink sm:text-lg">
+            <p className="max-w-2xl font-sans text-base leading-relaxed text-sploot-ink sm:text-lg">
               {description}
             </p>
 
-            {detail ? <div className="font-mono text-xs tracking-normal">{detail}</div> : null}
+            {detail ? <div className="font-mono text-xs">{detail}</div> : null}
 
             <div className="flex flex-col gap-3 pt-2 sm:flex-row">
               <SurfaceAction
@@ -137,9 +137,9 @@ export function StateSurface({
           aria-hidden="true"
           className={cn('hidden lg:block', !isPage && 'self-stretch')}
         >
-          <div className="sploot-shadow border-[length:var(--sploot-active-border-width)] border-sploot-ink bg-sploot-yellow p-3">
-            <div className="border-[3px] border-sploot-ink bg-sploot-paper p-4 text-sploot-ink">
-              <MemeDoodle kind={doodle} className={isPage ? 'min-h-[210px]' : 'min-h-[150px]'} />
+          <div className="sploot-shadow rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink bg-sploot-yellow p-3">
+            <div className="rounded-[var(--sploot-radius-inner)] border-2 border-sploot-ink bg-sploot-paper p-4 text-sploot-ink">
+              <MemeDoodle kind={doodle} className={cn('object-contain', isPage ? 'min-h-[210px]' : 'min-h-[150px]')} />
             </div>
             <StatBlock label="recovery" value="1 tap" tone="ink" className="mt-3" />
           </div>

@@ -6,8 +6,9 @@ import { StatBlock } from './stat-block';
 import { StatusBar } from './status-bar';
 
 /**
- * The neo-brutalist landing hero: search console first, with the retrieval
- * machinery visible instead of hidden behind soft product chrome.
+ * The toybox landing hero (lab-034 AFD-8): a dot-shelf substrate with a Bungee
+ * headline and the search console first, keeping the retrieval machinery
+ * visible instead of hidden behind soft product chrome.
  */
 export function AtlasLandingHero() {
   return (
@@ -19,7 +20,7 @@ export function AtlasLandingHero() {
           </StickerTab>
           <h1
             aria-label="type words. get the picture."
-            className="font-display text-[3.4rem] uppercase leading-[0.84] tracking-normal text-sploot-ink min-[420px]:text-7xl md:text-8xl"
+            className="font-display text-[3.4rem] leading-[0.84] text-sploot-ink min-[420px]:text-7xl md:text-8xl"
           >
             <span className="block">type words.</span>
             <span className="block">
@@ -29,7 +30,7 @@ export function AtlasLandingHero() {
               </span>
             </span>
           </h1>
-          <p className="max-w-xl font-sans text-base leading-7 text-sploot-ink/80 md:text-lg">
+          <p className="max-w-xl font-sans text-base leading-7 text-muted-foreground md:text-lg">
             a private library for screenshots and reaction pics. type what is in the
             image, and sploot pulls the one you mean out of the pile. no folders, no tags.
           </p>
@@ -52,7 +53,7 @@ export function AtlasLandingHero() {
           <Button asChild variant="primary" size="lg">
             <Link href="/sign-up">claim your library</Link>
           </Button>
-          <p className="font-mono text-xs uppercase tracking-normal text-sploot-ink/60">
+          <p className="font-mono text-xs lowercase text-muted-foreground">
             no social feed / no ads / export stays yours
           </p>
         </div>
