@@ -7,25 +7,26 @@ import { toast } from 'sonner';
 import { useWebShare } from '@/hooks/use-web-share';
 import { useIsMobile } from '@/hooks/use-is-mobile';
 
-interface ShareButtonProps {
+interface ShareMemeInput {
   assetId: string;
   blobUrl?: string;
   filename?: string;
   mimeType?: string;
+}
+
+interface ShareButtonProps extends ShareMemeInput {
   variant?: 'ghost' | 'default';
   size?: 'icon' | 'icon-sm';
   className?: string;
 }
 
-export function ShareButton({
-  assetId,
-  blobUrl,
-  filename,
-  mimeType,
-  variant = 'ghost',
-  size = 'icon-sm',
-  className
-}: ShareButtonProps) {
+/**
+ * The share flow, extracted so the toybox tile action rail can trigger the
+ * exact same logic the standalone ShareButton runs: native file share →
+ * desktop image clipboard → share-link fallback. Returns the handler plus its
+ * loading flag; both the rail and ShareButton compose it.
+ */
+export function useShareMeme({ assetId, blobUrl, filename, mimeType }: ShareMemeInput) {
   const [loading, setLoading] = useState(false);
   const { isSupported: isWebShareSupported, canShareFiles } = useWebShare();
   const isMobile = useIsMobile();
@@ -220,11 +221,25 @@ export function ShareButton({
     }
   };
 
+  return { share: handleShare, loading };
+}
+
+export function ShareButton({
+  assetId,
+  blobUrl,
+  filename,
+  mimeType,
+  variant = 'ghost',
+  size = 'icon-sm',
+  className,
+}: ShareButtonProps) {
+  const { share, loading } = useShareMeme({ assetId, blobUrl, filename, mimeType });
+
   return (
     <Button
       variant={variant}
       size={size}
-      onClick={handleShare}
+      onClick={share}
       disabled={loading}
       aria-label="Share meme"
       className={className}

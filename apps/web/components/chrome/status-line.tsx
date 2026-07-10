@@ -76,7 +76,7 @@ export function StatusLine({
       {queueDepth > 0 && (
         <>
           <Separator orientation="vertical" className="h-4" />
-          <Badge variant="secondary" className="font-mono text-xs text-yellow-500">
+          <Badge variant="secondary" className="font-mono text-xs text-sploot-orange">
             <span className="text-muted-foreground">q:</span>{queueDepth}
           </Badge>
         </>

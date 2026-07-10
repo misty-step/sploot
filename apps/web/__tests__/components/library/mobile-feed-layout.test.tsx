@@ -70,10 +70,10 @@ describe('mobile meme feed layout contract', () => {
     expect(image).toHaveAttribute('sizes', expect.stringContaining('(max-width: 640px) 100vw'));
 
     const favorite = screen.getByRole('button', { name: /mark as banger/i });
-    expect(favorite).toHaveClass('h-11', 'w-11');
+    expect(favorite).toHaveClass('sploot-ctl');
 
     const deleteButton = screen.getByRole('button', { name: /delete meme/i });
-    expect(deleteButton).toHaveClass('h-11', 'w-11');
+    expect(deleteButton).toHaveClass('sploot-ctl');
 
     expect(screen.queryByRole('button', { name: /more meme actions/i })).not.toBeInTheDocument();
 

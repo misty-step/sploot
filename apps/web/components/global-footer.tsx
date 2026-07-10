@@ -4,7 +4,7 @@ import { SPLOOT_EXTENSION_STORE_URL } from "@/components/library/empty-state"
 
 export function GlobalFooter() {
   return (
-    <footer className="bg-black border-t border-white/10 py-8">
+    <footer className="bg-sploot-void border-t-[3px] border-sploot-ink py-8">
       <div className="container px-6 mx-auto max-w-7xl flex flex-col md:flex-row items-center justify-between gap-4">
 
         {/* Left: Brand/Copyright */}
@@ -52,7 +52,7 @@ export function GlobalFooter() {
           rel="noopener noreferrer"
           className="text-sm text-white/40 hover:text-white transition-colors font-mono group"
         >
-          a <span className="underline decoration-white/20 underline-offset-4 group-hover:decoration-accent-cyan transition-all">misty step</span> project
+          a <span className="underline decoration-white/20 underline-offset-4 group-hover:decoration-sploot-cyan transition-all">misty step</span> project
         </Link>
       </div>
     </footer>
