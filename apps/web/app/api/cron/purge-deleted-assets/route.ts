@@ -25,7 +25,7 @@ interface PurgeStats {
  * 3. Delete database records (cascades to embeddings and tags)
  *
  * Authorization: Uses Bearer token from CRON_SECRET environment variable
- * Schedule: Daily via Vercel Cron (configured in vercel.json)
+ * Schedule: Daily via the production scheduler (declared in cron-schedules.json)
  */
 async function getHandler(request: NextRequest) {
   const startTime = Date.now();

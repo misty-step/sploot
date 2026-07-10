@@ -23,6 +23,8 @@ interface UserAuditResult {
   }>;
 }
 
+const AUDIT_CONCURRENCY = 32;
+
 /**
  * GET /api/cron/audit-assets
  *
@@ -30,7 +32,7 @@ interface UserAuditResult {
  * Detects broken blobs (404/403) and logs alerts if >10 broken assets found.
  *
  * Authorization: Uses Bearer token from CRON_SECRET environment variable
- * Schedule: Daily via Vercel Cron (configured in vercel.json)
+ * Schedule: Daily via the production scheduler (declared in cron-schedules.json)
  */
 async function getHandler(request: NextRequest) {
   const startTime = Date.now();
@@ -101,45 +103,60 @@ async function getHandler(request: NextRequest) {
     // Track broken assets per user for reporting
     const userAuditMap = new Map<string, UserAuditResult>();
 
-    // Validate each blob URL with HEAD request
-    for (const asset of assets) {
-      try {
-        // Use HEAD request to check if blob exists without downloading
-        const response = await fetch(asset.blobUrl, {
-          method: 'HEAD',
-          signal: AbortSignal.timeout(5000), // 5s timeout
-        });
+    // Keep the daily audit inside one HTTP job without opening thousands of
+    // sockets at once. Workers share a monotonically increasing index; JS runs
+    // each index claim synchronously before the worker reaches its first await.
+    let nextAssetIndex = 0;
+    async function auditNextAsset() {
+      while (true) {
+        const assetIndex = nextAssetIndex++;
+        if (assetIndex >= assets.length) return;
+        const asset = assets[assetIndex];
 
-        if (response.ok) {
-          stats.validCount++;
-        } else {
-          // 404 (Not Found), 403 (Forbidden), or other error status
-          stats.brokenCount++;
-          stats.brokenAssetIds.push(asset.id);
+        try {
+          // Use HEAD request to check if blob exists without downloading.
+          const response = await fetch(asset.blobUrl, {
+            method: 'HEAD',
+            signal: AbortSignal.timeout(5000), // 5s timeout
+          });
 
-          // Track per user
-          if (!userAuditMap.has(asset.ownerUserId)) {
-            userAuditMap.set(asset.ownerUserId, {
-              userId: asset.ownerUserId,
-              brokenCount: 0,
-              brokenAssets: [],
+          if (response.ok) {
+            stats.validCount++;
+          } else {
+            // 404 (Not Found), 403 (Forbidden), or other error status.
+            stats.brokenCount++;
+            stats.brokenAssetIds.push(asset.id);
+
+            if (!userAuditMap.has(asset.ownerUserId)) {
+              userAuditMap.set(asset.ownerUserId, {
+                userId: asset.ownerUserId,
+                brokenCount: 0,
+                brokenAssets: [],
+              });
+            }
+
+            const userResult = userAuditMap.get(asset.ownerUserId)!;
+            userResult.brokenCount++;
+            userResult.brokenAssets.push({
+              id: asset.id,
+              blobUrl: asset.blobUrl,
+              filename: asset.pathname.split('/').pop() || asset.pathname,
             });
           }
-
-          const userResult = userAuditMap.get(asset.ownerUserId)!;
-          userResult.brokenCount++;
-          userResult.brokenAssets.push({
-            id: asset.id,
-            blobUrl: asset.blobUrl,
-            filename: asset.pathname.split('/').pop() || asset.pathname,
-          });
+        } catch (err) {
+          // Network error, timeout, or other fetch failure.
+          stats.errorCount++;
+          logger.logError('cron:audit-assets:asset-check-failed', err as Error, { assetId: asset.id });
         }
-      } catch (err) {
-        // Network error, timeout, or other fetch failure
-        stats.errorCount++;
-        logger.logError('cron:audit-assets:asset-check-failed', err as Error, { assetId: asset.id });
       }
     }
+
+    await Promise.all(
+      Array.from(
+        { length: Math.min(AUDIT_CONCURRENCY, assets.length) },
+        () => auditNextAsset()
+      )
+    );
 
     stats.usersAffected = userAuditMap.size;
     const totalTime = Date.now() - startTime;

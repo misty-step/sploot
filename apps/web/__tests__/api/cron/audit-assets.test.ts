@@ -435,6 +435,34 @@ describe('/api/cron/audit-assets', () => {
         })
       );
     });
+
+    it('audits large libraries concurrently without an unbounded request fanout', async () => {
+      const mockAssets = Array.from({ length: 96 }, (_, index) => ({
+        id: `asset-${index}`,
+        blobUrl: `https://blob.vercel-storage.com/asset-${index}.jpg`,
+        pathname: `asset-${index}.jpg`,
+        ownerUserId: 'user-1',
+      }));
+      mockPrisma.asset.findMany.mockResolvedValue(mockAssets);
+
+      let active = 0;
+      let maxActive = 0;
+      (global.fetch as any).mockImplementation(async () => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        active -= 1;
+        return { ok: true, status: 200 };
+      });
+
+      const response = await GET({} as NextRequest);
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.stats.validCount).toBe(mockAssets.length);
+      expect(maxActive).toBeGreaterThan(1);
+      expect(maxActive).toBeLessThanOrEqual(32);
+    });
   });
 
   describe('Error Handling', () => {
