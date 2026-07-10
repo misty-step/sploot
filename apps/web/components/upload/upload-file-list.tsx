@@ -95,10 +95,10 @@ export function UploadFileList({
                 transform: `translateY(${virtualItem.start}px)`,
               }}
             >
-              <Card className="h-[60px] p-3 flex items-center rounded-md">
+              <Card className="h-[60px] p-3 flex items-center rounded-[var(--sploot-radius-inner)] border-2 border-sploot-ink shadow-none">
                 <div className="flex items-center gap-3 w-full">
                   {/* File icon/preview */}
-                  <div className="w-12 h-12 bg-muted flex items-center justify-center overflow-hidden flex-shrink-0 rounded">
+                  <div className="w-12 h-12 bg-sploot-paper-warm flex items-center justify-center overflow-hidden flex-shrink-0 rounded-[calc(var(--sploot-radius-inner)-2px)] border-2 border-sploot-ink">
                     {file.blobUrl ? (
                       <Image
                         src={file.blobUrl}
@@ -127,15 +127,15 @@ export function UploadFileList({
                     {file.status === 'uploading' && (
                       <div className="flex items-center gap-2">
                         <Progress value={file.progress} className="w-24 h-1" />
-                        <Badge variant="default" className="gap-1">
+                        <span className="sploot-sticker-shadow inline-flex items-center gap-1 rounded-[var(--sploot-radius-pill)] border-2 border-sploot-ink bg-sploot-yellow px-2 py-0.5 font-mono text-[0.65rem] font-bold text-sploot-ink">
                           <Loader2 className="size-3 animate-spin" />
                           {file.progress}%
-                        </Badge>
+                        </span>
                       </div>
                     )}
 
                     {file.status === 'queued' && (
-                      <Badge variant="outline">Queued</Badge>
+                      <span className="font-mono text-xs lowercase text-muted-foreground">queued</span>
                     )}
 
                     {file.status === 'success' && (
@@ -190,7 +190,7 @@ export function UploadFileList({
                     )}
 
                     {file.status === 'pending' && (
-                      <Badge variant="outline">Waiting...</Badge>
+                      <span className="font-mono text-xs lowercase text-muted-foreground">waiting…</span>
                     )}
                   </div>
                 </div>
