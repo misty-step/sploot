@@ -1,9 +1,10 @@
 # Sploot Design System
 
 Sploot is a personal meme archive that sorts itself into semantic piles. The
-interface should feel like a useful, private image workbench with zine energy:
-paper-grid surfaces, ink lines, sticker labels, sharp controls, and enough
-weirdness to avoid corporate AI-search sameness.
+interface is a toybox: every interactive object is a toy on a candy shelf,
+built from ink shells, candy fills, and honest drop-height physics. Fun but
+disciplined: loud toys, quiet ink-mini controls, and a machine that still
+shows its work.
 
 ## 1. Product Intent
 
@@ -36,24 +37,29 @@ Design priorities:
 
 ## 3. Brand Attributes
 
-Sploot is **neo-brutalist**: it admits it is a database, and it is loud about it.
+Sploot is a **toybox**: every interactive object is a toy.
 
 Sploot should feel:
 
-- Loud, blunt, and deadpan-funny.
-- Like a machine on display: structure exposed, the search mechanic and its
-  machinery (index, scorer/model, route, status) shown, not hidden behind soft
-  chrome.
-- Built from thick ink borders, hard offset shadows, square corners, and
-  saturated color blocks on unbleached paper.
-- Technically capable without sounding like generic AI infrastructure.
+- Fun, chunky, and tactile: controls you want to press.
+- Built from 3px ink shells, rounded corners, flat candy fills, and
+  drop-height elevation sitting on a dotted candy shelf.
+- Disciplined about hierarchy: loud toys (buttons, cards, the search console)
+  over quiet ink-mini controls (icon buttons flat at rest until touched).
+- Physically honest: surfaces lift and sink, shadows anchor and collapse,
+  nothing floats or glows.
+- Technically capable without sounding like generic AI infrastructure. The
+  machine still shows its work (index, scorer/model, route, status); it is
+  printed on toys now instead of exposed steel.
 - Private by default.
 
 Sploot should not feel:
 
 - Like a generic centered SaaS hero, or calm minimal-SaaS.
-- Like soft, rounded, drop-shadowed product chrome.
-- Like purple-on-black AI glassmorphism, gradient decoration, or pastel.
+- Like purple-on-black AI glassmorphism, gradient decoration, or glass chrome.
+- Like the previous system: square brutalist slabs, 8px diagonal ink
+  shadows, all-mono uppercase chrome. That grammar is dead.
+- Like baby furniture: rounded and friendly never means unserious or vague.
 - Like a creator monetization dashboard or enterprise file management.
 - Like a meme casino or engagement-maximizing social feed.
 
@@ -61,69 +67,91 @@ Sploot should not feel:
 
 ### Core Metaphor
 
-Use an "exposed database" language: the interface admits it is a machine that
-finds your memes, and shows its work.
+The toybox / candy shelf: the library is a shelf of toys the machine keeps
+sorted. Every card, console, button, and chip is a physical toy with an ink
+shell and a drop shadow straight down; the shelf behind them is a dotted
+substrate, not grid paper.
 
-- Console: the search box is a labeled console with an ink titlebar; the
-  machinery (index size, scorer/model, route, and status) is on display, not
-  hidden. Signed-out demos must label sample data as demo data.
-- Cells: meme tiles are bordered cells with a filename + vector-index header and
-  match / near / dim / default states.
-- Stamps and stickers: banger marks, labels, and status are saturated blocks
-  slammed on with thick borders and hard offset shadows.
-- Piles: self-organizing piles of cells, grouped by what they mean (the durable
-  product metaphor; see §1).
+- Shelf: the resting background is the polka-dot candy shelf
+  (`.bg-sploot-workbench`).
+- Toys: consoles, cards, stats, and buttons are panel-surface toys with 3px
+  ink shells, rounded corners, and drop-height elevation.
+- Ink minis: compact icon controls are flat 2px ink outlines at rest that
+  fill with candy on hover and sink on press.
+- Piles: self-organizing piles remain the durable product metaphor (see §1);
+  pile filters render as pill chips over the feed.
 
 ### Color
 
-Canonical colors are semantic, and they arrive as flat saturated blocks, never
-as tints or gradients.
+Light and dark are both first-class on every surface. Dark mode is the night
+shelf, not an inversion: candy values lift for AA contrast, shells turn warm
+cream, and drop shadows deepen to near-black.
 
-| Role | Token | Value | Use |
-|---|---|---|---|
-| Ink | `--sploot-ink` | `#0a0a0a` | Text, all 4-6px borders, linework |
-| Paper | `--sploot-paper` | `#f3efe4` | Unbleached resting surface |
-| Paper warm | `--sploot-paper-warm` | `#e9e4d6` | Secondary surface / workbench grid |
-| Void | `--sploot-void` | `#0a0a0a` | Dark surface (status bar, dark mode) |
-| Blue | `--sploot-blue` | `#1f4cff` | Primary action, the search console field |
-| Cyan | `--sploot-cyan` | `#00e5d4` | Brand through-line, secondary accent |
-| Magenta | `--sploot-magenta` | `#ff2d9b` | Bangers, favorites, attention (`--sploot-coral` aliases here) |
-| Yellow | `--sploot-yellow` | `#ffe600` | The single highlight per viewport (the query shelf) |
-| Orange | `--sploot-orange` | `#ff5a1f` | Near-match / warning |
-| Lime | `--sploot-lime` | `#9cff2e` | The found / match ring (`--sploot-match-ring`) |
-| Grid | `--sploot-grid-line` | — | Grid paper and low-emphasis structure |
+| Role | Token | Light | Dark | Use |
+|---|---|---|---|---|
+| Ink | `--sploot-ink` | `#1c1547` | `#fff3dc` | Text, shells, outlines, linework |
+| Shelf | `--sploot-paper` | `#cfe7ff` | `#19143d` | Resting dotted background |
+| Panel wash | `--sploot-paper-warm` | `#f1f7ff` | `#241d50` | Inner panel wash, rails |
+| Toy surface | `--sploot-panel` | `#ffffff` | `#2d255e` | Cards, consoles, stats |
+| Void | `--sploot-void` | `#1c1547` | `#090720` | Dark chrome (status bar) |
+| Blue | `--sploot-blue` | `#087bc1` | `#63c3ff` | PRIMARY action |
+| Cyan | `--sploot-cyan` | `#39b1ff` | `#8ed2ff` | Brand through-line, tab candy |
+| Bubblegum | `--sploot-magenta` | `#ed58bd` | `#ff8ed7` | Bangers, attention, press fill |
+| Banana | `--sploot-yellow` | `#ffdd00` | `#ffe45c` | Hover fill; the ONE highlight per viewport |
+| Orange | `--sploot-orange` | `#d97500` | `#ffb13b` | Near-match / warning |
+| Apple | `--sploot-lime` | `#138a50` | `#55d992` | The found / match ring |
+| Cherry | `--sploot-red` | `#e52347` | `#ff5d73` | Error / destructive |
+| Grape | `--sploot-purple` | `#7547e8` | `#a78aff` | Selected |
+| Focus | `--sploot-focus` | `#4a25c7` | `#ffe45c` | Focus-visible outline |
+| Shadow | `--sploot-shadow-color` | `#1c1547` | `#090720` | Every drop shadow |
+| Dot | `--sploot-dot` | `rgba(255,255,255,0.68)` | `rgba(255,255,255,0.09)` | Shelf polka dots |
+
+`--sploot-coral` aliases magenta and `--sploot-violet` aliases purple for
+legacy component code and lint; new code uses the real names.
 
 Color rules:
 
-- Resting state is ink on unbleached paper. Color is a flat block behind a
-  border, never a tint, gradient, or glow.
+- Candy is a flat fill inside an ink shell, never a tint, gradient, or glow.
 - Blue is the primary action color; cyan is the brand through-line.
-- Magenta is bangers / favorites / attention. Yellow is the ONE highlight per
-  viewport. Lime is reserved for the match ring; orange for near-match.
-- Saturation is full. No pastels, no gradients, no neon glow.
+- Yellow is the hover fill and the single highlight per viewport. Magenta is
+  bangers, attention, and the press fill. Lime is reserved for the match
+  ring; orange for near-match; red for destructive; purple for selected.
+- Both themes ship with every surface. A component is not done until it has
+  been seen on the light shelf and the night shelf.
 
 ### Typography
 
-- Display: Archivo Black for headlines, section heads, and stat numbers
-  (uppercase, letter spacing `0`).
-- Mono: Space Mono for all chrome, labels, stats, command hints, and technical
-  metadata (uppercase, letter spacing `0`).
-- Body: Space Grotesk for readable product copy and controls.
+- Display: Bungee for headlines, section heads, and stat values. Toy display
+  type; use it sparingly and never for controls or dense labels.
+- Body: Baloo 2 for product copy, controls, and captions. Rounded and
+  friendly without turning the controls into baby furniture.
+- Machine: Space Mono for machine metadata only: labels, stats, vector
+  indexes, routes, command hints.
 
-Do not use display type for dense control labels, table content, metadata, or
-long explanatory copy.
+Mono is no longer the default chrome voice. Body copy and control labels are
+lowercase Baloo 2; uppercase mono appears only where the machine is speaking.
 
 ### Shape and Line
 
-- Default radius is square (`0`). The only rounded exceptions are full circles
-  (status dots, avatars) and unmigrated third-party widgets.
-- Borders carry ALL structure: `--sploot-border` (4px ink) standard,
-  `--sploot-border-thick` (6px ink) for primary / active surfaces.
-- Shadows are hard offset only: `--sploot-shadow` / `-sm` / `-lg` is a solid
-  ink block offset down and right. Never blurred, never soft. No elevation by
-  blur. Buttons press: lift on hover, slam on active.
-- The found state is the lime match-ring (`--sploot-match-ring`); near-match is
-  an inset orange ring.
+- Radius scale: `--sploot-radius` (18px) for cards, consoles, and stats;
+  `--sploot-radius-inner` (10px) for media frames inside cards;
+  `--sploot-radius-ctl` (9px) for ink-mini icon controls;
+  `--sploot-radius-pill` (999px) for buttons, tabs, inputs, and pile chips.
+  Square corners are dead.
+- Shells carry structure: `--sploot-border` (3px ink) standard,
+  `--sploot-border-thin` (2px ink) for compact controls and inner frames,
+  `--sploot-border-thick` (4px ink) for primary / active surfaces.
+- Elevation is drop height, straight down, never blurred: `--sploot-shadow`
+  (5px resting), `--sploot-shadow-sm` (3px compact), `--sploot-shadow-lg`
+  (9px hero).
+- THE HOVER-PHYSICS LAW: on hover the surface lifts while the shadow stays
+  anchored or extends; never translate a control so its shadow travels with
+  it unchanged. On press the surface sinks and the shadow collapses. In
+  tokens: hover is `--sploot-shadow-hover` (2px 7px) or
+  `--sploot-shadow-hover-sm` (2px 5px); press is `--sploot-shadow-press`
+  (0 1px).
+- The found state is the lime match ring (`--sploot-match-ring`: 4px lime
+  halo plus the 9px drop); near-match is a dashed orange outline.
 
 ## 5. Layout and Density
 
@@ -138,10 +166,10 @@ Preferred structure:
 - The next section should be visible below the fold on desktop and mobile.
 
 Landing copy should be short, literal, and product-owned. The landing leads
-with the literal mechanic — "type words. get the picture." over "it's a search
-box. for memes." — deadpan inside Swiss chrome. "No folders. Just vibes."
-remains the product label and supporting line; the copy explains the mechanic:
-the user's saves are searchable without folders.
+with the literal mechanic ("type words. get the picture." over "it's a search
+box. for memes.") delivered deadpan on the candy shelf. "No folders. Just
+vibes." remains the product label and supporting line; the copy explains the
+mechanic: the user's saves are searchable without folders.
 
 ### App Workbench
 
@@ -157,12 +185,16 @@ Desktop `/app` should prioritize repeated use:
 - Optional right inspector for selected asset or selected group.
 - Bottom or top status line for counts, queue, storage, and embedding state.
 
+The workbench substrate is the dotted candy shelf, not grid paper. Toys sit
+on the dots; the dots never compete with thumbnails.
+
 ### Mobile
 
 Mobile should be thumb-first:
 
 - One primary visual surface per screen.
-- Persistent bottom command dock with stable icon positions.
+- Persistent bottom command dock of candy chips with stable icon positions
+  and 44px minimum targets.
 - Search and sorting as sheets, not cramped inline controls.
 - Extra safe-area padding around retry/upload/status rows.
 - Cluster navigation can become horizontal piles or stacked tabs.
@@ -181,28 +213,53 @@ Canonical component grammar:
 
 | Component | Purpose | Visual Rule |
 |---|---|---|
-| Search console | The centerpiece: type, find the match | Ink titlebar + LED squares; yellow query shelf; live match reveal with lime ring |
-| Meme cell | One tile in the pile | Thick ink border; filename + vector-index header; match / near / dim / default states |
-| Stat block | A library readout | Mono key over Archivo-Black value; bordered, hard offset shadow |
-| Status bar | The machinery on display | Dark row: index / scorer-model / route / status |
-| Button | Actions | Thick border, hard offset shadow; lift on hover, slam on active |
-| Command dock | Mobile primary actions | Fixed positions, icon-first, 44px minimum targets |
-| Pile filter / cluster | Self-organizing grouping | Bordered pile of cells; selected reads as a thick border |
-| Sticker tab | Label, tag, status | Saturated block, thick border, hard shadow, mono uppercase |
-| Banger stamp | Favorite or top-ranked marker | Magenta block slammed on like a rubber stamp |
-| Empty state | First-use and zero-result education | Show product action and example pile, not generic illustration |
+| Search console | The centerpiece: type, find the match | 18px panel toy with ink machine titlebar and dashed machine footer; pill input inside; 9px hero drop |
+| Meme cell (toy card) | One tile in the pile | 18px shell, candy filename tab, 10px inner media frame, caption row, action rail; seven states: default / match / near / dim / selected / loading / error |
+| IconButton (ink mini) | Compact icon control: theme switcher, tile actions, toolbar icons | 34px, 2px ink outline, 9px radius, flat at rest; hover lifts with banana fill and a small anchored shadow; press sinks with bubblegum fill and no shadow; disabled drops to 36% opacity |
+| TileActionRail | Heart / share / trash row on the cell | Owns space below the caption behind a dashed divider; never covers the media; renders inside the transformed card |
+| Heart banger | Favorite marker | A little heart: filled means banger, outline means not; no badges, no sort, no loud marks |
+| Stat block | A library readout | Mono key over Bungee value; 18px toy with 5px drop |
+| Status bar | The machinery on display | Ink row: index / scorer-model / route / status |
+| Button | Actions | Pill toy, 3px shell, 5px drop; variants map to the candy palette; obeys the hover-physics law |
+| Sticker tab | Label, tag, status | Pill candy chip with 2px shell; short lowercase text |
+| Pile chip | Self-organizing grouping filter | Pill, panel fill, 5px drop; selected fills banana (`--sploot-pile-selected`) |
+| Command dock | Mobile primary actions | Candy chips at 44px (`--sploot-touch-target`): pill rounding, 2px drop, extend on hover, click flush |
+| Empty state | First-use and zero-result education | Panel toy showing the product action, not generic illustration |
+
+### Operator Rules (design law)
+
+These five rules are standing operator law from lab 034. They bind every
+surface and every future design pass:
+
+1. Compact icon buttons (theme switcher, banger/share/trash tile actions) are
+   a CRITICAL component; any design work must exhibit them at real scale with
+   full states in both themes.
+2. Banger = a little heart (filled = banger, outline = not). No banger
+   badges, no banger sort, no loud marks.
+3. THE HOVER-PHYSICS LAW: on hover the surface lifts while the shadow stays
+   anchored or extends; never translate a control so its shadow travels with
+   it unchanged. On press the surface sinks and the shadow collapses.
+4. Match/state/banger markers render INSIDE the transformed card element;
+   they move with the card on hover, never anchored outside it.
+5. Light and dark are both first-class on every surface.
+
+### Implemented Wrappers
 
 Implemented product wrappers live in `apps/web/components/sploot`:
 
 - `SearchField` — the search console; the landing and app centerpiece.
-- `MemeCell` — one bordered tile in the pile, with match / near / dim states.
-- `StatBlock` — a bordered, hard-shadow library readout (demo vectors / folders / scorer).
+- `MemeCell` — one toy card in the pile with its reveal states.
+- `IconButton` — the ink-mini compact control; `TileActionRail` composes it
+  into the cell's heart / share / trash row.
+- `StatBlock` — the library readout (mono key over display value).
 - `StatusBar` — the machinery row (index / scorer / mode / route / status).
-- `StickerTab`, `BangerStamp`, `ClusterPile`, `PileMark`, `AtlasLandingHero` —
-  re-skinned neo-brutalist.
+- `StickerTab`, `ClusterPile`, `PileMark`, `AtlasLandingHero` — pill chips,
+  pile previews, brand mark, landing hero.
+- `BangerStamp` is legacy: the heart in `TileActionRail` is the only banger
+  marker going forward.
 
 New product surfaces should compose these wrappers before creating one-off
-console, cell, sticker, pile, banger, or stat treatments.
+console, cell, chip, pile, banger, or stat treatments.
 
 ### Motion
 
@@ -211,29 +268,34 @@ timing values:
 
 | Token | Value | Use |
 |---|---|---|
-| `--sploot-motion-fast` | 75ms | Hover/press feedback |
-| `--sploot-motion-base` | 150ms | Tile lifts, pops, small reveals |
-| `--sploot-motion-panel` | 240ms | Panels, sheets, stamps |
-| `--sploot-motion-cluster` | 360ms | Grid reshuffle/cluster moves |
+| `--sploot-motion-fast` | 130ms | Hover/press physics on controls |
+| `--sploot-motion-base` | 150ms | Card lifts, pops, small reveals |
+| `--sploot-motion-panel` | 200ms | Panels, sheets, stamps |
+| `--sploot-motion-cluster` | 300ms | Grid reshuffle/cluster moves |
 | `--sploot-ease-out` | cubic-bezier(0.2, 0.8, 0.2, 1) | Default deceleration |
-| `--sploot-ease-snap` | cubic-bezier(0.34, 1.56, 0.64, 1) | Sticker/stamp overshoot |
+| `--sploot-ease-snap` | cubic-bezier(0.34, 1.56, 0.64, 1) | Springy squash, stretch, settle |
 
 Named utilities:
 
-- `.animate-sploot-stamp`: banger/favorite stamp punch (scale-down rotate-in).
-- `.animate-sploot-pop`: sticker tabs and labels appearing.
+- `.sploot-press` / `.sploot-press-sm`: the hover-physics law for toys (lift
+  with anchored shadow, sink with collapsed shadow) at 5px and 3px resting
+  drops.
+- `.sploot-ctl`: ink-mini physics (flat rest, candy hover, bubblegum press).
+- `.animate-sploot-stamp`: match/state stamp punch (scale-down rotate-in).
+- `.animate-sploot-pop`: chips and labels appearing.
 - `.animate-sploot-slide-up`: panels, sheets, and docks entering.
 - Grid tiles cascade with `fadeInScale` staggered at 30ms per tile, capped at
   15 tiles so paginated content never waits.
 
 A global `prefers-reduced-motion: reduce` override collapses all animations
-and transitions; do not add per-component opt-outs.
+and transitions and removes travel, squash, and bounce; state changes remain
+immediate. Do not add per-component opt-outs.
 
 Interaction rules:
 
+- Motion is physics, on interaction only: lift, sink, squash, settle. Never
+  animate idle data.
 - Motion must explain sorting, clustering, uploading, or selection.
-- Respect `prefers-reduced-motion`.
-- Do not animate idle data.
 - Search and shuffle should feel fast; loading states should be compact and
   stateful rather than theatrical.
 - Cluster labels are suggestions, not user-owned taxonomy. Avoid implying the
@@ -287,26 +349,32 @@ as the brand.
 
 ## 8. Accessibility and Responsiveness
 
-- All focus states must be visible and use the cyan focus ring.
-- Interactive targets must be at least 44px on mobile.
+- All focus states must be visible: a 4px `--sploot-focus` outline at 3px
+  offset (0 offset on inputs to avoid double borders). Global rules in
+  `apps/web/app/globals.css` own this; do not restyle focus per component.
+- Interactive targets must be at least 44px on mobile
+  (`--sploot-touch-target`).
 - Color cannot be the only indicator for favorite, selected, failed, or active
-  states.
+  states. The heart uses fill, the match state uses a badge plus the ring.
 - Status and count values should use tabular numerals when compared.
 - Thumbnail grids must preserve aspect ratio to avoid layout shift.
 - Cluster canvases need keyboard-accessible list fallbacks.
-- Dark and light themes must both meet WCAG AA for text and controls.
+- Dark and light themes must both meet WCAG AA for text and controls; the
+  dark candy palette is lifted specifically to hold AA on the night shelf.
 
 ## 9. Evidence and Governance
 
 Current design direction is based on:
 
 - `vision.md`, especially the personal meme library, semantic search, shuffle,
-  bangers, and goofy/private positioning.
-- Live production landing screenshots captured during the June 6, 2026 design
-  pass.
-- Existing tokens and CSS in `apps/web/app/globals.css`.
-- Generated design boards combining Meme Atlas mechanics with No Folders Just
-  Vibes aesthetics.
+  bangers, and goofy/private positioning, plus the Meme Atlas mechanics and
+  No Folders Just Vibes lineage recorded in `design-contract.md`.
+- Design lab 034 (`explorations/lab-034-hypermax/`): round 1 (2026-07-09)
+  picked AFD-1 overprint and AFD-3 toybox as co-winners; round 3 (2026-07-09)
+  locked AFD-3 toybox; round 4 (2026-07-10) locked AFD-8 "ink minis" as the
+  compact-control grammar, with AFD-9's candy-chip treatment adopted for the
+  44px mobile dock only.
+- Live tokens and physics utilities in `apps/web/app/globals.css`.
 
 Governance rules:
 
@@ -329,10 +397,28 @@ Do not add:
 - Purple-on-black AI hero gradients, or any gradient as decoration.
 - Glassmorphism / `backdrop-blur` as decoration.
 - Decorative blobs, bokeh, or mesh gradients.
-- Soft or blurred shadows. Shadows are hard offset ink blocks only.
-- Rounded corners on product surfaces (square is the default; full circles and
-  unmigrated third-party widgets are the only exceptions).
-- Pastel or muted palettes. Color is full-saturation flat blocks.
-- Calm minimal-SaaS, or a generic centered hero when the product surface can lead.
-- Uniform fade/float motion. Motion is hard and on-interaction (press, match lock).
-- Stock illustrations where real product state or the doodle stand-ins are clearer.
+- Blurred or soft shadows. Elevation is a hard drop straight down.
+- Square brutalist slabs. The neo-brutalist grammar is dead; every surface
+  uses the radius scale.
+- 8px diagonal offset ink shadows, or any resting shadow that travels
+  diagonally. Resting drops are straight down.
+- Hover that translates a control with its shadow unchanged. The
+  hover-physics law is absolute: lift with anchored shadow, sink with
+  collapsed shadow.
+- Banger badges, banger sorts, or loud banger marks. The heart is the only
+  banger marker.
+- Uppercase mono as the default chrome voice. Mono is machine metadata only.
+- Match/state/banger markers anchored outside the card transform.
+- Tints, washes, or pastel decoration in place of flat candy fills inside
+  ink shells.
+- Calm minimal-SaaS, or a generic centered hero when the product surface can
+  lead.
+- Uniform fade/float motion, or animating idle data. Motion is physics on
+  interaction.
+- Stock illustrations where real product state or the doodle stand-ins are
+  clearer.
+
+Now allowed (banned under the previous system):
+
+- Rounded corners everywhere, on the 18 / 10 / 9 / pill radius scale.
+- Drop shadows straight down, at the 5 / 3 / 9px drop heights.

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Archivo_Black, Space_Mono, Space_Grotesk } from "next/font/google";
+import { Bungee, Space_Mono, Baloo_2 } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth/client";
 import { Toaster } from "@/components/ui/toast";
@@ -8,18 +8,18 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
-// Neo-brutalist type: Space Grotesk for body, Space Mono for all chrome/labels/
-// stats/meta, Archivo Black for the shouting display headlines + stat numbers.
-// The next/font `variable` names are kept stable (the old --font-* slots) so
-// existing consumers that reference them directly keep resolving — only the
-// font behind each slot moves to the brutalist family.
-const spaceGrotesk = Space_Grotesk({
+// Toybox type (lab-034, AFD-8 "ink minis"): Baloo 2 for the rounded friendly
+// body, Space Mono for machine labels/stats/meta, Bungee for toy display
+// headlines. The next/font `variable` names are kept stable (the old --font-*
+// slots) so existing consumers that reference them directly keep resolving —
+// only the font behind each slot moves to the toybox family.
+const baloo = Baloo_2({
   variable: "--font-geist-sans",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
-const archivoBlack = Archivo_Black({
+const bungee = Bungee({
   variable: "--font-bebas-neue",
   subsets: ["latin"],
   weight: ["400"],
@@ -130,7 +130,7 @@ export default function RootLayout({
             <meta name="theme-color" content="#000000" />
           </head>
           <body
-            className={`${spaceGrotesk.variable} ${archivoBlack.variable} ${spaceMono.variable} font-sans antialiased`}
+            className={`${baloo.variable} ${bungee.variable} ${spaceMono.variable} font-sans antialiased`}
           >
             <ThemeProvider
               attribute="class"

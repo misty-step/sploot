@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -183,14 +183,15 @@ assertFile('docs/design/aesthetic-adoption.md');
 for (const phrase of ['@misty-step/aesthetic', 'declared deviations', 'Swiss chrome']) {
   assertIncludes('docs/design/aesthetic-adoption.md', phrase, 'substrate deviation contract');
 }
-for (const phrase of [
-  '@import "@misty-step/aesthetic" layer(base)',
-  '--ae-accent',
-  '--background: var(--ae-surface)',
-  '--accent-cyan: var(--ae-accent)',
-]) {
-  assertIncludes(cssPath, phrase, 'aesthetic substrate wiring');
+// The @misty-step/aesthetic base import remains, but the TOYBOX lock
+// (lab-034, AFD-8) supersedes the ADR-0005 --ae-* semantic steering: the
+// shadcn slots now resolve to --sploot-* tokens (see the "TOYBOX semantic
+// mapping" block in globals.css), so the old --ae-accent / --ae-surface
+// wiring is intentionally gone. Only the base-layer import is still guaranteed.
+for (const phrase of ['@import "@misty-step/aesthetic" layer(base)']) {
+  assertIncludes(cssPath, phrase, 'aesthetic substrate base import');
 }
+assertIncludes(cssPath, 'TOYBOX semantic mapping', 'toybox semantic mapping block');
 for (const [doorPath, phrases] of Object.entries({
   'apps/web/components/auth/console-door.tsx': ['auth.console', 'consoleDoorAppearance'],
   'apps/web/app/sign-in/[[...sign-in]]/page.tsx': ['ConsoleDoor'],
@@ -240,15 +241,10 @@ for (const file of landingSystemFiles) {
       fail(`${file}: new landing design-system code must use sploot-* tokens, not ${tokenName}`);
     }
   }
-  // neo-brutalist DNA: surfaces are SQUARE. No rounded corners except a full
-  // circle (avatars/dots) or an explicit reset.
-  const rounded = (content.match(/rounded-[a-z0-9[\]]+/g) || []).filter(
-    (r) => r !== 'rounded-none' && r !== 'rounded-full'
-  );
-  if (rounded.length > 0) {
-    fail(`${file}: neo-brutalist surfaces are square — remove ${rounded[0]}`);
-  }
-
+  // TOYBOX DNA (lab-034, AFD-8): surfaces are ROUNDED toys. Radius grammar is
+  // enforced product-wide by the token-radius ratchet below (rounded-none and
+  // arbitrary px radii are banned; rounded-[var(--sploot-radius*)] / rounded-full
+  // / token-driven ui defaults are the sanctioned forms).
   const nonZeroTracking = (content.match(/tracking-(?!normal\b)[a-z0-9[\]./-]+/g) || []);
   if (nonZeroTracking.length > 0) {
     fail(`${file}: letter spacing must stay at 0 — remove ${nonZeroTracking[0]}`);
@@ -320,6 +316,210 @@ for (const file of trackedUiFiles) {
   for (const phrase of ['if published', 'future layer', 'metric to confirm', 'public-safe']) {
     if (content.toLowerCase().includes(phrase)) {
       fail(`${file}: visible UI must not contain process/meta-copy phrase "${phrase}"`);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TOYBOX drift ratchet (lab-034, AFD-8)
+//
+// Deterministic bans that keep the whole product tree on the toybox token
+// grammar: no raw hex, no blur/raw shadows, no raw radii, no hand-rolled
+// hover lifts, no off-grammar tile actions, no retired legacy names. Every
+// hit reports RULE + FILE + LINE.
+//
+// Because the tree is mid-migration, current occurrences are PINNED in
+// scripts/design-ratchet-baseline.json as per-file counts. Ratchet
+// semantics: a file may only ever hold FEWER violations than its pinned
+// count — any excess, or any violation in a file absent from the baseline,
+// fails the gate. New drift can never be introduced; legacy debt can only
+// shrink. Re-pin (shrink) the baseline after a conversion lane lands with:
+//
+//   node scripts/check-design-system.mjs --update-baseline
+//
+// The integrator drives that toward an empty baseline as the lanes finish.
+// ═══════════════════════════════════════════════════════════════════
+const UPDATE_BASELINE = process.argv.includes('--update-baseline');
+const baselinePath = 'scripts/design-ratchet-baseline.json';
+const baseline =
+  existsSync(join(repoRoot, baselinePath)) && !UPDATE_BASELINE
+    ? JSON.parse(read(baselinePath))
+    : {};
+
+const cssFiles = execSync("git ls-files 'apps/web/**/*.css'", {
+  cwd: repoRoot,
+  encoding: 'utf8',
+})
+  .split('\n')
+  .filter(Boolean)
+  // globals.css is the token HOME: it defines the hex values, the shadow
+  // tokens, and the legacy back-compat utility classes. It is exempt.
+  .filter((f) => f !== 'apps/web/app/globals.css');
+
+const productTsx = trackedUiFiles;
+
+// The one sanctioned hex literal: ink-on-candy text/foreground.
+const ALLOWED_HEX = new Set(['#1c1547']);
+
+// Collect {line, match} for every occurrence of `regex` in `content`,
+// optionally filtered by (match, lineText) => keep.
+function linesOf(content, regex, keep) {
+  const out = [];
+  content.split('\n').forEach((text, i) => {
+    const matches = text.match(regex);
+    if (!matches) return;
+    for (const m of matches) {
+      if (keep && !keep(m, text)) continue;
+      out.push({ line: i + 1, match: m });
+    }
+  });
+  return out;
+}
+
+const ratchetRules = [
+  {
+    id: 'rawHex',
+    label: 'raw hex color literal — use --sploot-* tokens',
+    files: [...productTsx, ...cssFiles],
+    scan: (content) =>
+      linesOf(
+        content,
+        /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g,
+        (m) => !ALLOWED_HEX.has(m.toLowerCase())
+      ),
+  },
+  {
+    id: 'rawShadow',
+    label: 'raw/blur shadow — use sploot-shadow* classes/vars or the physics utilities',
+    files: productTsx,
+    scan: (content) => [
+      // tailwind blur scales (sploot-shadow-* is excluded by the lookbehind)
+      ...linesOf(content, /(?<![\w-])shadow-(?:sm|md|lg|xl|2xl|inner)(?![\w-])/g),
+      // tailwind drop-shadow blur (drop-shadow-none stays allowed)
+      ...linesOf(content, /(?<![\w-])drop-shadow(?:-(?:sm|md|lg|xl|2xl))?(?![\w-])/g),
+      // inline box-shadow literals that don't reference a sploot var
+      ...linesOf(
+        content,
+        /box-shadow\s*:|boxShadow\s*:/g,
+        (_m, text) => !text.includes('var(--sploot')
+      ),
+    ],
+  },
+  {
+    id: 'rawRadius',
+    label:
+      'raw radius — use rounded-[var(--sploot-radius*)], rounded-full, or the token ui defaults',
+    files: productTsx,
+    scan: (content) => [
+      ...linesOf(content, /(?<![\w-])rounded-none(?![\w-])/g),
+      // arbitrary bracket radius with a numeric literal and no CSS var
+      ...linesOf(
+        content,
+        /(?<![\w-])rounded-\[[^\]]*\]/g,
+        (m) => /\d/.test(m) && !m.includes('var(')
+      ),
+    ],
+  },
+  {
+    id: 'handRolledLift',
+    label:
+      'hand-rolled hover lift — compose .sploot-press / .sploot-press-sm / .sploot-ctl instead',
+    files: productTsx,
+    scan: (content) =>
+      linesOf(
+        content,
+        /hover:-?translate(?:-[xy])?-/g,
+        (_m, text) =>
+          !text.includes('sploot-press') && !text.includes('sploot-ctl')
+      ),
+  },
+  {
+    id: 'bangerStampOutsideSploot',
+    label:
+      'BangerStamp used outside components/sploot/ — tile banger grammar is the TileActionRail heart',
+    files: productTsx.filter((f) => !f.startsWith('apps/web/components/sploot/')),
+    scan: (content) => linesOf(content, /\bBangerStamp\b/g),
+  },
+  {
+    id: 'tileActionGrammar',
+    label:
+      'raw lucide Heart/Trash2/Share2 in a tile surface — route actions through TileActionRail / IconButton',
+    files: productTsx.filter(
+      (f) =>
+        f.startsWith('apps/web/components/library/') ||
+        f.startsWith('apps/web/app/app/')
+    ),
+    scan: (content) => {
+      if (/\b(?:IconButton|TileActionRail)\b/.test(content)) return [];
+      if (
+        !/import\s+[^;]*\b(?:Heart|Trash2|Share2)\b[^;]*from\s+['"]lucide-react['"]/.test(
+          content
+        )
+      ) {
+        return [];
+      }
+      return linesOf(content, /\b(?:Heart|Trash2|Share2)\b/g);
+    },
+  },
+  {
+    id: 'legacyNames',
+    label: 'retired legacy design token/literal (electric-lime/hot-pink/cyber-blue/brutalist hex/shadow)',
+    files: [...productTsx, ...cssFiles],
+    scan: (content) =>
+      linesOf(content, /electric-lime|hot-pink|cyber-blue|#f3efe4|#0a0a0a|8px 8px 0/gi),
+  },
+];
+
+const currentCounts = {};
+const currentDetail = {};
+for (const rule of ratchetRules) {
+  currentCounts[rule.id] = {};
+  currentDetail[rule.id] = {};
+  for (const file of rule.files) {
+    const hits = rule.scan(read(file));
+    if (hits.length > 0) {
+      currentCounts[rule.id][file] = hits.length;
+      currentDetail[rule.id][file] = hits;
+    }
+  }
+}
+
+if (UPDATE_BASELINE) {
+  const pinned = {};
+  for (const rule of ratchetRules) {
+    pinned[rule.id] = {};
+    for (const file of Object.keys(currentCounts[rule.id]).sort()) {
+      pinned[rule.id][file] = currentCounts[rule.id][file];
+    }
+  }
+  writeFileSync(
+    join(repoRoot, baselinePath),
+    `${JSON.stringify(pinned, null, 2)}\n`
+  );
+  const total = ratchetRules.reduce(
+    (sum, rule) =>
+      sum +
+      Object.values(currentCounts[rule.id]).reduce((a, b) => a + b, 0),
+    0
+  );
+  console.log(
+    `design ratchet baseline written to ${baselinePath} (${total} pinned occurrences)`
+  );
+  process.exit(0);
+}
+
+for (const rule of ratchetRules) {
+  const pinned = baseline[rule.id] ?? {};
+  for (const file of Object.keys(currentCounts[rule.id])) {
+    const found = currentCounts[rule.id][file];
+    const allowed = pinned[file] ?? 0;
+    if (found > allowed) {
+      // Report the occurrences beyond the pinned budget (the new drift).
+      for (const { line, match } of currentDetail[rule.id][file].slice(allowed)) {
+        fail(
+          `${file}:${line}: [${rule.id}] ${rule.label} — "${match.trim()}" (baseline ${allowed}, found ${found})`
+        );
+      }
     }
   }
 }
