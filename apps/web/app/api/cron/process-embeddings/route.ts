@@ -25,7 +25,7 @@ interface ProcessingStats {
  * GET /api/cron/process-embeddings
  *
  * Cron job endpoint to process assets that need embeddings.
- * Can be triggered by Vercel Cron or manually.
+ * Can be triggered by the production scheduler or manually.
  *
  * Authorization: Uses Bearer token from CRON_SECRET environment variable
  */
@@ -214,7 +214,7 @@ async function getHandler(request: NextRequest) {
   }
 }
 
-// GET only: Vercel Cron invokes this on the */5 schedule, and a manual run is
+// GET only: the production scheduler invokes this on the */5 schedule, and a manual run is
 // the same idempotent, CRON_SECRET-gated call. There is deliberately no POST
 // variant — it would just duplicate GET and invite an "options" knob, and the
 // only knob worth having (re-embed everything) is the runaway this route must

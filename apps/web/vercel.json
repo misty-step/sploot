@@ -1,21 +1,3 @@
 {
-  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
-  "crons": [
-    {
-      "path": "/api/cron/process-embeddings",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/audit-assets",
-      "schedule": "0 2 * * *"
-    },
-    {
-      "path": "/api/cron/purge-deleted-assets",
-      "schedule": "0 3 * * *"
-    },
-    {
-      "path": "/api/cron/purge-search-logs",
-      "schedule": "0 4 * * *"
-    }
-  ]
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile"
 }

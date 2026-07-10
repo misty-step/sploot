@@ -68,14 +68,19 @@ describe('privacy copy contract', () => {
   });
 
   it('schedules the retention job promised by the privacy policy', () => {
-    const vercelConfig = JSON.parse(read('vercel.json')) as {
-      crons?: Array<{ path?: string; schedule?: string }>;
-    };
+    const schedules = JSON.parse(read('cron-schedules.json')) as Array<{
+      path?: string;
+      schedule?: string;
+    }>;
 
-    expect(vercelConfig.crons).toContainEqual(
+    expect(schedules).toContainEqual(
       expect.objectContaining({
         path: '/api/cron/purge-search-logs',
+        schedule: '0 4 * * *',
       })
     );
+
+    const vercelConfig = JSON.parse(read('vercel.json')) as { crons?: unknown };
+    expect(vercelConfig).not.toHaveProperty('crons');
   });
 });
