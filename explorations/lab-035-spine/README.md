@@ -55,3 +55,28 @@ Survivors + 18 mutations from their originating lanes: LAND drill-down
 around the live demo pile (HALL/IMPEC ×2 each), NAV (AFD/HALL ×2 each),
 DET head-to-head refinements (AFD/TASTE ×2 each), UP (AFD/HALL ×2 each),
 SET (AFD refine + blend, IMPEC ×2). FEED is locked and awaits convergence.
+
+### Round 2 verdicts (operator delegated the pick, 2026-07-10: "use your
+best judgment and ship it")
+
+- **LAND: IMPEC-LAND-3** — keeps both survivors' DNA (IMPEC copy tower ×
+  HALL console-crowned demo) with the searchable wall above the fold;
+  grafted HALL-LAND-3's honest reshuffle microcopy. Converged with
+  today's static starter-pile demo and honest copy; the 1,000-classic
+  live corpus is backlog 059.
+- **NAV: AFD-NAV-1** as endorsed in round 1 — mutations traded away
+  affordances (help control, visible sort chip) for marginal density.
+- **FEED: AFD-FEED-1** (operator lock). Convergence found production
+  already satisfies it: masonry, object-contain uncropped tiles, in-card
+  action rail, and pile chips already exist (PileFilterRail).
+- **DET: AFD-DET-3** — similar-saves with score pills living in the
+  sticky sidebar answers the related-memes defect most directly; grafted
+  TASTE-DET-4's "ranked by cosine similarity" microcopy. Action trio
+  unified to identical IconButton grammar (banger/share/delete).
+- **UP: AFD-UP-1** unchanged — both AFD mutations quietly demoted the
+  winning dropzone-dominant mouth into a cramped bar.
+- **SET: AFD-SET-4** (SET-1 calm column + SET-2 stat row) with
+  IMPEC-SET-3's token-scope-chip content graft. The typed-DELETE danger
+  gate was skipped honestly: no destructive account flow exists yet.
+
+Converged via branch feat/spine-convergence. Lab closed.
