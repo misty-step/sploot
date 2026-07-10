@@ -23,17 +23,17 @@ import { getEmbeddingQueueManager } from '@/lib/embedding-queue';
 import { ShareButton } from '@/components/library/share-button';
 import { error as logError } from '@/lib/logger';
 import type { EmbeddingQueueItem } from '@/lib/embedding-queue';
-import { useKeyboardShortcut, useSearchShortcut, useSlashSearchShortcut } from '@/hooks/use-keyboard-shortcut';
+import { useSearchShortcut, useSlashSearchShortcut } from '@/hooks/use-keyboard-shortcut';
 import { CommandPalette, useCommandPalette } from '@/components/chrome/command-palette';
-import { KeyboardShortcutsHelp, useKeyboardShortcutsHelp } from '@/components/chrome/keyboard-shortcuts-help';
 import { useSortPreferences } from '@/hooks/use-sort-preferences';
 import { useFilter } from '@/contexts/filter-context';
 import { UploadButton } from '@/components/chrome/upload-button';
 import { FilterChips, type FilterType } from '@/components/chrome/filter-chips';
 import { SortDropdown } from '@/components/chrome/sort-dropdown';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { PileFilterRail, StickerTab } from '@/components/sploot';
+import { PileFilterRail, StickerTab, IconButton } from '@/components/sploot';
 import { RotateCcw, Shuffle, X, Trash2 } from 'lucide-react';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
 import { track } from '@/lib/analytics';
@@ -67,9 +67,6 @@ function AppPageClient() {
   // Command palette state
   const { isOpen: isCommandPaletteOpen, openPalette, closePalette } = useCommandPalette();
 
-  // Keyboard shortcuts help state
-  const { isOpen: isHelpOpen, openHelp, closeHelp } = useKeyboardShortcutsHelp();
-
   // Delete confirmation modal state
   const {
     isOpen: isDeleteModalOpen,
@@ -90,6 +87,7 @@ function AppPageClient() {
     getSortColumn,
   } = useSortPreferences();
   const [failedEmbeddings, setFailedEmbeddings] = useState<EmbeddingQueueItem[]>([]);
+  const [cookingCount, setCookingCount] = useState(0);
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [retryProgress, setRetryProgress] = useState({ current: 0, total: 0, processing: false });
 
@@ -205,12 +203,15 @@ function AppPageClient() {
   // Also add "/" key shortcut to focus search
   useSlashSearchShortcut(focusSearchBar);
 
-  // Monitor failed embeddings
+  // Monitor failed embeddings + the in-flight "cooking" count for the
+  // command bar's mono readout (row two of the AFD-NAV-1 chrome).
   useEffect(() => {
     const checkFailedEmbeddings = () => {
       const manager = getEmbeddingQueueManager();
       const failed = manager.getFailedItems();
       setFailedEmbeddings(failed);
+      const status = manager.getStatus();
+      setCookingCount(status.queued + status.processing);
     };
 
     // Check immediately
@@ -221,9 +222,7 @@ function AppPageClient() {
 
     // Subscribe to queue events
     const unsubscribe = getEmbeddingQueueManager().subscribe((event) => {
-      if (event.type === 'failed' || event.type === 'completed') {
-        checkFailedEmbeddings();
-      }
+      checkFailedEmbeddings();
     });
 
     return () => {
@@ -382,13 +381,6 @@ function AppPageClient() {
       window.scrollTo({ top: desiredTop });
     }
   }, []);
-
-  // ? for keyboard shortcuts help
-  useKeyboardShortcut({
-    key: '?',
-    callback: openHelp,
-    enabled: true,
-  });
 
   const gridContainerClassName = cn(
     'h-full overflow-y-auto overflow-x-hidden',
@@ -676,7 +668,10 @@ function AppPageClient() {
       <div className="border-b-[3px] border-sploot-cyan bg-background px-2 pb-2 pt-2 md:px-6 2xl:px-10">
         <div className="mx-auto w-full max-w-7xl 2xl:max-w-[1920px]">
           <header className="flex flex-col gap-2">
-            <div className="hidden items-center gap-2 md:grid md:grid-cols-[minmax(20rem,1fr)_auto]">
+            {/* Row one — the search pill owns the center; upload/retry sit
+                right of it. Compact ink-mini grammar continues from the
+                global mast's help/theme controls above. */}
+            <div className="hidden items-center gap-3 md:flex">
               <SearchBar
                 onSearch={handleInlineSearch}
                 inline
@@ -690,18 +685,11 @@ function AppPageClient() {
                             'idle'
                 }
                 resultCount={searchAssets.length}
-                className="min-w-0"
+                className="min-w-0 flex-1"
                 placeholder="search your memes..."
               />
 
-              <div className="flex flex-wrap justify-end gap-2">
-                <UploadButton
-                  onClick={() => setShowUploadPanel((prev) => !prev)}
-                  isActive={showUploadPanel}
-                  size="sm"
-                  showLabel={false}
-                  className="md:hidden"
-                />
+              <div className="flex flex-none items-center gap-2">
                 <UploadButton
                   onClick={() => setShowUploadPanel((prev) => !prev)}
                   isActive={showUploadPanel}
@@ -719,10 +707,20 @@ function AppPageClient() {
                     RETRY ({failedEmbeddings.length})
                   </Button>
                 )}
+              </div>
+            </div>
+
+            {/* Hairline divider between the search row and the filter row. */}
+            <Separator className="hidden md:block" />
+
+            {/* Row two — hairline-divided: tabs, sort, shuffle read left to
+                right; the machine's mono readout anchors the right edge. */}
+            <div className="hidden items-center justify-between gap-3 md:flex">
+              <div className="flex flex-wrap items-center gap-2">
                 <FilterChips
                   activeFilter={bangersOnly ? 'bangers' : 'all'}
                   onFilterChange={handleBangersFilterChange}
-                  size="lg"
+                  size="sm"
                   showLabels={true}
                 />
                 <SortDropdown
@@ -730,27 +728,23 @@ function AppPageClient() {
                   direction={sortOrder}
                   onChange={handleSortChange}
                 />
-
-                <Button
-                  variant={sortBy === 'shuffle' ? 'accent' : 'outline'}
-                  size="lg"
+                <IconButton
+                  label="shuffle the pile"
+                  pressed={sortBy === 'shuffle'}
                   onClick={() => {
                     handleSortChange('shuffle', 'desc');
                     requestAnimationFrame(() => {
                       gridScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                     });
                   }}
-                  className="gap-2"
-                  aria-pressed={sortBy === 'shuffle'}
                 >
-                  <Shuffle className="h-4 w-4" />
-                  shuffle
-                </Button>
+                  <Shuffle />
+                </IconButton>
 
                 {tagIdParam && (
                   <Button
                     variant="outline"
-                    size="lg"
+                    size="sm"
                     onClick={clearTagFilter}
                     className="gap-1"
                   >
@@ -760,6 +754,11 @@ function AppPageClient() {
                   </Button>
                 )}
               </div>
+
+              <span className="shrink-0 font-mono text-xs lowercase tabular-nums text-muted-foreground">
+                {total.toLocaleString()} in the pile
+                {cookingCount > 0 ? ` · ${cookingCount.toLocaleString()} cooking` : ''}
+              </span>
             </div>
 
             <div className={cn('md:hidden', showMobileSearch ? 'block' : 'hidden')}>
@@ -1195,12 +1194,6 @@ function AppPageClient() {
           await signOut();
           router.push('/');
         }}
-      />
-
-      {/* Keyboard Shortcuts Help */}
-      <KeyboardShortcutsHelp
-        isOpen={isHelpOpen}
-        onClose={closeHelp}
       />
 
       {/* Delete Confirmation Modal */}

@@ -2,10 +2,13 @@
 
 import { ReactNode } from 'react';
 import Link from 'next/link';
+import { HelpCircle } from 'lucide-react';
 import { UserAvatar } from './user-avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { PileMark } from '@/components/sploot';
+import { PileMark, IconButton } from '@/components/sploot';
 import { cn } from '@/lib/utils';
+import { useKeyboardShortcut } from '@/hooks/use-keyboard-shortcut';
+import { KeyboardShortcutsHelp, useKeyboardShortcutsHelp } from './keyboard-shortcuts-help';
 
 interface NavbarProps {
   children?: ReactNode;
@@ -28,6 +31,10 @@ export function Navbar({
   onSignOut,
   statusLine,
 }: NavbarProps) {
+  // Help control lives in the mast itself (AFD-NAV-1): the "?" shortcut and
+  // its dialog are global chrome, not tied to any one route.
+  const { isOpen: isHelpOpen, openHelp, closeHelp } = useKeyboardShortcutsHelp();
+  useKeyboardShortcut({ key: '?', callback: openHelp, enabled: true });
 
   return (
     <>
@@ -76,10 +83,16 @@ export function Navbar({
         {/* Spacer to push user menu to the right */}
         <div className="flex-1" />
 
-        {/* Right section: Status line, theme toggle, and user menu */}
-        <div className="flex items-center gap-4">
+        {/* Right section: Status line, help, theme toggle, and user menu —
+            compact ink-mini icon buttons share identical grammar. */}
+        <div className="flex items-center gap-2 md:gap-3">
           {/* Terminal-style status line */}
           {statusLine}
+
+          {/* Help control */}
+          <IconButton label="keyboard shortcuts" onClick={openHelp}>
+            <HelpCircle />
+          </IconButton>
 
           {/* Theme toggle */}
           <ThemeToggle />
@@ -99,6 +112,7 @@ export function Navbar({
         {children}
       </div>
     </nav>
+    <KeyboardShortcutsHelp isOpen={isHelpOpen} onClose={closeHelp} />
     </>
   );
 }
