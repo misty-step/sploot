@@ -122,7 +122,7 @@ export function SearchField() {
     <div className="w-full max-w-2xl">
       <div className="sploot-shadow-lg overflow-hidden rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink bg-sploot-panel">
         {/* console titlebar with the 3 candy LEDs */}
-        <div className="flex items-center justify-between gap-3 bg-sploot-ink px-4 py-2.5 font-mono text-[0.7rem] lowercase text-sploot-paper">
+        <div className="flex items-center justify-between gap-3 bg-sploot-void px-4 py-2.5 font-mono text-[0.7rem] lowercase text-sploot-on-void">
           <span>sploot://search.console</span>
           <span className="flex gap-1.5" aria-hidden="true">
             <i className="block h-3 w-3 rounded-full border-2 border-sploot-paper bg-sploot-orange" />
@@ -140,7 +140,7 @@ export function SearchField() {
         >
           <label
             htmlFor="search-input"
-            className="mb-2 block font-mono text-[0.78rem] font-bold lowercase text-sploot-ink"
+            className="mb-2 block font-mono text-[0.78rem] font-bold lowercase text-[#1c1547]"
           >
             find &gt; describe what is in the meme
           </label>
@@ -182,18 +182,18 @@ export function SearchField() {
         <output
           id="search-readout"
           aria-live="polite"
-          className="flex flex-wrap gap-x-6 gap-y-1 bg-sploot-ink px-4 py-2.5 font-mono text-[0.72rem] lowercase text-sploot-paper"
+          className="flex flex-wrap gap-x-6 gap-y-1 bg-sploot-void px-4 py-2.5 font-mono text-[0.72rem] lowercase text-sploot-on-void"
         >
           <span>
-            scan: <b className="text-sploot-lime sploot-tabular">{result.scanned}</b> vectors
+            scan: <b className="text-sploot-yellow sploot-tabular">{result.scanned}</b> vectors
           </span>
           <span>
             top sim:{' '}
-            <b className={result.found ? 'text-sploot-lime' : 'text-sploot-orange'}>{result.topSim}</b>
+            <b className={result.found ? 'text-sploot-yellow' : 'text-sploot-magenta'}>{result.topSim}</b>
           </span>
           <span>
             hit:{' '}
-            <b className={result.found ? 'text-sploot-lime' : 'text-sploot-orange'}>{result.hit}</b>
+            <b className={result.found ? 'text-sploot-yellow' : 'text-sploot-magenta'}>{result.hit}</b>
           </span>
         </output>
 
@@ -234,13 +234,13 @@ export function SearchField() {
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="font-mono text-xs font-bold lowercase text-sploot-ink sploot-tabular">
+        <span className="font-mono text-xs font-bold lowercase text-[#1c1547] sploot-tabular">
           8 in the demo pile
         </span>
         <button
           type="button"
           onClick={() => router.push('/sign-up')}
-          className="flex items-center gap-1.5 font-mono text-xs font-bold lowercase text-sploot-ink underline decoration-sploot-magenta decoration-[3px] underline-offset-4 transition-colors duration-[var(--sploot-motion-fast)] hover:text-sploot-magenta"
+          className="flex items-center gap-1.5 font-mono text-xs font-bold lowercase text-[#1c1547] underline decoration-sploot-magenta decoration-[3px] underline-offset-4 transition-opacity duration-[var(--sploot-motion-fast)] hover:opacity-70"
         >
           search your own pile
           <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />

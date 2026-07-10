@@ -8,7 +8,7 @@ type StickerTone = 'cyan' | 'coral' | 'violet' | 'lime' | 'ink';
 const stickerToneClass: Record<StickerTone, string> = {
   cyan: 'bg-[var(--sploot-sticker-cyan)] text-[#1c1547]',
   coral: 'bg-[var(--sploot-sticker-coral)] text-[#1c1547]',
-  violet: 'bg-[var(--sploot-sticker-violet)] text-white',
+  violet: 'bg-[var(--sploot-sticker-violet)] text-sploot-on-purple',
   lime: 'bg-[var(--sploot-sticker-lime)] text-[#1c1547]',
   ink: 'bg-sploot-ink text-sploot-paper',
 };

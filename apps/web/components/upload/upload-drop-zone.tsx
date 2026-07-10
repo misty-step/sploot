@@ -192,7 +192,7 @@ export function UploadDropZone({
           <p className="text-sm text-muted-foreground mb-4">
             or click to browse • paste an image or its url
           </p>
-          <p className="font-mono text-xs text-muted-foreground/60">
+          <p className="font-mono text-xs text-muted-foreground">
             JPEG, PNG, WebP, GIF, MP4, WebM • zips & bookmark exports too • Max {UPLOAD.maxSizeMB}MB per file
           </p>
         </CardContent>
