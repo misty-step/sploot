@@ -86,7 +86,7 @@ export default function SettingsPage() {
         </p>
       </header>
 
-      <section className="bg-card border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] sploot-shadow p-5 space-y-4">
+      <section className="sploot-card p-5 space-y-4">
         <div>
           <h2 className="text-lg font-semibold text-foreground">Account lore</h2>
           <p className="text-muted-foreground text-sm mt-1">
@@ -109,7 +109,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="bg-card border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] sploot-shadow p-5 space-y-4">
+      <section className="sploot-card p-5 space-y-4">
         <div>
           <h2 className="text-lg font-semibold text-foreground">Storage</h2>
           <p className="text-muted-foreground text-sm mt-1">
@@ -135,7 +135,7 @@ export default function SettingsPage() {
 
       <UploadTokensCard />
 
-      <section className="bg-card border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] sploot-shadow p-5 space-y-3">
+      <section className="sploot-card p-5 space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-foreground">Install as app</h2>
           <p className="text-muted-foreground text-sm mt-1">
@@ -186,7 +186,7 @@ export default function SettingsPage() {
         </p>
       </section>
 
-      <section className="bg-card border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] sploot-shadow p-5 space-y-3">
+      <section className="sploot-card p-5 space-y-3">
         <h2 className="text-lg font-semibold text-foreground">What exists now</h2>
         <p className="text-muted-foreground text-sm">
           This settings panel manages your account, storage, install path, upload
@@ -195,7 +195,7 @@ export default function SettingsPage() {
         </p>
       </section>
 
-      <section className="bg-card border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] sploot-shadow p-5 space-y-3">
+      <section className="sploot-card p-5 space-y-3">
         <h2 className="text-lg font-semibold text-foreground">About</h2>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground text-sm">Version</span>

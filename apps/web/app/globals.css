@@ -654,6 +654,15 @@ select:focus-visible {
   box-shadow: var(--sploot-match-ring);
 }
 
+/* The standard toy-card panel: ink shell, toybox radius, resting drop.
+   Compose with .sploot-press when the panel is interactive. */
+.sploot-card {
+  background: var(--sploot-panel);
+  border: var(--sploot-border);
+  border-radius: var(--sploot-radius);
+  box-shadow: var(--sploot-shadow);
+}
+
 /* THE HOVER-PHYSICS LAW (operator rule, lab-034): on hover the surface
    lifts while the shadow stays anchored/extends; on press the surface sinks
    and the shadow collapses. Never translate a toy so its shadow travels
