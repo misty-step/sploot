@@ -127,31 +127,32 @@ describe('SharePageCTA', () => {
       const { container } = render(<SharePageCTA assetId={mockAssetId} />);
 
       const button = container.firstChild as HTMLElement;
-      expect(button).toHaveClass('bg-primary', 'text-primary-foreground');
+      // variant classes come from the real Button (mocked away here); the CTA
+      // must not override the primary variant with local color classes
+      expect(button.className).not.toContain('bg-');
     });
 
     it('should include hover effects', () => {
       const { container } = render(<SharePageCTA assetId={mockAssetId} />);
 
       const button = container.firstChild as HTMLElement;
-      expect(button.className).toContain('hover:bg-primary/90');
-      expect(button.className).toContain('hover:shadow-lg');
-      expect(button.className).toContain('hover:shadow-primary/20');
+      // hover/press physics live in the real Button's .sploot-press utility;
+      // the mock strips variants, so assert the CTA delegates (no local overrides)
+      expect(button.className).not.toContain('hover:');
     });
 
     it('should include touch feedback with active state', () => {
       const { container } = render(<SharePageCTA assetId={mockAssetId} />);
 
       const button = container.firstChild as HTMLElement;
-      expect(button.className).toContain('active:scale-95');
+      expect(button.className).not.toContain('active:');
     });
 
     it('should include transition for smooth animations', () => {
       const { container } = render(<SharePageCTA assetId={mockAssetId} />);
 
       const button = container.firstChild as HTMLElement;
-      expect(button.className).toContain('transition-all');
-      expect(button.className).toContain('duration-200');
+      expect(button.className).not.toContain('transition-');
     });
 
     it('should prevent text selection for better touch experience', () => {
@@ -200,8 +201,8 @@ describe('SharePageCTA', () => {
       const { container } = render(<SharePageCTA assetId={mockAssetId} />);
 
       const button = container.firstChild as HTMLElement;
-      expect(button.className).toContain('focus-visible:ring-2');
-      expect(button.className).toContain('focus-visible:ring-primary');
+      // focus-visible styling comes from the real Button component
+      expect(button.className).not.toContain('focus-visible:ring');
     });
 
     it('should use default button size', () => {

@@ -3,11 +3,7 @@
     "apps/web/components/auth/console-door.tsx": 1
   },
   "rawShadow": {
-    "apps/web/app/app/page.tsx": 1,
-    "apps/web/components/chrome/grid-density-toggle.tsx": 1,
     "apps/web/components/chrome/keyboard-shortcuts-help.tsx": 1,
-    "apps/web/components/offline/upload-queue-display.tsx": 1,
-    "apps/web/components/share/share-page-cta.tsx": 1,
     "apps/web/components/ui/alert-dialog.tsx": 1,
     "apps/web/components/ui/card.tsx": 1,
     "apps/web/components/ui/dialog.tsx": 1,
@@ -17,16 +13,10 @@
   },
   "rawRadius": {
     "apps/web/components/auth/console-door.tsx": 2,
-    "apps/web/components/library/asset-integrity-banner.tsx": 1,
-    "apps/web/components/library/blob-error-banner.tsx": 1,
     "apps/web/components/ui/checkbox.tsx": 1,
-    "apps/web/components/ui/toggle-group.tsx": 1,
-    "apps/web/components/ui/toggle.tsx": 1,
     "apps/web/components/ui/tooltip.tsx": 1
   },
-  "handRolledLift": {
-    "apps/web/components/sploot/meme-cell.tsx": 2
-  },
+  "handRolledLift": {},
   "bangerStampOutsideSploot": {
     "apps/web/app/styleguide/page.tsx": 4
   },

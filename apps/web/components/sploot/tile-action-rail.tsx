@@ -49,6 +49,7 @@ export function TileActionRail({
         label={banger ? 'remove banger' : 'mark as banger'}
         pressed={banger}
         disabled={disabled}
+        className="max-sm:size-[var(--sploot-touch-target)]"
         onClick={(e) => {
           e.stopPropagation();
           onToggleBanger?.();
@@ -60,6 +61,7 @@ export function TileActionRail({
         <IconButton
           label="share meme"
           disabled={disabled}
+          className="max-sm:size-[var(--sploot-touch-target)]"
           onClick={(e) => {
             e.stopPropagation();
             onShare();
@@ -73,7 +75,7 @@ export function TileActionRail({
         <IconButton
           label="delete meme"
           disabled={disabled}
-          className="hover:!bg-sploot-red hover:!text-white"
+          className="max-sm:size-[var(--sploot-touch-target)] hover:!bg-sploot-red hover:!text-white"
           onClick={(e) => {
             e.stopPropagation();
             onDelete();

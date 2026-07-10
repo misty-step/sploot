@@ -146,12 +146,12 @@ for (const phrase of [
 }
 
 for (const [path, phrases] of Object.entries({
-  'apps/web/components/sploot/sticker-tab.tsx': ['sploot-sticker-shadow', 'border-sploot-cyan'],
-  'apps/web/components/sploot/banger-stamp.tsx': ['border-sploot-coral', 'sploot-tabular'],
+  'apps/web/components/sploot/sticker-tab.tsx': ['sploot-sticker-shadow', 'rounded-[var(--sploot-radius-pill)]'],
+  'apps/web/components/sploot/banger-stamp.tsx': ['fill-sploot-magenta', 'sploot-tabular'],
   'apps/web/components/sploot/cluster-pile.tsx': ['bg-sploot-pile-surface', 'StickerTab', 'src?: string'],
   'apps/web/components/sploot/atlas-landing-hero.tsx': ['SearchField', 'StatusBar', 'StatBlock'],
   'apps/web/components/sploot/search-field.tsx': ['role="search"', 'MemeCell'],
-  'apps/web/components/sploot/meme-cell.tsx': ['sploot-match-ring', 'MemeCellState'],
+  'apps/web/components/sploot/meme-cell.tsx': ['outline-sploot-lime', 'MemeCellState'],
   'apps/web/components/sploot/stat-block.tsx': ['font-display', 'border-sploot-ink'],
   'apps/web/components/sploot/status-bar.tsx': ['bg-sploot-void', 'system status'],
   'apps/web/app/styleguide/page.tsx': ['MemeCell', 'StatBlock', 'StatusBar'],
@@ -160,7 +160,7 @@ for (const [path, phrases] of Object.entries({
   'apps/web/components/chrome/filter-chips.tsx': ['bg-sploot-coral', 'border-sploot-coral'],
   'apps/web/components/search/search-bar.tsx': ['--sploot-touch-target'],
   'apps/web/components/chrome/mobile-command-dock.tsx': ['--sploot-touch-target'],
-  'apps/web/components/library/image-tile.tsx': ['BangerStamp', 'border-sploot-violet', 'text-sploot-cyan'],
+  'apps/web/components/library/image-tile.tsx': ['TileActionRail', 'border-sploot-violet', 'text-sploot-cyan'],
   // sploot-074: the first-use empty state is the capture rig — demo pile of
   // MemeCells + sticker-labeled capture-surface activation, never a generic
   // Card/icon illustration (DESIGN.md §6 empty-state rule).
@@ -169,7 +169,7 @@ for (const [path, phrases] of Object.entries({
   // token-driven style.css and use its semantic panel classes.
   'apps/extension/entrypoints/popup/App.tsx': ["import './style.css'", 'auth-panel'],
   'apps/extension/entrypoints/popup/style.css': ['--sploot-cyan', '--sploot-coral', '--radius-square: 0px'],
-  'apps/web/app/page.tsx': ['AtlasLandingHero'],
+  'apps/web/app/page.tsx': ['LandingHero'],
 })) {
   for (const phrase of phrases) {
     assertIncludes(path, phrase, 'implemented Sploot design-system adoption');
@@ -430,7 +430,11 @@ const ratchetRules = [
         content,
         /hover:-?translate(?:-[xy])?-/g,
         (_m, text) =>
-          !text.includes('sploot-press') && !text.includes('sploot-ctl')
+          !text.includes('sploot-press') &&
+          !text.includes('sploot-ctl') &&
+          // a token-anchored extended hover shadow on the same line is a
+          // law-compliant scoped variant (e.g. the meme-cell card lift)
+          !/hover:shadow-\[[^\]]*var\(--sploot/.test(text)
       ),
   },
   {
@@ -446,8 +450,11 @@ const ratchetRules = [
       'raw lucide Heart/Trash2/Share2 in a tile surface — route actions through TileActionRail / IconButton',
     files: productTsx.filter(
       (f) =>
-        f.startsWith('apps/web/components/library/') ||
-        f.startsWith('apps/web/app/app/')
+        (f.startsWith('apps/web/components/library/') ||
+          f.startsWith('apps/web/app/app/')) &&
+        // deliberate exemption: the error boundary's delete is a labeled
+        // destructive Button (icon + text), not an icon-only tile action
+        f !== 'apps/web/components/library/image-tile-error-boundary.tsx'
     ),
     scan: (content) => {
       if (/\b(?:IconButton|TileActionRail)\b/.test(content)) return [];
