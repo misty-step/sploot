@@ -11,6 +11,7 @@ import { type MemeDoodleKind } from './meme-doodle';
 // console to find the intended sample.
 type Tile = {
   doodle: MemeDoodleKind;
+  src?: string;
   file: string;
   index: string;
   caption: string;
@@ -18,12 +19,12 @@ type Tile = {
 };
 
 const TILES: Tile[] = [
-  { doodle: 'cat', file: 'IMG_4471.png', index: 'v#00471', caption: 'two cats arguing at a dinner table, one yelling', kw: 'cat cats kitten arguing argument yelling angry table dinner two pointing screaming fight' },
-  { doodle: 'fire', file: 'screenshot_2019.png', index: 'v#02019', caption: 'cartoon dog drinking coffee in a burning room', kw: 'this is fine dog fire burning room flames coffee calm disaster everything okay' },
-  { doodle: 'eyes', file: 'reaction_022.jpg', index: 'v#00822', caption: 'side-eye, guy looking at another thing', kw: 'distracted boyfriend looking turning other staring side eye jealous walking by' },
-  { doodle: 'skull', file: 'IMG_9013.png', index: 'v#09013', caption: 'dead. skeleton still waiting on a bench', kw: 'skeleton waiting bench still forever dead bones patient reply text back' },
-  { doodle: 'sparkle', file: 'galaxybrain_4.png', index: 'v#04004', caption: 'chef kiss, glowing brain expanding to a galaxy', kw: 'galaxy brain expanding glowing cosmic genius smart big mind ascend stars chef kiss sparkle' },
-  { doodle: 'hundred', file: 'IMG_3120.png', index: 'v#03120', caption: 'no notes. a perfect hundred', kw: 'hundred 100 no notes perfect score keep it agree facts real top marks' },
+  { doodle: 'cat', src: '/starter-pile/cats-arguing.jpg', file: 'IMG_4471.png', index: 'v#00471', caption: 'two cats arguing at a dinner table, one yelling', kw: 'cat cats kitten arguing argument yelling angry table dinner two pointing screaming fight' },
+  { doodle: 'fire', src: '/starter-pile/dog-burning-room.jpg', file: 'screenshot_2019.png', index: 'v#02019', caption: 'cartoon dog drinking coffee in a burning room', kw: 'this is fine dog fire burning room flames coffee calm disaster everything okay' },
+  { doodle: 'eyes', src: '/starter-pile/side-eye-cat.jpg', file: 'reaction_022.jpg', index: 'v#00822', caption: 'side-eye, guy looking at another thing', kw: 'distracted boyfriend looking turning other staring side eye jealous walking by' },
+  { doodle: 'skull', src: '/starter-pile/skeleton-bench.jpg', file: 'IMG_9013.png', index: 'v#09013', caption: 'dead. skeleton still waiting on a bench', kw: 'skeleton waiting bench still forever dead bones patient reply text back' },
+  { doodle: 'sparkle', src: '/starter-pile/galaxy-brain.jpg', file: 'galaxybrain_4.png', index: 'v#04004', caption: 'chef kiss, glowing brain expanding to a galaxy', kw: 'galaxy brain expanding glowing cosmic genius smart big mind ascend stars chef kiss sparkle' },
+  { doodle: 'hundred', src: '/starter-pile/hundred-points.jpg', file: 'IMG_3120.png', index: 'v#03120', caption: 'no notes. a perfect hundred', kw: 'hundred 100 no notes perfect score keep it agree facts real top marks' },
   { doodle: 'bubble', file: 'mood_final2.png', index: 'v#08431', caption: 'group chat going off, what is happening', kw: 'group chat groupchat bubble text message reply notification what huh confused' },
   { doodle: 'sob', file: 'IMG_6004.png', index: 'v#06004', caption: 'crying, it is what it is', kw: 'crying sob tears sad fine mood feelings hiding it is what it is jordan' },
 ];
@@ -218,6 +219,8 @@ export function SearchField() {
                   file={tile.file}
                   index={tile.index}
                   doodle={tile.doodle}
+                  src={tile.src}
+                  mediaAlt={tile.caption}
                   caption={tile.caption}
                   score={cell.score}
                   state={cell.state}

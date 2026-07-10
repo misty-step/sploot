@@ -52,7 +52,13 @@ export function TileActionRail({
         label={banger ? 'remove banger' : 'mark as banger'}
         pressed={banger}
         disabled={disabled}
-        className="max-sm:size-[var(--sploot-touch-target)]"
+        className={cn(
+          'max-sm:size-[var(--sploot-touch-target)]',
+          // Operator rule: the favorited state must be unmistakable — the
+          // filled heart glows bubblegum in both themes (overrides the
+          // generic pressed yellow, which the theme toggle keeps).
+          banger && '!bg-transparent !text-sploot-magenta'
+        )}
         onClick={(e) => {
           e.stopPropagation();
           onToggleBanger?.();

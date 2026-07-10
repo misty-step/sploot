@@ -36,6 +36,32 @@ function renderTile(asset: Asset) {
 }
 
 describe('animated media tile rendering', () => {
+  it('keeps known-aspect media complete inside its natural-ratio frame', () => {
+    const { container } = renderTile({
+      ...baseAsset,
+      width: 1280,
+      height: 720,
+    });
+
+    expect(screen.getByAltText('original.jpg')).toHaveClass('object-contain');
+    expect(screen.getByAltText('original.jpg')).not.toHaveClass('object-cover');
+    expect(container.querySelector('[style*="aspect-ratio"]')).toHaveStyle({
+      aspectRatio: '1280 / 720',
+    });
+  });
+
+  it('letterboxes media with missing dimensions instead of cropping it', () => {
+    const { container } = renderTile({
+      ...baseAsset,
+      width: null,
+      height: null,
+    });
+
+    expect(screen.getByAltText('original.jpg')).toHaveClass('object-contain');
+    expect(screen.getByAltText('original.jpg')).not.toHaveClass('object-cover');
+    expect(container.querySelector('.aspect-square')).toBeInTheDocument();
+  });
+
   it('renders animated gifs from the original blob instead of the static thumbnail', () => {
     renderTile({
       ...baseAsset,

@@ -394,7 +394,9 @@ function ImageTileComponent({
         <div
           className={cn(
             'relative m-2 mb-0 overflow-hidden rounded-[var(--sploot-radius-inner)] border-2 border-sploot-ink bg-sploot-paper-warm',
-            !preserveAspectRatio && 'aspect-square'
+            // No known dimensions -> stable square letterbox; the media still
+            // renders complete via object-contain (never cropped).
+            (!preserveAspectRatio || !aspectRatioStyle) && 'aspect-square'
           )}
           style={aspectRatioStyle}
         >
