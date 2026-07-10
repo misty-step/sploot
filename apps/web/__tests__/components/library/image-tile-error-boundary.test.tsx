@@ -212,7 +212,7 @@ describe('ImageTileErrorBoundary', () => {
       );
 
       const deleteButton = screen.getByText('delete').closest('button');
-      expect(deleteButton).toHaveClass('bg-sploot-red', 'text-white');
+      expect(deleteButton).toHaveClass('bg-sploot-red', 'text-sploot-on-red');
     });
   });
 
