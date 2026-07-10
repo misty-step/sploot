@@ -57,8 +57,8 @@ describe('ImageTileErrorBoundary', () => {
         </ImageTileErrorBoundary>
       );
 
-      expect(screen.queryByText('Failed to load')).not.toBeInTheDocument();
-      expect(screen.queryByText('Retry')).not.toBeInTheDocument();
+      expect(screen.queryByText('failed to load')).not.toBeInTheDocument();
+      expect(screen.queryByText('retry')).not.toBeInTheDocument();
     });
   });
 
@@ -70,8 +70,8 @@ describe('ImageTileErrorBoundary', () => {
         </ImageTileErrorBoundary>
       );
 
-      expect(screen.getByText('Failed to load')).toBeInTheDocument();
-      expect(screen.getByText('Retry')).toBeInTheDocument();
+      expect(screen.getByText('failed to load')).toBeInTheDocument();
+      expect(screen.getByText('retry')).toBeInTheDocument();
     });
 
     it('should display tombstone icon when error occurs', () => {
@@ -118,7 +118,7 @@ describe('ImageTileErrorBoundary', () => {
         </ImageTileErrorBoundary>
       );
 
-      expect(screen.getByText('Retry')).toBeInTheDocument();
+      expect(screen.getByText('retry')).toBeInTheDocument();
     });
 
     it('should reset error boundary state when retry is clicked', async () => {
@@ -131,17 +131,17 @@ describe('ImageTileErrorBoundary', () => {
       );
 
       // Error state should be shown
-      expect(screen.getByText('Failed to load')).toBeInTheDocument();
+      expect(screen.getByText('failed to load')).toBeInTheDocument();
 
       // Click retry button - this resets the error boundary's internal state
-      const retryButton = screen.getByText('Retry');
+      const retryButton = screen.getByText('retry');
       await user.click(retryButton);
 
       // The error boundary will try to re-render the child
       // Since the child still throws, it will catch the error again
       // But the retry button successfully called setState to reset hasError
       // This is the expected behavior - retry gives the child another chance
-      expect(screen.getByText('Failed to load')).toBeInTheDocument();
+      expect(screen.getByText('failed to load')).toBeInTheDocument();
     });
 
     it('should have accessible title on retry button', () => {
@@ -151,7 +151,7 @@ describe('ImageTileErrorBoundary', () => {
         </ImageTileErrorBoundary>
       );
 
-      const retryButton = screen.getByText('Retry').closest('button');
+      const retryButton = screen.getByText('retry').closest('button');
       expect(retryButton).toHaveAttribute('title', 'Retry loading image');
     });
   });
@@ -164,7 +164,7 @@ describe('ImageTileErrorBoundary', () => {
         </ImageTileErrorBoundary>
       );
 
-      expect(screen.getByText('Delete')).toBeInTheDocument();
+      expect(screen.getByText('delete')).toBeInTheDocument();
     });
 
     it('should not render delete button when onDelete is not provided', () => {
@@ -174,7 +174,7 @@ describe('ImageTileErrorBoundary', () => {
         </ImageTileErrorBoundary>
       );
 
-      expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+      expect(screen.queryByText('delete')).not.toBeInTheDocument();
     });
 
     it('should call onDelete with asset id when delete button is clicked', async () => {
@@ -186,7 +186,7 @@ describe('ImageTileErrorBoundary', () => {
         </ImageTileErrorBoundary>
       );
 
-      const deleteButton = screen.getByText('Delete');
+      const deleteButton = screen.getByText('delete');
       await user.click(deleteButton);
 
       expect(mockOnDelete).toHaveBeenCalledWith('test-asset-id');
@@ -200,19 +200,19 @@ describe('ImageTileErrorBoundary', () => {
         </ImageTileErrorBoundary>
       );
 
-      const deleteButton = screen.getByText('Delete').closest('button');
+      const deleteButton = screen.getByText('delete').closest('button');
       expect(deleteButton).toHaveAttribute('title', 'Delete broken image');
     });
 
-    it('should have warning styling on delete button', () => {
+    it('should have destructive toy styling on delete button', () => {
       render(
         <ImageTileErrorBoundary asset={mockAsset} onDelete={mockOnDelete}>
           <ThrowError shouldThrow={true} />
         </ImageTileErrorBoundary>
       );
 
-      const deleteButton = screen.getByText('Delete').closest('button');
-      expect(deleteButton).toHaveClass('bg-red-500/10', 'text-red-400');
+      const deleteButton = screen.getByText('delete').closest('button');
+      expect(deleteButton).toHaveClass('bg-sploot-red', 'text-sploot-on-red');
     });
   });
 
@@ -225,18 +225,18 @@ describe('ImageTileErrorBoundary', () => {
       );
 
       const fallbackContainer = container.querySelector('.aspect-square');
-      expect(fallbackContainer).toHaveClass('bg-card', 'overflow-hidden');
+      expect(fallbackContainer).toHaveClass('bg-sploot-panel', 'overflow-hidden');
     });
 
-    it('should render retry button with primary styling', () => {
+    it('should render retry button with the compact toy variant', () => {
       render(
         <ImageTileErrorBoundary asset={mockAsset}>
           <ThrowError shouldThrow={true} />
         </ImageTileErrorBoundary>
       );
 
-      const retryButton = screen.getByText('Retry').closest('button');
-      expect(retryButton).toHaveClass('bg-primary/10', 'text-primary');
+      const retryButton = screen.getByText('retry').closest('button');
+      expect(retryButton).toHaveClass('bg-sploot-panel', 'text-sploot-ink');
     });
   });
 
@@ -248,8 +248,8 @@ describe('ImageTileErrorBoundary', () => {
         </ImageTileErrorBoundary>
       );
 
-      const retryButton = screen.getByText('Retry').closest('button');
-      const deleteButton = screen.getByText('Delete').closest('button');
+      const retryButton = screen.getByText('retry').closest('button');
+      const deleteButton = screen.getByText('delete').closest('button');
 
       expect(retryButton).toHaveAttribute('type', 'button');
       expect(deleteButton).toHaveAttribute('type', 'button');
@@ -262,11 +262,11 @@ describe('ImageTileErrorBoundary', () => {
         </ImageTileErrorBoundary>
       );
 
-      const retryButton = screen.getByText('Retry').closest('button');
-      const deleteButton = screen.getByText('Delete').closest('button');
+      const retryButton = screen.getByText('retry').closest('button');
+      const deleteButton = screen.getByText('delete').closest('button');
 
-      expect(retryButton).toHaveClass('focus-visible:outline');
-      expect(deleteButton).toHaveClass('focus-visible:outline');
+      expect(retryButton).toHaveClass('focus-visible:outline-4');
+      expect(deleteButton).toHaveClass('focus-visible:outline-4');
     });
   });
 

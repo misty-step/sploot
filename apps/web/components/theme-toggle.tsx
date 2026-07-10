@@ -4,10 +4,13 @@ import * as React from 'react';
 import { Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/sploot';
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  // resolvedTheme, not theme: with the default "system" preference, `theme`
+  // stays "system" while the page actually renders dark — the control must
+  // reflect the resolved state or it misreports on dark-OS machines.
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
 
   // Avoid hydration mismatch by only rendering after mount
@@ -16,20 +19,18 @@ export function ThemeToggle() {
   }, []);
 
   if (!mounted) {
-    return <Button variant="ghost" size="icon" className="size-8" />;
+    return <IconButton label="switch theme" disabled />;
   }
 
+  const isDark = resolvedTheme === 'dark';
+
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="size-8"
-      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-      aria-label="Toggle theme"
+    <IconButton
+      label="switch theme"
+      pressed={isDark}
+      onClick={() => setTheme(isDark ? 'light' : 'dark')}
     >
-      <Sun className="size-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-      <Moon className="absolute size-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-      <span className="sr-only">Toggle theme</span>
-    </Button>
+      {isDark ? <Moon /> : <Sun />}
+    </IconButton>
   );
 }

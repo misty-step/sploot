@@ -148,7 +148,7 @@ export function GridDensityToggle({
 
               // Colors and states
               isActive
-                ? 'bg-primary text-white shadow-lg shadow-primary/20'
+                ? 'bg-sploot-blue text-sploot-on-blue'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted',
 
               // Touch target optimization
@@ -172,7 +172,7 @@ export function GridDensityToggle({
             {/* Active indicator dot */}
             {isActive && (
               <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
-                <div className="w-1 h-1 bg-green-600" />
+                <div className="w-1 h-1 bg-sploot-lime" />
               </div>
             )}
           </button>

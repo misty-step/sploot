@@ -156,14 +156,14 @@ describe('SharePageMetadata', () => {
       const { container } = render(<SharePageMetadata size={1024} />);
 
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper).toHaveClass('font-jetbrains-mono');
+      expect(wrapper).toHaveClass('font-mono');
     });
 
     it('should apply gray text color', () => {
       const { container } = render(<SharePageMetadata size={1024} />);
 
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper).toHaveClass('text-gray-400');
+      expect(wrapper).toHaveClass('text-white/60');
     });
 
     it('should apply small text size', () => {
@@ -192,7 +192,7 @@ describe('SharePageMetadata', () => {
     it('should apply darker gray to labels', () => {
       const { container } = render(<SharePageMetadata size={1024} />);
 
-      const label = container.querySelector('.text-gray-500');
+      const label = container.querySelector('[class*="text-white/50"]');
       expect(label).toBeInTheDocument();
       expect(label?.textContent).toBe('Size:');
     });
@@ -200,7 +200,7 @@ describe('SharePageMetadata', () => {
     it('should apply lighter gray to values', () => {
       const { container } = render(<SharePageMetadata size={1024} />);
 
-      const value = container.querySelector('.text-gray-300');
+      const value = container.querySelector('[class*="text-white/85"]');
       expect(value).toBeInTheDocument();
       expect(value?.textContent).toBe('1.0KB');
     });

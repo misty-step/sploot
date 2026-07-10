@@ -1,0 +1,33 @@
+
+> web@0.1.0 qa:seed /Users/phaedrus/Development/sploot/apps/web
+> tsx scripts/qa-seed.ts
+
+{"timestamp":"2026-07-10T15:14:24.143Z","level":"info","context":"db:prisma-initialized","metadata":{"database_url_configured":true,"database_url_redacted":"postgresql:****@localhost:5432/sploot_test?sslmode=disable","database_hostname":"localhost","database_params":"?sslmode=disable","is_pooler_endpoint":false,"has_pgbouncer_param":false,"node_version":"v22.15.0","platform":"darwin","vercel_env":"unknown","prisma_version":"6.19.3"},"environment":{}}
+[perf] endTiming() called for 'db:TextEmbeddingCache:upsert' without matching startTiming()
+[Vercel Web Analytics] Can't find VERCEL_URL in environment variables.
+[Vercel Web Analytics] Can't find VERCEL_URL in environment variables.
+[perf] endTiming() called for 'db:TextEmbeddingCache:upsert' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:upsert' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:upsert' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:upsert' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:upsert' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:upsert' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:upsert' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:upsert' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:upsert' without matching startTiming()
+[Vercel Web Analytics] Can't find VERCEL_URL in environment variables.
+[perf] endTiming() called for 'db:TextEmbeddingCache:upsert' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:deleteMany' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:deleteMany' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:deleteMany' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:deleteMany' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:deleteMany' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:deleteMany' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:deleteMany' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:deleteMany' without matching startTiming()
+[perf] endTiming() called for 'db:TextEmbeddingCache:deleteMany' without matching startTiming()
+Seeded 24 assets for user "qa-design-user" (including GIF/video fixtures when count >= 2).
+Seeded deterministic 768d embeddings for automatic piles.
+Media in public/qa-blob-seed/; rows point at https://sploot-qa-seed.public.blob.vercel-storage.com.
+Run the dev server with SPLOOT_QA_AUTH_MODE=enabled so the QA image loader is active.
+[Vercel Web Analytics] Can't find VERCEL_URL in environment variables.

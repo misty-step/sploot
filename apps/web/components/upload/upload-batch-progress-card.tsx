@@ -81,7 +81,7 @@ export function UploadBatchProgressCard<
 
         <div className="grid grid-cols-4 gap-2 mt-3">
           <div className="text-center">
-            <p className="text-green-500 text-lg font-semibold">
+            <p className="text-sploot-lime text-lg font-semibold">
               {stats.completed}
             </p>
             <p className="text-muted-foreground text-xs">Complete</p>

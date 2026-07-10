@@ -29,7 +29,7 @@ export function SharePageLayout({
   return (
     <div
       className={cn(
-        'min-h-screen bg-black',
+        'min-h-screen bg-sploot-void',
         'flex flex-col',
         // Safe area insets for iOS notch/bottom bar
         'pb-[env(safe-area-inset-bottom)]',
@@ -43,7 +43,7 @@ export function SharePageLayout({
           'flex items-center justify-between',
           'px-4 py-3',
           'sm:px-6 sm:py-4',
-          'border-b border-gray-900'
+          'border-b border-white/10'
         )}
       >
         <div className="flex items-center gap-2">
@@ -73,7 +73,7 @@ export function SharePageLayout({
             'flex items-center justify-center',
             'px-4 py-3',
             'sm:px-6 sm:py-4',
-            'border-t border-gray-900'
+            'border-t border-white/10'
           )}
         >
           {metadata}

@@ -122,7 +122,7 @@ export default function TagPage({
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="bg-card border-b border-border px-8 py-6">
+      <header className="bg-card border-b-[3px] border-sploot-ink px-8 py-6">
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-3 mb-2">
@@ -131,7 +131,7 @@ export default function TagPage({
               </h1>
               {tag.color && (
                 <span
-                  className="w-4 h-4"
+                  className="w-4 h-4 rounded-[var(--sploot-radius-ctl)] border-2 border-sploot-ink"
                   style={{ backgroundColor: tag.color }}
                 />
               )}

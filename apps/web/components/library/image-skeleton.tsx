@@ -16,22 +16,27 @@ export function ImageSkeleton({ className, variant = 'tile', aspectRatio = 'aspe
   if (variant === 'list') {
     return (
       <div className={cn('flex items-center gap-4 p-4', className)}>
-        <div className="h-16 w-16 flex-shrink-0 bg-muted animate-pulse" style={{ animationDelay: `${delay}ms` }} />
+        <div className="h-16 w-16 flex-shrink-0 rounded-[var(--sploot-radius-inner)] bg-sploot-paper-warm animate-pulse" style={{ animationDelay: `${delay}ms` }} />
         <div className="flex-1 space-y-2">
-          <div className="h-4 w-3/4 bg-muted animate-pulse" style={{ animationDelay: `${delay}ms` }} />
-          <div className="h-3 w-1/2 bg-muted animate-pulse" style={{ animationDelay: `${delay}ms` }} />
+          <div className="h-4 w-3/4 rounded-[var(--sploot-radius-ctl)] bg-sploot-paper-warm animate-pulse" style={{ animationDelay: `${delay}ms` }} />
+          <div className="h-3 w-1/2 rounded-[var(--sploot-radius-ctl)] bg-sploot-paper-warm animate-pulse" style={{ animationDelay: `${delay}ms` }} />
         </div>
       </div>
     );
   }
 
-  // Default tile variant - shimmer effect with no border
+  // Default tile variant — a quiet toy-card panel that pulses while it waits.
   return (
-    <div className={cn('overflow-hidden', className)}>
+    <div
+      className={cn(
+        'overflow-hidden rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink bg-sploot-panel sploot-shadow-sm',
+        className
+      )}
+    >
       <div
         className={cn(
           aspectRatio,
-          'w-full bg-gradient-to-r from-muted via-muted-foreground/5 to-muted animate-shimmer'
+          'm-2 rounded-[var(--sploot-radius-inner)] bg-sploot-paper-warm animate-pulse'
         )}
         style={{ animationDelay: `${delay}ms` }}
       />
@@ -109,10 +114,10 @@ export function OptimizedImageSkeleton({
   if (variant === 'list') {
     return (
       <div className={cn('flex items-center gap-4 p-4', baseClasses)}>
-        <div className="h-16 w-16 flex-shrink-0 bg-muted animate-pulse" />
+        <div className="h-16 w-16 flex-shrink-0 rounded-[var(--sploot-radius-inner)] bg-sploot-paper-warm animate-pulse" />
         <div className="flex-1 space-y-2">
-          <div className="h-4 w-3/4 bg-muted animate-pulse" />
-          <div className="h-3 w-1/2 bg-muted animate-pulse opacity-70" />
+          <div className="h-4 w-3/4 rounded-[var(--sploot-radius-ctl)] bg-sploot-paper-warm animate-pulse" />
+          <div className="h-3 w-1/2 rounded-[var(--sploot-radius-ctl)] bg-sploot-paper-warm animate-pulse opacity-70" />
         </div>
       </div>
     );
@@ -120,11 +125,16 @@ export function OptimizedImageSkeleton({
 
   // Default tile variant with optimized transitions
   return (
-    <div className={cn('overflow-hidden', baseClasses)}>
+    <div
+      className={cn(
+        'overflow-hidden rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink bg-sploot-panel sploot-shadow-sm',
+        baseClasses
+      )}
+    >
       <div
         className={cn(
           aspectRatio,
-          'w-full bg-gradient-to-r from-muted via-muted-foreground/5 to-muted animate-shimmer'
+          'm-2 rounded-[var(--sploot-radius-inner)] bg-sploot-paper-warm animate-pulse'
         )}
       />
     </div>

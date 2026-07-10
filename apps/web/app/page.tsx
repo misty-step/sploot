@@ -3,7 +3,8 @@ import Link from "next/link";
 import { getAuth } from "@/lib/auth/server";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { GlobalFooter } from "@/components/global-footer";
-import { AtlasLandingHero } from "@/components/sploot";
+import { LandingHero } from "@/components/landing/landing-hero";
+import { LandingStory } from "@/components/landing/landing-story";
 
 export default async function Home() {
   const { userId } = await getAuth();
@@ -14,20 +15,23 @@ export default async function Home() {
   }
 
   return (
-    <div className="relative min-h-screen bg-background text-foreground">
+    <div className="relative min-h-screen bg-sploot-workbench text-sploot-ink">
       {/* Top navigation */}
-      <nav className="fixed top-0 right-0 z-50 flex items-center gap-4 p-6">
+      <nav className="fixed top-0 right-0 z-50 flex items-center gap-3 p-5 sm:p-6">
         <ThemeToggle />
         <Link
           href="/sign-in"
-          className="font-mono text-sm uppercase tracking-normal text-muted-foreground transition-colors hover:text-sploot-cyan"
+          className="sploot-press-sm rounded-full border-[2px] border-sploot-ink bg-sploot-panel px-4 py-2 font-sans text-sm font-extrabold lowercase tracking-normal text-sploot-ink"
         >
           sign in
         </Link>
       </nav>
 
       {/* The whole product, above the fold: a search box for your memes */}
-      <AtlasLandingHero />
+      <LandingHero />
+
+      {/* Below the fold: how the pile works */}
+      <LandingStory />
 
       <GlobalFooter />
     </div>

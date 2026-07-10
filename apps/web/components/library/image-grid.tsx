@@ -260,10 +260,10 @@ export function ImageGrid({
           </div>
         )}
 
-        {/* End of list indicator */}
+        {/* End of list indicator — a little toy sticker */}
         {!hasMore && assets.length > 0 && (
           <div className="flex justify-center py-6">
-            <span className="inline-block -rotate-1 border border-border bg-card px-3 py-1 font-mono text-xs uppercase tracking-wider text-muted-foreground sploot-sticker-shadow">
+            <span className="inline-block -rotate-1 rounded-[var(--sploot-radius-pill)] border-[3px] border-sploot-ink bg-sploot-yellow px-4 py-1.5 font-mono text-xs lowercase text-[#1c1547] sploot-shadow-sm">
               end of the pile. go touch grass.
             </span>
           </div>

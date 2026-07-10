@@ -75,7 +75,7 @@ function SurfaceRow({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 border-[3px] border-sploot-ink bg-sploot-paper px-3 py-2">
+    <div className="flex items-center gap-3 rounded-[var(--sploot-radius-inner)] border-[3px] border-sploot-ink bg-sploot-paper px-3 py-2">
       <SurfaceLed on={on} />
       <div className="min-w-0 flex-1 text-left">
         <div className="font-mono text-xs font-bold uppercase tracking-normal text-sploot-ink">{label}</div>
@@ -317,7 +317,7 @@ export function EmptyState({
     const isSearch = variant === 'search';
     return (
       <div className={cn('flex h-full items-center justify-center px-4 py-8', className)}>
-        <div className="w-full max-w-md border-[4px] border-sploot-ink bg-sploot-paper sploot-shadow">
+        <div className="w-full max-w-md overflow-hidden rounded-[var(--sploot-radius)] border-[4px] border-sploot-ink bg-sploot-paper sploot-shadow">
           <div className="flex items-center justify-between border-b-[4px] border-sploot-ink bg-sploot-ink px-3 py-1.5 font-mono text-[0.65rem] font-bold uppercase tracking-normal text-sploot-paper">
             <span>{isSearch ? 'sploot.search' : 'pile.filters'}</span>
             <span aria-hidden="true">■ ■ ■</span>
@@ -354,7 +354,7 @@ export function EmptyState({
       <section
         aria-label="first-run capture setup"
         className={cn(
-          'w-full max-w-3xl border-[4px] border-sploot-ink bg-sploot-paper-warm sploot-shadow-lg transition-transform duration-[var(--sploot-motion-base)] ease-[var(--sploot-ease-out)]',
+          'w-full max-w-3xl overflow-hidden rounded-[var(--sploot-radius)] border-[4px] border-sploot-ink bg-sploot-paper-warm sploot-shadow-lg transition-transform duration-[var(--sploot-motion-base)] ease-[var(--sploot-ease-out)]',
           isDragging && 'scale-[1.01] shadow-[0_0_0_4px_var(--sploot-lime)]'
         )}
       >

@@ -1,51 +1,51 @@
 import { ReactNode } from "react";
 
 /**
- * The console door — sploot's auth surfaces framed as a labeled instrument
- * console (DESIGN.md §4: "the search box is a labeled console with an ink
- * titlebar; the machinery is on display"). Winner of the sploot-032 design
- * lab (explorations/lab-032-auth-workbench.html, option 1): quiet
- * aesthetic-substrate chrome — hairlines, wash, steered cyan — with the
- * machinery strip on display and zero glassmorphism.
+ * The auth door — sploot's sign-in / sign-up surfaces (lab-034, AFD-8
+ * "ink minis"). A single centered toy card on the dotted candy shelf: rounded
+ * ink shell, drop-height elevation, a quiet privacy line. No fake window
+ * chrome, no glassmorphism. The Clerk widget lives inside unchanged; only the
+ * room around it is toybox now. Historically this was the sploot-032
+ * auth.console; the toybox recut keeps the machinery honest but drops the
+ * brutalist titlebar.
  *
- * Everything reads the shadcn semantic layer, which resolves to the
- * @misty-step/aesthetic --ae-* substrate (globals.css), so the door follows
- * light/dark automatically.
+ * Everything reads the shadcn semantic layer, which now resolves to the toybox
+ * --sploot-* tokens (globals.css), so the door follows light/dark automatically.
  */
 
-/** Clerk appearance mapped onto the substrate: square corners, hairline
- *  borders, steered-cyan primary, mono field labels. No violet, no blur. */
+/** Clerk appearance mapped onto the toybox: pill buttons and inputs, 3px ink
+ *  borders, candy-blue primary, mono field labels. No violet, no blur. */
 export const consoleDoorAppearance = {
   variables: {
-    // steered accent (light value; the trailing-! utilities below carry the
-    // dark flip through the semantic tokens)
-    colorPrimary: "#0c6a84",
-    borderRadius: "0px",
+    // candy-blue primary (light value; the trailing-! utilities below carry the
+    // theme flip through the semantic tokens)
+    colorPrimary: "#087bc1",
+    borderRadius: "9999px",
   },
   elements: {
     // Clerk injects its own styles at high specificity, so the semantic-token
     // utilities ride the important flag (Tailwind v4 trailing !) to win.
     rootBox: "w-full",
-    cardBox: "w-full rounded-none! border-0! shadow-none!",
-    card: "bg-background! rounded-none! border-0! shadow-none!",
-    headerTitle: "text-foreground!",
-    headerSubtitle: "text-muted-foreground!",
+    cardBox: "w-full rounded-none! border-0! shadow-none! bg-transparent!",
+    card: "bg-transparent! rounded-none! border-0! shadow-none!",
+    headerTitle: "font-display text-foreground! tracking-normal",
+    headerSubtitle: "font-sans text-muted-foreground!",
     socialButtonsBlockButton:
-      "bg-secondary! hover:bg-muted! border! border-border! text-foreground! rounded-none! shadow-none!",
+      "bg-secondary! hover:bg-accent! border-[2px]! border-border! text-foreground! rounded-full! shadow-none! font-extrabold transition-colors",
     dividerLine: "bg-border!",
-    dividerText: "font-mono text-[11px] uppercase text-muted-foreground!",
+    dividerText: "font-mono text-[11px] lowercase text-muted-foreground!",
     formFieldLabel:
-      "font-mono text-[11px] uppercase tracking-wide text-muted-foreground!",
+      "font-mono text-[11px] lowercase tracking-normal text-muted-foreground!",
     formFieldInput:
-      "bg-background! border! border-border! rounded-none! text-foreground! shadow-none! focus:border-primary!",
+      "bg-background! border-[2px]! border-border! rounded-full! text-foreground! shadow-none! focus:border-primary!",
     formButtonPrimary:
-      "bg-primary! hover:bg-primary/90! text-primary-foreground! rounded-none! shadow-none! transition-colors",
+      "bg-primary! hover:bg-primary/90! text-primary-foreground! rounded-full! border-[2px]! border-border! shadow-none! font-extrabold transition-colors",
     formFieldInputShowPasswordButton:
       "text-muted-foreground! hover:text-foreground!",
     identityPreviewEditButtonIcon: "text-primary!",
-    footerActionLink: "text-primary! hover:text-primary/80!",
-    footer: "bg-background!",
-    footerAction: "bg-background!",
+    footerActionLink: "text-primary! hover:text-primary/80! font-extrabold",
+    footer: "bg-transparent!",
+    footerAction: "bg-transparent!",
     footerActionText: "text-muted-foreground!",
   },
   layout: {
@@ -55,26 +55,26 @@ export const consoleDoorAppearance = {
 };
 
 interface ConsoleDoorProps {
-  /** The route shown in the machinery strip, e.g. "/sign-in". */
-  route: string;
   children: ReactNode;
 }
 
-/** Ink titlebar + hairline frame + machinery strip around a Clerk card. */
-export function ConsoleDoor({ route, children }: ConsoleDoorProps) {
+/** Dotted candy shelf backdrop + centered rounded toy card around a Clerk widget. */
+export function ConsoleDoor({ children }: ConsoleDoorProps) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-secondary px-4 py-12">
-      <div className="w-full max-w-md border border-foreground bg-background">
-        <div className="flex items-center justify-between bg-foreground px-3 py-1.5 font-mono text-[11px] uppercase tracking-wide text-background">
-          <span>sploot / auth.console</span>
-          <span aria-hidden="true">&#9679; ready</span>
+    <div className="flex min-h-screen items-center justify-center bg-sploot-workbench px-4 py-12">
+      <div className="w-full max-w-md rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink bg-sploot-panel p-6 sploot-shadow-lg sm:p-8">
+        <div className="mb-6 flex flex-col items-center gap-1 text-center">
+          <span className="font-display text-3xl lowercase tracking-normal text-sploot-ink">
+            sploot
+          </span>
+          <span className="font-mono text-[11px] lowercase tracking-normal text-sploot-ink/60">
+            your private meme library
+          </span>
         </div>
         <div className="flex justify-center [&>div]:w-full">{children}</div>
-        <div className="flex gap-4 border-t border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground">
-          <span>route: {route}</span>
-          <span>auth: clerk</span>
-          <span>mode: private</span>
-        </div>
+        <p className="mt-6 text-center font-mono text-[11px] lowercase tracking-normal text-sploot-ink/55">
+          private library. only you can see your pile.
+        </p>
       </div>
     </div>
   );

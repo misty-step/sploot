@@ -144,26 +144,26 @@ export function UploadDropZone({
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
         className={cn(
-          'relative border-[8px] border-solid brutalist-corners transition-all duration-200 cursor-pointer',
-          'bg-diagonal-stripes',
-          'hover:border-electric-lime hover:bg-black',
+          'relative border-[3px] border-dashed border-sploot-ink rounded-[var(--sploot-radius)] transition-all duration-200 cursor-pointer',
+          'bg-sploot-paper-warm shadow-none',
+          'hover:border-sploot-blue hover:bg-sploot-yellow/20',
           isDragging
-            ? 'border-electric-lime bg-black scale-[1.02] neon-glow-lime'
-            : 'border-electric-lime',
+            ? 'border-sploot-blue bg-sploot-yellow/30 scale-[1.01]'
+            : 'border-sploot-ink',
           isProcessingPulse && 'animate-pulse'
         )}
       >
         {/* Preparing overlay */}
         {isPreparing && (
-          <div className="absolute inset-0 z-10 bg-black/95 flex flex-col items-center justify-center animate-in fade-in duration-200 brutalist-corners">
-            <Loader2 className="size-8 text-electric-lime animate-spin mb-3" />
+          <div className="absolute inset-0 z-10 bg-sploot-panel/95 flex flex-col items-center justify-center animate-in fade-in duration-200 rounded-[var(--sploot-radius)]">
+            <Loader2 className="size-8 text-sploot-blue animate-spin mb-3" />
             <p
-              className="text-3xl mb-2 tracking-wider text-electric-lime"
+              className="text-3xl mb-2 tracking-wider text-sploot-ink"
               style={{ fontFamily: "var(--font-bebas-neue)" }}
             >
               PREPARING {preparingFileCount} {preparingFileCount === 1 ? 'FILE' : 'FILES'}...
             </p>
-            <p className="font-mono text-sm text-muted-foreground uppercase tracking-wider">
+            <p className="text-sm text-muted-foreground">
               {preparingTotalSize < 1024 * 1024
                 ? `${(preparingTotalSize / 1024).toFixed(0)} KB`
                 : `${(preparingTotalSize / (1024 * 1024)).toFixed(1)} MB`}
@@ -172,11 +172,11 @@ export function UploadDropZone({
         )}
         <CardContent className="flex flex-col items-center justify-center py-12">
           <div className={cn(
-            'size-20 mb-6 brutalist-corners flex items-center justify-center transition-all duration-200',
-            'brutalist-border',
-            isDragging ? 'border-electric-lime bg-black scale-110' : 'border-muted-foreground bg-black'
+            'size-20 mb-6 rounded-[var(--sploot-radius-inner)] flex items-center justify-center transition-all duration-200',
+            'border-[3px] border-sploot-ink',
+            isDragging ? 'bg-sploot-yellow scale-110' : 'bg-sploot-panel'
           )}>
-            <Upload className={cn('size-10 transition-colors', isDragging ? 'text-electric-lime' : 'text-muted-foreground')} strokeWidth={3} />
+            <Upload className={cn('size-10 transition-colors', isDragging ? 'text-sploot-blue' : 'text-muted-foreground')} strokeWidth={2.5} />
           </div>
 
           <h2
@@ -184,15 +184,15 @@ export function UploadDropZone({
             style={{ fontFamily: "var(--font-bebas-neue)" }}
           >
             {isDragging ? (
-              <span className="text-electric-lime">DROP MEMES HERE</span>
+              <span className="text-sploot-blue">DROP MEMES HERE</span>
             ) : (
               <span className="text-muted-foreground">DRAG & DROP MEMES</span>
             )}
           </h2>
-          <p className="font-mono text-sm text-muted-foreground mb-4 uppercase tracking-wider">
+          <p className="text-sm text-muted-foreground mb-4">
             or click to browse • paste an image or its url
           </p>
-          <p className="font-mono text-xs text-muted-foreground/60 uppercase tracking-wider">
+          <p className="font-mono text-xs text-muted-foreground/60">
             JPEG, PNG, WebP, GIF, MP4, WebM • zips & bookmark exports too • Max {UPLOAD.maxSizeMB}MB per file
           </p>
         </CardContent>

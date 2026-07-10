@@ -8,12 +8,11 @@ import { error as logError } from '@/lib/logger';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
 import { useBlobCircuitBreaker } from '@/contexts/blob-circuit-breaker-context';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Heart, Trash2, ImageOff, Loader2, AlertCircle, Clock } from 'lucide-react';
+import { ImageOff, Trash2, Loader2, AlertCircle, Clock } from 'lucide-react';
 import type { Asset } from '@/lib/types';
-import { ShareButton } from './share-button';
+import { useShareMeme } from './share-button';
 import { logger } from '@/lib/observability-logger';
-import { BangerStamp } from '@/components/sploot';
+import { TileActionRail } from '@/components/sploot';
 import { isAnimatedImageMimeType, isVideoMimeType } from '@sploot/common';
 import { resolveQaSeedSrc } from '@/lib/qa/qa-image-loader';
 import { SIMILARITY_MATCH_BOUNDARY, SIMILARITY_NEAR_BOUNDARY } from '@/lib/search-config';
@@ -170,8 +169,14 @@ function ImageTileComponent({
     return { aspectRatio: `${asset.width} / ${asset.height}` };
   }, [preserveAspectRatio, asset.width, asset.height]);
 
-  const handleFavoriteToggle = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const { share: shareMeme, loading: shareLoading } = useShareMeme({
+    assetId: asset.id,
+    blobUrl: asset.blobUrl,
+    filename: asset.filename,
+    mimeType: asset.mime,
+  });
+
+  const handleFavoriteToggle = async () => {
     if (onToggleFavorite) {
       onToggleFavorite();
       return;
@@ -268,8 +273,7 @@ function ImageTileComponent({
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDelete = async () => {
     if (!onDelete || isLoading) return;
 
     const shouldDelete = deleteConfirmation.openConfirmation({
@@ -314,18 +318,19 @@ function ImageTileComponent({
     return score.toFixed(2);
   }, [showSimilarityScore, asset]);
 
-  // Determine border color based on similarity score
-  const scoreBorderStyle = useMemo(() => {
+  // A found tile gets a candy shell: lime for a locked match, grape for a near
+  // hit. The card keeps its ink shell + drop otherwise. Tokens only.
+  const scoreCardClass = useMemo(() => {
     if (!showSimilarityScore) return null;
     const score = (asset as any).similarity;
     if (typeof score !== 'number') return null;
 
     if (score >= SIMILARITY_MATCH_BOUNDARY) {
-      return 'border-sploot-cyan shadow-[0_0_0_2px_var(--sploot-cyan),0_0_12px_color-mix(in_srgb,var(--sploot-cyan)_28%,transparent)]';
+      return 'border-sploot-lime';
     } else if (score >= SIMILARITY_NEAR_BOUNDARY) {
-      return 'border-sploot-violet shadow-[0_0_0_2px_var(--sploot-violet),0_0_12px_color-mix(in_srgb,var(--sploot-violet)_28%,transparent)]';
+      return 'border-sploot-violet';
     }
-    return 'border-border shadow-[0_0_0_2px_hsl(var(--border))]';
+    return null;
   }, [showSimilarityScore, asset]);
 
   // Get embedding status icon and label (minimalist aesthetic)
@@ -379,231 +384,175 @@ function ImageTileComponent({
             (onClick || (() => onSelect?.(asset)))();
           }
         }}
-        className="group overflow-hidden cursor-pointer border border-border transition-all duration-[var(--sploot-motion-base)] hover:-translate-y-0.5 hover:border-sploot-ink hover:shadow-[3px_3px_0_var(--sploot-ink)]"
+        className={cn(
+          'sploot-press-sm group flex cursor-pointer flex-col overflow-hidden',
+          'rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink bg-sploot-panel sploot-shadow-sm',
+          scoreCardClass
+        )}
       >
-        <div className="relative">
-          {/* Image container */}
-          <div
-            className={cn('relative bg-muted overflow-hidden', !preserveAspectRatio && 'aspect-square')}
-            style={aspectRatioStyle}
-          >
-            {imageError ? (
-              <div className="w-full h-full flex flex-col items-center justify-center gap-3 p-4">
-                <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                  <ImageOff className="w-12 h-12" />
-                  <p className="text-xs text-center">Image unavailable</p>
-                </div>
-
-                <Button variant="destructive" size="sm" onClick={handleDelete} disabled={isLoading}>
-                  <Trash2 className="w-3 h-3 mr-1.5" />
-                  Delete
-                </Button>
+        {/* Media frame — object-contain, never cropped, aspect preserved */}
+        <div
+          className={cn(
+            'relative m-2 mb-0 overflow-hidden rounded-[var(--sploot-radius-inner)] border-2 border-sploot-ink bg-sploot-paper-warm',
+            !preserveAspectRatio && 'aspect-square'
+          )}
+          style={aspectRatioStyle}
+        >
+          {imageError ? (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-3 p-4 text-sploot-ink">
+              <div className="flex flex-col items-center gap-2">
+                <ImageOff className="h-10 w-10" />
+                <p className="font-mono text-xs lowercase">image unavailable</p>
               </div>
-            ) : (
-              <>
-                {/* Skeleton placeholder */}
-                {!imageLoaded && (
-                  <div aria-hidden className="absolute inset-0 overflow-hidden">
-                    <div className="h-full w-full bg-muted animate-pulse" />
-                  </div>
-                )}
-                {isVideo ? (
-                  <video
-                    key={asset.blobUrl}
-                    aria-label={`play ${asset.filename || asset.pathname?.split('/').pop() || 'meme'}`}
-                    className={cn(
-                      'h-full w-full',
-                      preserveAspectRatio ? 'object-contain' : 'object-cover'
-                    )}
-                    poster={asset.thumbnailUrl ? resolveQaSeedSrc(asset.thumbnailUrl) : undefined}
-                    muted
-                    loop
-                    playsInline
-                    preload="metadata"
-                    onLoadedData={() => {
-                      setImageLoaded(true);
-                      recordBlobSuccess();
-                    }}
-                    onError={() => {
-                      handleMediaLoadError(asset.blobUrl);
-                    }}
-                  >
-                    <source src={resolveQaSeedSrc(asset.blobUrl)} type={asset.mime} />
-                  </video>
-                ) : (
-                  <Image
-                    key={imageSrc}
-                    src={imageSrc}
-                    alt={asset.filename || asset.pathname?.split('/').pop() || 'Uploaded image'}
-                    fill
-                    sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
-                    className={cn(
-                      'h-full w-full',
-                      preserveAspectRatio ? 'object-contain' : 'object-cover'
-                    )}
-                    loading="lazy"
-                    // Grid tiles source the pre-built ~256px thumbnail (the
-                    // list/shuffle/search/similar reads return thumbnailUrl as of
-                    // 048), so the optimizer would add transform + cache-write cost
-                    // for no benefit — serve it directly. The detail/share pages
-                    // stay optimized. See ADR-008.
-                    unoptimized
-                    onLoad={() => {
-                      setImageLoaded(true);
-                      recordBlobSuccess();
-                    }}
-                    onError={() => {
-                      // If thumbnail failed and we haven't tried the main blob yet
-                      if (imageSrc === asset.thumbnailUrl && asset.blobUrl && !hasTriedFallback) {
-                        logger.logInfo('image-tile.thumbnail-fallback', {
-                          assetId: asset.id,
-                        });
-                        setHasTriedFallback(true);
-                        setImageSrc(asset.blobUrl);
-                        // Don't set imageError yet - give the fallback a chance
-                        return;
-                      }
 
-                      handleMediaLoadError(imageSrc);
-                    }}
-                  />
-                )}
-              </>
-            )}
-
-
-            {/* Banger stamp - slapped on the artwork like a sticker */}
-            {asset.favorite && !imageError && (
-              <div className="absolute top-2 left-2 z-10 -rotate-6">
-                <BangerStamp className="animate-sploot-stamp sploot-sticker-shadow" />
-              </div>
-            )}
-
-            {/* Similarity score overlay */}
-            {similarityScore !== null && (
-              <div className="absolute top-2 right-2 z-10">
-                <div className="border border-sploot-violet bg-black/80 px-2 py-1">
-                  <span className="font-mono text-xs text-sploot-cyan sploot-tabular">{similarityScore}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Action bar below image */}
-          <div className="flex items-center justify-between gap-2 px-2 py-2 bg-card dark:bg-muted border-t border-border sm:py-1.5">
-            {/* Left: Actions */}
-            <div className="flex items-center gap-1.5 sm:gap-1">
-              {/* Banger button - always visible */}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={cn(
-                        'h-11 w-11 rounded-none transition-colors hover:bg-sploot-coral hover:text-black sm:h-7 sm:w-7',
-                        asset.favorite
-                          ? 'text-sploot-coral'
-                          : 'text-muted-foreground/80'
-                      )}
-                      onClick={handleFavoriteToggle}
-                      disabled={isLoading}
-                      aria-pressed={asset.favorite}
-                      aria-label={asset.favorite ? 'remove banger' : 'mark as banger'}
-                    >
-                      <Heart
-                        className={cn('h-5 w-5 sm:h-4 sm:w-4', asset.favorite && 'fill-current')}
-                      />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{asset.favorite ? 'unfavorite' : 'favorite'}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
-              {/* Share button - always visible with hover color transition */}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ShareButton
-                      assetId={asset.id}
-                      blobUrl={asset.blobUrl}
-                      filename={asset.filename}
-                      mimeType={asset.mime}
-                      size="icon"
-                      className="h-11 w-11 rounded-none transition-colors text-muted-foreground/60 hover:bg-sploot-cyan hover:text-black sm:h-7 sm:w-7"
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent side="top">
-                    <p>share</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
-              {/* Delete button - direct on mobile so there is no one-item overflow menu */}
               <Button
-                variant="ghost"
-                size="icon"
-                className="h-11 w-11 rounded-none transition-colors text-muted-foreground/60 hover:bg-destructive hover:text-white sm:h-7 sm:w-7"
+                variant="destructive"
+                size="sm"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleDelete(e);
+                  handleDelete();
                 }}
                 disabled={isLoading}
-                aria-label="delete meme"
-                title="delete"
               >
-                <Trash2 className="h-5 w-5 sm:h-4 sm:w-4" />
+                <Trash2 className="mr-1.5 h-3 w-3" />
+                delete
               </Button>
             </div>
-
-            {/* Right: Metadata */}
-            <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
-              {/* Dimensions and size - monospace for technical data */}
-              <span className="hidden font-mono text-xs text-muted-foreground tabular-nums whitespace-nowrap sm:inline">
-                {asset.width}×{asset.height} {formatFileSize(asset.size || 0)}
-              </span>
-
-              {/* Relevance score - search results only */}
-              {typeof asset.relevance === 'number' && (
-                <>
-                  <span className="hidden text-muted-foreground/30 sm:inline">|</span>
-                  <span
-                    className={cn(
-                      'hidden font-mono text-xs tabular-nums sm:inline',
-                      asset.belowThreshold ? 'text-orange-400' : 'text-green-400'
-                    )}
-                  >
-                    {Math.round(asset.relevance)}%
-                  </span>
-                </>
+          ) : (
+            <>
+              {/* Quiet dimmed-panel pulse while the media loads */}
+              {!imageLoaded && (
+                <div aria-hidden className="absolute inset-0 overflow-hidden">
+                  <div className="h-full w-full animate-pulse bg-sploot-paper-warm" />
+                </div>
               )}
+              {isVideo ? (
+                <video
+                  key={asset.blobUrl}
+                  aria-label={`play ${asset.filename || asset.pathname?.split('/').pop() || 'meme'}`}
+                  className={cn(
+                    'h-full w-full',
+                    preserveAspectRatio ? 'object-contain' : 'object-cover'
+                  )}
+                  poster={asset.thumbnailUrl ? resolveQaSeedSrc(asset.thumbnailUrl) : undefined}
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                  onLoadedData={() => {
+                    setImageLoaded(true);
+                    recordBlobSuccess();
+                  }}
+                  onError={() => {
+                    handleMediaLoadError(asset.blobUrl);
+                  }}
+                >
+                  <source src={resolveQaSeedSrc(asset.blobUrl)} type={asset.mime} />
+                </video>
+              ) : (
+                <Image
+                  key={imageSrc}
+                  src={imageSrc}
+                  alt={asset.filename || asset.pathname?.split('/').pop() || 'Uploaded image'}
+                  fill
+                  sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
+                  className={cn(
+                    'h-full w-full',
+                    preserveAspectRatio ? 'object-contain' : 'object-cover'
+                  )}
+                  loading="lazy"
+                  // Grid tiles source the pre-built ~256px thumbnail (the
+                  // list/shuffle/search/similar reads return thumbnailUrl as of
+                  // 048), so the optimizer would add transform + cache-write cost
+                  // for no benefit — serve it directly. The detail/share pages
+                  // stay optimized. See ADR-008.
+                  unoptimized
+                  onLoad={() => {
+                    setImageLoaded(true);
+                    recordBlobSuccess();
+                  }}
+                  onError={() => {
+                    // If thumbnail failed and we haven't tried the main blob yet
+                    if (imageSrc === asset.thumbnailUrl && asset.blobUrl && !hasTriedFallback) {
+                      logger.logInfo('image-tile.thumbnail-fallback', {
+                        assetId: asset.id,
+                      });
+                      setHasTriedFallback(true);
+                      setImageSrc(asset.blobUrl);
+                      // Don't set imageError yet - give the fallback a chance
+                      return;
+                    }
 
-              {/* Embedding status - only show if not ready */}
-              {embeddingStatusInfo && (
-                <>
-                  <span className="hidden text-muted-foreground/30 sm:inline">|</span>
-                  <span className={cn('hidden text-xs shrink-0 sm:inline', embeddingStatusInfo.color)}>
-                    {embeddingStatusInfo.label}
-                  </span>
-                </>
+                    handleMediaLoadError(imageSrc);
+                  }}
+                />
               )}
-            </div>
-          </div>
-
-          {/* Debug info overlay */}
-          {isDebugMode && (embeddingStatus !== 'ready' || debugInfo.apiResponseTime) && (
-            <div className="px-2 py-1 bg-black/80 text-[9px] font-mono text-muted-foreground border-t border-border">
-              <div className="flex items-center gap-2">
-                <span className="text-primary">Debug:</span>
-                <span>{embeddingStatus}</span>
-                {asset.embeddingRetryCount !== undefined && <span>R{asset.embeddingRetryCount}</span>}
-                {debugInfo.apiResponseTime && <span>{debugInfo.apiResponseTime}ms</span>}
-              </div>
-            </div>
+            </>
           )}
         </div>
+
+        {/* Machine metadata — mono, quiet, desktop-only per the mobile contract */}
+        <div className="flex items-center justify-end gap-2 px-2.5 pt-1.5">
+          <span className="hidden font-mono text-xs text-muted-foreground tabular-nums whitespace-nowrap sm:inline">
+            {asset.width}×{asset.height} {formatFileSize(asset.size || 0)}
+          </span>
+
+          {typeof asset.relevance === 'number' && (
+            <>
+              <span className="hidden text-muted-foreground/30 sm:inline">|</span>
+              <span
+                className={cn(
+                  'hidden font-mono text-xs tabular-nums sm:inline',
+                  asset.belowThreshold ? 'text-sploot-orange' : 'text-sploot-lime'
+                )}
+              >
+                {Math.round(asset.relevance)}%
+              </span>
+            </>
+          )}
+
+          {similarityScore !== null && (
+            <>
+              <span className="hidden text-muted-foreground/30 sm:inline">|</span>
+              <span className="hidden font-mono text-xs text-sploot-cyan tabular-nums sm:inline">
+                {similarityScore}
+              </span>
+            </>
+          )}
+
+          {embeddingStatusInfo && (
+            <>
+              <span className="hidden text-muted-foreground/30 sm:inline">|</span>
+              <span className={cn('hidden shrink-0 font-mono text-xs sm:inline', embeddingStatusInfo.color)}>
+                {embeddingStatusInfo.label}
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* Action rail — heart (banger) / share / delete, inside the card so it
+            travels with the hover lift. Never over the media. */}
+        <TileActionRail
+          banger={!!asset.favorite}
+          disabled={isLoading}
+          shareLoading={shareLoading}
+          onToggleBanger={handleFavoriteToggle}
+          onShare={shareMeme}
+          onDelete={handleDelete}
+          className="mt-1.5 rounded-b-[calc(var(--sploot-radius)-3px)]"
+        />
+
+        {/* Debug info strip */}
+        {isDebugMode && (embeddingStatus !== 'ready' || debugInfo.apiResponseTime) && (
+          <div className="border-t-2 border-dashed border-sploot-ink px-2.5 py-1 font-mono text-[9px] text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <span className="text-sploot-blue">debug:</span>
+              <span>{embeddingStatus}</span>
+              {asset.embeddingRetryCount !== undefined && <span>R{asset.embeddingRetryCount}</span>}
+              {debugInfo.apiResponseTime && <span>{debugInfo.apiResponseTime}ms</span>}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Delete Confirmation Modal */}

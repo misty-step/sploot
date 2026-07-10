@@ -1,6 +1,7 @@
 'use client';
 
 import { QueuedUpload } from '@/hooks/use-upload-queue';
+import { IconButton } from '@/components/sploot';
 
 interface UploadQueueDisplayProps {
   queue: QueuedUpload[];
@@ -13,13 +14,13 @@ export function UploadQueueDisplay({ queue, onRemove, onRetry }: UploadQueueDisp
 
   return (
     <div className="fixed bottom-20 md:bottom-6 left-4 right-4 md:left-6 md:right-auto md:w-96 z-40">
-      <div className="bg-card border border-border p-4 shadow-2xl">
+      <div className="bg-card border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] sploot-shadow-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-foreground font-semibold">
             Upload Queue ({queue.length})
           </h3>
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-orange-500 animate-pulse" />
+            <div className="w-2 h-2 bg-sploot-orange rounded-full animate-pulse" />
             <span className="text-xs text-muted-foreground">Queued</span>
           </div>
         </div>
@@ -28,10 +29,10 @@ export function UploadQueueDisplay({ queue, onRemove, onRetry }: UploadQueueDisp
           {queue.map((item) => (
             <div
               key={item.id}
-              className="flex items-center gap-3 p-2 bg-muted"
+              className="flex items-center gap-3 p-2 bg-muted rounded-[var(--sploot-radius-inner)]"
             >
               {/* File icon */}
-              <div className="w-10 h-10 bg-border flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 bg-sploot-panel border-2 border-sploot-ink rounded-[var(--sploot-radius-ctl)] flex items-center justify-center flex-shrink-0">
                 {item.status === 'uploading' ? (
                   <svg
                     className="w-5 h-5 text-primary animate-spin"
@@ -68,7 +69,7 @@ export function UploadQueueDisplay({ queue, onRemove, onRetry }: UploadQueueDisp
                   </svg>
                 ) : item.status === 'success' ? (
                   <svg
-                    className="w-5 h-5 text-green-500"
+                    className="w-5 h-5 text-sploot-lime"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -115,13 +116,8 @@ export function UploadQueueDisplay({ queue, onRemove, onRetry }: UploadQueueDisp
               {/* Actions */}
               <div className="flex items-center gap-1">
                 {item.status === 'error' && onRetry && (
-                  <button
-                    onClick={() => onRetry(item.id)}
-                    className="p-1.5 text-primary hover:bg-border transition-colors"
-                    title="Retry upload"
-                  >
+                  <IconButton label="retry upload" onClick={() => onRetry(item.id)}>
                     <svg
-                      className="w-4 h-4"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -133,16 +129,15 @@ export function UploadQueueDisplay({ queue, onRemove, onRetry }: UploadQueueDisp
                         d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                       />
                     </svg>
-                  </button>
+                  </IconButton>
                 )}
                 {item.status !== 'uploading' && (
-                  <button
+                  <IconButton
+                    label="remove from queue"
                     onClick={() => onRemove(item.id)}
-                    className="p-1.5 text-muted-foreground/80 hover:text-destructive hover:bg-border transition-colors"
-                    title="Remove from queue"
+                    className="hover:!bg-sploot-red hover:!text-sploot-on-red"
                   >
                     <svg
-                      className="w-4 h-4"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -154,7 +149,7 @@ export function UploadQueueDisplay({ queue, onRemove, onRetry }: UploadQueueDisp
                         d="M6 18L18 6M6 6l12 12"
                       />
                     </svg>
-                  </button>
+                  </IconButton>
                 )}
               </div>
             </div>

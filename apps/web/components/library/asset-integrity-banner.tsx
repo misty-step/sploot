@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/sploot';
 import { AlertTriangle, ClipboardCheck, X } from 'lucide-react';
 
 interface AssetIntegrityBannerProps {
@@ -15,41 +15,30 @@ export function AssetIntegrityBanner({ onAudit }: AssetIntegrityBannerProps) {
   if (dismissed) return null;
 
   return (
-    <Alert variant="destructive" className="animate-in slide-in-from-top duration-300 rounded-none border-x-0 border-t-0">
-      <AlertTriangle className="h-4 w-4" />
-      <AlertDescription className="flex items-center gap-3 w-full">
-        <span className="flex-1 text-sm">
-          <span className="font-medium">Data integrity warning:</span>
-          {' '}
-          Some assets may have broken storage links.
-        </span>
+    <div
+      role="alert"
+      className="animate-in slide-in-from-top duration-300 flex items-center gap-3 border-b-[3px] border-sploot-ink bg-sploot-red px-4 py-2.5 text-sploot-on-red"
+    >
+      <AlertTriangle className="h-4 w-4 shrink-0" />
+      <span className="flex-1 font-sans text-sm">
+        <span className="font-extrabold">data integrity warning:</span>{' '}
+        some assets may have broken storage links.
+      </span>
 
-        <div className="flex items-center gap-2">
-          {/* Audit button */}
-          <Button
-            type="button"
-            onClick={onAudit}
-            size="sm"
-            variant="outline"
-            className="gap-1.5 border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20 hover:border-destructive/50"
-          >
-            <ClipboardCheck className="size-3" />
-            Run Audit
-          </Button>
+      <div className="flex items-center gap-2">
+        <Button type="button" onClick={onAudit} size="sm" variant="ink" className="gap-1.5">
+          <ClipboardCheck className="size-3" />
+          run audit
+        </Button>
 
-          {/* Dismiss button */}
-          <Button
-            type="button"
-            onClick={() => setDismissed(true)}
-            size="icon-sm"
-            variant="ghost"
-            className="text-muted-foreground hover:text-foreground"
-            title="Dismiss warning"
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
-      </AlertDescription>
-    </Alert>
+        <IconButton
+          label="dismiss warning"
+          onClick={() => setDismissed(true)}
+          className="hover:!bg-sploot-panel"
+        >
+          <X />
+        </IconButton>
+      </div>
+    </div>
   );
 }

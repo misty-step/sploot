@@ -49,51 +49,70 @@
   /* Background pattern color */
   --pattern-color: rgba(0, 0, 0, 0.03);
 
-  /* Sploot NEO-BRUTALIST design system — light / default.
-     The interface admits it is a machine: thick ink borders carry structure,
-     hard offset shadows (no blur), square corners, saturated color blocks on
-     unbleached documentation paper. Names are kept stable (lint references
-     them); only the VALUES move to the brutalist palette. */
-  --sploot-ink: #0a0a0a;            /* structural black — every border, every shadow */
-  --sploot-paper: #f3efe4;          /* unbleached documentation paper — the resting bg */
-  --sploot-paper-warm: #e9e4d6;
-  --sploot-void: #0a0a0a;
-  /* Saturated color BLOCKS */
-  --sploot-blue: #1f4cff;           /* electric — PRIMARY action / search section */
-  --sploot-cyan: #00e5d4;           /* brand through-line / secondary accent */
-  --sploot-magenta: #ff2d9b;        /* hot — bangers / favorites / attention */
-  --sploot-yellow: #ffe600;         /* acid — the ONE highlight per viewport */
-  --sploot-orange: #ff5a1f;         /* near-match / warning */
-  --sploot-lime: #9cff2e;           /* the FOUND / match ring */
+  /* Sploot TOYBOX design system — light / default (lab-034, AFD-8 "ink
+     minis" locked 2026-07-10). Every interactive object is a toy: 3px ink
+     shells, rounded corners, candy color fills, drop-height elevation that
+     obeys the hover-physics law (surface lifts, shadow anchors/extends;
+     press sinks, shadow collapses). Names are kept stable (lint references
+     them); only the VALUES move to the toybox palette. */
+  --sploot-ink: #1c1547;            /* deep toy ink — text, shells, outlines */
+  --sploot-paper: #cfe7ff;          /* the shelf — resting dotted background */
+  --sploot-paper-warm: #f1f7ff;     /* inner panel wash */
+  --sploot-panel: #ffffff;          /* toy surface — cards, consoles */
+  --sploot-void: #1c1547;           /* dark chrome (status bar) = ink */
+  /* Candy palette */
+  --sploot-blue: #087bc1;           /* PRIMARY action */
+  --sploot-cyan: #39b1ff;           /* brand through-line / tab candy */
+  --sploot-magenta: #ed58bd;        /* bubblegum — bangers / attention */
+  --sploot-yellow: #ffdd00;         /* banana — hover fill, the ONE highlight */
+  --sploot-orange: #d97500;         /* near-match / warning */
+  --sploot-lime: #138a50;           /* apple green — the FOUND / match ring */
+  --sploot-red: #e52347;            /* cherry — error / destructive */
+  --sploot-purple: #7547e8;         /* grape — selected */
+  --sploot-focus: #4a25c7;          /* focus-visible outline */
+  /* On-color foregrounds: AA text on the candy fills in BOTH themes.
+     Light fills are deep; dark fills lighten, so their text flips dark. */
+  --sploot-on-blue: #ffffff;
+  --sploot-on-red: #ffffff;
   /* Back-compat aliases — old component code & lint still reference these names */
   --sploot-coral: var(--sploot-magenta);
-  --sploot-violet: var(--sploot-blue);
-  /* Structure: borders are thick, shadows are hard offsets (no blur) */
-  --sploot-border: 4px solid var(--sploot-ink);
-  --sploot-border-thick: 6px solid var(--sploot-ink);
-  --sploot-active-border-width: 6px;
-  --sploot-shadow: 8px 8px 0 var(--sploot-ink);
-  --sploot-shadow-sm: 5px 5px 0 var(--sploot-ink);
-  --sploot-shadow-lg: 12px 12px 0 var(--sploot-ink);
-  --sploot-sticker-shadow: 5px 5px 0 var(--sploot-ink);
-  --sploot-match-ring: 0 0 0 5px var(--sploot-lime), 10px 10px 0 var(--sploot-ink);
-  /* The faint engineering grid drawn on the paper substrate */
-  --sploot-grid-line: rgba(10, 10, 10, 0.05);
+  --sploot-violet: var(--sploot-purple);
+  /* Structure: 3px toy shells; elevation is DROP HEIGHT (straight down) */
+  --sploot-shadow-color: #1c1547;
+  --sploot-border: 3px solid var(--sploot-ink);
+  --sploot-border-thin: 2px solid var(--sploot-ink);
+  --sploot-border-thick: 4px solid var(--sploot-ink);
+  --sploot-active-border-width: 4px;
+  --sploot-radius: 18px;            /* cards, consoles, stats */
+  --sploot-radius-inner: 10px;      /* media frames inside cards */
+  --sploot-radius-ctl: 9px;         /* ink-mini icon controls */
+  --sploot-radius-pill: 999px;      /* buttons, tabs, inputs, piles */
+  --sploot-shadow: 0 5px 0 var(--sploot-shadow-color);      /* resting drop */
+  --sploot-shadow-sm: 0 3px 0 var(--sploot-shadow-color);   /* compact drop */
+  --sploot-shadow-lg: 0 9px 0 var(--sploot-shadow-color);   /* hero drop */
+  --sploot-shadow-hover: 2px 7px 0 var(--sploot-shadow-color);   /* lifted, anchored */
+  --sploot-shadow-hover-sm: 2px 5px 0 var(--sploot-shadow-color);
+  --sploot-shadow-press: 0 1px 0 var(--sploot-shadow-color);     /* sunk */
+  --sploot-sticker-shadow: 0 3px 0 var(--sploot-shadow-color);
+  --sploot-match-ring: 0 0 0 4px var(--sploot-lime), 0 9px 0 var(--sploot-shadow-color);
+  /* The dotted candy-shelf substrate */
+  --sploot-dot: rgba(255, 255, 255, 0.68);
+  --sploot-grid-line: rgba(28, 21, 71, 0.05);
   --sploot-touch-target: 44px;
-  --sploot-command-surface: var(--sploot-paper);
+  --sploot-command-surface: var(--sploot-panel);
   --sploot-command-surface-contrast: var(--sploot-ink);
-  --sploot-pile-surface: var(--sploot-paper);
+  --sploot-pile-surface: var(--sploot-panel);
   --sploot-pile-selected: var(--sploot-yellow);
-  /* Sticker fills are now solid saturated blocks, not pastels */
+  /* Sticker/tab candy fills */
   --sploot-sticker-cyan: var(--sploot-cyan);
   --sploot-sticker-coral: var(--sploot-magenta);
-  --sploot-sticker-violet: var(--sploot-blue);
+  --sploot-sticker-violet: var(--sploot-purple);
   --sploot-sticker-lime: var(--sploot-yellow);
-  /* Motion: hard and mechanical, on interaction only */
-  --sploot-motion-fast: 80ms;
-  --sploot-motion-base: 120ms;
-  --sploot-motion-panel: 160ms;
-  --sploot-motion-cluster: 200ms;
+  /* Motion: springy, on interaction only */
+  --sploot-motion-fast: 130ms;
+  --sploot-motion-base: 150ms;
+  --sploot-motion-panel: 200ms;
+  --sploot-motion-cluster: 300ms;
   --sploot-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --sploot-ease-snap: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -101,8 +120,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Slots kept stable; the families behind them are now Space Grotesk (sans),
-     Space Mono (mono), and Archivo Black (display) — wired in app/layout.tsx. */
+  /* Slots kept stable; the families behind them are now Baloo 2 (sans),
+     Space Mono (mono), and Bungee (display) — wired in app/layout.tsx. */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-jetbrains-mono);
   --font-display: var(--font-bebas-neue);
@@ -154,6 +173,12 @@
   --color-sploot-coral: var(--sploot-coral);
   --color-sploot-violet: var(--sploot-violet);
   --color-sploot-lime: var(--sploot-lime);
+  --color-sploot-red: var(--sploot-red);
+  --color-sploot-purple: var(--sploot-purple);
+  --color-sploot-on-blue: var(--sploot-on-blue);
+  --color-sploot-on-red: var(--sploot-on-red);
+  --color-sploot-focus: var(--sploot-focus);
+  --color-sploot-panel: var(--sploot-panel);
   --color-sploot-grid-line: var(--sploot-grid-line);
   --color-sploot-command-surface: var(--sploot-command-surface);
   --color-sploot-command-surface-contrast: var(--sploot-command-surface-contrast);
@@ -353,16 +378,15 @@ details:focus-visible,
 [role="menuitem"]:focus-visible,
 [role="option"]:focus-visible,
 [contenteditable]:focus-visible {
-  outline: 5px solid var(--sploot-magenta);
+  outline: 4px solid var(--sploot-focus);
   outline-offset: 3px;
-  border-radius: 0;
 }
 
 /* Special handling for inputs and textareas to prevent double borders */
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 5px solid var(--sploot-magenta);
+  outline: 4px solid var(--sploot-focus);
   outline-offset: 0;
 }
 
@@ -410,43 +434,60 @@ select:focus-visible {
   /* Background pattern color */
   --pattern-color: rgba(255, 255, 255, 0.02);
 
-  /* Sploot NEO-BRUTALIST design system — dark (void) variant.
-     Same saturated palette; structure inverts to a near-white ink line on the
-     void so borders and hard shadows stay legible on black. */
-  --sploot-ink: #f3efe4;            /* near-paper ink — borders/shadows on the void */
-  --sploot-paper: #141414;          /* the void as resting surface */
-  --sploot-paper-warm: #1d1d1d;
-  --sploot-void: #0a0a0a;
-  --sploot-blue: #4d72ff;           /* electric blue lifted for contrast on black */
-  --sploot-cyan: #00e5d4;
-  --sploot-magenta: #ff2d9b;
-  --sploot-yellow: #ffe600;
-  --sploot-orange: #ff7a45;
-  --sploot-lime: #9cff2e;
+  /* Sploot TOYBOX design system — dark (night shelf) variant.
+     Same toy grammar; the shelf goes deep violet-night, shells become warm
+     cream ink, candy fills lift for AA contrast, and drop shadows deepen to
+     near-black so elevation stays legible. */
+  --sploot-ink: #fff3dc;            /* warm cream ink — text, shells, outlines */
+  --sploot-paper: #19143d;          /* night shelf — resting dotted background */
+  --sploot-paper-warm: #241d50;     /* inner panel wash */
+  --sploot-panel: #2d255e;          /* toy surface — cards, consoles */
+  --sploot-void: #090720;
+  --sploot-blue: #63c3ff;
+  --sploot-cyan: #8ed2ff;
+  --sploot-magenta: #ff8ed7;
+  --sploot-yellow: #ffe45c;
+  --sploot-orange: #ffb13b;
+  --sploot-lime: #55d992;
+  --sploot-red: #ff5d73;
+  --sploot-purple: #a78aff;
+  --sploot-focus: #ffe45c;
+  --sploot-on-blue: #10203a;
+  --sploot-on-red: #3a0d14;
   --sploot-coral: var(--sploot-magenta);
-  --sploot-violet: var(--sploot-blue);
-  --sploot-border: 4px solid var(--sploot-ink);
-  --sploot-border-thick: 6px solid var(--sploot-ink);
-  --sploot-active-border-width: 6px;
-  --sploot-shadow: 8px 8px 0 var(--sploot-ink);
-  --sploot-shadow-sm: 5px 5px 0 var(--sploot-ink);
-  --sploot-shadow-lg: 12px 12px 0 var(--sploot-ink);
-  --sploot-sticker-shadow: 5px 5px 0 var(--sploot-ink);
-  --sploot-match-ring: 0 0 0 5px var(--sploot-lime), 10px 10px 0 var(--sploot-ink);
-  --sploot-grid-line: rgba(243, 239, 228, 0.06);
+  --sploot-violet: var(--sploot-purple);
+  --sploot-shadow-color: #090720;
+  --sploot-border: 3px solid var(--sploot-ink);
+  --sploot-border-thin: 2px solid var(--sploot-ink);
+  --sploot-border-thick: 4px solid var(--sploot-ink);
+  --sploot-active-border-width: 4px;
+  --sploot-radius: 18px;
+  --sploot-radius-inner: 10px;
+  --sploot-radius-ctl: 9px;
+  --sploot-radius-pill: 999px;
+  --sploot-shadow: 0 5px 0 var(--sploot-shadow-color);
+  --sploot-shadow-sm: 0 3px 0 var(--sploot-shadow-color);
+  --sploot-shadow-lg: 0 9px 0 var(--sploot-shadow-color);
+  --sploot-shadow-hover: 2px 7px 0 var(--sploot-shadow-color);
+  --sploot-shadow-hover-sm: 2px 5px 0 var(--sploot-shadow-color);
+  --sploot-shadow-press: 0 1px 0 var(--sploot-shadow-color);
+  --sploot-sticker-shadow: 0 3px 0 var(--sploot-shadow-color);
+  --sploot-match-ring: 0 0 0 4px var(--sploot-lime), 0 9px 0 var(--sploot-shadow-color);
+  --sploot-dot: rgba(255, 255, 255, 0.09);
+  --sploot-grid-line: rgba(255, 243, 220, 0.06);
   --sploot-touch-target: 44px;
-  --sploot-command-surface: var(--sploot-paper);
+  --sploot-command-surface: var(--sploot-panel);
   --sploot-command-surface-contrast: var(--sploot-ink);
-  --sploot-pile-surface: var(--sploot-paper);
+  --sploot-pile-surface: var(--sploot-panel);
   --sploot-pile-selected: var(--sploot-yellow);
   --sploot-sticker-cyan: var(--sploot-cyan);
   --sploot-sticker-coral: var(--sploot-magenta);
-  --sploot-sticker-violet: var(--sploot-blue);
+  --sploot-sticker-violet: var(--sploot-purple);
   --sploot-sticker-lime: var(--sploot-yellow);
-  --sploot-motion-fast: 80ms;
-  --sploot-motion-base: 120ms;
-  --sploot-motion-panel: 160ms;
-  --sploot-motion-cluster: 200ms;
+  --sploot-motion-fast: 130ms;
+  --sploot-motion-base: 150ms;
+  --sploot-motion-panel: 200ms;
+  --sploot-motion-cluster: 300ms;
 }
 
 @layer base {
@@ -575,12 +616,11 @@ select:focus-visible {
   background-size: 24px 24px;
 }
 
+/* The candy-shelf substrate: white polka dots on the shelf color. */
 .bg-sploot-workbench {
   background-color: var(--sploot-paper);
-  background-image:
-    linear-gradient(var(--sploot-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--sploot-grid-line) 1px, transparent 1px);
-  background-size: 32px 32px;
+  background-image: radial-gradient(var(--sploot-dot) 2px, transparent 2.6px);
+  background-size: 26px 26px;
 }
 
 .sploot-sticker-shadow {
@@ -614,28 +654,99 @@ select:focus-visible {
   box-shadow: var(--sploot-match-ring);
 }
 
-/* Press motion: hover lifts the block toward the cursor and grows the shadow;
-   active slams it down and shrinks the shadow. Mechanical, on interaction only. */
+/* The standard toy-card panel: ink shell, toybox radius, resting drop.
+   Compose with .sploot-press when the panel is interactive. */
+.sploot-card {
+  background: var(--sploot-panel);
+  border: var(--sploot-border);
+  border-radius: var(--sploot-radius);
+  box-shadow: var(--sploot-shadow);
+}
+
+/* THE HOVER-PHYSICS LAW (operator rule, lab-034): on hover the surface
+   lifts while the shadow stays anchored/extends; on press the surface sinks
+   and the shadow collapses. Never translate a toy so its shadow travels
+   with it unchanged. Springy, on interaction only. */
 .sploot-press {
   transition:
-    transform var(--sploot-motion-fast) var(--sploot-ease-out),
-    box-shadow var(--sploot-motion-fast) var(--sploot-ease-out);
+    transform var(--sploot-motion-fast) var(--sploot-ease-snap),
+    box-shadow var(--sploot-motion-fast) var(--sploot-ease-snap);
 }
 
 .sploot-press:hover {
   transform: translate(-2px, -2px);
-  box-shadow: var(--sploot-shadow);
+  box-shadow: var(--sploot-shadow-hover);
 }
 
 .sploot-press:active {
-  transform: translate(3px, 3px);
-  box-shadow: 2px 2px 0 var(--sploot-ink);
+  transform: translate(3px, 3px) scale(0.98, 0.94);
+  box-shadow: var(--sploot-shadow-press);
+}
+
+/* Compact variant: same law at 3px resting drop. */
+.sploot-press-sm {
+  transition:
+    transform var(--sploot-motion-fast) var(--sploot-ease-snap),
+    box-shadow var(--sploot-motion-fast) var(--sploot-ease-snap);
+}
+
+.sploot-press-sm:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--sploot-shadow-hover-sm);
+}
+
+.sploot-press-sm:active {
+  transform: translate(2px, 2px) scale(0.98, 0.94);
+  box-shadow: var(--sploot-shadow-press);
+}
+
+/* Ink-mini icon controls (AFD-8 grammar): flat at rest, candy fill + small
+   anchored shadow on hover, sink + bubblegum on press. The IconButton
+   component composes this utility; it carries only physics + fills. */
+.sploot-ctl {
+  border: var(--sploot-border-thin);
+  border-radius: var(--sploot-radius-ctl);
+  background: transparent;
+  color: var(--sploot-ink);
+  box-shadow: none;
+  transition:
+    transform var(--sploot-motion-fast) var(--sploot-ease-snap),
+    box-shadow var(--sploot-motion-fast) var(--sploot-ease-snap),
+    background-color var(--sploot-motion-fast) var(--sploot-ease-snap);
+}
+
+.sploot-ctl:hover {
+  transform: translate(-2px, -2px);
+  background: var(--sploot-yellow);
+  color: #1c1547;
+  box-shadow: 2px 2px 0 var(--sploot-shadow-color);
+}
+
+.sploot-ctl:active {
+  transform: translate(1px, 1px) scale(0.92, 0.88);
+  background: var(--sploot-magenta);
+  color: #1c1547;
+  box-shadow: none;
+}
+
+.sploot-ctl:disabled {
+  opacity: 0.36;
+  cursor: not-allowed;
+  transform: none;
+  background: transparent;
+  color: var(--sploot-ink);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .sploot-press,
   .sploot-press:hover,
-  .sploot-press:active {
+  .sploot-press:active,
+  .sploot-press-sm,
+  .sploot-press-sm:hover,
+  .sploot-press-sm:active,
+  .sploot-ctl,
+  .sploot-ctl:hover,
+  .sploot-ctl:active {
     transform: none;
   }
 }
@@ -756,62 +867,49 @@ select:focus-visible {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   @misty-step/aesthetic substrate adoption (ADR 0005, card sploot-032)
+   TOYBOX semantic mapping (lab-034, AFD-8 — supersedes the ADR-0005
+   --ae-* steering for the shadcn layer)
 
-   Swiss chrome, feral contents: the shadcn semantic layer — everything
-   the /app workbench, the auth door, dialogs, and settings read — is
-   repointed at the aesthetic --ae-* substrate, so quiet chrome gets the
-   kit's ink-on-paper discipline, AA contrast contracts, and light/dark
-   flip for free. Sploot's cyan is steered as the system accent.
+   The shadcn semantic layer — everything the /app workbench, the auth
+   door, dialogs, and settings read — is repointed at the toybox
+   --sploot-* tokens above, so quiet chrome and loud contents share one
+   system: toy ink on candy panels, drop-height elevation, both themes.
 
-   The --sploot-* loud layer above is deliberately NOT remapped: paper,
-   stickers, stamps, hard shadows, and the display register are declared
-   deviations that live on top of the substrate. The full mapping and
-   deviation list: docs/design/aesthetic-adoption.md.
-
-   This block is last in the cascade, so it wins over the legacy oklch
-   token sets above. Dark mode needs no second block: the kit itself
-   flips every --ae-* under :root.dark (next-themes sets that class).
+   The @misty-step/aesthetic import remains for its base layer, but the
+   semantic slots now resolve to sploot tokens. This block is last in
+   the cascade, so it wins over the legacy oklch token sets above. Dark
+   mode needs no second block: --sploot-* flips under .dark
+   (next-themes sets that class) and these references follow.
    ═══════════════════════════════════════════════════════════════════ */
-:root {
-  /* steering: sploot's cyan, on the system's accent (AA on both surfaces) */
-  --ae-accent: #0c6a84;
-  --ae-accent-dark: #00f0ff;
-  /* wire the kit's font slots to the app's next/font families — the
-     brutalist type (Space Grotesk / Space Mono) is a declared deviation
-     from the kit's Geist default */
-  --ae-font: var(--font-geist-sans), "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --ae-font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
 :root,
 .dark {
-  --background: var(--ae-surface);
-  --foreground: var(--ae-ink);
-  --card: var(--ae-surface);
-  --card-foreground: var(--ae-ink);
-  --popover: var(--ae-surface);
-  --popover-foreground: var(--ae-ink);
-  --primary: var(--ae-accent);
-  --primary-foreground: var(--ae-surface);
-  --secondary: var(--ae-wash);
-  --secondary-foreground: var(--ae-ink);
-  --muted: var(--ae-wash);
-  --muted-foreground: var(--ae-ink-muted);
-  --accent: var(--ae-accent);
-  --accent-foreground: var(--ae-surface);
-  --destructive: var(--ae-err);
-  --border: var(--ae-line);
-  --input: var(--ae-line);
-  --ring: var(--ae-ink);
-  --sidebar: var(--ae-surface);
-  --sidebar-foreground: var(--ae-ink);
-  --sidebar-border: var(--ae-line);
-  --sidebar-accent: var(--ae-wash);
-  --sidebar-accent-foreground: var(--ae-ink);
-  --sidebar-ring: var(--ae-ink);
-  /* the cyan accent token the workbench chrome reads = the steered accent */
-  --accent-cyan: var(--ae-accent);
+  --radius: 14px; /* shadcn radius slots follow the toybox rounding */
+  --background: var(--sploot-paper);
+  --foreground: var(--sploot-ink);
+  --card: var(--sploot-panel);
+  --card-foreground: var(--sploot-ink);
+  --popover: var(--sploot-panel);
+  --popover-foreground: var(--sploot-ink);
+  --primary: var(--sploot-blue);
+  --primary-foreground: var(--sploot-on-blue);
+  --secondary: var(--sploot-paper-warm);
+  --secondary-foreground: var(--sploot-ink);
+  --muted: var(--sploot-paper-warm);
+  --muted-foreground: color-mix(in srgb, var(--sploot-ink) 72%, var(--sploot-paper));
+  --accent: var(--sploot-yellow);
+  --accent-foreground: #1c1547;
+  --destructive: var(--sploot-red);
+  --border: var(--sploot-ink);
+  --input: var(--sploot-ink);
+  --ring: var(--sploot-focus);
+  --sidebar: var(--sploot-panel);
+  --sidebar-foreground: var(--sploot-ink);
+  --sidebar-border: var(--sploot-ink);
+  --sidebar-accent: var(--sploot-paper-warm);
+  --sidebar-accent-foreground: var(--sploot-ink);
+  --sidebar-ring: var(--sploot-focus);
+  /* the accent token legacy workbench chrome reads */
+  --accent-cyan: var(--sploot-blue);
 }
 
 /* Clerk console door (sploot-032): Clerk injects its own high-specificity

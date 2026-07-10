@@ -77,7 +77,7 @@ export function SortDropdown({
           variant="outline"
           size="lg"
           className={cn(
-            'gap-1 border border-border font-mono uppercase tracking-wider hover:border-accent-cyan',
+            'gap-1 font-mono uppercase tracking-wider',
             className
           )}
           aria-label="Sort options"

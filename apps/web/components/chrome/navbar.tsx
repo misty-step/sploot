@@ -43,10 +43,9 @@ export function Navbar({
         'pt-[env(safe-area-inset-top)]',
         'pl-[env(safe-area-inset-left)]',
         'pr-[env(safe-area-inset-right)]',
-        // Background and border - semantic tokens on the aesthetic substrate.
-        // No backdrop blur: DESIGN.md bans soft chrome; the bar is opaque
-        // paper with a hairline rule (sploot-032 console-door grammar).
-        'bg-background border-b border-border',
+        // Background and border — toybox chrome: opaque paper shelf with a
+        // 3px ink rule under it (lab-034 AFD-8). No backdrop blur.
+        'bg-background border-b-[3px] border-sploot-ink',
         // Layout
         'flex items-center',
         // Padding - progressive increase for larger screens

@@ -1,0 +1,31 @@
+{
+  "rawHex": {
+    "apps/web/components/auth/console-door.tsx": 1
+  },
+  "rawShadow": {
+    "apps/web/app/styleguide/page.tsx": 1,
+    "apps/web/components/chrome/keyboard-shortcuts-help.tsx": 1,
+    "apps/web/components/sploot/icon-button.tsx": 2,
+    "apps/web/components/ui/alert-dialog.tsx": 1,
+    "apps/web/components/ui/button.tsx": 2,
+    "apps/web/components/ui/card.tsx": 1,
+    "apps/web/components/ui/dialog.tsx": 1,
+    "apps/web/components/ui/dropdown-menu.tsx": 2,
+    "apps/web/components/ui/popover.tsx": 1,
+    "apps/web/components/upload/upload-progress-header.tsx": 1
+  },
+  "rawRadius": {
+    "apps/web/components/auth/console-door.tsx": 2,
+    "apps/web/components/ui/checkbox.tsx": 1,
+    "apps/web/components/ui/tooltip.tsx": 1
+  },
+  "handRolledLift": {},
+  "bangerStampOutsideSploot": {
+    "apps/web/app/styleguide/page.tsx": 4
+  },
+  "tileActionGrammar": {
+    "apps/web/app/app/page.tsx": 5,
+    "apps/web/components/library/share-button.tsx": 2
+  },
+  "legacyNames": {}
+}

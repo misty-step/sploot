@@ -85,7 +85,7 @@ export function MobileCommandDock({
   sortOrder,
 }: MobileCommandDockProps) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t-[3px] border-accent-cyan bg-background px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 md:hidden">
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t-[3px] border-sploot-ink bg-background px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 md:hidden">
       <div className="mx-auto grid max-w-md grid-cols-5 gap-1.5">
         <Button
           variant={isUploadOpen ? 'accent' : 'outline'}

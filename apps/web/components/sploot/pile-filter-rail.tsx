@@ -45,10 +45,10 @@ export function PileFilterRail({
         aria-pressed={selectedPileId === null}
         data-pile-filter-id="all"
         className={cn(
-          'sploot-press shrink-0 border-[3px] border-sploot-ink px-3 py-2 text-left font-mono text-xs font-bold uppercase tracking-normal',
+          'sploot-press-sm sploot-shadow-sm flex min-h-[42px] shrink-0 flex-col justify-center rounded-[var(--sploot-radius-pill)] border-[3px] border-sploot-ink px-4 py-1.5 text-left font-mono text-xs font-bold lowercase',
           selectedPileId === null
-            ? 'bg-sploot-cyan text-sploot-ink sploot-shadow-sm'
-            : 'bg-sploot-paper text-sploot-ink'
+            ? 'bg-sploot-yellow text-sploot-ink'
+            : 'bg-sploot-panel text-sploot-ink'
         )}
       >
         <span className="block font-bold">all memes</span>
@@ -67,10 +67,10 @@ export function PileFilterRail({
             aria-pressed={selected}
             data-pile-filter-id={pile.id}
             className={cn(
-              'sploot-press shrink-0 border-[3px] border-sploot-ink px-3 py-2 text-left font-mono text-xs font-bold uppercase tracking-normal',
+              'sploot-press-sm sploot-shadow-sm flex min-h-[42px] shrink-0 flex-col justify-center rounded-[var(--sploot-radius-pill)] border-[3px] border-sploot-ink px-4 py-1.5 text-left font-mono text-xs font-bold lowercase',
               selected
-                ? 'bg-sploot-violet text-white sploot-shadow-sm'
-                : 'bg-sploot-paper text-sploot-ink'
+                ? 'bg-sploot-yellow text-sploot-ink'
+                : 'bg-sploot-panel text-sploot-ink'
             )}
           >
             <span className="block max-w-[11rem] truncate font-bold">

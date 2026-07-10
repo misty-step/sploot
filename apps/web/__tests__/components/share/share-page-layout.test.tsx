@@ -102,7 +102,7 @@ describe('SharePageLayout', () => {
       );
 
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper).toHaveClass('bg-black');
+      expect(wrapper).toHaveClass('bg-sploot-void');
     });
 
     it('should apply flexbox column layout', () => {
@@ -231,7 +231,7 @@ describe('SharePageLayout', () => {
       );
 
       const header = container.querySelector('header');
-      expect(header).toHaveClass('border-b', 'border-gray-900');
+      expect(header).toHaveClass('border-b', 'border-white/10');
     });
   });
 
@@ -261,7 +261,7 @@ describe('SharePageLayout', () => {
       );
 
       const footer = container.querySelector('footer');
-      expect(footer).toHaveClass('border-t', 'border-gray-900');
+      expect(footer).toHaveClass('border-t', 'border-white/10');
     });
   });
 });

@@ -87,7 +87,7 @@ describe('Navbar', () => {
       render(<Navbar />);
 
       const nav = screen.getByRole('navigation');
-      expect(nav).toHaveClass('bg-background', 'border-b', 'border-border');
+      expect(nav).toHaveClass('bg-background', 'border-b-[3px]', 'border-sploot-ink');
     });
 
     it('should be opaque chrome with no backdrop blur (DESIGN.md bans soft chrome)', () => {
