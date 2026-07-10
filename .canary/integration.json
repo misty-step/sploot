@@ -2,7 +2,7 @@
   "schema_version": 1,
   "service": "sploot-web",
   "environment": "production",
-  "canary_endpoint": "https://canary-obs.fly.dev",
+  "canary_endpoint": "https://canary.mistystep.io",
   "health_url": "https://www.sploot.app/api/health",
   "target_id": "TGT-4y0pa5ph1rws",
   "monitor_ids": [
