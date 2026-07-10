@@ -125,7 +125,7 @@ export default function SettingsPage() {
           className="flex-1 min-w-[8.5rem]"
         />
         <StatBlock
-          label="cooking"
+          label="not yet searchable"
           value={cookingCount !== null ? cookingCount.toLocaleString() : '—'}
           tone="magenta"
           className="flex-1 min-w-[8.5rem]"
@@ -162,7 +162,7 @@ export default function SettingsPage() {
           <h2 className="text-lg font-semibold text-foreground">Embeddings</h2>
           <p className="text-muted-foreground text-sm mt-1">
             {embeddedCount !== null && totalCount !== null
-              ? `${embeddedCount.toLocaleString()} of ${totalCount.toLocaleString()} saves embedded${cookingCount ? `, ${cookingCount.toLocaleString()} still cooking.` : '.'}`
+              ? `${embeddedCount.toLocaleString()} of ${totalCount.toLocaleString()} saves embedded${cookingCount ? `, ${cookingCount.toLocaleString()} not yet searchable (cooking or awaiting retry).` : '.'}`
               : 'Checking embedding coverage...'}
           </p>
         </div>

@@ -403,16 +403,14 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
             )}
           </div>
 
-          {asset.size > 0 && (
-            <button
-              type="button"
-              onClick={handleDownload}
-              className="inline-flex items-center gap-1.5 self-start font-mono text-xs lowercase text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Download className="size-3.5" />
-              download original
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="inline-flex items-center gap-1.5 self-start font-mono text-xs lowercase text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Download className="size-3.5" />
+            download original
+          </button>
         </aside>
       </div>
 
