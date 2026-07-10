@@ -2,11 +2,11 @@ import { cn } from '@/lib/utils';
 
 type StatTone = 'paper' | 'blue' | 'magenta' | 'yellow' | 'ink';
 
-// Ink text stays dark on the candy fills (magenta / yellow); blue and ink
-// carry light text.
+// Ink text stays dark on the candy fills (magenta / yellow); blue carries the
+// theme-flipping on-blue foreground and ink carries the shelf color.
 const statToneClass: Record<StatTone, string> = {
   paper: 'bg-sploot-panel text-sploot-ink',
-  blue: 'bg-sploot-blue text-white',
+  blue: 'bg-sploot-blue text-sploot-on-blue',
   magenta: 'bg-sploot-magenta text-[#1c1547]',
   yellow: 'bg-sploot-yellow text-sploot-ink',
   ink: 'bg-sploot-ink text-sploot-lime',

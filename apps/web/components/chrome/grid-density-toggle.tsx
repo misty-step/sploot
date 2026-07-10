@@ -148,7 +148,7 @@ export function GridDensityToggle({
 
               // Colors and states
               isActive
-                ? 'bg-sploot-blue text-white'
+                ? 'bg-sploot-blue text-sploot-on-blue'
                 : 'text-muted-foreground hover:text-foreground hover:bg-muted',
 
               // Touch target optimization

@@ -21,11 +21,12 @@ interface ClusterPileProps {
 }
 
 // Pile preview tiles ride the same candy palette as the rest of the toybox.
-// Ink text stays dark on the candy fills.
+// Candy fills carry theme-aware foregrounds: dark ink where the fill stays
+// bright in both themes, the on-blue token where the fill flips.
 const tileToneClass = {
   cyan: 'bg-sploot-cyan text-[#1c1547]',
   coral: 'bg-sploot-magenta text-[#1c1547]',
-  violet: 'bg-sploot-blue text-white',
+  violet: 'bg-sploot-blue text-sploot-on-blue',
   lime: 'bg-sploot-yellow text-[#1c1547]',
   ink: 'bg-sploot-ink text-sploot-paper',
 };

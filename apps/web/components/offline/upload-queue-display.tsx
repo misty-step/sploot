@@ -135,7 +135,7 @@ export function UploadQueueDisplay({ queue, onRemove, onRetry }: UploadQueueDisp
                   <IconButton
                     label="remove from queue"
                     onClick={() => onRemove(item.id)}
-                    className="hover:!bg-sploot-red hover:!text-white"
+                    className="hover:!bg-sploot-red hover:!text-sploot-on-red"
                   >
                     <svg
                       fill="none"

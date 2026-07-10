@@ -78,7 +78,7 @@ export function TileActionRail({
         <IconButton
           label="delete meme"
           disabled={disabled}
-          className="max-sm:size-[var(--sploot-touch-target)] hover:!bg-sploot-red hover:!text-white"
+          className="max-sm:size-[var(--sploot-touch-target)] hover:!bg-sploot-red hover:!text-sploot-on-red"
           onClick={(e) => {
             e.stopPropagation();
             onDelete();
