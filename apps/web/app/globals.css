@@ -729,7 +729,7 @@ select:focus-visible {
 }
 
 .sploot-ctl:active {
-  transform: translate(1px, 1px) scale(0.92, 0.88);
+  transform: translate(1px, 1px) scale(0.96);
   background: var(--sploot-magenta);
   color: #1c1547;
   box-shadow: none;

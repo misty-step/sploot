@@ -19,6 +19,8 @@ import { cn } from '@/lib/utils';
 
 interface UserAvatarProps {
   className?: string;
+  /** Extra classes for the avatar disc itself (e.g. the navbar's ink ring). */
+  avatarClassName?: string;
   avatarSize?: 'sm' | 'md' | 'lg';
   showDropdown?: boolean;
   onSignOut?: () => void;
@@ -30,6 +32,7 @@ interface UserAvatarProps {
  */
 export function UserAvatar({
   className,
+  avatarClassName,
   avatarSize = 'md',
   showDropdown = true,
   onSignOut,
@@ -82,14 +85,15 @@ export function UserAvatar({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          type="button"
           className={cn(
             // 44px hit area on phones regardless of the avatar's visual size
-            'inline-grid cursor-pointer place-items-center focus-visible:outline-none max-sm:size-[var(--sploot-touch-target)]',
+            'inline-grid cursor-pointer place-items-center focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-[3px] focus-visible:outline-sploot-focus max-sm:size-[var(--sploot-touch-target)]',
             className
           )}
           aria-label="User menu"
         >
-          <Avatar className={sizeClasses[avatarSize]}>
+          <Avatar className={cn(sizeClasses[avatarSize], avatarClassName)}>
             <AvatarImage
               src={user?.imageUrl}
               alt={getUserDisplay()}

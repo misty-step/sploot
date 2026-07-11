@@ -2,7 +2,6 @@
 
 import { ReactNode } from 'react';
 import Link from 'next/link';
-import { HelpCircle } from 'lucide-react';
 import { UserAvatar } from './user-avatar';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { PileMark, IconButton } from '@/components/sploot';
@@ -19,10 +18,9 @@ interface NavbarProps {
 }
 
 /**
- * Fixed navbar component for the new architecture
- * Height: 64px (16 * 4px base unit)
- * Position: Fixed top
- * Z-index: 50 (stays above main content)
+ * Fixed navbar component for the new architecture.
+ * The row always reserves the mobile touch-target height plus breathing room
+ * so compact controls stay centered instead of fighting the bottom rule.
  */
 export function Navbar({
   children,
@@ -44,10 +42,10 @@ export function Navbar({
         'fixed top-0 left-0 right-0',
         // Z-index to stay above content
         'z-50',
-        // Height: 48px mobile, 64px desktop
-        'h-12 md:h-16',
+        // Height: touch-safe mobile rail + breathing room; 64px desktop rail
+        'h-auto min-h-[calc(var(--sploot-touch-target)+0.75rem+env(safe-area-inset-top)+3px)] md:min-h-[calc(4rem+env(safe-area-inset-top)+3px)]',
         // iOS PWA safe area support - push navbar below status bar/notch
-        'pt-[env(safe-area-inset-top)]',
+        'pt-[env(safe-area-inset-top)] pb-1.5 md:py-2',
         'pl-[env(safe-area-inset-left)]',
         'pr-[env(safe-area-inset-right)]',
         // Background and border — toybox chrome: opaque paper shelf with a
@@ -62,7 +60,7 @@ export function Navbar({
       )}
     >
       {/* Container for navbar content - max-width for ultra-wide screens */}
-      <div className="flex items-center justify-between w-full max-w-screen-2xl 2xl:max-w-[1920px] mx-auto">
+      <div className="flex min-h-[var(--sploot-touch-target)] w-full max-w-screen-2xl items-center justify-between mx-auto 2xl:max-w-[1920px]">
         {/* Left section: SPLOOT branding with pile mark */}
         <Link
           href="/app"
@@ -86,23 +84,31 @@ export function Navbar({
 
         {/* Right section: Status line, help, theme toggle, and user menu —
             compact ink-mini icon buttons share identical grammar. */}
-        <div className="flex items-center gap-2 md:gap-3">
+        <div className="flex min-h-[var(--sploot-touch-target)] items-center gap-2 md:gap-3">
           {/* Terminal-style status line */}
           {statusLine}
 
-          {/* Help control */}
-          <IconButton label="keyboard shortcuts" onClick={openHelp}>
-            <HelpCircle />
+          {/* Help control — bare glyph in a circular ink-mini: the circled
+              HelpCircle icon inside a squared shell read as a frame-in-a-
+              frame, and the square shells fought the round avatar. The mast
+              family is circles. */}
+          <IconButton label="keyboard shortcuts" onClick={openHelp} className="!rounded-full">
+            <span aria-hidden="true" className="font-mono text-[15px] font-black leading-none">
+              ?
+            </span>
           </IconButton>
 
           {/* Theme toggle */}
-          <ThemeToggle />
+          <ThemeToggle className="!rounded-full" />
 
-          {/* User avatar - 32px circle with 8px margin from right edge */}
+          {/* User avatar — joins the mast family: same diameter as the
+              ink-mini controls, same 2px ink ring, instead of the bare
+              Clerk disc that read as a foreign object. */}
           {showUserAvatar && (
             <UserAvatar
-              className="mr-2"  // 8px margin from right edge
-              avatarSize="md"   // 32px size
+              className="mr-2"
+              avatarClassName="size-[34px] max-sm:size-[var(--sploot-touch-target)] border-2 border-sploot-ink"
+              avatarSize="md"
               showDropdown={true}
               onSignOut={onSignOut}
             />
@@ -124,5 +130,7 @@ export function Navbar({
  * Accounts for both navbar height (64px/4rem) and iOS safe area inset
  */
 export function NavbarSpacer() {
-  return <div className="h-[calc(3rem+env(safe-area-inset-top))] md:h-[calc(4rem+env(safe-area-inset-top))]" />;
+  return (
+    <div className="h-[calc(var(--sploot-touch-target)+0.75rem+env(safe-area-inset-top)+3px)] md:h-[calc(4rem+env(safe-area-inset-top)+3px)]" />
+  );
 }

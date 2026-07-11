@@ -1,10 +1,5 @@
 /**
- * Spacer component to account for fixed navbar height
+ * Backward-compatible import path for the canonical navbar spacer.
+ * Keeping one height contract prevents the fixed chrome from covering the feed.
  */
-
-/**
- * Spacer for navbar height (56px)
- */
-export function NavbarSpacer() {
-  return <div className="h-12 md:h-14" />;
-}
+export { NavbarSpacer } from './navbar';
