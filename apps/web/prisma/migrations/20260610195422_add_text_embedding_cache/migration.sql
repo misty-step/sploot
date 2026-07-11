@@ -69,88 +69,95 @@ END $$;
 -- RenameIndex
 DO $$
 DECLARE
-    old_exists BOOLEAN;
-    target_exists BOOLEAN;
+    old_names TEXT[] := ARRAY[
+        'unique_user_checksum',
+        'unique_user_tag',
+        'unique_provider_subject'
+    ];
+    target_names TEXT[] := ARRAY[
+        'assets_owner_user_id_checksum_sha256_key',
+        'tags_owner_user_id_name_key',
+        'user_identities_provider_provider_subject_key'
+    ];
+    table_names TEXT[] := ARRAY['assets', 'tags', 'user_identities'];
+    column_definitions TEXT[] := ARRAY[
+        'owner_user_id, checksum_sha256',
+        'owner_user_id, name',
+        'provider, provider_subject'
+    ];
+    position INTEGER;
+    old_definition TEXT;
+    target_definition TEXT;
+    expected_old_definition TEXT;
+    expected_target_definition TEXT;
 BEGIN
-    SELECT EXISTS (
-        SELECT 1 FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = current_schema()
-          AND c.relkind = 'i'
-          AND c.relname = 'unique_user_checksum'
-    ) INTO old_exists;
-    SELECT EXISTS (
-        SELECT 1 FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = current_schema()
-          AND c.relkind = 'i'
-          AND c.relname = 'assets_owner_user_id_checksum_sha256_key'
-    ) INTO target_exists;
+    FOR position IN 1..array_length(old_names, 1) LOOP
+        old_definition := NULL;
+        target_definition := NULL;
 
-    IF old_exists AND target_exists THEN
-        RAISE EXCEPTION 'Both source and target checksum indexes exist';
-    ELSIF NOT target_exists THEN
-        ALTER INDEX "unique_user_checksum"
-            RENAME TO "assets_owner_user_id_checksum_sha256_key";
-    END IF;
-END $$;
-
--- RenameIndex
-DO $$
-DECLARE
-    old_exists BOOLEAN;
-    target_exists BOOLEAN;
-BEGIN
-    SELECT EXISTS (
-        SELECT 1 FROM pg_class c
+        SELECT pg_get_indexdef(c.oid)
+        INTO old_definition
+        FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = current_schema()
           AND c.relkind = 'i'
-          AND c.relname = 'unique_user_tag'
-    ) INTO old_exists;
-    SELECT EXISTS (
-        SELECT 1 FROM pg_class c
+          AND c.relname = old_names[position];
+
+        SELECT pg_get_indexdef(c.oid)
+        INTO target_definition
+        FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = current_schema()
           AND c.relkind = 'i'
-          AND c.relname = 'tags_owner_user_id_name_key'
-    ) INTO target_exists;
+          AND c.relname = target_names[position];
 
-    IF old_exists AND target_exists THEN
-        RAISE EXCEPTION 'Both source and target tag indexes exist';
-    ELSIF NOT target_exists THEN
-        ALTER INDEX "unique_user_tag"
-            RENAME TO "tags_owner_user_id_name_key";
-    END IF;
-END $$;
+        expected_old_definition := format(
+            'CREATE UNIQUE INDEX %I ON %I.%I USING btree (%s)',
+            old_names[position],
+            current_schema(),
+            table_names[position],
+            column_definitions[position]
+        );
+        expected_target_definition := format(
+            'CREATE UNIQUE INDEX %I ON %I.%I USING btree (%s)',
+            target_names[position],
+            current_schema(),
+            table_names[position],
+            column_definitions[position]
+        );
 
--- RenameIndex
-DO $$
-DECLARE
-    old_exists BOOLEAN;
-    target_exists BOOLEAN;
-BEGIN
-    SELECT EXISTS (
-        SELECT 1 FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = current_schema()
-          AND c.relkind = 'i'
-          AND c.relname = 'unique_provider_subject'
-    ) INTO old_exists;
-    SELECT EXISTS (
-        SELECT 1 FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = current_schema()
-          AND c.relkind = 'i'
-          AND c.relname = 'user_identities_provider_provider_subject_key'
-    ) INTO target_exists;
+        IF old_definition IS NOT NULL AND target_definition IS NOT NULL THEN
+            RAISE EXCEPTION
+                'Both source % and target % indexes exist',
+                old_names[position],
+                target_names[position];
+        ELSIF target_definition IS NOT NULL THEN
+            IF target_definition <> expected_target_definition THEN
+                RAISE EXCEPTION
+                    'Existing target index % is incompatible: %',
+                    target_names[position],
+                    target_definition;
+            END IF;
+        ELSE
+            IF old_definition IS NULL THEN
+                RAISE EXCEPTION
+                    'Neither source % nor target % index exists',
+                    old_names[position],
+                    target_names[position];
+            ELSIF old_definition <> expected_old_definition THEN
+                RAISE EXCEPTION
+                    'Existing source index % is incompatible: %',
+                    old_names[position],
+                    old_definition;
+            END IF;
 
-    IF old_exists AND target_exists THEN
-        RAISE EXCEPTION 'Both source and target provider indexes exist';
-    ELSIF NOT target_exists THEN
-        ALTER INDEX "unique_provider_subject"
-            RENAME TO "user_identities_provider_provider_subject_key";
-    END IF;
+            EXECUTE format(
+                'ALTER INDEX %I RENAME TO %I',
+                old_names[position],
+                target_names[position]
+            );
+        END IF;
+    END LOOP;
 END $$;
 
 COMMIT;
