@@ -255,7 +255,10 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
       </div>
 
       {/* Editorial split: uncropped media left, identity + actions + related sidebar right */}
-      <div className="flex-1 grid gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,22rem)] lg:items-start">
+      {/* grid-cols-1 is load-bearing on phones: without an explicit clamped
+          template the implicit track sizes to max-content and the whole page
+          overflows sideways */}
+      <div className="flex-1 grid grid-cols-1 gap-6 p-4 sm:p-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,22rem)] lg:items-start">
         <div className="sploot-card flex items-center justify-center overflow-hidden p-4 sm:p-6">
           {imageError ? (
             <div className="flex flex-col items-center justify-center gap-3 py-20">
@@ -289,7 +292,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
           )}
         </div>
 
-        <aside className="flex flex-col gap-5 lg:sticky lg:top-6">
+        <aside className="flex min-w-0 flex-col gap-5 lg:sticky lg:top-6">
           <div className="space-y-2">
             <StickerTab tone="cyan">meme detail</StickerTab>
             <h1 className="font-display text-3xl leading-[0.95] text-foreground sm:text-4xl break-words">
@@ -406,7 +409,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
           <button
             type="button"
             onClick={handleDownload}
-            className="inline-flex items-center gap-1.5 self-start font-mono text-xs lowercase text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-1.5 self-start font-mono text-xs lowercase text-muted-foreground hover:text-foreground transition-colors max-sm:min-h-[var(--sploot-touch-target)]"
           >
             <Download className="size-3.5" />
             download original

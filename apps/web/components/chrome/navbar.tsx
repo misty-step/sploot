@@ -67,7 +67,7 @@ export function Navbar({
         <Link
           href="/app"
           aria-label="Sploot - Home"
-          className="flex items-center gap-2 group no-underline hover:opacity-80 transition-opacity duration-150"
+          className="flex min-h-[var(--sploot-touch-target)] items-center gap-2 group no-underline hover:opacity-80 transition-opacity duration-150"
         >
           <PileMark />
 

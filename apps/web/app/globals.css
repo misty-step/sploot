@@ -942,3 +942,20 @@ select:focus-visible {
 .cl-footer [class^='cl-internal'] * {
   color: var(--muted-foreground) !important;
 }
+/* Clerk renders 34px inputs/buttons; phones get the 44px touch floor. */
+@media (max-width: 640px) {
+  .cl-formFieldInput,
+  .cl-formButtonPrimary,
+  .cl-socialButtonsBlockButton {
+    min-height: var(--sploot-touch-target) !important;
+  }
+  .cl-formFieldInputShowPasswordButton {
+    min-height: var(--sploot-touch-target) !important;
+    min-width: var(--sploot-touch-target) !important;
+  }
+  .cl-footerActionLink {
+    display: inline-flex !important;
+    align-items: center !important;
+    min-height: var(--sploot-touch-target) !important;
+  }
+}

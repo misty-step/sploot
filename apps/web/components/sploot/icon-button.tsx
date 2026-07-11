@@ -41,7 +41,10 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
           'sploot-ctl inline-grid place-items-center shrink-0 cursor-pointer',
           'outline-none focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-[3px] focus-visible:outline-sploot-focus',
           '[&_svg]:pointer-events-none [&_svg]:size-[18px] [&_svg]:stroke-[2]',
-          size === 'dock' ? 'size-[var(--sploot-touch-target)]' : 'size-[34px]',
+          // compact is a desktop density; phones always get the 44px touch floor
+          size === 'dock'
+            ? 'size-[var(--sploot-touch-target)]'
+            : 'size-[34px] max-sm:size-[var(--sploot-touch-target)]',
           chip &&
             'rounded-[var(--sploot-radius-pill)] bg-sploot-panel shadow-[0_2px_0_var(--sploot-shadow-color)] hover:shadow-[2px_4px_0_var(--sploot-shadow-color)] active:shadow-none',
           pressed && 'bg-sploot-yellow text-[#1c1547]',
