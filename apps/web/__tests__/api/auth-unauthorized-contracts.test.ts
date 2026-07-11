@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   clerkAuth: vi.fn(),
   verifyBearerOrThrow: vi.fn(),
   logError: vi.fn(),
-  vercelLogError: vi.fn(),
   createErrorResponse: vi.fn(),
 }));
 
@@ -40,10 +39,6 @@ vi.mock('@/lib/observability-logger', async (importOriginal) => {
   };
 });
 
-vi.mock('@/lib/vercel-logger', () => ({
-  logError: mocks.vercelLogError,
-}));
-
 vi.mock('@/lib/error-response', () => ({
   createErrorResponse: (...args: any[]) => mocks.createErrorResponse(...args),
 }));
@@ -58,6 +53,11 @@ vi.mock('@/lib/embeddings', () => ({
   createEmbeddingService: vi.fn(),
   EmbeddingError: class EmbeddingError extends Error {
     statusCode?: number;
+  },
+  EmbeddingAdmissionError: class EmbeddingAdmissionError extends Error {
+    statusCode = 429;
+    reason = 'daily_budget';
+    retryAfterSec = 60;
   },
 }));
 

@@ -46,8 +46,8 @@ async function postHandler(
     }
 
     // The starter images ship in public/starter-pile/; fetch them from this
-    // deployment's own static origin (works locally and on Vercel, where
-    // public/ files are not on the function's filesystem).
+    // deployment's own static origin so local and hosted runtimes use the same
+    // HTTP path instead of assuming public files exist on a worker filesystem.
     const origin = new URL(req.url).origin;
 
     let seeded = 0;

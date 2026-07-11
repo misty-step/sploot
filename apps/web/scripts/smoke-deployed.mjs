@@ -166,6 +166,12 @@ await record('production health', async () => {
   if (json?.dependencies?.database !== 'up') {
     throw new Error(`expected database up, got ${json?.dependencies?.database}`);
   }
+  if (json?.dependencies?.embedding_limiter !== 'up') {
+    throw new Error(`expected embedding limiter up, got ${json?.dependencies?.embedding_limiter}`);
+  }
+  if (json?.dependencies?.share_slug_cache !== 'local') {
+    throw new Error(`expected local share slug cache, got ${json?.dependencies?.share_slug_cache}`);
+  }
   if (json?.diagnostics?.database_url_configured !== true) {
     throw new Error('expected DATABASE_URL to be configured');
   }
@@ -175,7 +181,8 @@ await record('production health', async () => {
 
   return {
     database: json.dependencies.database,
-    redis: json.dependencies.redis,
+    embedding_limiter: json.dependencies.embedding_limiter,
+    share_slug_cache: json.dependencies.share_slug_cache,
     canary_configured: json.diagnostics?.canary_configured ?? null,
     database_latency_ms: json.diagnostics?.connection_latency_ms ?? null,
     version: json.version ?? null,

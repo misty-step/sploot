@@ -7,14 +7,9 @@ import {
 import * as db from '@/lib/db';
 import * as embeddings from '@/lib/embeddings';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
-import { EmbeddingError } from '@/lib/embeddings';
+import { EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
 import * as nextServer from 'next/server';
 import { acquireEmbeddingProcessing } from '@/lib/embedding-guard';
-import {
-  acquireEmbeddingDailyBudget,
-  acquireEmbeddingRateLimit,
-  releaseEmbeddingRateLimit,
-} from '@/lib/embedding-rate-limit';
 
 // Mock dependencies
 vi.mock('next/server');
@@ -27,22 +22,6 @@ vi.mock('@/lib/embedding-guard', async () => {
     acquireEmbeddingProcessing: vi.fn().mockResolvedValue({
       acquired: true,
       state: 'processing',
-    }),
-  };
-});
-vi.mock('@/lib/embedding-rate-limit', async () => {
-  const actual = await vi.importActual<any>('@/lib/embedding-rate-limit');
-  return {
-    ...actual,
-    acquireEmbeddingRateLimit: vi.fn().mockResolvedValue({
-      allowed: true,
-      lease: { userId: 'user-123', inflightUserKey: 'k1', inflightGlobalKey: 'k2' },
-    }),
-    releaseEmbeddingRateLimit: vi.fn().mockResolvedValue(undefined),
-    acquireEmbeddingDailyBudget: vi.fn().mockResolvedValue({
-      allowed: true,
-      count: 1,
-      limit: 2000,
     }),
   };
 });
@@ -83,20 +62,12 @@ describe('EmbeddingSchedulerService', () => {
     });
 
     mockCreateEmbeddingService = vi.fn();
-    vi.spyOn(embeddings, 'createEmbeddingService').mockImplementation(mockCreateEmbeddingService);
+    vi.spyOn(embeddings, 'createEmbeddingService').mockImplementation(
+      mockCreateEmbeddingService
+    );
     vi.mocked(acquireEmbeddingProcessing).mockResolvedValue({
       acquired: true,
       state: 'processing',
-    });
-    vi.mocked(acquireEmbeddingRateLimit).mockResolvedValue({
-      allowed: true,
-      lease: { userId: 'user-123', inflightUserKey: 'k1', inflightGlobalKey: 'k2' },
-    });
-    vi.mocked(releaseEmbeddingRateLimit).mockResolvedValue(undefined);
-    vi.mocked(acquireEmbeddingDailyBudget).mockResolvedValue({
-      allowed: true,
-      count: 1,
-      limit: 2000,
     });
   });
 
@@ -191,57 +162,9 @@ describe('EmbeddingSchedulerService', () => {
         });
         expect(mockCreateEmbeddingService).not.toHaveBeenCalled();
         expect(mockUpsertAssetEmbedding).not.toHaveBeenCalled();
-        // Lease acquired before the lock check must still be released.
-        expect(releaseEmbeddingRateLimit).toHaveBeenCalledTimes(1);
       });
 
-      it('should skip generation when the rate limiter throttles the request', async () => {
-        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
-        vi.mocked(acquireEmbeddingRateLimit).mockResolvedValue({
-          allowed: false,
-          reason: 'global_concurrency',
-          retryAfterSec: 180,
-        });
-
-        const result = await service.scheduleEmbedding(baseParams);
-
-        expect(result).toEqual({
-          scheduled: true,
-          mode: 'sync',
-          assetId: 'asset-123',
-        });
-        expect(acquireEmbeddingDailyBudget).not.toHaveBeenCalled();
-        expect(acquireEmbeddingProcessing).not.toHaveBeenCalled();
-        expect(mockCreateEmbeddingService).not.toHaveBeenCalled();
-        // No lease was granted, so there is nothing to release.
-        expect(releaseEmbeddingRateLimit).not.toHaveBeenCalled();
-      });
-
-      it('should skip generation when the daily embedding budget is exhausted', async () => {
-        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
-        vi.mocked(acquireEmbeddingDailyBudget).mockResolvedValue({
-          allowed: false,
-          reason: 'daily_budget',
-          count: 2000,
-          limit: 2000,
-          retryAfterSec: 3600,
-        });
-
-        const result = await service.scheduleEmbedding(baseParams);
-
-        expect(result).toEqual({
-          scheduled: true,
-          mode: 'sync',
-          assetId: 'asset-123',
-        });
-        expect(acquireEmbeddingProcessing).not.toHaveBeenCalled();
-        expect(mockCreateEmbeddingService).not.toHaveBeenCalled();
-        // The granted rate-limit lease must still be released even though
-        // generation never reached the processing lock.
-        expect(releaseEmbeddingRateLimit).toHaveBeenCalledTimes(1);
-      });
-
-      it('should release the rate-limit lease after a successful generation', async () => {
+      it('should bind provider admission to the asset owner', async () => {
         mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
         const mockEmbeddingService = {
           embedImage: vi.fn().mockResolvedValue({
@@ -255,8 +178,7 @@ describe('EmbeddingSchedulerService', () => {
 
         await service.scheduleEmbedding(baseParams);
 
-        expect(acquireEmbeddingRateLimit).toHaveBeenCalledWith('user-123');
-        expect(releaseEmbeddingRateLimit).toHaveBeenCalledTimes(1);
+        expect(mockCreateEmbeddingService).toHaveBeenCalledWith('user-123');
       });
 
       it('should throw EmbeddingScheduleError on embedding service init failure', async () => {
@@ -288,19 +210,17 @@ describe('EmbeddingSchedulerService', () => {
             error: 'Failed to initialize embedding service',
           }),
         });
-
-        // The lease must be released on the thrown-error path too (one
-        // release per scheduleEmbedding call above).
-        expect(releaseEmbeddingRateLimit).toHaveBeenCalledTimes(2);
       });
 
       it('should throw EmbeddingScheduleError on embedding generation failure', async () => {
         // Setup
         mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
         const mockEmbeddingService = {
-          embedImage: vi.fn().mockRejectedValue(
-            new EmbeddingError('API rate limit exceeded', 429, true)
-          ),
+          embedImage: vi
+            .fn()
+            .mockRejectedValue(
+              new EmbeddingError('API rate limit exceeded', 429, true)
+            ),
         };
         mockCreateEmbeddingService.mockReturnValue(mockEmbeddingService);
         mockPrisma.assetEmbedding.upsert.mockResolvedValue({});
@@ -316,15 +236,15 @@ describe('EmbeddingSchedulerService', () => {
         expect(error).toBeInstanceOf(EmbeddingScheduleError);
         expect(error.retryable).toBe(true);
 
-        // Verify failure was marked in DB
+        // Retryable provider failures remain discoverable by cron.
         expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalledWith({
           where: { assetId: 'asset-123' },
           create: expect.objectContaining({
-            status: 'failed',
+            status: 'pending',
             error: 'API rate limit exceeded',
           }),
           update: expect.objectContaining({
-            status: 'failed',
+            status: 'pending',
             error: 'API rate limit exceeded',
           }),
         });
@@ -409,11 +329,43 @@ describe('EmbeddingSchedulerService', () => {
         });
 
         // Verify: error was marked in DB
-        const afterResult = mockAfter.mock.results[mockAfter.mock.results.length - 1]?.value;
+        const afterResult =
+          mockAfter.mock.results[mockAfter.mock.results.length - 1]?.value;
         if (afterResult instanceof Promise) {
           await afterResult;
         }
         expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalled();
+      });
+
+      it('should leave admission-denied async work pending for cron recovery', async () => {
+        const asyncParams = { ...baseParams, mode: 'async' as const };
+        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
+        mockCreateEmbeddingService.mockReturnValue({
+          embedImage: vi
+            .fn()
+            .mockRejectedValue(new EmbeddingAdmissionError('daily_budget', 3600)),
+        });
+        mockPrisma.assetEmbedding.upsert.mockResolvedValue({});
+
+        await service.scheduleEmbedding(asyncParams);
+        const afterResult = mockAfter.mock.results.at(-1)?.value;
+        if (afterResult instanceof Promise) {
+          await afterResult;
+        }
+
+        expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalledWith({
+          where: { assetId: 'asset-123' },
+          create: expect.objectContaining({
+            assetId: 'asset-123',
+            status: 'pending',
+          }),
+          update: expect.objectContaining({
+            status: 'pending',
+          }),
+        });
+        expect(JSON.stringify(mockPrisma.assetEmbedding.upsert.mock.calls)).not.toContain(
+          '"status":"failed"'
+        );
       });
 
       it('should skip if embedding exists in async mode', async () => {
@@ -562,7 +514,9 @@ describe('EmbeddingSchedulerService', () => {
         const mockEmbeddingService = {
           embedImage: vi
             .fn()
-            .mockRejectedValue(new EmbeddingError('Temporary failure', 500, true)),
+            .mockRejectedValue(
+              new EmbeddingError('Temporary failure', 500, true)
+            ),
         };
         mockCreateEmbeddingService.mockReturnValue(mockEmbeddingService);
         mockPrisma.assetEmbedding.upsert.mockResolvedValue({});

@@ -1,4 +1,7 @@
-import { kv } from '@vercel/kv';
+import { randomUUID } from 'node:crypto';
+import type { Prisma } from '@prisma/client';
+
+import { prisma } from '@/lib/db';
 import { logger } from '@/lib/observability-logger';
 
 export const EMBEDDING_RATE_WINDOW_SECONDS = 60;
@@ -8,24 +11,21 @@ export const EMBEDDING_USER_CONCURRENCY_LIMIT = 1;
 export const EMBEDDING_GLOBAL_CONCURRENCY_LIMIT = 3;
 export const EMBEDDING_INFLIGHT_TTL_SECONDS = 180;
 
-// Daily ceiling on embedding *generation attempts*, independent of the
-// per-minute burst/concurrency limits above. Bounds worst-case daily
-// Replicate spend against a bulk-import or retry-loop spike, the same way
-// docs/adr/008-cap-image-optimization-cost.md caps CDN spend with a named,
-// testable constant instead of an unbounded surface. Replicate embedding
-// calls run well under $0.01 each; 2,000/day keeps worst-case daily spend
-// in the single digits regardless of upload volume.
+// Global ceiling on paid embedding generation attempts per UTC day.
 export const EMBEDDING_DAILY_BUDGET = 2000;
-export const EMBEDDING_DAILY_BUDGET_TTL_SECONDS = 26 * 60 * 60; // covers UTC-day rollover drift
+export const EMBEDDING_DAILY_BUDGET_TTL_SECONDS = 26 * 60 * 60;
+
+const LIMITER_LOCK_NAMESPACE = 'sploot:embedding-rate-limit:v1';
+const GLOBAL_WINDOW_KEY_PREFIX = 'embedding:rate:global';
 
 export type EmbeddingRateLimitReason =
   | 'user_rate'
   | 'global_rate'
   | 'user_concurrency'
   | 'global_concurrency'
-  | 'kv_unavailable';
+  | 'limiter_unavailable';
 
-export type EmbeddingDailyBudgetReason = 'daily_budget' | 'kv_unavailable';
+export type EmbeddingDailyBudgetReason = 'daily_budget' | 'limiter_unavailable';
 
 export interface EmbeddingDailyBudgetResult {
   allowed: boolean;
@@ -36,9 +36,8 @@ export interface EmbeddingDailyBudgetResult {
 }
 
 export interface EmbeddingRateLimitLease {
+  id: string;
   userId: string;
-  inflightUserKey: string;
-  inflightGlobalKey: string;
 }
 
 export interface EmbeddingRateLimitResult {
@@ -63,161 +62,171 @@ function getWindowRetryAfterSec(nowMs: number): number {
   return Math.max(1, EMBEDDING_RATE_WINDOW_SECONDS - elapsed);
 }
 
-async function incrementWithExpiry(key: string, ttlSeconds: number): Promise<number> {
-  const value = await kv.incr(key);
-  if (value === 1) {
-    await kv.expire(key, ttlSeconds);
-  }
-  return value;
+function getWindowExpiry(windowId: number): Date {
+  return new Date((windowId + 1) * EMBEDDING_RATE_WINDOW_SECONDS * 1000);
 }
 
-async function decrementSafe(key: string): Promise<void> {
-  try {
-    await kv.decr(key);
-  } catch (error) {
-    logger.logError('embedding-rate-limit.decrement-failed', error, { key });
+function getUtcDateKey(nowMs: number): string {
+  return new Date(nowMs).toISOString().slice(0, 10);
+}
+
+function secondsUntilNextUtcDay(nowMs: number): number {
+  const now = new Date(nowMs);
+  const nextDayMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  return Math.max(1, Math.round((nextDayMs - nowMs) / 1000));
+}
+
+async function withLimiterLock<T>(
+  work: (tx: Prisma.TransactionClient) => Promise<T>
+): Promise<T> {
+  if (!prisma) {
+    throw new Error('Postgres is not configured');
   }
+
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${LIMITER_LOCK_NAMESPACE})) IS NULL AS locked
+      `;
+      return work(tx);
+    },
+    { maxWait: 5_000, timeout: 10_000 }
+  );
+}
+
+async function pruneExpiredLimiterState(
+  tx: Prisma.TransactionClient,
+  now: Date
+): Promise<void> {
+  await Promise.all([
+    tx.embeddingRateLease.deleteMany({ where: { expiresAt: { lte: now } } }),
+    tx.embeddingRateBucket.deleteMany({ where: { expiresAt: { lte: now } } }),
+  ]);
+}
+
+async function incrementBucket(
+  tx: Prisma.TransactionClient,
+  key: string,
+  expiresAt: Date
+): Promise<number> {
+  const bucket = await tx.embeddingRateBucket.upsert({
+    where: { key },
+    create: { key, count: 1, expiresAt },
+    update: { count: { increment: 1 }, expiresAt },
+    select: { count: true },
+  });
+  return bucket.count;
 }
 
 export async function acquireEmbeddingRateLimit(
-  userId: string
+  userId: string,
+  nowMs: number = Date.now()
 ): Promise<EmbeddingRateLimitResult> {
-  const nowMs = Date.now();
+  const now = new Date(nowMs);
   const windowId = getWindowId(nowMs);
   const retryAfterSec = getWindowRetryAfterSec(nowMs);
-
-  const inflightUserKey = `embedding:inflight:user:${userId}`;
-  const inflightGlobalKey = 'embedding:inflight:global';
-
   const userWindowKey = `embedding:rate:user:${userId}:${windowId}`;
-  const globalWindowKey = `embedding:rate:global:${windowId}`;
-  let userInflightIncremented = false;
-  let globalInflightIncremented = false;
-  let userWindowIncremented = false;
-  let globalWindowIncremented = false;
+  const globalWindowKey = `${GLOBAL_WINDOW_KEY_PREFIX}:${windowId}`;
 
   try {
-    const userInflight = await incrementWithExpiry(
-      inflightUserKey,
-      EMBEDDING_INFLIGHT_TTL_SECONDS
-    );
-    userInflightIncremented = true;
-    const globalInflight = await incrementWithExpiry(
-      inflightGlobalKey,
-      EMBEDDING_INFLIGHT_TTL_SECONDS
-    );
-    globalInflightIncremented = true;
+    return await withLimiterLock(async (tx) => {
+      await pruneExpiredLimiterState(tx, now);
 
-    if (userInflight > EMBEDDING_USER_CONCURRENCY_LIMIT) {
-      await Promise.all([
-        decrementSafe(inflightUserKey),
-        decrementSafe(inflightGlobalKey),
+      const [userInflight, globalInflight, userBucket, globalBucket] = await Promise.all([
+        tx.embeddingRateLease.count({ where: { userId, expiresAt: { gt: now } } }),
+        tx.embeddingRateLease.count({ where: { expiresAt: { gt: now } } }),
+        tx.embeddingRateBucket.findUnique({ where: { key: userWindowKey } }),
+        tx.embeddingRateBucket.findUnique({ where: { key: globalWindowKey } }),
       ]);
-      return {
-        allowed: false,
-        reason: 'user_concurrency',
-        retryAfterSec: EMBEDDING_INFLIGHT_TTL_SECONDS,
-        counts: { userInflight, globalInflight, userWindow: 0, globalWindow: 0 },
+
+      const userWindow = userBucket?.count ?? 0;
+      const globalWindow = globalBucket?.count ?? 0;
+      const candidateCounts = {
+        userWindow: userWindow + 1,
+        globalWindow: globalWindow + 1,
+        userInflight: userInflight + 1,
+        globalInflight: globalInflight + 1,
       };
-    }
 
-    if (globalInflight > EMBEDDING_GLOBAL_CONCURRENCY_LIMIT) {
-      await Promise.all([
-        decrementSafe(inflightUserKey),
-        decrementSafe(inflightGlobalKey),
-      ]);
-      // Global (not per-user) pressure means the queue depth floor was
-      // crossed system-wide, not one user hitting their own throttle —
-      // that is worth an operator's attention.
-      logger.logError(
-        'embedding-rate-limit.global-concurrency-breach',
-        new Error('Embedding global concurrency limit exceeded'),
-        { globalInflight, limit: EMBEDDING_GLOBAL_CONCURRENCY_LIMIT }
-      );
-      return {
-        allowed: false,
-        reason: 'global_concurrency',
-        retryAfterSec: EMBEDDING_INFLIGHT_TTL_SECONDS,
-        counts: { userInflight, globalInflight, userWindow: 0, globalWindow: 0 },
-      };
-    }
+      if (userInflight >= EMBEDDING_USER_CONCURRENCY_LIMIT) {
+        return {
+          allowed: false,
+          reason: 'user_concurrency',
+          retryAfterSec: EMBEDDING_INFLIGHT_TTL_SECONDS,
+          counts: candidateCounts,
+        };
+      }
 
-    const userWindow = await incrementWithExpiry(
-      userWindowKey,
-      EMBEDDING_RATE_WINDOW_SECONDS + 2
-    );
-    userWindowIncremented = true;
-    const globalWindow = await incrementWithExpiry(
-      globalWindowKey,
-      EMBEDDING_RATE_WINDOW_SECONDS + 2
-    );
-    globalWindowIncremented = true;
+      if (globalInflight >= EMBEDDING_GLOBAL_CONCURRENCY_LIMIT) {
+        logger.logError(
+          'embedding-rate-limit.global-concurrency-breach',
+          new Error('Embedding global concurrency limit exceeded'),
+          { globalInflight, limit: EMBEDDING_GLOBAL_CONCURRENCY_LIMIT }
+        );
+        return {
+          allowed: false,
+          reason: 'global_concurrency',
+          retryAfterSec: EMBEDDING_INFLIGHT_TTL_SECONDS,
+          counts: candidateCounts,
+        };
+      }
 
-    if (userWindow > EMBEDDING_USER_WINDOW_LIMIT) {
-      await Promise.all([
-        decrementSafe(userWindowKey),
-        decrementSafe(globalWindowKey),
-        decrementSafe(inflightUserKey),
-        decrementSafe(inflightGlobalKey),
-      ]);
-      return {
-        allowed: false,
-        reason: 'user_rate',
-        retryAfterSec,
-        counts: { userWindow, globalWindow, userInflight, globalInflight },
-      };
-    }
+      if (userWindow >= EMBEDDING_USER_WINDOW_LIMIT) {
+        return {
+          allowed: false,
+          reason: 'user_rate',
+          retryAfterSec,
+          counts: candidateCounts,
+        };
+      }
 
-    if (globalWindow > EMBEDDING_GLOBAL_WINDOW_LIMIT) {
-      await Promise.all([
-        decrementSafe(userWindowKey),
-        decrementSafe(globalWindowKey),
-        decrementSafe(inflightUserKey),
-        decrementSafe(inflightGlobalKey),
-      ]);
-      logger.logError(
-        'embedding-rate-limit.global-rate-breach',
-        new Error('Embedding global rate limit exceeded'),
-        { globalWindow, limit: EMBEDDING_GLOBAL_WINDOW_LIMIT }
-      );
-      return {
-        allowed: false,
-        reason: 'global_rate',
-        retryAfterSec,
-        counts: { userWindow, globalWindow, userInflight, globalInflight },
-      };
-    }
+      if (globalWindow >= EMBEDDING_GLOBAL_WINDOW_LIMIT) {
+        logger.logError(
+          'embedding-rate-limit.global-rate-breach',
+          new Error('Embedding global rate limit exceeded'),
+          { globalWindow, limit: EMBEDDING_GLOBAL_WINDOW_LIMIT }
+        );
+        return {
+          allowed: false,
+          reason: 'global_rate',
+          retryAfterSec,
+          counts: candidateCounts,
+        };
+      }
 
-    return {
-      allowed: true,
-      lease: {
+      const expiresAt = getWindowExpiry(windowId);
+      const lease = {
+        id: randomUUID(),
         userId,
-        inflightUserKey,
-        inflightGlobalKey,
-      },
-      counts: { userWindow, globalWindow, userInflight, globalInflight },
-    };
+      };
+
+      const [persistedUserWindow, persistedGlobalWindow] = await Promise.all([
+        incrementBucket(tx, userWindowKey, expiresAt),
+        incrementBucket(tx, globalWindowKey, expiresAt),
+        tx.embeddingRateLease.create({
+          data: {
+            ...lease,
+            expiresAt: new Date(nowMs + EMBEDDING_INFLIGHT_TTL_SECONDS * 1000),
+          },
+        }),
+      ]);
+
+      return {
+        allowed: true,
+        lease,
+        counts: {
+          userWindow: persistedUserWindow,
+          globalWindow: persistedGlobalWindow,
+          userInflight: candidateCounts.userInflight,
+          globalInflight: candidateCounts.globalInflight,
+        },
+      };
+    });
   } catch (error) {
-    const rollbacks: Promise<void>[] = [];
-    if (userInflightIncremented) {
-      rollbacks.push(decrementSafe(inflightUserKey));
-    }
-    if (globalInflightIncremented) {
-      rollbacks.push(decrementSafe(inflightGlobalKey));
-    }
-    if (userWindowIncremented) {
-      rollbacks.push(decrementSafe(userWindowKey));
-    }
-    if (globalWindowIncremented) {
-      rollbacks.push(decrementSafe(globalWindowKey));
-    }
-    if (rollbacks.length > 0) {
-      await Promise.all(rollbacks);
-    }
-    logger.logError('embedding-rate-limit.kv-unavailable', error, { userId });
+    logger.logError('embedding-rate-limit.store-unavailable', error, { userId });
     return {
       allowed: false,
-      reason: 'kv_unavailable',
+      reason: 'limiter_unavailable',
       retryAfterSec: 30,
     };
   }
@@ -228,61 +237,63 @@ export async function releaseEmbeddingRateLimit(
 ): Promise<void> {
   if (!lease) return;
 
-  await Promise.all([
-    decrementSafe(lease.inflightUserKey),
-    decrementSafe(lease.inflightGlobalKey),
-  ]);
+  try {
+    if (!prisma) {
+      throw new Error('Postgres is not configured');
+    }
+    await prisma.embeddingRateLease.deleteMany({ where: { id: lease.id } });
+  } catch (error) {
+    logger.logError('embedding-rate-limit.release-failed', error, {
+      leaseId: lease.id,
+      userId: lease.userId,
+    });
+  }
 }
 
-function getUtcDateKey(nowMs: number): string {
-  return new Date(nowMs).toISOString().slice(0, 10); // YYYY-MM-DD
-}
-
-function secondsUntilNextUtcDay(nowMs: number): number {
-  const now = new Date(nowMs);
-  const nextDayMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-  return Math.max(1, Math.round((nextDayMs - nowMs) / 1000));
-}
-
-/**
- * Global daily ceiling on embedding generation attempts. Independent of
- * (and checked in addition to) the per-minute rate/concurrency limits
- * above — those bound bursts, this bounds total daily Replicate spend.
- *
- * Fails closed on KV outage, matching acquireEmbeddingRateLimit: an
- * unreachable limiter must not become an unbounded spend surface.
- */
 export async function acquireEmbeddingDailyBudget(
   nowMs: number = Date.now()
 ): Promise<EmbeddingDailyBudgetResult> {
+  const now = new Date(nowMs);
   const dateKey = getUtcDateKey(nowMs);
   const dailyKey = `embedding:daily:${dateKey}`;
 
   try {
-    const count = await incrementWithExpiry(dailyKey, EMBEDDING_DAILY_BUDGET_TTL_SECONDS);
+    return await withLimiterLock(async (tx) => {
+      await pruneExpiredLimiterState(tx, now);
+      const bucket = await tx.embeddingRateBucket.findUnique({ where: { key: dailyKey } });
+      const count = bucket?.count ?? 0;
 
-    if (count > EMBEDDING_DAILY_BUDGET) {
-      await decrementSafe(dailyKey);
-      logger.logError(
-        'embedding-rate-limit.daily-budget-breach',
-        new Error('Embedding daily budget exceeded'),
-        { dateKey, count: count - 1, limit: EMBEDDING_DAILY_BUDGET }
+      if (count >= EMBEDDING_DAILY_BUDGET) {
+        logger.logError(
+          'embedding-rate-limit.daily-budget-breach',
+          new Error('Embedding daily budget exceeded'),
+          { dateKey, count, limit: EMBEDDING_DAILY_BUDGET }
+        );
+        return {
+          allowed: false,
+          reason: 'daily_budget',
+          count,
+          limit: EMBEDDING_DAILY_BUDGET,
+          retryAfterSec: secondsUntilNextUtcDay(nowMs),
+        };
+      }
+
+      const persistedCount = await incrementBucket(
+        tx,
+        dailyKey,
+        new Date(nowMs + EMBEDDING_DAILY_BUDGET_TTL_SECONDS * 1000)
       );
       return {
-        allowed: false,
-        reason: 'daily_budget',
-        count: count - 1,
+        allowed: true,
+        count: persistedCount,
         limit: EMBEDDING_DAILY_BUDGET,
-        retryAfterSec: secondsUntilNextUtcDay(nowMs),
       };
-    }
-
-    return { allowed: true, count, limit: EMBEDDING_DAILY_BUDGET };
+    });
   } catch (error) {
-    logger.logError('embedding-rate-limit.daily-budget-kv-unavailable', error, { dateKey });
+    logger.logError('embedding-rate-limit.daily-budget-store-unavailable', error, { dateKey });
     return {
       allowed: false,
-      reason: 'kv_unavailable',
+      reason: 'limiter_unavailable',
       count: 0,
       limit: EMBEDDING_DAILY_BUDGET,
       retryAfterSec: 30,

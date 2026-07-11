@@ -18,8 +18,8 @@ export interface Release {
   html_url: string;
 }
 
-// GITHUB_REPOSITORY is only set inside GitHub Actions; on Vercel the
-// default must be the real repo or every surface renders empty.
+// GITHUB_REPOSITORY is only set inside GitHub Actions; deployed runtimes use
+// the explicit repository default.
 export function getRepoSlug(): string {
   return process.env.GITHUB_REPOSITORY || 'misty-step/sploot';
 }

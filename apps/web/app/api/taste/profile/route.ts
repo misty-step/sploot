@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import { getTasteProfile } from '@/lib/taste/taste-engine';
 import { withObservability } from '@/lib/with-observability';
-import { logError } from '@/lib/vercel-logger';
+import { logError } from '@/lib/observability-logger';
 
 async function getHandler(
   _req: NextRequest,

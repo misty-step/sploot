@@ -13,5 +13,5 @@ Related surfaces to verify when prepping a Web Store submission:
   for prod, `pk_test_*` + localhost for dev (`VITE_CLERK_PUBLISHABLE_KEY`,
   `VITE_API_BASE_URL`, `VITE_CLERK_SYNC_HOST`).
 
-Remember: the extension release is a separate surface from the Vercel web
+Remember: the extension release is a separate surface from the DigitalOcean web
 deploy. Report what passed, what's missing, and the exact remediation.

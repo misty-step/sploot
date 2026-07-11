@@ -1,4 +1,10 @@
 import { logger } from '@/lib/observability-logger';
+import { postPerformanceMetric } from '@/lib/telemetry-client';
+import type {
+  PerformanceMetricName,
+  PerformanceMetricUnit,
+  TelemetryMetadata,
+} from '@/lib/telemetry-contract';
 
 /**
  * Performance Metrics Tracking
@@ -7,10 +13,10 @@ import { logger } from '@/lib/observability-logger';
  * to the telemetry API and browser console.
  */
 interface PerformanceMetric {
-  name: string;
+  name: PerformanceMetricName;
   value: number;
-  unit: 'ms' | 'count' | 'ratio' | 'score';
-  tags?: Record<string, string | number | boolean>;
+  unit: PerformanceMetricUnit;
+  tags?: TelemetryMetadata;
 }
 
 interface CoreWebVitalsMetric extends PerformanceMetric {
@@ -55,22 +61,12 @@ export function trackMetric(metric: PerformanceMetric): void {
  * Send metric to telemetry API
  */
 async function sendToTelemetry(metric: PerformanceMetric): Promise<void> {
-  try {
-    await fetch('/api/telemetry', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'performance',
-        metric: metric.name,
-        value: metric.value,
-        unit: metric.unit,
-        tags: metric.tags,
-        timestamp: new Date().toISOString(),
-      }),
-    });
-  } catch (error) {
-    // Silently fail
-  }
+  await postPerformanceMetric({
+    metric: metric.name,
+    value: metric.value,
+    unit: metric.unit,
+    tags: metric.tags,
+  });
 }
 
 /**

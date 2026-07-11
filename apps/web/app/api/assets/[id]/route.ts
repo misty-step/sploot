@@ -3,6 +3,7 @@ import { unstable_rethrow } from 'next/navigation';
 import { getCacheService } from '@/lib/cache';
 import { getAuth } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
+import { invalidateSlugCache } from '@/lib/slug-cache';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
 
@@ -293,11 +294,7 @@ async function deleteHandler(
         where: { id },
       });
 
-      // Invalidate cache after deletion
-      // Clear only asset and search caches (preserve embeddings)
-      const cache = getCacheService();
-      await cache.clear('assets');
-      await cache.clear('search');
+      await invalidateDeletedAssetCaches(existingAsset.shareSlug);
 
       return NextResponse.json({
         message: 'Asset permanently deleted',
@@ -310,11 +307,7 @@ async function deleteHandler(
         },
       });
 
-      // Invalidate cache after soft deletion
-      // Clear only asset and search caches (preserve embeddings)
-      const cache = getCacheService();
-      await cache.clear('assets');
-      await cache.clear('search');
+      await invalidateDeletedAssetCaches(existingAsset.shareSlug);
 
       return NextResponse.json({
         message: 'Asset soft deleted',
@@ -331,6 +324,16 @@ async function deleteHandler(
       { error: 'Failed to delete asset' },
       { status: 500 }
     );
+  }
+}
+
+async function invalidateDeletedAssetCaches(shareSlug: string | null): Promise<void> {
+  const cache = getCacheService();
+  await cache.clear('assets');
+  await cache.clear('search');
+
+  if (shareSlug) {
+    await invalidateSlugCache(shareSlug);
   }
 }
 

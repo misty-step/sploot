@@ -6,7 +6,7 @@ Sploot is a personal meme library for people with saved images scattered across 
 
 ## Stack & Boundaries
 
-Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 15 app, App Router API routes, Clerk auth, Prisma/Neon Postgres with pgvector, Vercel Blob, Replicate embeddings, Canary diagnostics, deployed smoke, and Vercel release posture. `apps/extension` owns the WXT/React Chrome extension, popup, background context-menu capture, Clerk extension auth, API upload client, store listing assets, and Chrome Web Store release packet. `packages/common` owns shared upload constants and API types consumed by web and extension.
+Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 16 app on DigitalOcean, App Router API routes, Clerk auth, Prisma/Neon Postgres with pgvector, Vercel Blob, Replicate embeddings, Canary diagnostics, and deployed smoke. `apps/extension` owns the WXT/React Chrome extension, popup, background context-menu capture, Clerk extension auth, API upload client, store listing assets, and Chrome Web Store release packet. `packages/common` owns shared upload constants and API types consumed by web and extension.
 
 ## Load-Bearing Gate
 

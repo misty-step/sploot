@@ -76,8 +76,6 @@ export async function reportCanaryError(input: CanaryReportInput): Promise<void>
           context: input.context,
           trace_id: input.traceId,
           environment: config.environment,
-          vercel_region: process.env.VERCEL_REGION,
-          vercel_url: process.env.VERCEL_URL,
           metadata: sanitizeValue(input.metadata),
         },
       }),
@@ -162,8 +160,6 @@ export async function reportCanaryCheckIn(input: CanaryCheckInInput): Promise<vo
         context: sanitizeValue({
           source: 'sploot-web',
           environment: config.environment,
-          vercel_region: process.env.VERCEL_REGION,
-          vercel_url: process.env.VERCEL_URL,
           ...input.context,
         }),
       }),
@@ -192,7 +188,7 @@ function getCanaryConfig(): CanaryConfig | null {
     endpoint,
     apiKey,
     service: process.env.CANARY_SERVICE_NAME || DEFAULT_SERVICE,
-    environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'unknown',
+    environment: process.env.DEPLOYMENT_ENV || process.env.NODE_ENV || 'unknown',
   };
 }
 

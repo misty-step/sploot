@@ -3,7 +3,7 @@
  *
  * Provides application-wide caching with strategy pattern for backend swapping.
  * Default: Memory-backed LRU cache
- * Future: Swap to Redis or Vercel KV by changing backend in getCacheService()
+ * Backends remain replaceable through ICacheBackend.
  */
 
 // Export types
@@ -60,14 +60,6 @@ export function getCacheService(): CacheService {
  * const cache = createCacheService(mockBackend);
  * ```
  *
- * @example
- * ```typescript
- * // Future: Swap to Vercel KV
- * import { createCacheService } from '@/lib/cache';
- * import { VercelKVBackend } from '@/lib/cache/VercelKVBackend';
- *
- * const cache = createCacheService(new VercelKVBackend());
- * ```
  */
 export function createCacheService(backend?: import('./types').ICacheBackend): CacheService {
   return new CacheService(backend);

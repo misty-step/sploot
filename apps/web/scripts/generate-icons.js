@@ -241,7 +241,7 @@ async function generateIcons() {
   console.log('📁 Icons saved to: public/icons/');
   console.log('\n💡 Next steps:');
   console.log('   - Build the app: pnpm build');
-  console.log('   - Deploy to Vercel for PWA functionality');
+  console.log('   - Deploy the DigitalOcean web component for PWA functionality');
 }
 
 // Run the script

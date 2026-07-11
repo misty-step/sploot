@@ -438,7 +438,8 @@ async function main() {
   }
 
   // Check if running against production
-  if (apiBaseUrl.includes('vercel.app') || apiBaseUrl.includes('production')) {
+  const loadTestHost = new URL(apiBaseUrl).hostname;
+  if (!['localhost', '127.0.0.1', '::1'].includes(loadTestHost)) {
     console.error('⚠️  WARNING: You appear to be testing against a production environment!');
     console.error('   This load test may impact real users.');
     console.error('   Press Ctrl+C to cancel, or wait 5 seconds to continue...');

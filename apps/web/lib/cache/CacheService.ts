@@ -49,7 +49,7 @@ const CACHE_KEYS = {
  * Interface: 6 domain methods (text/image embeddings, search results)
  * Hidden: Key generation, hash functions, namespace routing, backend strategy
  *
- * Future migration to Redis/Vercel KV: swap backend, zero business logic changes
+ * Backend changes stay behind ICacheBackend; business methods remain stable.
  */
 export class CacheService {
   private backend: ICacheBackend;

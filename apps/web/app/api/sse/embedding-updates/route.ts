@@ -1,9 +1,7 @@
 /**
  * Server-Sent Events (SSE) endpoint for real-time embedding updates
  *
- * This replaces WebSocket functionality for Vercel deployment compatibility.
- * SSE provides server-to-client real-time communication which is perfect
- * for embedding status updates.
+ * SSE provides portable server-to-client embedding status updates.
  */
 
 import { NextRequest, NextResponse } from 'next/server';

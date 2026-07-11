@@ -30,7 +30,7 @@ describe('runtime gates', () => {
     vi.stubEnv('SPLOOT_EMBEDDINGS_ENABLED', 'false');
     vi.stubEnv('REPLICATE_API_TOKEN', 'test-token');
 
-    expect(() => createEmbeddingService()).toThrow(EmbeddingError);
-    expect(() => createEmbeddingService()).toThrow('Embedding generation is temporarily paused');
+    expect(() => createEmbeddingService('user-test')).toThrow(EmbeddingError);
+    expect(() => createEmbeddingService('user-test')).toThrow('Embedding generation is temporarily paused');
   });
 });

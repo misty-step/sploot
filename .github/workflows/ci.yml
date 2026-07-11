@@ -53,6 +53,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm provider:check
+      - run: pnpm provider:test
       - run: pnpm turbo run lint
 
   type-check:
@@ -186,7 +188,7 @@ jobs:
           DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
         run: |
           if [[ -z "$DATABASE_URL" ]]; then
-            echo "::warning title=Prod auto-migrate not activated::PRODUCTION_DATABASE_URL secret is unset; skipping prod migrations. Run 'gh secret set PRODUCTION_DATABASE_URL' once (same value as Vercel's prod DATABASE_URL) to activate hands-off schema deploys."
+            echo "::warning title=Prod auto-migrate not activated::PRODUCTION_DATABASE_URL secret is unset; skipping prod migrations. Set the production Neon URL as the repository secret to activate hands-off schema deploys."
             exit 0
           fi
           pnpm --filter web exec node scripts/migrate-deploy.mjs

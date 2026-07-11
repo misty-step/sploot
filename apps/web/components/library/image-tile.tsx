@@ -16,6 +16,7 @@ import { TileActionRail } from '@/components/sploot';
 import { isAnimatedImageMimeType, isVideoMimeType } from '@sploot/common';
 import { resolveQaSeedSrc } from '@/lib/qa/qa-image-loader';
 import { SIMILARITY_MATCH_BOUNDARY, SIMILARITY_NEAR_BOUNDARY } from '@/lib/search-config';
+import { postBlobLoadFailure } from '@/lib/telemetry-client';
 
 interface ImageTileProps {
   asset: Asset;
@@ -351,23 +352,12 @@ function ImageTileComponent({
 
   const embeddingStatusInfo = getEmbeddingStatusIcon();
 
-  const handleMediaLoadError = (failedUrl: string) => {
+  const handleMediaLoadError = () => {
     setImageError(true);
     setImageLoaded(true);
     recordBlobError(404);
 
-    // Send telemetry (fire-and-forget)
-    fetch('/api/telemetry', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        assetId: asset.id,
-        blobUrl: failedUrl,
-        errorType: 'blob_load_failure',
-        timestamp: Date.now(),
-        fallbackAttempted: hasTriedFallback,
-      }),
-    }).catch(() => {});
+    void postBlobLoadFailure(hasTriedFallback).catch(() => {});
   };
 
   return (
@@ -446,7 +436,7 @@ function ImageTileComponent({
                     recordBlobSuccess();
                   }}
                   onError={() => {
-                    handleMediaLoadError(asset.blobUrl);
+                    handleMediaLoadError();
                   }}
                 >
                   <source src={resolveQaSeedSrc(asset.blobUrl)} type={asset.mime} />
@@ -485,7 +475,7 @@ function ImageTileComponent({
                       return;
                     }
 
-                    handleMediaLoadError(imageSrc);
+                    handleMediaLoadError();
                   }}
                 />
               )}

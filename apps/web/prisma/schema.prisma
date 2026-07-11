@@ -216,3 +216,28 @@ model TextEmbeddingCache {
   @@index([expiresAt])
   @@map("text_embedding_cache")
 }
+
+// Durable counters for embedding minute windows and the UTC daily spend
+// ceiling. Expired rows are pruned while holding the limiter advisory lock.
+model EmbeddingRateBucket {
+  key       String   @id
+  count     Int
+  expiresAt DateTime @map("expires_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([expiresAt])
+  @@map("embedding_rate_buckets")
+}
+
+// One row per admitted embedding job. Explicit leases make release idempotent,
+// while expiresAt recovers capacity when a worker dies before releasing it.
+model EmbeddingRateLease {
+  id        String   @id
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+  @@map("embedding_rate_leases")
+}

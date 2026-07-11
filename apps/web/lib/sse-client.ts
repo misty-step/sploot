@@ -3,8 +3,7 @@ import { logger } from '@/lib/observability-logger';
 /**
  * Server-Sent Events (SSE) Client
  *
- * Provides real-time updates using SSE instead of WebSockets
- * for compatibility with Vercel serverless deployment.
+ * Provides portable server-to-client real-time updates using SSE.
  */
 
 export type SSEMessageHandler = (data: any) => void;

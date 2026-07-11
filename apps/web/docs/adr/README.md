@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADRs)
 
-This directory contains Architecture Decision Records for Sploot, a Vercel-first meme library with text→image semantic search. ADRs document important architectural decisions that will have long-term impact on the system.
+This directory contains architecture decision records for Sploot, a DigitalOcean-hosted meme library with text→image semantic search. ADRs document important architectural decisions that have long-term impact on the system.
 
 ## ADR Index
 
@@ -11,6 +11,9 @@ This directory contains Architecture Decision Records for Sploot, a Vercel-first
 | [003](./003-upload-processing-pipeline.md) | Upload Processing Pipeline | Proposed | Hybrid sync-async pipeline with optimistic UI updates |
 | [004](./004-caching-architecture.md) | Caching Architecture | Proposed | Multi-layer caching: client, edge, Redis, and database levels |
 | [005](./005-pwa-implementation-strategy.md) | PWA Implementation Strategy | Proposed | Network-first PWA with intelligent caching; service-worker upload replay is not supported |
+| [008](./008-cap-image-optimization-cost.md) | Cap image delivery cost | Accepted | Bound image variants and cache churn while preserving thumbnail quality |
+| [009](./009-stack-sovereignty-spike-leave-vercel-keep-neon.md) | Host migration spike | Accepted | Keep Neon and move the app host off Vercel |
+| [010](./010-digitalocean-runtime-controls.md) | DigitalOcean runtime controls | Accepted | Persist embedding limits in Postgres; retain only Vercel Blob |
 
 ## Decision Process
 
@@ -35,18 +38,16 @@ All architectural decisions are evaluated against Sploot's core requirements:
 - Cost-effective for personal use (<$50/month operational costs)
 
 **Technology Constraints:**
-- Vercel-first architecture (serverless)
+- long-running DigitalOcean App Platform web service
 - Next.js App Router compatibility
 - External embedding service (no self-hosted GPU)
 - PostgreSQL + pgvector for vector storage
 
 ## Key Architectural Principles
 
-### 1. Vercel-First Design
-All decisions prioritize Vercel platform capabilities and constraints:
-- Serverless function limitations (timeout, memory, cold starts)
-- Edge network optimization
-- Integrated services (Blob, Postgres, KV)
+### 1. portable runtime design
+runtime decisions target standard Node.js and PostgreSQL behavior. Vercel Blob
+is an explicit temporary storage exception, not a compute-platform assumption.
 
 ### 2. Cost Optimization
 Personal-use application requires aggressive cost management:
@@ -81,7 +82,7 @@ Minimize operational overhead for single-developer maintenance:
 - User experience metrics (search relevance, upload success rates)
 
 ### Scalability
-- Horizontal scaling within Vercel serverless limits
+- Horizontal scaling through database-coordinated application controls
 - Database scaling via read replicas if needed
 - Migration paths to dedicated vector databases at higher scale
 - Caching strategies that grow with usage
@@ -135,4 +136,4 @@ If an ADR decision proves problematic:
 - [Sploot PRD](../../TASK.md) - Product requirements and success criteria
 - [Sploot Aesthetics](../../AESTHETIC.md) - Design system and user experience guidelines
 - [Architecture Decision Records Template](https://github.com/joelparkerhenderson/architecture-decision-record)
-- [Vercel Documentation](https://vercel.com/docs) - Platform capabilities and constraints
+- [DigitalOcean App Platform documentation](https://docs.digitalocean.com/products/app-platform/) - current compute substrate

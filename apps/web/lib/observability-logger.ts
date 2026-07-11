@@ -8,8 +8,6 @@ interface BaseLogEntry {
   metadata?: Record<string, any>;
   environment: {
     nodeEnv?: string;
-    vercelRegion?: string;
-    vercelUrl?: string;
   };
 }
 
@@ -54,8 +52,6 @@ export interface ObservabilityLogger {
 function getEnvironment() {
   return {
     nodeEnv: process.env.NODE_ENV,
-    vercelRegion: process.env.VERCEL_REGION,
-    vercelUrl: process.env.VERCEL_URL,
   };
 }
 

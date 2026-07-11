@@ -77,10 +77,10 @@ The seven levers (beyond containerization):
    **Clerk's ID used as the `users` primary key** (`lib/db.ts` `syncUser`). Store
    opaque/relative refs; resolve vendor specifics at the edge.
 4. **One typed env contract (12-factor)** — provider selection + creds via env,
-   validated by one schema. (`.env.example` has drifted: `CANARY_*` undocumented; KV
-   named `UPSTASH_*` while code reads `KV_REST_API_*`.)
-5. **Declarative deploy per target** — Dockerfile + a ~20-line manifest each
-   (`fly.toml` / `railway.json` / `render.yaml` / `compose.yaml`) + `release_command`.
+   validated by one schema. (`.env.example` previously drifted from the retired
+   cache service's vendor-specific variable names.)
+5. **Declarative deploy per target** — Dockerfile + the DigitalOcean app spec
+   (and `compose.yaml` for local proof), with an explicit migration command.
 6. **A portability CI gate (the ratchet)** — build the container, run app + tests
    against generic backends (plain Postgres + MinIO + Redis) with no Vercel env; green
    = proof of no hidden lock-in, and it fails if a vendor SDK is reintroduced outside
@@ -130,16 +130,20 @@ drift), **049** (asset→DTO mapper). This epic is the umbrella that sequences t
    the `AuthenticatedPrincipal` seam; stop using the Clerk ID as the `users` PK (the
    `user_identities` table is already provider-neutral). Identity acquisition (login
    UI, extension SSO) stays Clerk but isolated. Size: L.
-5. **Port Vercel platform services** — KV (rate-limit, slug cache → Redis-protocol
-   adapter via the existing `ICacheBackend`), cron (4 bearer-authed GET routes →
-   document the any-scheduler pattern), analytics (consolidate the `lib/analytics.ts`
-   facade). Size: M.
+5. **Port retired platform services. ✅ shipped in the DigitalOcean cutover.**
+   Embedding rate/concurrency/daily-budget state now uses additive Postgres
+   buckets + expiring leases, enforced at the private Replicate boundary for
+   every paid text/image cache miss; share slugs use local LRU → authoritative
+   Postgres; analytics uses the authenticated first-party telemetry route and
+   structured logger; cron ownership is declared outside the retired compute
+   provider. Vercel Blob remains the explicit storage exception tracked by
+   child 2. Size: M.
 6. **Spike the lead target and decide.** ✅ DONE (2026-06-23) — ADR-009. App off
    Vercel + keep Neon; not Fly MPG.
-7. **Portability tidy (Tier 0, do anytime).** Delete the dead `@vercel/functions` dep
-   (declared, never imported — coordinate with **042**); fix `.env.example` drift
-   (`CANARY_*`, KV var names); standardize cron auth on `timingSafeEqual` (only
-   `purge-search-logs` does today); drop the unused 2nd vector column. Size: S.
+7. **Portability tidy (Tier 0, partial).** ✅ Dead compute/functions/KV/analytics
+   dependencies and `.env.example` drift are gone. Remaining: standardize cron
+   auth on `timingSafeEqual` (only `purge-search-logs` does today) and drop the
+   unused second vector column. Size: S.
 8. **Portability CI gate (the ratchet).** CI builds the container and runs app + tests
    against generic Postgres + MinIO (S3) + Redis with NO Vercel env — proving no hidden
    lock-in, failing if a vendor SDK leaks outside an adapter. Relates to **041**.
@@ -168,9 +172,16 @@ drift), **049** (asset→DTO mapper). This epic is the umbrella that sequences t
 
 ## Notes
 
+- **DigitalOcean cutover closeout (2026-07-10):** ADR-010 records the durable
+  runtime-control decision and rollback shape. The standing provider-retirement
+  gate permits only explicit Vercel Blob markers plus historical evidence and
+  rejects active compute manifests, packages, environment variables, CLI
+  commands, and endpoints. DB-backed integration tests cover concurrent leases,
+  expiry recovery, minute windows, and UTC daily budget rollover.
+
 - **Related portability tickets (this epic sequences them):** 035 (auth-door
   unification = child 4), 041 (verify/read/recover = the agent-ops half), 042 (delete
-  dead infra, incl. `@vercel/functions`), 047 (vector-dim drift = pairs with child 3),
+  dead infra, including the retired functions SDK), 047 (vector-dim drift = pairs with child 3),
   049 (asset→DTO mapper = where blob-URL derivation should centralize for child 2).
 - Keep **pgvector** through any move — standard `<=>`/HNSW, zero Neon-proprietary SQL;
   it rides every Postgres with no code change. Don't move to a vector DB (lock-in).

@@ -531,7 +531,8 @@ function AppPageClient() {
         track({
           name: 'search_no_results',
           properties: {
-            query,
+            queryLength: query.length,
+            hasFilters,
           },
         });
         lastNoResultsTrackedRef.current = query;

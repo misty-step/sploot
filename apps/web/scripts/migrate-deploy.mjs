@@ -2,12 +2,9 @@
 // Run `prisma migrate deploy` so schema and code cannot ship apart
 // (incident 2026-06-09: a user_identities migration never ran).
 //
-// Invoked from two places:
-//   - the production `build` script, which SKIPS here because Vercel marks the
-//     prod DATABASE_URL as Sensitive (injected at runtime, withheld at build);
-//   - the `migrate-prod` GitHub Actions job, which runs on merge to master with
-//     the prod URL held as a repo secret — the path that actually applies prod
-//     migrations. See docs/adr/007-prod-migrations-via-github-actions.md.
+// Invoked by the production build and the `migrate-prod` GitHub Actions job.
+// A build without DATABASE_URL skips safely; the migration job owns the
+// production connection. See docs/adr/007-prod-migrations-via-github-actions.md.
 //
 // Prisma migrations need a direct (non-pooler) connection. Prefer
 // DATABASE_URL_DIRECT when set; otherwise derive it from DATABASE_URL by

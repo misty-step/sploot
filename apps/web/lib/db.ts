@@ -97,7 +97,7 @@ if (databaseConfigured) {
         has_pgbouncer_param: params.includes('pgbouncer=true'),
         node_version: process.version,
         platform: process.platform,
-        vercel_env: process.env.VERCEL_ENV || 'unknown',
+        deployment_environment: process.env.DEPLOYMENT_ENV || process.env.NODE_ENV || 'unknown',
         prisma_version: Prisma.prismaVersion?.client || 'unknown',
       });
     } else {
@@ -105,7 +105,7 @@ if (databaseConfigured) {
         database_url_configured: false,
         node_version: process.version,
         platform: process.platform,
-        vercel_env: process.env.VERCEL_ENV || 'unknown',
+        deployment_environment: process.env.DEPLOYMENT_ENV || process.env.NODE_ENV || 'unknown',
       });
     }
   } catch (logError) {

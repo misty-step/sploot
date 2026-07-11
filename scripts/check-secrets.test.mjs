@@ -45,3 +45,13 @@ test('blocks real-looking service token assignments', () => {
   assert.match(result.stderr, /real-secret-assignment:REPLICATE_API_TOKEN/);
   assert.doesNotMatch(result.stderr, /r8_abcdefghijklmnop/);
 });
+
+test('continues blocking retired Redis credentials', () => {
+  const retiredTokenName = ['UPSTASH', 'REDIS', 'REST', 'TOKEN'].join('_');
+  const token = 'abcdefghijklmnopqrstuvwxyz123456';
+  const result = runScanner(`${retiredTokenName}=${token}\n`);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, new RegExp(`real-secret-assignment:${retiredTokenName}`));
+  assert.doesNotMatch(result.stderr, new RegExp(token));
+});

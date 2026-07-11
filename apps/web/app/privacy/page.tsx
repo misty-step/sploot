@@ -111,8 +111,9 @@ export default function PrivacyPolicy() {
             <p>We use the following third-party services:</p>
             <ul className="list-disc pl-6 space-y-2">
               <li><strong>Clerk</strong>: Authentication (see <a href="https://clerk.com/privacy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">Clerk Privacy Policy</a>)</li>
-              <li><strong>Vercel</strong>: Hosting and storage (see <a href="https://vercel.com/legal/privacy-policy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">Vercel Privacy Policy</a>)</li>
-              <li><strong>Vercel Analytics and Speed Insights</strong>: Product usage and performance measurement</li>
+              <li><strong>DigitalOcean</strong>: Application hosting (see <a href="https://www.digitalocean.com/legal/privacy-policy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">DigitalOcean Privacy Policy</a>)</li>
+              <li><strong>Vercel Blob</strong>: Image storage (see <a href="https://vercel.com/legal/privacy-policy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">Vercel Privacy Policy</a>)</li>
+              <li><strong>First-party telemetry</strong>: Authenticated product usage and performance events written to Sploot application logs</li>
               <li><strong>Neon</strong>: Database (see <a href="https://neon.tech/privacy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">Neon Privacy Policy</a>)</li>
               <li><strong>Replicate</strong>: AI embedding generation for image and text search</li>
               <li><strong>Canary</strong>: Error monitoring, health checks, and diagnostics</li>

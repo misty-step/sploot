@@ -8,7 +8,7 @@
  * at runtime, but that runs in Node.js AFTER Prisma's Rust engine already
  * reads env vars. Runtime sanitization cannot fix what Prisma sees.
  *
- * Solution: Set DATABASE_URL correctly at deployment time (Vercel env vars).
+ * Solution: Set DATABASE_URL correctly in the deployment environment.
  */
 
 const PLACEHOLDER_MARKERS = [

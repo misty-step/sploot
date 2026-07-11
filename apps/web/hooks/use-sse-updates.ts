@@ -1,7 +1,7 @@
 /**
  * React hooks for Server-Sent Events (SSE) integration
  *
- * Provides real-time embedding updates using SSE for Vercel compatibility
+ * Provides real-time embedding updates using portable SSE.
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';

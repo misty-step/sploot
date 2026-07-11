@@ -147,7 +147,7 @@ export async function getAutomaticPiles({
     };
   }
 
-  const anchors = await loadAnchorEmbeddings(dimension);
+  const anchors = await loadAnchorEmbeddings(dimension, userId);
   const piles = buildSemanticPiles({
     assets,
     anchors,
@@ -278,7 +278,10 @@ async function listReadyEmbeddedAssets(userId: string, limit: number): Promise<E
     .filter((row) => row.embedding.length > 0);
 }
 
-async function loadAnchorEmbeddings(dimension: number): Promise<PileAnchorEmbedding[]> {
+async function loadAnchorEmbeddings(
+  dimension: number,
+  userId: string
+): Promise<PileAnchorEmbedding[]> {
   const cache = getCacheService();
   const cached = await Promise.all(
     PILE_ANCHORS.map(async (anchor) => ({
@@ -309,7 +312,7 @@ async function loadAnchorEmbeddings(dimension: number): Promise<PileAnchorEmbedd
 
   let embeddingService;
   try {
-    embeddingService = createEmbeddingService();
+    embeddingService = createEmbeddingService(userId);
   } catch (error) {
     throw new PileEmbeddingUnavailableError(
       error instanceof Error ? error.message : 'Pile anchor embeddings are unavailable'
