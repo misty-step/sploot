@@ -5,13 +5,12 @@ import sharp from 'sharp';
  * Images larger than this will be resized (longest edge)
  */
 export const MAX_IMAGE_DIMENSION = 2048;
-
 /**
- * Thumbnail dimensions for grid view
- * Square thumbnails for consistent grid layout
+ * Maximum edge for grid thumbnails.
+ * The generated thumbnail keeps the source aspect ratio; only its longest
+ * edge is bounded so the gallery never receives a square crop.
  */
 export const THUMBNAIL_SIZE = 256;
-
 /**
  * Quality settings for processed images
  */
@@ -38,7 +37,7 @@ export interface ImageProcessingResult {
  * Process an uploaded image to create optimized versions.
  * Generates:
  * 1. Main image (resized if > 2048px)
- * 2. Thumbnail (256x256 square for grid view)
+ * 2. Thumbnail (longest edge 256px, source aspect preserved for grid view)
  *
  * @param buffer - Raw image buffer
  * @param mimeType - Original file mime type
@@ -166,7 +165,7 @@ async function processMainImage(
  * shows the complete image, so the thumbnail must carry the full frame.
  * fit: 'inside' bounds the longest edge at THUMBNAIL_SIZE without cropping.
  */
-async function generateThumbnail(
+export async function generateThumbnail(
   buffer: Buffer,
   format: 'jpeg' | 'webp' | 'png'
 ): Promise<Buffer> {
