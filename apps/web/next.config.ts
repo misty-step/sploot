@@ -10,6 +10,25 @@ import {
 const nextConfig: NextConfig = {
   output: "standalone",
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
+  // Legacy route aliases live here as plain HTTP redirects. They used to be
+  // RSC redirect() pages, but next@16.2.10's app-router throws "Rendered
+  // more hooks than during the previous render" when hydrating an RSC
+  // redirect arrival (crash in next's own Router component — backlog 060);
+  // config-level redirects sidestep the RSC payload entirely.
+  async redirects() {
+    return [
+      {
+        source: "/app/upload",
+        destination: "/app?upload=1",
+        permanent: false,
+      },
+      {
+        source: "/app/search",
+        destination: "/app",
+        permanent: false,
+      },
+    ];
+  },
   // Image optimization configuration
   images: {
     // QA-only: map the reserved seed host to local files so qa-seed fixtures

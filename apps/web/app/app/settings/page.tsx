@@ -266,19 +266,19 @@ export default function SettingsPage() {
           <span className="text-muted-foreground text-sm">What&apos;s new</span>
           <Link
             href="/changelog"
-            className="text-sm text-sploot-blue hover:underline"
+            className="inline-flex items-center text-sm text-sploot-blue hover:underline max-sm:min-h-[var(--sploot-touch-target)]"
           >
             View changelog →
           </Link>
         </div>
-        <div className="pt-2 border-t border-border flex gap-4 text-sm">
-          <Link href="/help" className="text-muted-foreground hover:text-foreground transition-colors">
+        <div className="pt-2 border-t border-border flex flex-wrap gap-x-4 text-sm">
+          <Link href="/help" className="inline-flex items-center py-1 text-muted-foreground hover:text-foreground transition-colors max-sm:min-h-[var(--sploot-touch-target)]">
             Getting started
           </Link>
-          <Link href="/support" className="text-muted-foreground hover:text-foreground transition-colors">
+          <Link href="/support" className="inline-flex items-center py-1 text-muted-foreground hover:text-foreground transition-colors max-sm:min-h-[var(--sploot-touch-target)]">
             Support
           </Link>
-          <Link href="/privacy" className="text-muted-foreground hover:text-foreground transition-colors">
+          <Link href="/privacy" className="inline-flex items-center py-1 text-muted-foreground hover:text-foreground transition-colors max-sm:min-h-[var(--sploot-touch-target)]">
             Privacy
           </Link>
         </div>

@@ -82,7 +82,11 @@ export function UserAvatar({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
-          className={cn('cursor-pointer focus-visible:outline-none', className)}
+          className={cn(
+            // 44px hit area on phones regardless of the avatar's visual size
+            'inline-grid cursor-pointer place-items-center focus-visible:outline-none max-sm:size-[var(--sploot-touch-target)]',
+            className
+          )}
           aria-label="User menu"
         >
           <Avatar className={sizeClasses[avatarSize]}>
