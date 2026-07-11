@@ -11,7 +11,7 @@ import type { AuthenticatedPrincipal } from './types';
  * gated by the `allowUploadToken` policy flag, so a token authenticates ONLY on
  * routes that explicitly opt in (the upload routes) — every other route rejects
  * it. See lib/auth/request-auth.ts for the branch and
- * backlog.d/033-ios-share-sheet-ingestion.ctx.md for the design.
+ * Powder card `sploot-033` context packet for the design.
  */
 
 export const UPLOAD_TOKEN_PREFIX = 'splt_';

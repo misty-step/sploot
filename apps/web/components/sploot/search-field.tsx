@@ -11,7 +11,7 @@ import { type MemeDoodleKind } from './meme-doodle';
 
 // Signed-out demo pile: license-safe doodles with enough keywords for the
 // console to find the intended sample.
-// TODO(backlog.d/059-live-demo-pile-on-landing.md): swap this static 8-tile
+// TODO(Powder sploot-059): swap this static 8-tile
 // pile for the live 1,000-classic public corpus once that ingest ships.
 type Tile = {
   doodle: MemeDoodleKind;

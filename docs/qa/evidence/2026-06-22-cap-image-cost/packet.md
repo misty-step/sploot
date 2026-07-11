@@ -2,7 +2,7 @@
 
 - Date: 2026-06-22
 - Branch: `deliver-046-cap-cost-blast-radius`
-- Ticket: `backlog.d/046-cap-cdn-image-optimization-cost-blast-radius.md`
+- Ticket: Powder card `sploot-046`
 - Decision: `apps/web/docs/adr/008-cap-image-optimization-cost.md`
 
 ## Intent

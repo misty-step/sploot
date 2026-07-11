@@ -2,7 +2,7 @@
 
 - Date: 2026-06-23
 - Branch: `spike/044-fly-substrate`
-- Ticket: `backlog.d/044-achieve-stack-sovereignty-agent-operable-substrate.md` (child 6)
+- Ticket: Powder card `sploot-044` (child 6)
 - Operator: agent, using **only credentials already on disk** — the Fly API token and
   `neonctl` auth. No Vercel/Clerk/Replicate secrets were present locally (verified: no
   `.env.local`, no `.vercel` link, none in env/`~/.secrets`).

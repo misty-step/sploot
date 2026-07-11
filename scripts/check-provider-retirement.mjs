@@ -11,7 +11,6 @@ const POLICY_FILES = new Set([
 
 const HISTORICAL_PATHS = [
   /^CHANGELOG\.md$/,
-  /^backlog\.d\/_done\//,
   /^docs\/adr\//,
   /^docs\/qa\//,
   /^docs\/auth-agent-readiness-decision-/,

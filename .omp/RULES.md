@@ -12,9 +12,7 @@ contract: read `AGENTS.md` (loaded as context) and `CLAUDE.md`.
   validation, and shared API types. Change it there, then update both apps.
 - **Web deploy (DigitalOcean) and extension release (Chrome Web Store) are separate
   surfaces.** Do not couple them.
-- **Work tracking lives in `backlog.d/`** (local markdown), not GitHub Issues.
-  Closure = move to `backlog.d/_done/` with `Status: done`, a `## What Was
-  Built` note, and a conventional-commit `Backlog:`/`Closes-backlog:` trailer.
+- **Work tracking lives in Powder** via the registered MCP/API/CLI, not GitHub Issues or repository-local ticket files. Closure is a Powder card status update with proof, links, and acceptance-criterion evidence.
 - **Ship gate = CI parity:** `pnpm lint && pnpm type-check && pnpm --filter web
   test && pnpm --filter extension build` (run the web step as `CI=1 pnpm --filter
   web test` so Vitest stays one-shot under omp's PTY). CI adds a frozen install,

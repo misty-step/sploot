@@ -2,7 +2,7 @@
 
 - Date: 2026-06-22
 - Branch: `deliver-045-extension-ux`
-- Ticket: `backlog.d/045-extension-ux-auth-screenshot-feedback.md`
+- Ticket: Powder card `sploot-045`
 
 ## What changed
 
