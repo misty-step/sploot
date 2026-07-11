@@ -956,6 +956,8 @@ select:focus-visible {
   .cl-footerActionLink {
     display: inline-flex !important;
     align-items: center !important;
+    justify-content: center !important;
     min-height: var(--sploot-touch-target) !important;
+    min-width: var(--sploot-touch-target) !important;
   }
 }

@@ -137,7 +137,7 @@ export function UploadTokensCard() {
           }}
           maxLength={64}
           placeholder="name it (e.g. iphone)"
-          className="flex-1 min-w-[12rem] bg-background border-[3px] border-sploot-ink rounded-[var(--sploot-radius-pill)] px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground"
+          className="flex-1 min-w-[12rem] bg-background border-[3px] border-sploot-ink rounded-[var(--sploot-radius-pill)] px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground max-sm:min-h-[var(--sploot-touch-target)]"
         />
         <Button
           onClick={mint}

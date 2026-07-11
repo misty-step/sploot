@@ -67,13 +67,14 @@ export function Navbar({
         <Link
           href="/app"
           aria-label="Sploot - Home"
-          className="flex min-h-[var(--sploot-touch-target)] items-center gap-2 group no-underline hover:opacity-80 transition-opacity duration-150"
+          className="flex min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)] items-center gap-2 group no-underline hover:opacity-80 transition-opacity duration-150"
         >
           <PileMark />
 
-          {/* SPLOOT wordmark in Bebas Neue */}
+          {/* SPLOOT wordmark in Bebas Neue — yields to the PileMark glyph on
+              very narrow phones (320px) so the 44px control cluster fits */}
           <span
-            className="text-xl md:text-2xl text-accent-cyan tracking-wider"
+            className="hidden min-[400px]:inline text-xl md:text-2xl text-accent-cyan tracking-wider"
             style={{ fontFamily: "var(--font-bebas-neue)" }}
           >
             SPLOOT

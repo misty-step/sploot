@@ -79,7 +79,13 @@ async function main() {
               (el.getAttribute('aria-label') || el.textContent || el.tagName)
                 .trim()
                 .slice(0, 30) || el.tagName;
-            if ((r.width < 40 || r.height < 40) && r.width > 4 && r.height > 4) {
+            // exemptions: Clerk's own branding badge; inline links inside
+            // prose (WCAG 2.5.8 inline exception). Inline, not a helper —
+            // tsx/esbuild injects __name for named fns, absent in-page.
+            const isExempt =
+              /clerk/i.test(label) || (el.tagName === 'A' && el.closest('p') !== null);
+            // 43.5: getBoundingClientRect floats — an exact 44px box can read 43.99
+            if ((r.width < 43.5 || r.height < 43.5) && r.width > 4 && r.height > 4 && !isExempt) {
               small.push(`${label} (${Math.round(r.width)}x${Math.round(r.height)})`);
             }
             if (r.right > vw + 4 || r.left < -4) {
@@ -93,7 +99,7 @@ async function main() {
         const lines = [`## ${name} (${theme})${route === '/' ? '' : ` ${route}`}`];
         if (checks.hscroll > 6) lines.push(`- HSCROLL: +${checks.hscroll}px`);
         if (checks.offscreen.length) lines.push(`- OFFSCREEN: ${checks.offscreen.join(' · ')}`);
-        if (checks.small.length) lines.push(`- SMALL TARGETS (<40px): ${checks.small.join(' · ')}`);
+        if (checks.small.length) lines.push(`- SMALL TARGETS (<44px): ${checks.small.join(' · ')}`);
         if (errors.length) lines.push(`- PAGEERRORS: ${errors.join(' | ')}`);
         if (lines.length === 1) lines.push('- clean');
         report.push(lines.join('\n'));

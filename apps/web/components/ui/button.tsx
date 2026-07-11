@@ -34,7 +34,7 @@ const buttonVariants = cva(
       size: {
         default: "min-h-[var(--sploot-touch-target)] px-5 py-2 has-[>svg]:px-4",
         // phones get the 44px touch floor; desktop keeps the compact 36px
-        sm: "h-9 gap-1.5 px-3 text-xs has-[>svg]:px-2.5 max-sm:h-auto max-sm:min-h-[var(--sploot-touch-target)]",
+        sm: "h-9 gap-1.5 px-3 text-xs has-[>svg]:px-2.5 max-sm:h-auto max-sm:min-h-[var(--sploot-touch-target)] max-sm:min-w-[var(--sploot-touch-target)]",
         lg: "min-h-[var(--sploot-touch-target)] px-7 py-3 text-base has-[>svg]:px-5",
         icon: "size-11",
         "icon-sm": "size-9 max-sm:size-[var(--sploot-touch-target)]",
