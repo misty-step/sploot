@@ -26,14 +26,20 @@ export function StatusLine({
   queueDepth = 0,
   className,
 }: StatusLineProps) {
-  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  // null until the first tick: relative time depends on the wall clock, and
+  // seeding it during render makes the server HTML disagree with the client
+  // (full hydration mismatch on every /app page). The badge appears within
+  // a second of mount; setState only ever runs from the interval callback.
+  const [currentTime, setCurrentTime] = useState<Date | null>(null);
 
-  // Update current time every second for relative display
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-    return () => clearInterval(interval);
+    const tick = () => setCurrentTime(new Date());
+    const interval = setInterval(tick, 1000);
+    const kickoff = setTimeout(tick, 0);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(kickoff);
+    };
   }, []);
 
   const formatTimestamp = (time: Date | string | null): string => {
@@ -43,7 +49,7 @@ export function StatusLine({
   };
 
   const getRelativeTime = (time: Date | string | null): string => {
-    if (!time) return '';
+    if (!time || !currentTime) return '';
     const date = typeof time === 'string' ? new Date(time) : time;
     const seconds = Math.floor((currentTime.getTime() - date.getTime()) / 1000);
 
@@ -64,7 +70,7 @@ export function StatusLine({
       )}
       title={`Last upload: ${formatTimestamp(lastUploadTime)} | Queue: ${queueDepth}`}
     >
-      {lastUploadTime && (
+      {lastUploadTime && relativeTime && (
         <>
           <Separator orientation="vertical" className="hidden xl:block h-4" />
           <Badge variant="outline" className="hidden xl:inline-block font-mono text-xs">

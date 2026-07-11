@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useSyncExternalStore } from 'react';
 import { cn } from '@/lib/utils';
 import { trackEmptyStateRender } from '@/lib/performance-metrics';
 import { Button } from '@/components/ui/button';
@@ -92,12 +92,21 @@ function SurfaceRow({
  * iOS with the "Save to Sploot" shortcut. Lab + decision:
  * docs/design/lab-074-capture-activation.html (option 01, two-lane capture rig).
  */
-function CaptureSurfaces() {
-  const [device] = useState<CaptureDevice>(() =>
-    typeof window === 'undefined'
-      ? 'desktop'
-      : detectCaptureDevice(window.navigator.userAgent, window.navigator.maxTouchPoints ?? 0)
+// Hydration-safe device detection: the server (and the hydration render)
+// always see 'desktop'; the real device swaps in after mount. Branching on
+// navigator during render was a guaranteed hydration failure (full tree
+// regeneration) on phones.
+const noopSubscribe = () => () => {};
+function useCaptureDevice(): CaptureDevice {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => detectCaptureDevice(window.navigator.userAgent, window.navigator.maxTouchPoints ?? 0),
+    () => 'desktop' as CaptureDevice
   );
+}
+
+function CaptureSurfaces() {
+  const device = useCaptureDevice();
   const { installable, installed, requiresManualInstall, promptInstall } = usePwaInstallPrompt();
 
   return (
