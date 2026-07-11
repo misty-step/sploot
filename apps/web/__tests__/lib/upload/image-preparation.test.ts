@@ -36,7 +36,7 @@ describe('image upload preparation policy', () => {
     expect(shouldPrepareImage(file)).toBe(false);
   });
 
-  it('keeps the current multipart target below the Vercel function body limit', () => {
+  it('keeps the current multipart target below the conservative ingress budget', () => {
     expect(UPLOAD.compressionTargetSize).toBeLessThan(UPLOAD.multipartSafeSize);
     expect(UPLOAD.multipartSafeSize).toBeLessThan(4.5 * 1024 * 1024);
   });

@@ -264,10 +264,9 @@ Previous check on 2026-05-25 with Computer Use and the same Chrome profile:
   `chrome-extension://hikefmnilgapfckjmillbhcocihjffhn` and Web Store draft ID
   `chrome-extension://fbhkflbcnllfogefckablkafjknmcfnd` are both included in
   the web API's default Clerk authorized parties.
-- Production deploy `dpl_Dc6S9wEDe6xtnDyBMU2sJfg5fxFe`
-  (`https://sploot-om9xryqr7-misty-step.vercel.app`) is live behind
-  `https://www.sploot.app`, and deployed smoke passed after the auth-origin
-  change.
+- At this 2026-05 evidence capture, the then-current production deploy passed
+  smoke after the auth-origin change. That compute deployment is retired;
+  `https://www.sploot.app` is now served by DigitalOcean App Platform.
 - UI upload proof is paused because Computer Use cannot see Chrome while macOS
   is locked (`cgWindowNotFound`); do not treat right-click upload or duplicate
   behavior as release-proven until the Mac is unlocked and the real Chrome flow

@@ -10,19 +10,18 @@ boundary's secret is reachable by a token already on disk.
 
 ## Context
 
-Delivering 033 exposed the seam: the agent can build, test, review, and merge a
-migration, but cannot apply it to prod. Vercel runs `next build`, not
-`prisma migrate deploy`; the prod `DATABASE_URL` is a Vercel **Sensitive** var
-(withheld from build and from `vercel env pull`); and the prod Neon project
-(`lively-lake-63852609`) lives on a Neon account this machine's `neonctl` / `op`
-are not logged into. Net: a merged schema change strands at the prod boundary
-and needs a human holding the sequestered credential.
+Delivering 033 exposed a schema-to-production seam on the retired compute
+host. The DigitalOcean cutover removed that host boundary: the production
+build runs `prisma migrate deploy`, while the independent `migrate-prod` CI job
+remains a second explicit path with the connection string held by the runner.
+The remaining work is proof and operability: migration status readback, live QA
+credentials reachable from the agent secret store, and repository-owned
+recovery commands (tracked by 041).
 
 The friction is not a missing capability — it is that the deploy loop is
 "dashboard + sequestered secret" where it needs to be "token-on-disk + one
-command." This epic closes that gap for the current stack first (cheap, high
-leverage), then decides whether a runtime move makes the whole loop
-structurally agent-native.
+command." The runtime decision is now DigitalOcean App Platform + Neon; this
+card closes the remaining verification and credential gaps on that stack.
 
 ## Oracle
 
@@ -34,10 +33,8 @@ structurally agent-native.
 - [ ] The live QA loop (mint → `POST` 201 → 409 dedupe → revoke → 401) is
       runnable by the agent against a non-prod environment without a human
       handing over a secret (agent-readable secret store or seeded preview).
-- [ ] An ADR records the platform decision: "stay on Vercel+Neon and glue the
-      seam" vs "consolidate the runtime onto a token-on-disk platform" (Fly,
-      already authed here; or Supabase), with criteria and, if a move is chosen,
-      a sequenced migration path.
+- [x] ADR-009 records the measured platform decision, and ADR-010 records the
+      DigitalOcean runtime-control cutover while retaining Neon.
 
 ## Verification System
 
@@ -57,26 +54,18 @@ structurally agent-native.
 
 ## Children
 
-1. **Migrate-on-deploy (the immediate fix; do first).** ✅ **Delivered** (PR for
-   `deliver-036-migrate-on-deploy`): `migrate-prod` job in
-   `.github/workflows/ci.yml` runs `prisma migrate deploy` on push to `master`
-   after the merge gate, with the prod URL held as the `PRODUCTION_DATABASE_URL`
-   repo secret — the agent never reads it. ADR-007 records the decision; the job
-   is inert-but-loud until activated. **Activation (one-time, operator):**
-   `gh secret set PRODUCTION_DATABASE_URL` with the same value as Vercel's prod
-   `DATABASE_URL`. After that the next merge applies pending migrations and
-   unblocks 033 automatically.
+1. **Migrate-on-deploy (the immediate fix; do first).** ✅ **Delivered.** The
+   `migrate-prod` job runs `prisma migrate deploy` after the merge gate with the
+   production URL held as a repository secret, and the DigitalOcean production
+   build invokes the same repo-owned migration runner before `next build`.
 2. **Agent-readable secret store.** Put the boundary secrets (DB, Blob, Clerk,
    Canary) behind a token-on-disk store (1Password **service-account** token, or
    Doppler) so the agent can run the live QA loop and reach every boundary
    without an interactive login. Document the bootstrap in AGENTS/CLAUDE.
-3. **Platform-fit spike + ADR.** → **SUPERSEDED by epic 044** (2026-06-22). The
-   2026-06-22 research swarm did this evaluation (Cloudflare / Fly / DigitalOcean
-   / embeddings / cost / portability) and turned the paper ADR into a measured,
-   port-first spike. Lead candidate is Fly; Supabase fell away (the swarm's
-   verdict: keep Clerk + pgvector, change only host/storage/embeddings-host, no
-   self-hosted Postgres). See 044 for the children and the spike. This child is
-   closed here.
+3. **Platform-fit spike + ADR.** ✅ **Superseded and resolved by epic 044.** The
+   measured spike selected DigitalOcean App Platform for compute while keeping
+   Neon, Clerk, pgvector, and the existing embedding provider. ADR-009 records
+   the decision and ADR-010 records the final runtime-control shape.
 
 ## Notes
 
@@ -84,14 +73,11 @@ structurally agent-native.
   included in the deploy · one account/CLI not five partial auths · pgvector and
   the embedding pipeline preserved · preview/staging the agent can spin and test
   against.
-- **Evidence (2026-06-20 delivery session):** `vercel env pull --environment
-  production` returns `DATABASE_URL` empty (Sensitive); `neonctl` authed as
-  `phraznikov@gmail.com` / org `phaedrus` (projects `memory-engine-prod`,
-  `moneta-prod`) has no access to `lively-lake-63852609` (direct fetch → "could
-  not be authorized"); `op` installed but signed out. The prod-Neon credential
-  is on a `mistystep`-associated account unreachable from this machine.
+- **Historical evidence:** the retired host withheld the production connection
+  string from builds and local agent tooling. ADR-009 retains the dated spike
+  evidence; this active card now describes only the current DigitalOcean path.
 - **Do child 1 first regardless of the child-3 decision** — auto-migrate pays
   off even if a runtime move happens later.
-- Related: memory `sploot-vercel-migrations` records the no-auto-migrate +
-  build-withheld facts this epic closes. Distinct from 035 (unify auth doors),
+- Related: ADR-009 records the retired host's no-auto-migrate and
+  build-withheld facts. Distinct from 035 (unify auth doors),
   which is code architecture, not infra.

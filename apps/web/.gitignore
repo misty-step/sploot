@@ -47,9 +47,6 @@ yarn-error.log*
 *.key
 **/secrets/**
 
-# vercel
-.vercel
-
 # typescript
 *.tsbuildinfo
 next-env.d.ts

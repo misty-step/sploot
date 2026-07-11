@@ -12,7 +12,7 @@ request APIs directly.
 | `qa-local` | `SPLOOT_QA_AUTH_MODE=enabled` plus `SPLOOT_QA_AUTH_SECRET` | signed Sploot QA token | local and CI only |
 | `upload-token` | always available | hashed personal API token (`Authorization: Bearer splt_…`) | **opt-in routes only**: save (`/api/upload`, `/api/upload/url`) + search (`/api/search`) |
 
-`qa-local` is rejected when `NODE_ENV=production` or `VERCEL_ENV=production`,
+`qa-local` is rejected when `NODE_ENV=production`,
 even if the mode and secret are present.
 
 ## QA Token

@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
-import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
+import {
+  createEmbeddingService,
+  type EmbeddingService,
+} from '@/lib/embeddings';
 import { headers } from 'next/headers';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
 import { getRuntimeGate, runtimeGateError } from '@/lib/runtime-gates';
+import { EMBEDDING_PROCESSING_TTL_MS } from '@/lib/embedding-guard';
 
 // Hard per-run cap on embeddings generated — the bound on Replicate spend per
 // invocation. With the */5 * * * * schedule this ceilings throughput at
@@ -52,13 +56,10 @@ async function getHandler(request: NextRequest) {
     }
 
     if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if ( !prisma) {
+    if (!prisma) {
       return NextResponse.json(
         { error: 'Database unavailable' },
         { status: 503 }
@@ -76,18 +77,32 @@ async function getHandler(request: NextRequest) {
       );
     }
 
-    // Find assets that need embeddings
-    // 1. Assets older than 1 hour with no embeddings
-    // 2. Assets with failed status (if we track this in the future)
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    // Rediscover retryable work and crashed workers. Terminal failed rows stay
+    // excluded so a permanently bad asset cannot create a paid retry loop.
+    const nowMs = Date.now();
+    const oneHourAgo = new Date(nowMs - 60 * 60 * 1000);
+    const processingStaleBefore = new Date(
+      nowMs - EMBEDDING_PROCESSING_TTL_MS
+    );
 
     const assetsNeedingEmbeddings = await prisma.asset.findMany({
       where: {
         deletedAt: null,
-        embedding: null,
         createdAt: {
           lt: oneHourAgo,
         },
+        OR: [
+          { embedding: null },
+          { embedding: { is: { status: 'pending' } } },
+          {
+            embedding: {
+              is: {
+                status: 'processing',
+                updatedAt: { lt: processingStaleBefore },
+              },
+            },
+          },
+        ],
       },
       select: {
         id: true,
@@ -113,12 +128,20 @@ async function getHandler(request: NextRequest) {
       });
     }
 
-    // Initialize embedding service once
-    let embeddingService;
+    // Validate the provider once, then keep one admitted service per owner so
+    // every paid call is charged to the user whose asset is being processed.
+    const embeddingServices = new Map<string, EmbeddingService>();
+    const firstOwnerUserId = assetsNeedingEmbeddings[0].ownerUserId;
     try {
-      embeddingService = createEmbeddingService();
+      embeddingServices.set(
+        firstOwnerUserId,
+        createEmbeddingService(firstOwnerUserId)
+      );
     } catch (error) {
-      logger.logError('cron:process-embeddings:service-init-failed', error as Error);
+      logger.logError(
+        'cron:process-embeddings:service-init-failed',
+        error as Error
+      );
       return NextResponse.json(
         {
           error: 'Embedding service not configured',
@@ -139,8 +162,17 @@ async function getHandler(request: NextRequest) {
           createdAt: asset.createdAt,
         });
 
+        let embeddingService = embeddingServices.get(asset.ownerUserId);
+        if (!embeddingService) {
+          embeddingService = createEmbeddingService(asset.ownerUserId);
+          embeddingServices.set(asset.ownerUserId, embeddingService);
+        }
+
         // Generate embedding
-        const result = await embeddingService.embedImage(asset.blobUrl, asset.checksumSha256);
+        const result = await embeddingService.embedImage(
+          asset.blobUrl,
+          asset.checksumSha256
+        );
 
         // Store embedding in database
         const embedding = await upsertAssetEmbedding({
@@ -164,12 +196,17 @@ async function getHandler(request: NextRequest) {
         }
       } catch (error) {
         stats.failureCount++;
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
         stats.errors.push({
           assetId: asset.id,
           error: errorMessage,
         });
-        logger.logError('cron:process-embeddings:asset-failed', error as Error, { assetId: asset.id });
+        logger.logError(
+          'cron:process-embeddings:asset-failed',
+          error as Error,
+          { assetId: asset.id }
+        );
 
         // Continue processing other assets even if one fails
         continue;
@@ -177,12 +214,14 @@ async function getHandler(request: NextRequest) {
     }
 
     const totalTime = Date.now() - startTime;
-    const avgProcessingTime = stats.successCount > 0
-      ? Math.round(stats.totalProcessingTime / stats.successCount)
-      : 0;
-    const successRate = stats.totalProcessed > 0
-      ? Math.round((stats.successCount / stats.totalProcessed) * 100)
-      : 0;
+    const avgProcessingTime =
+      stats.successCount > 0
+        ? Math.round(stats.totalProcessingTime / stats.successCount)
+        : 0;
+    const successRate =
+      stats.totalProcessed > 0
+        ? Math.round((stats.successCount / stats.totalProcessed) * 100)
+        : 0;
 
     logger.logInfo('cron.process-embeddings.complete', {
       totalTimeMs: totalTime,

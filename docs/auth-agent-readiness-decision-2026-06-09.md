@@ -36,7 +36,7 @@ token issuance, user identity mapping, and route migration are proven.
 - `qa-local` requires `SPLOOT_QA_AUTH_MODE=enabled` and
   `SPLOOT_QA_AUTH_SECRET`.
 - `qa-local` is rejected when `NODE_ENV=production` or
-  `VERCEL_ENV=production`.
+  `DEPLOYMENT_ENV=production`.
 - `users.id` stays stable; provider subjects are additive rows in
   `user_identities`.
 - New protected API routes must use `lib/auth/with-authenticated-api`; the

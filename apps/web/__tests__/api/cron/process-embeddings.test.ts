@@ -162,7 +162,20 @@ describe('/api/cron/process-embeddings', () => {
       // Verify the query includes correct filtering
       const callArgs = mockPrisma.asset.findMany.mock.calls[0][0];
       expect(callArgs.where.deletedAt).toBe(null);
-      expect(callArgs.where.embedding).toBe(null);
+      expect(callArgs.where.OR).toEqual(
+        expect.arrayContaining([
+          { embedding: null },
+          { embedding: { is: { status: 'pending' } } },
+          {
+            embedding: {
+              is: {
+                status: 'processing',
+                updatedAt: { lt: expect.any(Date) },
+              },
+            },
+          },
+        ])
+      );
       expect(callArgs.where.createdAt.lt).toBeInstanceOf(Date);
 
       // Verify the cutoff is approximately 1 hour ago (within 1 second tolerance)

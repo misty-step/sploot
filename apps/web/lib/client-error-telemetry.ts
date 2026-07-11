@@ -1,6 +1,8 @@
 'use client';
 
 import type { ErrorInfo } from 'react';
+import { postClientError } from '@/lib/telemetry-client';
+import type { ErrorTelemetryPayload } from '@/lib/telemetry-contract';
 
 type TelemetryMetadata = Record<string, unknown>;
 
@@ -23,21 +25,9 @@ export function sendClientErrorTelemetry(
 
   try {
     const payload = buildPayload(boundary, error, options);
-    const body = JSON.stringify({ type: 'error', payload });
-
-    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
-      const blob = new Blob([body], { type: 'application/json' });
-      navigator.sendBeacon('/api/telemetry', blob);
-    } else {
-      void fetch('/api/telemetry', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        keepalive: true,
-      }).catch(() => {
-        /* ignore */
-      });
-    }
+    void postClientError(payload).catch(() => {
+      /* telemetry is best effort */
+    });
   } catch (telemetryError) {
     if (process.env.NODE_ENV === 'development') {
       console.error('[ClientErrorTelemetry] Failed to send telemetry', telemetryError);
@@ -49,12 +39,11 @@ function buildPayload(
   boundary: string,
   error: Error,
   { errorInfo, metadata }: TelemetryOptions
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
+): Omit<ErrorTelemetryPayload, 'timestamp'> {
+  const payload: Omit<ErrorTelemetryPayload, 'timestamp'> = {
     boundary,
     name: error.name || 'Error',
     message: sanitizeMessage(error.message),
-    timestamp: Date.now(),
     hasStack: Boolean(error.stack),
   };
 

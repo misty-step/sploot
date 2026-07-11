@@ -7,7 +7,7 @@ symlink to this file — they are identical by construction.
 ## Project Overview
 
 Sploot is a pnpm Turborepo monorepo consolidating:
-- **apps/web** — Next.js 15 meme library: text→image semantic search (CLIP/SigLIP embeddings, pgvector), App Router API routes, Clerk auth, Prisma/Neon pgvector, Vercel Blob, Replicate embeddings, Canary diagnostics, deployed smoke, and Vercel release posture.
+- **apps/web** — Next.js 16 meme library: text→image semantic search (CLIP/SigLIP embeddings, pgvector), App Router API routes, Clerk auth, Prisma/Neon pgvector, Vercel Blob, Replicate embeddings, Canary diagnostics, deployed smoke, and DigitalOcean release posture.
 - **apps/extension** — Chrome extension (WXT + React) for one-click image saving: popup/background capture, Clerk extension auth, API client, store assets, and Chrome Web Store release packet.
 - **apps/mcp** — `@sploot/mcp` (`sploot-mcp` bin): MCP server exposing save + search as agent tools over the published token-scoped API contract. Companion skill: `.agents/skills/misty-sploot/`.
 - **packages/common** — `@sploot/common`, shared upload constants and API types consumed by both apps.
@@ -171,7 +171,7 @@ Pre-commit runs gitleaks, secrets scan, web lint, extension lint, and typecheck 
 ## CI/CD
 
 - GitHub Actions: lint, type-check, test (with postgres service), extension build
-- Vercel: Automatic deploys from main (web app)
+- DigitalOcean App Platform: automatic web deploys from `master`
 - Extension: Manual submission to Chrome Web Store from `apps/extension/.output/`
 
 ## Known Debt Map
@@ -180,7 +180,7 @@ Pre-commit runs gitleaks, secrets scan, web lint, extension lint, and typecheck 
 |---|---|---|
 | `backlog.d/_done/007-publish-extension-web-store-release.md` | `apps/extension`, Chrome Web Store | Current unpacked build is loaded, but authenticated right-click upload/duplicate proof and Web Store dashboard receipt remain. |
 | PR #151 | `apps/web/app/api/health/route.ts` | Stale Prisma serverless connections need runtime health evidence on future DB health changes. |
-| PR #142, bounded further by PR #251 (sploot-050) | `apps/web/lib/upload/embedding-scheduler-service.ts`, `apps/web/lib/embedding-rate-limit.ts` | Duplicate/concurrent job pressure was bounded by #142's DB lock + KV rate limiter, but the upload-path scheduler never consulted the limiter — only the manual regenerate-embedding route did. #251 wires `acquireEmbeddingRateLimit`/`acquireEmbeddingDailyBudget` into `EmbeddingSchedulerService`, adds an `EMBEDDING_DAILY_BUDGET` ceiling, and reports global-scope breaches (not routine per-user throttling) to Canary via `logger.logError`. Residual: the cron (`process-embeddings`) and manual regenerate route are unaffected — cron was already bounded per ADR-008; the manual route already had its own rate-limit call. |
+| PR #142, bounded further by PR #251 (sploot-050) and ADR-010 | `apps/web/lib/upload/embedding-scheduler-service.ts`, `apps/web/lib/embedding-rate-limit.ts` | Duplicate/concurrent job pressure is bounded by the DB processing lock plus Postgres-backed per-user/global leases, minute windows, and `EMBEDDING_DAILY_BUDGET`. Global breaches report to Canary. The cron (`process-embeddings`) remains bounded separately by ADR-008; the manual route has its own rate-limit call. |
 | PR #153 | `.github/workflows/release.yml` | Semantic-release depends on `GH_RELEASE_TOKEN`; release fixes must prove token path without weakening permissions. |
 | Backlog refs required | `apps/web/docs/API.md` | API docs are hand maintained and can drift from route behavior. |
 

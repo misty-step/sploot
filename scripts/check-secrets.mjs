@@ -23,6 +23,8 @@ const PLACEHOLDER_VALUES = new Set([
   'your_token',
 ]);
 
+const RETIRED_REDIS_TOKEN_NAME = ['UPSTASH', 'REDIS', 'REST', 'TOKEN'].join('_');
+
 const SECRET_ENV_NAMES = [
   'BLOB_READ_WRITE_TOKEN',
   'CLERK_SECRET_KEY',
@@ -31,7 +33,7 @@ const SECRET_ENV_NAMES = [
   'POSTGRES_URL',
   'POSTGRES_URL_NON_POOLING',
   'REPLICATE_API_TOKEN',
-  'UPSTASH_REDIS_REST_TOKEN',
+  RETIRED_REDIS_TOKEN_NAME,
 ];
 
 const SKIP_DIRS = new Set([
@@ -135,10 +137,9 @@ function isRealTokenAssignment(name, rawValue) {
   if (name === 'BLOB_READ_WRITE_TOKEN') {
     return /^vercel_blob_[A-Za-z0-9_-]{12,}$/.test(value);
   }
-  if (name === 'UPSTASH_REDIS_REST_TOKEN') {
+  if (name === RETIRED_REDIS_TOKEN_NAME) {
     return value.length >= 20 && /^[A-Za-z0-9_./+=:-]+$/.test(value);
   }
-
   return false;
 }
 

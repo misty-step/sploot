@@ -10,7 +10,7 @@ contract: read `AGENTS.md` (loaded as context) and `CLAUDE.md`.
   thresholds. Diagnose env/DB/migration/WXT/auth setup instead.
 - **`@sploot/common` is the source of truth** for upload limits, MIME
   validation, and shared API types. Change it there, then update both apps.
-- **Web deploy (Vercel) and extension release (Chrome Web Store) are separate
+- **Web deploy (DigitalOcean) and extension release (Chrome Web Store) are separate
   surfaces.** Do not couple them.
 - **Work tracking lives in `backlog.d/`** (local markdown), not GitHub Issues.
   Closure = move to `backlog.d/_done/` with `Status: done`, a `## What Was

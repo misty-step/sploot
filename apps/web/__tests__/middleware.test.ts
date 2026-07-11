@@ -108,7 +108,6 @@ describe('middleware auth boundary', () => {
 
   it('does not let qa-local bypass app protection in production', async () => {
     vi.stubEnv('NODE_ENV', 'production');
-    vi.stubEnv('VERCEL_ENV', 'production');
     const protect = vi.fn();
     const token = await createQaLocalAuthToken({
       userId: 'qa-user-1',

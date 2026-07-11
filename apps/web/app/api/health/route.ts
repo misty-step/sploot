@@ -1,240 +1,221 @@
-import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/db';
-import { kv } from '@vercel/kv';
-import { canaryConfigured, reportCanaryCheckIn } from '@/lib/canary-reporter';
-import { withObservability } from '@/lib/with-observability';
-import { logger } from '@/lib/observability-logger';
+import { NextRequest, NextResponse } from 'next/server';
+
 import pkg from '@/package.json';
+import { canaryConfigured, reportCanaryCheckIn } from '@/lib/canary-reporter';
+import { prisma } from '@/lib/db';
+import { logger } from '@/lib/observability-logger';
+import { withObservability } from '@/lib/with-observability';
+
+interface HealthDependencies {
+  database: 'up' | 'down';
+  embedding_limiter: 'up' | 'down';
+  share_slug_cache: 'local';
+}
 
 interface HealthStatus {
   status: 'ok' | 'error';
   timestamp: string;
-  dependencies?: {
-    database: 'up' | 'down';
-    redis: 'up' | 'down';
-  };
-  diagnostics?: {
+  dependencies: HealthDependencies;
+  diagnostics: {
     prisma_connection_test?: boolean;
-    database_url_configured?: boolean;
+    embedding_limiter_schema?: boolean;
+    database_url_configured: boolean;
     connection_latency_ms?: number;
-    env_vars?: Record<string, 'configured' | 'missing'>;
-    canary_configured?: boolean;
+    env_vars: Record<string, 'configured' | 'missing'>;
+    canary_configured: boolean;
   };
   version?: string;
   error?: string;
 }
 
-const TIMEOUT_MS = 5000;
-
-async function checkDatabase(): Promise<{
+interface DatabaseHealth {
   success: boolean;
+  limiterSchema: boolean;
   error?: string;
   latency_ms?: number;
-  prisma_test?: boolean;
-}> {
-  const start = Date.now();
+  prisma_test: boolean;
+}
+
+interface LimiterSchemaRow {
+  limiter_buckets: string | null;
+  limiter_leases: string | null;
+}
+
+const TIMEOUT_MS = 5_000;
+
+async function queryRuntimeSchema(): Promise<LimiterSchemaRow[]> {
+  return prisma.$queryRaw<LimiterSchemaRow[]>`
+    SELECT
+      to_regclass('public.embedding_rate_buckets')::text AS limiter_buckets,
+      to_regclass('public.embedding_rate_leases')::text AS limiter_leases
+  `;
+}
+
+function schemaIsReady(rows: LimiterSchemaRow[]): boolean {
+  return Boolean(rows[0]?.limiter_buckets && rows[0]?.limiter_leases);
+}
+
+async function checkDatabase(): Promise<DatabaseHealth> {
+  const startedAt = Date.now();
+
+  if (!prisma) {
+    return {
+      success: false,
+      limiterSchema: false,
+      error: 'Prisma client not initialized',
+      prisma_test: false,
+    };
+  }
 
   try {
-    if (!prisma) {
+    const rows = await queryRuntimeSchema();
+    return {
+      success: true,
+      limiterSchema: schemaIsReady(rows),
+      latency_ms: Date.now() - startedAt,
+      prisma_test: true,
+    };
+  } catch (error) {
+    const databaseError = error as Error;
+    const isStaleConnection =
+      databaseError instanceof Prisma.PrismaClientKnownRequestError &&
+      (databaseError.message.includes('Server has closed the connection') ||
+        databaseError.message.includes('Connection terminated unexpectedly') ||
+        databaseError.message.includes('connection has been closed') ||
+        databaseError.code === 'P1002' ||
+        databaseError.code === 'P1008');
+
+    if (!isStaleConnection) {
+      logger.logError('health-check-database-failed', databaseError);
       return {
         success: false,
-        error: 'Prisma client not initialized',
+        limiterSchema: false,
+        error: databaseError.message,
+        latency_ms: Date.now() - startedAt,
         prisma_test: false,
       };
     }
 
-    // Prisma-specific connection test
-    await prisma.$queryRaw`SELECT 1`;
-    const latency_ms = Date.now() - start;
+    logger.logInfo('health-check-db-reconnecting', {
+      reason: 'stale_connection',
+      error: databaseError.message,
+      errorCode: databaseError.code,
+    });
 
-    return {
-      success: true,
-      latency_ms,
-      prisma_test: true,
-    };
-  } catch (e) {
-    const err = e as Error;
-    const latency_ms = Date.now() - start;
-
-    // Handle stale connections in serverless environments (Neon/PgBouncer)
-    // PrismaClientKnownRequestError with connection-related messages indicates
-    // the server closed the connection due to idle timeout
-    const isStaleConnection =
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      (err.message.includes('Server has closed the connection') ||
-        err.message.includes('Connection terminated unexpectedly') ||
-        err.message.includes('connection has been closed') ||
-        err.code === 'P1002' || // Connection timeout
-        err.code === 'P1008'); // Operations timed out
-
-    if (isStaleConnection) {
-      logger.logInfo('health-check-db-reconnecting', {
-        reason: 'stale_connection',
-        error: err.message,
-        errorCode: err instanceof Prisma.PrismaClientKnownRequestError ? err.code : undefined,
-      });
-
-      try {
-        // Force disconnect and reconnect to get a fresh connection
-        await prisma.$disconnect();
-        await prisma.$connect();
-
-        // Retry the health check query
-        await prisma.$queryRaw`SELECT 1`;
-        const reconnectLatencyMs = Date.now() - start;
-
-        logger.logInfo('health-check-db-reconnect-success', {
-          latency_ms: reconnectLatencyMs,
-        });
-
-        return {
-          success: true,
-          latency_ms: reconnectLatencyMs,
-          prisma_test: true,
-        };
-      } catch (reconnectError) {
-        const reconnectErr = reconnectError as Error;
-        logger.logError('health-check-db-reconnect-failed', reconnectErr);
-
-        return {
-          success: false,
-          error: `Reconnect failed: ${reconnectErr.message}`,
-          latency_ms: Date.now() - start,
-          prisma_test: false,
-        };
-      }
+    try {
+      await prisma.$disconnect();
+      await prisma.$connect();
+      const rows = await queryRuntimeSchema();
+      const latencyMs = Date.now() - startedAt;
+      logger.logInfo('health-check-db-reconnect-success', { latency_ms: latencyMs });
+      return {
+        success: true,
+        limiterSchema: schemaIsReady(rows),
+        latency_ms: latencyMs,
+        prisma_test: true,
+      };
+    } catch (reconnectError) {
+      const reconnect = reconnectError as Error;
+      logger.logError('health-check-db-reconnect-failed', reconnect);
+      return {
+        success: false,
+        limiterSchema: false,
+        error: `Reconnect failed: ${reconnect.message}`,
+        latency_ms: Date.now() - startedAt,
+        prisma_test: false,
+      };
     }
-
-    logger.logError('health-check-database-failed', err);
-
-    return {
-      success: false,
-      error: err.message,
-      latency_ms,
-      prisma_test: false,
-    };
   }
 }
 
-async function checkRedis(): Promise<boolean> {
-  // Skip Redis check if not configured (treat as healthy)
-  if (!process.env.KV_REST_API_URL) {
-    return true;
-  }
-
-  try {
-    await kv.ping();
-    return true;
-  } catch (e) {
-    logger.logError('health-check-redis-failed', e as Error);
-    return false;
-  }
+function dependenciesFor(database: DatabaseHealth): HealthDependencies {
+  return {
+    database: database.success ? 'up' : 'down',
+    embedding_limiter: database.success && database.limiterSchema ? 'up' : 'down',
+    share_slug_cache: 'local',
+  };
 }
 
-async function getHandler(_req: NextRequest) {
+function diagnosticsFor(database: DatabaseHealth): HealthStatus['diagnostics'] {
+  return {
+    prisma_connection_test: database.prisma_test,
+    embedding_limiter_schema: database.limiterSchema,
+    database_url_configured: Boolean(process.env.DATABASE_URL),
+    connection_latency_ms: database.latency_ms,
+    canary_configured: canaryConfigured(),
+    env_vars: {
+      DATABASE_URL: process.env.DATABASE_URL ? 'configured' : 'missing',
+    },
+  };
+}
+
+async function getHandler(_request: NextRequest) {
   const timestamp = new Date().toISOString();
-
-  // Timeout wrapper
   let timeoutId: NodeJS.Timeout | undefined;
-  const timeoutPromise = new Promise<{
-    db: { success: boolean; error?: string; latency_ms?: number; prisma_test?: boolean };
-    redis: boolean;
-  }>((_, reject) => {
+  const timeout = new Promise<DatabaseHealth>((_, reject) => {
     timeoutId = setTimeout(() => reject(new Error('Health check timeout')), TIMEOUT_MS);
   });
 
   try {
-    const checksPromise = Promise.all([checkDatabase(), checkRedis()]).then(
-      ([db, redis]) => ({ db, redis })
-    );
-
-    const results = await Promise.race([checksPromise, timeoutPromise]);
-
-    // Clear timeout on successful completion
+    const database = await Promise.race([checkDatabase(), timeout]);
     if (timeoutId) clearTimeout(timeoutId);
 
-    const isHealthy = results.db.success && results.redis;
-
-    // Environment variable visibility (DB-only for reduced information disclosure)
-    const envVars: Record<string, 'configured' | 'missing'> = {
-      DATABASE_URL: process.env.DATABASE_URL ? 'configured' : 'missing',
-    };
-
-    if (isHealthy) {
+    const dependencies = dependenciesFor(database);
+    const healthy = database.success && database.limiterSchema;
+    if (healthy) {
       const payload: HealthStatus = {
         status: 'ok',
         timestamp,
-        dependencies: {
-          database: 'up',
-          redis: 'up',
-        },
-        diagnostics: {
-          prisma_connection_test: results.db.prisma_test,
-          database_url_configured: !!process.env.DATABASE_URL,
-          connection_latency_ms: results.db.latency_ms,
-          canary_configured: canaryConfigured(),
-          env_vars: envVars,
-        },
+        dependencies,
+        diagnostics: diagnosticsFor(database),
         version: pkg.version,
       };
 
       await reportHealthCheckIn('alive', 'sploot-web health route ok', {
-        database: 'up',
-        redis: 'up',
-        connection_latency_ms: results.db.latency_ms,
+        database: dependencies.database,
+        embedding_limiter: dependencies.embedding_limiter,
+        share_slug_cache: dependencies.share_slug_cache,
+        connection_latency_ms: database.latency_ms,
       });
 
-      return NextResponse.json(payload, {
-        status: 200,
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-        },
-      });
-    } else {
-      // Determine which failed
-      const errorMsg = [];
-      if (!results.db.success) errorMsg.push(`Database connection failed: ${results.db.error}`);
-      if (!results.redis) errorMsg.push('Redis connection failed');
-
-      const payload: HealthStatus = {
-        status: 'error',
-        timestamp,
-        error: errorMsg.join(', '),
-        diagnostics: {
-          prisma_connection_test: results.db.prisma_test,
-          database_url_configured: !!process.env.DATABASE_URL,
-          connection_latency_ms: results.db.latency_ms,
-          canary_configured: canaryConfigured(),
-          env_vars: envVars,
-        },
-      };
-
-      await reportHealthCheckIn('error', 'sploot-web health route degraded', {
-        database: results.db.success ? 'up' : 'down',
-        redis: results.redis ? 'up' : 'down',
-        error: errorMsg.join(', '),
-      });
-
-      return NextResponse.json(payload, {
-        status: 503,
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-        },
-      });
+      return json(payload, 200);
     }
 
-  } catch (error) {
-    // Clear timeout on error
-    if (timeoutId) clearTimeout(timeoutId);
+    const errors: string[] = [];
+    if (!database.success) {
+      errors.push(`Database connection failed: ${database.error}`);
+    } else if (!database.limiterSchema) {
+      errors.push('Embedding limiter schema unavailable');
+    }
 
-    // Timeout or other unexpected error
     const payload: HealthStatus = {
       status: 'error',
       timestamp,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      dependencies,
+      error: errors.join(', '),
+      diagnostics: diagnosticsFor(database),
+    };
+
+    await reportHealthCheckIn('error', 'sploot-web health route degraded', {
+      ...dependencies,
+      error: payload.error,
+    });
+    return json(payload, 503);
+  } catch (error) {
+    if (timeoutId) clearTimeout(timeoutId);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const payload: HealthStatus = {
+      status: 'error',
+      timestamp,
+      dependencies: {
+        database: 'down',
+        embedding_limiter: 'down',
+        share_slug_cache: 'local',
+      },
+      error: message,
       diagnostics: {
-        database_url_configured: !!process.env.DATABASE_URL,
+        database_url_configured: Boolean(process.env.DATABASE_URL),
         canary_configured: canaryConfigured(),
         env_vars: {
           DATABASE_URL: process.env.DATABASE_URL ? 'configured' : 'missing',
@@ -243,25 +224,26 @@ async function getHandler(_req: NextRequest) {
     };
 
     await reportHealthCheckIn('error', 'sploot-web health route failed', {
-      error: payload.error,
+      error: message,
     });
-
-    return NextResponse.json(payload, {
-      status: 503,
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-      },
-    });
+    return json(payload, 503);
   }
 }
 
-async function headHandler(req: NextRequest) {
-  const res = await getHandler(req);
+function json(payload: HealthStatus, status: number) {
+  return NextResponse.json(payload, {
+    status,
+    headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' },
+  });
+}
+
+async function headHandler(request: NextRequest) {
+  const response = await getHandler(request);
   return new NextResponse(null, {
-    status: res.status,
+    status: response.status,
     headers: {
-      'Cache-Control': res.headers.get('Cache-Control') || 'no-cache, no-store, must-revalidate',
-      'Content-Type': res.headers.get('Content-Type') || 'application/json',
+      'Cache-Control': response.headers.get('Cache-Control') ?? 'no-cache, no-store, must-revalidate',
+      'Content-Type': response.headers.get('Content-Type') ?? 'application/json',
     },
   });
 }
@@ -269,16 +251,13 @@ async function headHandler(req: NextRequest) {
 async function reportHealthCheckIn(
   status: 'alive' | 'error',
   summary: string,
-  context: Record<string, any>
+  context: Record<string, unknown>
 ) {
   await reportCanaryCheckIn({
     status,
     summary,
     ttlMs: 300_000,
-    context: {
-      route: '/api/health',
-      ...context,
-    },
+    context: { route: '/api/health', ...context },
   });
 }
 

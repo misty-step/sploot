@@ -6,7 +6,7 @@ const originalEnv = {
   CANARY_INGEST_KEY: process.env.CANARY_INGEST_KEY,
   CANARY_SERVICE_NAME: process.env.CANARY_SERVICE_NAME,
   CANARY_ENABLE_IN_TEST: process.env.CANARY_ENABLE_IN_TEST,
-  VERCEL_ENV: process.env.VERCEL_ENV,
+  DEPLOYMENT_ENV: process.env.DEPLOYMENT_ENV,
 };
 
 beforeEach(() => {
@@ -15,7 +15,7 @@ beforeEach(() => {
   process.env.CANARY_API_KEY = 'test-canary-key';
   process.env.CANARY_SERVICE_NAME = 'sploot-test';
   process.env.CANARY_ENABLE_IN_TEST = '1';
-  process.env.VERCEL_ENV = 'test';
+  process.env.DEPLOYMENT_ENV = 'test';
 });
 
 afterEach(() => {

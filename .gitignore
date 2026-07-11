@@ -73,9 +73,6 @@ next-env.d.ts
 # Clerk
 .clerk/
 
-# Vercel
-.vercel
-
 # Harness Kit runtime traces (delegation receipts) — local-only, not committed
 .harness-kit/traces/*.jsonl
 .harness-kit/traces/provider-lanes/

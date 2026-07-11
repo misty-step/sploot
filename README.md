@@ -49,7 +49,7 @@ packages.
 
 | Workspace | Path | Description |
 |-----------|------|-------------|
-| **Web App** | [`apps/web`](./apps/web) | Next.js 15 App Router, Vercel Blob, pgvector, Clerk Auth. |
+| **Web App** | [`apps/web`](./apps/web) | Next.js 16 App Router on DigitalOcean, Vercel Blob, pgvector, Clerk Auth. |
 | **Extension** | [`apps/extension`](./apps/extension) | Chrome Extension (WXT) for one-click saving. |
 | **MCP Server** | [`apps/mcp`](./apps/mcp) | `sploot-mcp` — save + search as agent tools over the [published API](./apps/web/docs/PUBLIC_API.md). |
 | **Common** | [`packages/common`](./packages/common) | Shared constants, types, and utilities. |
@@ -66,7 +66,7 @@ Sploot's face-by-face status (UI/API/MCP/skill shipped; CLI explicitly
 waived, rationale in that doc).
 
 ![Sploot Architecture](https://img.shields.io/badge/Architecture-Monorepo-black?style=flat-square&logo=turborepo)
-![Next.js](https://img.shields.io/badge/Next.js-15.5-black?style=flat-square&logo=next.js)
+![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)
 ![WXT](https://img.shields.io/badge/Extension-WXT-blue?style=flat-square&logo=googlechrome)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square&logo=typescript)
 
@@ -137,7 +137,7 @@ We use **Turborepo** to orchestrate tasks.
 - **Shared Code**: `@sploot/common` is consumed by both `web` and `extension`.
 - **CI/CD**: GitHub Actions (Lint, Test, Type-check).
 - **Deployment**: 
-  - Web: Automatic via Vercel.
+  - Web: Automatic via DigitalOcean App Platform.
   - Extension: Manual submission to Chrome Web Store.
 - **Details**: See [ARCHITECTURE.md](./ARCHITECTURE.md).
 

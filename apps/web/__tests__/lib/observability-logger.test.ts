@@ -3,8 +3,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 const FIXED_DATE = new Date('2024-04-20T16:20:42.000Z');
 const originalEnv = {
   NODE_ENV: process.env.NODE_ENV,
-  VERCEL_REGION: process.env.VERCEL_REGION,
-  VERCEL_URL: process.env.VERCEL_URL,
   CANARY_ENABLE_IN_TEST: process.env.CANARY_ENABLE_IN_TEST,
 };
 
@@ -44,8 +42,6 @@ beforeEach(() => {
   vi.setSystemTime(FIXED_DATE);
 
   process.env.NODE_ENV = 'test';
-  process.env.VERCEL_REGION = 'iad1';
-  process.env.VERCEL_URL = 'https://sploot.dev';
 
   consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -60,18 +56,6 @@ afterEach(() => {
     delete process.env.NODE_ENV;
   } else {
     process.env.NODE_ENV = originalEnv.NODE_ENV;
-  }
-
-  if (originalEnv.VERCEL_REGION === undefined) {
-    delete process.env.VERCEL_REGION;
-  } else {
-    process.env.VERCEL_REGION = originalEnv.VERCEL_REGION;
-  }
-
-  if (originalEnv.VERCEL_URL === undefined) {
-    delete process.env.VERCEL_URL;
-  } else {
-    process.env.VERCEL_URL = originalEnv.VERCEL_URL;
   }
 
   if (originalEnv.CANARY_ENABLE_IN_TEST === undefined) {
@@ -100,8 +84,6 @@ describe('observability logger', () => {
       metadata: { vibe: 'certified' },
       environment: {
         nodeEnv: 'test',
-        vercelRegion: 'iad1',
-        vercelUrl: 'https://sploot.dev',
       },
     });
     expect(entry.traceId).toBeUndefined();

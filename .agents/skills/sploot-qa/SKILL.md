@@ -90,8 +90,8 @@ evidence is. Playwright auth smoke only: `pnpm --filter web e2e:auth` (port 3108
 
 ## Gotchas
 
-- `SPLOOT_QA_AUTH_MODE` is hard-refused when `NODE_ENV`/`VERCEL_ENV` is
-  `production` — local only, never against a deployment. And seeded images 404
+- `SPLOOT_QA_AUTH_MODE` is hard-refused when `NODE_ENV=production` — local
+  only, never against a deployment. And seeded images 404
   unless it is `enabled` (the QA image loader maps the blob host to
   `public/qa-blob-seed/` only in that mode).
 - No fixed dev port: `pnpm dev` uses 3001, `qa:evidence` a random 3100–3499,

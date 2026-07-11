@@ -8,9 +8,9 @@
 
 The deployment validation harness checks the current `/api/health` response
 shape and the deployed smoke harness records production product-route behavior.
-After deploying `dpl_9DWe7Dhz82D5pX8GFbKd3j4cYZYT`, health, backing services,
-signed-out app protection, signed-out API auth, and production extension
-artifact sanity all pass against `https://www.sploot.app`.
+The current harness records health, backing services, signed-out app
+protection, signed-out API auth, and production extension artifact sanity
+against `https://www.sploot.app`.
 
 ## Validation Commands
 
@@ -24,12 +24,13 @@ pnpm --filter web smoke:deployed
 
 - `status=ok`
 - `dependencies.database=up`
-- `dependencies.redis=up`
+- `dependencies.embedding_limiter=up`
+- `dependencies.share_slug_cache=local`
 - `diagnostics.database_url_configured=true`
 - `diagnostics.prisma_connection_test=true`
 
-Local runs warn, rather than fail, when optional authenticated Vercel/Neon CLI
-checks cannot be performed.
+The validator reads the deployed contract directly and does not depend on a
+provider CLI session.
 
 ## Deployed Smoke
 

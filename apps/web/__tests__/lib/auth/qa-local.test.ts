@@ -46,7 +46,6 @@ describe('qa-local auth tokens', () => {
       new Headers({ [getQaLocalAuthHeader()]: token }),
       {
         NODE_ENV: 'production',
-        VERCEL_ENV: 'production',
         SPLOOT_QA_AUTH_MODE: 'enabled',
         SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
       }

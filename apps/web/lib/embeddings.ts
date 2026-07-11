@@ -1,10 +1,18 @@
 import Replicate from 'replicate';
 import { getCacheService } from './cache';
 import { getRuntimeGate } from './runtime-gates';
+import {
+  acquireEmbeddingDailyBudget,
+  acquireEmbeddingRateLimit,
+  releaseEmbeddingRateLimit,
+  type EmbeddingDailyBudgetReason,
+  type EmbeddingRateLimitLease,
+  type EmbeddingRateLimitReason,
+} from './embedding-rate-limit';
 
 // Updated to working CLIP model (SigLIP model was deprecated)
-export const CLIP_MODEL = 'krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4';
-export const MAX_RETRY_ATTEMPTS = 3;
+export const CLIP_MODEL =
+  'krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4';
 export const DEFAULT_TIMEOUT = 20000;
 
 export interface EmbeddingResult {
@@ -14,11 +22,19 @@ export interface EmbeddingResult {
   processingTime: number;
 }
 
-export interface EmbeddingServiceConfig {
+interface EmbeddingServiceConfig {
   apiToken: string;
+  userId: string;
   model?: string;
   timeout?: number;
-  retryAttempts?: number;
+}
+
+export interface EmbeddingService {
+  embedText(query: string): Promise<EmbeddingResult>;
+  embedImage(imageUrl: string, checksum?: string): Promise<EmbeddingResult>;
+  embedBatch(
+    items: Array<{ type: 'text' | 'image'; content: string }>
+  ): Promise<EmbeddingResult[]>;
 }
 
 export class EmbeddingError extends Error {
@@ -32,23 +48,45 @@ export class EmbeddingError extends Error {
   }
 }
 
+export type EmbeddingAdmissionReason =
+  | EmbeddingRateLimitReason
+  | EmbeddingDailyBudgetReason;
+
+export class EmbeddingAdmissionError extends EmbeddingError {
+  constructor(
+    public reason: EmbeddingAdmissionReason,
+    public retryAfterSec?: number
+  ) {
+    const unavailable = reason === 'limiter_unavailable';
+    super(
+      unavailable
+        ? 'Embedding admission is temporarily unavailable'
+        : 'Embedding generation is rate limited',
+      unavailable ? 503 : 429,
+      true
+    );
+    this.name = 'EmbeddingAdmissionError';
+  }
+}
+
 /**
  * Service for generating embeddings using Replicate's SigLIP model.
- * Handles both text and image embeddings with automatic caching and retry logic.
+ * Handles both text and image embeddings with automatic caching.
+ * Each paid admission permits exactly one provider prediction attempt.
  */
-export class ReplicateEmbeddingService {
+class ReplicateEmbeddingService implements EmbeddingService {
   private replicate: Replicate;
+  private userId: string;
   private model: string;
   private timeout: number;
-  private retryAttempts: number;
 
   constructor(config: EmbeddingServiceConfig) {
     this.replicate = new Replicate({
       auth: config.apiToken,
     });
+    this.userId = config.userId;
     this.model = config.model || CLIP_MODEL;
     this.timeout = config.timeout || DEFAULT_TIMEOUT;
-    this.retryAttempts = config.retryAttempts || MAX_RETRY_ATTEMPTS;
   }
 
   async embedText(query: string): Promise<EmbeddingResult> {
@@ -67,25 +105,33 @@ export class ReplicateEmbeddingService {
     }
 
     try {
-      const result = await this.withRetry(
-        async () => {
-          const output = await this.replicate.run(
-            this.model as `${string}/${string}:${string}`,
-            {
-              input: {
-                text: query,
-              },
-            }
-          );
-          return output;
-        },
-        `Embedding text: ${query.substring(0, 50)}...`
+      const result = await this.withPaidAdmission(() =>
+        this.withTimeout(
+          (signal) =>
+            this.replicate.run(
+              this.model as `${string}/${string}:${string}`,
+              {
+                input: {
+                  text: query,
+                },
+                wait: { mode: 'poll' },
+                signal,
+              }
+            ),
+          `Embedding text: ${query.substring(0, 50)}...`
+        )
       );
 
-      const embedding = Array.isArray(result) ? result : (result as any).embedding;
+      const embedding = Array.isArray(result)
+        ? result
+        : (result as any).embedding;
 
       if (!embedding || !Array.isArray(embedding)) {
-        throw new EmbeddingError('Invalid embedding response from model', 502, false);
+        throw new EmbeddingError(
+          'Invalid embedding response from model',
+          502,
+          false
+        );
       }
 
       // Cache the result
@@ -105,9 +151,12 @@ export class ReplicateEmbeddingService {
   /**
    * Generate embeddings for image from URL.
    * Uses checksum for cache key when available for better deduplication.
-   * @throws {EmbeddingError} If embedding generation fails after retries
+   * @throws {EmbeddingError} If embedding generation fails
    */
-  async embedImage(imageUrl: string, checksum?: string): Promise<EmbeddingResult> {
+  async embedImage(
+    imageUrl: string,
+    checksum?: string
+  ): Promise<EmbeddingResult> {
     const startTime = Date.now();
 
     // Check cache first if we have a checksum
@@ -125,25 +174,33 @@ export class ReplicateEmbeddingService {
     }
 
     try {
-      const result = await this.withRetry(
-        async () => {
-          const output = await this.replicate.run(
-            this.model as `${string}/${string}:${string}`,
-            {
-              input: {
-                image: imageUrl,
-              },
-            }
-          );
-          return output;
-        },
-        `Embedding image from: ${imageUrl.substring(0, 50)}...`
+      const result = await this.withPaidAdmission(() =>
+        this.withTimeout(
+          (signal) =>
+            this.replicate.run(
+              this.model as `${string}/${string}:${string}`,
+              {
+                input: {
+                  image: imageUrl,
+                },
+                wait: { mode: 'poll' },
+                signal,
+              }
+            ),
+          `Embedding image from: ${imageUrl.substring(0, 50)}...`
+        )
       );
 
-      const embedding = Array.isArray(result) ? result : (result as any).embedding;
+      const embedding = Array.isArray(result)
+        ? result
+        : (result as any).embedding;
 
       if (!embedding || !Array.isArray(embedding)) {
-        throw new EmbeddingError('Invalid embedding response from model', 502, false);
+        throw new EmbeddingError(
+          'Invalid embedding response from model',
+          502,
+          false
+        );
       }
 
       // Cache the result
@@ -162,7 +219,9 @@ export class ReplicateEmbeddingService {
     }
   }
 
-  async embedBatch(items: Array<{ type: 'text' | 'image'; content: string }>): Promise<EmbeddingResult[]> {
+  async embedBatch(
+    items: Array<{ type: 'text' | 'image'; content: string }>
+  ): Promise<EmbeddingResult[]> {
     const results = await Promise.all(
       items.map(async (item) => {
         if (item.type === 'text') {
@@ -176,51 +235,70 @@ export class ReplicateEmbeddingService {
     return results;
   }
 
-  private async withRetry<T>(
-    operation: () => Promise<T>,
-    context: string
-  ): Promise<T> {
-    let lastError: EmbeddingError | null = null;
-
-    for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
-      try {
-        return await this.withTimeout(operation, context);
-      } catch (error) {
-        const normalized = this.normalizeError(error, context);
-        lastError = normalized;
-
-        if (!normalized.retryable || attempt === this.retryAttempts) {
-          break;
-        }
-
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
+  private async withPaidAdmission<T>(operation: () => Promise<T>): Promise<T> {
+    const rateLimit = await acquireEmbeddingRateLimit(this.userId);
+    if (!rateLimit.allowed) {
+      throw new EmbeddingAdmissionError(
+        rateLimit.reason ?? 'limiter_unavailable',
+        rateLimit.retryAfterSec
+      );
     }
 
-    throw lastError ?? new EmbeddingError('Embedding request failed', 500, false);
+    const lease: EmbeddingRateLimitLease | null = rateLimit.lease ?? null;
+    if (!lease) {
+      throw new EmbeddingAdmissionError('limiter_unavailable', 30);
+    }
+
+    try {
+      const dailyBudget = await acquireEmbeddingDailyBudget();
+      if (!dailyBudget.allowed) {
+        throw new EmbeddingAdmissionError(
+          dailyBudget.reason ?? 'limiter_unavailable',
+          dailyBudget.retryAfterSec
+        );
+      }
+
+      return await operation();
+    } finally {
+      await releaseEmbeddingRateLimit(lease);
+    }
   }
 
   private async withTimeout<T>(
-    operation: () => Promise<T>,
+    operation: (signal: AbortSignal) => Promise<T>,
     context: string
   ): Promise<T> {
+    const controller = new AbortController();
+
     if (!this.timeout || this.timeout <= 0) {
-      return operation();
+      return operation(controller.signal);
     }
 
     const timeoutError = new EmbeddingError(
-      `Embedding request timed out after ${this.timeout}ms`,
+      `${context} timed out after ${this.timeout}ms`,
       504,
       true
     );
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort(timeoutError);
+    }, this.timeout);
 
-    return Promise.race([
-      operation(),
-      new Promise<T>((_, reject) => {
-        setTimeout(() => reject(timeoutError), this.timeout);
-      }),
-    ]);
+    try {
+      const result = await operation(controller.signal);
+      if (timedOut) {
+        throw timeoutError;
+      }
+      return result;
+    } catch (error) {
+      if (timedOut) {
+        throw timeoutError;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   private normalizeError(error: unknown, context: string): EmbeddingError {
@@ -233,17 +311,33 @@ export class ReplicateEmbeddingService {
 
     if (typeof status === 'number') {
       if (status >= 400 && status < 500 && status !== 429) {
-        return new EmbeddingError(`Embedding ${context} failed: ${message}`, status, false);
+        return new EmbeddingError(
+          `Embedding ${context} failed: ${message}`,
+          status,
+          false
+        );
       }
 
-      return new EmbeddingError(`Embedding ${context} failed: ${message}`, status, true);
+      return new EmbeddingError(
+        `Embedding ${context} failed: ${message}`,
+        status,
+        true
+      );
     }
 
     if (message.toLowerCase().includes('timeout')) {
-      return new EmbeddingError(`Embedding ${context} timed out: ${message}`, 504, true);
+      return new EmbeddingError(
+        `Embedding ${context} timed out: ${message}`,
+        504,
+        true
+      );
     }
 
-    return new EmbeddingError(`Embedding ${context} failed: ${message}`, 500, true);
+    return new EmbeddingError(
+      `Embedding ${context} failed: ${message}`,
+      500,
+      true
+    );
   }
 }
 
@@ -251,7 +345,7 @@ export class ReplicateEmbeddingService {
  * Factory function to create embedding service instance.
  * @throws {EmbeddingError} If API token not configured
  */
-export function createEmbeddingService(): ReplicateEmbeddingService {
+export function createEmbeddingService(userId: string): EmbeddingService {
   const embeddingGate = getRuntimeGate('embeddings');
   if (!embeddingGate.enabled) {
     throw new EmbeddingError(embeddingGate.message, 503, true);
@@ -263,7 +357,11 @@ export function createEmbeddingService(): ReplicateEmbeddingService {
     throw new EmbeddingError('Replicate API token not configured');
   }
 
-  return new ReplicateEmbeddingService({ apiToken });
+  if (!userId) {
+    throw new EmbeddingError('Embedding user identity is required', 500, false);
+  }
+
+  return new ReplicateEmbeddingService({ apiToken, userId });
 }
 
 /**
@@ -278,7 +376,7 @@ export function normalizeEmbedding(embedding: number[]): number[] {
     return embedding;
   }
 
-  return embedding.map(val => val / magnitude);
+  return embedding.map((val) => val / magnitude);
 }
 
 /**

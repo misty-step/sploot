@@ -9,7 +9,7 @@ import {
 } from '@/lib/piles/semantic-piles';
 import { createErrorResponse } from '@/lib/error-response';
 import { withObservability } from '@/lib/with-observability';
-import { logError } from '@/lib/vercel-logger';
+import { logError } from '@/lib/observability-logger';
 
 const MIN_LIMIT = 1;
 const MAX_LIMIT = 12;

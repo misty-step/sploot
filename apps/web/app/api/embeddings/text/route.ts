@@ -38,7 +38,7 @@ async function postHandler(req: NextRequest) {
 
     let embeddingService;
     try {
-      embeddingService = createEmbeddingService();
+      embeddingService = createEmbeddingService(userId);
     } catch (error) {
       // Failed to initialize embedding service
       return NextResponse.json(

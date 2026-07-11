@@ -13,7 +13,7 @@ import { isUnauthorizedAuthError, unauthorizedResponse } from "@/lib/auth/api";
 import { prisma, upsertAssetEmbedding } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import logger from "@/lib/logger";
-import { logError } from "@/lib/vercel-logger";
+import { logError } from "@/lib/observability-logger";
 import { createErrorResponse } from "@/lib/error-response";
 import { withObservability } from "@/lib/with-observability";
 import { logger as observabilityLogger } from "@/lib/observability-logger";
@@ -343,7 +343,7 @@ async function postHandler(req: NextRequest) {
       embeddingError = embeddingGate.message;
     } else {
       try {
-        const embeddingService = createEmbeddingService();
+        const embeddingService = createEmbeddingService(userId);
 
         // Start embedding generation in background
         generateEmbeddingAsync(

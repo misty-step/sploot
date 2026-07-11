@@ -32,8 +32,7 @@ export function getQaLocalAuthCookieName(): string {
 
 export function isQaLocalAuthEnabled(env: Record<string, string | undefined> = process.env): boolean {
   return env.SPLOOT_QA_AUTH_MODE === 'enabled' &&
-    env.NODE_ENV !== 'production' &&
-    env.VERCEL_ENV !== 'production';
+    env.NODE_ENV !== 'production';
 }
 
 export async function createQaLocalAuthToken({

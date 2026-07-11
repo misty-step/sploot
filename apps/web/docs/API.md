@@ -1214,7 +1214,7 @@ _Note: Real-time features are planned for v2_
 
 ```javascript
 // Example WebSocket connection for live updates
-const ws = new WebSocket("wss://your-app.vercel.app/api/ws");
+const ws = new WebSocket("wss://www.sploot.app/api/ws");
 
 ws.on("asset:created", (asset) => {
   console.log("New asset:", asset);

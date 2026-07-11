@@ -1,23 +1,13 @@
 /**
- * Analytics Service - Type-safe event tracking with PII sanitization
+ * Type-safe, provider-neutral event tracking with PII sanitization.
  *
- * Provides a unified interface for tracking analytics events across client and server.
- * Automatically handles Do Not Track, sanitizes PII, and validates event structures.
- *
- * @module lib/analytics
+ * Browser events use the authenticated first-party telemetry route. Server
+ * events write to the structured observability logger. Telemetry remains
+ * best-effort and never blocks product behavior.
  */
 
-import { track as vercelTrack } from '@vercel/analytics';
+import { postAnalyticsEvent } from '@/lib/telemetry-client';
 
-// ============================================================================
-// Type Definitions
-// ============================================================================
-
-/**
- * Analytics event payload with a discriminated union of supported event names and properties.
- *
- * @public
- */
 export type AnalyticsEvent =
   | { name: 'upload_file_selected'; properties: { count: number; totalSize: number } }
   | { name: 'upload_started'; properties: { assetId: string; size: number } }
@@ -26,220 +16,178 @@ export type AnalyticsEvent =
   | { name: 'search_query_submitted'; properties: { queryLength: number; hasFilters: boolean } }
   | { name: 'search_results_shown'; properties: { count: number; latency: number; hasFilters: boolean } }
   | { name: 'search_result_clicked'; properties: { position: number; score: number; assetId: string } }
-  | { name: 'search_no_results'; properties: { query: string } }
+  | { name: 'search_no_results'; properties: { queryLength: number; hasFilters: boolean } }
   | { name: 'asset_favorited'; properties: { assetId: string } }
   | { name: 'asset_unfavorited'; properties: { assetId: string } }
   | { name: 'asset_deleted'; properties: { assetId: string; hadTags: boolean } }
   | { name: 'tag_added'; properties: { assetId: string; tagName: string } }
   | { name: 'tag_removed'; properties: { assetId: string; tagName: string } };
 
+type DeclaredAnalyticsEventName = AnalyticsEvent['name'];
+type AnalyticsPropertiesFor<Name extends DeclaredAnalyticsEventName> = Extract<
+  AnalyticsEvent,
+  { name: Name }
+>['properties'];
+type AnalyticsPropertyAllowlist = {
+  [Name in DeclaredAnalyticsEventName]: readonly Extract<
+    keyof AnalyticsPropertiesFor<Name>,
+    string
+  >[];
+};
 
-/**
- * Sanitized property values (primitives only, no objects)
- */
 type SanitizedProperties = Record<string, string | number | boolean>;
 
-// ============================================================================
-// Public API
-// ============================================================================
+interface TelemetryEvent {
+  name: string;
+  properties: SanitizedProperties;
+}
 
-/**
- * Track an analytics event on the client.
- *
- * Respects the browser's Do Not Track setting, sanitizes PII, and never throws.
- *
- * @param event - Structured analytics event payload.
- */
+const ANALYTICS_EVENT_PROPERTY_ALLOWLIST = {
+  upload_file_selected: ['count', 'totalSize'],
+  upload_started: ['assetId', 'size'],
+  upload_completed: ['assetId', 'duration', 'size'],
+  upload_failed: ['reason', 'size'],
+  search_query_submitted: ['queryLength', 'hasFilters'],
+  search_results_shown: ['count', 'latency', 'hasFilters'],
+  search_result_clicked: ['position', 'score', 'assetId'],
+  search_no_results: ['queryLength', 'hasFilters'],
+  asset_favorited: ['assetId'],
+  asset_unfavorited: ['assetId'],
+  asset_deleted: ['assetId', 'hadTags'],
+  tag_added: ['assetId', 'tagName'],
+  tag_removed: ['assetId', 'tagName'],
+} as const satisfies AnalyticsPropertyAllowlist;
+
+const FLOW_EVENT_NAME = /^flow:[a-z][a-z0-9_-]{0,39}:[a-z][a-z0-9_-]{0,39}$/;
+const TIMING_EVENT_NAME = /^timing:[a-z][a-z0-9:_-]{0,99}$/i;
+const FLOW_PROPERTY_ALLOWLIST = ['count', 'totalSize', 'size', 'hasFilters'] as const;
+const TIMING_PROPERTY_ALLOWLIST = ['duration', 'success', 'size', 'count'] as const;
+
+export function getAnalyticsPropertyAllowlist(name: string): readonly string[] | null {
+  const declared = Object.prototype.hasOwnProperty.call(
+    ANALYTICS_EVENT_PROPERTY_ALLOWLIST,
+    name
+  )
+    ? ANALYTICS_EVENT_PROPERTY_ALLOWLIST[name as DeclaredAnalyticsEventName]
+    : undefined;
+  if (declared) return declared;
+  if (FLOW_EVENT_NAME.test(name)) return FLOW_PROPERTY_ALLOWLIST;
+  if (TIMING_EVENT_NAME.test(name)) return TIMING_PROPERTY_ALLOWLIST;
+  return null;
+}
+
 export function track(event: AnalyticsEvent): void {
+  emitAllowedEvent(event.name, event.properties);
+}
+
+export async function trackServer(event: AnalyticsEvent): Promise<void> {
+  const telemetryEvent = prepareTelemetryEvent(event.name, event.properties);
+  if (telemetryEvent) await logServerEvent(telemetryEvent);
+}
+
+export function trackFlow(
+  flowName: string,
+  step: string,
+  metadata?: Record<string, unknown>
+): void {
+  emitAllowedEvent(`flow:${flowName}:${step}`, metadata ?? {});
+}
+
+export function trackTiming(
+  operation: string,
+  duration: number,
+  success: boolean,
+  metadata?: Record<string, unknown>
+): void {
+  emitAllowedEvent(`timing:${operation}`, { duration, success, ...metadata });
+}
+
+function emitAllowedEvent(name: string, properties: Record<string, unknown>): void {
+  const telemetryEvent = prepareTelemetryEvent(name, properties);
+  if (telemetryEvent) emit(telemetryEvent);
+}
+
+function prepareTelemetryEvent(
+  name: string,
+  properties: Record<string, unknown>
+): TelemetryEvent | null {
+  const allowlist = getAnalyticsPropertyAllowlist(name);
+  if (!allowlist) return null;
+
+  return {
+    name,
+    properties: sanitizeEventProperties(properties, allowlist),
+  };
+}
+
+function emit(event: TelemetryEvent): void {
   try {
-    if (typeof window !== 'undefined' && navigator.doNotTrack === '1') {
+    if (typeof window !== 'undefined') {
+      if (navigator.doNotTrack === '1') return;
+
+      void postAnalyticsEvent(event).catch((error) => {
+        console.error('[Analytics] Tracking failed:', error);
+      });
       return;
     }
 
-    const sanitized = sanitizeEventProperties(event.properties);
-    vercelTrack(event.name, sanitized);
+    void logServerEvent(event).catch((error) => {
+      console.error('[Analytics] Tracking failed:', error);
+    });
   } catch (error) {
     console.error('[Analytics] Tracking failed:', error);
   }
 }
 
-/**
- * Track an analytics event on the server via the Vercel Analytics API.
- *
- * @param event - Structured analytics event payload.
- * @returns Promise that resolves once the analytics call completes.
- */
-export async function trackServer(event: AnalyticsEvent): Promise<void> {
+async function logServerEvent(event: TelemetryEvent): Promise<void> {
   try {
-    const sanitized = sanitizeEventProperties(event.properties);
-    const { track: vercelTrackServer } = await import('@vercel/analytics/server');
-    await vercelTrackServer(event.name, sanitized);
+    const { logger } = await import('@/lib/observability-logger');
+    logger.logInfo('analytics:event', event);
   } catch (error) {
     console.error('[Analytics] Server tracking failed:', error);
   }
 }
 
-/**
- * Track a funnel step for multi-step flows.
- *
- * Respects the browser's Do Not Track setting and never throws.
- *
- * @param flowName - Identifier for the flow (e.g. `upload_wizard`).
- * @param step - Descriptive step name within the flow.
- * @param metadata - Optional contextual data for the step.
- */
-export function trackFlow(
-  flowName: string,
-  step: string,
-  metadata?: Record<string, any>
-): void {
-  try {
-    // Respect Do Not Track (client-side only)
-    if (typeof window !== 'undefined' && navigator.doNotTrack === '1') {
-      return;
-    }
-
-    const sanitized = metadata ? sanitizeEventProperties(metadata) : {};
-    vercelTrack(`flow:${flowName}:${step}`, sanitized);
-  } catch (error) {
-    console.error('[Analytics] Flow tracking failed:', error);
-  }
-}
-
-/**
- * Track timing metrics for a named operation.
- *
- * Automatically detects the environment (client vs server) and uses the appropriate
- * Vercel Analytics API. Client-side calls are synchronous, server-side calls are
- * async but fire-and-forget to avoid blocking.
- *
- * Respects the browser's Do Not Track setting (client-side only) and never throws.
- *
- * @param operation - Unique operation identifier.
- * @param duration - Duration in milliseconds.
- * @param success - Whether the operation completed successfully.
- * @param metadata - Optional contextual data to attach.
- */
-export function trackTiming(
-  operation: string,
-  duration: number,
-  success: boolean,
-  metadata?: Record<string, any>
-): void {
-  try {
-    // Respect Do Not Track (client-side only)
-    if (typeof window !== 'undefined' && navigator.doNotTrack === '1') {
-      return;
-    }
-
-    const sanitized = metadata ? sanitizeEventProperties(metadata) : {};
-    const eventName = `timing:${operation}`;
-    const properties = {
-      duration,
-      success,
-      ...sanitized,
-    };
-
-    // Client-side: use synchronous client API
-    if (typeof window !== 'undefined') {
-      vercelTrack(eventName, properties);
-    } else {
-      // Server-side: use async server API (fire and forget)
-      (async () => {
-        try {
-          const { track: vercelTrackServer } = await import('@vercel/analytics/server');
-          await vercelTrackServer(eventName, properties);
-        } catch (err) {
-          console.error('[Analytics] Server timing tracking failed:', err);
-        }
-      })();
-    }
-  } catch (error) {
-    console.error('[Analytics] Timing tracking failed:', error);
-  }
-}
-
-// ============================================================================
-// Internal Helpers
-// ============================================================================
-
-/**
- * Sanitize event properties to remove PII and ensure safe data.
- *
- * PII handling:
- * - User IDs → '[REDACTED]'
- * - Email addresses → '[REDACTED]'
- * - URLs with query params → Stripped to pathname only
- * - Objects → '[OBJECT]' (not supported by analytics)
- * - Undefined values → Removed
- */
-function sanitizeEventProperties(properties: Record<string, any>): SanitizedProperties {
+function sanitizeEventProperties(
+  properties: Record<string, unknown>,
+  allowlist: readonly string[]
+): SanitizedProperties {
   const sanitized: SanitizedProperties = {};
 
-  for (const [key, value] of Object.entries(properties)) {
-    // Skip undefined values
-    if (value === undefined) {
-      continue;
-    }
+  for (const key of allowlist) {
+    const value = properties[key];
+    if (value === undefined) continue;
 
-    // Redact user IDs (shouldn't send PII)
-    if (key === 'userId') {
+    if (key === 'userId' || key.toLowerCase().includes('email') || isEmail(value)) {
       sanitized[key] = '[REDACTED]';
       continue;
     }
 
-    // Redact email addresses
-    if (key.includes('email') || isEmail(value)) {
-      sanitized[key] = '[REDACTED]';
-      continue;
-    }
-
-    // Strip query params from URLs
     if ((key === 'url' || key === 'referrer') && typeof value === 'string') {
       sanitized[key] = stripQueryParams(value);
       continue;
     }
 
-    // Pass through primitives only
-    if (isPrimitive(value)) {
-      sanitized[key] = value;
-    } else {
-      sanitized[key] = '[OBJECT]';
-    }
+    sanitized[key] = isPrimitive(value) ? value : '[OBJECT]';
   }
 
   return sanitized;
 }
 
-/**
- * Check if a value is a primitive (string, number, boolean)
- */
-function isPrimitive(value: any): value is string | number | boolean {
-  const type = typeof value;
-  return type === 'string' || type === 'number' || type === 'boolean';
+function isPrimitive(value: unknown): value is string | number | boolean {
+  return ['string', 'number', 'boolean'].includes(typeof value);
 }
 
-/**
- * Check if a string looks like an email address
- */
-function isEmail(value: any): boolean {
-  if (typeof value !== 'string') {
-    return false;
-  }
-  // Simple email regex - good enough for PII detection
-  return /\S+@\S+\.\S+/.test(value);
+function isEmail(value: unknown): boolean {
+  return typeof value === 'string' && /\S+@\S+\.\S+/.test(value);
 }
 
-/**
- * Strip query parameters from a URL
- */
 function stripQueryParams(url: string): string {
   try {
-    const urlObj = new URL(url);
-    return `${urlObj.origin}${urlObj.pathname}`;
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
   } catch {
-    // If URL parsing fails, try simple string manipulation
     const queryIndex = url.indexOf('?');
-    return queryIndex !== -1 ? url.substring(0, queryIndex) : url;
+    return queryIndex === -1 ? url : url.slice(0, queryIndex);
   }
 }

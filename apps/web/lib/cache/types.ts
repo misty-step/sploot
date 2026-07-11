@@ -1,11 +1,11 @@
 /**
  * Cache types and interfaces for unified caching system
- * Supports memory, Redis, and Vercel KV backends via strategy pattern
+ * Keeps cache consumers independent from the selected backend.
  */
 
 /**
  * Backend strategy interface for cache implementations
- * Allows swapping between memory, Redis, Vercel KV without changing business logic
+ * Allows swapping cache implementations without changing business logic.
  */
 export interface ICacheBackend {
   /**

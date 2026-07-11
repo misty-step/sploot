@@ -10,7 +10,7 @@ export const UPLOAD = {
   maxSize: 10 * 1024 * 1024,
   /** Maximum file size in MB for display */
   maxSizeMB: 10,
-  /** Safe multipart payload budget for Vercel Functions (4.5MB hard limit) */
+  /** Conservative multipart payload budget across browser and deployed ingress */
   multipartSafeSize: 4 * 1024 * 1024,
   /** Compression target leaves room for multipart overhead */
   compressionTargetSize: Math.floor(3.8 * 1024 * 1024),

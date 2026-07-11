@@ -2,7 +2,7 @@
 
 > **The core meme library experience.**
 
-A Next.js 15 Progressive Web App (PWA) enabling semantic search over your personal meme collection.
+A Next.js 16 Progressive Web App (PWA) enabling semantic search over your personal meme collection.
 
 ## ✨ Key Features
 
@@ -10,7 +10,7 @@ A Next.js 15 Progressive Web App (PWA) enabling semantic search over your person
 - **PWA**: Installable, offline-capable.
 - **Storage**: High-performance Vercel Blob storage.
 - **Auth**: Clerk (Google, Apple, Magic Link).
-- **Stack**: Next.js 15 (App Router), Tailwind CSS v4, Prisma, Neon Postgres.
+- **Stack**: Next.js 16 (App Router), Tailwind CSS v4, Prisma, Neon Postgres.
 
 ## 🚀 Getting Started
 
@@ -34,7 +34,7 @@ BLOB_READ_WRITE_TOKEN=vercel_blob_...
 REPLICATE_API_TOKEN=r8_...
 
 # Agent observability (Canary, optional but expected in production)
-CANARY_ENDPOINT=https://canary-obs.fly.dev
+CANARY_ENDPOINT=https://canary.mistystep.io
 CANARY_API_KEY=<ingest-scoped key>
 CANARY_SERVICE_NAME=sploot-web
 ```
@@ -69,6 +69,6 @@ pnpm test:ui        # Open Test UI
 
 ## 📦 Deployment
 
-Deployed automatically to Vercel on push to `master`.
-- **Root Directory**: `apps/web`
-- **Build Command**: `pnpm turbo run build --filter=web`
+Deployed automatically to DigitalOcean App Platform on push to `master`.
+See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for build, migration, health,
+and rollback contracts.

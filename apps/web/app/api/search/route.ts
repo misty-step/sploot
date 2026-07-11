@@ -89,7 +89,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       // Initialize embedding service
       let embeddingService;
       try {
-        embeddingService = createEmbeddingService();
+        embeddingService = createEmbeddingService(userId);
       } catch (error) {
         // Failed to initialize embedding service. A degraded backend must not
         // masquerade as an honest empty result set (HTTP 200 + results: []
