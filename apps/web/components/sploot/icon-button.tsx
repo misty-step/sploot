@@ -47,7 +47,10 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
             : 'size-[34px] max-sm:size-[var(--sploot-touch-target)]',
           chip &&
             'rounded-[var(--sploot-radius-pill)] bg-sploot-panel shadow-[0_2px_0_var(--sploot-shadow-color)] hover:shadow-[2px_4px_0_var(--sploot-shadow-color)] active:shadow-none',
-          pressed && 'bg-sploot-yellow text-[#1c1547]',
+          // !important: .sploot-ctl's own background is declared later in the
+          // sheet and silently wins otherwise (the tile rails already work
+          // around this with ! overrides)
+          pressed && '!bg-sploot-yellow !text-[#1c1547]',
           className
         )}
         {...props}

@@ -6,7 +6,7 @@ import { useTheme } from 'next-themes';
 
 import { IconButton } from '@/components/sploot';
 
-export function ThemeToggle() {
+export function ThemeToggle({ className }: { className?: string }) {
   // resolvedTheme, not theme: with the default "system" preference, `theme`
   // stays "system" while the page actually renders dark — the control must
   // reflect the resolved state or it misreports on dark-OS machines.
@@ -19,7 +19,7 @@ export function ThemeToggle() {
   }, []);
 
   if (!mounted) {
-    return <IconButton label="switch theme" disabled />;
+    return <IconButton label="switch theme" disabled className={className} />;
   }
 
   const isDark = resolvedTheme === 'dark';
@@ -28,6 +28,7 @@ export function ThemeToggle() {
     <IconButton
       label="switch theme"
       pressed={isDark}
+      className={className}
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
     >
       {isDark ? <Moon /> : <Sun />}

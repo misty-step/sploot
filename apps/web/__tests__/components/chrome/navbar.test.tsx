@@ -5,8 +5,19 @@ import React from 'react';
 
 // Mock child components
 vi.mock('@/components/chrome/user-avatar', () => ({
-  UserAvatar: ({ onSignOut }: { onSignOut?: () => void }) => (
-    <button data-testid="user-avatar" onClick={onSignOut}>
+  UserAvatar: ({
+    onSignOut,
+    className,
+  }: {
+    onSignOut?: () => void;
+    className?: string;
+  }) => (
+    <button
+      aria-label="User menu"
+      data-testid="user-avatar"
+      className={`${className ?? ''} max-sm:size-[var(--sploot-touch-target)]`}
+      onClick={onSignOut}
+    >
       User Avatar
     </button>
   ),
@@ -69,11 +80,15 @@ describe('Navbar', () => {
       expect(nav).toHaveClass('fixed', 'top-0', 'left-0', 'right-0');
     });
 
-    it('should have correct height (48px mobile, 64px desktop)', () => {
+    it('reserves a touch-safe rail instead of clipping compact controls', () => {
       render(<Navbar />);
 
       const nav = screen.getByRole('navigation');
-      expect(nav).toHaveClass('h-12', 'md:h-16');
+      expect(nav).toHaveClass(
+        'h-auto',
+        'min-h-[calc(var(--sploot-touch-target)+0.75rem+env(safe-area-inset-top)+3px)]',
+        'md:min-h-[calc(4rem+env(safe-area-inset-top)+3px)]'
+      );
     });
 
     it('should have correct z-index for layering', () => {
@@ -103,6 +118,24 @@ describe('Navbar', () => {
       const nav = screen.getByRole('navigation');
       expect(nav).toHaveClass('custom-navbar-class');
     });
+
+    it('keeps all navbar controls centered inside a touch-safe mobile chrome rail', () => {
+      render(<Navbar />);
+
+      const nav = screen.getByRole('navigation');
+      const help = screen.getByRole('button', { name: 'keyboard shortcuts' });
+      const theme = screen.getByRole('button', { name: 'switch theme' });
+      const auth = screen.getByRole('button', { name: 'User menu' });
+
+      expect(nav).toHaveClass(
+        'min-h-[calc(var(--sploot-touch-target)+0.75rem+env(safe-area-inset-top)+3px)]',
+        'md:min-h-[calc(4rem+env(safe-area-inset-top)+3px)]',
+        'items-center'
+      );
+      for (const control of [help, theme, auth]) {
+        expect(control).toHaveClass('max-sm:size-[var(--sploot-touch-target)]');
+      }
+    });
   });
 
   describe('Callbacks', () => {
@@ -124,18 +157,26 @@ describe('NavbarSpacer', () => {
 
     const spacer = container.firstChild as HTMLElement;
     expect(spacer).toBeInTheDocument();
-    expect(spacer).toHaveClass('h-[calc(3rem+env(safe-area-inset-top))]', 'md:h-[calc(4rem+env(safe-area-inset-top))]');
+    expect(spacer).toHaveClass(
+      'h-[calc(var(--sploot-touch-target)+0.75rem+env(safe-area-inset-top)+3px)]',
+      'md:h-[calc(4rem+env(safe-area-inset-top)+3px)]'
+    );
   });
 
-  it('should match navbar height (48px mobile, 64px desktop)', () => {
+  it('keeps the spacer aligned with the touch-safe navbar rail', () => {
     const { container: navbarContainer } = render(<Navbar />);
     const { container: spacerContainer } = render(<NavbarSpacer />);
 
     const navbar = navbarContainer.querySelector('nav');
     const spacer = spacerContainer.firstChild as HTMLElement;
 
-    // Navbar has responsive height, spacer includes safe area inset
-    expect(navbar).toHaveClass('h-12', 'md:h-16');
-    expect(spacer).toHaveClass('h-[calc(3rem+env(safe-area-inset-top))]', 'md:h-[calc(4rem+env(safe-area-inset-top))]');
+    expect(navbar).toHaveClass(
+      'min-h-[calc(var(--sploot-touch-target)+0.75rem+env(safe-area-inset-top)+3px)]',
+      'md:min-h-[calc(4rem+env(safe-area-inset-top)+3px)]'
+    );
+    expect(spacer).toHaveClass(
+      'h-[calc(var(--sploot-touch-target)+0.75rem+env(safe-area-inset-top)+3px)]',
+      'md:h-[calc(4rem+env(safe-area-inset-top)+3px)]'
+    );
   });
 });

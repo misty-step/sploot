@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect, memo } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, SyntheticEvent } from 'react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { error as logError } from '@/lib/logger';
@@ -17,6 +17,8 @@ import { isAnimatedImageMimeType, isVideoMimeType } from '@sploot/common';
 import { resolveQaSeedSrc } from '@/lib/qa/qa-image-loader';
 import { SIMILARITY_MATCH_BOUNDARY, SIMILARITY_NEAR_BOUNDARY } from '@/lib/search-config';
 import { postBlobLoadFailure } from '@/lib/telemetry-client';
+
+const THUMBNAIL_ASPECT_TOLERANCE = 0.02;
 
 interface ImageTileProps {
   asset: Asset;
@@ -45,12 +47,16 @@ function ImageTileComponent({
 }: ImageTileProps) {
   const isVideo = isVideoMimeType(asset.mime);
   const isAnimatedImage = isAnimatedImageMimeType(asset.mime);
+  const originalSrc = resolveQaSeedSrc(asset.blobUrl);
+  const thumbnailSrc = asset.thumbnailUrl ? resolveQaSeedSrc(asset.thumbnailUrl) : null;
+  const hasSourceDimensions = (asset.width ?? 0) > 0 && (asset.height ?? 0) > 0;
+  const initialImageSrc = hasSourceDimensions
+    ? getTileImageSrc(asset.mime, asset.blobUrl, asset.thumbnailUrl)
+    : originalSrc;
   const [isLoading, setIsLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageSrc, setImageSrc] = useState(() =>
-    getTileImageSrc(asset.mime, asset.blobUrl, asset.thumbnailUrl)
-  );
+  const [imageSrc, setImageSrc] = useState(initialImageSrc);
   const [hasTriedFallback, setHasTriedFallback] = useState(false);
   const [isGeneratingEmbedding, setIsGeneratingEmbedding] = useState(false);
   const [hasEmbedding, setHasEmbedding] = useState(!!asset.embedding);
@@ -79,12 +85,21 @@ function ImageTileComponent({
   // Reset image src when asset changes (e.g., component reused)
   useEffect(() => {
     queueMicrotask(() => {
-      setImageSrc(getTileImageSrc(asset.mime, asset.blobUrl, asset.thumbnailUrl));
+      setImageSrc(initialImageSrc);
       setHasTriedFallback(false);
       setImageError(false);
       setImageLoaded(false);
     });
-  }, [asset.id, asset.blobUrl, asset.thumbnailUrl, asset.mime]);
+  }, [
+    asset.id,
+    asset.blobUrl,
+    asset.thumbnailUrl,
+    asset.mime,
+    asset.width,
+    asset.height,
+    preserveAspectRatio,
+    initialImageSrc,
+  ]);
 
   // Simulate queue position in debug mode
   useEffect(() => {
@@ -360,6 +375,35 @@ function ImageTileComponent({
     void postBlobLoadFailure(hasTriedFallback).catch(() => {});
   };
 
+  const handleImageLoad = (event: SyntheticEvent<HTMLImageElement>) => {
+    const image = event.currentTarget;
+    const sourceAspect = asset.width && asset.height ? asset.width / asset.height : null;
+    const thumbnailAspect = image.naturalWidth && image.naturalHeight
+      ? image.naturalWidth / image.naturalHeight
+      : null;
+    const thumbnailIsCropped =
+      imageSrc === thumbnailSrc &&
+      !!originalSrc &&
+      !hasTriedFallback &&
+      sourceAspect !== null &&
+      thumbnailAspect !== null &&
+      Math.abs(thumbnailAspect - sourceAspect) / sourceAspect > THUMBNAIL_ASPECT_TOLERANCE;
+
+    if (thumbnailIsCropped) {
+      logger.logInfo('image-tile.thumbnail-aspect-fallback', {
+        assetId: asset.id,
+        sourceAspect,
+        thumbnailAspect,
+      });
+      setHasTriedFallback(true);
+      setImageSrc(originalSrc);
+      return;
+    }
+
+    setImageLoaded(true);
+    recordBlobSuccess();
+  };
+
   return (
     <>
       <div
@@ -459,18 +503,15 @@ function ImageTileComponent({
                   // for no benefit — serve it directly. The detail/share pages
                   // stay optimized. See ADR-008.
                   unoptimized
-                  onLoad={() => {
-                    setImageLoaded(true);
-                    recordBlobSuccess();
-                  }}
+                  onLoad={handleImageLoad}
                   onError={() => {
                     // If thumbnail failed and we haven't tried the main blob yet
-                    if (imageSrc === asset.thumbnailUrl && asset.blobUrl && !hasTriedFallback) {
+                    if (imageSrc === thumbnailSrc && originalSrc && !hasTriedFallback) {
                       logger.logInfo('image-tile.thumbnail-fallback', {
                         assetId: asset.id,
                       });
                       setHasTriedFallback(true);
-                      setImageSrc(asset.blobUrl);
+                      setImageSrc(originalSrc);
                       // Don't set imageError yet - give the fallback a chance
                       return;
                     }
@@ -608,10 +649,15 @@ function arePropsEqual(prevProps: ImageTileProps, nextProps: ImageTileProps) {
   // Always re-render if asset ID changed (different image)
   if (prevProps.asset.id !== nextProps.asset.id) return false;
 
-  // Re-render if URLs changed
+  // Re-render if URLs, metadata, or media dimensions changed
   if (prevProps.asset.blobUrl !== nextProps.asset.blobUrl) return false;
   if (prevProps.asset.thumbnailUrl !== nextProps.asset.thumbnailUrl) return false;
   if (prevProps.asset.mime !== nextProps.asset.mime) return false;
+  if (prevProps.asset.filename !== nextProps.asset.filename) return false;
+  if (prevProps.asset.pathname !== nextProps.asset.pathname) return false;
+  if (prevProps.asset.size !== nextProps.asset.size) return false;
+  if (prevProps.asset.width !== nextProps.asset.width) return false;
+  if (prevProps.asset.height !== nextProps.asset.height) return false;
 
   // Re-render if favorite status changed
   if (prevProps.asset.favorite !== nextProps.asset.favorite) return false;
@@ -630,8 +676,8 @@ function arePropsEqual(prevProps: ImageTileProps, nextProps: ImageTileProps) {
   if (prevProps.showSimilarityScore !== nextProps.showSimilarityScore) return false;
 
   // Re-render if similarity score changed (for search results)
-  const prevSimilarity = (prevProps.asset as any).similarity;
-  const nextSimilarity = (nextProps.asset as any).similarity;
+  const prevSimilarity = prevProps.asset.similarity;
+  const nextSimilarity = nextProps.asset.similarity;
   if (prevSimilarity !== nextSimilarity) return false;
 
   // Ignore function prop changes - they're stable via useCallback (see JSDoc above)
