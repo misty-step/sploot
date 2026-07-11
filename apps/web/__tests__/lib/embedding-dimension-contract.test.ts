@@ -35,7 +35,13 @@ describe('embedding dimension contract', () => {
     );
     expect(migrationSql).toContain(`TYPE vector(${EMBEDDING_DIMENSION})`);
     expect(migrationSql).toContain(`"image_embedding"::vector(${EMBEDDING_DIMENSION})`);
-    expect(migrationSql).toContain(`current_dimensions <> ${EMBEDDING_DIMENSION}`);
+    expect(migrationSql).toContain('IF NOT FOUND THEN');
+    expect(migrationSql).toContain('ELSIF current_typmod = -1 THEN');
+    expect(migrationSql).toContain(
+      `vector_dims("image_embedding") <> ${EMBEDDING_DIMENSION}`
+    );
+    expect(migrationSql).toContain(`ELSIF current_typmod <> ${EMBEDDING_DIMENSION}`);
+    expect(migrationSql).toContain('Cannot constrain image_embedding to vector(768)');
     expect(migrationSql).toContain('Cannot automatically convert % existing image embeddings');
     expect(migrationSql).toContain('20260610195422_add_text_embedding_cache');
   });
