@@ -1,6 +1,6 @@
 # Auth Agent-Readiness Decision
 
-Backlog: `backlog.d/018-agent-friendly-auth-and-qa-harness.md`
+Powder card: `sploot-018`
 
 ## Decision
 

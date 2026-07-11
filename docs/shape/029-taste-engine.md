@@ -26,7 +26,7 @@ without changing uniform shuffle as the default library experience.
 
 ## Repo Anchors
 
-- `backlog.d/029-build-the-taste-engine.md` — premise and oracle.
+- Powder card `sploot-029` — premise and oracle.
 - `apps/web/app/api/assets/route.ts` — current asset listing, seeded shuffle,
   sort validation, pagination, and raw SQL pattern.
 - `apps/web/lib/piles/semantic-piles.ts` — vector parsing, cosine helpers,
@@ -108,7 +108,7 @@ Live acceptance:
 ## Premise Source
 
 sha256:7e0e09355da9e7e48810349f78f70c75bde467b82d80a70fb6fd7da55c051074
-`backlog.d/029-build-the-taste-engine.md`
+Powder card `sploot-029`
 
 ## Risks + Rollout
 

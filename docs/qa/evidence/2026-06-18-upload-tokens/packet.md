@@ -2,7 +2,7 @@
 
 - Date: 2026-06-18
 - Branch: `deliver-033-ios-share-sheet-tokens`
-- Ticket: `backlog.d/033-ios-share-sheet-ingestion.md` (+ `.ctx.md`)
+- Ticket: Powder card `sploot-033` (context packet preserved on the card)
 
 > Hand-authored. `pnpm --filter web qa:evidence` (the browser+seed harness) was
 > not runnable in the delivery environment — no local Postgres, Vercel Blob

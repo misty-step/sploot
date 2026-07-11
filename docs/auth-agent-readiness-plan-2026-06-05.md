@@ -243,7 +243,7 @@ Acceptance:
 - Keep `AUTH_PROVIDER=clerk` as rollback default.
 - Do not rewrite `users.id` or remove Clerk SDKs until routes, extension token
   provider, and QA-local smoke all pass behind the boundary.
-- Shape implementation from `backlog.d/018-agent-friendly-auth-and-qa-harness.ctx.md`.
+- Shape implementation from the context packet preserved on Powder card `sploot-018`.
 
 ### Phase 0b: Replacement Spike
 

@@ -1,14 +1,8 @@
-Show the sploot work backlog and explain how to close an item.
+Inspect the Sploot work board and explain how to claim or close an item.
 
-`backlog.d/` is the source of truth for work (not GitHub Issues). Do this:
+Powder is the sole source of truth for work. Use the registered Powder MCP/API/CLI; do not read or create repository-local ticket files.
 
-1. Read `backlog.d/README.md` (the human-readable index / active queue).
-2. List active items: the `backlog.d/*.md` files (excluding `_done/` and
-   `README.md`). If only `_done/` and `README.md` exist, the queue is empty.
-3. List recently completed items in `backlog.d/_done/`.
-
-Closure protocol for an item: move it to `backlog.d/_done/` with `Status:
-done`, add a `## What Was Built` note, and link it from the commit/PR with a
-conventional trailer — `Backlog: backlog.d/<id>-<slug>.md`,
-`Closes-backlog:`, or `Ships-backlog:`. Keep `backlog.d/README.md` aligned with
-the active queue.
+1. Read repository board stats, then enumerate the repository's cards without status filters and reconcile the count.
+2. Read the relevant card with its goal, acceptance criteria, proof plan, relations, claim state, and recent activity before acting.
+3. Use `list_ready` before claiming work. Claim exactly one card at a time, keep its run alive, and release the claim when stopping.
+4. Close work with `update_status` or `complete_card`, attaching exact proof links and criterion evidence. Do not infer completion from a green command alone.

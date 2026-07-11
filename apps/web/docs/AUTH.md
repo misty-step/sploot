@@ -50,7 +50,7 @@ a Clerk session.
   routes) never calls the verifier at all; `POST /api/search` itself moved off
   that path onto `withAuthenticatedApi` to make the opt-in possible (partial,
   route-scoped step toward the full migration tracked in
-  `backlog.d/035-unify-auth-doors-on-policy-boundary.md`).
+  `Powder card sploot-035`).
 - Verification is throw-safe: a DB error (including a not-yet-migrated table)
   resolves to `401`, never `500`. Revoked and unknown tokens are
   indistinguishable.

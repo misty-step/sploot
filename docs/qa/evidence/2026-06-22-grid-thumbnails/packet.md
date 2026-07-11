@@ -2,7 +2,7 @@
 
 - Date: 2026-06-22
 - Branch: `deliver-048-grid-thumbnails`
-- Ticket: `backlog.d/048-serve-grid-thumbnails-not-full-originals.md`
+- Ticket: Powder card `sploot-048`
 - Builds on: ADR-008 (the deferred grid-`unoptimized` part)
 
 ## Intent

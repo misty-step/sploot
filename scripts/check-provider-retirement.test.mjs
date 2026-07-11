@@ -96,12 +96,11 @@ test('keeps dated evidence and architectural records readable', () => {
   }]), []);
 });
 
-test('scans active backlog cards while exempting completed backlog history', () => {
-  assert.equal(isHistoricalPath('backlog.d/041-agent-operable.md'), false);
-  assert.equal(isHistoricalPath('backlog.d/_done/012-retired-runtime.md'), true);
+test('scans ordinary files while preserving historical records elsewhere', () => {
+  assert.equal(isHistoricalPath('docs/current-plan.md'), false);
 
   const violations = findProviderRetirementViolations([{
-    path: 'backlog.d/041-agent-operable.md',
+    path: 'docs/current-plan.md',
     content: 'rollback with vercel --prod',
   }]);
 
