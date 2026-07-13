@@ -110,8 +110,8 @@ importers:
         specifier: ^1.1.0
         version: 1.1.0
       '@misty-step/aesthetic':
-        specifier: github:misty-step/aesthetic#v2.24.0
-        version: https://codeload.github.com/misty-step/aesthetic/tar.gz/27378184e7d45ad67e0cf1e579f7e836f7df9c47(@playwright/test@1.60.0)
+        specifier: github:misty-step/aesthetic#v0.25.0
+        version: https://codeload.github.com/misty-step/aesthetic/tar.gz/10e5a6afaef6b2f0dabbb6665857ae8ed44f2afd(@playwright/test@1.60.0)
       '@prisma/client':
         specifier: ^6.19.3
         version: 6.19.3(prisma@6.19.3(magicast@0.3.5)(typescript@6.0.3))(typescript@6.0.3)
@@ -1750,9 +1750,9 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@misty-step/aesthetic@https://codeload.github.com/misty-step/aesthetic/tar.gz/27378184e7d45ad67e0cf1e579f7e836f7df9c47':
-    resolution: {tarball: https://codeload.github.com/misty-step/aesthetic/tar.gz/27378184e7d45ad67e0cf1e579f7e836f7df9c47}
-    version: 2.24.0
+  '@misty-step/aesthetic@https://codeload.github.com/misty-step/aesthetic/tar.gz/10e5a6afaef6b2f0dabbb6665857ae8ed44f2afd':
+    resolution: {tarball: https://codeload.github.com/misty-step/aesthetic/tar.gz/10e5a6afaef6b2f0dabbb6665857ae8ed44f2afd}
+    version: 0.25.0
     hasBin: true
     peerDependencies:
       '@playwright/test': '>=1.40.0'
@@ -10291,7 +10291,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@misty-step/aesthetic@https://codeload.github.com/misty-step/aesthetic/tar.gz/27378184e7d45ad67e0cf1e579f7e836f7df9c47(@playwright/test@1.60.0)':
+  '@misty-step/aesthetic@https://codeload.github.com/misty-step/aesthetic/tar.gz/10e5a6afaef6b2f0dabbb6665857ae8ed44f2afd(@playwright/test@1.60.0)':
     dependencies:
       '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
       zod: 4.4.3
