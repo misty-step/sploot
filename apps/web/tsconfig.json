@@ -37,7 +37,9 @@
     ".next-bffeed/types/**/*.ts",
     ".next-bffeed/dev/types/**/*.ts",
     ".next-bfdark/types/**/*.ts",
-    ".next-bfdark/dev/types/**/*.ts"
+    ".next-bfdark/dev/types/**/*.ts",
+    ".next-mobileqa/types/**/*.ts",
+    ".next-mobileqa/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
