@@ -137,15 +137,17 @@ capped as the first deployed state.
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm --filter web db:migrate
 pnpm --filter web build
 pnpm --filter web start
 ```
 
-CI applies migrations to a pgvector test database before running the web suite.
-on `master`, the `migrate-prod` job applies pending migrations before the new
-source build becomes the intended runtime. migrations in this repository are
-forward-only and additive unless their own SQL says otherwise.
+The build is compilation-only and intentionally needs no runtime database or
+secret bindings. DigitalOcean owns production migration: the singleton
+`web-pre-deploy-migrate` `PRE_DEPLOY` job runs `pnpm --filter web exec node
+scripts/migrate-deploy.mjs` before replacing the service, while the service run
+command remains start-only. CI applies migrations only to its pgvector test
+database and never owns production credentials. Migrations are forward-only
+and additive unless their own SQL says otherwise.
 
 ## verification
 

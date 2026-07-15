@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 // @ts-expect-error — .mjs script without type declarations; we test its pure helper.
-import { deriveDirectUrl } from '../../scripts/migrate-deploy.mjs';
+import { deriveDirectUrl, runMigrateDeploy } from '../../scripts/migrate-deploy.mjs';
 
 // migrate-deploy.mjs derives a direct (non-pooler) connection for `prisma
 // migrate deploy`, because Prisma's advisory lock does not work through Neon's
@@ -24,5 +24,15 @@ describe('deriveDirectUrl', () => {
   it('leaves an already-direct url untouched', () => {
     const raw = 'postgresql://user:pass@db.example.com/app?sslmode=require';
     expect(deriveDirectUrl(raw)).toBe(raw);
+  });
+});
+
+describe('runMigrateDeploy', () => {
+  it.each([
+    {},
+    { NODE_ENV: 'production' },
+    { DEPLOYMENT_ENV: 'production' },
+  ])('fails closed without DATABASE_URL regardless of runtime metadata: %o', env => {
+    expect(() => runMigrateDeploy(env)).toThrow('DATABASE_URL is required');
   });
 });

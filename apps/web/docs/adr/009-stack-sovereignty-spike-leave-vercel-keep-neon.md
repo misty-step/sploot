@@ -2,6 +2,10 @@
 
 Status: Accepted (2026-06-23)
 
+Implementation update (2026-07-14): DigitalOcean App Platform is the selected
+app host. Its singleton PRE_DEPLOY job owns production migration; GitHub and
+the web build do not receive or apply the production database connection.
+
 ## Context
 
 Epic 044 asked whether sploot should leave the managed-serverless stack for a
@@ -74,10 +78,11 @@ adopt Fly Managed Postgres.
 - **Rejected — self-hosted Postgres:** would make `CREATE EXTENSION` trivial
   (you're superuser) but owns backups/PITR/patching on an unattended personal
   library — the data-loss blast radius the epic explicitly forbids.
-- Still required before a real cutover (tracked in 044, not done here): storage
-  port to R2/Tigris (child 2), Clerk isolation (child 4), `output: 'standalone'`
-  image, and a pooled `DATABASE_URL` + direct-for-migrations split.
+- The deployed source service intentionally uses a full dependency install and
+  plain `next start`; standalone output is neither required nor supported by
+  that contract. Storage portability and Clerk isolation remain separately
+  tracked work.
 - Spike resources (Fly app, Fly MPG cluster, Neon project) were destroyed after
   evidence capture; the throwaway `Dockerfile`/`fly.toml`/proof script are kept
-  under `docs/qa/evidence/2026-06-23-fly-spike/` as the reproduction (not at the
-  repo root — sploot still deploys on Vercel).
+  under `docs/qa/evidence/2026-06-23-fly-spike/` as the reproduction. They are
+  historical evidence, not the live deployment path.

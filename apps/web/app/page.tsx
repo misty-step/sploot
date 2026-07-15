@@ -6,6 +6,11 @@ import { GlobalFooter } from "@/components/global-footer";
 import { LandingHero } from "@/components/landing/landing-hero";
 import { LandingStory } from "@/components/landing/landing-story";
 
+// Authentication and enrollment are request/runtime concerns. Keeping this
+// route dynamic prevents a production build from requiring runtime secrets or
+// a database before DigitalOcean's PRE_DEPLOY migration step has run.
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const { userId } = await getAuth();
 
