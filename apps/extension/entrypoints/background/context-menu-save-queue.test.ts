@@ -208,6 +208,29 @@ describe('durable context-menu save queue', () => {
     expect(storedQueue).toEqual([]);
   });
 
+  it('fences a different owner before a future retry is due', async () => {
+    storedQueue = [{
+      id: 'future-owner-bound',
+      imageUrl: 'https://x.test/future-owner-bound.png',
+      filename: 'future-owner-bound.png',
+      state: 'pending',
+      createdAt: Date.now(),
+      attempts: 1,
+      nextAttemptAt: Date.now() + 30_000,
+      owner: OWNER,
+    }];
+    mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-2', sessionId: 'session-2' });
+
+    await recoverPendingContextMenuSaves('startup');
+
+    expect(mocks.saveToSploot).not.toHaveBeenCalled();
+    expect(storedQueue[0]).toMatchObject({
+      state: 'paused',
+      lastError: 'Sign in to the original Sploot account to resume this save.',
+    });
+    expect(alarmClear).toHaveBeenCalledWith(CONTEXT_MENU_SAVE_ALARM_NAME);
+  });
+
   it('retains a terminal failure and its payload after the attempt cap', async () => {
     storedQueue = [{
       id: 'poison',

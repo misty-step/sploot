@@ -388,7 +388,7 @@ async function terminalizeIfNeeded(
 async function processJob(job: ContextMenuSaveJob): Promise<void> {
   const jobs = await readJobs();
   const current = jobs.find(candidate => candidate.id === job.id);
-  if (!current || current.state !== 'pending' || current.nextAttemptAt > Date.now()) {
+  if (!current || current.state !== 'pending') {
     return;
   }
 
@@ -410,6 +410,13 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
       const latest = await readJobs();
       await writeJobs(latest.map(candidate => candidate.id === current.id ? pauseForOwnerChange(candidate) : candidate));
     });
+    return;
+  }
+
+  // Owner fencing is authoritative even when retry backoff has not elapsed.
+  // A restart must pause a job for the wrong Clerk authority immediately;
+  // otherwise a future-dated job can remain pending and leak across accounts.
+  if (current.nextAttemptAt > Date.now()) {
     return;
   }
 
@@ -575,6 +582,11 @@ async function recoverPendingSavesLocked(trigger: RecoveryTrigger = 'alarm'): Pr
   if (JSON.stringify(recovered) !== JSON.stringify(jobs)) {
     await writeJobs(recovered);
   }
+
+  // Re-arm future-dated pending work before attempting any recovery. This
+  // makes the durable alarm boundary survive a worker restart even when every
+  // eligible job is still in backoff.
+  await scheduleContextMenuSaveQueueWakeup();
 
   const eligible = recovered.filter(job => job.state === 'pending');
   let nextIndex = 0;
