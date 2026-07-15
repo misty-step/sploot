@@ -99,6 +99,24 @@ describe('auth-manager', () => {
     });
   });
 
+  it('returns an explicit user/account/session authority for durable owner fencing', async () => {
+    createClerkClient.mockResolvedValue({
+      session: {
+        id: 'session_authority',
+        user: { id: 'user_authority' },
+        getToken: vi.fn(),
+      },
+    });
+
+    const { getAuthAuthority } = await importAuthManager();
+
+    await expect(getAuthAuthority()).resolves.toEqual({
+      userId: 'user_authority',
+      accountId: 'user_authority',
+      sessionId: 'session_authority',
+    });
+  });
+
   it('returns null instead of requesting a token when there is no session', async () => {
     createClerkClient.mockResolvedValue({ session: null });
 

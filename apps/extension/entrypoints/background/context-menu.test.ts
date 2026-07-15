@@ -5,6 +5,9 @@ const mocks = vi.hoisted(() => ({
   fetchImage: vi.fn(),
   isAuthenticated: vi.fn(),
   promptUserSignIn: vi.fn(),
+  getAuthAuthority: vi.fn(),
+  getAuthTokenForAuthority: vi.fn(),
+  sameAuthAuthority: vi.fn(),
   runAuthDiagnostics: vi.fn(),
   uploadImage: vi.fn(),
   showSuccessNotification: vi.fn(),
@@ -23,6 +26,9 @@ vi.mock('./image-fetcher', () => ({ fetchImage: mocks.fetchImage }));
 vi.mock('./auth-manager', () => ({
   isAuthenticated: mocks.isAuthenticated,
   promptUserSignIn: mocks.promptUserSignIn,
+  getAuthAuthority: mocks.getAuthAuthority,
+  getAuthTokenForAuthority: mocks.getAuthTokenForAuthority,
+  sameAuthAuthority: mocks.sameAuthAuthority,
   runAuthDiagnostics: mocks.runAuthDiagnostics,
 }));
 vi.mock('../../shared/api-client', () => ({ uploadImage: mocks.uploadImage }));
@@ -47,6 +53,7 @@ let onMessage: MessageHandler;
 let contextMenusCreate: ReturnType<typeof vi.fn>;
 let contextMenusRemove: ReturnType<typeof vi.fn>;
 let storedQueue: unknown[] = [];
+const OWNER = { userId: 'user-1', sessionId: 'session-1' };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -72,7 +79,14 @@ beforeEach(() => {
     },
     storage: {
       local: {
-        get: vi.fn().mockImplementation(async () => ({ 'sploot:context-menu-queue': storedQueue })),
+        get: vi.fn().mockImplementation(async () => ({
+          'sploot:context-menu-queue': storedQueue.map(job => ({
+            ...(job as Record<string, unknown>),
+            owner: (job as Record<string, unknown>).owner ?? OWNER,
+            sourceBytes: (job as Record<string, unknown>).sourceBytes ?? btoa('x'),
+            sourceType: (job as Record<string, unknown>).sourceType ?? 'image/png',
+          })),
+        })),
         set: vi.fn().mockImplementation(async (value: Record<string, unknown>) => {
           if ('sploot:context-menu-queue' in value) {
             storedQueue = value['sploot:context-menu-queue'] as unknown[];
@@ -83,6 +97,9 @@ beforeEach(() => {
     },
   });
   mocks.isAuthenticated.mockResolvedValue(true);
+  mocks.getAuthAuthority.mockResolvedValue(OWNER);
+  mocks.getAuthTokenForAuthority.mockResolvedValue('token');
+  mocks.sameAuthAuthority.mockImplementation((left, right) => left?.userId === right?.userId && left?.sessionId === right?.sessionId);
   mocks.fetchImage.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
   mocks.uploadImage.mockResolvedValue({
     assetId: 'a1',
@@ -98,7 +115,7 @@ describe('context menu save', () => {
     await onClicked({ menuItemId: 'save-to-sploot', srcUrl: 'https://x.test/cat.png' }, { title: 'Cat' });
 
     await vi.waitFor(() => expect(mocks.fetchImage).toHaveBeenCalledWith('https://x.test/cat.png'));
-    await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'cat.png'));
+    await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'cat.png', expect.anything()));
     await vi.waitFor(() => expect(mocks.showSuccessNotification).toHaveBeenCalled());
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
   });
@@ -111,7 +128,7 @@ describe('context menu save', () => {
     expect(mocks.uploadImage).not.toHaveBeenCalled();
   });
 
-  it('persists the save before fetching and removes it after a successful upload', async () => {
+  it('persists immutable source bytes before processing and removes them after success', async () => {
     await onClicked({ menuItemId: 'save-to-sploot', srcUrl: 'https://x.test/cat.png' }, { title: 'Cat' });
 
     expect(chrome.storage.local.set).toHaveBeenCalledWith({
@@ -119,6 +136,7 @@ describe('context menu save', () => {
         imageUrl: 'https://x.test/cat.png',
         filename: 'cat.png',
         state: 'pending',
+        sourceBytes: expect.any(String),
       })],
     });
     await vi.waitFor(() => expect(storedQueue).toEqual([]));
@@ -138,8 +156,8 @@ describe('context menu save', () => {
 
     await onStartup?.();
 
-    expect(mocks.fetchImage).toHaveBeenCalledWith('https://x.test/cat.png');
-    expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'cat.png');
+    expect(mocks.fetchImage).not.toHaveBeenCalled();
+    expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'cat.png', expect.anything());
     await vi.waitFor(() => expect(storedQueue).toEqual([]));
   });
 
@@ -157,7 +175,7 @@ describe('context menu save', () => {
 
     await Promise.all([onStartup?.(), onStartup?.()]);
 
-    expect(mocks.fetchImage).toHaveBeenCalledOnce();
+    expect(mocks.fetchImage).not.toHaveBeenCalled();
     expect(mocks.uploadImage).toHaveBeenCalledOnce();
   });
 

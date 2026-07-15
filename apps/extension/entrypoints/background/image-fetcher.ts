@@ -1,135 +1,120 @@
 /**
  * Image Fetcher
  *
- * Handles CORS-aware image downloading from any website.
- * Background context has elevated permissions to bypass CORS.
+ * Background-context image download with explicit deadlines at every async
+ * boundary. A remote page must never hold the save worker indefinitely.
  */
 
 import {
   UPLOAD,
+  isCompressibleImageType,
   isValidMimeType,
   prepareImageForUpload,
-  isCompressibleImageType,
 } from '@sploot/common';
 
-/**
- * Fetch image from URL
- *
- * Background service worker context bypasses CORS via host_permissions.
- * Validates content type and size before returning blob.
- *
- * @throws Error if fetch fails, invalid content type, or exceeds size limit
- */
 export async function fetchImage(url: string): Promise<Blob> {
-  // Validate URL
   let urlObj: URL;
   try {
     urlObj = new URL(url);
-  } catch (error) {
-    console.error('[ImageFetcher] Invalid URL', { url, error });
+  } catch {
     throw new Error('Invalid image URL');
   }
 
-  // Only allow HTTP(S) protocols
   if (!['http:', 'https:'].includes(urlObj.protocol)) {
-    console.warn('[ImageFetcher] Unsupported protocol', {
-      url,
-      protocol: urlObj.protocol,
-    });
     throw new Error('Only HTTP/HTTPS URLs are supported');
   }
 
   try {
-    console.log('[ImageFetcher] Fetching image', { url });
-    // Fetch image using background context (bypasses CORS)
-    const response = await fetch(url, {
-      credentials: 'omit', // Don't send cookies (privacy)
-      cache: 'no-store', // Fresh fetch each time
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), UPLOAD.timeout);
+    let response: Response;
+    try {
+      response = await withDeadline(fetch(url, {
+        credentials: 'omit',
+        cache: 'no-store',
+        signal: controller.signal,
+      }), 'Image fetch timed out');
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    // Validate content type
     const contentType = response.headers.get('content-type')?.toLowerCase();
     if (!contentType || !isValidMimeType(contentType)) {
-      console.warn('[ImageFetcher] Invalid content type', {
-        url,
-        contentType,
-      });
       throw new Error(`Invalid content type: ${contentType || 'unknown'}`);
     }
 
-    // Get blob
-    const blob = await response.blob();
-
-    // Ensure blob has correct MIME type
-    if (!isValidMimeType(blob.type)) {
-      // Try to infer from content-type header
-      const inferredType = contentType || 'image/jpeg';
-      return await prepareFetchedImage(new Blob([blob], { type: inferredType }));
-    }
-
-    return await prepareFetchedImage(blob);
+    const blob = await withDeadline(response.blob(), 'Image conversion timed out');
+    const typedBlob = isValidMimeType(blob.type)
+      ? blob
+      : new Blob([blob], { type: contentType || 'image/jpeg' });
+    return await withDeadline(prepareFetchedImage(typedBlob), 'Image conversion timed out');
   } catch (error) {
-    // If fetch fails, try fallback method using image element
-    if (error instanceof Error && error.message.includes('too large')) {
+    if (error instanceof Error && (
+      error.message.includes('too large')
+      || error.message.includes('timed out')
+      || error.name === 'AbortError'
+      || error.message.startsWith('Invalid content type')
+    )) {
       throw error;
     }
 
-    console.warn('[ImageFetcher] Fetch failed, trying fallback:', error);
+    console.warn('[ImageFetcher] Fetch failed, trying bounded fallback:', error);
     return await fetchViaImageElement(url);
   }
 }
 
-/**
- * Fallback: Fetch image via Image element + canvas
- *
- * Used when direct fetch fails (some sites block fetch but allow img tags)
- */
-async function fetchViaImageElement(url: string): Promise<Blob> {
+function fetchViaImageElement(url: string): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    console.log('[ImageFetcher] Fallback via Image element', { url });
     const img = new Image();
-    img.crossOrigin = 'anonymous'; // Try to request CORS
+    img.crossOrigin = 'anonymous';
+    let settled = false;
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const finish = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeoutId);
+      callback();
+    };
 
     img.onload = () => {
       try {
-        // Create canvas and draw image
         const canvas = new OffscreenCanvas(img.width, img.height);
-        const ctx = canvas.getContext('2d');
-
-        if (!ctx) {
+        const context = canvas.getContext('2d');
+        if (!context) {
           throw new Error('Failed to get canvas context');
         }
-
-        ctx.drawImage(img, 0, 0);
-
-        // Convert to blob
-        canvas
-          .convertToBlob({ type: 'image/webp', quality: UPLOAD.compressionQuality })
-          .then(blob => {
-            prepareFetchedImage(blob).then(resolve).catch(reject);
-          })
-          .catch(reject);
+        context.drawImage(img, 0, 0);
+        canvas.convertToBlob({ type: 'image/webp', quality: UPLOAD.compressionQuality })
+          .then(blob => withDeadline(prepareFetchedImage(blob), 'Image conversion timed out'))
+          .then(blob => finish(() => resolve(blob)), error => finish(() => reject(error)));
       } catch (error) {
-        reject(error);
+        finish(() => reject(error));
       }
     };
 
-    img.onerror = () => {
-      console.error('[ImageFetcher] Fallback image load failed', { url });
-      reject(new Error('Failed to load image'));
-    };
-
-    // Set src to trigger load
+    img.onerror = () => finish(() => reject(new Error('Failed to load image')));
     img.src = url;
+    timeoutId = setTimeout(() => finish(() => reject(new Error('Image load timeout'))), UPLOAD.timeout);
+  });
+}
 
-    // Timeout using shared constant
-    setTimeout(() => {
-      reject(new Error('Image load timeout'));
-    }, UPLOAD.timeout);
+function withDeadline<T>(promise: Promise<T>, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error(message)), UPLOAD.timeout);
+    promise.then(value => {
+      clearTimeout(timeoutId);
+      resolve(value);
+    }, error => {
+      clearTimeout(timeoutId);
+      reject(error);
+    });
   });
 }
 
@@ -146,7 +131,6 @@ async function prepareFetchedImage(blob: Blob): Promise<Blob> {
 
   if (uploadBlob.size > UPLOAD.multipartSafeSize) {
     const sizeMB = (uploadBlob.size / 1024 / 1024).toFixed(2);
-    console.warn('[ImageFetcher] Image too large after preparation', { sizeMB });
     throw new Error(`Image too large after compression: ${sizeMB}MB`);
   }
 

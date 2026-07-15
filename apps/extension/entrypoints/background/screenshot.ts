@@ -8,9 +8,10 @@
  * because the popup closes the moment it loses focus.
  */
 
-import { saveToSploot } from './save-flow';
 import { CAPTURE_MESSAGES } from '../../shared/capture-messages';
 import { UPLOAD, prepareImageForUpload } from '@sploot/common';
+import { enqueueCapturedSave } from './context-menu-save-queue';
+import { showErrorNotification } from './notifications';
 
 const CAPTURE_ERROR = "Chrome doesn't allow capturing this page. Try a normal web page.";
 
@@ -38,39 +39,65 @@ export function setupScreenshotCapture(): void {
 }
 
 export function captureAndSaveVisibleTab() {
-  return saveToSploot(
-    async () => {
-      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-      if (!tab || tab.windowId === undefined) {
-        throw new Error('No active tab to screenshot.');
-      }
+  return (async () => {
+    try {
+      const prepared = await captureVisibleTabImage();
+      await enqueueCapturedSave(prepared.blob, prepared.filename, `captured://${prepared.filename}`);
+      return { ok: true, filename: prepared.filename, isDuplicate: false } as const;
+    } catch (error) {
+      const saveError = error instanceof Error ? error : new Error(CAPTURE_ERROR);
+      showCaptureError(saveError);
+      return { ok: false, error: saveError } as const;
+    }
+  })();
+}
 
-      const tabUrl = ensureHttpTabUrl(tab.url);
+async function captureVisibleTabImage(): Promise<{ blob: Blob; filename: string }> {
+  const [tab] = await withDeadline(chrome.tabs.query({ active: true, lastFocusedWindow: true }));
+  if (!tab || tab.windowId === undefined) {
+    throw new Error('No active tab to screenshot.');
+  }
 
-      let dataUrl: string;
-      try {
-        dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
-      } catch (error) {
-        console.warn('[Background][Screenshot] captureVisibleTab failed', error);
-        throw new Error(CAPTURE_ERROR);
-      }
-      const capturedBlob = await (await fetch(dataUrl)).blob();
-      const filename = screenshotFilename(tabUrl);
-      const prepared = await prepareImageForUpload(new File([capturedBlob], filename, {
-        type: capturedBlob.type || 'image/png',
-        lastModified: Date.now(),
-      }));
+  const tabUrl = ensureHttpTabUrl(tab.url);
+  let dataUrl: string;
+  try {
+    dataUrl = await withDeadline(chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' }));
+  } catch (error) {
+    console.warn('[Background][Screenshot] captureVisibleTab failed', error);
+    throw new Error(CAPTURE_ERROR);
+  }
 
-      if (prepared.file.size > UPLOAD.multipartSafeSize) {
-        const sizeMB = (prepared.file.size / 1024 / 1024).toFixed(2);
-        throw new Error(`Image too large after compression: ${sizeMB}MB`);
-      }
+  const capturedBlob = await withDeadline((async () => (await fetch(dataUrl)).blob())());
+  const filename = screenshotFilename(tabUrl);
+  const preparedImage = await withDeadline(prepareImageForUpload(new File([capturedBlob], filename, {
+    type: capturedBlob.type || 'image/png',
+    lastModified: Date.now(),
+  })));
+  if (preparedImage.file.size > UPLOAD.multipartSafeSize) {
+    const sizeMB = (preparedImage.file.size / 1024 / 1024).toFixed(2);
+    throw new Error(`Image too large after compression: ${sizeMB}MB`);
+  }
 
-      return { blob: prepared.file, filename: prepared.file.name };
-    },
-    'screenshot',
-    { prepareBeforeAuth: true },
-  );
+  return { blob: preparedImage.file, filename: preparedImage.file.name };
+}
+
+function withDeadline<T>(promise: Promise<T>, timeoutMs = UPLOAD.timeout): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error('Screenshot capture timed out. Try again.')), timeoutMs);
+    promise.then(value => {
+      clearTimeout(timeoutId);
+      resolve(value);
+    }, error => {
+      clearTimeout(timeoutId);
+      reject(error);
+    });
+  });
+}
+
+function showCaptureError(error: Error): void {
+  showErrorNotification(error.message === CAPTURE_ERROR || error.message.includes('captureVisibleTab')
+    ? CAPTURE_ERROR
+    : error.message);
 }
 
 /** e.g. "screenshot-twitter.com-1750000000000.png". */

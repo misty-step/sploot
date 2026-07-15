@@ -14,6 +14,7 @@
     "release:check": "node scripts/validate-store-release.mjs",
     "release:structural": "RELEASE_STRUCTURAL_ONLY=true node scripts/validate-store-release.mjs",
     "release:test": "node --test scripts/release-provenance.node-test.mjs",
+    "release:verify-uploaded": "node scripts/verify-uploaded-artifact.mjs",
     "manifest:check": "node scripts/validate-manifest.mjs",
     "manifest:test": "node --test scripts/manifest-policy.node-test.mjs",
     "test:layout": "playwright test --config playwright.config.ts",

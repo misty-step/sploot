@@ -7,7 +7,14 @@
  * "produce the image" step differs between them, so it is passed in.
  */
 
-import { isAuthenticated, promptUserSignIn } from './auth-manager';
+import {
+  getAuthAuthority,
+  getAuthTokenForAuthority,
+  isAuthenticated,
+  promptUserSignIn,
+  sameAuthAuthority,
+  type AuthAuthority,
+} from './auth-manager';
 import { uploadImage } from '../../shared/api-client';
 import { setSaveStatus } from '../../shared/save-status';
 import { showSuccessNotification, showErrorNotification } from './notifications';
@@ -20,6 +27,8 @@ export interface ProducedImage {
 export interface SaveOptions {
   /** Produce bytes before auth can open or focus another browser tab. */
   prepareBeforeAuth?: boolean;
+  /** When present, upload is fenced to this exact Clerk user/session. */
+  owner?: AuthAuthority;
 }
 
 export type SaveOutcome =
@@ -53,6 +62,19 @@ export async function saveToSploot(
     }
 
     const { blob, filename } = preparedImage ?? await produce();
+    const owner = options.owner;
+    if (owner) {
+      const currentOwner = await getAuthAuthority();
+      if (!sameAuthAuthority(currentOwner, owner)) {
+        throw new Error('The original Sploot account is no longer active. Sign in to that account to resume this save.');
+      }
+      const result = await uploadImage(blob, filename, {
+        getToken: () => getAuthTokenForAuthority(owner),
+      });
+      showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
+      return { ok: true, filename, isDuplicate: result.isDuplicate };
+    }
+
     const result = await uploadImage(blob, filename);
     showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
     return { ok: true, filename, isDuplicate: result.isDuplicate };

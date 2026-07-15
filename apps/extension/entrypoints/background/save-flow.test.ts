@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   isAuthenticated: vi.fn(),
   promptUserSignIn: vi.fn(),
+  getAuthAuthority: vi.fn(),
+  getAuthTokenForAuthority: vi.fn(),
+  sameAuthAuthority: vi.fn(),
   uploadImage: vi.fn(),
   showSuccessNotification: vi.fn(),
   showErrorNotification: vi.fn(),
@@ -12,6 +15,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('./auth-manager', () => ({
   isAuthenticated: mocks.isAuthenticated,
   promptUserSignIn: mocks.promptUserSignIn,
+  getAuthAuthority: mocks.getAuthAuthority,
+  getAuthTokenForAuthority: mocks.getAuthTokenForAuthority,
+  sameAuthAuthority: mocks.sameAuthAuthority,
 }));
 vi.mock('../../shared/api-client', () => ({ uploadImage: mocks.uploadImage }));
 vi.mock('./notifications', () => ({
@@ -27,6 +33,9 @@ const produce = async () => ({ blob: new Blob(['x']), filename: 'meme.png' });
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.isAuthenticated.mockResolvedValue(true);
+  mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-1', sessionId: 'session-1' });
+  mocks.getAuthTokenForAuthority.mockResolvedValue('token');
+  mocks.sameAuthAuthority.mockImplementation((left, right) => left?.userId === right?.userId && left?.sessionId === right?.sessionId);
   mocks.uploadImage.mockResolvedValue({
     assetId: 'a1',
     blobUrl: 'b',
@@ -93,5 +102,16 @@ describe('saveToSploot', () => {
       message: 'Storage quota exceeded',
       actionHref: '/app/settings',
     });
+  });
+
+  it('fences an owner-bound upload when the Clerk session changes', async () => {
+    mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-2', sessionId: 'session-2' });
+    const outcome = await saveToSploot(produce, 'image', {
+      owner: { userId: 'user-1', sessionId: 'session-1' },
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(mocks.uploadImage).not.toHaveBeenCalled();
+    expect(mocks.showErrorNotification).toHaveBeenCalledWith(expect.stringContaining('original Sploot account'));
   });
 });

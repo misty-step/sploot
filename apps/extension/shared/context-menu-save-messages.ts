@@ -5,7 +5,7 @@ export const CONTEXT_MENU_SAVE_MESSAGES = {
   DISCARD: 'sploot:context-menu-save:discard',
 } as const;
 
-export type ContextMenuSaveJobState = 'pending' | 'processing' | 'failed';
+export type ContextMenuSaveJobState = 'pending' | 'processing' | 'failed' | 'paused';
 
 export interface ContextMenuSaveJobSummary {
   id: string;

@@ -17,6 +17,33 @@ const SIGN_IN_POLL_INTERVAL_MS = 1000
 let cachedState: AuthState = { status: 'unknown' }
 const waiters = new Set<(state: AuthState) => void>()
 
+/** The exact Clerk authority that created a durable save job. */
+export interface AuthAuthority {
+  userId: string
+  /** Clerk's account boundary is currently the user; keep it explicit for future organizations. */
+  accountId?: string
+  sessionId: string
+}
+
+function sessionAuthority(session: { id?: string | null; user?: { id?: string | null } | null } | null | undefined): AuthAuthority | null {
+  const userId = session?.user?.id
+  const sessionId = session?.id
+  if (!userId || !sessionId) {
+    return null
+  }
+  return { userId, accountId: userId, sessionId }
+}
+
+export function sameAuthAuthority(left: AuthAuthority | null | undefined, right: AuthAuthority | null | undefined): boolean {
+  return Boolean(
+    left
+    && right
+    && left.userId === right.userId
+    && (left.accountId ?? left.userId) === (right.accountId ?? right.userId)
+    && left.sessionId === right.sessionId,
+  )
+}
+
 function notifyWaiters(state: AuthState) {
   for (const listener of waiters) {
     listener(state)
@@ -41,7 +68,8 @@ async function createFreshClerkClient() {
 export async function isAuthenticated(): Promise<boolean> {
   try {
     const clerk = await createFreshClerkClient()
-    const hasSession = Boolean(clerk.session)
+    const authority = sessionAuthority(clerk.session)
+    const hasSession = Boolean(authority)
 
     console.log('[Auth] isAuthenticated check', {
       hasSession,
@@ -51,8 +79,8 @@ export async function isAuthenticated(): Promise<boolean> {
     if (hasSession) {
       updateCachedState({
         status: 'signed-in',
-        userId: clerk.session?.user?.id,
-        sessionId: clerk.session?.id,
+        userId: authority?.userId,
+        sessionId: authority?.sessionId,
         expiresAt: clerk.session?.expireAt?.getTime(),
       })
     }
@@ -92,6 +120,43 @@ export async function getAuthToken(): Promise<string | null> {
     return token
   } catch (error) {
     console.error('[Auth] Failed to get token', error)
+    return null
+  }
+}
+
+/** Read the current session authority without exposing it in user-facing copy. */
+export async function getAuthAuthority(): Promise<AuthAuthority | null> {
+  try {
+    const clerk = await createFreshClerkClient()
+    const authority = sessionAuthority(clerk.session)
+    if (authority) {
+      updateCachedState({
+        status: 'signed-in',
+        userId: authority.userId,
+        sessionId: authority.sessionId,
+        expiresAt: clerk.session?.expireAt?.getTime(),
+      })
+    } else {
+      updateCachedState({ status: 'signed-out' })
+    }
+    return authority
+  } catch (error) {
+    console.error('[Auth] Failed to read session authority', error)
+    return null
+  }
+}
+
+/** Obtain a token only while the original durable-job authority is still active. */
+export async function getAuthTokenForAuthority(expected: AuthAuthority): Promise<string | null> {
+  try {
+    const clerk = await createFreshClerkClient()
+    const actual = sessionAuthority(clerk.session)
+    if (!sameAuthAuthority(actual, expected) || !clerk.session) {
+      return null
+    }
+    return await clerk.session.getToken()
+  } catch (error) {
+    console.error('[Auth] Failed to get owner-fenced token', error)
     return null
   }
 }

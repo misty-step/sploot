@@ -1,5 +1,6 @@
-import { setSaveStatus } from '../../shared/save-status';
 import { UPLOAD } from '@sploot/common';
+import { setSaveStatus } from '../../shared/save-status';
+import { getAuthAuthority, sameAuthAuthority, type AuthAuthority } from './auth-manager';
 import { fetchImage } from './image-fetcher';
 import { showErrorNotification } from './notifications';
 import { saveToSploot } from './save-flow';
@@ -14,8 +15,10 @@ export const RETRY_BACKOFF_BASE_MS = 30 * 1000;
 export const RETRY_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000;
 /** Base64-encoded source bytes retained across worker crashes. */
 export const MAX_CONTEXT_MENU_SAVE_STORAGE_BYTES = 8 * 1024 * 1024;
+/** Fetch, conversion, and upload each have a finite worker deadline. */
+export const CONTEXT_MENU_SAVE_DEADLINE_MS = UPLOAD.timeout;
 
-export type ContextMenuSaveJobState = 'pending' | 'processing' | 'failed';
+export type ContextMenuSaveJobState = 'pending' | 'processing' | 'failed' | 'paused';
 
 export interface ContextMenuSaveJob {
   id: string;
@@ -29,7 +32,9 @@ export interface ContextMenuSaveJob {
   processingToken?: string;
   lastError?: string;
   failedAt?: number;
-  /** Original fetched bytes, retained so a retry cannot silently fetch new content. */
+  /** Exact Clerk authority that created the durable job. Never shown in popup summaries. */
+  owner?: AuthAuthority;
+  /** Original bytes are persisted before the job is authoritative. */
   sourceBytes?: string;
   sourceType?: string;
 }
@@ -37,7 +42,7 @@ export interface ContextMenuSaveJob {
 export class ContextMenuSaveQueueError extends Error {
   constructor(
     message: string,
-    public readonly code: 'queue-full',
+    public readonly code: 'queue-full' | 'owner-unavailable' | 'owner-changed',
   ) {
     super(message);
     this.name = 'ContextMenuSaveQueueError';
@@ -45,6 +50,7 @@ export class ContextMenuSaveQueueError extends Error {
 }
 
 let queueOperations = Promise.resolve();
+let jobMutations = Promise.resolve();
 
 function exclusively<T>(operation: () => Promise<T>): Promise<T> {
   const next = queueOperations.then(operation, operation);
@@ -52,8 +58,26 @@ function exclusively<T>(operation: () => Promise<T>): Promise<T> {
   return next;
 }
 
+function mutateJobs(operation: () => Promise<void>): Promise<void> {
+  const next = jobMutations.then(operation, operation);
+  jobMutations = next.then(() => undefined, () => undefined);
+  return next;
+}
+
 function finiteNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function validAuthority(value: unknown): value is AuthAuthority {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && typeof (value as AuthAuthority).userId === 'string'
+    && (value as AuthAuthority).userId.length > 0
+    && ((value as AuthAuthority).accountId === undefined || typeof (value as AuthAuthority).accountId === 'string')
+    && typeof (value as AuthAuthority).sessionId === 'string'
+    && (value as AuthAuthority).sessionId.length > 0,
+  );
 }
 
 function normalizeJob(job: unknown): ContextMenuSaveJob | null {
@@ -66,7 +90,7 @@ function normalizeJob(job: unknown): ContextMenuSaveJob | null {
     typeof candidate.id !== 'string'
     || typeof candidate.imageUrl !== 'string'
     || typeof candidate.filename !== 'string'
-    || (candidate.state !== 'pending' && candidate.state !== 'processing' && candidate.state !== 'failed')
+    || !['pending', 'processing', 'failed', 'paused'].includes(candidate.state ?? '')
     || typeof candidate.createdAt !== 'number'
     || !Number.isFinite(candidate.createdAt)
   ) {
@@ -77,12 +101,15 @@ function normalizeJob(job: unknown): ContextMenuSaveJob | null {
     id: candidate.id,
     imageUrl: candidate.imageUrl,
     filename: candidate.filename,
-    state: candidate.state,
+    state: candidate.state as ContextMenuSaveJobState,
     createdAt: candidate.createdAt,
     attempts: Math.max(0, Math.floor(finiteNumber(candidate.attempts, 0))),
     nextAttemptAt: finiteNumber(candidate.nextAttemptAt, candidate.createdAt),
   };
 
+  if (validAuthority(candidate.owner)) {
+    normalized.owner = candidate.owner;
+  }
   if (typeof candidate.processingStartedAt === 'number' && Number.isFinite(candidate.processingStartedAt)) {
     normalized.processingStartedAt = candidate.processingStartedAt;
   }
@@ -125,8 +152,8 @@ function retainedSourceBytes(jobs: ContextMenuSaveJob[]): number {
 }
 
 async function blobToStoredSource(blob: Blob): Promise<Pick<ContextMenuSaveJob, 'sourceBytes' | 'sourceType'>> {
-  if (blob.size > UPLOAD.multipartSafeSize) {
-    throw new Error('Original image exceeds the bounded retry storage budget; retry will fetch the current remote URL.');
+  if (blob.size <= 0 || blob.size > UPLOAD.multipartSafeSize) {
+    throw new Error('Original image cannot be retained within the bounded retry storage budget.');
   }
 
   const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -143,7 +170,7 @@ async function blobToStoredSource(blob: Blob): Promise<Pick<ContextMenuSaveJob, 
 
 function storedSourceToBlob(job: ContextMenuSaveJob): Blob {
   if (!job.sourceBytes || !job.sourceType) {
-    throw new Error('Retained image bytes are incomplete; retry will fetch the current remote URL.');
+    throw new Error('Durable image bytes are unavailable; this save must be discarded.');
   }
 
   const binary = atob(job.sourceBytes);
@@ -172,6 +199,17 @@ function terminalFailure(job: ContextMenuSaveJob, now: number, error: string): C
   };
 }
 
+function pauseForOwnerChange(job: ContextMenuSaveJob): ContextMenuSaveJob {
+  return {
+    ...job,
+    state: 'paused',
+    nextAttemptAt: 0,
+    processingStartedAt: undefined,
+    processingToken: undefined,
+    lastError: 'Sign in to the original Sploot account to resume this save.',
+  };
+}
+
 function notifyTerminalFailure(job: ContextMenuSaveJob): void {
   try {
     showErrorNotification({
@@ -180,6 +218,22 @@ function notifyTerminalFailure(job: ContextMenuSaveJob): void {
   } catch (error) {
     console.error('[Background][ContextMenu] Terminal failure feedback failed', error);
   }
+}
+
+function withDeadline<T>(promise: Promise<T>, message: string, timeoutMs = CONTEXT_MENU_SAVE_DEADLINE_MS): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      value => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      error => {
+        clearTimeout(timeoutId);
+        reject(error);
+      },
+    );
+  });
 }
 
 export async function scheduleContextMenuSaveQueueWakeup(): Promise<void> {
@@ -207,7 +261,7 @@ export async function scheduleContextMenuSaveQueueWakeup(): Promise<void> {
 
 async function writeJobs(jobs: ContextMenuSaveJob[]): Promise<void> {
   if (retainedSourceBytes(jobs) > MAX_CONTEXT_MENU_SAVE_STORAGE_BYTES) {
-    throw new Error('Original image bytes exceed the bounded retry storage budget; retry will fetch the current remote URL.');
+    throw new Error('Original image bytes exceed the bounded retry storage budget.');
   }
   await chrome.storage.local.set({ [CONTEXT_MENU_QUEUE_KEY]: jobs });
   await scheduleContextMenuSaveQueueWakeup();
@@ -222,7 +276,7 @@ async function terminalizeIfNeeded(
   job: ContextMenuSaveJob,
   now: number,
 ): Promise<{ jobs: ContextMenuSaveJob[]; job: ContextMenuSaveJob; terminalized: boolean }> {
-  if (job.state === 'failed') {
+  if (job.state === 'failed' || job.state === 'paused') {
     return { jobs, job, terminalized: false };
   }
 
@@ -230,21 +284,56 @@ async function terminalizeIfNeeded(
     return { jobs, job, terminalized: false };
   }
 
-  const terminal = terminalFailure(
-    job,
-    now,
-    job.lastError ?? (isTooOld(job, now) ? 'Save expired before it could complete.' : 'Save reached its retry limit.'),
-  );
-  const nextJobs = jobs.map(candidate => candidate.id === job.id ? terminal : candidate);
-  await writeJobs(nextJobs);
-  notifyTerminalFailure(terminal);
-  return { jobs: nextJobs, job: terminal, terminalized: true };
+  let terminalized = false;
+  let terminal = job;
+  let nextJobs = jobs;
+  await mutateJobs(async () => {
+    const latest = await readJobs();
+    const live = latest.find(candidate => (
+      candidate.id === job.id
+      && candidate.state === job.state
+      && (!job.processingToken || candidate.processingToken === job.processingToken)
+    ));
+    if (!live) {
+      return;
+    }
+    terminal = terminalFailure(
+      live,
+      now,
+      live.lastError ?? (isTooOld(live, now) ? 'Save expired before it could complete.' : 'Save reached its retry limit.'),
+    );
+    nextJobs = latest.map(candidate => candidate.id === live.id ? terminal : candidate);
+    await writeJobs(nextJobs);
+    terminalized = true;
+  });
+  if (terminalized) {
+    notifyTerminalFailure(terminal);
+  }
+  return { jobs: nextJobs, job: terminal, terminalized };
 }
 
 async function processJob(job: ContextMenuSaveJob): Promise<void> {
   const jobs = await readJobs();
   const current = jobs.find(candidate => candidate.id === job.id);
   if (!current || current.state !== 'pending' || current.nextAttemptAt > Date.now()) {
+    return;
+  }
+
+  if (!current.owner || !current.sourceBytes || !current.sourceType) {
+    const invalid = terminalFailure(current, Date.now(), 'This save has no durable owner or image bytes and must be discarded.');
+    await mutateJobs(async () => {
+      const latest = await readJobs();
+      await writeJobs(latest.map(candidate => candidate.id === current.id ? invalid : candidate));
+    });
+    return;
+  }
+
+  const currentOwner = await getAuthAuthority();
+  if (!sameAuthAuthority(currentOwner, current.owner)) {
+    await mutateJobs(async () => {
+      const latest = await readJobs();
+      await writeJobs(latest.map(candidate => candidate.id === current.id ? pauseForOwnerChange(candidate) : candidate));
+    });
     return;
   }
 
@@ -261,39 +350,29 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
     processingStartedAt: now,
     processingToken: crypto.randomUUID(),
   };
-  await writeJobs(jobs.map(candidate => candidate.id === current.id ? processing : candidate));
+  let processingPersisted = false;
+  await mutateJobs(async () => {
+    const latest = await readJobs();
+    const stillPending = latest.find(candidate => candidate.id === current.id && candidate.state === 'pending');
+    if (stillPending) {
+      await writeJobs(latest.map(candidate => candidate.id === current.id ? processing : candidate));
+      processingPersisted = true;
+    }
+  });
+  if (!processingPersisted) {
+    return;
+  }
 
   let outcome: Awaited<ReturnType<typeof saveToSploot>>;
   try {
-    let sourceBlob: Blob;
-    if (current.sourceBytes) {
-      sourceBlob = storedSourceToBlob(current);
-    } else {
-      sourceBlob = await fetchImage(current.imageUrl);
-      const retained = await blobToStoredSource(sourceBlob);
-      const latestJobs = await readJobs();
-      const activeLatest = latestJobs.find(candidate => (
-        candidate.id === current.id
-        && candidate.state === 'processing'
-        && candidate.processingToken === processing.processingToken
-      ));
-      if (!activeLatest) {
-        return;
-      }
-      await writeJobs(latestJobs.map(candidate => candidate.id === current.id
-        ? { ...candidate, ...retained }
-        : candidate));
-    }
-
-    outcome = await saveToSploot(
-      async () => ({
-        // Replay the exact bytes retained before upload. A URL can serve new
-        // content between attempts, so URL refetching is not an idempotency
-        // guarantee by itself.
-        blob: sourceBlob,
-        filename: current.filename,
-      }),
-      'image',
+    const sourceBlob = storedSourceToBlob(processing);
+    outcome = await withDeadline(
+      saveToSploot(
+        async () => ({ blob: sourceBlob, filename: processing.filename }),
+        'image',
+        { owner: processing.owner },
+      ),
+      'Save processing timed out; retry scheduled.',
     );
   } catch (error) {
     outcome = { ok: false, error: queueError(error) };
@@ -301,7 +380,7 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
 
   const remaining = await readJobs();
   const active = remaining.find(candidate => (
-    candidate.id === current.id
+    candidate.id === processing.id
     && candidate.state === 'processing'
     && candidate.processingToken === processing.processingToken
   ));
@@ -311,7 +390,17 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
 
   if (outcome.ok) {
     // The API checksum makes a post-upload worker crash safe to replay.
-    await writeJobs(remaining.filter(candidate => candidate.id !== current.id));
+    await mutateJobs(async () => {
+      const latest = await readJobs();
+      const activeLatest = latest.find(candidate => (
+        candidate.id === processing.id
+        && candidate.state === 'processing'
+        && candidate.processingToken === processing.processingToken
+      ));
+      if (activeLatest) {
+        await writeJobs(latest.filter(candidate => candidate.id !== processing.id));
+      }
+    });
     return;
   }
 
@@ -323,12 +412,22 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
     lastError: outcome.error.message,
     nextAttemptAt: Date.now() + retryDelayMs(processing.attempts),
   };
-  const afterFailure = remaining.map(candidate => candidate.id === current.id ? failure : candidate);
+  await mutateJobs(async () => {
+    const latest = await readJobs();
+    const activeLatest = latest.find(candidate => (
+      candidate.id === processing.id
+      && candidate.state === 'processing'
+      && candidate.processingToken === processing.processingToken
+    ));
+    if (activeLatest) {
+      await writeJobs(latest.map(candidate => candidate.id === processing.id ? failure : candidate));
+    }
+  });
+  const afterFailure = await readJobs();
   const terminal = await terminalizeIfNeeded(afterFailure, failure, Date.now());
   if (terminal.terminalized) {
     return;
   }
-  await writeJobs(afterFailure);
   setSaveStatus({
     state: 'retrying',
     label: `Retry scheduled for ${failure.filename}.`,
@@ -360,9 +459,9 @@ async function recoverPendingSavesLocked(): Promise<void> {
     await writeJobs(recovered);
   }
 
-  for (const job of recovered) {
-    await processJob(job);
-  }
+  // A bounded job deadline plus fan-out means one hung source/upload cannot
+  // serially starve other eligible durable jobs.
+  await Promise.all(recovered.map(job => processJob(job)));
   await scheduleContextMenuSaveQueueWakeup();
 }
 
@@ -377,42 +476,52 @@ export function setupContextMenuSaveQueue(): void {
   });
 }
 
-export function enqueueContextMenuSave(imageUrl: string, filename: string): Promise<void> {
-  const persisted = exclusively(async () => {
-    const jobs = await readJobs();
-    if (jobs.length >= MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE) {
-      throw new ContextMenuSaveQueueError(
-        'Save queue is full. Open the extension popup to retry or discard a failed save, then try again.',
-        'queue-full',
-      );
-    }
+/** Persist captured bytes and owner in one authoritative storage transition. */
+export function enqueueCapturedSave(blob: Blob, filename: string, imageUrl = 'captured://visible-tab'): Promise<void> {
+  return withDeadline(blobToStoredSource(blob), 'Image preparation timed out; save was not queued.')
+    .then(retained => exclusively(async () => {
+      const owner = await getAuthAuthority();
+      if (!owner) {
+        throw new ContextMenuSaveQueueError('Sign in to Sploot before saving this image.', 'owner-unavailable');
+      }
 
-    const now = Date.now();
-    const job: ContextMenuSaveJob = {
-      id: crypto.randomUUID(),
-      imageUrl,
-      filename,
-      state: 'pending',
-      createdAt: now,
-      attempts: 0,
-      nextAttemptAt: now,
-    };
-    await writeJobs([...jobs, job]);
-    setQueuedStatus(filename);
-  });
+      const jobs = await readJobs();
+      if (jobs.length >= MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE) {
+        throw new ContextMenuSaveQueueError(
+          'Save queue is full. Open the extension popup to retry or discard a failed save, then try again.',
+          'queue-full',
+        );
+      }
 
-  void persisted.then(() => {
-    void recoverPendingContextMenuSaves().catch(error => {
-      console.error('[Background][ContextMenu] Enqueued save failed', error);
+      const now = Date.now();
+      const job: ContextMenuSaveJob = {
+        id: crypto.randomUUID(),
+        imageUrl,
+        filename,
+        owner,
+        ...retained,
+        state: 'pending',
+        createdAt: now,
+        attempts: 0,
+        nextAttemptAt: now,
+      };
+      await writeJobs([...jobs, job]);
+      setQueuedStatus(filename);
+    }))
+    .then(() => {
+      // A durable enqueue is the caller's acknowledgement boundary. Recovery
+      // is deliberately detached so a slow upload cannot hold the context-menu
+      // event or popup message open.
+      void recoverPendingContextMenuSaves().catch(error => {
+        console.error('[Background][ContextMenu] Enqueued save recovery failed', error);
+      });
     });
-  }).catch(error => {
-    // The caller owns the user-visible rejection (e.g. a full queue). Keep the
-    // fire-and-forget dispatcher from creating an unhandled rejection.
-    if (!(error instanceof ContextMenuSaveQueueError)) {
-      console.error('[Background][ContextMenu] Enqueue persistence failed', error);
-    }
-  });
-  return persisted;
+}
+
+/** Fetch once with a deadline, then enqueue immutable bytes; retries never refetch. */
+export function enqueueContextMenuSave(imageUrl: string, filename: string): Promise<void> {
+  return withDeadline(fetchImage(imageUrl), 'Image fetch timed out; retry scheduled without blocking other saves.')
+    .then(blob => enqueueCapturedSave(blob, filename, imageUrl));
 }
 
 export function recoverPendingContextMenuSaves(): Promise<void> {
@@ -424,14 +533,19 @@ export function listContextMenuSaves(): Promise<ContextMenuSaveJob[]> {
 }
 
 export function listFailedContextMenuSaves(): Promise<ContextMenuSaveJob[]> {
-  return readJobs().then(jobs => jobs.filter(job => job.state === 'failed'));
+  return readJobs().then(jobs => jobs.filter(job => job.state === 'failed' || job.state === 'paused'));
 }
 
 export function retryContextMenuSave(jobId: string): Promise<boolean> {
   return exclusively(async () => {
     const jobs = await readJobs();
-    const failed = jobs.find(job => job.id === jobId && job.state === 'failed');
-    if (!failed) {
+    const failed = jobs.find(job => (job.state === 'failed' || job.state === 'paused') && job.id === jobId);
+    if (!failed || !failed.owner || !failed.sourceBytes || !failed.sourceType) {
+      return false;
+    }
+
+    const owner = await getAuthAuthority();
+    if (!sameAuthAuthority(owner, failed.owner)) {
       return false;
     }
 
@@ -456,7 +570,7 @@ export function retryContextMenuSave(jobId: string): Promise<boolean> {
 export function discardContextMenuSave(jobId: string): Promise<boolean> {
   return exclusively(async () => {
     const jobs = await readJobs();
-    if (!jobs.some(job => job.id === jobId && job.state === 'failed')) {
+    if (!jobs.some(job => (job.state === 'failed' || job.state === 'paused') && job.id === jobId)) {
       return false;
     }
     await writeJobs(jobs.filter(job => job.id !== jobId));

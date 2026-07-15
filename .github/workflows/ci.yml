@@ -195,14 +195,19 @@ jobs:
         env:
           RELEASE_CANDIDATE_SHA: ${{ github.sha }}
           RELEASE_PROVENANCE_PATH: ${{ runner.temp }}/extension-release-provenance.json
+          RELEASE_REPORT_PATH: ${{ runner.temp }}/extension-release-report.json
         run: |
-          if pnpm --filter extension release:check; then
-            echo 'strict release:check unexpectedly passed without exact external Chrome/Web Store evidence'
-            exit 1
-          fi
-          echo 'strict release:check correctly failed closed: external operator evidence is absent'
+          set +e
+          pnpm --filter extension release:check
+          status=$?
+          set -e
+          test "$status" -eq 2
+          node --input-type=module -e 'import fs from "node:fs"; const report=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (report.verdict !== "external-evidence-missing" || report.localBlockers.length !== 0 || report.externalBlockers.length !== 1 || !report.externalBlockers[0].startsWith("missing exact-provenance operator evidence:")) { console.error(report); process.exit(1); }' "$RELEASE_REPORT_PATH"
+          echo 'strict release:check correctly failed closed with the exact external-evidence-missing verdict'
       - name: Test manifest policy
         run: pnpm --filter extension manifest:test
+      - name: Test release provenance validators
+        run: pnpm --filter extension release:test
       - name: Lint extension
         run: pnpm --filter extension lint
       - name: Test extension
@@ -221,6 +226,28 @@ jobs:
             apps/extension/dist/
             ${{ runner.temp }}/extension-release-provenance.json
           retention-days: 7
+
+  verify-extension-dist:
+    name: Verify uploaded extension artifact
+    needs: extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        with:
+          name: extension-dist
+          path: ${{ runner.temp }}/extension-dist
+      - name: Recompute transported ZIP and provenance binding
+        env:
+          RELEASE_ARTIFACT_ROOT: ${{ runner.temp }}/extension-dist
+          RELEASE_CANDIDATE_SHA: ${{ github.sha }}
+        run: pnpm --filter extension release:verify-uploaded
 
   db-authority:
     name: Restricted DB authority (pg${{ matrix.pg }})
@@ -335,15 +362,15 @@ jobs:
   merge-gate:
     name: merge-gate
     if: always()
-    needs: [secrets, lint, type-check, web-build, design, test, extension, db-authority]
+    needs: [secrets, lint, type-check, web-build, design, test, extension, verify-extension-dist, db-authority]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.db-authority.result }}")
+          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.verify-extension-dist.result }}" "${{ needs.db-authority.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" ]]; then
-              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }} db-authority=${{ needs.db-authority.result }}"
+              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }} verify-extension-dist=${{ needs.verify-extension-dist.result }} db-authority=${{ needs.db-authority.result }}"
               exit 1
             fi
           done

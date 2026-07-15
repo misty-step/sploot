@@ -4,20 +4,27 @@ const mocks = vi.hoisted(() => ({
   fetchImage: vi.fn(),
   saveToSploot: vi.fn(),
   showErrorNotification: vi.fn(),
+  getAuthAuthority: vi.fn(),
 }));
 
 vi.mock('./image-fetcher', () => ({ fetchImage: mocks.fetchImage }));
 vi.mock('./save-flow', () => ({ saveToSploot: mocks.saveToSploot }));
 vi.mock('./notifications', () => ({ showErrorNotification: mocks.showErrorNotification }));
+vi.mock('./auth-manager', () => ({
+  getAuthAuthority: mocks.getAuthAuthority,
+  sameAuthAuthority: (left: { userId: string; sessionId: string } | null, right: { userId: string; sessionId: string } | null) => Boolean(left && right && left.userId === right.userId && left.sessionId === right.sessionId),
+}));
 
 import {
   CONTEXT_MENU_QUEUE_KEY,
+  CONTEXT_MENU_SAVE_DEADLINE_MS,
   CONTEXT_MENU_SAVE_ALARM_NAME,
   MAX_CONTEXT_MENU_SAVE_ATTEMPTS,
   MAX_CONTEXT_MENU_SAVE_AGE_MS,
   MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE,
   PROCESSING_STALE_TIMEOUT_MS,
   discardContextMenuSave,
+  enqueueCapturedSave,
   enqueueContextMenuSave,
   listContextMenuSaves,
   recoverPendingContextMenuSaves,
@@ -30,7 +37,7 @@ interface StoredJob {
   id: string;
   imageUrl: string;
   filename: string;
-  state: 'pending' | 'processing' | 'failed';
+  state: 'pending' | 'processing' | 'failed' | 'paused';
   createdAt: number;
   attempts?: number;
   nextAttemptAt?: number;
@@ -39,12 +46,14 @@ interface StoredJob {
   lastError?: string;
   sourceBytes?: string;
   sourceType?: string;
+  owner?: { userId: string; sessionId: string };
 }
 
 let storedQueue: StoredJob[];
 let alarmListener: ((alarm: { name: string }) => void) | undefined;
 let alarmCreate: ReturnType<typeof vi.fn>;
 let alarmClear: ReturnType<typeof vi.fn>;
+const OWNER = { userId: 'user-1', sessionId: 'session-1' };
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -57,7 +66,14 @@ beforeEach(() => {
   vi.stubGlobal('chrome', {
     storage: {
       local: {
-        get: vi.fn(async () => ({ [CONTEXT_MENU_QUEUE_KEY]: storedQueue })),
+        get: vi.fn(async () => ({
+          [CONTEXT_MENU_QUEUE_KEY]: storedQueue.map(job => ({
+            ...job,
+            owner: job.owner ?? OWNER,
+            sourceBytes: job.sourceBytes ?? btoa('image'),
+            sourceType: job.sourceType ?? 'image/png',
+          })),
+        })),
         set: vi.fn(async (value: Record<string, unknown>) => {
           if (CONTEXT_MENU_QUEUE_KEY in value) {
             storedQueue = value[CONTEXT_MENU_QUEUE_KEY] as StoredJob[];
@@ -76,6 +92,7 @@ beforeEach(() => {
     },
   });
   setupContextMenuSaveQueue();
+  mocks.getAuthAuthority.mockResolvedValue(OWNER);
   mocks.fetchImage.mockResolvedValue(new Blob(['image'], { type: 'image/png' }));
   mocks.saveToSploot.mockResolvedValue({ ok: true, filename: 'cat.png', isDuplicate: false });
 });
@@ -84,7 +101,7 @@ describe('durable context-menu save queue', () => {
   it('removes a job only after the save pipeline reports success', async () => {
     await enqueueContextMenuSave('https://x.test/cat.png', 'cat.png');
 
-    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(expect.any(Function), 'image', { owner: OWNER }));
     await vi.waitFor(() => expect(storedQueue).toEqual([]));
   });
 
@@ -162,7 +179,7 @@ describe('durable context-menu save queue', () => {
     });
 
     expect(mocks.saveToSploot).toHaveBeenCalledOnce();
-    expect(mocks.saveToSploot).toHaveBeenCalledWith(expect.any(Function), 'image');
+    expect(mocks.saveToSploot).toHaveBeenCalledWith(expect.any(Function), 'image', { owner: OWNER });
     expect(storedQueue.find(job => job.id === 'fresh')).toMatchObject({
       state: 'processing',
       processingStartedAt: 1_000_000,
@@ -345,7 +362,7 @@ describe('durable context-menu save queue', () => {
     mocks.saveToSploot.mockResolvedValueOnce({ ok: false, error: new Error('offline') });
 
     alarmListener!({ name: CONTEXT_MENU_SAVE_ALARM_NAME });
-    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(expect.any(Function), 'image', { owner: OWNER }));
     await vi.waitFor(() => expect(storedQueue[0].nextAttemptAt).toBeGreaterThan(Date.now()));
     expect(storedQueue[0].state).toBe('pending');
 
@@ -433,5 +450,97 @@ describe('durable context-menu save queue', () => {
     expect(mocks.fetchImage).toHaveBeenCalledOnce();
     expect(mocks.saveToSploot).toHaveBeenCalledTimes(2);
     expect(storedQueue).toEqual([]);
+  });
+
+  it('pauses a durable save when the Clerk session changes without leaking the owner', async () => {
+    storedQueue = [{
+      id: 'owner-bound',
+      imageUrl: 'https://x.test/private.png',
+      filename: 'private.png',
+      state: 'pending',
+      createdAt: Date.now(),
+      attempts: 0,
+      nextAttemptAt: Date.now(),
+      owner: OWNER,
+    }];
+    mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-2', sessionId: 'session-2' });
+
+    await recoverPendingContextMenuSaves();
+
+    expect(mocks.saveToSploot).not.toHaveBeenCalled();
+    expect(storedQueue[0]).toMatchObject({
+      state: 'paused',
+      lastError: 'Sign in to the original Sploot account to resume this save.',
+    });
+    expect(storedQueue[0].lastError).not.toContain('user-1');
+  });
+
+  it('fans out eligible jobs so a hung first upload cannot starve the next job', async () => {
+    storedQueue = [{
+      id: 'hung', imageUrl: 'https://x.test/hung.png', filename: 'hung.png', state: 'pending',
+      createdAt: Date.now(), attempts: 0, nextAttemptAt: Date.now(), owner: OWNER,
+    }, {
+      id: 'next', imageUrl: 'https://x.test/next.png', filename: 'next.png', state: 'pending',
+      createdAt: Date.now(), attempts: 0, nextAttemptAt: Date.now(), owner: OWNER,
+    }];
+    mocks.saveToSploot.mockImplementation(async (produce: () => Promise<{ filename: string }>) => {
+      const produced = await produce();
+      if (produced.filename === 'hung.png') {
+        return await new Promise<never>(() => undefined);
+      }
+      return { ok: true, filename: produced.filename, isDuplicate: false };
+    });
+
+    const recovery = recoverPendingContextMenuSaves();
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledTimes(2));
+    expect(storedQueue.find(job => job.id === 'next')).toBeUndefined();
+    vi.advanceTimersByTime(CONTEXT_MENU_SAVE_DEADLINE_MS);
+    await recovery;
+
+    expect(storedQueue.find(job => job.id === 'hung')).toMatchObject({ state: 'pending', attempts: 1 });
+  });
+
+  it('persists screenshot bytes before processing and replays them after an upload failure', async () => {
+    mocks.saveToSploot.mockResolvedValueOnce({ ok: false, error: new Error('offline') });
+    await enqueueCapturedSave(new Blob(['captured-original'], { type: 'image/png' }), 'shot.png');
+
+    expect(storedQueue[0]).toMatchObject({ state: 'pending', sourceType: 'image/png' });
+    const original = storedQueue[0].sourceBytes;
+    await vi.waitFor(() => expect(storedQueue[0].nextAttemptAt).toBeGreaterThan(Date.now()));
+    vi.setSystemTime(storedQueue[0].nextAttemptAt!);
+    mocks.saveToSploot.mockImplementationOnce(async (produce: () => Promise<{ blob: Blob; filename: string }>) => {
+      const produced = await produce();
+      expect(await produced.blob.text()).toBe('captured-original');
+      return { ok: true, filename: produced.filename, isDuplicate: true };
+    });
+    await recoverPendingContextMenuSaves();
+    expect(original).toBeDefined();
+    expect(storedQueue).toEqual([]);
+  });
+
+  it('bounds concurrent source fetches so a hung URL does not block later enqueue work', async () => {
+    mocks.fetchImage.mockImplementation((url: string) => (
+      url.includes('hung')
+        ? new Promise<Blob>(() => undefined)
+        : Promise.resolve(new Blob(['later'], { type: 'image/png' }))
+    ));
+
+    const hung = enqueueContextMenuSave('https://x.test/hung.png', 'hung.png');
+    const later = enqueueContextMenuSave('https://x.test/later.png', 'later.png');
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(expect.any(Function), 'image', { owner: OWNER }));
+    expect(storedQueue).toEqual([]);
+    vi.advanceTimersByTime(CONTEXT_MENU_SAVE_DEADLINE_MS);
+    const results = await Promise.allSettled([hung, later]);
+    expect(results[0].status).not.toBe('pending');
+    expect(results[1]).toEqual({ status: 'fulfilled', value: undefined });
+  });
+
+  it('does not upload if the worker terminates before source bytes are persisted', async () => {
+    const storageSet = chrome.storage.local.set as unknown as ReturnType<typeof vi.fn>;
+    storageSet.mockRejectedValueOnce(new Error('worker terminated before commit'));
+
+    await expect(enqueueCapturedSave(new Blob(['not-durable'], { type: 'image/png' }), 'lost.png'))
+      .rejects.toThrow('worker terminated before commit');
+    expect(mocks.saveToSploot).not.toHaveBeenCalled();
   });
 });

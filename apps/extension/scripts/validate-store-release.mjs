@@ -11,7 +11,7 @@ import { validateManifest } from './manifest-policy.mjs';
 import {
   assertCandidateSha,
   createReleaseProvenance,
-  validateOperatorEvidence,
+  validateOperatorEvidenceAt,
 } from './release-provenance.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -32,6 +32,9 @@ const structuralOnly = process.env.RELEASE_STRUCTURAL_ONLY === 'true';
 const pass = [];
 const localBlockers = [];
 const externalBlockers = [];
+const reportPath = process.env.RELEASE_REPORT_PATH
+  ? path.resolve(process.env.RELEASE_REPORT_PATH)
+  : undefined;
 let releaseCandidateSha;
 let releaseArtifactSha256;
 
@@ -144,6 +147,9 @@ async function validateZip() {
   }
 
   const manifest = JSON.parse(await zipEntry(zipPath, 'manifest.json'));
+  if (manifest.version !== '1.0.0') {
+    recordLocal(`release zip version drift: expected 1.0.0, found ${manifest.version ?? 'missing'}`);
+  }
   for (const error of validateManifest(manifest, { production: true })) {
     recordLocal(`release zip manifest ${error}`);
   }
@@ -237,6 +243,9 @@ async function validateListing() {
   }
 
   const listing = await readFile(listingPath, 'utf8');
+  if (!listing.includes('Canonical submission packet for Sploot extension version `1.0.0`.')) {
+    recordLocal('listing packet version does not match the release version 1.0.0');
+  }
   const requiredSnippets = [
     'https://www.sploot.app/support',
     'https://www.sploot.app/privacy',
@@ -270,12 +279,12 @@ async function validateExternalEvidence() {
 
   try {
     const evidence = JSON.parse(await readFile(operatorEvidencePath, 'utf8'));
-    const errors = validateOperatorEvidence(evidence, {
+    const errors = validateOperatorEvidenceAt(evidence, {
       candidateSha: releaseCandidateSha,
       artifactPath: rel(zipPath),
       artifactSha256: releaseArtifactSha256,
       version: '1.0.0',
-    });
+    }, { evidenceRoot: path.dirname(operatorEvidencePath) });
     for (const error of errors) {
       recordExternal(error);
     }
@@ -299,21 +308,44 @@ function printSection(title, items) {
   }
 }
 
-await validateZip();
-await validateImages(screenshotDir, [
-  { width: 1280, height: 800 },
-  { width: 640, height: 400 },
-], 'screenshot');
-await validateImages(promoDir, [
-  { width: 440, height: 280 },
-], 'small promo tile');
-await validateListing();
-await validateExternalEvidence();
+try {
+  await validateZip();
+  await validateImages(screenshotDir, [
+    { width: 1280, height: 800 },
+    { width: 640, height: 400 },
+  ], 'screenshot');
+  await validateImages(promoDir, [
+    { width: 440, height: 280 },
+  ], 'small promo tile');
+  await validateListing();
+  await validateExternalEvidence();
+} catch (error) {
+  recordLocal(`release validator failed: ${error instanceof Error ? error.message : String(error)}`);
+}
 
 printSection('pass', pass);
 printSection('local blockers', localBlockers);
 printSection('external blockers', externalBlockers);
 
-if (localBlockers.length > 0 || externalBlockers.length > 0) {
-  process.exitCode = 1;
+const verdict = localBlockers.length > 0
+  ? 'local-validation-failed'
+  : externalBlockers.length > 0
+    ? (externalBlockers.length === 1 && externalBlockers[0].startsWith('missing exact-provenance operator evidence:')
+      ? 'external-evidence-missing'
+      : 'external-evidence-invalid')
+    : 'pass';
+
+if (reportPath) {
+  await writeFile(reportPath, `${JSON.stringify({
+    verdict,
+    pass,
+    localBlockers,
+    externalBlockers,
+    candidateSha: releaseCandidateSha,
+    artifactSha256: releaseArtifactSha256,
+  }, null, 2)}\n`);
+}
+
+if (verdict !== 'pass') {
+  process.exitCode = verdict === 'external-evidence-missing' ? 2 : 1;
 }

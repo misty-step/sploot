@@ -355,6 +355,15 @@ button.debug:hover {
   white-space: nowrap;
 }
 
+/* Actionable restricted-page and account-remediation copy must remain fully
+ * readable; compact success/queued strips keep the single-line treatment. */
+.save-strip.error .save-copy {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .save-strip .save-time {
   flex: none;
   font-variant-numeric: tabular-nums;

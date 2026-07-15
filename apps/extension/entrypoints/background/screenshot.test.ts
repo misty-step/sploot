@@ -2,20 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UPLOAD } from '@sploot/common';
 
 const mocks = vi.hoisted(() => ({
-  isAuthenticated: vi.fn(),
-  promptUserSignIn: vi.fn(),
-  uploadImage: vi.fn(),
-  showSuccessNotification: vi.fn(),
+  enqueueCapturedSave: vi.fn(),
   showErrorNotification: vi.fn(),
 }));
 
-vi.mock('./auth-manager', () => ({
-  isAuthenticated: mocks.isAuthenticated,
-  promptUserSignIn: mocks.promptUserSignIn,
-}));
-vi.mock('../../shared/api-client', () => ({ uploadImage: mocks.uploadImage }));
+vi.mock('./context-menu-save-queue', () => ({ enqueueCapturedSave: mocks.enqueueCapturedSave }));
 vi.mock('./notifications', () => ({
-  showSuccessNotification: mocks.showSuccessNotification,
   showErrorNotification: mocks.showErrorNotification,
 }));
 
@@ -53,13 +45,7 @@ beforeEach(() => {
     'fetch',
     vi.fn().mockResolvedValue({ blob: async () => new Blob(['x'], { type: 'image/png' }) })
   );
-  mocks.isAuthenticated.mockResolvedValue(true);
-  mocks.uploadImage.mockResolvedValue({
-    assetId: 'a1',
-    blobUrl: 'b',
-    thumbnailUrl: 't',
-    isDuplicate: false,
-  });
+  mocks.enqueueCapturedSave.mockResolvedValue(undefined);
 });
 
 describe('captureAndSaveVisibleTab', () => {
@@ -67,16 +53,11 @@ describe('captureAndSaveVisibleTab', () => {
     await captureAndSaveVisibleTab();
 
     expect(chromeMock.tabs.captureVisibleTab).toHaveBeenCalledWith(1, { format: 'png' });
-    expect(mocks.uploadImage).toHaveBeenCalledOnce();
-    const [, filename] = mocks.uploadImage.mock.calls[0];
+    expect(mocks.enqueueCapturedSave).toHaveBeenCalledOnce();
+    const [, filename] = mocks.enqueueCapturedSave.mock.calls[0];
     expect(filename).toMatch(/^screenshot-twitter\.com-\d+\.png$/);
-    expect(mocks.showSuccessNotification).toHaveBeenCalled();
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
-    expect(mocks.uploadImage.mock.calls[0][0]).toBeInstanceOf(Blob);
-    // The real save pipeline records live progress for the popup strip.
-    expect(chromeMock.storage.local.set).toHaveBeenCalledWith({
-      'sploot:last-save': expect.objectContaining({ state: 'saving', label: 'Saving screenshot…' }),
-    });
+    expect(mocks.enqueueCapturedSave.mock.calls[0][0]).toBeInstanceOf(Blob);
   });
 
   it('maps a restricted-page capture failure to user-facing copy', async () => {
@@ -86,31 +67,25 @@ describe('captureAndSaveVisibleTab', () => {
 
     await captureAndSaveVisibleTab();
 
-    expect(mocks.uploadImage).not.toHaveBeenCalled();
+    expect(mocks.enqueueCapturedSave).not.toHaveBeenCalled();
     expect(mocks.showErrorNotification).toHaveBeenCalledWith(
       "Chrome doesn't allow capturing this page. Try a normal web page."
     );
   });
 
-  it('captures original bytes before auth can open a sign-in tab', async () => {
-    mocks.isAuthenticated.mockResolvedValue(false);
-    mocks.promptUserSignIn.mockResolvedValue(false);
+  it('persists captured bytes through the shared queue after capture', async () => {
+    mocks.enqueueCapturedSave.mockRejectedValue(new Error('Sign in to Sploot before saving this image.'));
     const order: string[] = [];
     chromeMock.tabs.captureVisibleTab.mockImplementation(async () => {
       order.push('capture');
       return 'data:image/png;base64,AAAA';
     });
-    mocks.promptUserSignIn.mockImplementation(async () => {
-      order.push('prompt');
-      return false;
-    });
-
     await captureAndSaveVisibleTab();
 
     expect(chromeMock.tabs.captureVisibleTab).toHaveBeenCalled();
-    expect(mocks.uploadImage).not.toHaveBeenCalled();
+    expect(mocks.enqueueCapturedSave).toHaveBeenCalledOnce();
     expect(mocks.showErrorNotification).toHaveBeenCalled();
-    expect(order).toEqual(['capture', 'prompt']);
+    expect(order).toEqual(['capture']);
   });
 
   it.each([
@@ -126,7 +101,7 @@ describe('captureAndSaveVisibleTab', () => {
     await captureAndSaveVisibleTab();
 
     expect(chromeMock.tabs.captureVisibleTab).not.toHaveBeenCalled();
-    expect(mocks.uploadImage).not.toHaveBeenCalled();
+    expect(mocks.enqueueCapturedSave).not.toHaveBeenCalled();
     expect(mocks.showErrorNotification).toHaveBeenCalledWith(
       "Chrome doesn't allow capturing this page. Try a normal web page."
     );
@@ -140,7 +115,7 @@ describe('captureAndSaveVisibleTab', () => {
 
     await captureAndSaveVisibleTab();
 
-    expect(mocks.uploadImage).not.toHaveBeenCalled();
+    expect(mocks.enqueueCapturedSave).not.toHaveBeenCalled();
     expect(mocks.showErrorNotification).toHaveBeenCalledWith(
       expect.stringContaining('Image too large after compression')
     );
@@ -164,9 +139,8 @@ describe('captureAndSaveVisibleTab', () => {
     );
 
     expect(keepsWorkerAlive).toBe(true);
-    await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(mocks.enqueueCapturedSave).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledWith({ completed: true }));
-    expect(mocks.showSuccessNotification).toHaveBeenCalledOnce();
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
   });
 
@@ -178,19 +152,14 @@ describe('captureAndSaveVisibleTab', () => {
       messageListener = listener;
     });
     let completeUpload: (() => void) | undefined;
-    mocks.uploadImage.mockReturnValue(new Promise(resolve => {
-      completeUpload = () => resolve({
-        assetId: 'a1',
-        blobUrl: 'b',
-        thumbnailUrl: 't',
-        isDuplicate: false,
-      });
+    mocks.enqueueCapturedSave.mockReturnValue(new Promise(resolve => {
+      completeUpload = () => resolve(undefined);
     }));
     const sendResponse = vi.fn();
 
     setupScreenshotCapture();
     expect(messageListener?.({ type: 'CAPTURE_VISIBLE_TAB' }, {}, sendResponse)).toBe(true);
-    await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(mocks.enqueueCapturedSave).toHaveBeenCalledOnce());
     expect(sendResponse).not.toHaveBeenCalled();
 
     completeUpload?.();
@@ -204,14 +173,13 @@ describe('captureAndSaveVisibleTab', () => {
     chromeMock.runtime.onMessage.addListener.mockImplementation(listener => {
       messageListener = listener;
     });
-    mocks.uploadImage.mockRejectedValue(new Error('Network error. Check your connection.'));
+    mocks.enqueueCapturedSave.mockRejectedValue(new Error('Network error. Check your connection.'));
     const sendResponse = vi.fn();
 
     setupScreenshotCapture();
     expect(messageListener?.({ type: 'CAPTURE_VISIBLE_TAB' }, {}, sendResponse)).toBe(true);
 
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledWith({ completed: false }));
-    expect(mocks.showSuccessNotification).not.toHaveBeenCalled();
     expect(mocks.showErrorNotification).toHaveBeenCalledWith('Network error. Check your connection.');
   });
 });

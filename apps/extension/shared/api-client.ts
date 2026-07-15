@@ -121,9 +121,10 @@ async function parseErrorResponse(
  */
 export async function uploadImage(
   blob: Blob,
-  filename?: string
+  filename?: string,
+  authTokenProvider: AuthTokenProvider = clerkAuthTokenProvider,
 ): Promise<UploadResult> {
-  return uploadImageWithTokenProvider(clerkAuthTokenProvider, blob, filename);
+  return uploadImageWithTokenProvider(authTokenProvider, blob, filename);
 }
 
 async function uploadImageWithTokenProvider(

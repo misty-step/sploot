@@ -1,6 +1,16 @@
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import path from 'node:path';
+
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const COMMIT_PATTERN = /^[a-f0-9]{40}$/i;
-const SHA256_LABEL_PATTERN = /^[a-f0-9]{64}$/i;
+export const OPERATOR_EVIDENCE_SCHEMA_VERSION = 1;
+export const OPERATOR_EVIDENCE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+export const OPERATOR_EVIDENCE_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
+const CHROME_EXTENSION_ID_PATTERN = /^[a-p]{32}$/;
+const WEB_STORE_ORIGIN = 'https://chromewebstore.google.com';
+const SPLOOT_ORIGINS = new Set(['https://www.sploot.app', 'https://sploot.app']);
+const WEB_STORE_STATUSES = new Set(['in_review', 'published']);
 
 export function assertCandidateSha(actualSha, expectedSha) {
   if (!COMMIT_PATTERN.test(actualSha)) {
@@ -57,7 +67,23 @@ export function assertReleaseArtifact({
  * pass.
  */
 export function validateOperatorEvidence(evidence, expected) {
+  return validateOperatorEvidenceAt(evidence, expected, { evidenceRoot: process.cwd() });
+}
+
+/**
+ * Validate operator evidence and the files it names. `evidenceRoot` is the
+ * packet directory; references are deliberately local relative paths so a
+ * packet cannot hide a URL, data URI, or path traversal behind a string.
+ */
+export function validateOperatorEvidenceAt(evidence, expected, options = {}) {
   const errors = [];
+  const now = options.now ?? Date.now();
+  const evidenceRoot = options.evidenceRoot;
+
+  if (evidence?.schemaVersion !== OPERATOR_EVIDENCE_SCHEMA_VERSION) {
+    errors.push(`operator evidence schemaVersion must be ${OPERATOR_EVIDENCE_SCHEMA_VERSION}`);
+  }
+
   const binding = evidence?.binding;
 
   if (!binding || typeof binding !== 'object') {
@@ -76,12 +102,12 @@ export function validateOperatorEvidence(evidence, expected) {
     }
   }
 
-  if (!SHA256_LABEL_PATTERN.test(binding.artifactSha256 ?? '')) {
+  if (!SHA256_PATTERN.test(binding.artifactSha256 ?? '')) {
     errors.push('operator evidence binding artifactSha256 is invalid');
   }
 
-  if (typeof binding.extensionId !== 'string' || binding.extensionId.trim().length === 0) {
-    errors.push('operator evidence binding extensionId is required');
+  if (typeof binding.extensionId !== 'string' || !CHROME_EXTENSION_ID_PATTERN.test(binding.extensionId)) {
+    errors.push('operator evidence binding extensionId is not a valid Chrome extension ID');
   }
 
   const chromeProofs = [
@@ -91,35 +117,180 @@ export function validateOperatorEvidence(evidence, expected) {
     'signout',
   ];
   for (const proofName of chromeProofs) {
-    validateProof(evidence?.chrome?.[proofName], `chrome.${proofName}`, binding, errors);
+    validateProof(evidence?.chrome?.[proofName], `chrome.${proofName}`, binding, errors, {
+      expectedKind: proofName === 'duplicate409' ? 'receipt' : 'screenshot',
+      evidenceRoot,
+      now,
+    });
   }
 
   const webStore = evidence?.webStore;
-  if (!webStore || webStore.itemId !== binding.extensionId) {
-    errors.push('operator evidence Web Store itemId must equal the exact extensionId');
+  if (!webStore || typeof webStore !== 'object') {
+    errors.push('missing operator evidence Web Store verification');
+  } else {
+    if (webStore.origin !== WEB_STORE_ORIGIN) {
+      errors.push(`operator evidence Web Store origin must be ${WEB_STORE_ORIGIN}`);
+    }
+    if (webStore.itemId !== binding.extensionId) {
+      errors.push('operator evidence Web Store itemId must equal the exact extensionId');
+    }
+    const expectedItemUrl = `${WEB_STORE_ORIGIN}/detail/sploot/${binding.extensionId}`;
+    if (webStore.itemUrl !== expectedItemUrl) {
+      errors.push('operator evidence Web Store itemUrl does not match the exact extension');
+    }
+    if (!WEB_STORE_STATUSES.has(webStore.status)) {
+      errors.push('operator evidence Web Store status is not a verified submitted status');
+    }
+    if (!validTimestamp(webStore.verifiedAt, now, errors, 'webStore.verifiedAt')) {
+      // The helper records the precise timestamp failure.
+    }
   }
-  validateProof(webStore?.receipt, 'webStore.receipt', binding, errors);
-  validateProof(webStore?.installed, 'webStore.installed', binding, errors);
+  validateProof(webStore?.receipt, 'webStore.receipt', binding, errors, {
+    expectedKind: 'receipt',
+    evidenceRoot,
+    now,
+    provider: webStore,
+  });
+  validateProof(webStore?.installed, 'webStore.installed', binding, errors, {
+    expectedKind: 'install',
+    evidenceRoot,
+    now,
+    provider: webStore,
+  });
+
+  const providerVerification = evidence?.providerVerification;
+  if (!providerVerification || typeof providerVerification !== 'object') {
+    errors.push('missing independent live provider verification record');
+  } else {
+    if (providerVerification.provider !== 'chrome-web-store') {
+      errors.push('provider verification must identify chrome-web-store');
+    }
+    if (providerVerification.origin !== WEB_STORE_ORIGIN) {
+      errors.push(`provider verification origin must be ${WEB_STORE_ORIGIN}`);
+    }
+    if (providerVerification.itemUrl !== webStore?.itemUrl) {
+      errors.push('provider verification itemUrl does not match Web Store evidence');
+    }
+    if (providerVerification.status !== webStore?.status) {
+      errors.push('provider verification status does not match Web Store evidence');
+    }
+    validTimestamp(providerVerification.verifiedAt, now, errors, 'providerVerification.verifiedAt');
+  }
 
   return errors;
 }
 
-function validateProof(proof, label, binding, errors) {
+function validateProof(proof, label, binding, errors, options) {
   if (!proof || typeof proof !== 'object') {
-    errors.push(`missing ${label} proof reference`);
+    errors.push(`missing ${label} concrete proof artifact`);
     return;
   }
 
-  if (typeof proof.reference !== 'string' || proof.reference.trim().length === 0) {
-    errors.push(`${label} proof reference is required`);
-  }
-  if (typeof proof.capturedAt !== 'string' || proof.capturedAt.trim().length === 0) {
-    errors.push(`${label} capturedAt is required`);
-  }
+  validTimestamp(proof.capturedAt, options.now, errors, `${label}.capturedAt`);
 
   for (const field of ['candidateSha', 'artifactSha256', 'version', 'extensionId']) {
     if (proof[field] !== binding[field]) {
       errors.push(`${label} ${field} is not bound to the packet release`);
     }
   }
+
+  const artifact = proof.artifact;
+  if (!artifact || typeof artifact !== 'object') {
+    errors.push(`${label} concrete artifact metadata is required`);
+    return;
+  }
+  if (artifact.kind !== options.expectedKind) {
+    errors.push(`${label} artifact kind must be ${options.expectedKind}`);
+  }
+  if (typeof artifact.reference !== 'string' || !safeRelativeReference(artifact.reference)) {
+    errors.push(`${label} artifact reference path escapes the evidence packet or uses a fabricated scheme`);
+  } else if (options.evidenceRoot) {
+    const artifactPath = path.resolve(options.evidenceRoot, artifact.reference);
+    if (!isWithin(options.evidenceRoot, artifactPath)) {
+      errors.push(`${label} artifact reference escapes the evidence packet`);
+    } else if (!existsSync(artifactPath) || !statSync(artifactPath).isFile()) {
+      errors.push(`${label} referenced evidence artifact is missing`);
+    } else {
+      const bytes = readFileSync(artifactPath);
+      const digest = createHash('sha256').update(bytes).digest('hex');
+      if (artifact.sha256 !== digest) {
+        errors.push(`${label} artifact SHA-256 does not match the referenced evidence artifact`);
+      }
+      if (artifact.byteLength !== bytes.length) {
+        errors.push(`${label} artifact byteLength does not match the referenced evidence artifact`);
+      }
+    }
+  }
+  if (!SHA256_PATTERN.test(artifact.sha256 ?? '')) {
+    errors.push(`${label} artifact sha256 is invalid`);
+  }
+  if (!Number.isInteger(artifact.byteLength) || artifact.byteLength <= 0) {
+    errors.push(`${label} artifact byteLength is required`);
+  }
+  if (typeof artifact.mimeType !== 'string' || artifact.mimeType.length === 0) {
+    errors.push(`${label} artifact mimeType is required`);
+  }
+  if (!artifact.metadata || typeof artifact.metadata !== 'object') {
+    errors.push(`${label} artifact machine metadata is required`);
+  }
+
+  const providerUrl = proof.providerUrl;
+  if (label.startsWith('webStore.')) {
+    if (typeof providerUrl !== 'string' || !providerUrl.startsWith(`${WEB_STORE_ORIGIN}/`)) {
+      errors.push(`${label} providerUrl must use the Chrome Web Store origin`);
+    }
+    if (proof.itemUrl !== options.provider?.itemUrl) {
+      errors.push(`${label} itemUrl does not match the verified Web Store item`);
+    }
+  } else if (proof.providerUrl !== undefined) {
+    try {
+      const parsed = new URL(proof.providerUrl);
+      if (!SPLOOT_ORIGINS.has(parsed.origin) || parsed.protocol !== 'https:') {
+        errors.push(`${label} providerUrl uses an untrusted origin`);
+      }
+    } catch {
+      errors.push(`${label} providerUrl is not a valid HTTPS URL`);
+    }
+  }
+
+  if (label === 'chrome.duplicate409') {
+    if (proof.observed?.httpStatus !== 409 || proof.observed?.isDuplicate !== true) {
+      errors.push(`${label} must carry machine-checked HTTP 409 duplicate metadata`);
+    }
+  }
+  if (label === 'chrome.signout' && proof.observed?.authState !== 'signed-out') {
+    errors.push(`${label} must carry signed-out machine metadata`);
+  }
+}
+
+function safeRelativeReference(reference) {
+  return reference.length > 0
+    && !path.isAbsolute(reference)
+    && !reference.includes('\\')
+    && !/^[a-z][a-z\d+.-]*:/i.test(reference)
+    && reference.split('/').every(part => part.length > 0 && part !== '.' && part !== '..');
+}
+
+function isWithin(root, candidate) {
+  const relative = path.relative(path.resolve(root), candidate);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function validTimestamp(value, now, errors, label) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(value)) {
+    errors.push(`${label} must be an ISO-8601 timestamp`);
+    return false;
+  }
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    errors.push(`${label} is invalid`);
+    return false;
+  }
+  if (parsed > now + OPERATOR_EVIDENCE_MAX_FUTURE_SKEW_MS) {
+    errors.push(`${label} is in the future`);
+  }
+  if (now - parsed > OPERATOR_EVIDENCE_MAX_AGE_MS) {
+    errors.push(`${label} is stale`);
+  }
+  return true;
 }

@@ -40,6 +40,7 @@ describe('fetchImage', () => {
     expect(fetch).toHaveBeenCalledWith('https://example.com/image.jpg', {
       credentials: 'omit',
       cache: 'no-store',
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -62,5 +63,15 @@ describe('fetchImage', () => {
       'Image too large after compression'
     );
     expect(imageConstructor).not.toHaveBeenCalled();
+  });
+
+  it('aborts and rejects a fetch that ignores AbortSignal', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)));
+    const { fetchImage } = await importImageFetcher();
+    const pending = fetchImage('https://example.com/hung.png');
+    vi.advanceTimersByTime(UPLOAD.timeout);
+    await expect(pending).rejects.toThrow('timed out');
+    vi.useRealTimers();
   });
 });

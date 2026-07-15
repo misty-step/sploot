@@ -229,3 +229,11 @@ Web Store item, and carry independently captured proof references for
 authenticated right-click/save, the 409 duplicate, library visibility,
 sign-out, the Web Store receipt, and installation. Each proof must repeat the
 same `candidateSha`, `artifactSha256`, `version`, and `extensionId` binding.
+The packet schema is versioned and every proof names a local relative artifact
+with a SHA-256, byte length, MIME type, capture timestamp, and machine metadata;
+the validator reads and hashes those files, rejects path escapes/schemes,
+future or stale timestamps, invalid Chrome IDs, and Web Store origin/item/status
+drift. Operator approval is a separate record from the independent provider
+verification record and cannot substitute for either. CI intentionally remains
+red with the typed `external-evidence-missing` verdict until a real operator
+supplies this packet.

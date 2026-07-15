@@ -123,7 +123,9 @@ function SignedInPanel() {
   const handleScreenshot = () => {
     // The capture + upload runs in the background worker (the popup closes the
     // moment it loses focus). Outcome is confirmed via badge + notification.
-    void requestVisibleTabCapture().catch(() => undefined)
+    void requestVisibleTabCapture().catch(error => {
+      console.error('[Popup] Screenshot dispatch failed', error)
+    })
   }
 
   const handleDiagnostics = () => {
@@ -236,18 +238,18 @@ function LastSaveStrip() {
         </div>
       )}
       {queueJobs.map(job => (
-        <div className={`save-strip queue-failure ${job.state === 'failed' ? 'error' : 'queued'}`} role={job.state === 'failed' ? 'alert' : 'status'} aria-live="polite" key={job.id}>
+        <div className={`save-strip queue-failure ${job.state === 'failed' || job.state === 'paused' ? 'error' : 'queued'}`} role={job.state === 'failed' || job.state === 'paused' ? 'alert' : 'status'} aria-live="polite" key={job.id}>
           <span className="save-dot" aria-hidden="true" />
           <span className="save-copy">
             <strong>{queueStateTitle(job)}</strong> {job.filename}. {queueStateCopy(job)}
           </span>
-          {job.state === 'failed' && (
+          {(job.state === 'failed' || job.state === 'paused') && (
             <div className="queue-actions">
               <button
                 disabled={activeAction !== null}
                 onClick={() => void handleQueueAction(job.id, CONTEXT_MENU_SAVE_MESSAGES.RETRY)}
               >
-                {activeAction?.jobId === job.id && activeAction.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY ? 'Retrying…' : 'Retry'}
+                {activeAction?.jobId === job.id && activeAction.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY ? 'Retrying…' : job.state === 'paused' ? 'Resume' : 'Retry'}
               </button>
               <button
                 className="secondary"
@@ -267,12 +269,13 @@ function LastSaveStrip() {
 
 function queueStateTitle(job: ContextMenuSaveJobSummary): string {
   if (job.state === 'failed') return 'Save needs attention.'
+  if (job.state === 'paused') return 'Save paused.'
   if (job.state === 'processing') return 'Saving.'
   return job.nextAttemptAt > Date.now() ? 'Retry scheduled.' : 'Queued for retry.'
 }
 
 function queueStateCopy(job: ContextMenuSaveJobSummary): string {
-  if (job.state === 'failed') return job.lastError ?? 'Retry limit reached; choose Retry or Discard.'
+  if (job.state === 'failed' || job.state === 'paused') return job.lastError ?? 'The original account is required; choose Resume or Discard.'
   if (job.state === 'processing') return 'The background worker is uploading it.'
   return job.nextAttemptAt > Date.now()
     ? `Next attempt ${new Date(job.nextAttemptAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
