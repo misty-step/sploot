@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { logger } from '@/lib/observability-logger';
 import { acquireEnrollmentIdentityWriterLock, EnrollmentUnavailableError } from '@/lib/enrollment/enrollment-policy';
+import economicsPolicy from '../../../economics/policy.json';
 
 export const EMBEDDING_RATE_WINDOW_SECONDS = 60;
 export const EMBEDDING_USER_WINDOW_LIMIT = 5;
@@ -12,9 +13,25 @@ export const EMBEDDING_USER_CONCURRENCY_LIMIT = 1;
 export const EMBEDDING_GLOBAL_CONCURRENCY_LIMIT = 3;
 export const EMBEDDING_INFLIGHT_TTL_SECONDS = 180;
 
-// Global ceiling on paid embedding generation attempts per UTC day.
-export const EMBEDDING_DAILY_BUDGET = 2000;
+function policyAttemptCap(value: number, name: string): number {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`Invalid economics policy ${name}`);
+  }
+  return value;
+}
+
+// These are the runtime projection of economics/policy.json. Keep the policy
+// file versioned and fail at startup if a non-integer/zero cap is introduced.
+export const EMBEDDING_DAILY_BUDGET = policyAttemptCap(
+  economicsPolicy.global.replicateDailyAttempts,
+  'global.replicateDailyAttempts'
+);
+export const EMBEDDING_MONTHLY_BUDGET = policyAttemptCap(
+  economicsPolicy.global.replicateMonthlyAttempts,
+  'global.replicateMonthlyAttempts'
+);
 export const EMBEDDING_DAILY_BUDGET_TTL_SECONDS = 26 * 60 * 60;
+export const EMBEDDING_MONTHLY_BUDGET_TTL_SECONDS = 32 * 24 * 60 * 60;
 
 const LIMITER_LOCK_NAMESPACE = 'sploot:embedding-rate-limit:v1';
 const GLOBAL_WINDOW_KEY_PREFIX = 'embedding:rate:global';
@@ -26,7 +43,7 @@ export type EmbeddingRateLimitReason =
   | 'global_concurrency'
   | 'limiter_unavailable';
 
-export type EmbeddingDailyBudgetReason = 'daily_budget' | 'limiter_unavailable';
+export type EmbeddingDailyBudgetReason = 'daily_budget' | 'monthly_budget' | 'limiter_unavailable';
 
 export interface EmbeddingDailyBudgetResult {
   allowed: boolean;
@@ -71,10 +88,20 @@ function getUtcDateKey(nowMs: number): string {
   return new Date(nowMs).toISOString().slice(0, 10);
 }
 
+function getUtcMonthKey(nowMs: number): string {
+  return new Date(nowMs).toISOString().slice(0, 7);
+}
+
 function secondsUntilNextUtcDay(nowMs: number): number {
   const now = new Date(nowMs);
   const nextDayMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
   return Math.max(1, Math.round((nextDayMs - nowMs) / 1000));
+}
+
+function secondsUntilNextUtcMonth(nowMs: number): number {
+  const now = new Date(nowMs);
+  const nextMonthMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+  return Math.max(1, Math.round((nextMonthMs - nowMs) / 1000));
 }
 
 async function withLimiterLock<T>(
@@ -264,13 +291,19 @@ export async function acquireEmbeddingDailyBudget(
 ): Promise<EmbeddingDailyBudgetResult> {
   const now = new Date(nowMs);
   const dateKey = getUtcDateKey(nowMs);
+  const monthKey = getUtcMonthKey(nowMs);
   const dailyKey = `embedding:daily:${dateKey}`;
+  const monthlyKey = `embedding:monthly:${monthKey}`;
 
   try {
     return await withLimiterLock(async (tx) => {
       await pruneExpiredLimiterState(tx, now);
-      const bucket = await tx.embeddingRateBucket.findUnique({ where: { key: dailyKey } });
-      const count = bucket?.count ?? 0;
+      const [dailyBucket, monthlyBucket] = await Promise.all([
+        tx.embeddingRateBucket.findUnique({ where: { key: dailyKey } }),
+        tx.embeddingRateBucket.findUnique({ where: { key: monthlyKey } }),
+      ]);
+      const count = dailyBucket?.count ?? 0;
+      const monthlyCount = monthlyBucket?.count ?? 0;
 
       if (count >= EMBEDDING_DAILY_BUDGET) {
         logger.logError(
@@ -287,11 +320,33 @@ export async function acquireEmbeddingDailyBudget(
         };
       }
 
-      const persistedCount = await incrementBucket(
-        tx,
-        dailyKey,
-        new Date(nowMs + EMBEDDING_DAILY_BUDGET_TTL_SECONDS * 1000)
-      );
+      if (monthlyCount >= EMBEDDING_MONTHLY_BUDGET) {
+        logger.logError(
+          'embedding-rate-limit.monthly-budget-breach',
+          new Error('Embedding monthly budget exceeded'),
+          { monthKey, count: monthlyCount, limit: EMBEDDING_MONTHLY_BUDGET }
+        );
+        return {
+          allowed: false,
+          reason: 'monthly_budget',
+          count: monthlyCount,
+          limit: EMBEDDING_MONTHLY_BUDGET,
+          retryAfterSec: secondsUntilNextUtcMonth(nowMs),
+        };
+      }
+
+      const [persistedCount] = await Promise.all([
+        incrementBucket(
+          tx,
+          dailyKey,
+          new Date(nowMs + EMBEDDING_DAILY_BUDGET_TTL_SECONDS * 1000)
+        ),
+        incrementBucket(
+          tx,
+          monthlyKey,
+          new Date(nowMs + EMBEDDING_MONTHLY_BUDGET_TTL_SECONDS * 1000)
+        ),
+      ]);
       return {
         allowed: true,
         count: persistedCount,

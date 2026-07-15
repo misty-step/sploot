@@ -62,11 +62,67 @@ const REQUIRED_GLOBAL_NUMBERS = [
   'replicateDailyUsd',
   'replicateDailyAttempts',
   'replicateMonthlyUsd',
+  'replicateMonthlyAttempts',
+];
+const REQUIRED_LIVE_NUMBER_PATHS = [
+  'storage.blobObjects',
+  'storage.blobBytes',
+  'storage.databaseSourceBytesLive',
+  'storage.databaseSourceBytesDeleted',
+  'storage.liveAssets',
+  'storage.deletedAssets',
+  'storage.liveThumbnails',
+  'database.databaseBytes',
+  'database.users',
+  'database.readyEmbeddings',
+  'database.failedEmbeddings',
+  'database.processingEmbeddings',
+  'database.pendingEmbeddings',
+  'database.searches30d',
+  'database.textCacheRows',
+  'inference.latestPredictionSample.size',
+  'inference.latestPredictionSample.failed',
+  'inference.latestPredictionSample.canceled',
+  'inference.latestPredictionSample.succeeded',
+  'digitalOcean.webInstances',
+  'digitalOcean.scheduledSmallJobs',
+  'digitalOcean.embeddingJobEstimatedMonthlyUsd',
+  'digitalOcean.invoicePreviewUsd',
+  'digitalOcean.monthToDateUsageUsd',
+  'digitalOcean.namedVarianceUsd',
+  'telemetry.errors30d',
+  'telemetry.errorGroupsReturned',
+  'github.activeCacheCount',
+  'github.activeCacheBytes',
+];
+const REQUIRED_LIVE_STRING_PATHS = [
+  'storage.reconciliation',
+  'inference.latestPredictionSample.model',
+  'inference.latestPredictionSample.modelVersion',
+  'inference.reconciliation',
+  'digitalOcean.webInstance',
+  'digitalOcean.embeddingJobSchedule',
+  'digitalOcean.varianceExplanation',
+  'telemetry.reconciliation',
+  'github.repositoryVisibility',
+  'github.reconciliation',
+];
+const REQUIRED_LIVE_TIMESTAMP_PATHS = [
+  'capturedAt',
+  'inference.latestPredictionSample.from',
+  'inference.latestPredictionSample.to',
 ];
 const round = (value, digits = 4) => Number(value.toFixed(digits));
 const money = (value) => `$${value.toFixed(2)}`;
 const percent = (value) => value === null ? 'n/a' : `${value.toFixed(1)}%`;
 const rateMoney = (value) => value < 0.01 ? `$${value.toFixed(6)}` : value < 1 ? `$${value.toFixed(3)}` : money(value);
+const sensitivityMultiplierText = (inputs, key) => ['low', 'base', 'high']
+  .map((id) => `${inputs.policy.sensitivity[id][key].toFixed(2)}×`).join('/');
+const sensitivityPercentText = (inputs, key) => ['low', 'base', 'high']
+  .map((id) => `${(inputs.policy.sensitivity[id][key] * 100).toFixed(key === 'stripeVariableSurcharge' ? 1 : 0).replace(/\.0$/, '')}%`).join('/');
+const getPath = (value, path) => path.split('.').reduce((current, key) => current?.[key], value);
+const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const ceilCents = (value) => Math.ceil((value - Number.EPSILON) * 100) / 100;
 
 export async function loadInputs() {
   const [rates, liveUsage, workloads, policy] = await Promise.all(
@@ -105,6 +161,11 @@ export function validateInputs(inputs, now = new Date()) {
     }
     if (!rate.sourceUrl || !rate.retrievedAt || !rate.unit || !rate.planAssumption
       || !Object.hasOwn(rate, 'includedAllowance')) errors.push(`authority missing: ${rate.id}`);
+    if (rate.id === 'replicate-clip-prediction'
+      && (typeof rate.sourceEvidence !== 'string' || !rate.sourceEvidence.includes('0.00073')
+        || !rate.sourceEvidence.includes('1369'))) {
+      errors.push('source evidence missing: replicate-clip-prediction');
+    }
     const retrievedAt = Date.parse(`${rate.retrievedAt}T00:00:00Z`);
     if (!Number.isFinite(retrievedAt)) {
       errors.push(`invalid retrieval date: ${rate.id}`);
@@ -145,6 +206,13 @@ export function validateInputs(inputs, now = new Date()) {
   if (!Number.isInteger(inputs.policy.freeFullAllowanceAccounts)
     || inputs.policy.freeFullAllowanceAccounts <= 0) {
     errors.push('policy.freeFullAllowanceAccounts must be a positive integer');
+  }
+  if (!Number.isInteger(inputs.policy.liveUsageFreshnessHours)
+    || inputs.policy.liveUsageFreshnessHours <= 0) {
+    errors.push('policy.liveUsageFreshnessHours must be a positive integer');
+  }
+  if (typeof inputs.policy.planBudgetSemantics !== 'string' || inputs.policy.planBudgetSemantics.length === 0) {
+    errors.push('policy.planBudgetSemantics must be a non-empty string');
   }
   for (const sensitivityId of ['low', 'base', 'high']) {
     const sensitivity = inputs.policy.sensitivity?.[sensitivityId];
@@ -190,6 +258,104 @@ export function validateInputs(inputs, now = new Date()) {
       }
     }
   }
+  for (const path of REQUIRED_LIVE_NUMBER_PATHS) {
+    const value = getPath(inputs.liveUsage, path);
+    if (!Number.isFinite(value) || value < 0) {
+      errors.push(`liveUsage.${path} must be a finite nonnegative number`);
+    }
+  }
+  for (const path of REQUIRED_LIVE_STRING_PATHS) {
+    const value = getPath(inputs.liveUsage, path);
+    if (typeof value !== 'string' || value.length === 0) {
+      errors.push(`liveUsage.${path} must be a non-empty string`);
+    }
+  }
+  const liveTimestampValues = Object.fromEntries(REQUIRED_LIVE_TIMESTAMP_PATHS.map((path) => [path, getPath(inputs.liveUsage, path)]));
+  for (const [path, value] of Object.entries(liveTimestampValues)) {
+    const timestamp = typeof value === 'string' ? Date.parse(value) : Number.NaN;
+    if (!Number.isFinite(timestamp)) {
+      errors.push(`liveUsage.${path} must be a valid timestamp`);
+      continue;
+    }
+    if (timestamp > now.getTime() + 300_000) errors.push(`liveUsage.${path} is future-dated`);
+  }
+  const capturedAt = Date.parse(liveTimestampValues.capturedAt);
+  if (Number.isFinite(capturedAt) && Number.isFinite(inputs.policy.liveUsageFreshnessHours)) {
+    const ageHours = (now.getTime() - capturedAt) / 3_600_000;
+    if (ageHours > inputs.policy.liveUsageFreshnessHours) errors.push('liveUsage.capturedAt is stale');
+  }
+  const sampleFrom = Date.parse(liveTimestampValues['inference.latestPredictionSample.from']);
+  const sampleTo = Date.parse(liveTimestampValues['inference.latestPredictionSample.to']);
+  if (Number.isFinite(sampleFrom) && Number.isFinite(sampleTo) && sampleFrom > sampleTo) {
+    errors.push('liveUsage.inference.latestPredictionSample.from must not be after to');
+  }
+  if (!Array.isArray(inputs.liveUsage.unknowns)) {
+    errors.push('liveUsage.unknowns must be an array');
+  } else {
+    inputs.liveUsage.unknowns.forEach((unknown, index) => {
+      if (!isRecord(unknown)) {
+        errors.push(`liveUsage.unknowns[${index}] must be an object`);
+        return;
+      }
+      for (const key of ['name', 'impact']) {
+        if (typeof unknown[key] !== 'string' || unknown[key].length === 0) {
+          errors.push(`liveUsage.unknowns[${index}].${key} must be a non-empty string`);
+        }
+      }
+      if (unknown.value !== null) errors.push(`liveUsage.unknowns[${index}].value must be null`);
+    });
+  }
+  if (REQUIRED_RATE_IDS.every((id) => rateIds.has(id))
+    && isRecord(inputs.policy.global)
+    && isRecord(inputs.policy.planBudgets)
+    && isRecord(inputs.policy.sensitivity?.high)
+    && ['free', 'collector', 'archive'].every((id) => inputs.scenarios.some((scenario) => scenario.id === id))) {
+    const rates = rateMap(inputs);
+    const replicateRate = rates['replicate-clip-prediction'].value;
+    for (const planId of ['free', 'collector', 'archive']) {
+      const budget = inputs.policy.planBudgets?.[planId];
+      const workload = inputs.scenarios.find((scenario) => scenario.id === planId);
+      if (!budget || !workload) continue;
+      const high = calculateScenarioRaw(inputs, workload, inputs.policy.sensitivity?.high);
+      if (Number.isFinite(budget.monthlyInfrastructureUsd)
+        && budget.monthlyInfrastructureUsd < high.infrastructureCostUsd) {
+        errors.push(`policy.planBudgets.${planId}.monthlyInfrastructureUsd must cover exact high-case infrastructure cost`);
+      }
+      if (planId === 'free'
+        && Number.isFinite(inputs.policy.global.preGaMonthlyVariableUsd)
+        && high.totalCostUsd * inputs.policy.freeFullAllowanceAccounts
+          >= inputs.policy.global.preGaMonthlyVariableUsd) {
+        errors.push('free high-case subsidy pool must be strictly below policy.global.preGaMonthlyVariableUsd');
+      }
+      if (planId !== 'free' && Number.isFinite(high.grossMarginPct) && high.grossMarginPct < 70) {
+        errors.push(`scenario ${planId} high-case gross margin must be at least 70% unrounded`);
+      }
+      for (const [period, usdKey, attemptsKey] of [
+        ['daily', 'dailyInferenceUsd', 'dailyInferenceAttempts'],
+        ['monthly', 'monthlyInferenceUsd', 'monthlyInferenceAttempts'],
+      ]) {
+        const attempts = budget[attemptsKey];
+        const dollars = budget[usdKey];
+        if (Number.isFinite(attempts) && Number.isFinite(dollars)
+          && (attempts * replicateRate > dollars + Number.EPSILON
+            || attempts !== Math.floor((dollars + Number.EPSILON) / replicateRate))) {
+          errors.push(`policy.planBudgets.${planId}.${period} inference budget must equal its dollar-derived attempt cap`);
+        }
+      }
+    }
+    for (const [period, usdKey, attemptsKey] of [
+      ['daily', 'replicateDailyUsd', 'replicateDailyAttempts'],
+      ['monthly', 'replicateMonthlyUsd', 'replicateMonthlyAttempts'],
+    ]) {
+      const attempts = inputs.policy.global[attemptsKey];
+      const dollars = inputs.policy.global[usdKey];
+      if (Number.isFinite(attempts) && Number.isFinite(dollars)
+        && (attempts * replicateRate > dollars + Number.EPSILON
+          || attempts !== Math.floor((dollars + Number.EPSILON) / replicateRate))) {
+        errors.push(`policy.global.${period} Replicate budget must equal its dollar-derived attempt cap`);
+      }
+    }
+  }
   if (!Array.isArray(inputs.policy.providerHardCaps)
     || inputs.policy.providerHardCaps.length === 0) {
     errors.push('policy.providerHardCaps must be a non-empty array');
@@ -216,12 +382,7 @@ function assertValidInputs(inputs) {
 
 const rateMap = (inputs) => Object.fromEntries(inputs.rates.map((rate) => [rate.id, rate]));
 
-export function calculateScenario(inputs, scenarioId, sensitivityId = 'base') {
-  assertValidInputs(inputs);
-  const workload = inputs.scenarios.find((scenario) => scenario.id === scenarioId);
-  if (!workload) throw new Error(`unknown scenario: ${scenarioId}`);
-  const sensitivity = inputs.policy.sensitivity[sensitivityId];
-  if (!sensitivity) throw new Error(`unknown sensitivity: ${sensitivityId}`);
+function calculateScenarioRaw(inputs, workload, sensitivity) {
   const rates = rateMap(inputs);
   const predictions = (workload.uploads + workload.uniqueTextQueries) * sensitivity.inferenceAttemptMultiplier;
   const jobSecondRate = rates['digitalocean-small-job-runtime'].value / (30 * 24 * 60 * 60);
@@ -252,29 +413,41 @@ export function calculateScenario(inputs, scenarioId, sensitivityId = 'base') {
   const grossMarginPct = workload.priceUsd > 0
     ? (workload.priceUsd - totalCostUsd) / workload.priceUsd * 100
     : null;
+  return { infrastructure, predictions, infrastructureCostUsd, paymentFeeUsd, totalCostUsd, grossMarginPct };
+}
+
+export function calculateScenario(inputs, scenarioId, sensitivityId = 'base') {
+  assertValidInputs(inputs);
+  const workload = inputs.scenarios.find((scenario) => scenario.id === scenarioId);
+  if (!workload) throw new Error(`unknown scenario: ${scenarioId}`);
+  const sensitivity = inputs.policy.sensitivity[sensitivityId];
+  if (!sensitivity) throw new Error(`unknown sensitivity: ${sensitivityId}`);
+  const raw = calculateScenarioRaw(inputs, workload, sensitivity);
   return {
     id: workload.id,
     label: workload.label,
     sensitivity: sensitivityId,
     priceUsd: workload.priceUsd,
-    predictions: round(predictions, 1),
-    infrastructure: Object.fromEntries(Object.entries(infrastructure).map(([key, value]) => [key, round(value, 6)])),
-    infrastructureCostUsd: round(infrastructureCostUsd, 4),
-    paymentFeeUsd: round(paymentFeeUsd, 4),
-    totalCostUsd: round(totalCostUsd, 4),
-    grossMarginPct: grossMarginPct === null ? null : round(grossMarginPct, 2),
+    predictions: round(raw.predictions, 1),
+    infrastructure: Object.fromEntries(Object.entries(raw.infrastructure).map(([key, value]) => [key, round(value, 6)])),
+    infrastructureCostUsd: raw.infrastructureCostUsd,
+    paymentFeeUsd: raw.paymentFeeUsd,
+    totalCostUsd: raw.totalCostUsd,
+    grossMarginPct: raw.grossMarginPct,
   };
 }
 
 export function minimumPriceForMargin(inputs, scenarioId, targetMargin = 0.7) {
-  const result = calculateScenario(inputs, scenarioId, 'high');
+  assertValidInputs(inputs);
+  const workload = inputs.scenarios.find((scenario) => scenario.id === scenarioId);
+  if (!workload) throw new Error(`unknown scenario: ${scenarioId}`);
+  const result = calculateScenarioRaw(inputs, workload, inputs.policy.sensitivity.high);
   const high = inputs.policy.sensitivity.high;
   const stripe = rateMap(inputs)['stripe-domestic-card'];
   const variablePaymentRate = stripe.value + high.stripeVariableSurcharge;
-  return round(
+  return ceilCents(
     (result.infrastructureCostUsd + stripe.fixedValue)
       / (1 - targetMargin - variablePaymentRate),
-    2,
   );
 }
 
@@ -321,6 +494,7 @@ const budgetTable = (inputs) => Object.entries(inputs.policy.planBudgets)
   .join('\n');
 
 export function buildReport(inputs) {
+  assertValidInputs(inputs);
   const freeHigh = calculateScenario(inputs, 'free', 'high');
   const collectorHigh = calculateScenario(inputs, 'collector', 'high');
   const archiveHigh = calculateScenario(inputs, 'archive', 'high');
@@ -333,6 +507,14 @@ export function buildReport(inputs) {
   const refreshDate = inputs.rates[0].retrievedAt;
   const providerCaps = inputs.policy.providerHardCaps.map((cap) => `- **${cap.provider}:** ${cap.enforcement}.`).join('\n');
   const unknowns = live.unknowns.map((item) => `- **${item.name}:** unknown, not zero. ${item.impact}`).join('\n');
+  const highInferenceReservePct = (inputs.policy.sensitivity.high.inferenceAttemptMultiplier - 1) * 100;
+  const sensitivitySummary = [
+    `physical rendition overhead (${sensitivityMultiplierText(inputs, 'renditionMultiplier')})`,
+    `Blob origin-miss share (${sensitivityPercentText(inputs, 'originMissRatio')})`,
+    `potentially billed inference attempts (${sensitivityMultiplierText(inputs, 'inferenceAttemptMultiplier')})`,
+    `database compute (${sensitivityMultiplierText(inputs, 'databaseComputeMultiplier')})`,
+    `Stripe variable surcharge (${sensitivityPercentText(inputs, 'stripeVariableSurcharge')})`,
+  ].join(', ');
   return `# Sploot economic safety envelope
 
 Generated deterministically from the versioned inputs in this directory. Rates were refreshed on ${refreshDate} and CI expires them after ${inputs.policy.rateFreshnessDays} days. This is a release gate, not a forecast: paid-tier margins charge on-demand rates so shared included pools cannot make an unprofitable plan look safe.
@@ -348,7 +530,7 @@ These are candidates for entitlement and billing cards, not live promises. Inter
 
 ## Workload and sensitivity results
 
-Low/base/high vary physical rendition overhead (1.05×/1.10×/1.20×), Blob origin-miss share (5%/15%/30%), potentially billed inference attempts (1.00×/1.05×/1.20×), database compute (0.75×/1.00×/1.50×), and Stripe's variable surcharge (domestic / international / international plus FX). Storage includes retained trash.
+Low/base/high vary ${sensitivitySummary}. Storage includes retained trash.
 
 | Workload | Revenue | Low COGS | Base COGS | High COGS | High gross margin |
 |---|---:|---:|---:|---:|---:|
@@ -362,7 +544,7 @@ The abusive and viral rows deliberately exceed their account/global budgets; the
 |---|---:|---:|---:|
 ${budgetTable(inputs)}
 
-Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve, so full advertised use cannot exhaust its own budget merely because a provider attempt is retried. Pre-GA global variable spend is capped at ${money(inputs.policy.global.preGaDailyVariableUsd)}/day and ${money(inputs.policy.global.preGaMonthlyVariableUsd)}/month. Replicate is a sub-budget of ${money(inputs.policy.global.replicateDailyUsd)}/day (${inputs.policy.global.replicateDailyAttempts} attempts) and ${money(inputs.policy.global.replicateMonthlyUsd)}/month. After paid admission, the monthly ceiling is \`${inputs.policy.global.paidMonthlyFormula}\`; daily is \`${inputs.policy.global.paidDailyFormula}\`. Counters reserve worst-case dollars transactionally before work and reconcile provider usage afterward.
+${inputs.policy.planBudgetSemantics} Plan inference ceilings include the high-sensitivity ${highInferenceReservePct.toFixed(0)}% retry/cancel reserve, so full advertised use cannot exhaust its own budget merely because a provider attempt is retried. Pre-GA global variable spend is capped at ${money(inputs.policy.global.preGaDailyVariableUsd)}/day and ${money(inputs.policy.global.preGaMonthlyVariableUsd)}/month. Replicate is a sub-budget of ${money(inputs.policy.global.replicateDailyUsd)}/day (${inputs.policy.global.replicateDailyAttempts} attempts) and ${money(inputs.policy.global.replicateMonthlyUsd)}/month (${inputs.policy.global.replicateMonthlyAttempts} attempts). After paid admission, the monthly ceiling is \`${inputs.policy.global.paidMonthlyFormula}\`; daily is \`${inputs.policy.global.paidDailyFormula}\`. Counters reserve worst-case dollars transactionally before work and reconcile provider usage afterward.
 
 ## Provider hard-cap map
 
@@ -374,7 +556,7 @@ ${providerCaps}
 - Neon/Postgres: ${(live.database.databaseBytes / 1_000_000).toFixed(1)} MB database, ${live.database.users} users, ${live.database.readyEmbeddings.toLocaleString('en-US')} ready embeddings.
 - Replicate: latest ${live.inference.latestPredictionSample.size} predictions were ${live.inference.latestPredictionSample.failed} failed, ${live.inference.latestPredictionSample.canceled} canceled, and ${live.inference.latestPredictionSample.succeeded} succeeded. ${live.inference.reconciliation}
 - DigitalOcean: invoice preview ${money(live.digitalOcean.invoicePreviewUsd)} versus account month-to-date usage ${money(live.digitalOcean.monthToDateUsageUsd)}, a named ${money(live.digitalOcean.namedVarianceUsd)} variance. ${live.digitalOcean.varianceExplanation}
-- Fixed baseline: the Sploot web service is ${money(rateMap(inputs)['digitalocean-web-service'].value)}/month. The current sleep-heavy embedding schedule is estimated at ${money(live.digitalOcean.embeddingJobEstimatedMonthlyUsd)}/month before other short jobs; Canary is a ${money(rateMap(inputs)['canary-shared-service'].value)}/month service shared across projects. These fixed costs are visible but excluded from the Vision's $25 variable free-subsidy ratchet and per-account margin.
+  - Fixed baseline: the Sploot web service is ${money(rateMap(inputs)['digitalocean-web-service'].value)}/month. The current sleep-heavy embedding schedule is estimated at ${money(live.digitalOcean.embeddingJobEstimatedMonthlyUsd)}/month before other short jobs; Canary is a ${money(rateMap(inputs)['canary-shared-service'].value)}/month service shared across projects. These fixed costs are visible but excluded from the Vision's ${money(inputs.policy.global.preGaMonthlyVariableUsd)} variable free-subsidy ratchet and per-account margin.
 - Modeled known-cost reconciliation: current web, embedding-job schedule, Blob bytes at the on-demand rate, and database bytes at the Launch storage rate produce a ${money(liveFloor.knownSplootFloorUsd)} monthly baseline. It deliberately excludes unknown history/WAL, operations, and transfer rather than treating them as zero. The ${money(liveFloor.accountPreviewDifferenceUsd)} difference to the account-wide invoice preview is deliberately not attributed to Sploot: it contains unrelated apps, Canary allocation, other jobs, transfer/operations, and endpoint timing.
 - Canary: ${live.telemetry.errors30d.toLocaleString('en-US')} Sploot errors in 30 days. ${live.telemetry.reconciliation}
 - GitHub: public repository, ${live.github.activeCacheCount} active caches / ${(live.github.activeCacheBytes / 2 ** 30).toFixed(2)} GiB. ${live.github.reconciliation}

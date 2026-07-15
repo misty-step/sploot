@@ -52,6 +52,16 @@ test('the rate registry names every cost-bearing capability and its authority', 
     validateInputs(inputs, new Date('2026-08-15T00:00:00Z')).join('\n'),
     /rate sheet expired/,
   );
+
+  const replicate = inputs.rates.find((rate) => rate.id === 'replicate-clip-prediction');
+  assert.equal(replicate.value, 0.00073);
+  assert.equal(replicate.sourceUrl, 'https://replicate.com/krthr/clip-embeddings');
+  assert.match(replicate.sourceEvidence, /0\.00073/);
+  assert.match(replicate.sourceEvidence, /1369/);
+  const vercelOrigin = inputs.rates.find((rate) => rate.id === 'vercel-fast-origin-transfer');
+  assert.equal(vercelOrigin.value, 0.06);
+  assert.equal(vercelOrigin.sourceUrl, 'https://vercel.com/docs/manage-cdn-usage');
+  assert.match(vercelOrigin.includedAllowance, /Hobby: first 10 GB; Pro: N\/A/);
 });
 
 test('malformed or incomplete inputs fail closed instead of becoming zero or NaN', async () => {
@@ -91,6 +101,25 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
   assert.match(validateInputs(divergentDates).join('\n'), /rate registry must use one retrieval date/);
 });
 
+test('every required live usage field is validated table-first', async () => {
+  const inputs = await loadInputs();
+  const cases = [
+    ['storage.blobBytes', (live) => delete live.storage.blobBytes, /liveUsage\.storage\.blobBytes/],
+    ['database.databaseBytes NaN', (live) => { live.database.databaseBytes = Number.NaN; }, /liveUsage\.database\.databaseBytes/],
+    ['github.activeCacheBytes Infinity', (live) => { live.github.activeCacheBytes = Number.POSITIVE_INFINITY; }, /liveUsage\.github\.activeCacheBytes/],
+    ['capturedAt missing', (live) => delete live.capturedAt, /liveUsage\.capturedAt/],
+    ['inference sample from missing', (live) => delete live.inference.latestPredictionSample.from, /liveUsage\.inference\.latestPredictionSample\.from/],
+    ['stale capturedAt', (live) => { live.capturedAt = '2026-01-01T00:00:00Z'; }, /liveUsage\.capturedAt is stale/],
+  ];
+
+  for (const [label, mutate, expected] of cases) {
+    const changed = structuredClone(inputs);
+    mutate(changed.liveUsage);
+    assert.match(validateInputs(changed).join('\n'), expected, label);
+    assert.throws(() => calculateLiveKnownFloor(changed), expected, label);
+  }
+});
+
 test('live usage reconciles without identifiers or silently-zero unknowns', async () => {
   const inputs = await loadInputs();
   const serialized = JSON.stringify(inputs.liveUsage);
@@ -115,12 +144,12 @@ test('free subsidy and paid full-allowance margins satisfy the vision ratchets',
   const collector = calculateScenario(inputs, 'collector', 'high');
   const archive = calculateScenario(inputs, 'archive', 'high');
 
-  assert.ok(free.totalCostUsd * inputs.policy.freeFullAllowanceAccounts <= 25);
+  assert.ok(free.totalCostUsd * inputs.policy.freeFullAllowanceAccounts < 25);
   assert.ok(collector.grossMarginPct >= 70);
   assert.ok(archive.grossMarginPct >= 70);
   assert.ok(collector.paymentFeeUsd > 12 * 0.029 + 0.3);
   assert.ok(archive.paymentFeeUsd > 49 * 0.029 + 0.3);
-  assert.ok(12 >= minimumPriceForMargin(inputs, 'collector'));
+  assert.ok(12.01 >= minimumPriceForMargin(inputs, 'collector'));
   assert.ok(49 >= minimumPriceForMargin(inputs, 'archive'));
   assert.ok(collector.infrastructureCostUsd <= inputs.policy.planBudgets.collector.monthlyInfrastructureUsd);
   assert.ok(archive.infrastructureCostUsd <= inputs.policy.planBudgets.archive.monthlyInfrastructureUsd);
@@ -128,6 +157,22 @@ test('free subsidy and paid full-allowance margins satisfy the vision ratchets',
     const budget = inputs.policy.planBudgets[result.id];
     assert.ok(budget.monthlyInferenceAttempts >= result.predictions);
     assert.ok(budget.monthlyInferenceUsd >= result.infrastructure.inference);
+  }
+});
+
+test('paid margin and price-floor gates use unrounded economics', async () => {
+  const inputs = await loadInputs();
+  const collector = calculateScenario(inputs, 'collector', 'high');
+  assert.ok(collector.grossMarginPct >= 70, `exact Collector margin was ${collector.grossMarginPct}`);
+  assert.equal(minimumPriceForMargin(inputs, 'collector'), 12.01);
+  for (const scenarioId of ['free', 'collector', 'archive']) {
+    const scenario = inputs.scenarios.find((candidate) => candidate.id === scenarioId);
+    const high = calculateScenario(inputs, scenarioId, 'high');
+    assert.ok(
+      inputs.policy.planBudgets[scenarioId].monthlyInfrastructureUsd >= high.infrastructureCostUsd,
+      `${scenarioId} cap must cover exact high-case infrastructure cost`,
+    );
+    if (scenario.priceUsd > 0) assert.ok(high.grossMarginPct >= 70);
   }
 });
 
@@ -164,9 +209,32 @@ test('recommendations are derived from versioned rates and workloads', async () 
   const collector = changed.scenarios.find((scenario) => scenario.id === 'collector');
   free.sourceTrashStorageGb = 0.75;
   collector.priceUsd = 13;
+  changed.policy.planBudgets.free.monthlyInfrastructureUsd = 999;
 
   const report = buildReport(changed);
   assert.match(report, /Rates were refreshed on 2026-07-16/);
   assert.match(report, /Cardless Free:\*\* 0\.75 GB/);
   assert.match(report, /Collector:\*\* \$13\/month/);
+});
+
+test('all sensitivity prose is derived from policy inputs', async () => {
+  const inputs = await loadInputs();
+  const changed = structuredClone(inputs);
+  changed.policy.sensitivity.low.renditionMultiplier = 1.01;
+  changed.policy.sensitivity.base.originMissRatio = 0.22;
+  changed.policy.sensitivity.high.inferenceAttemptMultiplier = 1.35;
+  changed.policy.sensitivity.low.databaseComputeMultiplier = 0.66;
+  changed.policy.sensitivity.base.stripeVariableSurcharge = 0.017;
+  for (const budget of Object.values(changed.policy.planBudgets)) budget.monthlyInfrastructureUsd = 999;
+  changed.scenarios.find((scenario) => scenario.id === 'collector').priceUsd = 100;
+  changed.scenarios.find((scenario) => scenario.id === 'archive').priceUsd = 100;
+
+  const report = buildReport(changed);
+  assert.match(report, /1\.01×\/1\.10×\/1\.20×/);
+  assert.match(report, /5%\/22%\/30%/);
+  assert.match(report, /1\.00×\/1\.05×\/1\.35×/);
+  assert.match(report, /0\.66×\/1\.00×\/1\.50×/);
+  assert.match(report, /0%\/1\.7%\/2\.5%/);
+  assert.match(report, /35% retry\/cancel reserve/);
+  assert.doesNotMatch(report, /1\.05×\/1\.10×\/1\.20×/);
 });
