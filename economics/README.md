@@ -12,3 +12,9 @@ pnpm economics -- --write
 Paid tiers are charged at on-demand rates even while current free allowances absorb usage. Fixed web hosting is visible but excluded from the Vision's $25 variable free-subsidy ceiling. Scheduled jobs, inference, storage/renditions/trash, delivery, database work, auth, telemetry, and payments remain explicit.
 
 This model does not activate plans, open enrollment, or substitute for provider hard-cap receipts. Refresh rates and redacted usage on any vendor, plan, limit, or billing-unit change.
+
+## Future composition
+
+PR #293 is an unmerged follow-on. This correction intentionally does not import
+its changes; future composition must reconcile the versioned policy, the web
+embedding reservation/refund seam, and these generated inputs at rebase time.

@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   acquireEmbeddingDailyBudget,
   acquireEmbeddingRateLimit,
+  refundEmbeddingBudget,
   releaseEmbeddingRateLimit,
   EMBEDDING_DAILY_BUDGET,
   EMBEDDING_MONTHLY_BUDGET,
@@ -212,5 +213,26 @@ describeWithDatabase('Postgres embedding limiter', () => {
       WHERE "key" = 'embedding:monthly:2026-07'
     `;
     expect(rows[0]?.count).toBe(EMBEDDING_MONTHLY_BUDGET);
+  });
+
+  it('refunds daily and monthly reservations together under the advisory lock', async () => {
+    const reservation = await acquireEmbeddingDailyBudget(TEST_DAY_ONE_MS);
+    expect(reservation).toMatchObject({
+      allowed: true,
+      reservation: { dateKey: '2026-07-10', monthKey: '2026-07' },
+    });
+
+    await refundEmbeddingBudget(reservation.reservation);
+
+    const rows = await prisma.$queryRaw<Array<{ key: string; count: number }>>`
+      SELECT "key", "count"
+      FROM "embedding_rate_buckets"
+      WHERE "key" IN ('embedding:daily:2026-07-10', 'embedding:monthly:2026-07')
+      ORDER BY "key"
+    `;
+    expect(rows).toEqual([
+      { key: 'embedding:daily:2026-07-10', count: 0 },
+      { key: 'embedding:monthly:2026-07', count: 0 },
+    ]);
   });
 });
