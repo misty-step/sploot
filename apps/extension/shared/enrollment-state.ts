@@ -10,8 +10,12 @@ export async function loadPublicEnrollmentState(
 ): Promise<SplootEnrollmentPublicState | null> {
   try {
     const response = await fetcher(url, { cache: 'no-store' })
-    if (!response.ok) return null
-    return parsePublicEnrollmentState(await response.json())
+    const state = parsePublicEnrollmentState(await response.json())
+    if (!state) return null
+    // A non-ok read (503 database-unavailable) still carries the honest
+    // paused/unknown body; only an 'open' claim requires a healthy response.
+    if (!response.ok && state.status === 'open') return null
+    return state
   } catch {
     return null
   }

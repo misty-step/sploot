@@ -107,6 +107,28 @@ describe('middleware auth boundary', () => {
     expect(protect).not.toHaveBeenCalled();
   });
 
+  it('never consults qa-local when the build seam is compiled out', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD', 'false');
+    const protect = vi.fn();
+    const token = await createQaLocalAuthToken({
+      userId: 'qa-user-1',
+      secret: QA_SECRET,
+      expiresInSeconds: 60,
+    });
+
+    await middleware(
+      { protect } as any,
+      {
+        method: 'GET',
+        nextUrl: { pathname: '/app' },
+        url: 'https://www.sploot.app/app',
+        headers: new Headers({ [getQaLocalAuthHeader()]: token }),
+      } as any
+    );
+
+    expect(protect).toHaveBeenCalledTimes(1);
+  });
+
   it('does not let qa-local bypass app protection in production', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'production');

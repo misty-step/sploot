@@ -22,7 +22,7 @@ export default async function IosShortcutHelp() {
       <div className="max-w-3xl mx-auto px-6 py-12">
         <Link
           href="/help"
-          className="text-muted-foreground hover:text-foreground transition-colors mb-8 inline-block"
+          className="sploot-public-link mb-8 inline-flex min-h-11 min-w-11 items-center transition-colors"
         >
           ← Back to Getting Started
         </Link>
@@ -55,7 +55,7 @@ export default async function IosShortcutHelp() {
             <ol className="list-decimal pl-6 space-y-2 text-muted-foreground">
               <li>
                 Open Sploot →{" "}
-                <Link href="/app/settings" className="sploot-public-link">
+                <Link href="/app/settings" className="sploot-public-link inline-flex min-h-11 min-w-11 items-center">
                   Settings
                 </Link>{" "}
                 → Upload tokens.
@@ -177,7 +177,7 @@ export default async function IosShortcutHelp() {
               <li>Only a hash of the token is stored server-side; the plaintext is shown once.</li>
               <li>
                 If a token leaks (lost phone, shared screenshot), open{" "}
-                <Link href="/app/settings" className="sploot-public-link">
+                <Link href="/app/settings" className="sploot-public-link inline-flex min-h-11 min-w-11 items-center">
                   Settings → Upload tokens
                 </Link>{" "}
                 and revoke it. Revocation is immediate.

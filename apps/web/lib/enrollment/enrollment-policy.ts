@@ -224,6 +224,10 @@ export interface PublicEnrollmentRead {
  * The sole server authority for public enrollment state. A valid open/capped
  * configuration still needs a live account-count query before it can render
  * open; closed and invalid states are safe without touching the database.
+ *
+ * A database that cannot answer is reported as the distinct 'unknown' state,
+ * never mislabeled as an ordinary policy pause: sign-up stays fail-closed
+ * either way, but the public claim remains truthful.
  */
 export async function readPublicEnrollmentState({
   env = process.env,
@@ -238,6 +242,11 @@ export async function readPublicEnrollmentState({
     mode: status.mode,
     configuration: status.configuration,
   };
+  const unknownState: SplootEnrollmentPublicState = {
+    status: 'unknown',
+    mode: status.mode,
+    configuration: status.configuration,
+  };
 
   if (status.configuration === 'invalid') {
     return { state: pausedState, available: false };
@@ -248,7 +257,7 @@ export async function readPublicEnrollmentState({
   }
 
   if (!prisma) {
-    return { state: pausedState, available: false };
+    return { state: unknownState, available: false };
   }
 
   try {
@@ -266,7 +275,7 @@ export async function readPublicEnrollmentState({
       available: true,
     };
   } catch {
-    return { state: pausedState, available: false };
+    return { state: unknownState, available: false };
   }
 }
 

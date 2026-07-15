@@ -81,7 +81,10 @@ change ID. DigitalOcean assigns the provider deployment ID after the update;
 record it in the proof packet, never in the public health contract. The public
 enrollment endpoint intentionally returns only `configuration`, `mode`, and
 `status`; use the authenticated admin readback and provider receipt for
-deployment identity and diagnostics.
+deployment identity and diagnostics. `status: "unknown"` (HTTP 503) is the
+distinct database-unavailable read under a valid GA/capped configuration —
+fail-closed for sign-up but never mislabeled as an ordinary policy pause;
+`closed` mode never touches the database and always reports `paused`.
 
 `SPLOOT_ENROLLMENT_MODE` is the server-owned pre-GA containment boundary. In
 `capped` mode, new `users` rows are admitted only while the aggregate count is

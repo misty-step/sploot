@@ -1,4 +1,7 @@
 import type { AuthenticatedPrincipal, RequestAuthResult } from './types';
+import { isQaLocalAuthEnabled } from './qa-local-enabled';
+
+export { isQaLocalAuthEnabled } from './qa-local-enabled';
 
 const QA_LOCAL_AUTH_HEADER = 'x-sploot-qa-auth';
 const QA_LOCAL_AUTH_COOKIE = 'sploot_qa_auth';
@@ -39,10 +42,17 @@ export function hasQaLocalAuthInput(headers: Headers): boolean {
   );
 }
 
-export function isQaLocalAuthEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  const deploymentMarker = env.SPLOOT_DEPLOYMENT_ENV?.trim().toLowerCase();
-  return env.SPLOOT_QA_AUTH_MODE === 'enabled' &&
-    (deploymentMarker === 'development' || deploymentMarker === 'test');
+/**
+ * Terminal request-auth resolution for qa-local input: returns null when the
+ * request carries no qa-local credential at all, otherwise the (possibly
+ * forbidden/unauthenticated) qa verdict that must never fall through to Clerk.
+ */
+export async function resolveQaLocalRequestAuth(
+  headers: Headers,
+  env: Record<string, string | undefined> = process.env,
+): Promise<RequestAuthResult | null> {
+  if (!hasQaLocalAuthInput(headers)) return null;
+  return verifyQaLocalAuthHeaders(headers, env);
 }
 
 export async function createQaLocalAuthToken({

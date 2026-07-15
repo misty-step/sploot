@@ -26,13 +26,45 @@ describe('public enrollment popup seam', () => {
     { status: 'open', mode: 'ga', configuration: 'invalid' },
     { status: 'paused', mode: 'capped', configuration: 'invalid' },
     { status: 'paused', mode: 'closed', configuration: 'invalid', extra: true },
+    { status: 'unknown', mode: 'closed', configuration: 'valid' },
+    { status: 'unknown', mode: 'ga', configuration: 'invalid' },
+    { status: 'unknown', mode: 'closed', configuration: 'invalid' },
   ])('fails closed for impossible public state %#', (payload) => {
     expect(parsePublicEnrollmentState(payload)).toBeNull()
   })
 
-  it('fails closed for unavailable and network-failed public reads', async () => {
-    const unavailable = await loadPublicEnrollmentState('/api/health/enrollment', async () => new Response('', { status: 503 }))
-    expect(unavailable).toBeNull()
+  it('accepts the distinct unknown state for a database-unavailable read', () => {
+    expect(parsePublicEnrollmentState({ status: 'unknown', mode: 'capped', configuration: 'valid' })).toEqual({
+      status: 'unknown',
+      mode: 'capped',
+      configuration: 'valid',
+    })
+    expect(parsePublicEnrollmentState({ status: 'unknown', mode: 'ga', configuration: 'valid' })).toEqual({
+      status: 'unknown',
+      mode: 'ga',
+      configuration: 'valid',
+    })
+  })
+
+  it('keeps the unavailable read distinct instead of discarding or mislabeling it', async () => {
+    // A 503 carrying the honest unknown state is preserved, not dropped.
+    const unavailable = await loadPublicEnrollmentState('/api/health/enrollment', async () => new Response(JSON.stringify({
+      status: 'unknown',
+      mode: 'ga',
+      configuration: 'valid',
+    }), { status: 503, headers: { 'content-type': 'application/json' } }))
+    expect(unavailable).toEqual({ status: 'unknown', mode: 'ga', configuration: 'valid' })
+
+    // A non-ok response may never smuggle in an open state.
+    const smuggledOpen = await loadPublicEnrollmentState('/api/health/enrollment', async () => new Response(JSON.stringify({
+      status: 'open',
+      mode: 'ga',
+      configuration: 'valid',
+    }), { status: 503, headers: { 'content-type': 'application/json' } }))
+    expect(smuggledOpen).toBeNull()
+
+    const emptyUnavailable = await loadPublicEnrollmentState('/api/health/enrollment', async () => new Response('', { status: 503 }))
+    expect(emptyUnavailable).toBeNull()
 
     const networkFailure = await loadPublicEnrollmentState('/api/health/enrollment', async () => {
       throw new Error('offline')

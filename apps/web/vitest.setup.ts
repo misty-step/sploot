@@ -37,6 +37,13 @@ beforeEach(() => {
   installWebCrypto();
 });
 
+// The vitest environment stands in for a QA-capable dev/test build: the
+// compile-time qa-local seam (NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD, inlined by
+// next.config in real builds) is present so the runtime gates
+// (SPLOOT_QA_AUTH_MODE, deployment marker, secret) remain the authority under
+// test. Individual tests stub it to 'false' to prove the production omission.
+process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD = 'true';
+
 // Polyfill Request and Response for Next.js API routes testing
 if (!global.Request) {
   global.Request = class Request {

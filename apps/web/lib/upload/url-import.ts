@@ -1,5 +1,7 @@
 import { UPLOAD, isValidMimeType } from '@sploot/common';
-import { isQaLocalAuthEnabled } from '@/lib/auth/qa-local';
+// Marker-free enablement check only: importing the full qa-local module here
+// would pull its header/cookie/secret markers into production upload chunks.
+import { isQaLocalAuthEnabled } from '@/lib/auth/qa-local-enabled';
 
 /**
  * Server-side fetch of a user-supplied media URL for ingestion.

@@ -11,9 +11,22 @@ import { assertPublicTruthE2EBuildAllowed, isPublicTruthE2EBuild } from "./lib/p
 assertPublicTruthE2EBuildAllowed(process.env);
 const publicTruthE2EBuild = isPublicTruthE2EBuild(process.env);
 
+// The qa-local auth harness is a build-time capability, not just a runtime
+// flag: only explicit dev/test deployments may compile the seam in at all.
+// Production/staging builds inline 'false', so webpack dead-code-eliminates
+// every qa-local import and marker out of the shipped artifact (the
+// production public-truth guard proves the omission on each CI run).
+const qaLocalDeployment =
+  process.env.SPLOOT_DEPLOYMENT_ENV === 'development' || process.env.SPLOOT_DEPLOYMENT_ENV === 'test';
+if (process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && !qaLocalDeployment) {
+  throw new Error('SPLOOT_QA_AUTH_MODE=enabled is dev/test-only and requires SPLOOT_DEPLOYMENT_ENV=development or test');
+}
+const qaLocalAuthBuild = process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && qaLocalDeployment;
+
 const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E: publicTruthE2EBuild ? 'true' : 'false',
+    NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: qaLocalAuthBuild ? 'true' : 'false',
   },
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   // @ffmpeg-installer resolves its platform binary with dynamic requires that

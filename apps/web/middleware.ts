@@ -1,6 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse, type NextRequest } from 'next/server'
-import { verifyQaLocalAuthHeaders } from '@/lib/auth/qa-local'
 
 // Define protected routes that require authentication
 const isProtectedRoute = createRouteMatcher([
@@ -42,9 +41,15 @@ const clerkAuthMiddleware = clerkMiddleware(async (auth, req) => {
   }
 
   if (isProtectedRoute(req)) {
-    const qaAuth = await verifyQaLocalAuthHeaders(req.headers ?? new Headers())
-    if (qaAuth.status === 'authenticated') {
-      return
+    // Compile-time omission: only explicit dev/test qa builds inline this
+    // flag to 'true'. Production builds eliminate the qa-local bypass (and
+    // its markers) entirely — proven by the production public-truth guard.
+    if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
+      const { verifyQaLocalAuthHeaders } = await import('@/lib/auth/qa-local')
+      const qaAuth = await verifyQaLocalAuthHeaders(req.headers ?? new Headers())
+      if (qaAuth.status === 'authenticated') {
+        return
+      }
     }
 
     await auth.protect({ unauthenticatedUrl: new URL('/sign-in', req.url).toString() })

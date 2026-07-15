@@ -49,15 +49,39 @@ describe('enrollment policy', () => {
     });
   });
 
-  it('pauses open configuration when the enrollment database is unavailable', async () => {
+  it('reports unknown, not paused, when the enrollment database is unavailable', async () => {
     const result = await readPublicEnrollmentState({
       env: { ...productionEnv, SPLOOT_ENROLLMENT_MODE: 'ga' },
       prisma: { user: { count: async () => { throw new Error('database down'); } } },
     });
 
     expect(result).toEqual({
-      state: { status: 'paused', mode: 'ga', configuration: 'valid' },
+      state: { status: 'unknown', mode: 'ga', configuration: 'valid' },
       available: false,
+    });
+  });
+
+  it('reports unknown for a capped configuration without a database seam', async () => {
+    const result = await readPublicEnrollmentState({
+      env: { ...productionEnv, SPLOOT_ENROLLMENT_MODE: 'capped', SPLOOT_ENROLLMENT_MAX_ACCOUNTS: '12' },
+      prisma: null,
+    });
+
+    expect(result).toEqual({
+      state: { status: 'unknown', mode: 'capped', configuration: 'valid' },
+      available: false,
+    });
+  });
+
+  it('keeps closed mode an ordinary pause that never needs the database', async () => {
+    const result = await readPublicEnrollmentState({
+      env: { ...productionEnv, SPLOOT_ENROLLMENT_MODE: 'closed' },
+      prisma: null,
+    });
+
+    expect(result).toEqual({
+      state: { status: 'paused', mode: 'closed', configuration: 'valid' },
+      available: true,
     });
   });
 

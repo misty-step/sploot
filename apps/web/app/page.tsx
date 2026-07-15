@@ -30,7 +30,7 @@ export default async function Home() {
         <ThemeToggle />
         <Link
           href="/sign-in"
-          className="sploot-press-sm rounded-full border-[2px] border-sploot-ink bg-sploot-panel px-4 py-2 font-sans text-sm font-extrabold lowercase tracking-normal text-sploot-ink"
+          className="sploot-press-sm inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border-[2px] border-sploot-ink bg-sploot-panel px-4 font-sans text-sm font-extrabold lowercase tracking-normal text-sploot-ink"
         >
           sign in
         </Link>

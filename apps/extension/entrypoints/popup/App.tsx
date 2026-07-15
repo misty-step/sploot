@@ -133,22 +133,48 @@ function E2EPopup() {
   )
 }
 
+/**
+ * The truthful signed-out states, kept distinct: before the readback resolves
+ * the popup only claims it is checking; a failed or database-unavailable
+ * readback is reported as unknown, never mislabeled as an ordinary policy
+ * pause. Every state keeps existing-user sign-in available and none promises
+ * immediate account creation.
+ */
+type SignedOutEnrollment = SplootEnrollmentPublicState | { status: 'checking' } | { status: 'unreachable' }
+
+const SIGNED_OUT_COPY: Record<'checking' | 'unreachable' | 'unknown' | 'paused' | 'open', { heading: string; body: string }> = {
+  checking: {
+    heading: 'sign in on sploot',
+    body: 'Checking new-account availability… Existing users can sign in now, then return here to save images from the web.',
+  },
+  unreachable: {
+    heading: 'enrollment status unavailable',
+    body: 'Sploot could not confirm new-account availability. Existing users can still sign in, then return here to save images from the web.',
+  },
+  unknown: {
+    heading: 'enrollment status unavailable',
+    body: 'Sploot cannot confirm new-account availability right now, so sign-up stays closed until it can. Existing users can still sign in, then return here to save images from the web.',
+  },
+  paused: {
+    heading: 'new enrollment is paused',
+    body: 'New accounts are not being accepted right now. Existing users can still sign in, then return here to save images from the web.',
+  },
+  open: {
+    heading: 'sign in on sploot',
+    body: 'Use the full Sploot sign-in page, then return here to save images from the web.',
+  },
+}
+
 function SignedOutPanel() {
-  const [enrollmentState, setEnrollmentState] = useState<SplootEnrollmentPublicState>({
-    status: 'paused',
-    mode: 'closed',
-    configuration: 'invalid',
-  })
+  const [enrollmentState, setEnrollmentState] = useState<SignedOutEnrollment>({ status: 'checking' })
 
   useEffect(() => {
     loadPublicEnrollmentState(getSplootEnrollmentUrl())
       .then(state => {
-        if (state) {
-          setEnrollmentState(state)
-        }
+        setEnrollmentState(state ?? { status: 'unreachable' })
       })
       .catch(() => {
-        // The safe initial state remains paused when the public readback is unavailable.
+        setEnrollmentState({ status: 'unreachable' })
       })
   }, [])
 
@@ -156,15 +182,13 @@ function SignedOutPanel() {
     runBestEffort('tabs.create sign-in', () => chrome.tabs.create({ url: getSplootSignInUrl() }))
   }
 
+  const copy = SIGNED_OUT_COPY[enrollmentState.status]
+
   return (
     <div className="auth-panel">
       <div className="auth-header">
-        <h2>{enrollmentState.status === 'paused' ? 'new enrollment is paused' : 'sign in on sploot'}</h2>
-        <p>
-          {enrollmentState.status === 'paused'
-            ? 'New accounts are not being accepted right now. Existing users can still sign in, then return here to save images from the web.'
-            : 'Use the full Sploot sign-in page, then return here to save images from the web.'}
-        </p>
+        <h2>{copy.heading}</h2>
+        <p>{copy.body}</p>
       </div>
       <div className="actions">
         <button onClick={handleSignIn}>Sign In</button>

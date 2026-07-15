@@ -181,8 +181,11 @@ cache-disabled, anonymous-safe shape:
 ```
 
 `status` is `open` only after a live account-count read proves a GA or capped
-configuration is available; a capped limit, malformed configuration, or
-Prisma outage is fail-closed. The response sends
+configuration is available; a capped limit or malformed configuration is the
+fail-closed `paused`. A GA/capped configuration whose database cannot answer
+returns the distinct `{"status": "unknown"}` with HTTP `503` — still
+fail-closed for sign-up, but never mislabeled as an ordinary policy pause.
+The response sends
 `Cache-Control: no-store, private`. Operators who need account count,
 capacity, or deployment diagnostics must use the distinct authenticated
 `GET /api/health/enrollment/readback` route with an operator/admin account.
@@ -194,8 +197,11 @@ deployment URL for the anonymous-safe mode/status check.
 **Authentication:** Not required. **Response:** exactly
 `SplootEnrollmentPublicState` (`status`, `mode`, `configuration`) with no
 account count, capacity, deployment identity, commit, or operator fields.
-Invalid configuration or an unavailable enrollment database returns the same
-paused state with HTTP `503`; a valid closed state returns HTTP `200`.
+`status` is one of `open`, `paused`, or `unknown`. Invalid configuration
+returns the paused fail-safe with HTTP `503`; an unavailable enrollment
+database under a valid GA/capped configuration returns `status: "unknown"`
+with HTTP `503` (distinct from a policy pause, equally closed for sign-up);
+a valid closed state returns `paused` with HTTP `200`.
 
 #### POST /api/upload
 

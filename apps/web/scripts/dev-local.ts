@@ -349,6 +349,9 @@ async function main() {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     DATABASE_URL: `postgresql://test:test@localhost:${args.dbPort}/sploot_test?sslmode=disable`,
+    // The qa-local seam is compile-time gated (NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD):
+    // an explicit dev marker keeps the harness self-sufficient without .env.local.
+    SPLOOT_DEPLOYMENT_ENV: process.env.SPLOOT_DEPLOYMENT_ENV ?? 'development',
     SPLOOT_QA_AUTH_MODE: 'enabled',
     SPLOOT_QA_AUTH_SECRET: secret,
     PORT: String(args.port),

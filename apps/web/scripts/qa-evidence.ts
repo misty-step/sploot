@@ -279,6 +279,9 @@ async function main() {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     DATABASE_URL: process.env.DATABASE_URL ?? DEFAULT_DB_URL,
+    // The qa-local seam is compile-time gated (NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD):
+    // an explicit dev marker keeps the harness self-sufficient without .env.local.
+    SPLOOT_DEPLOYMENT_ENV: process.env.SPLOOT_DEPLOYMENT_ENV ?? 'development',
     SPLOOT_QA_AUTH_MODE: 'enabled',
     SPLOOT_QA_AUTH_SECRET: await resolveAuthSecret(args.baseUrl),
     CI: '1',

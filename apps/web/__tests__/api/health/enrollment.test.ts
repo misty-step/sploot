@@ -62,14 +62,14 @@ describe('GET /api/health/enrollment public seam', () => {
     expect(mockPrisma.user.count).not.toHaveBeenCalled();
   });
 
-  it('returns paused 503 for database outage and does not expose the error', async () => {
+  it('returns unknown 503 for database outage, distinct from an ordinary pause', async () => {
     vi.stubEnv('SPLOOT_ENROLLMENT_MODE', 'ga');
     mockPrisma.user.count.mockRejectedValue(new Error('private database detail'));
 
     const response = await GET();
 
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ status: 'paused', mode: 'ga', configuration: 'valid' });
+    expect(await response.json()).toEqual({ status: 'unknown', mode: 'ga', configuration: 'valid' });
     expect(response.headers.get('cache-control')).toBe('no-store, private');
   });
 });

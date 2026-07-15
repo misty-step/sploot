@@ -83,6 +83,54 @@ describe('public truth contracts', () => {
     expect(workflow).toMatch(/merge-gate:[\s\S]*needs: \[[^\]]*public-truth/);
   });
 
+  it('keeps the paused sign-in door explicitly sign-up-free via the supported Clerk API', () => {
+    const signIn = read('app/sign-in/[[...sign-in]]/page.tsx');
+    expect(signIn).toContain('withSignUp={enrollmentOpen ? undefined : false}');
+    expect(signIn).toContain("signUpUrl={enrollmentOpen ? \"/sign-up\" : undefined}");
+    expect(signIn).toContain('EnrollmentNotice');
+    expect(signIn).toContain('footerAction');
+  });
+
+  it('distinguishes the database-unavailable unknown state from an ordinary pause end to end', () => {
+    expect(read('lib/enrollment/enrollment-policy.ts')).toContain("status: 'unknown'");
+    expect(read('../../packages/common/src/types.ts')).toContain("'open' | 'paused' | 'unknown'");
+    expect(read('components/enrollment/enrollment-notice.tsx')).toContain('enrollment status unavailable');
+    expect(read('app/sign-up/[[...sign-up]]/page.tsx')).toContain('EnrollmentUnavailable');
+    expect(read('app/sign-up/[[...sign-up]]/page.tsx')).toContain("enrollmentState.status === 'unknown'");
+    const popup = read('../extension/entrypoints/popup/App.tsx');
+    expect(popup).toContain('enrollment status unavailable');
+    expect(popup).toContain("{ status: 'checking' }");
+    // The extension seam preserves an honest non-ok body instead of
+    // discarding it, and never trusts an open claim from a failed read.
+    const seam = read('../extension/shared/enrollment-state.ts');
+    expect(seam).toContain("state.status === 'open'");
+    expect(seam).not.toContain('if (!response.ok) return null');
+  });
+
+  it('states the pause exactly once per public surface', () => {
+    // The support page derives its extension-step copy from the shared
+    // notice instead of restating the pause.
+    expect(read('app/support/page.tsx')).not.toContain('New enrollment is paused;');
+    expect(read('e2e/public-truth.spec.ts')).toContain('exactly one paused statement');
+  });
+
+  it('compiles the qa-local auth seam out of production bundles and proves it', () => {
+    expect(read('next.config.ts')).toContain('NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD');
+    expect(read('next.config.ts')).toContain('dev/test-only');
+    for (const file of ['middleware.ts', 'lib/auth/server.ts', 'lib/auth/request-auth.ts', 'app/api/qa-auth/login/route.ts']) {
+      expect(read(file), `${file} must gate qa-local behind the compile-time flag`)
+        .toContain("process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD");
+      expect(read(file), `${file} must not import qa-local statically`)
+        .not.toMatch(/^import .*from '.*qa-local';?$/m);
+    }
+    const guard = read('scripts/verify-production-public-truth-guard.mjs');
+    expect(guard).toContain("'x-sploot-qa-auth'");
+    expect(guard).toContain("'sploot_qa_auth'");
+    expect(guard).toContain("'SPLOOT_QA_AUTH_SECRET'");
+    expect(guard).toContain('NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD');
+    expect(guard).toContain('SPLOOT_QA_AUTH_MODE=enabled is dev/test-only');
+  });
+
   it('cannot enable the provider omission in a production build', () => {
     expect(isPublicTruthE2EBuild({ NODE_ENV: 'production', SPLOOT_DEPLOYMENT_ENV: 'test', SPLOOT_PUBLIC_TRUTH_E2E_BUILD: 'true' })).toBe(true);
     expect(isPublicTruthE2EBuild({ NODE_ENV: 'production', SPLOOT_DEPLOYMENT_ENV: 'production', SPLOOT_PUBLIC_TRUTH_E2E_BUILD: 'true' })).toBe(false);

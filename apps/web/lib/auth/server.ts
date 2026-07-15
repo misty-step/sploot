@@ -2,29 +2,24 @@ import { syncUser } from '../db';
 import { prisma } from '../db';
 import { isUnauthorizedAuthError } from './api';
 import { getUserSyncCircuitBreaker } from '../circuit-breaker';
-import { hasQaLocalAuthInput, verifyQaLocalAuthHeaders } from './qa-local';
 import { isCompiledPublicTruthE2EBuild } from '@/lib/public-truth-e2e';
-import type { RequestAuthResult } from './types';
 import {
   EnrollmentDeniedError,
   EnrollmentIdentityConflictError,
   EnrollmentUnavailableError,
-  ENROLLMENT_DENIAL_CODE,
-  ENROLLMENT_UNAVAILABLE_CODE,
-  ENROLLMENT_IDENTITY_CONFLICT_CODE,
   isEnrollmentDeniedError,
   isEnrollmentUnavailableError,
   isEnrollmentIdentityConflictError,
   assertEnrolledUser,
 } from '@/lib/enrollment/enrollment-policy';
 
-interface AuthResult {
+export interface AuthResult {
   userId: string | null;
   sessionId: string | null;
   getToken: (options?: unknown) => Promise<string | null>;
 }
 
-interface AuthWithUserResult extends AuthResult {
+export interface AuthWithUserResult extends AuthResult {
   userEmail?: string;
   /**
    * Database sync status
@@ -48,16 +43,13 @@ export async function getAuth(): Promise<AuthResult> {
     return { userId: null, sessionId: null, getToken: async () => null };
   }
 
-  const qaAuth = await getQaLocalAuthFromCurrentRequest();
-  if (qaAuth?.status === 'authenticated') {
-    return {
-      userId: qaAuth.principal.userId,
-      sessionId: qaAuth.principal.sessionId ?? null,
-      getToken: async () => null,
-    };
-  }
-  if (qaAuth?.terminal) {
-    return { userId: null, sessionId: null, getToken: async () => null };
+  // Compile-time omission: production builds inline this flag to 'false', so
+  // the qa-local seam (and every qa-local marker) is dead-code-eliminated out
+  // of the shipped bundle. The production public-truth guard proves it.
+  if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
+    const { getQaLocalAuthResult } = await import('./qa-local-server');
+    const qaAuth = await getQaLocalAuthResult();
+    if (qaAuth) return qaAuth;
   }
   const clerk = await import('@clerk/nextjs/server');
   let auth: Awaited<ReturnType<typeof clerk.auth>>;
@@ -78,43 +70,12 @@ export async function getAuth(): Promise<AuthResult> {
  * This automatically syncs Clerk users with our database
  */
 export async function getAuthWithUser(): Promise<AuthWithUserResult> {
-  const qaAuth = await getQaLocalAuthFromCurrentRequest();
-  if (qaAuth?.status === 'authenticated') {
-    let syncStatus: AuthWithUserResult['syncStatus'] = 'success';
-    let syncError: string | undefined;
-    try {
-      await assertEnrolledUser(qaAuth.principal.userId, prisma);
-    } catch (error: unknown) {
-      if (isEnrollmentDeniedError(error)) {
-        syncStatus = 'denied';
-        syncError = ENROLLMENT_DENIAL_CODE;
-      } else if (isEnrollmentUnavailableError(error)) {
-        syncStatus = 'unavailable';
-        syncError = ENROLLMENT_UNAVAILABLE_CODE;
-      } else if (isEnrollmentIdentityConflictError(error)) {
-        syncStatus = 'conflict';
-        syncError = ENROLLMENT_IDENTITY_CONFLICT_CODE;
-      } else {
-        throw error;
-      }
-    }
-    return {
-      userId: syncStatus === 'success' ? qaAuth.principal.userId : null,
-      sessionId: qaAuth.principal.sessionId ?? null,
-      getToken: async () => null,
-      userEmail: qaAuth.principal.email,
-      syncStatus,
-      syncError,
-    };
-  }
-  if (qaAuth?.terminal) {
-    return {
-      userId: null,
-      sessionId: null,
-      getToken: async () => null,
-      syncStatus: 'failed',
-      syncError: 'qa_auth_terminal',
-    };
+  // Same compile-time omission as getAuth: qa-local exists only in explicit
+  // dev/test qa builds and is proven absent from production bundles.
+  if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
+    const { getQaLocalAuthWithUserResult } = await import('./qa-local-server');
+    const qaAuth = await getQaLocalAuthWithUserResult();
+    if (qaAuth) return qaAuth;
   }
   const clerk = await import('@clerk/nextjs/server');
   const { logger } = await import('../observability-logger');
@@ -316,17 +277,4 @@ export async function requireUserIdWithSync(): Promise<string> {
   // stale/failed status from reaching a cost-bearing handler.
   await assertEnrolledUser(userId, prisma);
   return userId;
-}
-
-async function getQaLocalAuthFromCurrentRequest(): Promise<(RequestAuthResult & { terminal?: boolean }) | null> {
-  try {
-    const { headers: getHeaders } = await import('next/headers');
-    const requestHeaders = await getHeaders();
-    const headerBag = requestHeaders as unknown as Headers;
-    if (!hasQaLocalAuthInput(headerBag)) return null;
-    const result = await verifyQaLocalAuthHeaders(headerBag);
-    return { ...result, terminal: true };
-  } catch {
-    return null;
-  }
 }

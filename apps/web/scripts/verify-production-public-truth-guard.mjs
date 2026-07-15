@@ -34,6 +34,24 @@ if (omission.status === 0 || !omission.output.includes(expectedGuardMessage)) {
   );
 }
 
+// A production-marked build must refuse the qa-local auth harness at config
+// load, before any compilation could bake the seam in.
+const qaOmission = runBuild({
+  ...process.env,
+  NODE_ENV: 'production',
+  SPLOOT_DEPLOYMENT_ENV: 'production',
+  SPLOOT_PUBLIC_TRUTH_E2E_BUILD: undefined,
+  SPLOOT_QA_AUTH_MODE: 'enabled',
+});
+
+if (qaOmission.status === 0 || !qaOmission.output.includes('SPLOOT_QA_AUTH_MODE=enabled is dev/test-only')) {
+  throw new Error(
+    qaOmission.status === 0
+      ? 'production omission guard did not reject the dev/test-only qa auth mode'
+      : 'production omission guard failed for an unrelated reason; expected SPLOOT_QA_AUTH_MODE=enabled is dev/test-only',
+  );
+}
+
 rmSync(resolve(webRoot, distDir), { recursive: true, force: true });
 const production = runBuild({
   ...process.env,
@@ -42,6 +60,8 @@ const production = runBuild({
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: `pk_test_${Buffer.from('clerk.example.com$').toString('base64url')}`,
   SPLOOT_PUBLIC_TRUTH_E2E_BUILD: undefined,
   NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E: undefined,
+  SPLOOT_QA_AUTH_MODE: undefined,
+  NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: undefined,
   NEXT_DIST_DIR: distDir,
 });
 
@@ -61,15 +81,39 @@ function bundleFiles(directory) {
   });
 }
 
-const omissionInBundle = bundleFiles(bundleRoot).some((path) => {
-  if (path.endsWith('.map')) return false;
-  if (statSync(path).size > 10 * 1024 * 1024) return false;
-  const source = readFileSync(path, 'utf8');
-  return /NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E["':= ]{1,6}["']?true/.test(source);
-});
+// QA-local auth must be ABSENT from the shipped artifact, not merely gated:
+// these are the marker strings of the qa-local credential machinery (header,
+// cookie, secret env, runtime-refusal reasons, terminal sync marker). Any hit
+// in a production bundle means the seam survived dead-code elimination.
+const qaLocalMarkers = [
+  'x-sploot-qa-auth',
+  'sploot_qa_auth',
+  'SPLOOT_QA_AUTH_SECRET',
+  'qa-local-disabled',
+  'qa-local-invalid',
+  'qa_auth_terminal',
+];
 
-if (omissionInBundle) {
-  throw new Error('compiled production bundle contains an enabled public-truth omission');
+const violations = [];
+for (const path of bundleFiles(bundleRoot)) {
+  if (path.endsWith('.map')) continue;
+  if (statSync(path).size > 10 * 1024 * 1024) continue;
+  const source = readFileSync(path, 'utf8');
+  if (/NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E["':= ]{1,6}["']?true/.test(source)) {
+    violations.push(`${path}: enabled public-truth omission`);
+  }
+  if (/NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD["':= ]{1,6}["']?true/.test(source)) {
+    violations.push(`${path}: enabled qa-local auth build flag`);
+  }
+  for (const marker of qaLocalMarkers) {
+    if (source.includes(marker)) {
+      violations.push(`${path}: qa-local marker ${marker}`);
+    }
+  }
+}
+
+if (violations.length > 0) {
+  throw new Error(`compiled production bundle contains an enabled public-truth omission or qa-local auth residue:\n${violations.join('\n')}`);
 }
 
 console.log(`production public-truth guard passed: ${execFileSync('cat', [resolve(bundleRoot, 'BUILD_ID')], { encoding: 'utf8' }).trim()}`);

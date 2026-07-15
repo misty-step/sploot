@@ -39,7 +39,9 @@
     ".next-bfdark/types/**/*.ts",
     ".next-bfdark/dev/types/**/*.ts",
     ".next-mobileqa/types/**/*.ts",
-    ".next-mobileqa/dev/types/**/*.ts"
+    ".next-mobileqa/dev/types/**/*.ts",
+    ".next/public-truth-production-guard/types/**/*.ts",
+    ".next/public-truth-production-guard/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

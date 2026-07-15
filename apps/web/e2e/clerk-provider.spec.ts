@@ -8,3 +8,14 @@ test('real Clerk provider seam remains available outside the signed-out public f
   await page.goto('/sign-in', { waitUntil: 'domcontentloaded' });
   await expect(page.getByText(/sign in/i).first()).toBeVisible();
 });
+
+test('hydrated real Clerk SignIn offers no sign-up path while enrollment is not open', async ({ page }) => {
+  test.skip(process.env.SPLOOT_ENROLLMENT_MODE === 'ga', 'enrollment open: the sign-up link is expected');
+  await page.goto('/sign-in', { waitUntil: 'networkidle' });
+  // Wait for clerk-js itself to hydrate the widget, then prove the absence
+  // of any sign-up affordance in the fully rendered component.
+  await page.waitForFunction(() => Boolean((window as { Clerk?: { loaded?: boolean } }).Clerk?.loaded));
+  await expect(page.locator('.cl-signIn-root, .cl-rootBox').first()).toBeVisible();
+  await expect(page.locator('a[href*="sign-up"]')).toHaveCount(0);
+  expect((await page.locator('body').innerText()).toLowerCase()).not.toContain('sign up');
+});

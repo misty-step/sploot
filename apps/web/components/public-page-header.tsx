@@ -13,7 +13,7 @@ export function PublicPageHeader({ current }: { current?: (typeof LINKS)[number]
     <header className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 border-b-[3px] border-sploot-ink px-5 py-5 sm:px-8">
       <Link
         href="/"
-        className="font-display text-2xl tracking-normal text-sploot-ink underline decoration-sploot-magenta decoration-[3px] underline-offset-4 focus-visible:outline focus-visible:outline-4 focus-visible:outline-sploot-focus"
+        className="inline-flex min-h-11 min-w-11 items-center font-display text-2xl tracking-normal text-sploot-ink underline decoration-sploot-magenta decoration-[3px] underline-offset-4 focus-visible:outline focus-visible:outline-4 focus-visible:outline-sploot-focus"
       >
         sploot
       </Link>

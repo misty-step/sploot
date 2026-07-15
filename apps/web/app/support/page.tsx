@@ -55,9 +55,11 @@ export default async function Support() {
               <ol className="list-decimal pl-6 space-y-2 text-muted-foreground">
                 <li>Install the Sploot extension from the Chrome Web Store</li>
                 <li>
-                  {enrollmentState.status === 'paused'
-                    ? 'New enrollment is paused; existing users can sign in at sploot.app'
-                    : 'Enrollment is open; new users can sign up at sploot.app'}
+                  {/* The enrollment notice above is the single paused/unknown
+                      statement on this page; this step only routes sign-in. */}
+                  {enrollmentState.status === 'open'
+                    ? 'Enrollment is open; new users can sign up at sploot.app'
+                    : 'Sign in at sploot.app with your existing account (see the enrollment status above)'}
                 </li>
                 <li>Right-click any image on any website</li>
                 <li>Select &quot;Save to Sploot&quot; from the menu</li>

@@ -67,6 +67,37 @@ describe('withAuthenticatedApi', () => {
     });
   });
 
+  it('ignores qa-local credentials entirely when the build seam is compiled out', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD', 'false');
+    const routeHandler = vi.fn(async () => NextResponse.json({ ok: true }));
+    const handler = withAuthenticatedApi(routeHandler, {
+      allowClerk: false,
+      allowQaLocal: true,
+      env: {
+        NODE_ENV: 'test',
+        SPLOOT_DEPLOYMENT_ENV: 'test',
+        SPLOOT_QA_AUTH_MODE: 'enabled',
+        SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
+      },
+    });
+    const token = await createQaLocalAuthToken({
+      userId: 'qa-user-1',
+      secret: 'test-secret-with-enough-entropy',
+      expiresInSeconds: 60,
+    });
+
+    const response = await handler(
+      new NextRequest('http://localhost:3001/api/cache/stats', {
+        headers: { [getQaLocalAuthHeader()]: token },
+      }),
+      { params: Promise.resolve({}) }
+    );
+
+    expect(response.status).toBe(401);
+    expect(routeHandler).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
   it('denies an authenticated principal without a durable enrollment row', async () => {
     mocks.userFindUnique.mockResolvedValue(null);
     const handler = withAuthenticatedApi(
