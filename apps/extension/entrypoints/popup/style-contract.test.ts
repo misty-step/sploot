@@ -9,4 +9,10 @@ describe('popup narrow-viewport contract', () => {
     expect(css).toMatch(/\.popup-frame\s*\{[^}]*width:\s*min\(360px,\s*100vw\)/s);
     expect(css).toMatch(/\.popup-frame\s*\{[^}]*min-width:\s*0/s);
   });
+
+  it('allows long signed-in identities to wrap inside the panel', () => {
+    expect(css).toMatch(/\.signed-in-panel p\s*\{[^}]*min-width:\s*0/s);
+    expect(css).toMatch(/\.signed-in-panel p\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+    expect(css).toMatch(/\.signed-in-panel p strong\s*\{[^}]*overflow-wrap:\s*anywhere/s);
+  });
 });

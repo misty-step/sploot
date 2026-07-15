@@ -180,8 +180,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build deterministic production manifest without secrets
-        run: pnpm --filter extension build:manifest-check
+      - name: Build production extension release artifacts
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+        run: pnpm --filter extension zip:prod
       - name: Validate production manifest policy
         run: pnpm --filter extension manifest:check
       - name: Test manifest policy
@@ -190,8 +192,8 @@ jobs:
         run: pnpm --filter extension lint
       - name: Test extension
         run: pnpm --filter extension test
-      - name: Build extension
-        run: pnpm --filter extension build
+      - name: Test extension narrow layouts in Chrome
+        run: pnpm --filter extension test:layout
       - uses: actions/upload-artifact@v7
         with:
           name: extension-dist

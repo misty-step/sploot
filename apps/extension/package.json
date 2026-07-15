@@ -14,6 +14,7 @@
     "release:check": "node scripts/validate-store-release.mjs",
     "manifest:check": "node scripts/validate-manifest.mjs",
     "manifest:test": "node --test scripts/manifest-policy.node-test.mjs",
+    "test:layout": "playwright test --config playwright.config.ts",
     "zip": "wxt zip",
     "zip:prod": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://www.sploot.app} VITE_CLERK_SYNC_HOST=${VITE_CLERK_SYNC_HOST:-https://clerk.sploot.app} WXT_MODE=production wxt zip",
     "zip:firefox": "wxt zip -b firefox",
@@ -31,6 +32,7 @@
   "packageManager": "pnpm@10.22.0",
   "devDependencies": {
     "@types/chrome": "^0.1.42",
+    "@playwright/test": "^1.60.0",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
     "react": "^19.2.6",

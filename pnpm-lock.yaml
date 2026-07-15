@@ -48,6 +48,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/common
     devDependencies:
+      '@playwright/test':
+        specifier: ^1.60.0
+        version: 1.60.0
       '@types/chrome':
         specifier: ^0.1.42
         version: 0.1.42
