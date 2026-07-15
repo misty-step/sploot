@@ -25,6 +25,8 @@ export function createWebBuildEnvironment(parent = process.env) {
       'test',
       Buffer.from('clerk.example.com$').toString('base64url'),
     ].join('_'),
+    NEXT_PUBLIC_TELEMETRY_ENDPOINT: parent.NEXT_PUBLIC_TELEMETRY_ENDPOINT ?? '/api/telemetry',
+    NEXT_PUBLIC_TELEMETRY_ENABLED: parent.NEXT_PUBLIC_TELEMETRY_ENABLED ?? 'true',
   };
 
   for (const name of DENIED_RUNTIME_BINDINGS) environment[name] = '';

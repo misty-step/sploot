@@ -73,6 +73,24 @@ export function findBundleTelemetryViolations(contents) {
   return findTelemetryInventoryViolations([{ path: 'bundle.js', content: contents }]);
 }
 
+export function findBundleTelemetryConfigurationViolations(
+  contents,
+  { endpoint, enabled }
+) {
+  const violations = [];
+  if (!contents.includes(endpoint)) {
+    violations.push({ rule: `compiled telemetry endpoint missing: ${endpoint}` });
+  }
+
+  const enabledPattern = enabled
+    ? /enabled\s*:\s*(?:true|!0)|NEXT_PUBLIC_TELEMETRY_ENABLED\s*:\s*["']true["']/
+    : /enabled\s*:\s*(?:false|!1)|NEXT_PUBLIC_TELEMETRY_ENABLED\s*:\s*["']false["']/;
+  if (!enabledPattern.test(contents)) {
+    violations.push({ rule: `compiled telemetry enabled flag missing: ${enabled}` });
+  }
+  return violations;
+}
+
 function repositoryFiles() {
   const output = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { encoding: 'utf8' });
   return output.split('\0').filter(Boolean).filter((path) => existsSync(path) && statSync(path).isFile())
@@ -93,11 +111,22 @@ function bundleFiles(directory) {
 function main() {
   const bundleIndex = process.argv.indexOf('--bundle-dir');
   const bundleDir = bundleIndex === -1 ? undefined : process.argv[bundleIndex + 1];
+  const endpointIndex = process.argv.indexOf('--expect-endpoint');
+  const expectedEndpoint = endpointIndex === -1 ? undefined : process.argv[endpointIndex + 1];
+  const enabledIndex = process.argv.indexOf('--expect-enabled');
+  const expectedEnabled = enabledIndex === -1 ? undefined : process.argv[enabledIndex + 1] !== 'false';
   const files = repositoryFiles();
+  const bundles = bundleFiles(bundleDir);
   const violations = [
     ...findTelemetryInventoryViolations(files),
     ...findInventoryDocumentationGaps(files),
-    ...bundleFiles(bundleDir).flatMap(({ path, content }) => findBundleTelemetryViolations(content).map((violation) => ({ ...violation, path }))),
+    ...bundles.flatMap(({ path, content }) => findBundleTelemetryViolations(content).map((violation) => ({ ...violation, path }))),
+    ...(expectedEndpoint && expectedEnabled !== undefined
+      ? findBundleTelemetryConfigurationViolations(
+        bundles.map(({ content }) => content).join('\n'),
+        { endpoint: expectedEndpoint, enabled: expectedEnabled },
+      ).map((violation) => ({ ...violation, path: bundleDir }))
+      : []),
   ];
   if (violations.length) {
     console.error('telemetry inventory check failed:');

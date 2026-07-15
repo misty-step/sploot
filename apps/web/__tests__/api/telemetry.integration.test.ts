@@ -340,6 +340,34 @@ describe('/api/telemetry', () => {
     expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain('private performance search text');
   });
 
+  it('rejects performance tags with values outside their declared contract', async () => {
+    const invalidTags = [
+      { target: '100' },
+      { met: 'true' },
+      { broken_count: -1 },
+      { percent: 'not-a-percent' },
+      { rating: 'excellent' },
+    ];
+
+    for (const tags of invalidTags) {
+      const response = await POST(
+        createMockRequest('POST', {
+          type: 'performance',
+          payload: {
+            metric: 'broken_images_ratio',
+            value: 0.02,
+            unit: 'ratio',
+            timestamp: Date.now(),
+            tags,
+          },
+        }),
+        defaultContext
+      );
+
+      expect(response.status, JSON.stringify(tags)).toBe(400);
+    }
+  });
+
   it('rejects unknown performance metadata instead of forwarding arbitrary fields', async () => {
     const tags = Object.fromEntries(
       Array.from({ length: 40 }, (_, index) => [`field_${index}`, index])
@@ -554,6 +582,24 @@ describe('/api/telemetry', () => {
     );
     expect(JSON.stringify(usageCall)).not.toContain(AUTH_USER.userId);
     expect(JSON.stringify(usageCall)).not.toContain('external-user');
+  });
+
+  it('rejects usage metadata outside fallbackAttempted', async () => {
+    const response = await POST(
+      createMockRequest('POST', {
+        type: 'usage',
+        payload: {
+          action: 'blob_load_failure',
+          count: 1,
+          timestamp: Date.now(),
+          metadata: { fallbackAttempted: true, assetId: 'private-asset' },
+        },
+      }),
+      defaultContext
+    );
+
+    expect(response.status).toBe(400);
+    expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain('private-asset');
   });
 
   it('logs errors when usage forwarding fails but does not block response', async () => {

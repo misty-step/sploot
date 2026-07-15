@@ -18,6 +18,15 @@ export interface TelemetrySink {
 const DEFAULT_TELEMETRY_ENDPOINT = '/api/telemetry';
 const DEFAULT_TELEMETRY_TIMEOUT_MS = 1_500;
 
+// Keep these as literal member reads: Next.js only inlines public environment
+// variables when it can see the exact process.env.NAME expression at build
+// time. Passing process.env through an object makes the production client keep
+// the runtime lookup and silently loses the configured browser sink.
+const TELEMETRY_BUILD_ENV = {
+  NEXT_PUBLIC_TELEMETRY_ENDPOINT: process.env.NEXT_PUBLIC_TELEMETRY_ENDPOINT,
+  NEXT_PUBLIC_TELEMETRY_ENABLED: process.env.NEXT_PUBLIC_TELEMETRY_ENABLED,
+};
+
 export function resolveTelemetrySink(
   env: Record<string, string | undefined> = process.env
 ): TelemetrySink {
@@ -33,7 +42,7 @@ export function resolveTelemetrySink(
   };
 }
 
-export const telemetrySink = resolveTelemetrySink();
+export const telemetrySink = resolveTelemetrySink(TELEMETRY_BUILD_ENV);
 
 export async function postTelemetry(
   request: TelemetryRequest,

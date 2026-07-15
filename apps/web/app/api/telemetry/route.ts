@@ -341,8 +341,9 @@ function isPerformancePayload(value: unknown): value is PerformancePayload {
       payload.tags !== null &&
       !Array.isArray(payload.tags) &&
       isPerformanceMetricName(payload.metric) &&
-      Object.keys(payload.tags).every((key) =>
-        getPerformanceTagAllowlist(payload.metric as PerformancePayload['metric']).includes(key as never)
+      Object.entries(payload.tags).every(([key, value]) =>
+        getPerformanceTagAllowlist(payload.metric as PerformancePayload['metric']).includes(key as never) &&
+        isValidPerformanceTagValue(key, value)
       ));
 
   return (
@@ -374,9 +375,30 @@ function isUsagePayload(value: unknown): value is UsagePayload {
       (typeof payload.metadata === 'object' &&
         payload.metadata !== null &&
         !Array.isArray(payload.metadata) &&
-        typeof (payload.metadata as { fallbackAttempted?: unknown }).fallbackAttempted === 'boolean')) &&
+        typeof (payload.metadata as { fallbackAttempted?: unknown }).fallbackAttempted === 'boolean' &&
+        hasOnlyKeys(payload.metadata, ['fallbackAttempted']))) &&
     hasOnlyKeys(payload, ['action', 'count', 'timestamp', 'metadata'])
   );
+}
+
+function isValidPerformanceTagValue(key: string, value: unknown): boolean {
+  switch (key) {
+    case 'target':
+      return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+    case 'met':
+      return typeof value === 'boolean';
+    case 'broken_count':
+    case 'total_count':
+      return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+    case 'percent':
+      return typeof value === 'string' &&
+        /^\d{1,3}(?:\.\d{1,2})?$/.test(value) &&
+        Number(value) <= 100;
+    case 'rating':
+      return value === 'good' || value === 'needs-improvement' || value === 'poor';
+    default:
+      return false;
+  }
 }
 
 function hasOnlyKeys(value: object, allowed: readonly string[]): boolean {
