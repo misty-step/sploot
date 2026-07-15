@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "currency": "USD",
+  "rates": [
+    {
+      "id": "vercel-blob-storage",
+      "provider": "Vercel Blob",
+      "capabilities": ["storage", "retained-trash", "renditions"],
+      "value": 0.023,
+      "unit": "GB-month",
+      "includedAllowance": "Hobby: first 1 GB-month",
+      "planAssumption": "Hobby today; charge every modeled GB at the on-demand rate so an included pool never props up paid-tier margin",
+      "sourceUrl": "https://vercel.com/docs/vercel-blob/usage-and-pricing",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "vercel-blob-simple-ops",
+      "provider": "Vercel Blob",
+      "capabilities": ["blob-operations"],
+      "value": 0.4,
+      "unit": "million simple operations",
+      "includedAllowance": "Hobby: first 10,000 simple operations",
+      "planAssumption": "On-demand list rate",
+      "sourceUrl": "https://vercel.com/docs/vercel-blob/usage-and-pricing",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "vercel-blob-advanced-ops",
+      "provider": "Vercel Blob",
+      "capabilities": ["blob-operations", "renditions"],
+      "value": 5,
+      "unit": "million advanced operations",
+      "includedAllowance": "Hobby: first 2,000 advanced operations",
+      "planAssumption": "On-demand list rate; upload plus thumbnail work is modeled explicitly",
+      "sourceUrl": "https://vercel.com/docs/vercel-blob/usage-and-pricing",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "vercel-blob-transfer",
+      "provider": "Vercel Blob",
+      "capabilities": ["blob-egress"],
+      "value": 0.05,
+      "unit": "GB transferred",
+      "includedAllowance": "Hobby: first 10 GB",
+      "planAssumption": "Public Blob delivery; every modeled GB is charged",
+      "sourceUrl": "https://vercel.com/docs/vercel-blob/usage-and-pricing",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "vercel-edge-requests",
+      "provider": "Vercel CDN",
+      "capabilities": ["blob-egress"],
+      "value": 2,
+      "unit": "million edge requests",
+      "includedAllowance": "Hobby: first 1,000,000; Pro: first 10,000,000",
+      "planAssumption": "North America on-demand rate; included requests are shared headroom",
+      "sourceUrl": "https://vercel.com/docs/manage-cdn-usage",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "vercel-fast-origin-transfer",
+      "provider": "Vercel CDN",
+      "capabilities": ["blob-egress"],
+      "value": 0.06,
+      "unit": "GB origin transfer",
+      "includedAllowance": "Hobby: first 10 GB",
+      "planAssumption": "North America on-demand rate; sensitivity varies uncached-origin share from 5% to 30%",
+      "sourceUrl": "https://vercel.com/docs/manage-cdn-usage",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "replicate-clip-prediction",
+      "provider": "Replicate",
+      "capabilities": ["image-inference", "text-inference"],
+      "value": 0.00054,
+      "unit": "typical prediction",
+      "includedAllowance": null,
+      "planAssumption": "krthr/clip-embeddings estimate; high sensitivity adds 20% potentially billed retry/cancel overhead",
+      "sourceUrl": "https://replicate.com/krthr/clip-embeddings",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "neon-launch-compute",
+      "provider": "Neon",
+      "capabilities": ["database-compute", "vector-storage"],
+      "value": 0.106,
+      "unit": "CU-hour",
+      "includedAllowance": "Free: 100 CU-hours per project",
+      "planAssumption": "Launch list rate for GA; production account plan is unavailable in current authority",
+      "sourceUrl": "https://neon.com/pricing",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "neon-database-storage",
+      "provider": "Neon",
+      "capabilities": ["vector-storage"],
+      "value": 0.35,
+      "unit": "GB-month",
+      "includedAllowance": "Free: 0.5 GB per project",
+      "planAssumption": "Launch list rate",
+      "sourceUrl": "https://neon.com/pricing",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "neon-history-storage",
+      "provider": "Neon",
+      "capabilities": ["vector-storage"],
+      "value": 0.2,
+      "unit": "GB-month of history/WAL",
+      "includedAllowance": "Plan-specific restore window",
+      "planAssumption": "Launch list rate",
+      "sourceUrl": "https://neon.com/pricing",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "neon-network-transfer",
+      "provider": "Neon",
+      "capabilities": ["database-compute"],
+      "value": 0.1,
+      "unit": "GB public transfer",
+      "includedAllowance": "Free: 5 GB then suspend; Launch/Scale docs: 100 GB then overage",
+      "planAssumption": "Current network-transfer docs control over a conflicting June 2026 promotional blog",
+      "sourceUrl": "https://neon.com/docs/introduction/network-transfer",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "digitalocean-web-service",
+      "provider": "DigitalOcean App Platform",
+      "capabilities": ["app-compute", "logs"],
+      "value": 25,
+      "unit": "month for apps-s-1vcpu-2gb",
+      "includedAllowance": "200 GiB outbound transfer",
+      "planAssumption": "One production web instance; fixed hosting is separate from variable subsidy",
+      "sourceUrl": "https://www.digitalocean.com/pricing/app-platform",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "digitalocean-small-job-runtime",
+      "provider": "DigitalOcean App Platform",
+      "capabilities": ["jobs", "app-compute", "logs"],
+      "value": 5,
+      "unit": "full month for apps-s-1vcpu-0.5gb, prorated per second with one-minute minimum",
+      "includedAllowance": "50 GiB outbound transfer",
+      "planAssumption": "Scheduled jobs bill only while running",
+      "sourceUrl": "https://docs.digitalocean.com/products/app-platform/details/pricing/",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "digitalocean-egress",
+      "provider": "DigitalOcean App Platform",
+      "capabilities": ["app-bandwidth"],
+      "value": 0.02,
+      "unit": "GiB beyond pooled allowance",
+      "includedAllowance": "Team-level allowance pooled across apps",
+      "planAssumption": "Charge modeled API egress despite current pooled headroom",
+      "sourceUrl": "https://docs.digitalocean.com/products/app-platform/details/pricing/",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "clerk-hobby-mru",
+      "provider": "Clerk",
+      "capabilities": ["auth"],
+      "value": 0,
+      "unit": "MRU through 50,000 per app",
+      "includedAllowance": "50,000 monthly retained users per app",
+      "planAssumption": "Hobby; current production has 10 database users but MRU/plan readback is unavailable",
+      "sourceUrl": "https://clerk.com/pricing",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "clerk-pro-mru-overage",
+      "provider": "Clerk",
+      "capabilities": ["auth"],
+      "value": 0.02,
+      "unit": "MRU-month from 50,001 through 100,000",
+      "includedAllowance": "First 50,000 MRU; Pro base is $25 monthly",
+      "planAssumption": "First published graduated band; Pro base is a shared fixed cost",
+      "sourceUrl": "https://clerk.com/pricing",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "canary-shared-service",
+      "provider": "Canary on DigitalOcean",
+      "capabilities": ["telemetry-canary", "logs"],
+      "value": 5,
+      "unit": "month for shared apps-s-1vcpu-0.5gb service",
+      "includedAllowance": "Compute, runtime logs, and platform storage within the component plan",
+      "planAssumption": "Self-hosted shared service; per-event marginal fee is zero inside capacity, with explicit fixed allocation per workload",
+      "sourceUrl": "https://www.digitalocean.com/pricing/app-platform",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "github-actions-public-standard",
+      "provider": "GitHub Actions",
+      "capabilities": ["jobs", "logs"],
+      "value": 0,
+      "unit": "standard hosted-runner minute for public repositories",
+      "includedAllowance": "Public standard runners free; 10 GB cache per repository",
+      "planAssumption": "misty-step/sploot is public; larger runners remain billable and are not used",
+      "sourceUrl": "https://docs.github.com/en/billing/concepts/product-billing/github-actions",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "github-actions-cache-overage",
+      "provider": "GitHub Actions",
+      "capabilities": ["jobs"],
+      "value": 0.07,
+      "unit": "GB-month above cache allowance",
+      "includedAllowance": "10 GB cache per repository",
+      "planAssumption": "Current active cache is 6.37 GiB",
+      "sourceUrl": "https://docs.github.com/en/billing/concepts/product-billing/github-actions",
+      "retrievedAt": "2026-07-15"
+    },
+    {
+      "id": "stripe-domestic-card",
+      "provider": "Stripe",
+      "capabilities": ["payment-fees"],
+      "value": 0.029,
+      "fixedValue": 0.3,
+      "unit": "successful domestic online card charge plus fixed fee",
+      "includedAllowance": null,
+      "planAssumption": "US standard pricing, one monthly charge; international and FX require a separate geo policy",
+      "sourceUrl": "https://stripe.com/pricing",
+      "retrievedAt": "2026-07-15"
+    }
+  ]
+}

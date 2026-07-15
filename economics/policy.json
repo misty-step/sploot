@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "freeFullAllowanceAccounts": 80,
+  "sensitivity": {
+    "low": {"renditionMultiplier": 1.05, "originMissRatio": 0.05, "inferenceAttemptMultiplier": 1, "databaseComputeMultiplier": 0.75, "stripeVariableSurcharge": 0},
+    "base": {"renditionMultiplier": 1.1, "originMissRatio": 0.15, "inferenceAttemptMultiplier": 1.05, "databaseComputeMultiplier": 1, "stripeVariableSurcharge": 0.015},
+    "high": {"renditionMultiplier": 1.2, "originMissRatio": 0.3, "inferenceAttemptMultiplier": 1.2, "databaseComputeMultiplier": 1.5, "stripeVariableSurcharge": 0.025}
+  },
+  "planBudgets": {
+    "free": {"monthlyInfrastructureUsd": 0.28, "dailyInferenceUsd": 0.0054, "monthlyInferenceUsd": 0.108, "dailyInferenceAttempts": 10, "monthlyInferenceAttempts": 200},
+    "collector": {"monthlyInfrastructureUsd": 2.75, "dailyInferenceUsd": 0.0405, "monthlyInferenceUsd": 0.81, "dailyInferenceAttempts": 75, "monthlyInferenceAttempts": 1500},
+    "archive": {"monthlyInfrastructureUsd": 12.5, "dailyInferenceUsd": 0.135, "monthlyInferenceUsd": 2.7, "dailyInferenceAttempts": 250, "monthlyInferenceAttempts": 5000}
+  },
+  "global": {
+    "preGaDailyVariableUsd": 0.75,
+    "preGaMonthlyVariableUsd": 25,
+    "replicateDailyUsd": 0.5,
+    "replicateDailyAttempts": 925,
+    "replicateMonthlyUsd": 15,
+    "paidMonthlyFormula": "25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions",
+    "paidDailyFormula": "paidMonthlyBudget / 30"
+  },
+  "providerHardCaps": [
+    {"provider": "Application admission", "enforcement": "Postgres transactional per-plan counters plus global dollar ledger; deny before Blob, Replicate, or public-delivery work"},
+    {"provider": "Replicate", "enforcement": "Repository daily/monthly dollar-derived attempt counters and embeddings kill switch; no provider cap is relied upon"},
+    {"provider": "Vercel Blob/CDN", "enforcement": "Vercel Spend Management action plus application byte/request egress leases; verify provider action before GA"},
+    {"provider": "Neon", "enforcement": "Autosuspend, CU ceiling, transfer alert, and application query/work admission; exact plan controls need provider authority"},
+    {"provider": "DigitalOcean", "enforcement": "One fixed web instance, fixed component sizes/counts, scheduled-job runtime budgets, and team billing alerts"},
+    {"provider": "Clerk", "enforcement": "Hobby 50,000-MRU allowance and application enrollment cap; SMS and paid add-ons remain disabled without a ledger rate"},
+    {"provider": "Stripe", "enforcement": "One subscription charge per period, plan-price allowlist, webhook idempotency, and fail-closed entitlements"}
+  ]
+}

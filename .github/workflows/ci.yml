@@ -100,6 +100,20 @@ jobs:
       # advisory-only. See scripts/check-design-system.mjs.
       - run: pnpm lint:design
 
+  economics:
+    name: Economic safety
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify versioned rates, margins, budgets, and report reproducibility
+        run: pnpm test:economics
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -305,15 +319,15 @@ jobs:
   merge-gate:
     name: merge-gate
     if: always()
-    needs: [secrets, lint, type-check, web-build, design, test, extension, db-authority]
+    needs: [secrets, lint, type-check, web-build, design, economics, test, extension, db-authority]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.db-authority.result }}")
+          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.economics.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.db-authority.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" ]]; then
-              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }} db-authority=${{ needs.db-authority.result }}"
+              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} economics=${{ needs.economics.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }} db-authority=${{ needs.db-authority.result }}"
               exit 1
             fi
           done
