@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
-import { createQaLocalAuthToken, getQaLocalAuthHeader, getQaLocalRemoteAddressHeader } from '@/lib/auth/qa-local';
+import { createQaLocalAuthToken, createQaLocalProxyProof, getQaLocalAuthHeader, getQaLocalProxyProofHeader } from '@/lib/auth/qa-local';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 
 const mocks = vi.hoisted(() => ({
@@ -36,6 +36,7 @@ describe('withAuthenticatedApi', () => {
       secret: 'test-secret-with-enough-entropy',
       expiresInSeconds: 60,
     });
+    const proxyProof = await createQaLocalProxyProof('localhost', '127.0.0.1', 'test-secret-with-enough-entropy');
     const handler = withAuthenticatedApi(
       async (_req, _context, auth) => NextResponse.json({
         userId: auth.principal.userId,
@@ -61,7 +62,7 @@ describe('withAuthenticatedApi', () => {
       new NextRequest('http://localhost:3001/api/cache/stats', {
         headers: {
           [getQaLocalAuthHeader()]: token,
-          [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+          [getQaLocalProxyProofHeader()]: proxyProof,
         },
       }),
       { params: Promise.resolve({}) }
@@ -129,12 +130,13 @@ describe('withAuthenticatedApi', () => {
       secret: 'test-secret-with-enough-entropy',
       expiresInSeconds: 60,
     });
+    const proxyProof = await createQaLocalProxyProof('localhost', '127.0.0.1', 'test-secret-with-enough-entropy');
 
     const response = await handler(
       new NextRequest('http://localhost:3001/api/cache/stats', {
         headers: {
           [getQaLocalAuthHeader()]: token,
-          [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+          [getQaLocalProxyProofHeader()]: proxyProof,
         },
       }),
       { params: Promise.resolve({}) }
@@ -152,6 +154,7 @@ describe('withAuthenticatedApi', () => {
       secret: 'test-secret-with-enough-entropy',
       expiresInSeconds: 60,
     });
+    const proxyProof = await createQaLocalProxyProof('localhost', '127.0.0.1', 'test-secret-with-enough-entropy');
     const response = await withAuthenticatedApi(
       async () => NextResponse.json({ ok: true }),
       {
@@ -172,7 +175,7 @@ describe('withAuthenticatedApi', () => {
       new NextRequest('http://localhost:3001/api/cache/stats', {
         headers: {
           [getQaLocalAuthHeader()]: token,
-          [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+          [getQaLocalProxyProofHeader()]: proxyProof,
         },
       }),
       { params: Promise.resolve({}) }

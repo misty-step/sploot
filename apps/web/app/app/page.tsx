@@ -850,7 +850,10 @@ function AppPageClient() {
         {selectedAsset && (
           <DialogContent
             showCloseButton={false}
+            role="dialog"
+            aria-modal="true"
             overlayClassName="bg-sploot-void/90"
+            onEscapeKeyDown={() => setSelectedAsset(null)}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
               detailReturnFocusRef.current?.focus();
@@ -949,7 +952,7 @@ function AppPageClient() {
                     />
                   )}
                 </div>
-                <dl className="min-w-0 max-w-full self-start overflow-hidden rounded-[var(--sploot-radius-inner)] border-2 border-dashed border-sploot-ink p-3 font-mono text-xs lowercase">
+                <dl aria-label="meme metadata" className="min-w-0 max-w-full self-start overflow-hidden rounded-[var(--sploot-radius-inner)] border-2 border-dashed border-sploot-ink p-3 font-mono text-xs lowercase">
                   <div className="flex justify-between gap-3 border-b border-dashed border-sploot-ink/50 py-2"><dt>index</dt><dd>—</dd></div>
                   <div className="flex justify-between gap-3 border-b border-dashed border-sploot-ink/50 py-2"><dt>match</dt><dd>{typeof selectedAsset.relevance === 'number' ? `${Math.round(selectedAsset.relevance)}%` : '—'}</dd></div>
                   <div className="flex justify-between gap-3 border-b border-dashed border-sploot-ink/50 py-2"><dt>cosine</dt><dd>{typeof selectedAsset.similarity === 'number' ? selectedAsset.similarity.toFixed(2) : '—'}</dd></div>

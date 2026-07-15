@@ -1,6 +1,5 @@
 import { GET } from '@/app/api/qa-auth/login/route';
 import { verifyQaLocalAuthHeaders } from '@/lib/auth/qa-local';
-import { getQaLocalRemoteAddressHeader } from '@/lib/auth/qa-local';
 import { NextRequest } from 'next/server';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
@@ -45,9 +44,12 @@ describe('/api/qa-auth/login', () => {
     const headers = new Headers({
       host: 'localhost:3001',
       cookie: `sploot_qa_auth=${token}`,
-      [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+      'x-sploot-qa-remote-address': '127.0.0.1',
     });
-    const auth = await verifyQaLocalAuthHeaders(headers);
+    const auth = await verifyQaLocalAuthHeaders(headers, process.env, {
+      host: 'localhost',
+      remoteAddress: '127.0.0.1',
+    });
     expect(auth.status).toBe('authenticated');
     if (auth.status === 'authenticated') {
       expect(auth.principal.userId).toBe('qa-design-user');

@@ -83,6 +83,15 @@ export interface SearchFilters {
   /** Filter by favorite status */
   favorites?: boolean;
 
+  /** Stable semantic-search page cursor. */
+  cursor?: string;
+
+  /** Legacy first-500 offset used only for backwards-compatible callers. */
+  offset?: number;
+
+  /** Deterministic shuffle seed used by semantic search ordering. */
+  shuffleSeed?: number;
+
   /** Filter by minimum image width in pixels */
   minWidth?: number;
 

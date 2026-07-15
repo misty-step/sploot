@@ -11,6 +11,7 @@ describe('useSearchAssets pagination', () => {
         total: 2,
         hasMore: true,
         processingTime: 12,
+        nextCursor: 'next-page',
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         results: [{ id: 'two' }],
@@ -30,7 +31,7 @@ describe('useSearchAssets pagination', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls.every(([url]) => url === '/api/search')).toBe(true);
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ offset: 1, limit: 1 });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ cursor: 'next-page', limit: 1 });
 
     vi.unstubAllGlobals();
   });

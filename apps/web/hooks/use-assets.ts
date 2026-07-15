@@ -466,7 +466,7 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
   const [metadata, setMetadata] = useState<SearchMetadata | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [resultQuery, setResultQuery] = useState<string | null>(null);
-  const offsetRef = useRef(0);
+  const cursorRef = useRef<string | undefined>(undefined);
   const loadingRef = useRef(false);
   const hasMoreRef = useRef(false);
   const requestIdRef = useRef(0);
@@ -491,7 +491,7 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
       setMetadata(null);
       hasMoreRef.current = false;
       setHasMore(false);
-      offsetRef.current = 0;
+      cursorRef.current = undefined;
       loadingRef.current = false;
       setLoading(false);
       return;
@@ -505,7 +505,7 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
     loadingRef.current = true;
     setError(null);
 
-    const currentOffset = append ? offsetRef.current : 0;
+    const currentCursor = append ? cursorRef.current : undefined;
 
     try {
       const response = await fetch('/api/search', {
@@ -515,7 +515,7 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
           query: queryKey,
           limit,
           threshold,
-          ...(currentOffset > 0 && { offset: currentOffset }),
+          ...(currentCursor && { cursor: currentCursor }),
           ...(shuffleSeed !== undefined && { shuffleSeed }),
         }),
         signal: controller.signal,
@@ -546,7 +546,7 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
       if (!controller.signal.aborted && requestId === requestIdRef.current) {
         // Handle successful response
         const results = data.results || [];
-        const total = Number.isFinite(data.total) ? Number(data.total) : currentOffset + results.length;
+        const total = Number.isFinite(data.total) ? Number(data.total) : results.length;
         const searchMetadata = {
           limit: data.limit ?? limit,
           requestedLimit: data.requestedLimit ?? limit,
@@ -560,7 +560,7 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
 
         setAssets((previous) => append ? [...previous, ...results] : results);
         setTotal(total);
-        offsetRef.current = currentOffset + results.length;
+        cursorRef.current = typeof data.nextCursor === 'string' ? data.nextCursor : undefined;
         const nextHasMore = Boolean(data.hasMore ?? results.length >= limit);
         hasMoreRef.current = nextHasMore;
         setHasMore(nextHasMore);
@@ -635,7 +635,7 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
-      offsetRef.current = 0;
+      cursorRef.current = undefined;
       hasMoreRef.current = false;
       setHasMore(false);
       setTotal(0);

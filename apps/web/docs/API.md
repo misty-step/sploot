@@ -1140,7 +1140,6 @@ Perform semantic search using text queries.
 {
   "query": "distracted boyfriend",
   "limit": 30,
-  "offset": 0,
   "threshold": 0.2,
   "shuffleSeed": 424242
 }
@@ -1149,10 +1148,12 @@ Perform semantic search using text queries.
 **Parameters:**
 
 - `query` (string, required): Search text (max 500 characters)
-- `limit` (number, optional): requested result count (default: 30).
-- `offset` (number, optional): page offset from the same semantic result set
-  (default: 0, max: 500). Search pagination remains on this route and never
-  falls back to `/api/assets`.
+- `limit` (number, optional): requested result count (default: 30, max: 100).
+  Every page is bounded.
+- `cursor` (string, optional): opaque cursor from the previous response for
+  deterministic keyset traversal beyond the legacy offset window.
+- `offset` (number, optional): retained for backwards compatibility (default:
+  0, max: 500); do not combine it with `cursor`.
 - `threshold` (number, optional): Minimum similarity score (0-1, default: 0.2)
   Results below this score are not returned; a real miss returns an empty
   `results` array rather than low-similarity padding.
@@ -1197,6 +1198,9 @@ Perform semantic search using text queries.
   "thresholdFallback": false
 }
 ```
+
+When `hasMore` is true, the response also includes `nextCursor`; send it as
+`cursor` on the next request.
 
 When Replicate is not configured, the route returns `503` with an `error`
 explaining search is unavailable.

@@ -180,7 +180,7 @@ export class CacheService {
     userId: string,
     query: string,
     filters: SearchFilters = {},
-  ): Promise<{ results: any[]; total: number } | null> {
+  ): Promise<{ results: any[]; total: number; hasMore?: boolean; nextCursor?: string } | null> {
     try {
       const filterKey = JSON.stringify({ ...filters, __pageEnvelope: true });
       const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
@@ -195,7 +195,12 @@ export class CacheService {
         return { results: value, total: value.length };
       }
       if (Array.isArray(value.results) && Number.isInteger(value.total)) {
-        return { results: value.results, total: value.total };
+        return {
+          results: value.results,
+          total: value.total,
+          ...(typeof value.hasMore === 'boolean' ? { hasMore: value.hasMore } : {}),
+          ...(typeof value.nextCursor === 'string' ? { nextCursor: value.nextCursor } : {}),
+        };
       }
       this.incrementMiss();
       return null;
@@ -236,11 +241,13 @@ export class CacheService {
     filters: SearchFilters,
     results: any[],
     total: number,
+    hasMore: boolean,
+    nextCursor?: string,
   ): Promise<void> {
     try {
       const filterKey = JSON.stringify({ ...filters, __pageEnvelope: true });
       const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
-      await this.backend.set(key, { results, total });
+      await this.backend.set(key, { results, total, hasMore, ...(nextCursor ? { nextCursor } : {}) });
     } catch (error) {
       console.error('[CacheService] setSearchResultPage failed:', {
         userId,
