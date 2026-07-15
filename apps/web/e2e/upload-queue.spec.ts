@@ -205,7 +205,9 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     context = await browser.browserType().launchPersistentContext(userDataDir, { baseURL });
     const accountATab = await context.newPage();
     const accountBTab = await context.newPage();
+    const signedOut = await context.newPage();
     await Promise.all([openApp(accountATab, accountA), openApp(accountBTab, accountB)]);
+    await signedOut.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
     await context.setOffline(true);
 
     await accountATab.locator('input[type="file"]').setInputFiles({ name: 'account-a.png', mimeType: 'image/png', buffer: Buffer.from('png') });
@@ -225,10 +227,6 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     await expect(intentList(accountBTab).getByText(url, { exact: true })).toHaveCount(0);
     expect(await readRows(accountBTab, await ownerKey(accountB))).toEqual([]);
 
-    await context.setOffline(false);
-    const signedOut = await context.newPage();
-    await signedOut.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
-    await context.setOffline(true);
     await expect(signedOut.locator('body')).not.toContainText('account-a.png');
     await expect(signedOut.locator('body')).not.toContainText(url);
     expect((await readRows(signedOut, accountAKey)).map((row) => row.filename)).toEqual(expect.arrayContaining(['account-a.png', url]));
