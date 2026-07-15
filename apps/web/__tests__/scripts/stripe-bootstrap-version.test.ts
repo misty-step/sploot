@@ -161,6 +161,9 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(ci).toContain("PGOPTIONS='-c lock_timeout=5s -c statement_timeout=30s'");
     expect(ci).toContain('migration_name" == 20260715*');
     expect(ci).toContain('legacy-upgrade-event');
+    expect(ci).toContain(
+      'INSERT INTO public.assets (id, owner_user_id, blob_url, pathname, mime, size, checksum_sha256, "createdAt", "updatedAt")',
+    );
     expect(ci).toContain('CREATE ROLE sploot_stripe_app SUPERUSER INHERIT');
     expect(ci).toContain("test \"$role_converged\" = 't'");
   });

@@ -462,8 +462,8 @@ jobs:
           # The upgrade must preserve data and later ownership/definitions.
           psql "$admin_url" -v ON_ERROR_STOP=1 <<'SQL'
           INSERT INTO public.users (id, email, "createdAt", "updatedAt") VALUES ('legacy-upgrade-user', 'legacy-upgrade@example.invalid', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-          INSERT INTO public.assets (id, owner_user_id, blob_url, pathname, mime, size, checksum_sha256)
-          VALUES ('legacy-upgrade-asset', 'legacy-upgrade-user', 'https://legacy.public.blob.vercel-storage.com/legacy.png', 'legacy.png', 'image/png', 7, 'legacy-upgrade-checksum');
+          INSERT INTO public.assets (id, owner_user_id, blob_url, pathname, mime, size, checksum_sha256, "createdAt", "updatedAt")
+          VALUES ('legacy-upgrade-asset', 'legacy-upgrade-user', 'https://legacy.public.blob.vercel-storage.com/legacy.png', 'legacy.png', 'image/png', 7, 'legacy-upgrade-checksum', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
           INSERT INTO public.asset_embeddings (asset_id, model_name, model_version, dim, status)
           VALUES ('legacy-upgrade-asset', 'legacy-model', 'legacy-v1', 768, 'processing');
           INSERT INTO public.embedding_rate_buckets (key, count, expires_at)
