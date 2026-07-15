@@ -193,7 +193,7 @@ class ReplicateEmbeddingService implements EmbeddingService {
     // Check cache first if we have a checksum
     const cache = getCacheService();
     if (checksum) {
-      const cachedEmbedding = await cache.getImageEmbedding(checksum);
+      const cachedEmbedding = await cache.getImageEmbedding(checksum, this.model);
       if (cachedEmbedding) {
         return {
           embedding: cachedEmbedding,
@@ -227,7 +227,7 @@ class ReplicateEmbeddingService implements EmbeddingService {
 
       // Cache the result
       if (checksum) {
-        await cache.setImageEmbedding(checksum, embedding);
+        await cache.setImageEmbedding(checksum, this.model, embedding);
       }
 
       return {

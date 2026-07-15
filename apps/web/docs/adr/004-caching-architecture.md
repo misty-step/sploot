@@ -220,13 +220,13 @@ class EmbeddingCache {
   }
 
   // Image embedding cache (indefinite, keyed by SHA-256)
-  async getImageEmbedding(checksum: string): Promise<number[] | null> {
+  async getImageEmbedding(checksum: string, model: string): Promise<number[] | null> {
     const cached = await this.redis.get(`img_embed:${checksum}`)
     return cached ? JSON.parse(cached as string) : null
   }
 
-  async setImageEmbedding(checksum: string, embedding: number[]): Promise<void> {
-    // No expiration for image embeddings (content-based key)
+  async setImageEmbedding(checksum: string, model: string, embedding: number[]): Promise<void> {
+    // No expiration; the versioned key is bound to checksum and model revision.
     await this.redis.set(`img_embed:${checksum}`, JSON.stringify(embedding))
   }
 

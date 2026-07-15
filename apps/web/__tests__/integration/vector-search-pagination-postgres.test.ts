@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 
-import { createVectorSearchContext, prisma, upsertAssetEmbedding, vectorSearch, vectorSearchPage } from '@/lib/db';
+import { createVectorSearchContext, encodeVectorSearchCursor, prisma, upsertAssetEmbedding, vectorSearch, vectorSearchPage } from '@/lib/db';
 
 const describeWithDatabase = process.env.DATABASE_URL && prisma
   ? describe.sequential
@@ -129,6 +129,25 @@ describeWithDatabase('Postgres seeded vector-search pagination', () => {
       pages.push(page);
       if (!page.nextCursor) break;
       cursor = page.nextCursor;
+    }
+
+    // Adversarial DB-seam probe: normal clients stop when hasMore=false and
+    // no nextCursor is returned; issue one explicit terminal cursor call to
+    // prove the keyset boundary itself returns the later empty page.
+    const lastPage = pages.at(-1);
+    if (lastPage && !lastPage.nextCursor && lastPage.results.length > 0) {
+      const last = lastPage.results.at(-1)!;
+      cursor = encodeVectorSearchCursor({
+        order: 'relevance',
+        id: last.id,
+        distance: last.distance,
+        context,
+      });
+      pages.push(await vectorSearchPage(userId, query, {
+        limit: 7,
+        cursor,
+        cursorContext: context,
+      }));
     }
 
     expect(pages).toHaveLength(5);
