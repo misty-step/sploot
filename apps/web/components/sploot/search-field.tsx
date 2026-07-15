@@ -2,12 +2,14 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { SplootEnrollmentPublicState } from '@sploot/common';
 import { ArrowRight, Shuffle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { IconButton } from './icon-button';
 import { MemeCell, type MemeCellState } from './meme-cell';
 import { type MemeDoodleKind } from './meme-doodle';
+import { EnrollmentNotice } from '@/components/enrollment/enrollment-notice';
 
 // Signed-out demo pile: license-safe doodles with enough keywords for the
 // console to find the intended sample.
@@ -77,13 +79,8 @@ const THRESHOLD = 0.2;
 
 type Ranked = { tile: Tile; s: number };
 
-function shuffledOrder(length: number): number[] {
-  const order = Array.from({ length }, (_, i) => i);
-  for (let i = order.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [order[i], order[j]] = [order[j], order[i]];
-  }
-  return order;
+function shuffledOrder(order: number[]): number[] {
+  return order.length > 1 ? [...order.slice(1), order[0]] : order;
 }
 
 export interface SearchFieldHandle {
@@ -94,6 +91,7 @@ export interface SearchFieldHandle {
 export interface SearchFieldProps {
   /** Overrides the default `max-w-2xl` cap (e.g. to fill a wider layout column). */
   className?: string;
+  enrollmentState?: SplootEnrollmentPublicState;
 }
 
 /**
@@ -103,16 +101,27 @@ export interface SearchFieldProps {
  * card (the landing tower's "shuffle the demo" button) can reorder the wall.
  */
 export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(function SearchField(
-  { className },
+  { className, enrollmentState = { status: 'paused', mode: 'closed', configuration: 'invalid' } },
   ref
 ) {
   const router = useRouter();
   const [query, setQuery] = useState('two cats arguing at a table');
   const [reducedMotion, setReducedMotion] = useState(false);
   const [order, setOrder] = useState<number[]>(() => TILES.map((_, i) => i));
+  const [isShuffled, setIsShuffled] = useState(false);
+  const [searchRun, setSearchRun] = useState(0);
+
+  const runSearch = (nextQuery: string) => {
+    setQuery(nextQuery);
+    setIsShuffled(false);
+    setSearchRun((current) => current + 1);
+  };
 
   useImperativeHandle(ref, () => ({
-    shuffle: () => setOrder(shuffledOrder(TILES.length)),
+    shuffle: () => {
+      setOrder((current) => shuffledOrder(current));
+      setIsShuffled(true);
+    },
   }));
 
   useEffect(() => {
@@ -150,6 +159,9 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
       hit: found ? best.tile.file : 'none',
       scanned: TILES.length,
       tokenCount: tokens.length,
+      announcement: found
+        ? `search complete: found ${best.tile.file} in the demo pile`
+        : 'search complete: no close demo match; showing the full demo pile',
     };
   }, [query]);
 
@@ -170,7 +182,10 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
         <form
           role="search"
           autoComplete="off"
-          onSubmit={(e) => e.preventDefault()}
+          onSubmit={(e) => {
+            e.preventDefault();
+            runSearch(query);
+          }}
           className="border-b-[3px] border-sploot-ink bg-sploot-yellow p-4"
         >
           <label
@@ -186,7 +201,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
                 type="search"
                 value={query}
                 spellCheck={false}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => runSearch(e.target.value)}
                 placeholder="what's that one meme..."
                 aria-describedby="search-readout"
                 className="w-full min-w-0 border-0 bg-transparent font-sans text-lg font-bold text-sploot-ink outline-none placeholder:text-muted-foreground"
@@ -203,7 +218,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
                 <button
                   key={chip}
                   type="button"
-                  onClick={() => setQuery(chip)}
+                  onClick={() => runSearch(chip)}
                   className="sploot-press-sm sploot-shadow-sm rounded-[var(--sploot-radius-pill)] border-2 border-sploot-ink bg-sploot-panel px-3 py-1.5 font-sans text-[0.72rem] font-bold lowercase text-sploot-ink hover:bg-sploot-magenta hover:text-[#1c1547]"
                 >
                   try: {chip}
@@ -213,10 +228,15 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
           </div>
         </form>
 
+        <div key={`${result.announcement}-${searchRun}`} data-search-run={searchRun} data-testid="search-announcement" role="status" aria-live="polite" className="sr-only">
+          {result.announcement}
+        </div>
+
         {/* machinery readout: the product truth shows */}
         <output
           id="search-readout"
-          aria-live="polite"
+          role="region"
+          aria-label="search readout"
           className="flex flex-wrap gap-x-6 gap-y-1 bg-sploot-void px-4 py-2.5 font-mono text-[0.72rem] lowercase text-sploot-on-void"
         >
           <span>
@@ -241,7 +261,10 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
           </span>
           <IconButton
             label="shuffle the demo pile"
-            onClick={() => setOrder(shuffledOrder(TILES.length))}
+            onClick={() => {
+              setOrder((current) => shuffledOrder(current));
+              setIsShuffled(true);
+            }}
             className="!border-[#1c1547] !text-[#1c1547]"
           >
             <Shuffle />
@@ -254,7 +277,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
           role="list"
           aria-label="sample meme library"
         >
-          {(result.found ? result.rankedOrder : order).map((tileIndex) => {
+          {(result.found && !isShuffled ? result.rankedOrder : order).map((tileIndex) => {
             const tile = TILES[tileIndex];
             const cell = result.states.get(tile.file)!;
             return (
@@ -281,14 +304,18 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
         <span className="font-mono text-xs font-bold lowercase text-[#1c1547] sploot-tabular">
           8 in the demo pile
         </span>
-        <button
-          type="button"
-          onClick={() => router.push('/sign-up')}
-          className="flex items-center gap-1.5 font-mono text-xs font-bold lowercase text-[#1c1547] underline decoration-sploot-magenta decoration-[3px] underline-offset-4 transition-opacity duration-[var(--sploot-motion-fast)] hover:opacity-70"
-        >
-          search your own pile
-          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
+        {enrollmentState.status === 'open' ? (
+          <button
+            type="button"
+            onClick={() => router.push('/sign-up')}
+            className="flex items-center gap-1.5 font-mono text-xs font-bold lowercase text-[#1c1547] underline decoration-sploot-magenta decoration-[3px] underline-offset-4 transition-opacity duration-[var(--sploot-motion-fast)] hover:opacity-70"
+          >
+            search your own pile
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        ) : (
+          <EnrollmentNotice state={enrollmentState} compact />
+        )}
       </div>
     </div>
   );

@@ -9,13 +9,14 @@ import {
   useSession,
   useUser,
 } from '@clerk/chrome-extension'
+import type { SplootEnrollmentPublicState } from '@sploot/common'
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
 import { IS_DEV_BUILD } from '../../shared/build-mode'
 import { requestVisibleTabCapture } from '../../shared/capture-messages'
 import { CONTEXT_MENU_SAVE_MESSAGES, type ContextMenuSaveJobSummary } from '../../shared/context-menu-save-messages'
 import { getSaveStatus, onSaveStatusChanged, type SaveStatus } from '../../shared/save-status'
 import { E2E_AUTH_MODE, EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
-import { getSplootAppUrl, getSplootSignInUrl } from '../../shared/app-url'
+import { getSplootAppUrl, getSplootEnrollmentUrl, getSplootSignInUrl } from '../../shared/app-url'
 import { runBestEffort } from '../../shared/best-effort'
 import { performContextMenuSaveAction, requestContextMenuSaveQueue } from './queue-recovery'
 import './style.css'
@@ -132,6 +133,25 @@ function E2EPopup() {
 }
 
 function SignedOutPanel() {
+  const [enrollmentState, setEnrollmentState] = useState<SplootEnrollmentPublicState>({
+    status: 'paused',
+    mode: 'closed',
+    configuration: 'invalid',
+  })
+
+  useEffect(() => {
+    fetch(getSplootEnrollmentUrl(), { cache: 'no-store' })
+      .then(response => response.ok ? response.json() : null)
+      .then(payload => {
+        if (payload?.publicState?.status === 'open') {
+          setEnrollmentState(payload.publicState)
+        }
+      })
+      .catch(() => {
+        // The safe initial state remains paused when the public readback is unavailable.
+      })
+  }, [])
+
   const handleSignIn = () => {
     runBestEffort('tabs.create sign-in', () => chrome.tabs.create({ url: getSplootSignInUrl() }))
   }
@@ -139,8 +159,12 @@ function SignedOutPanel() {
   return (
     <div className="auth-panel">
       <div className="auth-header">
-        <h2>Sign in on Sploot</h2>
-        <p>Use the full Sploot sign-in page, then return here to save images from the web.</p>
+        <h2>{enrollmentState.status === 'paused' ? 'new enrollment is paused' : 'sign in on sploot'}</h2>
+        <p>
+          {enrollmentState.status === 'paused'
+            ? 'New accounts are not being accepted right now. Existing users can still sign in, then return here to save images from the web.'
+            : 'Use the full Sploot sign-in page, then return here to save images from the web.'}
+        </p>
       </div>
       <div className="actions">
         <button onClick={handleSignIn}>Sign In</button>

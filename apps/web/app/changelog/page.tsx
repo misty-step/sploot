@@ -71,7 +71,7 @@ function ReleaseCard({ release }: { release: Release }) {
           href={release.html_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-sm text-accent-cyan hover:underline"
+          className="sploot-public-link text-sm"
         >
           View on GitHub
         </a>
@@ -167,7 +167,7 @@ export default function ChangelogPage() {
       <div className="max-w-3xl mx-auto px-6 py-12">
         <Link
           href="/"
-          className="text-muted-foreground hover:text-foreground transition-colors mb-8 inline-block"
+          className="sploot-public-link mb-8 inline-block"
         >
           &larr; Back to Sploot
         </Link>
@@ -183,7 +183,7 @@ export default function ChangelogPage() {
             Latest updates and improvements to Sploot. Subscribe to our{" "}
             <a
               href="/changelog.xml"
-              className="text-accent-cyan hover:underline"
+              className="sploot-public-link"
             >
               RSS feed
             </a>{" "}

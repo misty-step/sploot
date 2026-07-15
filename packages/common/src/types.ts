@@ -38,6 +38,14 @@ export interface StorageQuotaSnapshot {
   incomingBytes?: number;
 }
 
+export type SplootEnrollmentPublicStatus = 'open' | 'paused';
+
+export interface SplootEnrollmentPublicState {
+  status: SplootEnrollmentPublicStatus;
+  mode: 'capped' | 'ga' | 'closed';
+  configuration: 'valid' | 'invalid';
+}
+
 /**
  * Response from POST /api/upload
  *

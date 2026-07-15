@@ -5,6 +5,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { GlobalFooter } from "@/components/global-footer";
 import { LandingHero } from "@/components/landing/landing-hero";
 import { LandingStory } from "@/components/landing/landing-story";
+import { getPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
 
 // Authentication and enrollment are request/runtime concerns. Keeping this
 // route dynamic prevents a production build from requiring runtime secrets or
@@ -18,6 +19,8 @@ export default async function Home() {
   if (userId) {
     redirect("/app");
   }
+
+  const enrollmentState = getPublicEnrollmentState();
 
   return (
     <div className="relative min-h-screen bg-sploot-workbench text-sploot-ink">
@@ -33,10 +36,10 @@ export default async function Home() {
       </nav>
 
       {/* The whole product, above the fold: a search box for your memes */}
-      <LandingHero />
+      <LandingHero enrollmentState={enrollmentState} />
 
       {/* Below the fold: how the pile works */}
-      <LandingStory />
+      <LandingStory enrollmentState={enrollmentState} />
 
       <GlobalFooter />
     </div>

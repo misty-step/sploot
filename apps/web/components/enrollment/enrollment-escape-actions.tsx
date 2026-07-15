@@ -21,6 +21,12 @@ export function EnrollmentEscapeActions() {
       >
         Return home
       </Link>
+      <Link
+        href="/sign-in"
+        className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-sploot-ink bg-sploot-panel px-4 py-2 text-sm font-bold text-sploot-ink hover:underline focus-visible:outline focus-visible:outline-4 focus-visible:outline-sploot-focus"
+      >
+        Existing user: sign in
+      </Link>
       <button
         type="button"
         onClick={handleSignOut}

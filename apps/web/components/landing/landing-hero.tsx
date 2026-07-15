@@ -2,7 +2,9 @@
 
 import { useRef } from 'react';
 import Link from 'next/link';
+import type { SplootEnrollmentPublicState } from '@sploot/common';
 import { Button } from '@/components/ui/button';
+import { EnrollmentNotice } from '@/components/enrollment/enrollment-notice';
 import { SearchField, type SearchFieldHandle, StatBlock, StatusBar, StickerTab } from '@/components/sploot';
 
 /**
@@ -12,7 +14,7 @@ import { SearchField, type SearchFieldHandle, StatBlock, StatusBar, StickerTab }
  * on the table, running, and the tower's "shuffle the demo" CTA drives the
  * same shuffle as the wall header's control (SearchFieldHandle).
  */
-export function LandingHero() {
+export function LandingHero({ enrollmentState }: { enrollmentState: SplootEnrollmentPublicState }) {
   const searchFieldRef = useRef<SearchFieldHandle>(null);
 
   return (
@@ -38,9 +40,13 @@ export function LandingHero() {
             taste of how your pile answers.
           </p>
           <div className="flex flex-wrap gap-3">
-            <Button asChild variant="primary" size="lg">
-              <Link href="/sign-up">start your own pile</Link>
-            </Button>
+            {enrollmentState.status === 'open' ? (
+              <Button asChild variant="primary" size="lg">
+                <Link href="/sign-up">start your own pile</Link>
+              </Button>
+            ) : (
+              <EnrollmentNotice state={enrollmentState} compact />
+            )}
             <Button
               type="button"
               variant="secondary"
@@ -58,7 +64,7 @@ export function LandingHero() {
 
         {/* right column: the working console + demo wall, filling the wide 7-span */}
         <div className="lg:col-span-7">
-          <SearchField ref={searchFieldRef} className="max-w-none" />
+          <SearchField ref={searchFieldRef} className="max-w-none" enrollmentState={enrollmentState} />
         </div>
       </div>
 

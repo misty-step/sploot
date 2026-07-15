@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { Prisma, type PrismaClient } from '@prisma/client';
+import type { SplootEnrollmentPublicState } from '@sploot/common';
 
 export const ENROLLMENT_DENIAL_CODE = 'enrollment_closed' as const;
 export const ENROLLMENT_UNAVAILABLE_CODE = 'enrollment_unavailable' as const;
@@ -211,6 +212,24 @@ export function getEnrollmentStatus(
   }
 
   return invalidStatus(rawMode ? 'invalid_mode' : 'missing');
+}
+
+/**
+ * The only enrollment shape public clients need. Keep deployment identity,
+ * account counts, and configuration diagnostics on the server-side readback.
+ */
+export function getPublicEnrollmentState(
+  env: Record<string, string | undefined> = process.env,
+  acceptingNewAccountsOverride?: boolean,
+): SplootEnrollmentPublicState {
+  const status = getEnrollmentStatus(env);
+  const acceptingNewAccounts = acceptingNewAccountsOverride ?? status.acceptingNewAccounts;
+
+  return {
+    status: status.configuration === 'valid' && acceptingNewAccounts ? 'open' : 'paused',
+    mode: status.mode,
+    configuration: status.configuration,
+  };
 }
 
 export function getEnrollmentReadback(

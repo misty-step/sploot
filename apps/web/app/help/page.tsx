@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { EnrollmentNotice } from "@/components/enrollment/enrollment-notice";
+import { getPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
 
 export const metadata: Metadata = {
   title: "Help - Sploot",
@@ -7,12 +9,14 @@ export const metadata: Metadata = {
 };
 
 export default function Help() {
+  const enrollmentState = getPublicEnrollmentState();
+
   return (
     <main className="min-h-screen bg-background">
       <div className="max-w-3xl mx-auto px-6 py-12">
         <Link
           href="/"
-          className="text-muted-foreground hover:text-foreground transition-colors mb-8 inline-block"
+          className="sploot-public-link mb-8 inline-block"
         >
           ← Back to Sploot
         </Link>
@@ -30,15 +34,15 @@ export default function Help() {
 
         <div className="space-y-10">
           <section>
-            <h2 className="text-xl font-semibold mb-4">1. Sign up</h2>
-            <p className="text-muted-foreground">
-              Create an account at{" "}
-              <a href="https://sploot.app" className="text-accent-cyan hover:underline">
-                sploot.app
-              </a>
-              . That&apos;s it — no setup wizard, no folders to build. Your
-              library starts empty and fills up as you save.
-            </p>
+            <h2 className="text-xl font-semibold mb-4">1. enrollment status</h2>
+            <EnrollmentNotice state={enrollmentState} />
+            {enrollmentState.status === 'open' ? (
+              <p className="text-muted-foreground">
+                Create an account at{' '}
+                <a href="https://sploot.app" className="sploot-public-link">sploot.app</a>.
+                That&apos;s it — no setup wizard, no folders to build. Your library starts empty and fills up as you save.
+              </p>
+            ) : null}
           </section>
 
           <section>
@@ -60,7 +64,7 @@ export default function Help() {
                 <p className="text-muted-foreground">
                   Install the extension, sign in, then right-click any image
                   on any site and choose &quot;Save to Sploot&quot;. See{" "}
-                  <Link href="/support" className="text-accent-cyan hover:underline">
+                  <Link href="/support" className="sploot-public-link">
                     Support
                   </Link>{" "}
                   for install and troubleshooting steps.
@@ -73,7 +77,7 @@ export default function Help() {
                   sheet, so the Save to Sploot shortcut fills that gap: share
                   an image from any app and it lands in your library. Full
                   walkthrough:{" "}
-                  <Link href="/help/ios-shortcut" className="text-accent-cyan hover:underline">
+                  <Link href="/help/ios-shortcut" className="sploot-public-link">
                     Save to Sploot on iPhone
                   </Link>
                   .
@@ -142,11 +146,11 @@ export default function Help() {
             <p className="text-muted-foreground">
               For extension troubleshooting, search tips, and contact info,
               see{" "}
-              <Link href="/support" className="text-accent-cyan hover:underline">
+              <Link href="/support" className="sploot-public-link">
                 Support
               </Link>
               . For the iPhone shortcut setup, see{" "}
-              <Link href="/help/ios-shortcut" className="text-accent-cyan hover:underline">
+              <Link href="/help/ios-shortcut" className="sploot-public-link">
                 Save to Sploot on iPhone
               </Link>
               .

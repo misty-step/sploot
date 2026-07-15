@@ -12,7 +12,7 @@ export default function PrivacyPolicy() {
       <div className="max-w-3xl mx-auto px-6 py-12">
         <Link
           href="/"
-          className="text-muted-foreground hover:text-foreground transition-colors mb-8 inline-block"
+          className="sploot-public-link mb-8 inline-block"
         >
           ← Back to Sploot
         </Link>
@@ -110,11 +110,11 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-semibold mt-8 mb-4">Third-Party Services</h2>
             <p>We use the following third-party services:</p>
             <ul className="list-disc pl-6 space-y-2">
-              <li><strong>Clerk</strong>: Authentication (see <a href="https://clerk.com/privacy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">Clerk Privacy Policy</a>)</li>
-              <li><strong>DigitalOcean</strong>: Application hosting (see <a href="https://www.digitalocean.com/legal/privacy-policy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">DigitalOcean Privacy Policy</a>)</li>
-              <li><strong>Vercel Blob</strong>: Image storage (see <a href="https://vercel.com/legal/privacy-policy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">Vercel Privacy Policy</a>)</li>
+              <li><strong>Clerk</strong>: Authentication (see <a href="https://clerk.com/privacy" className="sploot-public-link" target="_blank" rel="noopener noreferrer">Clerk Privacy Policy</a>)</li>
+              <li><strong>DigitalOcean</strong>: Application hosting (see <a href="https://www.digitalocean.com/legal/privacy-policy" className="sploot-public-link" target="_blank" rel="noopener noreferrer">DigitalOcean Privacy Policy</a>)</li>
+              <li><strong>Vercel Blob</strong>: Image storage (see <a href="https://vercel.com/legal/privacy-policy" className="sploot-public-link" target="_blank" rel="noopener noreferrer">Vercel Privacy Policy</a>)</li>
               <li><strong>First-party telemetry</strong>: Authenticated product usage and performance events written to Sploot application logs</li>
-              <li><strong>Neon</strong>: Database (see <a href="https://neon.tech/privacy" className="text-accent-cyan hover:underline" target="_blank" rel="noopener noreferrer">Neon Privacy Policy</a>)</li>
+              <li><strong>Neon</strong>: Database (see <a href="https://neon.tech/privacy" className="sploot-public-link" target="_blank" rel="noopener noreferrer">Neon Privacy Policy</a>)</li>
               <li><strong>Replicate</strong>: AI embedding generation for image and text search</li>
               <li><strong>Canary</strong>: Error monitoring, health checks, and diagnostics</li>
             </ul>
@@ -127,7 +127,7 @@ export default function PrivacyPolicy() {
               <li>Access your data</li>
               <li>Delete your images</li>
               <li>Delete your account</li>
-              <li>Export your data</li>
+              <li>Download individual images</li>
             </ul>
           </section>
 
@@ -135,7 +135,7 @@ export default function PrivacyPolicy() {
             <h2 className="text-xl font-semibold mt-8 mb-4">Contact</h2>
             <p>
               For privacy questions or concerns, contact us at{" "}
-              <a href="mailto:privacy@sploot.app" className="text-accent-cyan hover:underline">
+              <a href="mailto:privacy@sploot.app" className="sploot-public-link">
                 privacy@sploot.app
               </a>
             </p>

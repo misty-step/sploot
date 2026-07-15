@@ -117,6 +117,9 @@
   --sploot-motion-cluster: 300ms;
   --sploot-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --sploot-ease-snap: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* AA public prose links on the light shelf and dark footer. */
+  --sploot-public-link: #075985;
+  --sploot-public-footer-link: #cfe7ff;
 }
 
 @theme inline {
@@ -456,6 +459,8 @@ select:focus-visible {
   --sploot-red: #ff5d73;
   --sploot-purple: #a78aff;
   --sploot-focus: #ffe45c;
+  --sploot-public-link: #8ed2ff;
+  --sploot-public-footer-link: #fff3dc;
   --sploot-on-blue: #10203a;
   --sploot-on-red: #3a0d14;
   --sploot-on-void: #fff3dc;
@@ -759,6 +764,21 @@ select:focus-visible {
 
 .sploot-tabular {
   font-variant-numeric: tabular-nums;
+}
+
+.sploot-public-link {
+  color: var(--sploot-public-link);
+  text-decoration-line: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.sploot-public-footer-link {
+  color: var(--sploot-public-footer-link);
+}
+
+.dark .sploot-public-link {
+  color: var(--sploot-public-link);
 }
 
 /* Sharp corners override */
