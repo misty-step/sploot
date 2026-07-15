@@ -1009,11 +1009,18 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     await expect(
       prisma.assetEmbedding.findUnique({
         where: { assetId: chainAssetIds[3] },
-        select: { status: true, attemptCount: true, nextAttemptAt: true, terminalAt: true },
+        select: {
+          status: true,
+          attemptCount: true,
+          reviveCount: true,
+          nextAttemptAt: true,
+          terminalAt: true,
+        },
       })
     ).resolves.toMatchObject({
       status: 'failed',
       attemptCount: EMBEDDING_MAX_ATTEMPTS,
+      reviveCount: 1,
       nextAttemptAt: null,
       terminalAt: new Date(baseNowMs + 180_000),
     });
@@ -1028,6 +1035,43 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       retryAfter: EMBEDDING_TERMINAL_REVIVE_QUARANTINE_SECONDS - 60,
     });
     expect(providerRun).toHaveBeenCalledTimes(3);
+
+    // One owner-authorized revival is the lifetime cap. After the second
+    // poison cycle and quarantine, the same media cannot buy another cycle.
+    vi.setSystemTime(
+      baseNowMs + 180_000 + EMBEDDING_TERMINAL_REVIVE_QUARANTINE_SECONDS * 1000
+    );
+    const exhausted = await postGenerateEmbedding(3);
+    expect(exhausted.status).toBe(422);
+    await expect(exhausted.json()).resolves.toMatchObject({
+      status: 'terminal_failure',
+      reason: 'revival_exhausted',
+    });
+    expect(providerRun).toHaveBeenCalledTimes(3);
+
+    // The database also rejects the transition an older rolled-back runtime
+    // would issue without the revive_count predicate.
+    await expect(
+      prisma.$executeRaw`
+        UPDATE "asset_embeddings"
+        SET "attempt_count" = 0,
+            "status" = 'pending',
+            "terminal_at" = NULL,
+            "updatedAt" = NOW()
+        WHERE "asset_id" = ${chainAssetIds[3]}
+      `
+    ).rejects.toThrow(/terminal revival budget exhausted/);
+    await expect(
+      prisma.assetEmbedding.findUnique({
+        where: { assetId: chainAssetIds[3] },
+        select: { status: true, attemptCount: true, reviveCount: true, terminalAt: true },
+      })
+    ).resolves.toMatchObject({
+      status: 'failed',
+      attemptCount: EMBEDDING_MAX_ATTEMPTS,
+      reviveCount: 1,
+      terminalAt: new Date(baseNowMs + 180_000),
+    });
   }, 30_000);
 
   it('persists exponential retry timestamps and an exact terminal poison timestamp', async () => {

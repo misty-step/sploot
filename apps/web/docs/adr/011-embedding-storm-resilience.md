@@ -53,13 +53,15 @@ terminal row once `terminal_at` is at least fifteen minutes old
 (`EMBEDDING_TERMINAL_REVIVE_QUARANTINE_SECONDS`), atomically resetting the
 attempt budget and re-entering the ordinary circuit/lease/admission boundary;
 inside the quarantine the route returns `429` with
-`status: "terminal_quarantine"` and a truthful `Retry-After`. Each revive
-grants exactly one fresh bounded attempt cycle — three further failures
-re-poison the row into a new quarantine — so an extended provider outage
-cannot permanently strand an asset, and a permanently bad asset still cannot
-enter an unbounded paid retry loop. Cron never revives; every revive emits a
-structured `embedding.terminal-revived` log with the prior attempt count and
-terminal timestamp. All retry, terminal, circuit-open, and recovery
+`status: "terminal_quarantine"` and a truthful `Retry-After`. Each asset may
+receive at most one revival over its lifetime. Three further failures re-poison
+the row; after its new quarantine expires, owner requests return `422` with
+`reason: "revival_exhausted"`. The `revive_count` column, bounded check, and
+transition trigger enforce that policy even if an older runtime is rolled back,
+so a permanently bad asset cannot enter an unbounded paid retry loop. Cron never
+revives; every revive emits a structured `embedding.terminal-revived` log with
+the prior attempt count, revival count, and terminal timestamp. All retry,
+terminal, circuit-open, and recovery
 timestamps are computed from the caller-supplied clock; retry delays are
 exponential (60s, 120s, then terminal). Admission denials do not consume an
 asset attempt; provider 429s and retryable provider timeouts do.

@@ -321,6 +321,35 @@ describe('central Replicate admission boundary', () => {
     );
   });
 
+  it('preserves an HTTP-date Retry-After lower bound from the provider', async () => {
+    const nowMs = Date.UTC(2026, 6, 15, 12, 0, 0);
+    vi.useFakeTimers();
+    vi.setSystemTime(nowMs);
+    const response = new Response(null, {
+      status: 429,
+      headers: { 'Retry-After': new Date(nowMs + 2 * 60_000).toUTCString() },
+    });
+    mocks.replicateRun.mockRejectedValue(
+      new InstalledReplicateApiError(
+        'Request was throttled',
+        new Request('https://api.replicate.com/v1/predictions'),
+        response,
+      ),
+    );
+    const service = createEmbeddingService('user-1');
+
+    await expect(service.embedText('replicate HTTP-date retry')).rejects.toMatchObject({
+      name: 'EmbeddingProviderRateLimitError',
+      statusCode: 429,
+      retryAfterSec: 120,
+    });
+    expect(mocks.recordEmbeddingProviderFailure).toHaveBeenCalledWith(
+      { generation: 0, probeGeneration: null, probeLeaseToken: null },
+      'provider_rate_limit',
+      120,
+    );
+  });
+
   it('preserves bounded Retry-After metadata for provider 5xx responses', async () => {
     const response = new Response(null, {
       status: 503,

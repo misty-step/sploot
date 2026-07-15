@@ -266,6 +266,21 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
           }
         );
       }
+      if (!revive.revived && revive.reason === 'revival_exhausted') {
+        logger.logInfo('generate-embedding.terminal-revival-exhausted', {
+          assetId: id,
+          reviveCount: revive.reviveCount,
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            status: 'terminal_failure',
+            reason: 'revival_exhausted',
+            error: 'Embedding recovery attempts exhausted for this asset',
+          },
+          { status: 422 }
+        );
+      }
       if (!revive.revived) {
         // 'not_terminal' means we lost a race with a concurrent revive or the
         // row changed; the claim below arbitrates the current state.

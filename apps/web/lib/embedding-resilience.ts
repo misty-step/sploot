@@ -20,6 +20,7 @@ export const EMBEDDING_RETRY_BASE_DELAY_SECONDS = 60;
 // stranded by an extended provider outage are recoverable the moment the
 // owner retries after it ends.
 export const EMBEDDING_TERMINAL_REVIVE_QUARANTINE_SECONDS = 15 * 60;
+export const EMBEDDING_MAX_TERMINAL_REVIVALS = 1;
 export const EMBEDDING_PROVIDER_CIRCUIT_KEY = 'replicate-image';
 export const EMBEDDING_PROVIDER_MIN_BACKOFF_SECONDS = 30;
 export const EMBEDDING_PROVIDER_PROBE_LEASE_SECONDS = 60;
@@ -598,9 +599,10 @@ export function isEmbeddingAdmissionFailure(error: unknown): error is EmbeddingA
 
 export interface EmbeddingTerminalRevive {
   revived: boolean;
-  reason?: 'not_terminal' | 'quarantine' | 'store_unavailable';
+  reason?: 'not_terminal' | 'quarantine' | 'revival_exhausted' | 'store_unavailable';
   retryAfterSec?: number;
   previousAttemptCount?: number;
+  reviveCount?: number;
   terminalAt?: Date | null;
 }
 
@@ -627,14 +629,15 @@ export async function reviveTerminalEmbedding(
     nowMs - EMBEDDING_TERMINAL_REVIVE_QUARANTINE_SECONDS * 1000
   );
   const rows = await prisma.$queryRaw<
-    Array<{ previousAttemptCount: number; terminalAt: Date }>
+    Array<{ previousAttemptCount: number; reviveCount: number; terminalAt: Date }>
   >(Prisma.sql`
     WITH terminal_row AS (
-      SELECT "asset_id", "attempt_count", "terminal_at"
+      SELECT "asset_id", "attempt_count", "revive_count", "terminal_at"
       FROM "asset_embeddings"
       WHERE "asset_id" = ${assetId}
         AND "terminal_at" IS NOT NULL
         AND "terminal_at" <= ${quarantineBefore}
+        AND "revive_count" < ${EMBEDDING_MAX_TERMINAL_REVIVALS}
         AND "image_embedding" IS NULL
         AND ("dim" IS NULL OR "dim" = 0)
       FOR UPDATE
@@ -649,6 +652,7 @@ export async function reviveTerminalEmbedding(
     FROM terminal_row
     WHERE e."asset_id" = terminal_row."asset_id"
     RETURNING terminal_row."attempt_count" AS "previousAttemptCount",
+              e."revive_count" AS "reviveCount",
               terminal_row."terminal_at" AS "terminalAt"
   `);
 
@@ -656,32 +660,50 @@ export async function reviveTerminalEmbedding(
     logger.logInfo('embedding.terminal-revived', {
       assetId,
       previousAttemptCount: rows[0].previousAttemptCount,
+      reviveCount: rows[0].reviveCount,
       terminalAt: rows[0].terminalAt.toISOString(),
     });
     return {
       revived: true,
       previousAttemptCount: rows[0].previousAttemptCount,
+      reviveCount: rows[0].reviveCount,
       terminalAt: rows[0].terminalAt,
     };
   }
 
   const existing = await prisma.assetEmbedding.findUnique({
     where: { assetId },
-    select: { terminalAt: true },
+    select: { terminalAt: true, reviveCount: true },
   });
   if (existing?.terminalAt) {
+    const retryAfterSec = Math.ceil(
+      (existing.terminalAt.getTime() +
+        EMBEDDING_TERMINAL_REVIVE_QUARANTINE_SECONDS * 1000 -
+        nowMs) /
+        1000
+    );
+    if (retryAfterSec > 0) {
+      return {
+        revived: false,
+        reason: 'quarantine',
+        retryAfterSec: Math.max(1, retryAfterSec),
+        reviveCount: existing.reviveCount,
+        terminalAt: existing.terminalAt,
+      };
+    }
+    if (existing.reviveCount >= EMBEDDING_MAX_TERMINAL_REVIVALS) {
+      return {
+        revived: false,
+        reason: 'revival_exhausted',
+        reviveCount: existing.reviveCount,
+        terminalAt: existing.terminalAt,
+      };
+    }
     return {
       revived: false,
       reason: 'quarantine',
-      retryAfterSec: Math.max(
-        1,
-        Math.ceil(
-          (existing.terminalAt.getTime() +
-            EMBEDDING_TERMINAL_REVIVE_QUARANTINE_SECONDS * 1000 -
-            nowMs) /
-            1000
-        )
-      ),
+      retryAfterSec: 1,
+      reviveCount: existing.reviveCount,
       terminalAt: existing.terminalAt,
     };
   }

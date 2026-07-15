@@ -144,6 +144,7 @@ model AssetEmbedding {
   processingClaimToken String?           @map("processing_claim_token")
   error           String? // Error message if failed
   attemptCount    Int                    @default(0) @map("attempt_count")
+  reviveCount     Int                    @default(0) @map("revive_count")
   nextAttemptAt   DateTime?              @map("next_attempt_at")
   terminalAt      DateTime?              @map("terminal_at") // Set when bounded retries are exhausted
   completedAt     DateTime?              @map("completedAt") // When embedding was completed

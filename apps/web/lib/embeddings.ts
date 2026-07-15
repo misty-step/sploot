@@ -474,15 +474,24 @@ class ReplicateEmbeddingService implements EmbeddingService {
     const responseRetryAfter = typeof headers?.get === 'function'
       ? headers.get('retry-after')
       : headers?.['retry-after'] ?? headers?.['Retry-After'];
-    const parsedResponseRetryAfter = typeof responseRetryAfter === 'string'
-      ? Number(responseRetryAfter.trim())
-      : responseRetryAfter;
+    const retryAfterText = typeof responseRetryAfter === 'string'
+      ? responseRetryAfter.trim()
+      : undefined;
+    const parsedResponseRetryAfter = retryAfterText === undefined
+      ? responseRetryAfter
+      : Number(retryAfterText);
     if (
       typeof parsedResponseRetryAfter === 'number' &&
       Number.isFinite(parsedResponseRetryAfter) &&
       parsedResponseRetryAfter > 0
     ) {
       return parsedResponseRetryAfter;
+    }
+    if (retryAfterText) {
+      const retryAtMs = Date.parse(retryAfterText);
+      if (Number.isFinite(retryAtMs) && retryAtMs > Date.now()) {
+        return Math.max(1, Math.ceil((retryAtMs - Date.now()) / 1000));
+      }
     }
     return undefined;
   }
