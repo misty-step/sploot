@@ -195,43 +195,54 @@ async function waitForQueue(
 async function stopAndRestart(
   context: BrowserContext,
   popup: Page,
+  previousWorker: Worker,
   testInfo: import('@playwright/test').TestInfo,
   step: Mv3Step,
 ): Promise<Worker> {
   return runMv3Step(context, testInfo, step, 'service worker termination and bounded restart', async () => {
-    const cdp = await context.newCDPSession(popup);
+    const browser = context.browser();
+    if (!browser) throw new Error('persistent MV3 context has no browser CDP authority');
+    const cdp = await browser.newBrowserCDPSession();
+    const targetUrl = previousWorker.url();
+    let latestVersion: {
+      versionId: string;
+      scriptURL: string;
+      runningStatus: string;
+      targetId?: string;
+    } | undefined;
+    const onVersionUpdated = ({ versions }: {
+      versions: Array<{
+        versionId: string;
+        scriptURL: string;
+        runningStatus: string;
+        targetId?: string;
+      }>;
+    }) => {
+      const extensionVersion = versions.find(version => version.scriptURL === targetUrl);
+      if (extensionVersion) latestVersion = extensionVersion;
+    };
     try {
       await cdp.send('Target.setDiscoverTargets', { discover: true });
+      cdp.on('ServiceWorker.workerVersionUpdated', onVersionUpdated);
+      await cdp.send('ServiceWorker.enable');
       const targets = await cdp.send('Target.getTargets');
       const target = targets.targetInfos.find(info => info.type === 'service_worker' && info.url.startsWith('chrome-extension://'));
       expect(target).toBeTruthy();
       const terminatedTargetId = target!.targetId;
 
-      let resolveDestroyed!: () => void;
-      let rejectDestroyed!: (error: Error) => void;
-      const destroyed = new Promise<void>((resolve, reject) => {
-        resolveDestroyed = resolve;
-        rejectDestroyed = reject;
-      });
-      const destroyTimer = setTimeout(() => {
-        rejectDestroyed(new Error(`service worker target ${terminatedTargetId} did not emit Target.targetDestroyed`));
-      }, 15_000);
-      const onTargetDestroyed = (event: { targetId: string }) => {
-        if (event.targetId === terminatedTargetId) {
-          clearTimeout(destroyTimer);
-          resolveDestroyed();
-        }
-      };
-      cdp.on('Target.targetDestroyed', onTargetDestroyed);
-      await cdp.send('Target.closeTarget', { targetId: terminatedTargetId });
-      await destroyed;
-      cdp.off('Target.targetDestroyed', onTargetDestroyed);
+      await expect.poll(() => latestVersion?.targetId ?? null, { timeout: 5_000 }).toBe(terminatedTargetId);
+      const version = latestVersion;
+      expect(version).toBeTruthy();
+      await cdp.send('ServiceWorker.stopWorker', { versionId: version!.versionId });
+      await expect.poll(() => latestVersion?.runningStatus ?? null, { timeout: 15_000 }).toBe('stopped');
+      await expect.poll(async () => {
+        const current = await cdp.send('Target.getTargets');
+        return current.targetInfos.some(info => info.targetId === terminatedTargetId);
+      }, { timeout: 15_000 }).toBe(false);
 
-      // Chromium does not emit a second Playwright `serviceworker` event for
-      // every CDP target restart. The real queue message is the wake trigger;
-      // a different CDP target ID is the bounded worker-restart proof. The
-      // destroyed event above is the termination boundary, so a stale handle
-      // cannot satisfy this assertion.
+      // The queue message is the real wake trigger. A different CDP target and
+      // a different Playwright Worker object are both required, so a stale
+      // handle cannot satisfy the restart proof.
       const wake = sendMv3Message<{ ok: boolean }>(
         popup,
         { type: LIST_QUEUE },
@@ -249,13 +260,16 @@ async function stopAndRestart(
           && info.targetId !== terminatedTargetId
         ))?.targetId ?? null;
       }, { timeout: 15_000 }).toBeTruthy();
-      const restarted = context.serviceWorkers().find(worker => worker.url().startsWith('chrome-extension://'));
+      const restarted = context.serviceWorkers().find(worker => (
+        worker.url().startsWith('chrome-extension://') && worker !== previousWorker
+      ));
       expect(restarted).toBeTruthy();
       const worker = restarted!;
       observeWorker(worker);
       await wakeMv3Worker(worker, context, testInfo, step);
       return worker;
     } finally {
+      cdp.off('ServiceWorker.workerVersionUpdated', onVersionUpdated);
       const detach = cdp.detach();
       await Promise.race([
         detach,
@@ -286,7 +300,7 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     expect(immutable.imageUrl).toBe(`${API_ORIGIN}/immutable.png`);
 
     await setAuth(worker, 'user-b');
-    worker = await stopAndRestart(context, popup, testInfo, step);
+    worker = await stopAndRestart(context, popup, worker, testInfo, step);
     ({ context, popup } = opened);
     await waitForQueue(worker, context, testInfo, step, 'account switch pauses original-owner job', jobs => jobs.some(job => (
       job.id === immutable?.id && job.state === 'paused'
@@ -305,7 +319,7 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     uploadMode = 'success';
     imageBytes = 'changed-image';
     expect(await send({ type: RETRY, jobId: immutable.id }, 'original-owner retry message')).toMatchObject({ ok: true });
-    await stopAndRestart(context, popup, testInfo, step).then(next => { worker = next; });
+    await stopAndRestart(context, popup, worker, testInfo, step).then(next => { worker = next; });
     await waitForQueue(worker, context, testInfo, step, 'immutable retry converged', jobs => !jobs.some(job => job.id === immutable.id));
     expect(uploadBodies.some(body => body.includes('original-image'))).toBe(true);
     expect(uploadBodies.some(body => body.includes('changed-image'))).toBe(false);
@@ -393,7 +407,7 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
       ));
       await chrome.storage.local.set({ 'sploot:context-menu-queue': jobs });
     });
-    worker = await stopAndRestart(context, popup, testInfo, step);
+    worker = await stopAndRestart(context, popup, worker, testInfo, step);
     await waitForQueue(worker, context, testInfo, step, 'screenshot retry converged', jobs => !jobs.some(job => job.id === screenshotJob.id));
     expect(uploadPayloads.some(payload => payload.includes(screenshotBytes))).toBe(true);
     await fixture.close();
