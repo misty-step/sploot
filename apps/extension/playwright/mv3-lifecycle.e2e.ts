@@ -1,6 +1,15 @@
 import { createServer, type Server } from 'node:http';
 import path from 'node:path';
 import { chromium, expect, test, type BrowserContext, type Page, type Worker } from '@playwright/test';
+import {
+  closeMv3Context,
+  openMv3Popup,
+  runMv3Step,
+  sendMv3Message,
+  waitForMv3Worker,
+  wakeMv3Worker,
+  type Mv3Step,
+} from './mv3-readiness';
 
 const PORT = 3345;
 const API_ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -86,22 +95,23 @@ test.afterAll(async () => {
   await new Promise<void>(resolve => server.close(() => resolve()));
 });
 
-async function openExtension(): Promise<{ context: BrowserContext; popup: Page; worker: Worker; extensionId: string }> {
+async function openExtension(testInfo: import('@playwright/test').TestInfo, step: Mv3Step): Promise<{ context: BrowserContext; popup: Page; worker: Worker; extensionId: string }> {
   const extensionPath = path.resolve('dist/chrome-mv3');
-  const context = await chromium.launchPersistentContext('', {
+  const context = await runMv3Step(undefined, testInfo, step, 'launch persistent unpacked MV3 Chrome', () => chromium.launchPersistentContext('', {
     channel: 'chrome',
     headless: false,
+    ignoreDefaultArgs: ['--disable-extensions'],
     args: [
       `--disable-extensions-except=${extensionPath}`,
       `--load-extension=${extensionPath}`,
       '--no-first-run',
       '--no-default-browser-check',
     ],
-  });
-  const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+  }));
+  const worker = await waitForMv3Worker(context, testInfo, step);
+  await wakeMv3Worker(worker, context, testInfo, step);
   const extensionId = new URL(worker.url()).host;
-  const popup = await context.newPage();
-  await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+  const popup = await openMv3Popup(context, extensionId, testInfo, step);
   return { context, popup, worker, extensionId };
 }
 
@@ -113,10 +123,6 @@ async function setAuth(worker: Worker, userId: string | null) {
         : null,
     });
   }, { userId });
-}
-
-async function send(popup: Page, message: Record<string, unknown>) {
-  return await popup.evaluate(async nextMessage => chrome.runtime.sendMessage(nextMessage), message);
 }
 
 async function queue(worker: Worker) {
@@ -136,15 +142,19 @@ async function stopAndRestart(context: BrowserContext, popup: Page): Promise<Wor
   return await context.waitForEvent('serviceworker');
 }
 
-test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and duplicates', async () => {
+test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and duplicates', async ({}, testInfo) => {
   test.setTimeout(120_000);
-  const opened = await openExtension();
+  const step: Mv3Step = (title, body) => test.step(title, body);
+  const opened = await openExtension(testInfo, step);
   let { context, popup, worker } = opened;
+  const send = (message: Record<string, unknown>, title: string, timeoutMs?: number) => sendMv3Message(
+    popup, message, context, testInfo, step, title, timeoutMs,
+  );
   try {
     uploadMode = 'failure';
     imageBytes = 'original-image';
     await setAuth(worker, 'user-a');
-    await send(popup, { type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'immutable.png' });
+    await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'immutable.png' }, 'immutable save message');
     await waitForQueue(worker, jobs => jobs.some(job => (
       job.filename === 'immutable.png' && job.sourceBytes && job.state !== 'processing'
     )));
@@ -154,15 +164,15 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     worker = await stopAndRestart(context, popup);
     ({ context, popup } = opened);
     await setAuth(worker, 'user-b');
-    const otherOwnerList = await send(popup, { type: LIST_QUEUE });
+    const otherOwnerList = await send({ type: LIST_QUEUE }, 'different-owner queue-list message');
     expect(otherOwnerList).toEqual({ ok: true, jobs: [] });
     expect(JSON.stringify(otherOwnerList)).not.toContain('immutable.png');
-    expect(await send(popup, { type: DISCARD, jobId: immutable.id })).toMatchObject({ ok: false });
+    expect(await send({ type: DISCARD, jobId: immutable.id }, 'different-owner discard message')).toMatchObject({ ok: false });
     expect((await queue(worker)).some((job: any) => job.id === immutable.id)).toBe(true);
 
     await setAuth(worker, null);
-    expect(await send(popup, { type: LIST_QUEUE })).toEqual({ ok: true, jobs: [] });
-    expect(await send(popup, { type: DISCARD, jobId: immutable.id })).toMatchObject({ ok: false });
+    expect(await send({ type: LIST_QUEUE }, 'signed-out queue-list message')).toEqual({ ok: true, jobs: [] });
+    expect(await send({ type: DISCARD, jobId: immutable.id }, 'signed-out discard message')).toMatchObject({ ok: false });
 
     await setAuth(worker, 'user-a');
     uploadMode = 'success';
@@ -178,12 +188,12 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     expect(uploadBodies.some(body => body.includes('changed-image'))).toBe(false);
 
     uploadMode = 'duplicate';
-    await send(popup, { type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'duplicate.png' });
+    await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'duplicate.png' }, 'duplicate save message');
     await waitForQueue(worker, jobs => !jobs.some(job => job.filename === 'duplicate.png'));
     expect(uploadBodies.at(-1)).toContain('changed-image');
 
     uploadMode = 'failure';
-    await send(popup, { type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'popup-discard.png' });
+    await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'popup-discard.png' }, 'popup-discard save message');
     await waitForQueue(worker, jobs => jobs.some(job => (
       job.filename === 'popup-discard.png' && job.sourceBytes && job.state !== 'processing'
     )));
@@ -204,7 +214,7 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     await fixture.goto(`${API_ORIGIN}/fixture`);
     await fixture.bringToFront();
     uploadMode = 'failure';
-    await send(popup, { type: CAPTURE });
+    await send({ type: CAPTURE }, 'screenshot capture message');
     await waitForQueue(worker, jobs => jobs.some(job => (
       job.filename.startsWith('screenshot-') && job.sourceBytes && job.state !== 'processing'
     )));
@@ -226,13 +236,13 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
 
     uploadMode = 'success';
     const hungResults = await Promise.allSettled([
-      send(popup, { type: E2E_SAVE, imageUrl: `${API_ORIGIN}/hung-1.png`, filename: 'hung-1.png' }),
-      send(popup, { type: E2E_SAVE, imageUrl: `${API_ORIGIN}/hung-2.png`, filename: 'hung-2.png' }),
-      send(popup, { type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'after-hung.png' }),
+      send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/hung-1.png`, filename: 'hung-1.png' }, 'hung source 1 save message', 45_000),
+      send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/hung-2.png`, filename: 'hung-2.png' }, 'hung source 2 save message', 45_000),
+      send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'after-hung.png' }, 'post-hung save message'),
     ]);
     expect(hungResults).toHaveLength(3);
     expect(uploadBodies.some(body => body.includes('after-hung.png'))).toBe(true);
   } finally {
-    await context.close();
+    await closeMv3Context(context, testInfo);
   }
 });

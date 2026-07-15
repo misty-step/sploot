@@ -234,6 +234,14 @@ jobs:
         run: xvfb-run -a pnpm --filter extension test:layout
       - name: Exercise real unpacked MV3 lifecycle in Chromium
         run: xvfb-run -a pnpm --filter extension test:mv3
+      - name: Upload real MV3 browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: extension-mv3-browser-diagnostics
+          path: apps/extension/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
   verify-extension-dist:
     name: Verify uploaded extension artifact
