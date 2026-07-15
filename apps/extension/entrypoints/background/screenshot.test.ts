@@ -196,4 +196,22 @@ describe('captureAndSaveVisibleTab', () => {
     completeUpload?.();
     await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledWith({ completed: true }));
   });
+
+  it('answers the popup with failure when capture or upload fails', async () => {
+    let messageListener:
+      | ((message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean | undefined)
+      | undefined;
+    chromeMock.runtime.onMessage.addListener.mockImplementation(listener => {
+      messageListener = listener;
+    });
+    mocks.uploadImage.mockRejectedValue(new Error('Network error. Check your connection.'));
+    const sendResponse = vi.fn();
+
+    setupScreenshotCapture();
+    expect(messageListener?.({ type: 'CAPTURE_VISIBLE_TAB' }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledWith({ completed: false }));
+    expect(mocks.showSuccessNotification).not.toHaveBeenCalled();
+    expect(mocks.showErrorNotification).toHaveBeenCalledWith('Network error. Check your connection.');
+  });
 });

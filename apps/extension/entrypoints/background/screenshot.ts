@@ -27,7 +27,7 @@ export function setupScreenshotCapture(): void {
     // worker) alive until capture, upload, and durable feedback have finished.
     // The popup-side sendMessage promise is the other end of this lifecycle.
     void captureAndSaveVisibleTab().then(
-      () => sendResponse({ completed: true }),
+      outcome => sendResponse({ completed: outcome.ok }),
       (error) => {
         console.error('[Background][Screenshot] capture job failed unexpectedly', error);
         sendResponse({ completed: false });
@@ -37,7 +37,7 @@ export function setupScreenshotCapture(): void {
   });
 }
 
-export function captureAndSaveVisibleTab(): Promise<void> {
+export function captureAndSaveVisibleTab() {
   return saveToSploot(
     async () => {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });

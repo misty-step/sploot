@@ -37,8 +37,9 @@ beforeEach(() => {
 
 describe('saveToSploot', () => {
   it('produces, uploads, and reports success when authenticated', async () => {
-    await saveToSploot(produce, 'image');
+    const outcome = await saveToSploot(produce, 'image');
 
+    expect(outcome.ok).toBe(true);
     expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'meme.png');
     expect(mocks.showSuccessNotification).toHaveBeenCalledWith('meme.png', 't', { isDuplicate: false });
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
@@ -59,8 +60,9 @@ describe('saveToSploot', () => {
     mocks.promptUserSignIn.mockResolvedValue(false);
     const producer = vi.fn(produce);
 
-    await saveToSploot(producer, 'screenshot');
+    const outcome = await saveToSploot(producer, 'screenshot');
 
+    expect(outcome.ok).toBe(false);
     expect(producer).not.toHaveBeenCalled();
     expect(mocks.uploadImage).not.toHaveBeenCalled();
     expect(mocks.showErrorNotification).toHaveBeenCalledWith(
@@ -73,8 +75,9 @@ describe('saveToSploot', () => {
       throw new Error('Cannot capture chrome:// pages');
     };
 
-    await saveToSploot(producer, 'screenshot');
+    const outcome = await saveToSploot(producer, 'screenshot');
 
+    expect(outcome.ok).toBe(false);
     expect(mocks.uploadImage).not.toHaveBeenCalled();
     expect(mocks.showErrorNotification).toHaveBeenCalledWith('Cannot capture chrome:// pages');
   });
@@ -83,8 +86,9 @@ describe('saveToSploot', () => {
     const err = Object.assign(new Error('Storage quota exceeded'), { actionHref: '/app/settings' });
     mocks.uploadImage.mockRejectedValue(err);
 
-    await saveToSploot(produce, 'image');
+    const outcome = await saveToSploot(produce, 'image');
 
+    expect(outcome.ok).toBe(false);
     expect(mocks.showErrorNotification).toHaveBeenCalledWith({
       message: 'Storage quota exceeded',
       actionHref: '/app/settings',

@@ -36,23 +36,36 @@ import { ensureContextMenus, setupContextMenu } from './context-menu';
 
 type ClickHandler = (info: { menuItemId: string; srcUrl?: string }, tab?: { title?: string }) => Promise<void>;
 let onClicked: ClickHandler;
+let onStartup: (() => Promise<void>) | undefined;
 let contextMenusCreate: ReturnType<typeof vi.fn>;
 let contextMenusRemove: ReturnType<typeof vi.fn>;
+let storedQueue: unknown[] = [];
 
 beforeEach(() => {
   vi.clearAllMocks();
   buildMode.dev = true;
   contextMenusCreate = vi.fn();
   contextMenusRemove = vi.fn();
+  storedQueue = [];
   vi.stubGlobal('chrome', {
     contextMenus: {
       create: contextMenusCreate,
       remove: contextMenusRemove,
       onClicked: { addListener: vi.fn((fn: ClickHandler) => { onClicked = fn; }) },
     },
-    runtime: { onInstalled: { addListener: vi.fn() } },
+    runtime: {
+      onInstalled: { addListener: vi.fn() },
+      onStartup: { addListener: vi.fn((fn: () => Promise<void>) => { onStartup = fn; }) },
+    },
     storage: {
-      local: { set: vi.fn().mockResolvedValue(undefined) },
+      local: {
+        get: vi.fn().mockImplementation(async () => ({ 'sploot:context-menu-queue': storedQueue })),
+        set: vi.fn().mockImplementation(async (value: Record<string, unknown>) => {
+          if ('sploot:context-menu-queue' in value) {
+            storedQueue = value['sploot:context-menu-queue'] as unknown[];
+          }
+        }),
+      },
       onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
     },
   });
@@ -83,6 +96,50 @@ describe('context menu save', () => {
     expect(mocks.showErrorNotification).toHaveBeenCalledWith('No image URL found');
     expect(mocks.fetchImage).not.toHaveBeenCalled();
     expect(mocks.uploadImage).not.toHaveBeenCalled();
+  });
+
+  it('persists the save before fetching and removes it after a successful upload', async () => {
+    await onClicked({ menuItemId: 'save-to-sploot', srcUrl: 'https://x.test/cat.png' }, { title: 'Cat' });
+
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({
+      'sploot:context-menu-queue': [expect.objectContaining({
+        imageUrl: 'https://x.test/cat.png',
+        filename: 'cat.png',
+        state: 'processing',
+      })],
+    });
+    expect(storedQueue).toEqual([]);
+  });
+
+  it('replays an in-flight save after a worker restart', async () => {
+    storedQueue = [{
+      id: 'job-1',
+      imageUrl: 'https://x.test/cat.png',
+      filename: 'cat.png',
+      state: 'processing',
+      createdAt: 1,
+    }];
+
+    await onStartup?.();
+
+    expect(mocks.fetchImage).toHaveBeenCalledWith('https://x.test/cat.png');
+    expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'cat.png');
+    expect(storedQueue).toEqual([]);
+  });
+
+  it('does not replay the same persisted job twice when startup recovery races', async () => {
+    storedQueue = [{
+      id: 'job-1',
+      imageUrl: 'https://x.test/cat.png',
+      filename: 'cat.png',
+      state: 'processing',
+      createdAt: 1,
+    }];
+
+    await Promise.all([onStartup?.(), onStartup?.()]);
+
+    expect(mocks.fetchImage).toHaveBeenCalledOnce();
+    expect(mocks.uploadImage).toHaveBeenCalledOnce();
   });
 });
 

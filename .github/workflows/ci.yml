@@ -184,6 +184,11 @@ jobs:
         env:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
         run: pnpm --filter extension zip:prod
+      - name: Validate candidate release provenance
+        env:
+          RELEASE_CANDIDATE_SHA: ${{ github.sha }}
+          RELEASE_PROVENANCE_PATH: ${{ runner.temp }}/extension-release-provenance.json
+        run: pnpm --filter extension release:check
       - name: Validate production manifest policy
         run: pnpm --filter extension manifest:check
       - name: Test manifest policy
@@ -197,7 +202,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: extension-dist
-          path: apps/extension/dist/
+          path: |
+            apps/extension/dist/
+            ${{ runner.temp }}/extension-release-provenance.json
           retention-days: 7
 
   db-authority:

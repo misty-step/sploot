@@ -7,9 +7,8 @@
 
 import { IS_DEV_BUILD } from '../../shared/build-mode';
 import { runAuthDiagnostics } from './auth-manager';
-import { fetchImage } from './image-fetcher';
+import { enqueueContextMenuSave, recoverPendingContextMenuSaves } from './context-menu-save-queue';
 import { showErrorNotification } from './notifications';
-import { saveToSploot } from './save-flow';
 
 const MENU_ID_SAVE = 'save-to-sploot';
 const MENU_ID_DIAGNOSTICS = 'sploot-debug-auth';
@@ -47,9 +46,20 @@ export function ensureContextMenus() {
  * Initialize context menu
  */
 export function setupContextMenu() {
+  // Recover jobs that were left in-flight when the MV3 worker was terminated.
+  void recoverPendingContextMenuSaves().catch(error => {
+    console.error('[Background][ContextMenu] Recovery failed', error);
+  });
+
   // Create context menu on extension install/update
   chrome.runtime.onInstalled.addListener(() => {
     ensureContextMenus();
+  });
+
+  chrome.runtime.onStartup.addListener(() => {
+    return recoverPendingContextMenuSaves().catch(error => {
+      console.error('[Background][ContextMenu] Startup recovery failed', error);
+    });
   });
 
   // Handle context menu clicks
@@ -77,13 +87,12 @@ async function handleImageSave(
     return;
   }
 
-  await saveToSploot(
-    async () => ({
-      blob: await fetchImage(imageUrl), // handles CORS
-      filename: extractFilename(imageUrl, tab?.title),
-    }),
-    'image',
-  );
+  try {
+    await enqueueContextMenuSave(imageUrl, extractFilename(imageUrl, tab?.title));
+  } catch (error) {
+    console.error('[Background][ContextMenu] Save failed', error);
+    showErrorNotification(error instanceof Error ? error.message : 'Could not save to Sploot.');
+  }
 }
 
 async function handleDiagnostics(): Promise<void> {

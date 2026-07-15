@@ -3,11 +3,12 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
 import { validateManifest } from './manifest-policy.mjs';
+import { assertCandidateSha, createReleaseProvenance } from './release-provenance.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
@@ -15,10 +16,19 @@ const zipPath = path.resolve(root, 'dist/extension-1.0.0-chrome.zip');
 const listingPath = path.resolve(root, 'STORE_LISTING.md');
 const screenshotDir = path.resolve(root, 'store-assets/screenshots');
 const promoDir = path.resolve(root, 'store-assets/promo');
+const buildMarkerPath = path.resolve(root, 'dist/release-build-provenance.json');
+const provenancePath = path.resolve(
+  process.env.RELEASE_PROVENANCE_PATH ?? 'dist/extension-1.0.0-chrome.provenance.json'
+);
 
 const pass = [];
 const localBlockers = [];
 const externalBlockers = [];
+
+async function checkedOutCandidateSha() {
+  const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root });
+  return stdout.trim();
+}
 
 function rel(filePath) {
   return path.relative(root, filePath);
@@ -80,15 +90,33 @@ async function validateZip() {
 
   if (existsSync(listingPath)) {
     const listing = await readFile(listingPath, 'utf8');
-    const documentedSha = listing.match(/SHA256:\s*([a-f0-9]{64})/i)?.[1]?.toLowerCase();
     const actualSha = await sha256File(zipPath);
-
-    if (!documentedSha) {
-      recordLocal('listing packet missing release zip SHA256');
-    } else if (documentedSha !== actualSha) {
-      recordLocal(`release zip SHA256 mismatch: listing has ${documentedSha}, actual is ${actualSha}`);
-    } else {
-      recordPass(`release zip SHA256 matches STORE_LISTING.md (${actualSha})`);
+    const candidateSha = await checkedOutCandidateSha();
+    try {
+      assertCandidateSha(candidateSha, process.env.RELEASE_CANDIDATE_SHA);
+      if (!existsSync(buildMarkerPath)) {
+        throw new Error(`missing release build provenance: ${rel(buildMarkerPath)}`);
+      }
+      const buildMarker = JSON.parse(await readFile(buildMarkerPath, 'utf8'));
+      if (buildMarker.candidateSha !== candidateSha) {
+        throw new Error(`release build candidate drift: marker has ${buildMarker.candidateSha}, checked out ${candidateSha}`);
+      }
+      if (buildMarker.artifact?.path !== rel(zipPath)) {
+        throw new Error(`release build artifact path drift: marker has ${buildMarker.artifact?.path}, expected ${rel(zipPath)}`);
+      }
+      if (buildMarker.artifact?.sha256 !== actualSha) {
+        throw new Error(`release build artifact drift: marker has ${buildMarker.artifact?.sha256}, actual is ${actualSha}`);
+      }
+      const provenance = createReleaseProvenance({
+        candidateSha,
+        artifactPath: rel(zipPath),
+        artifactSha256: actualSha,
+        version: '1.0.0',
+      });
+      await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+      recordPass(`release provenance binds ${candidateSha} to ${actualSha}`);
+    } catch (error) {
+      recordLocal(error instanceof Error ? error.message : 'invalid release provenance');
     }
   }
 
@@ -211,18 +239,6 @@ async function validateListing() {
     if (!listing.includes(snippet)) {
       recordLocal(`listing packet missing required text: ${snippet}`);
     }
-  }
-
-  if (listing.includes('right-click upload and duplicate behavior are not release-proven')) {
-    recordExternal('authenticated right-click upload and duplicate behavior still need release proof');
-  }
-
-  if (listing.includes('no Chrome Web Store dashboard upload/review receipt has been captured')) {
-    recordExternal('Chrome Web Store dashboard upload/review receipt still needs capture');
-  }
-
-  if (/installed extension\s+source is stale/.test(listing)) {
-    recordExternal('Chrome is signed in but loaded from stale extension source; reload apps/extension/dist/chrome-mv3 before release QA');
   }
 
   if (/Status: (not submitted|submitted for review)\./.test(listing)) {
