@@ -87,10 +87,8 @@ test('qa-local authenticated product flow emits an actual telemetry POST', async
 
 test('an unreachable first-party sink does not break the authenticated product flow', async ({ browser, baseURL }) => {
   const { context, page } = await openAuthenticatedPage(browser, baseURL);
-  const consoleErrors: string[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text());
-  });
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
   let telemetryAttempts = 0;
   try {
     await page.route('**/api/telemetry', (route) => {
@@ -104,7 +102,7 @@ test('an unreachable first-party sink does not break the authenticated product f
     await searchInput.press('Enter');
     await expect.poll(() => telemetryAttempts).toBeGreaterThan(0);
     await expect(page).toHaveURL(/\/app/);
-    expect(consoleErrors).toEqual([]);
+    expect(pageErrors).toEqual([]);
   } finally {
     await context.close();
   }
