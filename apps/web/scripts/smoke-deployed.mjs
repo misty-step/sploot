@@ -6,6 +6,8 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
+import { assertSignedOutRedirectChain } from './smoke-redirects.mjs';
+
 const execFileAsync = promisify(execFile);
 const baseUrl = (process.env.DEPLOYED_SMOKE_URL ?? 'https://www.sploot.app').replace(/\/$/, '');
 const expectCanaryConfigured = process.env.EXPECT_CANARY_CONFIGURED === '1';
@@ -224,24 +226,12 @@ await record('signed-out app route protection', async () => {
   const redirects = [];
 
   for (const route of protectedRoutes) {
-    const response = await fetch(`${baseUrl}${route}`, {
-      method: 'GET',
-      redirect: 'manual',
-    });
-    const location = response.headers.get('location') ?? '';
-
-    if (![301, 302, 303, 307, 308].includes(response.status)) {
-      throw new Error(`${route}: expected redirect to sign-in, got HTTP ${response.status}`);
-    }
-    if (!location.includes('/sign-in')) {
-      throw new Error(`${route}: expected sign-in redirect, got ${location || '<missing location>'}`);
-    }
-
-    redirects.push({
+    const result = await assertSignedOutRedirectChain({
+      baseUrl,
       route,
-      status: response.status,
-      location,
+      fetchImpl: fetch,
     });
+    redirects.push({ route, ...result });
   }
 
   return { redirects };

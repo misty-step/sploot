@@ -2,31 +2,34 @@
   "base_url": "https://www.sploot.app",
   "extension_zip": "../extension/dist/extension-1.0.0-chrome.zip",
   "extension_dist": "../extension/dist/chrome-mv3",
-  "started_at": "2026-05-25T19:00:48.853Z",
-  "finished_at": "2026-05-25T19:00:50.803Z",
+  "started_at": "2026-07-15T05:07:16.412Z",
+  "finished_at": "2026-07-15T05:07:17.316Z",
   "status": "pass",
   "checks": [
     {
       "name": "production health",
       "status": "pass",
-      "duration_ms": 421,
+      "duration_ms": 235,
       "details": {
         "database": "up",
-        "redis": "up",
-        "database_latency_ms": 9,
+        "embedding_limiter": "up",
+        "share_slug_cache": "local",
+        "canary_configured": true,
+        "database_latency_ms": 42,
         "version": "0.1.0"
       }
     },
     {
       "name": "production service health",
       "status": "pass",
-      "duration_ms": 395,
+      "duration_ms": 153,
       "details": {
         "status": "degraded",
         "all_services_configured": true,
         "database": "healthy",
         "blob_storage": "healthy",
         "embeddings": "healthy",
+        "canary": "healthy",
         "can_upload": true,
         "can_search": true
       }
@@ -34,23 +37,51 @@
     {
       "name": "signed-out app route protection",
       "status": "pass",
-      "duration_ms": 370,
+      "duration_ms": 402,
       "details": {
         "redirects": [
           {
             "route": "/app",
-            "status": 307,
-            "location": "/sign-in"
+            "redirects": [
+              {
+                "from": "/app",
+                "status": 307,
+                "location": "/sign-in"
+              }
+            ],
+            "signIn": "/sign-in"
           },
           {
             "route": "/app/search",
-            "status": 307,
-            "location": "/sign-in"
+            "redirects": [
+              {
+                "from": "/app/search",
+                "status": 307,
+                "location": "/app"
+              },
+              {
+                "from": "/app",
+                "status": 307,
+                "location": "/sign-in"
+              }
+            ],
+            "signIn": "/sign-in"
           },
           {
             "route": "/app/upload",
-            "status": 307,
-            "location": "/sign-in"
+            "redirects": [
+              {
+                "from": "/app/upload",
+                "status": 307,
+                "location": "/app?upload=1"
+              },
+              {
+                "from": "/app?upload=1",
+                "status": 307,
+                "location": "/sign-in"
+              }
+            ],
+            "signIn": "/sign-in"
           }
         ]
       }
@@ -58,7 +89,7 @@
     {
       "name": "signed-out api auth contract",
       "status": "pass",
-      "duration_ms": 195,
+      "duration_ms": 71,
       "details": {
         "status": 401,
         "error": "Unauthorized"
@@ -67,7 +98,7 @@
     {
       "name": "production extension artifact",
       "status": "pass",
-      "duration_ms": 568,
+      "duration_ms": 41,
       "details": {
         "artifact": "../extension/dist/extension-1.0.0-chrome.zip",
         "artifact_type": "zip",
