@@ -214,20 +214,11 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
   const accountB = 'qa-upload-queue-user';
   const accountAKey = await ownerKey(accountA);
   const url = 'https://images.example.test/bookmark.png';
-  const browserBaseURL = baseURL.replace('127.0.0.1', 'sploot-pwa.test');
-  const persistentBrowserArgs = [
-    '--no-proxy-server',
-    '--proxy-bypass-list=*',
-    '--host-resolver-rules=MAP sploot-pwa.test 127.0.0.1',
-  ];
+  const browserBaseURL = baseURL;
   try {
     context = await browser.browserType().launchPersistentContext(userDataDir, {
-      args: persistentBrowserArgs,
       baseURL: browserBaseURL,
-      chromiumSandbox: false,
-      headless: true,
     });
-    await context.setOffline(false);
     const signedOut = context.pages()[0] ?? await context.newPage();
     await openSignedOutApp(signedOut);
     const accountATab = await context.newPage();
@@ -260,10 +251,7 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     context = undefined;
 
     context = await browser.browserType().launchPersistentContext(userDataDir, {
-      args: persistentBrowserArgs,
       baseURL: browserBaseURL,
-      chromiumSandbox: false,
-      headless: true,
     });
     const reopened = await context.newPage();
     await context.setOffline(true);
