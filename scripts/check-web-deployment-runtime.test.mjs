@@ -46,6 +46,6 @@ test('the contract rejects migration at build time and mismatched standalone out
   assert.match(formatFailures(failures), /must not own a second production migration path/);
   assert.match(formatFailures(failures), /CI must execute the production web build/);
   assert.match(formatFailures(failures), /must be required by merge-gate/);
-  assert.match(formatFailures(failures), /provider transaction must own one PRE_DEPLOY migrator/);
+  assert.match(formatFailures(failures), /provider transaction must own one migration-only PRE_DEPLOY component/);
   assert.match(formatFailures(failures), /explicit runtime-secret-denied environment/);
 });

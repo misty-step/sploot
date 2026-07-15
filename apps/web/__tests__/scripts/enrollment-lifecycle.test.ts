@@ -142,7 +142,11 @@ describe('strict DigitalOcean response contracts', () => {
     expect(job.run_command).toBe('pnpm --filter web exec node scripts/migrate-deploy.mjs');
     expect(job.github).toEqual(web.github);
     expect(job.source_dir).toBeNull();
-    expect(job.build_command).toBe(web.build_command);
+    expect(job.build_command).toBe(
+      'corepack enable && pnpm install --frozen-lockfile && pnpm --filter web exec prisma generate'
+    );
+    expect(job.build_command).not.toContain('web build');
+    expect(job.build_command).not.toContain('next build');
     expect(job.envs).toEqual([expect.objectContaining({ key: 'DATABASE_URL' })]);
     const lifted = deriveGaLiftSpec(staged);
     expect((lifted.services.find((service: { name?: unknown }) => service.name === 'web') as { envs?: Array<{ key: string; value: string }> }).envs?.find((entry) => entry.key === 'SPLOOT_ENROLLMENT_MODE')?.value).toBe('ga');
