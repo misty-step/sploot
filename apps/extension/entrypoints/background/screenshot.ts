@@ -10,6 +10,9 @@
 
 import { saveToSploot } from './save-flow';
 import { CAPTURE_MESSAGES } from '../../shared/capture-messages';
+import { UPLOAD, prepareImageForUpload } from '@sploot/common';
+
+const CAPTURE_ERROR = "Chrome doesn't allow capturing this page. Try a normal web page.";
 
 /**
  * Register the popup → background trigger for a visible-tab screenshot.
@@ -30,29 +33,52 @@ export function captureAndSaveVisibleTab(): Promise<void> {
       throw new Error('No active tab to screenshot.');
     }
 
-    // Fails on restricted pages (chrome://, the Web Store, the PDF viewer) —
-    // rethrown with user-facing copy; the raw error goes to the console.
+    const tabUrl = ensureHttpTabUrl(tab.url);
+
     let dataUrl: string;
     try {
       dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
     } catch (error) {
       console.warn('[Screenshot] captureVisibleTab failed', error);
-      throw new Error("Chrome doesn't allow capturing this page. Try a normal web page.");
+      throw new Error(CAPTURE_ERROR);
     }
-    const blob = await (await fetch(dataUrl)).blob();
-    return { blob, filename: screenshotFilename(tab.url) };
-  }, 'screenshot');
+    const capturedBlob = await (await fetch(dataUrl)).blob();
+    const filename = screenshotFilename(tabUrl);
+    const prepared = await prepareImageForUpload(new File([capturedBlob], filename, {
+      type: capturedBlob.type || 'image/png',
+      lastModified: Date.now(),
+    }));
+
+    if (prepared.file.size > UPLOAD.multipartSafeSize) {
+      const sizeMB = (prepared.file.size / 1024 / 1024).toFixed(2);
+      throw new Error(`Image too large after compression: ${sizeMB}MB`);
+    }
+
+    return { blob: prepared.file, filename: prepared.file.name };
+  }, 'screenshot', { prepareBeforeAuth: true });
 }
 
 /** e.g. "screenshot-twitter.com-1750000000000.png". */
-function screenshotFilename(url: string | undefined): string {
-  let host = 'screenshot';
-  if (url) {
-    try {
-      host = new URL(url).hostname || host;
-    } catch {
-      // keep the default
-    }
-  }
+function screenshotFilename(url: string): string {
+  const host = new URL(url).hostname || 'screenshot';
   return `screenshot-${host}-${Date.now()}.png`;
+}
+
+export function ensureHttpTabUrl(url: string | undefined): string {
+  if (!url) {
+    throw new Error(CAPTURE_ERROR);
+  }
+
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error(CAPTURE_ERROR);
+    }
+    return parsed.href;
+  } catch (error) {
+    if (error instanceof Error && error.message === CAPTURE_ERROR) {
+      throw error;
+    }
+    throw new Error(CAPTURE_ERROR);
+  }
 }

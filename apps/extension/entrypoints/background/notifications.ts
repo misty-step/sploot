@@ -18,28 +18,89 @@ export interface ErrorNotificationInput {
 
 const SUCCESS_DISMISS_MS = 5000;
 const ERROR_DISMISS_MS = 10000;
+const ACTIONS_STORAGE_KEY = 'sploot:notification-actions';
+const MAX_PERSISTED_ACTIONS = 32;
+
+interface NotificationAction {
+  notificationId: string;
+  url: string;
+}
 
 // Maps a live notification id to the URL its click should open. A single
 // onClicked listener (registered once via setupNotificationFeedback) reads this
 // — replacing the previous per-notification addListener, which leaked a listener
 // on every notification that auto-dismissed without ever being clicked.
 const notificationActions = new Map<string, string>();
+let actionWriteQueue = Promise.resolve();
+let clickListenerRegistered = false;
+
+async function loadPersistedActions(): Promise<NotificationAction[]> {
+  const result = await chrome.storage.local.get(ACTIONS_STORAGE_KEY);
+  const actions = result[ACTIONS_STORAGE_KEY];
+  if (!Array.isArray(actions)) {
+    return [];
+  }
+
+  return actions.filter(
+    (action): action is NotificationAction =>
+      Boolean(action) && typeof action.notificationId === 'string' && typeof action.url === 'string'
+  );
+}
+
+function enqueueActionWrite(write: () => Promise<void>): Promise<void> {
+  actionWriteQueue = actionWriteQueue.then(write, write);
+  return actionWriteQueue;
+}
+
+function rememberAction(notificationId: string, url: string): void {
+  notificationActions.set(notificationId, url);
+  while (notificationActions.size > MAX_PERSISTED_ACTIONS) {
+    const oldest = notificationActions.keys().next().value;
+    if (oldest) {
+      notificationActions.delete(oldest);
+    }
+  }
+
+  void enqueueActionWrite(async () => {
+    const actions = (await loadPersistedActions()).filter(action => action.notificationId !== notificationId);
+    actions.push({ notificationId, url });
+    await chrome.storage.local.set({
+      [ACTIONS_STORAGE_KEY]: actions.slice(-MAX_PERSISTED_ACTIONS),
+    });
+  });
+}
+
+async function forgetAction(notificationId: string): Promise<void> {
+  notificationActions.delete(notificationId);
+  await enqueueActionWrite(async () => {
+    const actions = (await loadPersistedActions()).filter(action => action.notificationId !== notificationId);
+    await chrome.storage.local.set({ [ACTIONS_STORAGE_KEY]: actions });
+  });
+}
 
 /**
  * Register the one notifications click handler. Call once at worker startup.
  */
 export function setupNotificationFeedback(): void {
+  if (clickListenerRegistered) {
+    return;
+  }
+
+  clickListenerRegistered = true;
   chrome.notifications.onClicked.addListener((notificationId) => {
-    const url = notificationActions.get(notificationId);
-    if (url) {
-      chrome.tabs.create({ url });
-    }
-    dismiss(notificationId);
+    void (async () => {
+      const url = notificationActions.get(notificationId)
+        ?? (await loadPersistedActions()).find(action => action.notificationId === notificationId)?.url;
+      if (url) {
+        chrome.tabs.create({ url });
+      }
+      await dismiss(notificationId);
+    })();
   });
 }
 
-function dismiss(notificationId: string): void {
-  notificationActions.delete(notificationId);
+async function dismiss(notificationId: string): Promise<void> {
+  await forgetAction(notificationId);
   chrome.notifications.clear(notificationId);
 }
 
@@ -65,7 +126,7 @@ export function showSuccessNotification(
     isClickable: true,
   });
 
-  notificationActions.set(notificationId, getSplootAppUrl());
+  rememberAction(notificationId, getSplootAppUrl());
   flashSuccessBadge();
   // Persistent trace for the popup — survives DND-suppressed notifications.
   setSaveStatus({
@@ -127,7 +188,7 @@ export function showErrorNotification(error: string | ErrorNotificationInput): v
   });
 
   if (actionUrl) {
-    notificationActions.set(notificationId, actionUrl);
+    rememberAction(notificationId, actionUrl);
   }
   flashErrorBadge();
   setSaveStatus({ state: 'error', message: userMessage, at: Date.now() });

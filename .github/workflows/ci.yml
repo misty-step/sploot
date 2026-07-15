@@ -180,6 +180,12 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Build deterministic production manifest without secrets
+        run: pnpm --filter extension build:manifest-check
+      - name: Validate production manifest policy
+        run: pnpm --filter extension manifest:check
+      - name: Test manifest policy
+        run: pnpm --filter extension manifest:test
       - name: Lint extension
         run: pnpm --filter extension lint
       - name: Test extension

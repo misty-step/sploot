@@ -150,7 +150,7 @@ popup action. This temporary grant avoids requesting file: or ftp: host access.
 **Host permission: `*://*/*`**
 
 ```text
-Required so the extension can offer "Save to Sploot" on images from arbitrary websites the user visits. The extension only uploads an image after the user explicitly chooses "Save to Sploot" from the context menu.
+Required so the extension can offer "Save to Sploot" on images from arbitrary websites the user visits. The extension only captures or uploads after the user explicitly chooses a Sploot action. Screenshot capture is limited to visible http(s) pages; Chrome, extension, file, ftp, data, and view-source pages are rejected.
 ```
 
 **Host permission: `https://www.sploot.app/*`**

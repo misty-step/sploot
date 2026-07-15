@@ -7,6 +7,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
+import { validateManifest } from './manifest-policy.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
@@ -106,46 +107,8 @@ async function validateZip() {
   }
 
   const manifest = JSON.parse(await zipEntry(zipPath, 'manifest.json'));
-  const hostPermissions = new Set(manifest.host_permissions ?? []);
-  const permissions = new Set(manifest.permissions ?? []);
-  const requiredHosts = [
-    'https://www.sploot.app/*',
-    'https://sploot.app/*',
-    'https://clerk.sploot.app/*',
-  ];
-  const requiredPermissions = ['storage', 'tabs', 'activeTab', 'contextMenus', 'notifications', 'cookies'];
-
-  if (manifest.version !== '1.0.0') {
-    recordLocal(`release zip version is ${manifest.version ?? '<missing>'}, expected 1.0.0`);
-  }
-
-  for (const host of requiredHosts) {
-    if (!hostPermissions.has(host)) {
-      recordLocal(`release zip manifest missing host permission ${host}`);
-    }
-  }
-
-  for (const permission of requiredPermissions) {
-    if (!permissions.has(permission)) {
-      recordLocal(`release zip manifest missing permission ${permission}`);
-    }
-  }
-
-  if (!hostPermissions.has('*://*/*')) {
-    recordLocal('release zip manifest missing narrow web host permission *://*/*');
-  }
-
-  if (hostPermissions.has('<all_urls>')) {
-    recordLocal('release zip manifest must not request broad <all_urls>; use activeTab with *://*/*');
-  }
-
-  const devHost = [...hostPermissions].find(host => {
-    const value = String(host);
-    return value.includes('localhost') || value.includes('clerk.accounts.dev');
-  });
-
-  if (devHost) {
-    recordLocal(`release zip manifest contains development host ${devHost}`);
+  for (const error of validateManifest(manifest, { production: true })) {
+    recordLocal(`release zip manifest ${error}`);
   }
 
   const javascriptBundle = (

@@ -17,6 +17,11 @@ export interface ProducedImage {
   filename: string;
 }
 
+export interface SaveOptions {
+  /** Produce bytes before auth can open or focus another browser tab. */
+  prepareBeforeAuth?: boolean;
+}
+
 /**
  * @param produce yields the image to upload (fetch from a URL, capture a tab, …)
  * @param subject noun for user-facing copy, e.g. "image" or "screenshot" —
@@ -24,11 +29,13 @@ export interface ProducedImage {
  */
 export async function saveToSploot(
   produce: () => Promise<ProducedImage>,
-  subject: string
+  subject: string,
+  options: SaveOptions = {}
 ): Promise<void> {
   try {
     // Live progress for the popup's persistent status strip.
     setSaveStatus({ state: 'saving', label: `Saving ${subject}…`, at: Date.now() });
+    const preparedImage = options.prepareBeforeAuth ? await produce() : undefined;
 
     const authenticated = await isAuthenticated();
     if (!authenticated) {
@@ -40,7 +47,7 @@ export async function saveToSploot(
       }
     }
 
-    const { blob, filename } = await produce();
+    const { blob, filename } = preparedImage ?? await produce();
     const result = await uploadImage(blob, filename);
     showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
   } catch (error) {

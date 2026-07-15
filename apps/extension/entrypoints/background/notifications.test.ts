@@ -20,19 +20,21 @@ interface ChromeMock {
     setBadgeBackgroundColor: ReturnType<typeof vi.fn>;
   };
   storage: {
-    local: { set: ReturnType<typeof vi.fn> };
+    local: { get: ReturnType<typeof vi.fn>; set: ReturnType<typeof vi.fn> };
     onChanged: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
   };
 }
 
 let clickListeners: Array<(notificationId: string) => void>;
 let chromeMock: ChromeMock;
+let persistedStorage: Record<string, unknown>;
 
 beforeEach(() => {
   vi.resetModules(); // fresh module-level action map + click handler per test
   vi.useFakeTimers();
   vi.setSystemTime(new Date('2026-05-18T12:00:00.000Z'));
   clickListeners = [];
+  persistedStorage = {};
   chromeMock = {
     notifications: {
       create: vi.fn(),
@@ -48,7 +50,10 @@ beforeEach(() => {
     tabs: { create: vi.fn() },
     action: { setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
     storage: {
-      local: { set: vi.fn().mockResolvedValue(undefined) },
+      local: {
+        get: vi.fn(async (key: string) => ({ [key]: persistedStorage[key] })),
+        set: vi.fn(async (values: Record<string, unknown>) => Object.assign(persistedStorage, values)),
+      },
       onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
     },
   };
@@ -77,6 +82,8 @@ describe('notifications', () => {
     const id = chromeMock.notifications.create.mock.calls[0][0] as string;
     expect(id).toMatch(/^success-/);
     clickListeners[0](id);
+    await vi.waitFor(() => expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/app' }));
+    await vi.waitFor(() => expect(chromeMock.notifications.clear).toHaveBeenCalledWith(id));
 
     expect(chromeMock.notifications.create).toHaveBeenCalledWith(id, {
       type: 'basic',
@@ -86,7 +93,6 @@ describe('notifications', () => {
       priority: 1,
       isClickable: true,
     });
-    expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/app' });
     expect(chromeMock.notifications.clear).toHaveBeenCalledWith(id);
   });
 
@@ -194,6 +200,8 @@ describe('notifications', () => {
     const id = chromeMock.notifications.create.mock.calls[0][0] as string;
     expect(id).toMatch(/^error-/);
     clickListeners[0](id);
+    await vi.waitFor(() => expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/app/settings' }));
+    await vi.waitFor(() => expect(chromeMock.notifications.clear).toHaveBeenCalledWith(id));
 
     expect(chromeMock.notifications.create).toHaveBeenCalledWith(id, {
       type: 'basic',
@@ -203,7 +211,37 @@ describe('notifications', () => {
       priority: 2,
       isClickable: true,
     });
-    expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/app/settings' });
     expect(chromeMock.notifications.clear).toHaveBeenCalledWith(id);
+  });
+
+  it('resolves a persisted action after the worker restarts', async () => {
+    const first = await import('./notifications');
+    first.setupNotificationFeedback();
+    first.showSuccessNotification('restart.jpg');
+    const id = chromeMock.notifications.create.mock.calls[0][0] as string;
+
+    await vi.waitFor(() => expect(persistedStorage['sploot:notification-actions']).toEqual([
+      { notificationId: id, url: 'https://sploot.test/app' },
+    ]));
+
+    vi.resetModules();
+    const second = await import('./notifications');
+    second.setupNotificationFeedback();
+    clickListeners[1](id);
+
+    await vi.waitFor(() => expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/app' }));
+    await vi.waitFor(() => expect(persistedStorage['sploot:notification-actions']).toEqual([]));
+  });
+
+  it('bounds persisted notification actions', async () => {
+    const { showSuccessNotification } = await import('./notifications');
+
+    for (let index = 0; index < 40; index += 1) {
+      showSuccessNotification(`meme-${index}.jpg`);
+    }
+
+    await vi.waitFor(() => {
+      expect(persistedStorage['sploot:notification-actions']).toHaveLength(32);
+    });
   });
 });
