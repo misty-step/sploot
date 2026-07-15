@@ -97,4 +97,16 @@ describe('offline recovery', () => {
     first.unmount();
     second.unmount();
   });
+
+  it('keeps the item when the durable completion fence is lost', async () => {
+    mocks.offline = false;
+    mocks.manager.completeUpload.mockImplementationOnce(async () => false);
+    const hook = renderHook(() => useUploadQueue({ autoProcess: true }));
+
+    await waitFor(() => expect(mocks.client.uploadFile).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(hook.result.current.queue.some((item) => item.id === 'queued-1')).toBe(true));
+    expect(mocks.manager.removeUpload).not.toHaveBeenCalled();
+    expect(hook.result.current.queue.find((item) => item.id === 'queued-1')?.status).not.toBe('success');
+    hook.unmount();
+  });
 });

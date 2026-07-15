@@ -144,6 +144,7 @@ model UploadIdempotency {
   result         Json?
   leaseToken     String   @map("lease_token")
   leaseExpiresAt DateTime @map("lease_expires_at")
+  retainedUntil  DateTime @map("retained_until")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -151,6 +152,7 @@ model UploadIdempotency {
 
   @@unique([ownerUserId, key], name: "upload_idempotency_owner_key")
   @@index([leaseExpiresAt])
+  @@index([status, retainedUntil])
   @@map("upload_idempotency")
 }
 

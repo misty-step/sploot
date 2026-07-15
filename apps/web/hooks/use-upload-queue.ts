@@ -151,7 +151,17 @@ export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean 
           const file = await queueManager.toFile(claimed);
           const result = await uploadClient.uploadFile(file, { idempotencyKey: claimed.id });
           if (!result.success) throw new Error(result.error || 'Upload failed');
-          await queueManager.completeUpload(upload.id, claimOwner);
+          const completed = await queueManager.completeUpload(upload.id, claimOwner);
+          if (!completed) {
+            const refreshed = await queueManager.getPendingUploads();
+            const durable = refreshed.find((candidate) => candidate.id === upload.id);
+            publishQueue((previous) => previous.map((item) => item.id === upload.id
+              ? durable
+                ? toQueuedUpload(durable)
+                : { ...item, status: 'error', error: 'Upload ownership was lost; retrying is required.' }
+              : item));
+            continue;
+          }
           publishQueue((previous) => previous.filter((item) => item.id !== upload.id));
           track({ name: 'upload_completed', properties: { assetId: upload.id, duration: 0, size: upload.size } });
         } catch (error) {

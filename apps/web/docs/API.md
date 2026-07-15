@@ -212,6 +212,7 @@ Uploads are guarded by the same runtime and quota policy:
 - Quota denials return `403` with `code: "quota_exceeded"`, a `quota` snapshot, and an action pointing to `/app/settings`.
 - `POST /api/upload` is the supported upload contract for web, extension, and future queued replay clients. Direct client-upload URL generation is not a supported product API.
 - Optional `Idempotency-Key` (1–128 ASCII letters, digits, `.`, `_`, `:`, or `-`) identifies a queued upload across retries and tabs. A completed key replays its original result; a live concurrent request returns `409` with `code: "UPLOAD_IN_PROGRESS"` and clients should retry the same key.
+- The browser queue uses a two-minute durable claim lease, longer than the upload client's ten-second network timeout, so a timed-out request can be recovered without a second active worker. The receipt is retained for seven days and cleanup deletes only completed receipts after that replay window. The `Idempotency-Key` is a request/replay fence; checksum uniqueness in the ingest pipeline remains the server-side asset deduplication oracle.
 
 Quota error example:
 

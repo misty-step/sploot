@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Prisma } from '@prisma/client';
 
 const mocks = vi.hoisted(() => ({
   prisma: {
@@ -13,10 +14,22 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/db', () => ({ prisma: mocks.prisma }));
 
-import { UploadIdempotencyInProgressError, runIdempotentUpload } from '@/lib/upload/upload-idempotency';
+import {
+  cleanupExpiredUploadReceipts,
+  UploadIdempotencyInProgressError,
+  UploadIdempotencyLeaseLostError,
+  runIdempotentUpload,
+} from '@/lib/upload/upload-idempotency';
+
+function uniqueViolation(): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError('duplicate', { code: 'P2002', clientVersion: 'test' });
+}
 
 describe('runIdempotentUpload', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.prisma.uploadIdempotency.deleteMany.mockResolvedValue({ count: 0 });
+  });
 
   it('stores and returns the first result without re-executing the vendor pipeline', async () => {
     mocks.prisma.uploadIdempotency.create.mockResolvedValue({ id: 'receipt-1' });
@@ -30,7 +43,7 @@ describe('runIdempotentUpload', () => {
       data: expect.objectContaining({ status: 'completed', result: { assetId: 'asset-1' } }),
     }));
 
-    mocks.prisma.uploadIdempotency.create.mockRejectedValueOnce(new Error('Unique constraint failed'));
+    mocks.prisma.uploadIdempotency.create.mockRejectedValueOnce(uniqueViolation());
     mocks.prisma.uploadIdempotency.findUnique.mockResolvedValueOnce({
       id: 'receipt-1',
       status: 'completed',
@@ -42,7 +55,7 @@ describe('runIdempotentUpload', () => {
   });
 
   it('reclaims only an expired receipt and rejects a live concurrent receipt', async () => {
-    mocks.prisma.uploadIdempotency.create.mockRejectedValue(new Error('Unique constraint failed'));
+    mocks.prisma.uploadIdempotency.create.mockRejectedValue(uniqueViolation());
     mocks.prisma.uploadIdempotency.findUnique.mockResolvedValue({
       id: 'receipt-1',
       status: 'processing',
@@ -53,5 +66,27 @@ describe('runIdempotentUpload', () => {
 
     mocks.prisma.uploadIdempotency.updateMany.mockReset().mockResolvedValue({ count: 0 });
     await expect(runIdempotentUpload('user-1', 'queue-1', vi.fn())).rejects.toBeInstanceOf(UploadIdempotencyInProgressError);
+  });
+
+  it('does not report success after losing the completion lease', async () => {
+    mocks.prisma.uploadIdempotency.create.mockResolvedValue({ id: 'receipt-1' });
+    mocks.prisma.uploadIdempotency.updateMany.mockResolvedValue({ count: 0 });
+    mocks.prisma.uploadIdempotency.findUnique.mockResolvedValue({
+      id: 'receipt-1',
+      status: 'processing',
+      result: null,
+    });
+
+    await expect(runIdempotentUpload('user-1', 'queue-lost', vi.fn().mockResolvedValue({ kind: 'created' })))
+      .rejects.toBeInstanceOf(UploadIdempotencyLeaseLostError);
+  });
+
+  it('cleans only completed receipts past the explicit retention boundary', async () => {
+    mocks.prisma.uploadIdempotency.deleteMany.mockResolvedValue({ count: 2 });
+
+    await expect(cleanupExpiredUploadReceipts(new Date('2026-07-15T00:00:00.000Z'))).resolves.toBe(2);
+    expect(mocks.prisma.uploadIdempotency.deleteMany).toHaveBeenCalledWith({
+      where: { status: 'completed', retainedUntil: { lt: new Date('2026-07-15T00:00:00.000Z') } },
+    });
   });
 });

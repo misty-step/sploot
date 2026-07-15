@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Loader2, CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useOffline } from '@/hooks/use-offline';
 import { useUploadQueue } from '@/hooks/use-upload-queue';
@@ -34,14 +34,13 @@ import {
   shouldEmitUploadProgressUpdate,
   UPLOAD_PROGRESS_UI_CAP,
 } from '@/lib/upload/upload-progress-throttle';
-import { getUploadQueueManager, useUploadRecovery } from '@/lib/upload-queue';
+import { createUploadId, getUploadQueueManager } from '@/lib/upload-queue';
 import { showToast } from '@/components/ui/toast';
 import type { ProgressStats } from './upload-progress-header';
 import { FileStreamProcessor } from '@/lib/file-stream-processor';
 import { logger } from '@/lib/logger';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { StickerTab } from '@/components/sploot';
 import { UPLOAD, prepareImageForUpload } from '@sploot/common';
 
@@ -112,9 +111,6 @@ export function UploadZone({
   // Store File objects temporarily only during active upload
   const fileObjects = useRef(new Map<string, File>());
   const [isCancelling, setIsCancelling] = useState(false);
-  const [showRecoveryNotification, setShowRecoveryNotification] =
-    useState(false);
-  const [recoveryCount, setRecoveryCount] = useState(0);
   const [uploadStats, setUploadStats] = useState<ProgressStats | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
   const [preparingFileCount, setPreparingFileCount] = useState(0);
@@ -862,7 +858,7 @@ export function UploadZone({
             fileObjects.current.set(queueItem.id, uploadFile);
 
           } else {
-            const id = `${Date.now()}-${Math.random()}`;
+            const id = createUploadId();
             const metadata: FileMetadata = {
               id,
               name: uploadFile.name,
@@ -1076,35 +1072,6 @@ export function UploadZone({
     }
   }, [onUploadComplete]);
 
-  // Check for interrupted uploads on mount
-  useUploadRecovery(
-    async (recoveredFiles) => {
-      logger.debug(
-        `[UploadZone] Recovering ${recoveredFiles.length} interrupted uploads`,
-      );
-      setRecoveryCount(recoveredFiles.length);
-      setShowRecoveryNotification(true);
-
-      // Process recovered files
-      await processFiles(recoveredFiles);
-
-      // Show success toast
-      showToast(
-        `✓ Resuming ${recoveredFiles.length} interrupted ${recoveredFiles.length === 1 ? 'upload' : 'uploads'}`,
-        'success',
-      );
-
-      // Hide notification after 3 seconds
-      setTimeout(() => {
-        setShowRecoveryNotification(false);
-      }, 3000);
-    },
-    {
-      autoResumeDelay: 3000,
-      maxRetries: 3,
-    },
-  );
-
   // Remove file from list
   const removeFile = (id: string) => {
     setFileMetadata((prev) => {
@@ -1245,17 +1212,6 @@ export function UploadZone({
           feed <em className="not-italic text-sploot-magenta">the pile</em>
         </h1>
       </div>
-
-      {/* Recovery notification */}
-      {showRecoveryNotification && (
-        <Alert className="mb-4 animate-in fade-in duration-200">
-          <Loader2 className="size-4 animate-spin" />
-          <AlertDescription>
-            Resuming {recoveryCount} interrupted{' '}
-            {recoveryCount === 1 ? 'upload' : 'uploads'}...
-          </AlertDescription>
-        </Alert>
-      )}
 
       {/* Drop Zone */}
       <UploadDropZone

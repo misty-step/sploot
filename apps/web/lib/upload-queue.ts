@@ -1,4 +1,3 @@
-import { useState, useEffect, useRef } from 'react';
 import { logger } from '@/lib/observability-logger';
 
 /**
@@ -14,6 +13,8 @@ export interface PersistedUpload {
   lastModified: number;
   fileData: ArrayBuffer; // Store file content as ArrayBuffer
   addedAt: number;
+  firstAddedAt?: number;
+  attemptStartedAt?: number;
   status: 'pending' | 'uploading' | 'failed' | 'terminal';
   error?: string;
   retryCount: number;
@@ -25,19 +26,31 @@ export const UPLOAD_QUEUE_MAX_RETRIES = 3;
 export const UPLOAD_QUEUE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const UPLOAD_QUEUE_MAX_BYTES = 250 * 1024 * 1024;
 export const UPLOAD_QUEUE_MAX_ENTRIES = 100;
-const UPLOAD_CLAIM_LEASE_MS = 2 * 60 * 1000;
+/** Must exceed the network client's 10-second request timeout. */
+export const UPLOAD_QUEUE_CLAIM_LEASE_MS = 2 * 60 * 1000;
+
+export function createUploadId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  }
+  throw new Error('Secure upload identifiers are unavailable in this browser.');
+}
+
+function uploadAttemptStartedAt(upload: PersistedUpload): number {
+  return upload.attemptStartedAt ?? upload.addedAt;
+}
+
+function isUploadExpired(upload: PersistedUpload, now: number): boolean {
+  return uploadAttemptStartedAt(upload) <= now - UPLOAD_QUEUE_MAX_AGE_MS;
+}
 
 export class UploadQueueStorageLimitError extends Error {
   constructor() {
     super('Upload queue storage is full. Remove a queued upload before adding another file.');
     this.name = 'UploadQueueStorageLimitError';
   }
-}
-
-interface UploadRecoveryOptions {
-  onResumePrompt?: (uploads: PersistedUpload[]) => boolean | Promise<boolean>;
-  autoResumeDelay?: number; // ms, defaults to 3000
-  maxRetries?: number; // defaults to 3
 }
 
 /**
@@ -112,13 +125,14 @@ export class UploadQueueManager {
   /**
    * Add a file to the persisted upload queue
    */
-  async addUpload(file: File): Promise<string> {
+  async addUpload(file: File, collisionAttempt = 0): Promise<string> {
     if (!this.db) {
       await this.init();
       if (!this.db) return file.name; // Fallback if DB not available
     }
 
-    const id = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = createUploadId();
+    const addedAt = Date.now();
 
     // Convert File to ArrayBuffer for storage
     const arrayBuffer = await file.arrayBuffer();
@@ -130,7 +144,9 @@ export class UploadQueueManager {
       size: file.size,
       lastModified: file.lastModified,
       fileData: arrayBuffer,
-      addedAt: Date.now(),
+      addedAt,
+      firstAddedAt: addedAt,
+      attemptStartedAt: addedAt,
       status: 'pending',
       retryCount: 0,
     };
@@ -161,6 +177,11 @@ export class UploadQueueManager {
 
         request.onerror = () => {
           console.error('[UploadQueue] Failed to persist upload:', request.error);
+          if (request.error?.name === 'ConstraintError' && collisionAttempt < 3) {
+            transaction.abort();
+            void this.addUpload(file, collisionAttempt + 1).then(resolve, reject);
+            return;
+          }
           reject(request.error);
         };
       };
@@ -201,7 +222,7 @@ export class UploadQueueManager {
           upload.status = 'terminal';
           upload.error = upload.error ?? 'Automatic retries exhausted. Retry or remove this upload.';
         }
-        if (upload.addedAt <= Date.now() - UPLOAD_QUEUE_MAX_AGE_MS) {
+        if (isUploadExpired(upload, Date.now())) {
           upload.status = 'terminal';
           upload.error = upload.error ?? 'Upload is older than 24 hours. Retry or remove this upload.';
         }
@@ -216,7 +237,7 @@ export class UploadQueueManager {
   }
 
   /** Atomically claim one upload for a tab/manager, recovering stale claims. */
-  async claimUpload(id: string, owner: string, leaseMs = UPLOAD_CLAIM_LEASE_MS): Promise<PersistedUpload | null> {
+  async claimUpload(id: string, owner: string, leaseMs = UPLOAD_QUEUE_CLAIM_LEASE_MS): Promise<PersistedUpload | null> {
     if (!this.db) return null;
 
     return new Promise((resolve, reject) => {
@@ -230,7 +251,7 @@ export class UploadQueueManager {
         if (!upload || upload.status === 'terminal') return;
         const now = Date.now();
         if (upload.status === 'uploading' && (upload.claimExpiresAt ?? 0) > now) return;
-        if (upload.retryCount >= UPLOAD_QUEUE_MAX_RETRIES || upload.addedAt <= now - UPLOAD_QUEUE_MAX_AGE_MS) {
+        if (upload.retryCount >= UPLOAD_QUEUE_MAX_RETRIES || isUploadExpired(upload, now)) {
           upload.status = 'terminal';
           upload.error = upload.retryCount >= UPLOAD_QUEUE_MAX_RETRIES
             ? 'Automatic retries exhausted. Retry or remove this upload.'
@@ -265,7 +286,7 @@ export class UploadQueueManager {
       let released: PersistedUpload | null = null;
       request.onsuccess = () => {
         const upload = request.result as PersistedUpload | undefined;
-        if (!upload || upload.claimOwner !== owner) return;
+        if (!upload || upload.claimOwner !== owner || (upload.claimExpiresAt ?? 0) <= Date.now()) return;
         upload.status = 'failed';
         upload.retryCount += 1;
         upload.error = error;
@@ -274,7 +295,7 @@ export class UploadQueueManager {
         if (upload.retryCount >= UPLOAD_QUEUE_MAX_RETRIES) {
           upload.status = 'terminal';
           upload.error = 'Automatic retries exhausted. Retry or remove this upload.';
-        } else if (upload.addedAt <= Date.now() - UPLOAD_QUEUE_MAX_AGE_MS) {
+        } else if (isUploadExpired(upload, Date.now())) {
           upload.status = 'terminal';
           upload.error = 'Upload is older than 24 hours. Retry or remove this upload.';
         }
@@ -299,7 +320,7 @@ export class UploadQueueManager {
       let completed = false;
       request.onsuccess = () => {
         const upload = request.result as PersistedUpload | undefined;
-        if (!upload || upload.claimOwner !== owner) return;
+        if (!upload || upload.claimOwner !== owner || (upload.claimExpiresAt ?? 0) <= Date.now()) return;
         store.delete(id);
         completed = true;
       };
@@ -328,6 +349,7 @@ export class UploadQueueManager {
 
         upload.status = 'pending';
         upload.retryCount = 0;
+        upload.attemptStartedAt = Date.now();
         delete upload.error;
         delete upload.claimOwner;
         delete upload.claimExpiresAt;
@@ -384,7 +406,7 @@ export class UploadQueueManager {
         const uploads = (request.result || []) as PersistedUpload[];
         normalizedUploads = uploads.map((upload) => {
           const normalized = { ...upload };
-          const expired = normalized.addedAt <= Date.now() - UPLOAD_QUEUE_MAX_AGE_MS;
+          const expired = isUploadExpired(normalized, Date.now());
           if (normalized.status === 'uploading' && (normalized.claimExpiresAt ?? 0) <= Date.now()) {
             normalized.status = 'pending';
             delete normalized.claimOwner;
@@ -447,82 +469,6 @@ export class UploadQueueManager {
   }
 
   /**
-   * Check for and handle interrupted uploads on page load
-   */
-  async checkForInterruptedUploads(
-    options: UploadRecoveryOptions = {}
-  ): Promise<File[]> {
-    const {
-      onResumePrompt,
-      autoResumeDelay = 3000,
-      maxRetries = 3,
-    } = options;
-
-    const pendingUploads = (await this.getPendingUploads()).filter((upload) => upload.status === 'pending' || upload.status === 'failed');
-
-    if (pendingUploads.length === 0) {
-      return [];
-    }
-
-    logger.logInfo('upload-queue.interrupted-found', {
-      count: pendingUploads.length,
-    });
-
-    // If there's a custom prompt handler, use it
-    if (onResumePrompt) {
-      const shouldResume = await onResumePrompt(pendingUploads);
-      if (!shouldResume) {
-        // User declined, optionally clear the uploads
-        // await this.clearAll();
-        return [];
-      }
-    } else {
-      // Default behavior: Show notification and auto-resume
-      if (typeof window !== 'undefined') {
-        this.showRecoveryNotification(pendingUploads.length, autoResumeDelay);
-
-        // Wait for auto-resume delay
-        await new Promise(resolve => setTimeout(resolve, autoResumeDelay));
-      }
-    }
-
-    // Convert persisted uploads back to Files and dequeue them: the caller
-    // feeds recovered files straight back into the upload pipeline, which
-    // re-persists them under fresh ids. Leaving the old records behind made
-    // every recovery pass duplicate them.
-    const files: File[] = [];
-    for (const upload of pendingUploads) {
-      try {
-        const file = await this.toFile(upload);
-        files.push(file);
-        await this.removeUpload(upload.id);
-      } catch (error) {
-        console.error(`[UploadQueue] Failed to restore upload ${upload.filename}:`, error);
-        await this.updateUploadStatus(upload.id, 'failed', String(error));
-      }
-    }
-
-    return files;
-  }
-
-  /**
-   * Show recovery notification (can be customized)
-   */
-  private showRecoveryNotification(count: number, autoResumeMs: number): void {
-    // This would integrate with your toast/notification system
-    logger.logInfo('upload-queue.auto-resume-scheduled', {
-      count,
-      delaySeconds: autoResumeMs / 1000,
-    });
-
-    // If you have a toast system available, use it:
-    // showToast(
-    //   `Found ${count} interrupted upload${count > 1 ? 's' : ''}. Resuming in ${autoResumeMs/1000}s...`,
-    //   'info'
-    // );
-  }
-
-  /**
    * Get upload statistics
    */
   async getStats(): Promise<{
@@ -550,69 +496,4 @@ export function getUploadQueueManager(): UploadQueueManager {
     queueManagerInstance = UploadQueueManager.getInstance();
   }
   return queueManagerInstance;
-}
-
-/**
- * Hook helper for React components
- */
-export function useUploadRecovery(
-  onFilesRecovered?: (files: File[]) => void,
-  options?: UploadRecoveryOptions
-): {
-  checking: boolean;
-  recoveredCount: number;
-} {
-  const [checking, setChecking] = useState(true);
-  const [recoveredCount, setRecoveredCount] = useState(0);
-
-  // Callers pass inline callbacks/options whose identity changes every
-  // render; keep the latest in refs so the recovery pass runs exactly once
-  // per mount. Re-running it per render restarted the auto-resume wait
-  // forever on pages that re-render continuously, so recovery never fired
-  // (and the queue was re-read on every render).
-  const onFilesRecoveredRef = useRef(onFilesRecovered);
-  const optionsRef = useRef(options);
-
-  useEffect(() => {
-    onFilesRecoveredRef.current = onFilesRecovered;
-  }, [onFilesRecovered]);
-
-  useEffect(() => {
-    optionsRef.current = options;
-  }, [options]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const checkUploads = async () => {
-      try {
-        const manager = getUploadQueueManager();
-        await manager.init();
-
-        const files = await manager.checkForInterruptedUploads(optionsRef.current);
-
-        if (mounted) {
-          setRecoveredCount(files.length);
-          setChecking(false);
-
-          if (files.length > 0 && onFilesRecoveredRef.current) {
-            onFilesRecoveredRef.current(files);
-          }
-        }
-      } catch (error) {
-        console.error('[UploadRecovery] Failed to check for interrupted uploads:', error);
-        if (mounted) {
-          setChecking(false);
-        }
-      }
-    };
-
-    checkUploads();
-
-    return () => {
-      mounted = false;
-    };
-  }, []); // One recovery pass per mount; latest callback/options via refs
-
-  return { checking, recoveredCount };
 }
