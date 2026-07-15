@@ -13,7 +13,9 @@ const expectedCandidateSha = process.env.RELEASE_CANDIDATE_SHA;
 const names = {
   zip: 'extension-1.0.0-chrome.zip',
   marker: 'release-build-provenance.json',
-  provenance: 'extension-1.0.0-chrome.provenance.json',
+  // The provenance record is emitted to the runner temp directory and is
+  // uploaded alongside dist under this transport-stable filename.
+  provenance: 'extension-release-provenance.json',
 };
 
 async function filesUnder(directory) {
