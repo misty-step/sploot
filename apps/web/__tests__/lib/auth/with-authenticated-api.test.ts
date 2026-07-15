@@ -49,13 +49,16 @@ describe('withAuthenticatedApi', () => {
           SPLOOT_DEPLOYMENT_ENV: 'test',
           SPLOOT_QA_AUTH_MODE: 'enabled',
           SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
+          SPLOOT_QA_DEPLOYMENT_ID: 'local-pwa-capture-v1',
+          SPLOOT_QA_DEPLOYMENT_ENV: 'local-qa',
+          SPLOOT_QA_AUDIENCE: 'sploot-pwa-capture',
         },
       }
     );
 
     const response = await handler(
       new NextRequest('http://localhost:3001/api/cache/stats', {
-        headers: { [getQaLocalAuthHeader()]: token },
+        headers: { [getQaLocalAuthHeader()]: token, 'x-forwarded-for': '127.0.0.1' },
       }),
       { params: Promise.resolve({}) }
     );

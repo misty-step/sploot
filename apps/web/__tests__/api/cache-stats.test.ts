@@ -39,6 +39,9 @@ describe('/api/cache/stats', () => {
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
     vi.stubEnv('SPLOOT_QA_AUTH_SECRET', QA_SECRET);
     vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'test');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ID', 'local-pwa-capture-v1');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ENV', 'local-qa');
+    vi.stubEnv('SPLOOT_QA_AUDIENCE', 'sploot-pwa-capture');
     vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', '');
     vi.stubEnv('CLERK_SECRET_KEY', '');
   });
@@ -55,6 +58,7 @@ describe('/api/cache/stats', () => {
 
     return createMockRequest(method, null, {
       [getQaLocalAuthHeader()]: token,
+      'x-forwarded-for': '127.0.0.1',
     }, searchParams);
   }
 

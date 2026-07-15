@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect, memo } from 'react';
+import { useMemo, useRef, useState, useEffect, memo } from 'react';
 import type { CSSProperties, SyntheticEvent } from 'react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
@@ -68,6 +68,9 @@ function ImageTileComponent({
   });
   const deleteConfirmation = useDeleteConfirmation();
   const { recordBlobError, recordBlobSuccess } = useBlobCircuitBreaker();
+  const tileMediaRef = useRef<HTMLDivElement>(null);
+  const shouldUseLazyBoundary = typeof IntersectionObserver !== 'undefined' && process.env.NODE_ENV !== 'test';
+  const [isMediaInView, setIsMediaInView] = useState(() => !shouldUseLazyBoundary);
 
   // Debug mode tracking
   const [debugInfo, setDebugInfo] = useState<{
@@ -89,6 +92,9 @@ function ImageTileComponent({
       setHasTriedFallback(false);
       setImageError(false);
       setImageLoaded(false);
+      if (shouldUseLazyBoundary) {
+        setIsMediaInView(false);
+      }
     });
   }, [
     asset.id,
@@ -100,6 +106,28 @@ function ImageTileComponent({
     preserveAspectRatio,
     initialImageSrc,
   ]);
+
+  useEffect(() => {
+    const node = tileMediaRef.current;
+    if (!node || !shouldUseLazyBoundary) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting || entry.intersectionRatio > 0)) {
+          setIsMediaInView(true);
+          observer.disconnect();
+        }
+      },
+      {
+        root: null,
+        rootMargin: '0px',
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [asset.id, shouldUseLazyBoundary]);
 
   // Simulate queue position in debug mode
   useEffect(() => {
@@ -457,69 +485,73 @@ function ImageTileComponent({
           ) : (
             <>
               {/* Quiet dimmed-panel pulse while the media loads */}
-              {!imageLoaded && (
+              {(!isMediaInView || !imageLoaded) && (
                 <div aria-hidden className="absolute inset-0 overflow-hidden">
                   <div className="h-full w-full animate-pulse bg-sploot-paper-warm" />
                 </div>
               )}
-              {isVideo ? (
-                <video
-                  key={asset.blobUrl}
-                  aria-label={`play ${asset.filename || asset.pathname?.split('/').pop() || 'meme'}`}
-                  className={cn(
-                    'h-full w-full',
-                    preserveAspectRatio ? 'object-contain' : 'object-cover'
-                  )}
-                  poster={asset.thumbnailUrl ? resolveQaSeedSrc(asset.thumbnailUrl) : undefined}
-                  muted
-                  loop
-                  playsInline
-                  preload="metadata"
-                  onLoadedData={() => {
-                    setImageLoaded(true);
-                    recordBlobSuccess();
-                  }}
-                  onError={() => {
-                    handleMediaLoadError();
-                  }}
-                >
-                  <source src={resolveQaSeedSrc(asset.blobUrl)} type={asset.mime} />
-                </video>
-              ) : (
-                <Image
-                  key={imageSrc}
-                  src={imageSrc}
-                  alt={asset.filename || asset.pathname?.split('/').pop() || 'Uploaded image'}
-                  fill
-                  sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
-                  className={cn(
-                    'h-full w-full',
-                    preserveAspectRatio ? 'object-contain' : 'object-cover'
-                  )}
-                  loading="lazy"
-                  // Grid tiles source the pre-built ~256px thumbnail (the
-                  // list/shuffle/search/similar reads return thumbnailUrl as of
-                  // 048), so the optimizer would add transform + cache-write cost
-                  // for no benefit — serve it directly. The detail/share pages
-                  // stay optimized. See ADR-008.
-                  unoptimized
-                  onLoad={handleImageLoad}
-                  onError={() => {
-                    // If thumbnail failed and we haven't tried the main blob yet
-                    if (imageSrc === thumbnailSrc && originalSrc && !hasTriedFallback) {
-                      logger.logInfo('image-tile.thumbnail-fallback', {
-                        assetId: asset.id,
-                      });
-                      setHasTriedFallback(true);
-                      setImageSrc(originalSrc);
-                      // Don't set imageError yet - give the fallback a chance
-                      return;
-                    }
+              <div ref={tileMediaRef} className="absolute inset-0">
+                {isMediaInView ? (
+                  isVideo ? (
+                    <video
+                      key={asset.blobUrl}
+                      aria-label={`play ${asset.filename || asset.pathname?.split('/').pop() || 'meme'}`}
+                      className={cn(
+                        'h-full w-full',
+                        preserveAspectRatio ? 'object-contain' : 'object-cover'
+                      )}
+                      poster={asset.thumbnailUrl ? resolveQaSeedSrc(asset.thumbnailUrl) : undefined}
+                      muted
+                      loop
+                      playsInline
+                      preload="metadata"
+                      onLoadedData={() => {
+                        setImageLoaded(true);
+                        recordBlobSuccess();
+                      }}
+                      onError={() => {
+                        handleMediaLoadError();
+                      }}
+                    >
+                      <source src={resolveQaSeedSrc(asset.blobUrl)} type={asset.mime} />
+                    </video>
+                  ) : (
+                    <Image
+                      key={imageSrc}
+                      src={imageSrc}
+                      alt={asset.filename || asset.pathname?.split('/').pop() || 'Uploaded image'}
+                      fill
+                      sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
+                      className={cn(
+                        'h-full w-full',
+                        preserveAspectRatio ? 'object-contain' : 'object-cover'
+                      )}
+                      loading="lazy"
+                      // Grid tiles source the pre-built ~256px thumbnail (the
+                      // list/shuffle/search/similar reads return thumbnailUrl as of
+                      // 048), so the optimizer would add transform + cache-write cost
+                      // for no benefit — serve it directly. The detail/share pages
+                      // stay optimized. See ADR-008.
+                      unoptimized
+                      onLoad={handleImageLoad}
+                      onError={() => {
+                        // If thumbnail failed and we haven't tried the main blob yet
+                        if (imageSrc === thumbnailSrc && originalSrc && !hasTriedFallback) {
+                          logger.logInfo('image-tile.thumbnail-fallback', {
+                            assetId: asset.id,
+                          });
+                          setHasTriedFallback(true);
+                          setImageSrc(originalSrc);
+                          // Don't set imageError yet - give the fallback a chance
+                          return;
+                        }
 
-                    handleMediaLoadError();
-                  }}
-                />
-              )}
+                        handleMediaLoadError();
+                      }}
+                    />
+                  )
+                ) : null}
+              </div>
             </>
           )}
         </div>

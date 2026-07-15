@@ -9,6 +9,7 @@
  *
  * Usage (from apps/web, with DATABASE_URL pointing at local postgres):
  *   pnpm qa:seed                 # seed default user + 24 assets
+ *   pnpm qa:seed --images-only   # use PNG fixtures for every seeded asset
  *   pnpm qa:seed --teardown      # remove everything the seed created
  *   pnpm qa:seed --user-id my-qa-user --count 36
  *
@@ -57,12 +58,25 @@ const ASPECTS: Array<[number, number]> = [
   [1280, 1600],
 ];
 
+// The screenshot contract uses a landscape-only fixture set so the first
+// viewport contains complete, readable cards at both manifest sizes. The
+// default QA seed keeps its GIF/video and portrait coverage unchanged.
+const SCREENSHOT_ASPECTS: Array<[number, number]> = [
+  [1280, 720],
+  [1024, 576],
+  [1200, 800],
+  [1280, 720],
+  [960, 640],
+  [1152, 648],
+];
+
 function parseArgs(argv: string[]) {
-  const args = { teardown: false, userId: DEFAULT_USER_ID, count: DEFAULT_COUNT };
+  const args = { teardown: false, userId: DEFAULT_USER_ID, count: DEFAULT_COUNT, imagesOnly: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--teardown') args.teardown = true;
     if (argv[i] === '--user-id' && argv[i + 1]) args.userId = argv[++i];
     if (argv[i] === '--count' && argv[i + 1]) args.count = Number(argv[++i]);
+    if (argv[i] === '--images-only') args.imagesOnly = true;
   }
   if (!Number.isInteger(args.count) || args.count < 1 || args.count > 500) {
     throw new Error(`--count must be an integer between 1 and 500, got ${args.count}`);
@@ -96,16 +110,16 @@ interface RenderedFixture {
   };
 }
 
-async function renderFixture(index: number): Promise<RenderedFixture> {
-  if (index === 0) {
+async function renderFixture(index: number, imagesOnly: boolean): Promise<RenderedFixture> {
+  if (!imagesOnly && index === 0) {
     return await renderAnimatedGifFixture(index);
   }
 
-  if (index === 1) {
+  if (!imagesOnly && index === 1) {
     return await renderVideoFixture(index);
   }
 
-  const [width, height] = ASPECTS[index % ASPECTS.length];
+  const [width, height] = (imagesOnly ? SCREENSHOT_ASPECTS : ASPECTS)[index % (imagesOnly ? SCREENSHOT_ASPECTS.length : ASPECTS.length)];
   const { bg, fg } = PALETTE[index % PALETTE.length];
   const label = `MEME ${String(index + 1).padStart(2, '0')}`;
   const fontSize = Math.round(Math.min(width, height) / 6);
@@ -191,7 +205,7 @@ async function renderVideoFixture(index: number): Promise<RenderedFixture> {
   };
 }
 
-async function seed(prisma: PrismaClient, userId: string, count: number) {
+async function seed(prisma: PrismaClient, userId: string, count: number, imagesOnly: boolean) {
   await prisma.user.upsert({
     where: { id: userId },
     update: {},
@@ -201,7 +215,7 @@ async function seed(prisma: PrismaClient, userId: string, count: number) {
   await mkdir(SEED_DIR, { recursive: true });
 
   for (let i = 0; i < count; i++) {
-    const { filename, buffer, width, height, mime, thumbnail } = await renderFixture(i);
+    const { filename, buffer, width, height, mime, thumbnail } = await renderFixture(i, imagesOnly);
     await writeFile(join(SEED_DIR, filename), buffer);
     if (thumbnail) {
       await writeFile(join(SEED_DIR, thumbnail.filename), thumbnail.buffer);
@@ -323,7 +337,7 @@ async function main() {
     if (args.teardown) {
       await teardown(prisma, args.userId);
     } else {
-      await seed(prisma, args.userId, args.count);
+      await seed(prisma, args.userId, args.count, args.imagesOnly);
     }
   } finally {
     await prisma.$disconnect();

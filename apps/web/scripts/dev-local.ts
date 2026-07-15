@@ -29,7 +29,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { createQaLocalAuthToken } from '../lib/auth/qa-local';
+import { createQaLocalAuthToken, QA_LOCAL_AUDIENCE, QA_LOCAL_DEPLOYMENT_ENV, QA_LOCAL_DEPLOYMENT_ID } from '../lib/auth/qa-local';
 
 const execFileAsync = promisify(execFile);
 
@@ -354,6 +354,9 @@ async function main() {
     SPLOOT_DEPLOYMENT_ENV: process.env.SPLOOT_DEPLOYMENT_ENV ?? 'development',
     SPLOOT_QA_AUTH_MODE: 'enabled',
     SPLOOT_QA_AUTH_SECRET: secret,
+    SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
+    SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
+    SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
     PORT: String(args.port),
   };
 

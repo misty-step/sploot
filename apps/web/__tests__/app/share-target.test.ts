@@ -40,6 +40,10 @@ vi.mock('@/lib/logger', () => ({
 import { POST, GET } from '@/app/share-target/route';
 
 const BASE = 'http://localhost:3000';
+const VALID_PNG = Uint8Array.from(Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+));
 
 function authed(userId = 'qa-design-user') {
   mocks.authenticateRequest.mockResolvedValue({
@@ -60,7 +64,7 @@ function shareRequest(files: File[]): NextRequest {
 }
 
 function pngFile(name = 'shared.png'): File {
-  return new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], name, { type: 'image/png' });
+  return new File([VALID_PNG], name, { type: 'image/png' });
 }
 
 beforeEach(() => {
@@ -105,6 +109,9 @@ describe('POST /share-target', () => {
     expect(mocks.ingestImage).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'qa-design-user' })
     );
+    const parsedFile = mocks.ingestImage.mock.calls[0][0].file as File;
+    expect(parsedFile.type).toBe('image/png');
+    expect(parsedFile.size).toBe(68);
     expect(response.status).toBe(303);
     const location = new URL(response.headers.get('location')!);
     expect(location.pathname).toBe('/app');

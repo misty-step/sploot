@@ -198,6 +198,7 @@ export function ImageGrid({
     <div className="h-full bg-sploot-workbench">
       <div
         ref={setContainerRef}
+        data-pwa-grid-scroll
         className={cn(IMAGE_GRID_SCROLL_CLASS, containerClassName)}
         style={{ scrollbarGutter: 'stable' }}
       >
@@ -210,6 +211,7 @@ export function ImageGrid({
             <div
               key={asset.id}
               data-asset-id={asset.id}
+              data-asset-url={asset.thumbnailUrl || asset.blobUrl}
               className="masonry-item"
               style={{
                 // Cap the cascade so late/paginated tiles never wait seconds

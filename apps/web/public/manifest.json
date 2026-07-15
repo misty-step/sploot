@@ -1,12 +1,12 @@
 {
-  "name": "Sploot - Your Personal Meme Library",
+  "name": "Sploot",
   "short_name": "Sploot",
-  "description": "Lightning-fast semantic search for your meme collection",
+  "description": "A personal meme library for saving, searching, and sharing memes.",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#000000",
+  "background_color": "#cfe7ff",
+  "theme_color": "#1c1547",
   "orientation": "any",
   "categories": ["photo", "utilities", "productivity"],
   "icons": [
@@ -47,16 +47,34 @@
       "purpose": "any"
     },
     {
+      "src": "/icons/icon-192x192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/icons/icon-384x384.png",
       "sizes": "384x384",
       "type": "image/png",
       "purpose": "any"
     },
     {
+      "src": "/icons/icon-384x384-maskable.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "screenshots": [

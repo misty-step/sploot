@@ -41,6 +41,10 @@ describe('validateImportUrl', () => {
     vi.stubEnv('SPLOOT_QA_ALLOW_LOCAL_URL_IMPORT', '1');
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
     vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'test');
+    vi.stubEnv('SPLOOT_QA_AUTH_SECRET', 'test-secret-with-enough-entropy');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ID', 'local-pwa-capture-v1');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ENV', 'local-qa');
+    vi.stubEnv('SPLOOT_QA_AUDIENCE', 'sploot-pwa-capture');
     vi.stubEnv('NODE_ENV', 'test');
 
     expect(validateImportUrl('http://localhost:3000/qa-blob-seed/x.png')).toMatchObject({

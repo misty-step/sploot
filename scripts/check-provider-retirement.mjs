@@ -24,6 +24,12 @@ const HISTORICAL_PATHS = [
   /^apps\/web\/docs\/deployed-smoke-report\.json$/,
 ];
 
+const GENERATED_PATHS = [
+  /^apps\/web\/\.next\//,
+  /^apps\/web\/public\/screenshots\//,
+  /^apps\/extension\/dist\//,
+];
+
 const FORBIDDEN_PATHS = [
   { rule: 'compute manifest', pattern: /(^|\/)vercel\.json$/i },
   { rule: 'local compute link', pattern: /(^|\/)\.vercel(\/|$)/i },
@@ -54,11 +60,15 @@ export function isHistoricalPath(file) {
   return HISTORICAL_PATHS.some((pattern) => pattern.test(file));
 }
 
+export function isGeneratedPath(file) {
+  return GENERATED_PATHS.some((pattern) => pattern.test(file));
+}
+
 export function findProviderRetirementViolations(files) {
   const violations = [];
 
   for (const { path, content } of files) {
-    if (POLICY_FILES.has(path) || isHistoricalPath(path)) continue;
+    if (POLICY_FILES.has(path) || isHistoricalPath(path) || isGeneratedPath(path)) continue;
 
     for (const { rule, pattern } of FORBIDDEN_PATHS) {
       if (pattern.test(path)) {

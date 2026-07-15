@@ -16,6 +16,9 @@ describe('/api/qa-auth/login', () => {
     process.env.SPLOOT_QA_AUTH_MODE = 'enabled';
     process.env.SPLOOT_QA_AUTH_SECRET = QA_SECRET;
     process.env.SPLOOT_DEPLOYMENT_ENV = 'test';
+    process.env.SPLOOT_QA_DEPLOYMENT_ID = 'local-pwa-capture-v1';
+    process.env.SPLOOT_QA_DEPLOYMENT_ENV = 'local-qa';
+    process.env.SPLOOT_QA_AUDIENCE = 'sploot-pwa-capture';
   });
 
   afterEach(() => {
@@ -35,7 +38,7 @@ describe('/api/qa-auth/login', () => {
     const token = decodeURIComponent(
       setCookie.split(';')[0].replace('sploot_qa_auth=', '')
     );
-    const headers = new Headers({ cookie: `sploot_qa_auth=${token}` });
+    const headers = new Headers({ cookie: `sploot_qa_auth=${token}`, host: 'localhost:3001', 'x-forwarded-for': '127.0.0.1' });
     const auth = await verifyQaLocalAuthHeaders(headers);
     expect(auth.status).toBe('authenticated');
     if (auth.status === 'authenticated') {

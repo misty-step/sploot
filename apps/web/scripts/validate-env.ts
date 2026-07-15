@@ -11,6 +11,7 @@
  */
 
 import { hasValidDeploymentIdentity } from '../lib/enrollment/enrollment-policy';
+import { validateQaLocalDeploymentConfig } from '../lib/auth/qa-local';
 
 interface ValidationResult {
   valid: boolean;
@@ -100,6 +101,13 @@ function validateDatabaseUrl(): ValidationResult {
   return result;
 }
 
+function validateProofAuth(): ValidationResult {
+  const config = validateQaLocalDeploymentConfig(process.env);
+  return config.valid
+    ? { valid: true, errors: [], warnings: [] }
+    : { valid: false, errors: [`Proof authentication configuration: ${config.reason ?? 'invalid configuration'}`], warnings: [] };
+}
+
 function printResult(result: ValidationResult) {
   console.log('\n🔍 Database Configuration Validation\n');
 
@@ -114,7 +122,7 @@ function printResult(result: ValidationResult) {
   }
 
   if (result.valid && result.errors.length === 0) {
-    console.log('✅ DATABASE_URL is valid\n');
+    console.log('✅ DATABASE_URL and proof-auth configuration are valid\n');
 
     // Show redacted URL for confirmation
     const url = new URL(process.env.DATABASE_URL!);
@@ -176,11 +184,14 @@ function validateEnrollmentConfig(): ValidationResult {
 }
 
 function main() {
-  const result = validateDatabaseUrl();
+  const database = validateDatabaseUrl();
   const enrollment = validateEnrollmentConfig();
-  result.valid = result.valid && enrollment.valid;
-  result.errors.push(...enrollment.errors);
-  result.warnings.push(...enrollment.warnings);
+  const proof = validateProofAuth();
+  const result: ValidationResult = {
+    valid: database.valid && enrollment.valid && proof.valid,
+    errors: [...database.errors, ...enrollment.errors, ...proof.errors],
+    warnings: [...database.warnings, ...enrollment.warnings, ...proof.warnings],
+  };
   printResult(result);
 
   if (!result.valid) {

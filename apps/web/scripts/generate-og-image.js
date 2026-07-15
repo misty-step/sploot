@@ -1,21 +1,29 @@
 const sharp = require('sharp');
 const fs = require('fs').promises;
 const path = require('path');
+const { BRAND_COLORS, SPLASH_SCREENS } = require('./pwa-assets.cjs');
 
 // Design system colors from AESTHETIC.md
 const colors = {
-  bg: '#0B0C0E',
-  surface: '#14171A',
-  surfaceMuted: '#1B1F24',
-  accent: '#7C5CFF',
-  accentAlt: '#B6FF6E',
-  text: '#E6E8EB',
-  mutedText: '#B3B7BE',
-  border: '#2A2F37'
+  bg: BRAND_COLORS.background,
+  surface: '#2d255e',
+  surfaceMuted: '#241d50',
+  accent: BRAND_COLORS.cyan,
+  accentAlt: BRAND_COLORS.magenta,
+  text: BRAND_COLORS.ink,
+  mutedText: BRAND_COLORS.paper,
+  border: BRAND_COLORS.purple,
+};
+
+const readBrandMark = async () => {
+  const source = await fs.readFile(path.join(__dirname, '..', 'public', 'icons', 'icon.svg'), 'utf8');
+  const contents = source.match(/<svg[^>]*>([\s\S]*)<\/svg>/i)?.[1];
+  if (!contents) throw new Error('icons/icon.svg must contain an SVG mark');
+  return contents;
 };
 
 // Create OG image (1200x630 for social media)
-const createOGImageSVG = () => {
+const createOGImageSVG = (markContents) => {
   const width = 1200;
   const height = 630;
 
@@ -51,14 +59,7 @@ const createOGImageSVG = () => {
         <!-- 200x200 icon -->
         <rect x="0" y="0" width="200" height="200" rx="50" fill="${colors.surfaceMuted}"/>
 
-        <!-- Grid pattern -->
-        <rect x="30" y="30" width="60" height="60" rx="12" fill="${colors.accentAlt}"/>
-        <rect x="110" y="30" width="60" height="60" rx="12" fill="${colors.accent}"/>
-        <rect x="30" y="110" width="60" height="60" rx="12" fill="${colors.accent}"/>
-        <rect x="110" y="110" width="60" height="60" rx="12" fill="${colors.accentAlt}"/>
-
-        <!-- Center dot -->
-        <circle cx="100" cy="100" r="12" fill="${colors.text}" opacity="0.9"/>
+        <g transform="translate(38 38) scale(3.875)">${markContents}</g>
       </g>
 
       <!-- Text content -->
@@ -71,13 +72,13 @@ const createOGImageSVG = () => {
       <text x="${width/2}" y="460" text-anchor="middle"
             font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
             font-size="32" font-weight="normal" fill="${colors.mutedText}">
-        Your Personal Meme Library
+        Your personal meme pile
       </text>
 
       <text x="${width/2}" y="510" text-anchor="middle"
             font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
             font-size="24" font-weight="normal" fill="${colors.mutedText}">
-        Lightning-fast semantic search for your meme collection
+        Save it anywhere. Find it with words.
       </text>
 
       <!-- Accent bar -->
@@ -87,7 +88,7 @@ const createOGImageSVG = () => {
 };
 
 // Create splash screens for PWA
-const createSplashScreenSVG = (width, height) => {
+const createSplashScreenSVG = (width, height, markContents) => {
   return `
     <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg">
       <!-- Background -->
@@ -99,14 +100,7 @@ const createSplashScreenSVG = (width, height) => {
         <rect x="0" y="0" width="256" height="256" rx="64" fill="${colors.surface}"/>
         <rect x="16" y="16" width="224" height="224" rx="48" fill="${colors.surfaceMuted}"/>
 
-        <!-- Grid pattern -->
-        <rect x="48" y="48" width="70" height="70" rx="14" fill="${colors.accentAlt}"/>
-        <rect x="138" y="48" width="70" height="70" rx="14" fill="${colors.accent}"/>
-        <rect x="48" y="138" width="70" height="70" rx="14" fill="${colors.accent}"/>
-        <rect x="138" y="138" width="70" height="70" rx="14" fill="${colors.accentAlt}"/>
-
-        <!-- Center dot -->
-        <circle cx="128" cy="128" r="16" fill="${colors.text}" opacity="0.9"/>
+        <g transform="translate(48 48) scale(4)">${markContents}</g>
       </g>
 
       <!-- App name -->
@@ -121,57 +115,27 @@ const createSplashScreenSVG = (width, height) => {
 
 async function generateOGAndSplashImages() {
   const publicDir = path.join(__dirname, '..', 'public');
+  const markContents = await readBrandMark();
 
   console.log('🖼️  Generating OG image and splash screens...\n');
 
-  // Generate OG image
-  try {
-    const ogSvg = createOGImageSVG();
-    const buffer = Buffer.from(ogSvg);
+  const ogSvg = createOGImageSVG(markContents);
+  await sharp(Buffer.from(ogSvg))
+    .resize(1200, 630)
+    .png()
+    .toFile(path.join(publicDir, 'og-image.png'));
+  console.log('✅ Generated og-image.png (1200x630)');
 
-    await sharp(buffer)
-      .resize(1200, 630)
-      .png()
-      .toFile(path.join(publicDir, 'og-image.png'));
-
-    console.log('✅ Generated og-image.png (1200x630)');
-  } catch (err) {
-    console.error('❌ Error generating OG image:', err);
-  }
-
-  // Generate splash screens
-  const splashScreens = [
-    { width: 640, height: 1136, name: 'apple-splash-640-1136.jpg' },
-    { width: 750, height: 1334, name: 'apple-splash-750-1334.jpg' },
-    { width: 1242, height: 2208, name: 'apple-splash-1242-2208.jpg' },
-    { width: 1125, height: 2436, name: 'apple-splash-1125-2436.jpg' },
-    { width: 1536, height: 2048, name: 'apple-splash-1536-2048.jpg' },
-    { width: 1668, height: 2388, name: 'apple-splash-1668-2388.jpg' },
-    { width: 2048, height: 2732, name: 'apple-splash-2048-2732.jpg' },
-  ];
-
-  // Create splash directory
   const splashDir = path.join(publicDir, 'splash');
-  try {
-    await fs.mkdir(splashDir, { recursive: true });
-  } catch (err) {
-    console.error('Error creating splash directory:', err);
-  }
+  await fs.mkdir(splashDir, { recursive: true });
 
-  for (const screen of splashScreens) {
-    try {
-      const svg = createSplashScreenSVG(screen.width, screen.height);
-      const buffer = Buffer.from(svg);
-
-      await sharp(buffer)
-        .resize(screen.width, screen.height)
-        .jpeg({ quality: 90 })
-        .toFile(path.join(splashDir, screen.name));
-
-      console.log(`✅ Generated ${screen.name}`);
-    } catch (err) {
-      console.error(`❌ Error generating ${screen.name}:`, err);
-    }
+  for (const screen of SPLASH_SCREENS) {
+    const svg = createSplashScreenSVG(screen.width, screen.height, markContents);
+    await sharp(Buffer.from(svg))
+      .resize(screen.width, screen.height)
+      .jpeg({ quality: 90 })
+      .toFile(path.join(splashDir, screen.name));
+    console.log(`✅ Generated ${screen.name}`);
   }
 
   console.log('\n🎉 OG image and splash screens generated!');
@@ -180,4 +144,7 @@ async function generateOGAndSplashImages() {
 }
 
 // Run the script
-generateOGAndSplashImages().catch(console.error);
+generateOGAndSplashImages().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

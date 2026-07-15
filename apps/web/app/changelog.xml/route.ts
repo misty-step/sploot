@@ -14,7 +14,7 @@ function escapeXml(unsafe: string): string {
 
 export async function GET() {
   const releases = await getReleases(20);
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://sploot.app";
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.sploot.app";
 
   const items = releases
     .map((release) => {

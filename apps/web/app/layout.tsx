@@ -5,6 +5,12 @@ import { AuthProvider } from "@/lib/auth/client";
 import { Toaster } from "@/components/ui/toast";
 import { EmbeddingStatusProvider } from "@/contexts/embedding-status-context";
 import { ThemeProvider } from "@/components/theme-provider";
+import {
+  PRODUCT_DESCRIPTION,
+  PRODUCT_NAME,
+  PRODUCT_THEME_COLOR,
+  PRODUCT_URL,
+} from "@/lib/product";
 
 // Toybox type (lab-034, AFD-8 "ink minis"): Baloo 2 for the rounded friendly
 // body, Space Mono for machine labels/stats/meta, Bungee for toy display
@@ -30,8 +36,9 @@ const spaceMono = Space_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sploot - Your Personal Meme Library",
-  description: "Lightning-fast semantic search for your meme collection",
+  metadataBase: new URL(PRODUCT_URL),
+  title: PRODUCT_NAME,
+  description: PRODUCT_DESCRIPTION,
   keywords: ["meme", "library", "search", "semantic", "image"],
   authors: [{ name: "Sploot" }],
   manifest: "/manifest.json",
@@ -71,22 +78,22 @@ export const metadata: Metadata = {
     ],
   },
   openGraph: {
-    title: "Sploot",
-    description: "Your personal meme library with semantic search",
+    title: PRODUCT_NAME,
+    description: PRODUCT_DESCRIPTION,
     type: "website",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "Sploot - Your Personal Meme Library",
+        alt: PRODUCT_DESCRIPTION,
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Sploot",
-    description: "Your personal meme library with semantic search",
+    title: PRODUCT_NAME,
+    description: PRODUCT_DESCRIPTION,
     images: ["/og-image.png"],
   },
   formatDetection: {
@@ -95,15 +102,15 @@ export const metadata: Metadata = {
   other: {
     "mobile-web-app-capable": "yes",
     "apple-mobile-web-app-capable": "yes",
-    "application-name": "Sploot",
-    "apple-mobile-web-app-title": "Sploot",
-    "msapplication-TileColor": "#000000",
+    "application-name": PRODUCT_NAME,
+    "apple-mobile-web-app-title": PRODUCT_NAME,
+    "msapplication-TileColor": PRODUCT_THEME_COLOR,
     "msapplication-config": "/browserconfig.xml",
   },
 };
 
 export const viewport = {
-  themeColor: "#000000",
+  themeColor: PRODUCT_THEME_COLOR,
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
@@ -124,8 +131,8 @@ export default function RootLayout({
             <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
             <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
             <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
-            <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#000000" />
-            <meta name="theme-color" content="#000000" />
+            <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color={PRODUCT_THEME_COLOR} />
+            <meta name="theme-color" content={PRODUCT_THEME_COLOR} />
           </head>
           <body
             className={`${baloo.variable} ${bungee.variable} ${spaceMono.variable} font-sans antialiased`}

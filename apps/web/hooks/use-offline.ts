@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 export function useOffline() {
   const [isOffline, setIsOffline] = useState(false);
+  const probeControllerRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
 
   const checkConnection = useCallback(async () => {
     // Check navigator.onLine first
@@ -13,32 +15,35 @@ export function useOffline() {
     }
 
     // Try to fetch a small resource to verify actual connectivity
+    if (probeControllerRef.current) return true;
+    const controller = new AbortController();
+    probeControllerRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-
       const response = await fetch('/api/health', {
-        method: 'HEAD',
+        method: 'GET',
         cache: 'no-cache',
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-
       if (response.ok) {
-        setIsOffline(false);
+        if (mountedRef.current) setIsOffline(false);
         return true;
       }
     } catch (error) {
       // Network error or timeout
-      setIsOffline(true);
+      if (mountedRef.current) setIsOffline(true);
       return false;
+    } finally {
+      clearTimeout(timeoutId);
+      if (probeControllerRef.current === controller) probeControllerRef.current = null;
     }
 
     return false;
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     // Initial check
     queueMicrotask(() => {
       void checkConnection();
@@ -65,6 +70,8 @@ export function useOffline() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       clearInterval(intervalId);
+      mountedRef.current = false;
+      probeControllerRef.current = null;
     };
   }, [checkConnection]);
 

@@ -5,6 +5,7 @@ import {
   findIgnoredEnvironmentViolations,
   findProviderRetirementViolations,
   formatProviderRetirementViolation,
+  isGeneratedPath,
   isHistoricalPath,
 } from './check-provider-retirement.mjs';
 
@@ -85,6 +86,21 @@ test('rejects compute manifests even when empty', () => {
   }]);
 
   assert.deepEqual(violations.map(({ rule }) => rule), ['compute manifest']);
+});
+
+test('skips generated build and proof artifacts from provider-retirement scanning', () => {
+  assert.equal(isGeneratedPath('apps/web/.next/standalone/node_modules/@vercel/nft/index.js'), true);
+  assert.equal(isGeneratedPath('apps/web/public/screenshots/capture-manifest.json'), true);
+
+  const violations = findProviderRetirementViolations([{
+    path: 'apps/web/.next/standalone/node_modules/@vercel/nft/index.js',
+    content: "import pkg from '@vercel/nft';\nprocess.env.VERCEL_ENV;\n",
+  }, {
+    path: 'apps/web/public/screenshots/capture-manifest.json',
+    content: "production-start with @vercel/nft and VERCEL_ENV",
+  }]);
+
+  assert.deepEqual(violations, []);
 });
 
 test('keeps dated evidence and architectural records readable', () => {
