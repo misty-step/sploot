@@ -21,6 +21,7 @@ import {
 import {
   deferEmbeddingAdmission,
   type EmbeddingAttemptFailure,
+  type EmbeddingAdmissionReason,
   getEmbeddingAdmissionReason,
   isEmbeddingAdmissionFailure,
   recordEmbeddingAttemptFailure,
@@ -331,7 +332,7 @@ export class EmbeddingSchedulerService {
         error instanceof Error ? error.message : 'Unknown error';
 
       if (error instanceof EmbeddingProviderCircuitOpenError) {
-        await deferEmbeddingAdmission(
+        await this.deferAdmissionOrFallback(
           assetId,
           errorMessage,
           'provider_circuit_open',
@@ -351,26 +352,12 @@ export class EmbeddingSchedulerService {
             ? error.retryAfterSec
             : undefined;
         const reason = getEmbeddingAdmissionReason(error) ?? 'limiter_unavailable';
-        try {
-          await deferEmbeddingAdmission(
-            assetId,
-            errorMessage,
-            reason,
-            retryAfterSec
-          );
-        } catch (deferError) {
-          logger.error('Failed to defer admission-denied embedding', {
-            assetId,
-            error:
-              deferError instanceof Error
-                ? deferError.message
-                : String(deferError),
-          });
-        }
-        // Keep the existing pending-row write as a compatibility fallback for
-        // callers whose Prisma client predates the resilience migration. The
-        // new columns remain untouched when the durable defer succeeds.
-        await this.markEmbeddingPending(assetId, errorMessage);
+        await this.deferAdmissionOrFallback(
+          assetId,
+          errorMessage,
+          reason,
+          retryAfterSec,
+        );
         throw new EmbeddingScheduleError(
           `Embedding generation deferred: ${errorMessage}`,
           true,
@@ -440,6 +427,34 @@ export class EmbeddingSchedulerService {
       await this.markEmbeddingFailed(assetId, errorMessage);
     }
     return null;
+  }
+
+  private async deferAdmissionOrFallback(
+    assetId: string,
+    errorMessage: string,
+    reason: EmbeddingAdmissionReason | 'provider_circuit_open',
+    retryAfterSec?: number,
+  ): Promise<void> {
+    try {
+      await deferEmbeddingAdmission(
+        assetId,
+        errorMessage,
+        reason,
+        retryAfterSec,
+      );
+      return;
+    } catch (deferError) {
+      logger.error('Failed to defer admission-denied embedding', {
+        assetId,
+        error:
+          deferError instanceof Error ? deferError.message : String(deferError),
+      });
+    }
+
+    // Compatibility fallback is reserved for a failed durable deferral. A
+    // successful migration-backed update must not be followed by a redundant
+    // legacy write that can race or erase retry metadata.
+    await this.markEmbeddingPending(assetId, errorMessage);
   }
 
   /** Keep an acquired placeholder eligible for cron or explicit retry. */

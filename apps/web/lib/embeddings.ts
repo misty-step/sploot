@@ -419,6 +419,7 @@ class ReplicateEmbeddingService implements EmbeddingService {
       if (status >= 500) {
         const unavailable = new EmbeddingProviderUnavailableError(
           `Embedding ${context} failed: ${message}`,
+          this.retryAfterSeconds(error),
         );
         const lease = getEmbeddingProviderLease(error);
         if (lease) attachEmbeddingProviderLease(unavailable, lease);

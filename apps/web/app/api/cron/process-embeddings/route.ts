@@ -280,6 +280,23 @@ async function getHandler(request: NextRequest) {
                 'provider_circuit_open',
                 retryAfterSec
               );
+              stats.deferredCount++;
+              stats.errors.push({
+                assetId: asset.id,
+                error: errorMessage,
+                taxonomy: providerError.reason,
+                statusCode: providerError.statusCode,
+                retryAfterSec,
+              });
+              batchOutcome = 'backoff';
+              batchRetryAfterSec = retryAfterSec;
+              batchOutcomeReason = providerError.reason;
+              logger.logInfo('cron.process-embeddings.initialization-deferred', {
+                assetId: asset.id,
+                reason: providerError.reason,
+                retryAfterSec,
+              });
+              break;
             }
             const failure = await recordEmbeddingAttemptFailure(
               asset.id,

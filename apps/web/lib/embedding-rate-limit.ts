@@ -123,10 +123,8 @@ async function pruneExpiredLimiterState(
   tx: Prisma.TransactionClient,
   now: Date
 ): Promise<void> {
-  await Promise.all([
-    tx.embeddingRateLease.deleteMany({ where: { expiresAt: { lte: now } } }),
-    tx.embeddingRateBucket.deleteMany({ where: { expiresAt: { lte: now } } }),
-  ]);
+  await tx.embeddingRateLease.deleteMany({ where: { expiresAt: { lte: now } } });
+  await tx.embeddingRateBucket.deleteMany({ where: { expiresAt: { lte: now } } });
 }
 
 async function incrementBucket(
@@ -165,12 +163,18 @@ export async function acquireEmbeddingRateLimit(
       }
       await pruneExpiredLimiterState(tx, now);
 
-      const [userInflight, globalInflight, userBucket, globalBucket] = await Promise.all([
-        tx.embeddingRateLease.count({ where: { userId, expiresAt: { gt: now } } }),
-        tx.embeddingRateLease.count({ where: { expiresAt: { gt: now } } }),
-        tx.embeddingRateBucket.findUnique({ where: { key: userWindowKey } }),
-        tx.embeddingRateBucket.findUnique({ where: { key: globalWindowKey } }),
-      ]);
+      const userInflight = await tx.embeddingRateLease.count({
+        where: { userId, expiresAt: { gt: now } },
+      });
+      const globalInflight = await tx.embeddingRateLease.count({
+        where: { expiresAt: { gt: now } },
+      });
+      const userBucket = await tx.embeddingRateBucket.findUnique({
+        where: { key: userWindowKey },
+      });
+      const globalBucket = await tx.embeddingRateBucket.findUnique({
+        where: { key: globalWindowKey },
+      });
 
       const userWindow = userBucket?.count ?? 0;
       const globalWindow = globalBucket?.count ?? 0;
@@ -224,17 +228,15 @@ export async function acquireEmbeddingRateLimit(
         windowId,
       };
 
-      const [persistedUserWindow, persistedGlobalWindow] = await Promise.all([
-        incrementBucket(tx, userWindowKey, expiresAt),
-        incrementBucket(tx, globalWindowKey, expiresAt),
-        tx.embeddingRateLease.create({
-          data: {
-            id: lease.id,
-            userId: lease.userId,
-            expiresAt: new Date(nowMs + EMBEDDING_INFLIGHT_TTL_SECONDS * 1000),
-          },
-        }),
-      ]);
+      const persistedUserWindow = await incrementBucket(tx, userWindowKey, expiresAt);
+      const persistedGlobalWindow = await incrementBucket(tx, globalWindowKey, expiresAt);
+      await tx.embeddingRateLease.create({
+        data: {
+          id: lease.id,
+          userId: lease.userId,
+          expiresAt: new Date(nowMs + EMBEDDING_INFLIGHT_TTL_SECONDS * 1000),
+        },
+      });
 
       return {
         allowed: true,
@@ -382,13 +384,21 @@ export async function acquireEmbeddingAdmissionReservation(
     return await withLimiterLock(async (tx) => {
       await pruneExpiredLimiterState(tx, now);
 
-      const [userInflight, globalInflight, userBucket, globalBucket, dailyBucket] = await Promise.all([
-        tx.embeddingRateLease.count({ where: { userId, expiresAt: { gt: now } } }),
-        tx.embeddingRateLease.count({ where: { expiresAt: { gt: now } } }),
-        tx.embeddingRateBucket.findUnique({ where: { key: userWindowKey } }),
-        tx.embeddingRateBucket.findUnique({ where: { key: globalWindowKey } }),
-        tx.embeddingRateBucket.findUnique({ where: { key: dailyKey } }),
-      ]);
+      const userInflight = await tx.embeddingRateLease.count({
+        where: { userId, expiresAt: { gt: now } },
+      });
+      const globalInflight = await tx.embeddingRateLease.count({
+        where: { expiresAt: { gt: now } },
+      });
+      const userBucket = await tx.embeddingRateBucket.findUnique({
+        where: { key: userWindowKey },
+      });
+      const globalBucket = await tx.embeddingRateBucket.findUnique({
+        where: { key: globalWindowKey },
+      });
+      const dailyBucket = await tx.embeddingRateBucket.findUnique({
+        where: { key: dailyKey },
+      });
 
       const userWindow = userBucket?.count ?? 0;
       const globalWindow = globalBucket?.count ?? 0;
@@ -440,23 +450,20 @@ export async function acquireEmbeddingAdmissionReservation(
         userId,
         windowId,
       };
-      const leaseRecord = tx.embeddingRateLease.create({
+      const persistedUserWindow = await incrementBucket(tx, userWindowKey, expiresAt);
+      const persistedGlobalWindow = await incrementBucket(tx, globalWindowKey, expiresAt);
+      const persistedDailyBudget = await incrementBucket(
+        tx,
+        dailyKey,
+        new Date(nowMs + EMBEDDING_DAILY_BUDGET_TTL_SECONDS * 1000)
+      );
+      await tx.embeddingRateLease.create({
         data: {
           id: lease.id,
           userId: lease.userId,
           expiresAt: new Date(nowMs + EMBEDDING_INFLIGHT_TTL_SECONDS * 1000),
         },
       });
-      const [persistedUserWindow, persistedGlobalWindow, persistedDailyBudget] = await Promise.all([
-        incrementBucket(tx, userWindowKey, expiresAt),
-        incrementBucket(tx, globalWindowKey, expiresAt),
-        incrementBucket(
-          tx,
-          dailyKey,
-          new Date(nowMs + EMBEDDING_DAILY_BUDGET_TTL_SECONDS * 1000)
-        ),
-        leaseRecord,
-      ]);
 
       return {
         allowed: true,
