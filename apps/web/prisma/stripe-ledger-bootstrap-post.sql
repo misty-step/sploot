@@ -474,18 +474,18 @@ DECLARE bad RECORD;
 BEGIN
   SELECT * INTO bad
   FROM (VALUES
-    ('sploot_append_stripe_event', 'text, text, integer, boolean, text, text, text, integer, jsonb, text, text, bytea, bytea, text, text', TRUE),
-    ('sploot_record_stripe_cancellation', 'text, text, integer, boolean, text, text, text, integer, jsonb, text, text, bytea, bytea, text, text, text, integer, integer, integer', TRUE),
-    ('sploot_append_stripe_audit', 'text, text, text, text, jsonb', TRUE),
-    ('sploot_stripe_claim_deliveries', 'text, integer, integer, text', TRUE),
-    ('sploot_stripe_drain_deliveries', 'integer, integer, text', TRUE),
-    ('sploot_stripe_complete_delivery', 'text, text, text, text, text, text, text, integer, boolean, text, integer', TRUE),
-    ('sploot_replay_stripe_dead_letter', 'text, integer', TRUE),
-    ('sploot_stripe_delivery_health', 'text', TRUE),
-    ('sploot_issue_stripe_maintenance_token', 'text, integer, text, text, text, text, text, timestamp without time zone, timestamp without time zone, timestamp without time zone, timestamp without time zone, timestamp without time zone', TRUE),
+    ('sploot_append_stripe_event', 'p_event_id text, p_event_type text, p_created_epoch integer, p_livemode boolean, p_account_id text, p_object_id text, p_object_type text, p_signature_timestamp integer, p_raw_payload jsonb, p_payload_digest text, p_raw_body_digest text, p_raw_body_ciphertext bytea, p_raw_body_nonce bytea, p_raw_body_key_id text, p_signature_header_digest text', TRUE),
+    ('sploot_record_stripe_cancellation', 'p_event_id text, p_event_type text, p_created_epoch integer, p_livemode boolean, p_account_id text, p_object_id text, p_object_type text, p_signature_timestamp integer, p_raw_payload jsonb, p_payload_digest text, p_raw_body_digest text, p_raw_body_ciphertext bytea, p_raw_body_nonce bytea, p_raw_body_key_id text, p_signature_header_digest text, p_reason text, p_max_cancellations integer, p_window_seconds integer, p_now integer', TRUE),
+    ('sploot_append_stripe_audit', 'p_event_id text, p_alert_key text, p_action text, p_provenance_digest text, p_details jsonb', TRUE),
+    ('sploot_stripe_claim_deliveries', 'p_alert_key text, p_now integer, p_lease_seconds integer, p_claim_token text', TRUE),
+    ('sploot_stripe_drain_deliveries', 'p_now integer, p_lease_seconds integer, p_claim_token text', TRUE),
+    ('sploot_stripe_complete_delivery', 'p_delivery_key text, p_alert_key text, p_adapter text, p_replay_key text, p_payload_digest text, p_payload_version text, p_claim_token text, p_generation integer, p_succeeded boolean, p_error text, p_now integer', TRUE),
+    ('sploot_replay_stripe_dead_letter', 'p_replay_key text, p_now integer', TRUE),
+    ('sploot_stripe_delivery_health', 'p_alert_key text', TRUE),
+    ('sploot_issue_stripe_maintenance_token', 'p_token_digest text, p_generation integer, p_actor text, p_purpose text, p_subject_kind text, p_subject_id text, p_time_basis text, p_range_start timestamp without time zone, p_range_end timestamp without time zone, p_legal_minimum_since timestamp without time zone, p_issued_at timestamp without time zone, p_expires_at timestamp without time zone', TRUE),
     ('sploot_stripe_ledger_append_only', '', FALSE),
-    ('sploot_purge_stripe_audit', 'text, integer, text, text, text, text, timestamp without time zone, timestamp without time zone, timestamp without time zone', TRUE),
-    ('sploot_purge_stripe_raw_provenance', 'text, integer, text, text, text, text, timestamp without time zone, timestamp without time zone, timestamp without time zone', TRUE)
+    ('sploot_purge_stripe_audit', 'p_token text, p_generation integer, p_actor text, p_purpose text, p_subject_kind text, p_subject_id text, p_range_start timestamp without time zone, p_range_end timestamp without time zone, p_legal_minimum_since timestamp without time zone', TRUE),
+    ('sploot_purge_stripe_raw_provenance', 'p_token text, p_generation integer, p_actor text, p_purpose text, p_subject_kind text, p_subject_id text, p_range_start timestamp without time zone, p_range_end timestamp without time zone, p_legal_minimum_since timestamp without time zone', TRUE)
   ) AS expected(name, arguments, security_definer)
   WHERE NOT EXISTS (
     SELECT 1
@@ -500,7 +500,7 @@ BEGIN
   )
   LIMIT 1;
   IF FOUND THEN
-    RAISE EXCEPTION 'final Stripe function signature/security contract is incomplete';
+    RAISE EXCEPTION 'final Stripe function signature/security contract is incomplete: % (%)', bad.name, bad.arguments;
   END IF;
 
   IF EXISTS (

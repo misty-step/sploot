@@ -149,7 +149,7 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(ci).toContain('migration_name" == 20260715*');
     expect(ci).toContain('legacy-upgrade-event');
     expect(ci).toContain('CREATE ROLE sploot_stripe_app SUPERUSER INHERIT');
-    expect(ci).toContain("test \"$role_drift\" = 'f:f:0'");
+    expect(ci).toContain("test \"$role_converged\" = 't'");
   });
 
   it('uses normalized exact catalog definitions and converged security state', () => {
@@ -158,6 +158,7 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(verifier).toContain('pg_get_constraintdef(oid)');
     expect(verifier).toContain('pg_get_functiondef(p.oid)');
     expect(verifier).toContain('pg_get_function_identity_arguments(p.oid)');
+    expect(verifier).toContain('p_event_id text,p_event_type text');
     expect(verifier).toContain('pg_get_triggerdef(tr.oid)');
     expect(verifier).toContain('has_function_privilege');
     expect(verifier).toContain('pg_auth_members');

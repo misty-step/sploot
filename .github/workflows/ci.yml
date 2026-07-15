@@ -352,8 +352,8 @@ jobs:
           GRANT sploot_stripe_app TO test;
           SQL
           psql "$fresh_url" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-pre.sql
-          role_drift="$(psql "$admin_url" -Atc "SELECT rolsuper || ':' || rolinherit || ':' || (SELECT count(*) FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.roleid WHERE r.rolname='sploot_stripe_app') FROM pg_roles WHERE rolname='sploot_stripe_app'")"
-          test "$role_drift" = 'f:f:0'
+          role_converged="$(psql "$admin_url" -Atc "SELECT NOT (rolsuper OR rolinherit OR rolbypassrls OR rolcreatedb OR rolcreaterole OR rolcanlogin) AND NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.roleid=pg_roles.oid OR m.member=pg_roles.oid) FROM pg_roles WHERE rolname='sploot_stripe_app'")"
+          test "$role_converged" = 't'
           fresh_migrator_password="$(openssl rand -hex 32)"
           fresh_app_password="$(openssl rand -hex 32)"
           fresh_issuer_password="$(openssl rand -hex 32)"
