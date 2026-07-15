@@ -201,7 +201,20 @@ async function stopAndRestart(
 ): Promise<Worker> {
   return runMv3Step(context, testInfo, step, 'service worker termination and bounded restart', async () => {
     const cdp = await context.newCDPSession(popup);
+    const browser = context.browser();
+    if (!browser) throw new Error('persistent MV3 context has no browser target authority');
+    const targetCdp = await browser.newBrowserCDPSession();
     const targetUrl = previousWorker.url();
+    let lastTargets: Array<{ targetId: string; type: string; url: string }> = [];
+    const readTargets = async () => {
+      const current = await targetCdp.send('Target.getTargets');
+      lastTargets = current.targetInfos.map(info => ({
+        targetId: info.targetId,
+        type: info.type,
+        url: info.url,
+      }));
+      return current;
+    };
     let latestVersion: {
       versionId: string;
       scriptURL: string;
@@ -220,10 +233,10 @@ async function stopAndRestart(
       if (extensionVersion) latestVersion = extensionVersion;
     };
     try {
-      await cdp.send('Target.setDiscoverTargets', { discover: true });
+      await targetCdp.send('Target.setDiscoverTargets', { discover: true });
       cdp.on('ServiceWorker.workerVersionUpdated', onVersionUpdated);
       await cdp.send('ServiceWorker.enable');
-      const targets = await cdp.send('Target.getTargets');
+      const targets = await readTargets();
       const target = targets.targetInfos.find(info => info.type === 'service_worker' && info.url.startsWith('chrome-extension://'));
       expect(target).toBeTruthy();
       const terminatedTargetId = target!.targetId;
@@ -234,7 +247,7 @@ async function stopAndRestart(
       await cdp.send('ServiceWorker.stopWorker', { versionId: version!.versionId });
       await expect.poll(() => latestVersion?.runningStatus ?? null, { timeout: 15_000 }).toBe('stopped');
       await expect.poll(async () => {
-        const current = await cdp.send('Target.getTargets');
+        const current = await readTargets();
         return current.targetInfos.some(info => info.targetId === terminatedTargetId);
       }, { timeout: 15_000 }).toBe(false);
 
@@ -250,14 +263,18 @@ async function stopAndRestart(
         'wake restarted worker through real queue message',
       );
       await wake;
-      await expect.poll(async () => {
-        const current = await cdp.send('Target.getTargets');
-        return current.targetInfos.find(info => (
-          info.type === 'service_worker'
-          && info.url.startsWith('chrome-extension://')
-          && info.targetId !== terminatedTargetId
-        ))?.targetId ?? null;
-      }, { timeout: 15_000 }).toBeTruthy();
+      try {
+        await expect.poll(async () => {
+          const current = await readTargets();
+          return current.targetInfos.find(info => (
+            info.type === 'service_worker'
+            && info.url.startsWith('chrome-extension://')
+            && info.targetId !== terminatedTargetId
+          ))?.targetId ?? null;
+        }, { timeout: 15_000 }).toBeTruthy();
+      } catch (error) {
+        throw new Error(`restarted worker target was not observed; targets=${JSON.stringify(lastTargets)}`, { cause: error });
+      }
       const restarted = context.serviceWorkers().find(worker => (
         worker.url().startsWith('chrome-extension://') && worker !== previousWorker
       ));
@@ -268,7 +285,7 @@ async function stopAndRestart(
       return worker;
     } finally {
       cdp.off('ServiceWorker.workerVersionUpdated', onVersionUpdated);
-      const detach = cdp.detach();
+      const detach = Promise.allSettled([cdp.detach(), targetCdp.detach()]).then(() => undefined);
       await Promise.race([
         detach,
         new Promise<void>(resolve => setTimeout(resolve, 5_000)),
