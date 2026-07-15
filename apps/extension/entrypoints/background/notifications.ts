@@ -7,7 +7,10 @@
  * notifications are suppressed.
  */
 
-import { getSplootAppUrl } from '../../shared/app-url';
+import {
+  getSplootAppUrl,
+  getTrustedSplootAppUrl,
+} from '../../shared/app-url';
 import { setSaveStatus } from '../../shared/save-status';
 import { flashErrorBadge, flashSuccessBadge } from './badge';
 
@@ -41,10 +44,17 @@ async function loadPersistedActions(): Promise<NotificationAction[]> {
     return [];
   }
 
-  return actions.filter(
-    (action): action is NotificationAction =>
-      Boolean(action) && typeof action.notificationId === 'string' && typeof action.url === 'string'
-  );
+  return actions.flatMap((action): NotificationAction[] => {
+    if (
+      !action
+      || typeof action.notificationId !== 'string'
+      || typeof action.url !== 'string'
+    ) {
+      return [];
+    }
+    const url = getTrustedSplootAppUrl(action.url);
+    return url ? [{ notificationId: action.notificationId, url }] : [];
+  });
 }
 
 function enqueueActionWrite(write: () => Promise<void>): Promise<void> {
@@ -53,7 +63,12 @@ function enqueueActionWrite(write: () => Promise<void>): Promise<void> {
 }
 
 function rememberAction(notificationId: string, url: string): void {
-  notificationActions.set(notificationId, url);
+  const trustedUrl = getTrustedSplootAppUrl(url);
+  if (!trustedUrl) {
+    return;
+  }
+
+  notificationActions.set(notificationId, trustedUrl);
   while (notificationActions.size > MAX_PERSISTED_ACTIONS) {
     const oldest = notificationActions.keys().next().value;
     if (oldest) {
@@ -63,7 +78,7 @@ function rememberAction(notificationId: string, url: string): void {
 
   void enqueueActionWrite(async () => {
     const actions = (await loadPersistedActions()).filter(action => action.notificationId !== notificationId);
-    actions.push({ notificationId, url });
+    actions.push({ notificationId, url: trustedUrl });
     await chrome.storage.local.set({
       [ACTIONS_STORAGE_KEY]: actions.slice(-MAX_PERSISTED_ACTIONS),
     });
@@ -91,8 +106,9 @@ export function setupNotificationFeedback(): void {
     void (async () => {
       const url = notificationActions.get(notificationId)
         ?? (await loadPersistedActions()).find(action => action.notificationId === notificationId)?.url;
-      if (url) {
-        chrome.tabs.create({ url });
+      const trustedUrl = url ? getTrustedSplootAppUrl(url) : undefined;
+      if (trustedUrl) {
+        chrome.tabs.create({ url: trustedUrl });
       }
       await dismiss(notificationId);
     })();
@@ -176,7 +192,7 @@ export function showErrorNotification(error: string | ErrorNotificationInput): v
   const errorMessage = typeof error === 'string' ? error : error.message;
   const userMessage = toErrorNotificationMessage(errorMessage);
   const actionHref = typeof error === 'string' ? undefined : error.actionHref;
-  const actionUrl = actionHref ? getSplootAppUrl(actionHref) : undefined;
+  const actionUrl = actionHref ? getTrustedSplootAppUrl(actionHref) : undefined;
 
   chrome.notifications.create(notificationId, {
     type: 'basic',

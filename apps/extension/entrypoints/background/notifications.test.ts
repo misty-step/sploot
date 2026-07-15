@@ -2,6 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../shared/app-url', () => ({
   getSplootAppUrl: (path = '/app') => new URL(path, 'https://sploot.test').toString(),
+  getTrustedSplootAppUrl: (path = '/app') => {
+    const url = new URL(path, 'https://sploot.test');
+    return url.origin === 'https://sploot.test' && ['http:', 'https:'].includes(url.protocol)
+      ? url.toString()
+      : undefined;
+  },
 }));
 
 interface ChromeMock {
@@ -212,6 +218,38 @@ describe('notifications', () => {
       isClickable: true,
     });
     expect(chromeMock.notifications.clear).toHaveBeenCalledWith(id);
+  });
+
+  it.each(['https://evil.example/steal', 'javascript:alert(1)'])(
+    'does not make an untrusted remediation URL clickable: %s',
+    async actionHref => {
+      const { setupNotificationFeedback, showErrorNotification } = await import('./notifications');
+
+      setupNotificationFeedback();
+      showErrorNotification({ message: 'Try this action', actionHref });
+      const id = chromeMock.notifications.create.mock.calls[0][0] as string;
+      clickListeners[0](id);
+
+      expect(chromeMock.notifications.create).toHaveBeenCalledWith(
+        id,
+        expect.objectContaining({ isClickable: false }),
+      );
+      expect(chromeMock.tabs.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects an untrusted persisted action from an older worker', async () => {
+    persistedStorage['sploot:notification-actions'] = [{
+      notificationId: 'legacy-action',
+      url: 'https://evil.example/steal',
+    }];
+    const { setupNotificationFeedback } = await import('./notifications');
+
+    setupNotificationFeedback();
+    clickListeners[0]('legacy-action');
+
+    await vi.waitFor(() => expect(persistedStorage['sploot:notification-actions']).toEqual([]));
+    expect(chromeMock.tabs.create).not.toHaveBeenCalled();
   });
 
   it('resolves a persisted action after the worker restarts', async () => {

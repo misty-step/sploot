@@ -18,11 +18,22 @@ const CAPTURE_ERROR = "Chrome doesn't allow capturing this page. Try a normal we
  * Register the popup → background trigger for a visible-tab screenshot.
  */
 export function setupScreenshotCapture(): void {
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message?.type === CAPTURE_MESSAGES.VISIBLE_TAB) {
-      // Fire-and-forget: feedback is delivered via notification + badge.
-      void captureAndSaveVisibleTab();
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type !== CAPTURE_MESSAGES.VISIBLE_TAB) {
+      return undefined;
     }
+
+    // Returning true keeps the MV3 message event (and therefore the service
+    // worker) alive until capture, upload, and durable feedback have finished.
+    // The popup-side sendMessage promise is the other end of this lifecycle.
+    void captureAndSaveVisibleTab().then(
+      () => sendResponse({ completed: true }),
+      (error) => {
+        console.error('[Background][Screenshot] capture job failed unexpectedly', error);
+        sendResponse({ completed: false });
+      },
+    );
+    return true;
   });
 }
 

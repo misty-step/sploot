@@ -37,3 +37,27 @@ test('rejects all_urls and development hosts in production', () => {
   assert.match(errors, /<all_urls>/);
   assert.match(errors, /localhost/);
 });
+
+for (const permission of ['downloads', 'webRequest', 'declarativeNetRequest', 'management']) {
+  test(`rejects undeclared privileged permission ${permission}`, () => {
+    const manifest = {
+      ...baseManifest,
+      permissions: [...baseManifest.permissions, permission],
+    };
+    assert.match(
+      validateManifest(manifest, { production: true }).join('\n'),
+      new RegExp(`undeclared permission ${permission}`),
+    );
+  });
+}
+
+test('rejects undeclared production host permissions', () => {
+  const manifest = {
+    ...baseManifest,
+    host_permissions: [...baseManifest.host_permissions, 'https://example.com/*'],
+  };
+  assert.match(
+    validateManifest(manifest, { production: true }).join('\n'),
+    /undeclared production host permission https:\/\/example\.com\/\*/,
+  );
+});

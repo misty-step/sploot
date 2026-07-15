@@ -37,6 +37,12 @@ export function validateManifest(manifest, { production = false } = {}) {
     }
   }
 
+  for (const permission of permissions) {
+    if (!REQUIRED_PERMISSIONS.includes(permission)) {
+      errors.push(`undeclared permission ${permission}`);
+    }
+  }
+
   if (!hosts.has('*://*/*')) {
     errors.push('missing narrow web host permission *://*/*');
   }
@@ -77,6 +83,9 @@ export function validateManifest(manifest, { production = false } = {}) {
     for (const host of hosts) {
       if (host.includes('localhost') || host.includes('clerk.accounts.dev')) {
         errors.push(`production manifest contains development host ${host}`);
+      }
+      if (!REQUIRED_PRODUCTION_HOSTS.includes(host)) {
+        errors.push(`undeclared production host permission ${host}`);
       }
     }
   }

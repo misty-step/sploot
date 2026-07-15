@@ -124,18 +124,18 @@ body {
 
 html,
 body {
-  width: auto;
+  width: 100%;
   max-width: 100%;
-  min-width: 320px;
+  min-width: 0;
   overflow-x: hidden; /* prevent popup resize loops from horizontal overflow */
 }
 
 /* ── Layout ── */
 
 .popup-frame {
-  width: 360px;
+  width: min(360px, 100vw);
   max-width: 100%; /* never clip on narrow hosts — the panel shrinks instead */
-  min-width: 320px;
+  min-width: 0;
   margin: 0 auto;
   overflow: hidden;
   contain: layout;

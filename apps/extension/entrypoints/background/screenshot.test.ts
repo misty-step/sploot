@@ -147,17 +147,53 @@ describe('captureAndSaveVisibleTab', () => {
   });
 
   it('runs the real popup message listener through capture, upload, and feedback', async () => {
-    let messageListener: ((message: unknown) => void) | undefined;
+    let messageListener:
+      | ((message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean | undefined)
+      | undefined;
     chromeMock.runtime.onMessage.addListener.mockImplementation(listener => {
       messageListener = listener;
     });
+    const sendResponse = vi.fn();
 
     setupScreenshotCapture();
     expect(chromeMock.runtime.onMessage.addListener).toHaveBeenCalledOnce();
-    messageListener?.({ type: 'CAPTURE_VISIBLE_TAB' });
+    const keepsWorkerAlive = messageListener?.(
+      { type: 'CAPTURE_VISIBLE_TAB' },
+      {},
+      sendResponse,
+    );
 
+    expect(keepsWorkerAlive).toBe(true);
     await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledWith({ completed: true }));
     expect(mocks.showSuccessNotification).toHaveBeenCalledOnce();
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
+  });
+
+  it('does not answer the popup until the screenshot upload has completed', async () => {
+    let messageListener:
+      | ((message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean | undefined)
+      | undefined;
+    chromeMock.runtime.onMessage.addListener.mockImplementation(listener => {
+      messageListener = listener;
+    });
+    let completeUpload: (() => void) | undefined;
+    mocks.uploadImage.mockReturnValue(new Promise(resolve => {
+      completeUpload = () => resolve({
+        assetId: 'a1',
+        blobUrl: 'b',
+        thumbnailUrl: 't',
+        isDuplicate: false,
+      });
+    }));
+    const sendResponse = vi.fn();
+
+    setupScreenshotCapture();
+    expect(messageListener?.({ type: 'CAPTURE_VISIBLE_TAB' }, {}, sendResponse)).toBe(true);
+    await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledOnce());
+    expect(sendResponse).not.toHaveBeenCalled();
+
+    completeUpload?.();
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledWith({ completed: true }));
   });
 });
