@@ -62,10 +62,22 @@ async function establishOrigin(page: Page, userId: string): Promise<void> {
 }
 
 async function openSignedOutApp(page: Page): Promise<void> {
-  const healthResponse = await page.goto('/api/health', { waitUntil: 'domcontentloaded', timeout: 10_000 });
-  expect(healthResponse?.ok()).toBe(true);
-  const health = JSON.parse((await page.locator('body').textContent()) ?? '{}') as { status?: string };
-  expect(health.status).toBe('ok');
+  await page.goto('/manifest.json', { waitUntil: 'commit', timeout: 10_000 });
+  const health = await page.evaluate(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5_000);
+    try {
+      const response = await fetch('/api/health', { cache: 'no-store', signal: controller.signal });
+      return {
+        ok: response.ok,
+        status: response.status,
+        body: await response.json() as { status?: string },
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+  expect(health).toMatchObject({ ok: true, status: 200, body: { status: 'ok' } });
   await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
 }
 
@@ -211,10 +223,10 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
   const url = 'https://images.example.test/bookmark.png';
   try {
     context = await browser.browserType().launchPersistentContext(userDataDir, { baseURL });
-    const accountATab = await context.newPage();
-    const accountBTab = await context.newPage();
     const signedOut = await context.newPage();
     await openSignedOutApp(signedOut);
+    const accountATab = await context.newPage();
+    const accountBTab = await context.newPage();
     await Promise.all([openApp(accountATab, accountA), openApp(accountBTab, accountB)]);
     await context.setOffline(true);
 
