@@ -4,6 +4,7 @@ import { getRuntimeGate } from './runtime-gates';
 import {
   acquireEmbeddingDailyBudget,
   acquireEmbeddingRateLimit,
+  refundEmbeddingBudget,
   releaseEmbeddingRateLimit,
   type EmbeddingDailyBudgetReason,
   type EmbeddingRateLimitLease,
@@ -253,15 +254,23 @@ class ReplicateEmbeddingService implements EmbeddingService {
     }
 
     try {
-      const dailyBudget = await acquireEmbeddingDailyBudget();
-      if (!dailyBudget.allowed) {
+      const budget = await acquireEmbeddingDailyBudget();
+      if (!budget.allowed) {
         throw new EmbeddingAdmissionError(
-          dailyBudget.reason ?? 'limiter_unavailable',
-          dailyBudget.retryAfterSec
+          budget.reason ?? 'limiter_unavailable',
+          budget.retryAfterSec
         );
       }
+      if (!budget.reservation) {
+        throw new EmbeddingAdmissionError('limiter_unavailable', 30);
+      }
 
-      return await operation();
+      try {
+        return await operation();
+      } catch (error) {
+        await refundEmbeddingBudget(budget.reservation);
+        throw error;
+      }
     } finally {
       await releaseEmbeddingRateLimit(lease);
     }

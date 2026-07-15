@@ -51,6 +51,12 @@ export interface EmbeddingDailyBudgetResult {
   count: number;
   limit: number;
   retryAfterSec?: number;
+  reservation?: EmbeddingBudgetReservation;
+}
+
+export interface EmbeddingBudgetReservation {
+  dateKey: string;
+  monthKey: string;
 }
 
 export interface EmbeddingRateLimitLease {
@@ -144,6 +150,19 @@ async function incrementBucket(
     select: { count: true },
   });
   return bucket.count;
+}
+
+async function decrementBucket(
+  tx: Prisma.TransactionClient,
+  key: string
+): Promise<void> {
+  const result = await tx.embeddingRateBucket.updateMany({
+    where: { key, count: { gt: 0 } },
+    data: { count: { decrement: 1 } },
+  });
+  if (result.count !== 1) {
+    throw new Error(`Embedding budget reservation missing: ${key}`);
+  }
 }
 
 export async function acquireEmbeddingRateLimit(
@@ -351,6 +370,7 @@ export async function acquireEmbeddingDailyBudget(
         allowed: true,
         count: persistedCount,
         limit: EMBEDDING_DAILY_BUDGET,
+        reservation: { dateKey, monthKey },
       };
     });
   } catch (error) {
@@ -362,5 +382,21 @@ export async function acquireEmbeddingDailyBudget(
       limit: EMBEDDING_DAILY_BUDGET,
       retryAfterSec: 30,
     };
+  }
+}
+
+/** Refund one failed embedding reservation across both UTC budget buckets. */
+export async function refundEmbeddingBudget(
+  reservation: EmbeddingBudgetReservation | undefined | null
+): Promise<void> {
+  if (!reservation) return;
+
+  try {
+    await withLimiterLock(async (tx) => {
+      await decrementBucket(tx, `embedding:daily:${reservation.dateKey}`);
+      await decrementBucket(tx, `embedding:monthly:${reservation.monthKey}`);
+    });
+  } catch (error) {
+    logger.logError('embedding-rate-limit.budget-refund-failed', error, reservation);
   }
 }

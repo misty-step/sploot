@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   setImageEmbedding: vi.fn(),
   acquireEmbeddingRateLimit: vi.fn(),
   acquireEmbeddingDailyBudget: vi.fn(),
+  refundEmbeddingBudget: vi.fn(),
   releaseEmbeddingRateLimit: vi.fn(),
 }));
 
@@ -29,6 +30,7 @@ vi.mock('@/lib/cache', () => ({
 vi.mock('@/lib/embedding-rate-limit', () => ({
   acquireEmbeddingRateLimit: mocks.acquireEmbeddingRateLimit,
   acquireEmbeddingDailyBudget: mocks.acquireEmbeddingDailyBudget,
+  refundEmbeddingBudget: mocks.refundEmbeddingBudget,
   releaseEmbeddingRateLimit: mocks.releaseEmbeddingRateLimit,
 }));
 
@@ -53,8 +55,10 @@ describe('central Replicate admission boundary', () => {
       allowed: true,
       count: 1,
       limit: 2000,
+      reservation: { dateKey: '2026-07-15', monthKey: '2026-07' },
     });
     mocks.releaseEmbeddingRateLimit.mockResolvedValue(undefined);
+    mocks.refundEmbeddingBudget.mockResolvedValue(undefined);
     mocks.replicateRun.mockResolvedValue([0.1, 0.2, 0.3]);
   });
 
@@ -73,6 +77,7 @@ describe('central Replicate admission boundary', () => {
 
     expect(mocks.acquireEmbeddingRateLimit).toHaveBeenCalledWith('user-1');
     expect(mocks.acquireEmbeddingDailyBudget).toHaveBeenCalledOnce();
+    expect(mocks.refundEmbeddingBudget).not.toHaveBeenCalled();
     expect(mocks.replicateRun).toHaveBeenCalledOnce();
     expect(mocks.releaseEmbeddingRateLimit).toHaveBeenCalledWith({
       id: 'lease-1',
@@ -87,6 +92,7 @@ describe('central Replicate admission boundary', () => {
 
     expect(mocks.acquireEmbeddingRateLimit).toHaveBeenCalledWith('user-1');
     expect(mocks.acquireEmbeddingDailyBudget).toHaveBeenCalledOnce();
+    expect(mocks.refundEmbeddingBudget).not.toHaveBeenCalled();
     expect(mocks.replicateRun).toHaveBeenCalledOnce();
     expect(mocks.releaseEmbeddingRateLimit).toHaveBeenCalledOnce();
   });
@@ -189,6 +195,10 @@ describe('central Replicate admission boundary', () => {
     expect(options.signal).toBeInstanceOf(AbortSignal);
     expect(options.signal?.aborted).toBe(true);
     expect(mocks.acquireEmbeddingDailyBudget).toHaveBeenCalledOnce();
+    expect(mocks.refundEmbeddingBudget).toHaveBeenCalledWith({
+      dateKey: '2026-07-15',
+      monthKey: '2026-07',
+    });
     expect(mocks.releaseEmbeddingRateLimit).toHaveBeenCalledOnce();
   });
 });

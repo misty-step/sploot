@@ -10,9 +10,9 @@
     "high": {"renditionMultiplier": 1.2, "originMissRatio": 0.3, "inferenceAttemptMultiplier": 1.2, "databaseComputeMultiplier": 1.5, "stripeVariableSurcharge": 0.025}
   },
   "planBudgets": {
-    "free": {"monthlyInfrastructureUsd": 0.3084958, "dailyInferenceUsd": 0.00876, "monthlyInferenceUsd": 0.1752, "dailyInferenceAttempts": 12, "monthlyInferenceAttempts": 240},
-    "collector": {"monthlyInfrastructureUsd": 2.6522, "dailyInferenceUsd": 0.0657, "monthlyInferenceUsd": 1.314, "dailyInferenceAttempts": 90, "monthlyInferenceAttempts": 1800},
-    "archive": {"monthlyInfrastructureUsd": 11.72595, "dailyInferenceUsd": 0.219, "monthlyInferenceUsd": 3.504, "dailyInferenceAttempts": 300, "monthlyInferenceAttempts": 4800}
+    "free": {"monthlyInfrastructureUsd": 0.4, "dailyInferenceUsd": 0.00876, "monthlyInferenceUsd": 0.1752, "dailyInferenceAttempts": 12, "monthlyInferenceAttempts": 240},
+    "collector": {"monthlyInfrastructureUsd": 3, "dailyInferenceUsd": 0.0657, "monthlyInferenceUsd": 1.314, "dailyInferenceAttempts": 90, "monthlyInferenceAttempts": 1800},
+    "archive": {"monthlyInfrastructureUsd": 13, "dailyInferenceUsd": 0.219, "monthlyInferenceUsd": 3.504, "dailyInferenceAttempts": 300, "monthlyInferenceAttempts": 4800}
   },
   "global": {
     "preGaDailyVariableUsd": 0.75,

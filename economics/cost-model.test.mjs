@@ -149,7 +149,7 @@ test('free subsidy and paid full-allowance margins satisfy the vision ratchets',
   assert.ok(archive.grossMarginPct >= 70);
   assert.ok(collector.paymentFeeUsd > 12 * 0.029 + 0.3);
   assert.ok(archive.paymentFeeUsd > 49 * 0.029 + 0.3);
-  assert.ok(12.01 >= minimumPriceForMargin(inputs, 'collector'));
+  assert.ok(13 >= minimumPriceForMargin(inputs, 'collector'));
   assert.ok(49 >= minimumPriceForMargin(inputs, 'archive'));
   assert.ok(collector.infrastructureCostUsd <= inputs.policy.planBudgets.collector.monthlyInfrastructureUsd);
   assert.ok(archive.infrastructureCostUsd <= inputs.policy.planBudgets.archive.monthlyInfrastructureUsd);
@@ -165,6 +165,10 @@ test('paid margin and price-floor gates use unrounded economics', async () => {
   const collector = calculateScenario(inputs, 'collector', 'high');
   assert.ok(collector.grossMarginPct >= 70, `exact Collector margin was ${collector.grossMarginPct}`);
   assert.equal(minimumPriceForMargin(inputs, 'collector'), 12.01);
+  assert.equal(inputs.scenarios.find((scenario) => scenario.id === 'collector').priceUsd, 13);
+  assert.ok(inputs.policy.planBudgets.free.monthlyInfrastructureUsd >= 0.4);
+  assert.ok(inputs.policy.planBudgets.collector.monthlyInfrastructureUsd >= 3);
+  assert.ok(inputs.policy.planBudgets.archive.monthlyInfrastructureUsd >= 13);
   for (const scenarioId of ['free', 'collector', 'archive']) {
     const scenario = inputs.scenarios.find((candidate) => candidate.id === scenarioId);
     const high = calculateScenario(inputs, scenarioId, 'high');

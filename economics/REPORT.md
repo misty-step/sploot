@@ -5,7 +5,7 @@ Generated deterministically from the versioned inputs in this directory. Rates w
 ## Recommendation
 
 - **Cardless Free:** 0.5 GB user-visible source-plus-trash allowance (rendition overhead is reserved separately), 100 new indexes and 100 novel text embeddings per month, 1 GB delivery, and at most 75 project-wide full-allowance equivalents before waitlist/paid admission. High-case variable cost is $0.31 per full account and $23.14 for the pool, below the $25.00 subsidy ceiling.
-- **Collector:** $12.01/month, 10 GB, 600 new indexes, 900 novel text embeddings, and 10 GB delivery. High-case COGS is $3.60 and gross margin is 70.0%. The computed 70%-margin price floor is $12.01.
+- **Collector:** $13/month, 10 GB, 600 new indexes, 900 novel text embeddings, and 10 GB delivery. High-case COGS is $3.65 and gross margin is 71.9%. The computed 70%-margin price floor is $12.01.
 - **Archive:** $49/month, 100 GB, 2,000 new indexes, 2,000 novel text embeddings, and 40 GB delivery. High-case COGS is $14.67 and gross margin is 70.1%. The computed 70%-margin price floor is $48.89.
 - Existing content remains readable, exportable, and deletable after a cost boundary closes. No plan permits silent overage.
 
@@ -18,7 +18,7 @@ Low/base/high vary physical rendition overhead (1.05×/1.10×/1.20×), Blob orig
 | Workload | Revenue | Low COGS | Base COGS | High COGS | High gross margin |
 |---|---:|---:|---:|---:|---:|
 | Cardless Free — full allowance | $0.00 | $0.26 | $0.28 | $0.31 | n/a |
-| Collector — 10 GB | $12.01 | $2.86 | $3.18 | $3.60 | 70.0% |
+| Collector — 10 GB | $13.00 | $2.89 | $3.22 | $3.65 | 71.9% |
 | Archive — 100 GB | $49.00 | $11.52 | $12.89 | $14.67 | 70.1% |
 | Abusive novel-query and upload storm | $0.00 | $48.19 | $50.66 | $57.77 | n/a |
 | Viral public share / crawler month | $0.00 | $156.81 | $163.34 | $173.40 | n/a |
@@ -29,9 +29,9 @@ The abusive and viral rows deliberately exceed their account/global budgets; the
 
 | Plan | Monthly infrastructure ceiling | Daily inference ceiling | Monthly inference ceiling |
 |---|---:|---:|---:|
-| free | $0.31 | $0.01 (12 attempts) | $0.18 (240 attempts) |
-| collector | $2.65 | $0.07 (90 attempts) | $1.31 (1800 attempts) |
-| archive | $11.73 | $0.22 (300 attempts) | $3.50 (4800 attempts) |
+| free | $0.40 | $0.01 (12 attempts) | $0.18 (240 attempts) |
+| collector | $3.00 | $0.07 (90 attempts) | $1.31 (1800 attempts) |
+| archive | $13.00 | $0.22 (300 attempts) | $3.50 (4800 attempts) |
 
 monthlyInfrastructureUsd is an inclusive hard cap in unrounded USD for each scenario's high-sensitivity full allowance; the cap must cover exact modeled infrastructure cost. Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve, so full advertised use cannot exhaust its own budget merely because a provider attempt is retried. Pre-GA global variable spend is capped at $0.75/day and $25.00/month. Replicate is a sub-budget of $0.50/day (684 attempts) and $15.00/month (20547 attempts). After paid admission, the monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; daily is `paidMonthlyBudget / 30`. Counters reserve worst-case dollars transactionally before work and reconcile provider usage afterward.
 
