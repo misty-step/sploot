@@ -58,8 +58,10 @@ $$;
 -- Existing roles are not trusted merely because they already exist. Converge
 -- every managed role to the least-privilege contract before migration DDL,
 -- including installations where an operator previously made a role
--- SUPERUSER, INHERIT, BYPASSRLS, or a login role. Managed roles have no
--- memberships; application credentials are rebound explicitly by deployment.
+-- SUPERUSER, INHERIT, or BYPASSRLS. Managed roles have no memberships.
+-- LOGIN is operator-owned state for the app, migrator, issuer, consumer, and
+-- maintenance roles: an idempotent pre-deploy replay must not disable the
+-- credentials it needs for the immediately following restricted migration.
 DO $$
 DECLARE role_name TEXT;
 BEGIN
@@ -73,10 +75,15 @@ BEGIN
     'sploot_stripe_app'
   ] LOOP
     EXECUTE format(
-      'ALTER ROLE %I NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT NOLOGIN',
+      'ALTER ROLE %I NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT',
       role_name
     );
   END LOOP;
+
+  -- These roles are never legitimate connection principals. Converge their
+  -- login bit even when an earlier operator or compromised install changed it.
+  ALTER ROLE sploot_stripe_ledger_owner NOLOGIN;
+  ALTER ROLE sploot_stripe_adversary NOLOGIN;
 END
 $$;
 

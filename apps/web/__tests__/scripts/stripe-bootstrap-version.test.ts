@@ -94,13 +94,16 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(postSql).toContain(":'bootstrap_version'");
     expect(preSql).toContain("d.deptype = 'e'");
     expect(preSql).toContain("'ALTER %s public.%I OWNER TO sploot_stripe_schema_migrator'");
-    expect(preSql).toContain('NOBYPASSRLS NOINHERIT NOLOGIN');
+    expect(preSql).toContain('NOBYPASSRLS NOINHERIT');
+    expect(preSql).toContain('ALTER ROLE sploot_stripe_ledger_owner NOLOGIN');
+    expect(preSql).toContain('ALTER ROLE sploot_stripe_adversary NOLOGIN');
     expect(preSql).toContain('FROM pg_auth_members');
     expect(preSql).toContain('REVOKE %I FROM %I');
     expect(postSql).toContain('final embedding claim-token schema contract is incomplete');
     expect(postSql).toContain('asset_embeddings_processing_claim_token_state');
     expect(postSql).toContain('asset_embeddings_revival_budget');
     expect(postSql).toContain('final embedding column type/default/nullability contract is incomplete');
+    expect(postSql).toContain("p.prosecdef OR p.proname = 'sploot_stripe_ledger_append_only'");
   });
 
   it('creates managed Stripe roles before converging their privileges', () => {

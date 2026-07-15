@@ -448,7 +448,13 @@ TO sploot_stripe_app;
 DO $$
 DECLARE fn RECORD;
 BEGIN
-  FOR fn IN SELECT p.oid::regprocedure AS signature FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prosecdef LOOP
+  FOR fn IN
+    SELECT p.oid::regprocedure AS signature
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND (p.prosecdef OR p.proname = 'sploot_stripe_ledger_append_only')
+  LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, sploot_stripe_app, sploot_stripe_schema_migrator, sploot_stripe_ledger_issuer, sploot_stripe_ledger_consumer, sploot_stripe_ledger_maintenance', fn.signature);
   END LOOP;
 END
