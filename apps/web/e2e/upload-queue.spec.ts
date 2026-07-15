@@ -216,7 +216,10 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
   const url = 'https://images.example.test/bookmark.png';
   const browserBaseURL = baseURL;
   try {
-    context = await browser.browserType().launchPersistentContext(userDataDir, { baseURL: browserBaseURL });
+    context = await browser.browserType().launchPersistentContext(userDataDir, {
+      args: ['--no-proxy-server'],
+      baseURL: browserBaseURL,
+    });
     await context.setOffline(false);
     const signedOut = context.pages()[0] ?? await context.newPage();
     await openSignedOutApp(signedOut);
@@ -249,7 +252,10 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     await context.close();
     context = undefined;
 
-    context = await browser.browserType().launchPersistentContext(userDataDir, { baseURL: browserBaseURL });
+    context = await browser.browserType().launchPersistentContext(userDataDir, {
+      args: ['--no-proxy-server'],
+      baseURL: browserBaseURL,
+    });
     const reopened = await context.newPage();
     await context.setOffline(true);
     await openApp(reopened, accountA);
