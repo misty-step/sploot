@@ -123,8 +123,13 @@ process.on('SIGTERM', () => void stop().finally(() => process.exit(143)));
 
 for (let attempt = 0; attempt < 120; attempt += 1) {
   try {
-    await fetch(`${baseURL}/api/version`);
-    break;
+    const readiness = await fetch(`${baseURL}/api/version`, { redirect: 'manual' });
+    if (readiness.ok) break;
+    if (attempt === 119) {
+      await stop();
+      fail(`standalone loopback server readiness returned HTTP ${readiness.status}, expected 2xx`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
   } catch {
     if (attempt === 119) {
       await stop();

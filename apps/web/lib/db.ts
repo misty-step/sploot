@@ -1,5 +1,5 @@
 import { PrismaClient, Prisma } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 import { databaseConfigured } from './env';
 import { normalizeSearchQuery, SEARCH_MAX_CURSOR_LENGTH, SEARCH_MAX_LIMIT } from './search-config';
@@ -821,8 +821,26 @@ export interface VectorSearchPage {
 
 export const VECTOR_SEARCH_CURSOR_CONTEXT_ERROR = 'Search cursor does not match search context';
 
+const VECTOR_SEARCH_CURSOR_VERSION = 3;
+const TEST_VECTOR_SEARCH_CURSOR_SECRET = 'sploot-test-only-vector-search-cursor-secret';
+
+function getVectorSearchCursorSecret(): string | null {
+  const configured = process.env.SEARCH_CURSOR_SECRET ||
+    process.env.CLERK_SECRET_KEY ||
+    process.env.SPLOOT_QA_AUTH_SECRET;
+  if (configured) return configured;
+  return process.env.NODE_ENV === 'test' ? TEST_VECTOR_SEARCH_CURSOR_SECRET : null;
+}
+
+function signVectorSearchCursor(payload: string): string | null {
+  const secret = getVectorSearchCursorSecret();
+  if (!secret) return null;
+  return createHmac('sha256', secret).update(payload, 'utf8').digest('base64url');
+}
+
 export interface VectorSearchContext {
   query: string;
+  embeddingModel: string;
   threshold: number;
   sort: 'relevance';
   direction: 'desc';
@@ -844,7 +862,8 @@ export function vectorSearchFilterVariant(input: {
 }
 
 interface VectorSearchCursor {
-  version: 2;
+  version: typeof VECTOR_SEARCH_CURSOR_VERSION;
+  userId: string;
   order: 'relevance';
   id: string;
   distance: number;
@@ -853,6 +872,7 @@ interface VectorSearchCursor {
 
 export function createVectorSearchContext(input: {
   query: string;
+  embeddingModel?: string;
   threshold: number;
   favoriteOnly?: boolean;
   tagId?: string | null;
@@ -861,6 +881,7 @@ export function createVectorSearchContext(input: {
   const normalizedTagId = typeof input.tagId === 'string' ? input.tagId.trim() || null : null;
   return {
     query: normalizeSearchQuery(input.query),
+    embeddingModel: input.embeddingModel ?? process.env.SEARCH_EMBEDDING_MODEL ?? 'default',
     threshold: input.threshold,
     sort: 'relevance',
     direction: 'desc',
@@ -871,18 +892,34 @@ export function createVectorSearchContext(input: {
 }
 
 export function encodeVectorSearchCursor(cursor: Omit<VectorSearchCursor, 'version'>): string {
-  return Buffer.from(JSON.stringify({ version: 2, ...cursor })).toString('base64url');
+  if (!cursor.userId) throw new Error('Search cursor requires a user id');
+  const payload = Buffer.from(JSON.stringify({ version: VECTOR_SEARCH_CURSOR_VERSION, ...cursor })).toString('base64url');
+  const signature = signVectorSearchCursor(payload);
+  if (!signature) throw new Error('Search cursor signing authority is not configured');
+  return `${payload}.${signature}`;
 }
 
-export function decodeVectorSearchCursor(value: string): VectorSearchCursor | null {
+export function decodeVectorSearchCursor(value: string, expectedUserId?: string): VectorSearchCursor | null {
   try {
-    const cursor = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as VectorSearchCursor;
+    const [payload, signature, extra] = value.split('.');
+    if (!payload || !signature || extra !== undefined) return null;
+    const expectedSignature = signVectorSearchCursor(payload);
+    if (!expectedSignature) return null;
+    const actualBytes = Buffer.from(signature, 'base64url');
+    const expectedBytes = Buffer.from(expectedSignature, 'base64url');
+    if (actualBytes.length !== expectedBytes.length || !timingSafeEqual(actualBytes, expectedBytes)) return null;
+
+    const cursor = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as VectorSearchCursor;
     const context = cursor.context;
-    if (cursor.version !== 2 || cursor.order !== 'relevance' ||
+    if (cursor.version !== VECTOR_SEARCH_CURSOR_VERSION ||
+        typeof cursor.userId !== 'string' || cursor.userId.length === 0 || cursor.userId.length > 200 ||
+        (expectedUserId !== undefined && cursor.userId !== expectedUserId) ||
+        cursor.order !== 'relevance' ||
         typeof cursor.id !== 'string' || cursor.id.length === 0 || cursor.id.length > 200 ||
         typeof cursor.distance !== 'number' || !Number.isFinite(cursor.distance) ||
         !context || typeof context !== 'object' ||
         typeof context.query !== 'string' || context.query !== normalizeSearchQuery(context.query) ||
+        typeof context.embeddingModel !== 'string' || context.embeddingModel.length === 0 || context.embeddingModel.length > 500 ||
         typeof context.threshold !== 'number' || !Number.isFinite(context.threshold) ||
         context.threshold < 0 || context.threshold > 1 ||
         context.sort !== 'relevance' || context.direction !== 'desc' ||
@@ -900,8 +937,11 @@ export function decodeVectorSearchCursor(value: string): VectorSearchCursor | nu
 export function vectorSearchCursorMatchesContext(
   cursor: VectorSearchCursor,
   context: VectorSearchContext,
+  userId: string,
 ): boolean {
-  return cursor.context.query === context.query &&
+  return cursor.userId === userId &&
+    cursor.context.query === context.query &&
+    cursor.context.embeddingModel === context.embeddingModel &&
     cursor.context.threshold === context.threshold &&
     cursor.context.sort === context.sort &&
     cursor.context.direction === context.direction &&
@@ -945,6 +985,65 @@ export function vectorSearchFilterClause(
   }
 }
 
+export function buildVectorSearchPageQuery(
+  userId: string,
+  queryEmbedding: number[],
+  options: {
+    limit: number;
+    threshold?: number;
+    favoriteOnly: boolean;
+    tagId: string | null;
+    offset: number;
+    cursor: VectorSearchCursor | null;
+  },
+): Prisma.Sql {
+  const vectorSql = embeddingVectorSql(queryEmbedding, 'search query embedding');
+  const thresholdClause = typeof options.threshold === 'number' && options.threshold > 0
+    ? Prisma.sql`AND 1 - (ae.image_embedding <=> ${vectorSql}) >= ${options.threshold}`
+    : Prisma.empty;
+  const filterClause = vectorSearchFilterClause(
+    vectorSearchFilterVariant({ favoriteOnly: options.favoriteOnly, tagId: options.tagId }),
+    options.tagId,
+    thresholdClause,
+  );
+  const cursorClause = options.cursor
+    ? Prisma.sql`
+        AND (
+          1 - (ae.image_embedding <=> ${vectorSql}) < ${options.cursor.distance}
+          OR (
+            1 - (ae.image_embedding <=> ${vectorSql}) = ${options.cursor.distance}
+            AND a.id > ${options.cursor.id}
+          )
+        )
+      `
+    : Prisma.empty;
+
+  return Prisma.sql`
+    SELECT
+      a.id,
+      a.blob_url,
+      a.thumbnail_url,
+      a.pathname,
+      a.mime,
+      a.width,
+      a.height,
+      a.favorite,
+      a.size,
+      a."createdAt" AS created_at,
+      1 - (ae.image_embedding <=> ${vectorSql}) AS distance
+    FROM "assets" a
+    INNER JOIN "asset_embeddings" ae ON a.id = ae.asset_id
+    WHERE
+      a.owner_user_id = ${userId}
+      AND a.deleted_at IS NULL
+      AND ae.status = 'ready'
+      ${filterClause}
+      ${cursorClause}
+    ORDER BY ae.image_embedding <=> ${vectorSql} ASC, a.id ASC
+    LIMIT ${options.limit + 1} OFFSET ${options.cursor ? 0 : options.offset}
+  `;
+}
+
 export async function vectorSearchPage(
   userId: string,
   queryEmbedding: number[],
@@ -977,10 +1076,10 @@ export async function vectorSearchPage(
   if (cursorValue && cursorValue.length > SEARCH_MAX_CURSOR_LENGTH) {
     throw new Error('vector search cursor is invalid');
   }
-  const cursor = cursorValue ? decodeVectorSearchCursor(cursorValue) : null;
+  const cursor = cursorValue ? decodeVectorSearchCursor(cursorValue, userId) : null;
   if (cursorValue && !cursor) throw new Error('vector search cursor is invalid');
   if (cursor && offset > 0) throw new Error('vector search cursor cannot be combined with offset');
-  if (cursor && (!cursorContext || !vectorSearchCursorMatchesContext(cursor, cursorContext))) {
+  if (cursor && (!cursorContext || !vectorSearchCursorMatchesContext(cursor, cursorContext, userId))) {
     throw new Error(VECTOR_SEARCH_CURSOR_CONTEXT_ERROR);
   }
 
@@ -988,48 +1087,18 @@ export async function vectorSearchPage(
     return { results: [], total: 0, hasMore: false };
   }
 
-  const vectorSql = embeddingVectorSql(queryEmbedding, 'search query embedding');
   const thresholdClause = typeof threshold === 'number' && threshold > 0
-    ? Prisma.sql`AND 1 - (ae.image_embedding <=> ${vectorSql}) >= ${threshold}`
+    ? Prisma.sql`AND 1 - (ae.image_embedding <=> ${embeddingVectorSql(queryEmbedding, 'search query embedding')}) >= ${threshold}`
     : Prisma.empty;
   const filterVariant = vectorSearchFilterVariant({ favoriteOnly, tagId });
   const filterClause = vectorSearchFilterClause(filterVariant, tagId, thresholdClause);
 
   try {
-    const cursorClause = cursor
-      ? Prisma.sql`
-          AND (
-            1 - (ae.image_embedding <=> ${vectorSql}) < ${cursor.distance}
-            OR (
-              1 - (ae.image_embedding <=> ${vectorSql}) = ${cursor.distance}
-              AND a.id > ${cursor.id}
-            )
-          )
-        `
-      : Prisma.empty;
-    const rows = await prisma.$queryRaw<VectorSearchRow[]>(Prisma.sql`
-      SELECT
-        a.id,
-        a.blob_url,
-        a.thumbnail_url,
-        a.pathname,
-        a.mime,
-        a.width,
-        a.height,
-        a.favorite,
-        a.size,
-        a."createdAt" AS created_at,
-        1 - (ae.image_embedding <=> ${vectorSql}) AS distance
-      FROM "assets" a
-      INNER JOIN "asset_embeddings" ae ON a.id = ae.asset_id
-      WHERE
-        a.owner_user_id = ${userId}
-        AND a.deleted_at IS NULL
-        ${filterClause}
-        ${cursorClause}
-      ORDER BY ae.image_embedding <=> ${vectorSql} ASC, a.id ASC
-      LIMIT ${limit + 1} OFFSET ${cursor ? 0 : offset}
-    `);
+    const rows = await prisma.$queryRaw<VectorSearchRow[]>(buildVectorSearchPageQuery(
+      userId,
+      queryEmbedding,
+      { limit, threshold, favoriteOnly, tagId, offset, cursor },
+    ));
 
     const countRows = await prisma.$queryRaw<Array<{ total_count: bigint | number }>>(Prisma.sql`
       SELECT COUNT(*) AS total_count
@@ -1038,6 +1107,7 @@ export async function vectorSearchPage(
       WHERE
         a.owner_user_id = ${userId}
         AND a.deleted_at IS NULL
+        AND ae.status = 'ready'
         ${filterClause}
       `);
     const total = Number(countRows[0]?.total_count ?? 0);
@@ -1054,7 +1124,7 @@ export async function vectorSearchPage(
       : rows.length > limit || offset + results.length < total;
     const last = results.at(-1);
     const nextCursor = hasMore && last && cursorContext
-      ? encodeVectorSearchCursor({ order: 'relevance', id: last.id, distance: last.distance, context: cursorContext })
+      ? encodeVectorSearchCursor({ userId, order: 'relevance', id: last.id, distance: last.distance, context: cursorContext })
       : undefined;
 
     return { results, total, hasMore, ...(nextCursor ? { nextCursor } : {}) };
@@ -1107,24 +1177,36 @@ async function vectorSearchLegacyUnfiltered(
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > SEARCH_MAX_LIMIT) {
     throw new Error(`vector search page limit must be between 1 and ${SEARCH_MAX_LIMIT}`);
   }
-  // Thresholding belongs in SQL. Fetching a capped unfiltered prefix and
-  // filtering it in JavaScript silently drops qualifying rows that follow
-  // low-scoring neighbors, while a direct pgvector query with a predicate
-  // keeps the proven low-latency plan shape.
-  const fetchLimit = limit;
+  // Keep the direct pgvector plan shape free of a similarity predicate: on
+  // pgvector this preserves the HNSW/order-by plan used by the 6.5ms p95
+  // baseline. Start with the proven bounded probe and expand only when the
+  // threshold result is not yet complete.
+  const hasThreshold = typeof threshold === 'number' && threshold > 0;
+  let fetchLimit = hasThreshold ? Math.min(limit * 3, 120) : limit;
 
   try {
     // Keep the golden eval and similar-assets path on the pre-pagination SQL
     // shape: no CTE, count, or optional filter joins when no filters apply.
-    const results = await prisma!.$queryRaw<VectorSearchRow[]>(buildUnfilteredVectorSearchQuery(
-      userId,
-      queryEmbedding,
-      fetchLimit,
-      threshold,
-    ));
-    return results
-      .filter((result) => typeof threshold !== 'number' || threshold <= 0 || result.distance >= threshold)
-      .slice(0, limit);
+    while (true) {
+      const results = await prisma!.$queryRaw<VectorSearchRow[]>(buildUnfilteredVectorSearchQuery(
+        userId,
+        queryEmbedding,
+        fetchLimit,
+      ));
+      const filtered = results
+        .filter((result) => !hasThreshold || result.distance >= threshold!)
+        .slice(0, limit);
+
+      if (!hasThreshold || filtered.length >= limit || results.length < fetchLimit) {
+        return filtered;
+      }
+
+      // A full probe with too few qualifying rows is not a complete answer:
+      // lower-scoring neighbors may still hide later qualifying rows. Keep
+      // expanding until the database returns fewer rows than requested so the
+      // bounded result page never silently omits a qualifying asset.
+      fetchLimit = Math.max(fetchLimit * 2, fetchLimit + limit);
+    }
   } catch (error) {
     logger.error('Vector search query failed', {
       userId,
@@ -1141,12 +1223,8 @@ export function buildUnfilteredVectorSearchQuery(
   userId: string,
   queryEmbedding: number[],
   fetchLimit: number,
-  threshold?: number,
 ): Prisma.Sql {
   const vectorSql = embeddingVectorSql(queryEmbedding, 'search query embedding');
-  const thresholdClause = typeof threshold === 'number' && threshold > 0
-    ? Prisma.sql`AND 1 - (ae.image_embedding <=> ${vectorSql}) >= ${threshold}`
-    : Prisma.empty;
   return Prisma.sql`
       SELECT
         a.id,
@@ -1165,8 +1243,8 @@ export function buildUnfilteredVectorSearchQuery(
       WHERE
         a.owner_user_id = ${userId}
         AND a.deleted_at IS NULL
-        ${thresholdClause}
-      ORDER BY ae.image_embedding <=> ${vectorSql}
+        AND ae.status = 'ready'
+      ORDER BY ae.image_embedding <=> ${vectorSql} ASC, a.id ASC
       LIMIT ${fetchLimit}
     `;
 }

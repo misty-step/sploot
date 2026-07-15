@@ -183,6 +183,7 @@ describe('/api/search with a cached query embedding', () => {
       'qa-design-user',
       'cats',
       expect.objectContaining({ sort: 'relevance', direction: 'desc' }),
+      'test/clip:model',
     );
   });
 
@@ -205,7 +206,8 @@ describe('/api/search with a cached query embedding', () => {
     ['page size', { query: 'cats', limit: 10, cursor: 'cursor-from-cats' }],
   ])('rejects a cursor replay with a changed %s before embedding or DB execution', async (_change, body) => {
     mocks.decodeVectorSearchCursor.mockReturnValue({
-      version: 2,
+      version: 3,
+      userId: 'qa-design-user',
       order: 'relevance',
       id: 'asset-1',
       distance: 0.9,

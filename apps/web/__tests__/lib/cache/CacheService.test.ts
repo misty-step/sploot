@@ -202,6 +202,8 @@ describe('CacheService', () => {
   describe('Search Results', () => {
     const userId = 'user-123';
     const query = 'funny cats';
+    const searchModelV1 = 'clip-model:v1';
+    const searchModelV2 = 'clip-model:v2';
     const filters = { limit: 50, threshold: 0.3 };
     const results = [
       { id: 'asset-1', score: 0.95 },
@@ -286,6 +288,28 @@ describe('CacheService', () => {
       });
       await expect(cacheService.getSearchResultPage(userId, '`@', filters)).resolves.toEqual({
         results: secondPage,
+        total: 1,
+        hasMore: false,
+      });
+    });
+
+    it('does not reuse search pages when the embedding model revision changes', async () => {
+      const page = [{ id: 'asset-model-v1' }];
+
+      await cacheService.setSearchResultPage(
+        userId,
+        query,
+        filters,
+        page,
+        1,
+        false,
+        undefined,
+        searchModelV1,
+      );
+
+      await expect(cacheService.getSearchResultPage(userId, query, filters, searchModelV2)).resolves.toBeNull();
+      await expect(cacheService.getSearchResultPage(userId, query, filters, searchModelV1)).resolves.toEqual({
+        results: page,
         total: 1,
         hasMore: false,
       });
