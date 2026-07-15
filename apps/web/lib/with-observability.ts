@@ -109,6 +109,9 @@ export function withObservability(
       const response = perfMonitor
         ? await perfMonitor.measureAsync(operation, () => callRouteHandler(handler, req, handlerContext))
         : await callRouteHandler(handler, req, handlerContext);
+      if (!response) {
+        throw new Error('Route handler returned no response');
+      }
       const duration = Date.now() - startTime;
       const statusCode = response.status;
       const success = statusCode >= 200 && statusCode < 400;

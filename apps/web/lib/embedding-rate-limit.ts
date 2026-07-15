@@ -168,6 +168,20 @@ async function incrementBucket(
   return bucket.count;
 }
 
+async function decrementReservedBucket(
+  tx: Prisma.TransactionClient,
+  key: string
+): Promise<void> {
+  // A bucket may already have expired and been pruned by another admission
+  // transaction. In that state its capacity is already free. The lease row is
+  // the idempotency fence, so refund every surviving bucket without rolling its
+  // deletion back merely because one counter is gone.
+  await tx.embeddingRateBucket.updateMany({
+    where: { key, count: { gt: 0 } },
+    data: { count: { decrement: 1 } },
+  });
+}
+
 export async function acquireEmbeddingRateLimit(
   userId: string,
   nowMs: number = Date.now()
@@ -255,10 +269,8 @@ export async function acquireEmbeddingRateLimit(
         windowId,
       };
 
-      const [persistedUserWindow, persistedGlobalWindow] = await Promise.all([
-        incrementBucket(tx, userWindowKey, expiresAt),
-        incrementBucket(tx, globalWindowKey, expiresAt),
-      ]);
+      const persistedUserWindow = await incrementBucket(tx, userWindowKey, expiresAt);
+      const persistedGlobalWindow = await incrementBucket(tx, globalWindowKey, expiresAt);
       await tx.embeddingRateLease.create({
         data: {
           id: lease.id,

@@ -214,6 +214,107 @@ describeWithDatabase('Postgres embedding limiter', () => {
     expect(leaseCount).toBe(0);
   });
 
+  it('keeps minute, daily, and lease state unchanged at the monthly ceiling', async () => {
+    const nowMs = Date.UTC(2026, 6, 10, 12, 0, 0);
+    const windowId = Math.floor(nowMs / 60_000);
+    const monthlyKey = 'embedding:monthly:2026-07';
+    const dailyKey = 'embedding:daily:2026-07-10';
+    const userKey = `embedding:rate:user:atomic-user-a:${windowId}`;
+    const globalKey = `embedding:rate:global:${windowId}`;
+
+    await prisma.$executeRaw`
+      INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
+      VALUES (
+        ${monthlyKey},
+        ${EMBEDDING_MONTHLY_BUDGET},
+        NOW() + INTERVAL '32 days',
+        NOW()
+      )
+    `;
+
+    const denied = await acquireEmbeddingAdmissionReservation('atomic-user-a', nowMs);
+    expect(denied).toMatchObject({ allowed: false, reason: 'monthly_budget' });
+
+    const buckets = await prisma.$queryRaw<Array<{ key: string; count: number }>>`
+      SELECT "key", "count"
+      FROM "embedding_rate_buckets"
+      WHERE "key" IN (${monthlyKey}, ${dailyKey}, ${userKey}, ${globalKey})
+      ORDER BY "key"
+    `;
+    expect(buckets).toEqual([
+      { key: monthlyKey, count: EMBEDDING_MONTHLY_BUDGET },
+    ]);
+    expect(await prisma.embeddingRateLease.count({
+      where: { userId: 'atomic-user-a' },
+    })).toBe(0);
+  });
+
+  it('refunds the exact minute, day, and month reservation once', async () => {
+    const nowMs = Date.UTC(2026, 6, 10, 14, 0, 0);
+    const windowId = Math.floor(nowMs / 60_000);
+    const admitted = await acquireEmbeddingAdmissionReservation('atomic-user-a', nowMs);
+    expect(admitted.allowed).toBe(true);
+    const reservation = admitted.reservation!;
+
+    await refundEmbeddingAdmissionCapacity(
+      reservation.lease,
+      reservation.dailyReservation,
+    );
+    await refundEmbeddingAdmissionCapacity(
+      reservation.lease,
+      reservation.dailyReservation,
+    );
+
+    const keys = [
+      `embedding:rate:user:atomic-user-a:${windowId}`,
+      `embedding:rate:global:${windowId}`,
+      'embedding:daily:2026-07-10',
+      'embedding:monthly:2026-07',
+    ];
+    const buckets = await prisma.embeddingRateBucket.findMany({
+      where: { key: { in: keys } },
+      select: { key: true, count: true },
+      orderBy: { key: 'asc' },
+    });
+    expect(buckets).toHaveLength(4);
+    expect(buckets.every(({ count }) => count === 0)).toBe(true);
+    expect(await prisma.embeddingRateLease.count({
+      where: { id: reservation.lease.id },
+    })).toBe(0);
+  });
+
+  it('releases the lease and surviving capacity when one reserved bucket was pruned', async () => {
+    const nowMs = Date.UTC(2026, 6, 10, 14, 5, 0);
+    const windowId = Math.floor(nowMs / 60_000);
+    const admitted = await acquireEmbeddingAdmissionReservation('atomic-user-a', nowMs);
+    expect(admitted.allowed).toBe(true);
+    const reservation = admitted.reservation!;
+    const missingKey = `embedding:rate:user:atomic-user-a:${windowId}`;
+
+    await prisma.embeddingRateBucket.delete({ where: { key: missingKey } });
+    await refundEmbeddingAdmissionCapacity(
+      reservation.lease,
+      reservation.dailyReservation,
+    );
+
+    const survivingKeys = [
+      `embedding:rate:global:${windowId}`,
+      'embedding:daily:2026-07-10',
+      'embedding:monthly:2026-07',
+    ];
+    const buckets = await prisma.embeddingRateBucket.findMany({
+      where: { key: { in: survivingKeys } },
+      select: { key: true, count: true },
+      orderBy: { key: 'asc' },
+    });
+    expect(buckets).toHaveLength(3);
+    expect(buckets.every(({ count }) => count === 0)).toBe(true);
+    expect(await prisma.embeddingRateLease.count({
+      where: { id: reservation.lease.id },
+    })).toBe(0);
+  });
+
+
   it('serializes concurrent denials without over-refunding a surviving reservation', async () => {
     const nowMs = Date.UTC(2026, 6, 10, 13, 0, 0);
     const windowId = Math.floor(nowMs / 60_000);

@@ -143,6 +143,21 @@ describe('withObservability', () => {
     expect(record?.logger.logError).not.toHaveBeenCalled();
   });
 
+  it('reports an explicit route contract error when a handler returns no response', async () => {
+    const handler = vi.fn(async () => undefined as never);
+    const wrapped = withObservability(handler);
+
+    await expect(
+      wrapped(createRequest('https://sploot.dev/api/gremlin'), defaultContext)
+    ).rejects.toThrow('Route handler returned no response');
+
+    expect(loggerRecords[0]?.logger.logError).toHaveBeenCalledWith(
+      'request:error',
+      expect.objectContaining({ message: 'Route handler returned no response' }),
+      expect.objectContaining({ success: false }),
+    );
+  });
+
   it('honors custom operation override', async () => {
     nanoidMock.mockReturnValueOnce('trace-override');
 
