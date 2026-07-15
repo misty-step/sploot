@@ -962,6 +962,30 @@ export async function vectorSearchPage(
       `
     : Prisma.empty;
   const orderClause = vectorSearchOrderClause();
+  const rankedCte = Prisma.sql`
+    WITH ranked AS (
+      SELECT
+        a.id,
+        a.blob_url,
+        a.thumbnail_url,
+        a.pathname,
+        a.mime,
+        a.width,
+        a.height,
+        a.favorite,
+        a.size,
+        a."createdAt" AS created_at,
+        1 - (ae.image_embedding <=> ${vectorSql}) AS distance
+      FROM "assets" a
+      INNER JOIN "asset_embeddings" ae ON a.id = ae.asset_id
+      WHERE
+        a.owner_user_id = ${userId}
+        AND a.deleted_at IS NULL
+        ${favoriteClause}
+        ${tagClause}
+        ${thresholdClause}
+    )
+  `;
 
   try {
     // The ranked CTE owns the complete result set, while page applies a
@@ -975,28 +999,7 @@ export async function vectorSearchPage(
       : Prisma.empty;
     const pageOrderClause = Prisma.sql`ORDER BY page.distance DESC, page.id ASC`;
     const rows = await prisma.$queryRaw<Array<VectorSearchRow & { total_count: bigint | number }>>(Prisma.sql`
-      WITH ranked AS (
-        SELECT
-          a.id,
-          a.blob_url,
-          a.thumbnail_url,
-          a.pathname,
-          a.mime,
-          a.width,
-          a.height,
-          a.favorite,
-          a.size,
-          a."createdAt" AS created_at,
-          1 - (ae.image_embedding <=> ${vectorSql}) AS distance
-        FROM "assets" a
-        INNER JOIN "asset_embeddings" ae ON a.id = ae.asset_id
-        WHERE
-          a.owner_user_id = ${userId}
-          AND a.deleted_at IS NULL
-          ${favoriteClause}
-          ${tagClause}
-          ${thresholdClause}
-      )
+      ${rankedCte}
       , page AS (
         SELECT ranked.*
         FROM ranked
@@ -1004,16 +1007,19 @@ export async function vectorSearchPage(
         ${orderClause}
         LIMIT ${limit + 1} OFFSET ${cursor ? 0 : offset}
       )
-      , totals AS (
-        SELECT COUNT(*) AS total_count FROM ranked
-      )
-      SELECT page.*, totals.total_count
-      FROM totals
-      LEFT JOIN page ON TRUE
+      SELECT page.*, (SELECT COUNT(*) FROM ranked) AS total_count
+      FROM page
       ${pageOrderClause}
     `);
 
-    const total = Number(rows[0]?.total_count ?? 0);
+    let total = Number(rows[0]?.total_count ?? 0);
+    if (rows.length === 0) {
+      const countRows = await prisma.$queryRaw<Array<{ total_count: bigint | number }>>(Prisma.sql`
+        ${rankedCte}
+        SELECT COUNT(*) AS total_count FROM ranked
+      `);
+      total = Number(countRows[0]?.total_count ?? 0);
+    }
     const results = rows
       .filter((row) => row.id !== null && row.id !== undefined)
       .slice(0, limit)
