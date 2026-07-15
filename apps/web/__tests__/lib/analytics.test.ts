@@ -10,13 +10,11 @@ import { track, trackFlow, trackServer, trackTiming } from '@/lib/analytics';
 
 describe('provider-neutral analytics facade', () => {
   const fetchMock = vi.fn();
-  let consoleError: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     fetchMock.mockResolvedValue(new Response(null, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
-    consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     Object.defineProperty(navigator, 'doNotTrack', {
       value: null,
       writable: true,
@@ -26,14 +24,12 @@ describe('provider-neutral analytics facade', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    consoleError.mockRestore();
   });
 
   it('sends sanitized client events to the first-party telemetry route', () => {
     track({
       name: 'upload_completed',
       properties: {
-        assetId: 'asset-1',
         duration: 120,
         size: 2048,
         // @ts-expect-error exercise the runtime property allowlist
@@ -41,20 +37,20 @@ describe('provider-neutral analytics facade', () => {
       },
     });
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/telemetry', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/telemetry', expect.objectContaining({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
       keepalive: true,
+      signal: expect.any(AbortSignal),
       body: expect.any(String),
-    });
+    }));
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(request).toMatchObject({
       type: 'analytics',
       payload: {
         name: 'upload_completed',
         properties: {
-          assetId: 'asset-1',
           duration: 120,
           size: 2048,
         },
@@ -94,7 +90,7 @@ describe('provider-neutral analytics facade', () => {
 
     track({
       name: 'asset_favorited',
-      properties: { assetId: 'asset-2' },
+      properties: {},
     });
 
     expect(fetchMock).not.toHaveBeenCalled();
@@ -128,7 +124,7 @@ describe('provider-neutral analytics facade', () => {
     });
   });
 
-  it('never lets telemetry transport failure break the caller', async () => {
+  it('never lets telemetry transport failure break the caller or console cleanliness', async () => {
     fetchMock.mockRejectedValueOnce(new Error('network gone'));
 
     expect(() => {
@@ -138,11 +134,6 @@ describe('provider-neutral analytics facade', () => {
       });
     }).not.toThrow();
 
-    await vi.waitFor(() => {
-      expect(consoleError).toHaveBeenCalledWith(
-        '[Analytics] Tracking failed:',
-        expect.any(Error)
-      );
-    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 });

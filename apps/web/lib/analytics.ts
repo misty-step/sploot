@@ -10,18 +10,18 @@ import { postAnalyticsEvent } from '@/lib/telemetry-client';
 
 export type AnalyticsEvent =
   | { name: 'upload_file_selected'; properties: { count: number; totalSize: number } }
-  | { name: 'upload_started'; properties: { assetId: string; size: number } }
-  | { name: 'upload_completed'; properties: { assetId: string; duration: number; size: number } }
-  | { name: 'upload_failed'; properties: { reason: string; size: number } }
+  | { name: 'upload_started'; properties: { size: number } }
+  | { name: 'upload_completed'; properties: { duration: number; size: number } }
+  | { name: 'upload_failed'; properties: { reason: 'unknown' | 'network' | 'offline' | 'validation' | 'duplicate'; size: number } }
   | { name: 'search_query_submitted'; properties: { queryLength: number; hasFilters: boolean } }
   | { name: 'search_results_shown'; properties: { count: number; latency: number; hasFilters: boolean } }
-  | { name: 'search_result_clicked'; properties: { position: number; score: number; assetId: string } }
+  | { name: 'search_result_clicked'; properties: { position: number; score: number } }
   | { name: 'search_no_results'; properties: { queryLength: number; hasFilters: boolean } }
-  | { name: 'asset_favorited'; properties: { assetId: string } }
-  | { name: 'asset_unfavorited'; properties: { assetId: string } }
-  | { name: 'asset_deleted'; properties: { assetId: string; hadTags: boolean } }
-  | { name: 'tag_added'; properties: { assetId: string; tagName: string } }
-  | { name: 'tag_removed'; properties: { assetId: string; tagName: string } };
+  | { name: 'asset_favorited'; properties: Record<string, never> }
+  | { name: 'asset_unfavorited'; properties: Record<string, never> }
+  | { name: 'asset_deleted'; properties: { hadTags: boolean } }
+  | { name: 'tag_added'; properties: Record<string, never> }
+  | { name: 'tag_removed'; properties: Record<string, never> };
 
 type DeclaredAnalyticsEventName = AnalyticsEvent['name'];
 type AnalyticsPropertiesFor<Name extends DeclaredAnalyticsEventName> = Extract<
@@ -44,24 +44,25 @@ interface TelemetryEvent {
 
 const ANALYTICS_EVENT_PROPERTY_ALLOWLIST = {
   upload_file_selected: ['count', 'totalSize'],
-  upload_started: ['assetId', 'size'],
-  upload_completed: ['assetId', 'duration', 'size'],
+  upload_started: ['size'],
+  upload_completed: ['duration', 'size'],
   upload_failed: ['reason', 'size'],
   search_query_submitted: ['queryLength', 'hasFilters'],
   search_results_shown: ['count', 'latency', 'hasFilters'],
-  search_result_clicked: ['position', 'score', 'assetId'],
+  search_result_clicked: ['position', 'score'],
   search_no_results: ['queryLength', 'hasFilters'],
-  asset_favorited: ['assetId'],
-  asset_unfavorited: ['assetId'],
-  asset_deleted: ['assetId', 'hadTags'],
-  tag_added: ['assetId', 'tagName'],
-  tag_removed: ['assetId', 'tagName'],
+  asset_favorited: [],
+  asset_unfavorited: [],
+  asset_deleted: ['hadTags'],
+  tag_added: [],
+  tag_removed: [],
 } as const satisfies AnalyticsPropertyAllowlist;
 
 const FLOW_EVENT_NAME = /^flow:[a-z][a-z0-9_-]{0,39}:[a-z][a-z0-9_-]{0,39}$/;
 const TIMING_EVENT_NAME = /^timing:[a-z][a-z0-9:_-]{0,99}$/i;
 const FLOW_PROPERTY_ALLOWLIST = ['count', 'totalSize', 'size', 'hasFilters'] as const;
 const TIMING_PROPERTY_ALLOWLIST = ['duration', 'success', 'size', 'count'] as const;
+const UPLOAD_FAILURE_REASONS = new Set(['unknown', 'network', 'offline', 'validation', 'duplicate']);
 
 export function getAnalyticsPropertyAllowlist(name: string): readonly string[] | null {
   const declared = Object.prototype.hasOwnProperty.call(
@@ -116,7 +117,7 @@ function prepareTelemetryEvent(
 
   return {
     name,
-    properties: sanitizeEventProperties(properties, allowlist),
+    properties: sanitizeEventProperties(name, properties, allowlist),
   };
 }
 
@@ -125,17 +126,13 @@ function emit(event: TelemetryEvent): void {
     if (typeof window !== 'undefined') {
       if (navigator.doNotTrack === '1') return;
 
-      void postAnalyticsEvent(event).catch((error) => {
-        console.error('[Analytics] Tracking failed:', error);
-      });
+      void postAnalyticsEvent(event);
       return;
     }
 
-    void logServerEvent(event).catch((error) => {
-      console.error('[Analytics] Tracking failed:', error);
-    });
-  } catch (error) {
-    console.error('[Analytics] Tracking failed:', error);
+    void logServerEvent(event);
+  } catch {
+    // Telemetry is strictly best effort and must never affect product UX.
   }
 }
 
@@ -143,12 +140,13 @@ async function logServerEvent(event: TelemetryEvent): Promise<void> {
   try {
     const { logger } = await import('@/lib/observability-logger');
     logger.logInfo('analytics:event', event);
-  } catch (error) {
-    console.error('[Analytics] Server tracking failed:', error);
+  } catch {
+    // A missing or unavailable observability sink is an ordinary failure mode.
   }
 }
 
 function sanitizeEventProperties(
+  name: string,
   properties: Record<string, unknown>,
   allowlist: readonly string[]
 ): SanitizedProperties {
@@ -158,13 +156,10 @@ function sanitizeEventProperties(
     const value = properties[key];
     if (value === undefined) continue;
 
-    if (key === 'userId' || key.toLowerCase().includes('email') || isEmail(value)) {
-      sanitized[key] = '[REDACTED]';
-      continue;
-    }
-
-    if ((key === 'url' || key === 'referrer') && typeof value === 'string') {
-      sanitized[key] = stripQueryParams(value);
+    if (name === 'upload_failed' && key === 'reason') {
+      sanitized[key] = typeof value === 'string' && UPLOAD_FAILURE_REASONS.has(value)
+        ? value
+        : 'unknown';
       continue;
     }
 
@@ -176,18 +171,4 @@ function sanitizeEventProperties(
 
 function isPrimitive(value: unknown): value is string | number | boolean {
   return ['string', 'number', 'boolean'].includes(typeof value);
-}
-
-function isEmail(value: unknown): boolean {
-  return typeof value === 'string' && /\S+@\S+\.\S+/.test(value);
-}
-
-function stripQueryParams(url: string): string {
-  try {
-    const parsed = new URL(url);
-    return `${parsed.origin}${parsed.pathname}`;
-  } catch {
-    const queryIndex = url.indexOf('?');
-    return queryIndex === -1 ? url : url.slice(0, queryIndex);
-  }
 }

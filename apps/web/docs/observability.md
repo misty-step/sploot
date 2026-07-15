@@ -15,3 +15,6 @@ for an incident:
 telemetry failure must never block upload, search, authentication, or health
 responses. a missing limiter schema is different: it returns health 503 and
 embedding generation fails closed because that path controls paid work.
+
+the complete browser/server producer classification and executable source and
+bundle falsifiers live in [telemetry-inventory.md](./telemetry-inventory.md).

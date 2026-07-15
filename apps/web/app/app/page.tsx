@@ -564,7 +564,6 @@ function AppPageClient() {
           properties: {
             position: index >= 0 ? index + 1 : 0,
             score,
-            assetId: asset.id,
           },
         });
       }

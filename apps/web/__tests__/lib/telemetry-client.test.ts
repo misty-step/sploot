@@ -4,6 +4,7 @@ import {
   postBlobLoadFailure,
   postPerformanceMetric,
   postUsageMetric,
+  resolveTelemetrySink,
 } from '@/lib/telemetry-client';
 
 describe('typed first-party telemetry client', () => {
@@ -27,13 +28,14 @@ describe('typed first-party telemetry client', () => {
       tags: { broken_count: 2, total_count: 100 },
     });
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/telemetry', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/telemetry', expect.objectContaining({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
       keepalive: true,
+      signal: expect.any(AbortSignal),
       body: expect.any(String),
-    });
+    }));
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body).toMatchObject({
       type: 'performance',
@@ -64,11 +66,34 @@ describe('typed first-party telemetry client', () => {
     expect(JSON.stringify(body)).not.toContain('blobUrl');
   });
 
-  it('rejects a non-success response instead of silently accepting it', async () => {
+  it('bounds a non-success response without surfacing a product error', async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 400 }));
 
-    await expect(
-      postUsageMetric({ action: 'blob_load_failure', count: 1 })
-    ).rejects.toThrow('Telemetry request rejected (400)');
+    await expect(postUsageMetric({ action: 'blob_load_failure', count: 1 })).resolves.toBe(false);
+  });
+
+  it('does not call a disabled sink or throw when the sink is unreachable', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('sink offline'));
+
+    await expect(postUsageMetric({ action: 'blob_load_failure', count: 1 }, {
+      endpoint: '/api/telemetry', enabled: false, timeoutMs: 10,
+    })).resolves.toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await expect(postUsageMetric({ action: 'blob_load_failure', count: 1 }, {
+      endpoint: '/api/telemetry', enabled: true, timeoutMs: 10,
+    })).resolves.toBe(false);
+  });
+
+  it('keeps sink configuration same-origin and explicitly disableable', () => {
+    expect(resolveTelemetrySink({
+      NEXT_PUBLIC_TELEMETRY_ENDPOINT: 'https://collector.example.test/events',
+      NEXT_PUBLIC_TELEMETRY_ENABLED: 'true',
+    })).toMatchObject({ endpoint: '/api/telemetry', enabled: true });
+
+    expect(resolveTelemetrySink({
+      NEXT_PUBLIC_TELEMETRY_ENDPOINT: '/internal/telemetry',
+      NEXT_PUBLIC_TELEMETRY_ENABLED: 'false',
+    })).toMatchObject({ endpoint: '/internal/telemetry', enabled: false });
   });
 });

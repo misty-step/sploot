@@ -3,7 +3,7 @@ import { postPerformanceMetric } from '@/lib/telemetry-client';
 import type {
   PerformanceMetricName,
   PerformanceMetricUnit,
-  TelemetryMetadata,
+  PerformanceTelemetryTags,
 } from '@/lib/telemetry-contract';
 
 /**
@@ -16,7 +16,7 @@ interface PerformanceMetric {
   name: PerformanceMetricName;
   value: number;
   unit: PerformanceMetricUnit;
-  tags?: TelemetryMetadata;
+  tags?: PerformanceTelemetryTags;
 }
 
 interface CoreWebVitalsMetric extends PerformanceMetric {

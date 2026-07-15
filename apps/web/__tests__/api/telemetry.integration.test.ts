@@ -118,10 +118,9 @@ describe('/api/telemetry', () => {
       type: 'error' as const,
       payload: {
         name: 'TypeError',
-        message: 'meltdown imminent',
-        stack: 'stack trace',
-        componentStack: 'Component > Child',
-        url: '/app/library',
+        boundary: 'app-error',
+        hasStack: true,
+        hasComponentStack: true,
         timestamp: Date.now(),
       },
     };
@@ -136,9 +135,8 @@ describe('/api/telemetry', () => {
       'client:error',
       expect.any(Error),
       expect.objectContaining({
-        userId: AUTH_USER.userId,
         name: payload.payload.name,
-        url: payload.payload.url,
+        boundary: payload.payload.boundary,
         hasStack: true,
         hasComponentStack: true,
       })
@@ -150,16 +148,10 @@ describe('/api/telemetry', () => {
       type: 'error' as const,
       payload: {
         name: 'RenderError',
-        message: 'tile went sideways',
         boundary: 'image-tile-error-boundary',
-        location: {
-          origin: 'https://www.sploot.app',
-          pathname: '/app',
-        },
         timestamp: Date.now(),
         hasStack: true,
-        digest: 'digest-123',
-        metadata: { assetId: 'asset-123' },
+        hasComponentStack: false,
       },
     };
 
@@ -173,17 +165,14 @@ describe('/api/telemetry', () => {
       'client:error',
       expect.any(Error),
       expect.objectContaining({
-        userId: AUTH_USER.userId,
         boundary: 'image-tile-error-boundary',
-        location: payload.payload.location,
         hasStack: true,
-        digest: 'digest-123',
-        metadata: { assetId: 'asset-123' },
+        hasComponentStack: false,
       })
     );
   });
 
-  it('strips untrusted error text and secrets from top-level client fields', async () => {
+  it('rejects raw error text, location, and arbitrary metadata at the boundary', async () => {
     const secrets = {
       email: 'private-person@example.com',
       token: 'top-secret-token-123',
@@ -193,42 +182,21 @@ describe('/api/telemetry', () => {
       type: 'error' as const,
       payload: {
         name: 'TypeError',
+        boundary: 'image-tile-error-boundary',
+        hasStack: true,
+        hasComponentStack: true,
         message: `failed for ${secrets.email} token=${secrets.token}`,
-        stack: `Error: failed\n at https://sploot.app/app?token=${secrets.token}`,
-        componentStack: `Component cookie=${secrets.cookie}`,
-        url: `https://sploot.app/app?token=${secrets.token}`,
-        location: {
-          origin: `https://sploot.app?token=${secrets.token}`,
-          pathname: `/users/${secrets.email}`,
-        },
-        boundary: `tile:${secrets.cookie}`,
-        digest: `digest:${secrets.token}`,
         timestamp: Date.now(),
       },
     };
 
     const response = await POST(createMockRequest('POST', payload), defaultContext);
 
-    expect(response.status).toBe(200);
-    const clientErrorCall = mockLogger.logError.mock.calls.find(
-      ([eventName]) => eventName === 'client:error'
-    );
-    const forwarded = JSON.stringify(clientErrorCall);
-    expect(forwarded).not.toContain(payload.payload.message);
-    expect(forwarded).not.toContain(payload.payload.stack);
-    expect(forwarded).not.toContain(payload.payload.componentStack);
-    expect(forwarded).not.toContain(secrets.email);
-    expect(forwarded).not.toContain(secrets.token);
-    expect(forwarded).not.toContain(secrets.cookie);
-    expect(clientErrorCall?.[1]).toMatchObject({
-      name: 'TypeError',
-      message: 'Client-reported error',
-    });
-    expect(clientErrorCall?.[2]).toMatchObject({
-      url: 'https://sploot.app/app',
-      hasStack: true,
-      hasComponentStack: true,
-    });
+    expect(response.status).toBe(400);
+    expect(mockLogger.logError.mock.calls.some(([eventName]) => eventName === 'client:error')).toBe(false);
+    expect(JSON.stringify(mockLogger.logError.mock.calls)).not.toContain(secrets.email);
+    expect(JSON.stringify(mockLogger.logError.mock.calls)).not.toContain(secrets.token);
+    expect(JSON.stringify(mockLogger.logError.mock.calls)).not.toContain(secrets.cookie);
   });
 
   it('rejects oversized top-level error telemetry strings', async () => {
@@ -265,8 +233,9 @@ describe('/api/telemetry', () => {
       type: 'error' as const,
       payload: {
         name: 'TypeError',
-        message: 'broken vibes',
-        url: '/app',
+        boundary: 'app-error',
+        hasStack: false,
+        hasComponentStack: false,
         timestamp: Date.now(),
       },
     };
@@ -350,48 +319,28 @@ describe('/api/telemetry', () => {
     const payload = {
       type: 'performance' as const,
       payload: {
-        metric: 'time_to_empty_state',
-        value: 1500,
-        unit: 'ms',
+        metric: 'broken_images_ratio',
+        value: 0.02,
+        unit: 'ratio',
         timestamp: Date.now(),
         tags: {
-          size: 2048,
+          broken_count: 2,
+          total_count: 100,
           userId: 'user_private_123',
           query: 'private performance search text',
-          email: 'private@example.com',
-          referrer: 'https://example.com/path?token=secret',
-          note: 'also-private@example.com',
-          nested: { token: 'super-secret' },
-          oversized: 'x'.repeat(2_001),
         },
       },
     };
 
     const response = await POST(createMockRequest('POST', payload), defaultContext);
 
-    expect(response.status).toBe(200);
-    expect(mockLogger.logInfo).toHaveBeenCalledWith('performance_metric', {
-      metric: payload.payload.metric,
-      value: payload.payload.value,
-      unit: payload.payload.unit,
-      timestamp: payload.payload.timestamp,
-      tags: {
-        size: 2048,
-        referrer: 'https://example.com/path',
-        note: '[REDACTED]',
-      },
-    });
-    const timingCall = mockLogger.logInfo.mock.calls.find(
-      ([eventName]) => eventName === 'performance_metric'
-    );
-    expect(JSON.stringify(timingCall)).not.toContain('user_private_123');
-    expect(JSON.stringify(timingCall)).not.toContain('private performance search text');
-    expect(JSON.stringify(timingCall)).not.toContain('private@example.com');
-    expect(JSON.stringify(timingCall)).not.toContain('super-secret');
-    expect(JSON.stringify(timingCall)).not.toContain('x'.repeat(2_001));
+    expect(response.status).toBe(400);
+    expect(mockLogger.logInfo.mock.calls.some(([eventName]) => eventName === 'performance_metric')).toBe(false);
+    expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain('user_private_123');
+    expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain('private performance search text');
   });
 
-  it('caps structured metadata cardinality', async () => {
+  it('rejects unknown performance metadata instead of forwarding arbitrary fields', async () => {
     const tags = Object.fromEntries(
       Array.from({ length: 40 }, (_, index) => [`field_${index}`, index])
     );
@@ -410,13 +359,8 @@ describe('/api/telemetry', () => {
       defaultContext
     );
 
-    expect(response.status).toBe(200);
-    const timingCall = mockLogger.logInfo.mock.calls.find(
-      ([eventName]) => eventName === 'performance_metric'
-    );
-    expect(Object.keys((timingCall?.[1] as { tags?: object })?.tags ?? {})).toHaveLength(
-      30
-    );
+    expect(response.status).toBe(400);
+    expect(mockLogger.logInfo.mock.calls.some(([eventName]) => eventName === 'performance_metric')).toBe(false);
   });
 
   it('forwards first-party analytics events to the structured logger', async () => {
@@ -444,16 +388,13 @@ describe('/api/telemetry', () => {
     mockLogger.logInfo.mockImplementation((eventName) => {
       if (eventName === 'analytics:event') throw new Error('structured logging offline');
     });
-    const rawQuery = 'private failed analytics query';
     const payload = {
       type: 'analytics' as const,
       payload: {
         name: 'search_no_results',
         properties: {
-          queryLength: rawQuery.length,
+          queryLength: 12,
           hasFilters: false,
-          query: rawQuery,
-          userId: 'client-supplied-user',
         },
         timestamp: Date.now(),
       },
@@ -469,12 +410,10 @@ describe('/api/telemetry', () => {
     const failureCall = mockLogger.logError.mock.calls.find(
       ([eventName]) => eventName === 'telemetry:analytics-forwarding-failed'
     );
-    expect(JSON.stringify(failureCall)).not.toContain(rawQuery);
     expect(JSON.stringify(failureCall)).not.toContain(AUTH_USER.userId);
-    expect(JSON.stringify(failureCall)).not.toContain('client-supplied-user');
   });
 
-  it('allowlists analytics properties and drops raw search text and direct identity', async () => {
+  it('rejects analytics properties outside the declared contract', async () => {
     const rawQuery = 'private therapy reaction meme';
     const payload = {
       type: 'analytics' as const,
@@ -494,21 +433,9 @@ describe('/api/telemetry', () => {
 
     const response = await POST(createMockRequest('POST', payload), defaultContext);
 
-    expect(response.status).toBe(200);
-    expect(mockLogger.logInfo).toHaveBeenCalledWith('analytics:event', {
-      name: payload.payload.name,
-      properties: {
-        queryLength: rawQuery.length,
-        hasFilters: false,
-      },
-      timestamp: payload.payload.timestamp,
-    });
-    const analyticsCall = mockLogger.logInfo.mock.calls.find(
-      ([eventName]) => eventName === 'analytics:event'
-    );
-    expect(JSON.stringify(analyticsCall)).not.toContain(rawQuery);
-    expect(JSON.stringify(analyticsCall)).not.toContain(AUTH_USER.userId);
-    expect(JSON.stringify(analyticsCall)).not.toContain('client-supplied-user');
+    expect(response.status).toBe(400);
+    expect(mockLogger.logInfo.mock.calls.some(([eventName]) => eventName === 'analytics:event')).toBe(false);
+    expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain(rawQuery);
   });
 
   it('rejects analytics event names outside the declared contract', async () => {
@@ -534,11 +461,11 @@ describe('/api/telemetry', () => {
     const events = [
       {
         name: 'flow:upload_wizard:selected',
-        properties: { count: 2, query: 'private flow text' },
+        properties: { count: 2 },
       },
       {
         name: 'timing:upload:single',
-        properties: { duration: 45, success: true, size: 100, userId: 'user_private_123' },
+        properties: { duration: 45, success: true, size: 100 },
       },
     ];
 
@@ -565,7 +492,6 @@ describe('/api/telemetry', () => {
       name: 'timing:upload:single',
       properties: { duration: 45, success: true, size: 100 },
     });
-    expect(JSON.stringify(analyticsCalls)).not.toContain('private flow text');
     expect(JSON.stringify(analyticsCalls)).not.toContain('user_private_123');
   });
 
@@ -603,11 +529,10 @@ describe('/api/telemetry', () => {
     const payload = {
       type: 'usage' as const,
       payload: {
-        userId: 'external-user',
-        action: 'upload',
-        count: 3,
+        action: 'blob_load_failure',
+        count: 1,
         timestamp: Date.now(),
-        metadata: { plan: 'pro' },
+        metadata: { fallbackAttempted: true },
       },
     };
 
@@ -647,8 +572,7 @@ describe('/api/telemetry', () => {
     const payload = {
       type: 'usage' as const,
       payload: {
-        userId: 'external-user',
-        action: 'search',
+        action: 'blob_load_failure',
         count: 1,
         timestamp: Date.now(),
       },
@@ -675,8 +599,9 @@ describe('/api/telemetry', () => {
       type: 'error' as const,
       payload: {
         name: 'EdgeCase',
-        message: 'boom',
-        url: '/app',
+        boundary: 'app-error',
+        hasStack: false,
+        hasComponentStack: false,
         timestamp: Date.now(),
       },
     };

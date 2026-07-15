@@ -131,7 +131,6 @@ export function useUploadQueue() {
         track({
           name: 'upload_started',
           properties: {
-            assetId: item.id,
             size: item.file.size,
           },
         });
@@ -159,7 +158,6 @@ export function useUploadQueue() {
         track({
           name: 'upload_completed',
           properties: {
-            assetId: item.id,
             duration: Math.round(duration),
             size: item.file.size,
           },
@@ -175,7 +173,7 @@ export function useUploadQueue() {
         track({
           name: 'upload_failed',
           properties: {
-            reason: error instanceof Error ? error.message : 'unknown',
+            reason: 'unknown',
             size: item.file.size,
           },
         });
