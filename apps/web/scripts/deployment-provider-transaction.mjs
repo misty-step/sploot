@@ -6,6 +6,7 @@ const WEB_SERVICE_NAME = 'web';
 const MIGRATION_JOB_NAME = 'web-pre-deploy-migrate';
 const MIGRATION_JOB_KIND = 'PRE_DEPLOY';
 const SERVICE_RUN_COMMAND = 'pnpm --filter web start';
+const MIGRATION_BUILD_COMMAND = 'corepack enable && pnpm install --frozen-lockfile && pnpm --filter web exec prisma generate';
 const MIGRATION_RUN_COMMAND = 'pnpm --filter web exec node scripts/migrate-deploy.mjs';
 const SOURCE_KEYS = ['github', 'git', 'image'];
 const CLOSED_ALLOWLIST_BINDINGS = new Set([
@@ -437,6 +438,10 @@ export function deriveClosedStageSpec(liveSpec, operatorSpec = liveSpec) {
     job.kind = MIGRATION_JOB_KIND;
     job.run_command = MIGRATION_RUN_COMMAND;
     applySourceDescriptor(job, sourceDescriptor);
+    // App Platform builds jobs as independent components. The migrator needs
+    // dependencies and a generated Prisma client, never the Next.js artifact
+    // or web-only auth bindings.
+    job.build_command = MIGRATION_BUILD_COMMAND;
     if (!Array.isArray(job.envs)) job.envs = [];
     const existing = job.envs.filter((env) => env?.key === 'DATABASE_URL');
     if (existing.length > 1) throw new Error('migration job has duplicate DATABASE_URL bindings');
@@ -450,6 +455,7 @@ export function deriveClosedStageSpec(liveSpec, operatorSpec = liveSpec) {
       envs: [databaseBinding],
     };
     applySourceDescriptor(job, sourceDescriptor);
+    job.build_command = MIGRATION_BUILD_COMMAND;
     jobs.push(job);
   }
   web.run_command = SERVICE_RUN_COMMAND;

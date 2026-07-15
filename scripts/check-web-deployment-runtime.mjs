@@ -45,8 +45,8 @@ export function validateWebDeploymentRuntime({
   if (!/merge-gate:[\s\S]*needs:\s*\[[^\]]*web-build/.test(workflow)) {
     failures.push('the production web build must be required by merge-gate');
   }
-  if (!/MIGRATION_JOB_NAME\s*=\s*['"]web-pre-deploy-migrate['"][\s\S]*MIGRATION_JOB_KIND\s*=\s*['"]PRE_DEPLOY['"][\s\S]*SERVICE_RUN_COMMAND\s*=\s*['"]pnpm --filter web start['"][\s\S]*MIGRATION_RUN_COMMAND\s*=\s*['"]pnpm --filter web exec node scripts\/migrate-deploy\.mjs['"]/.test(providerTransaction)) {
-    failures.push('the provider transaction must own one PRE_DEPLOY migrator and a start-only service');
+  if (!/MIGRATION_JOB_NAME\s*=\s*['"]web-pre-deploy-migrate['"][\s\S]*MIGRATION_JOB_KIND\s*=\s*['"]PRE_DEPLOY['"][\s\S]*SERVICE_RUN_COMMAND\s*=\s*['"]pnpm --filter web start['"][\s\S]*MIGRATION_BUILD_COMMAND\s*=\s*['"]corepack enable && pnpm install --frozen-lockfile && pnpm --filter web exec prisma generate['"][\s\S]*MIGRATION_RUN_COMMAND\s*=\s*['"]pnpm --filter web exec node scripts\/migrate-deploy\.mjs['"]/.test(providerTransaction)) {
+    failures.push('the provider transaction must own one migration-only PRE_DEPLOY component and a start-only service');
   }
   if (!/DENIED_RUNTIME_BINDINGS[\s\S]*createWebBuildEnvironment[\s\S]*spawnSync\(['"]pnpm['"],\s*\[['"]--filter['"],\s*['"]web['"],\s*['"]build['"]\]/.test(secretlessBuilder)) {
     failures.push('the CI builder must use an explicit runtime-secret-denied environment');
