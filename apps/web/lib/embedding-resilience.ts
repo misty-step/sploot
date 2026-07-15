@@ -456,6 +456,12 @@ export async function recordEmbeddingProviderSuccess(
 ): Promise<boolean> {
   if (!prisma) return false;
 
+  // Ordinary closed-state successes are not circuit state transitions. Keep
+  // their generation untouched so a sibling real failure can still win, and
+  // so a late success cannot close a newer failure interval. Only the exact
+  // generation/token-fenced recovery probe may close and advance the circuit.
+  if (!lease.probeLeaseToken || lease.probeGeneration === null) return true;
+
   try {
     const probeLeaseToken = lease.probeLeaseToken ?? null;
     const updated = await prisma.$executeRaw(Prisma.sql`

@@ -321,6 +321,32 @@ describe('central Replicate admission boundary', () => {
     );
   });
 
+  it('preserves bounded Retry-After metadata for provider 5xx responses', async () => {
+    const response = new Response(null, {
+      status: 503,
+      headers: { 'Retry-After': '47' },
+    });
+    mocks.replicateRun.mockRejectedValue(
+      new InstalledReplicateApiError(
+        'Provider unavailable',
+        new Request('https://api.replicate.com/v1/predictions'),
+        response,
+      ),
+    );
+    const service = createEmbeddingService('user-1');
+
+    await expect(service.embedText('replicate 5xx response envelope')).rejects.toMatchObject({
+      name: 'EmbeddingProviderUnavailableError',
+      statusCode: 503,
+      retryAfterSec: 47,
+    });
+    expect(mocks.recordEmbeddingProviderFailure).toHaveBeenCalledWith(
+      { generation: 0, probeGeneration: null, probeLeaseToken: null },
+      'provider_unavailable',
+      47,
+    );
+  });
+
   it.each([
     ['missing output', undefined],
     ['empty output', []],

@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GET } from '@/app/api/cron/process-embeddings/route';
 import { NextRequest } from 'next/server';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
-import { EmbeddingProviderRateLimitError } from '@/lib/embedding-errors';
+import {
+  EmbeddingProviderCircuitOpenError,
+  EmbeddingProviderRateLimitError,
+} from '@/lib/embedding-errors';
 
 // Mock next/headers
 const mockHeaders = vi.fn();
@@ -484,6 +487,41 @@ describe('/api/cron/process-embeddings', () => {
         failureCount: 0,
       });
       expect(mockPrisma.asset.findMany).not.toHaveBeenCalled();
+      expect(mockEmbedImage).not.toHaveBeenCalled();
+    });
+
+    it('defers circuit-open initialization without consuming an asset attempt', async () => {
+      mockPrisma.asset.findMany.mockResolvedValue([
+        {
+          id: 'asset-init-circuit-open',
+          blobUrl: 'https://blob.vercel-storage.com/init-circuit-open.jpg',
+          checksumSha256: 'checksum-init-circuit-open',
+          ownerUserId: 'user-1',
+          createdAt: hoursAgo(2),
+        },
+      ]);
+      mockCreateEmbeddingService.mockImplementation(() => {
+        throw new EmbeddingProviderCircuitOpenError(42);
+      });
+
+      const response = await GET({} as NextRequest);
+      const data = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get('Retry-After')).toBe('42');
+      expect(data.stats).toMatchObject({
+        totalProcessed: 1,
+        successCount: 0,
+        failureCount: 0,
+        deferredCount: 1,
+      });
+      expect(mockDeferEmbeddingAdmission).toHaveBeenCalledWith(
+        'asset-init-circuit-open',
+        'Embedding provider temporarily unavailable',
+        'provider_circuit_open',
+        42,
+      );
+      expect(mockRecordEmbeddingAttemptFailure).not.toHaveBeenCalled();
       expect(mockEmbedImage).not.toHaveBeenCalled();
     });
 

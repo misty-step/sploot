@@ -8,6 +8,8 @@ import {
   deferEmbeddingAdmission,
   recordEmbeddingAdmissionFailure,
   acquireEmbeddingProviderAdmission,
+  recordEmbeddingProviderFailure,
+  recordEmbeddingProviderSuccess,
 } from '@/lib/embedding-resilience';
 import { EmbeddingSchedulerService } from '@/lib/upload/embedding-scheduler-service';
 import {
@@ -654,6 +656,50 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
         select: { generation: true, openUntil: true, lastReason: true },
       }),
     ).resolves.toMatchObject({ generation: 2, lastReason: 'provider_unavailable' });
+  }, 30_000);
+
+  it('lets a sibling real failure open after an ordinary success', async () => {
+    const nowMs = Date.UTC(2026, 6, 14, 20, 30, 0);
+    const first = await acquireEmbeddingProviderAdmission(nowMs);
+    const sibling = await acquireEmbeddingProviderAdmission(nowMs);
+
+    expect(first.allowed).toBe(true);
+    expect(sibling.allowed).toBe(true);
+    await expect(
+      recordEmbeddingProviderSuccess(first.lease!, nowMs + 1_000),
+    ).resolves.toBe(true);
+    await expect(
+      recordEmbeddingProviderFailure(sibling.lease!, 'provider_unavailable', 45, nowMs + 2_000),
+    ).resolves.toBe(true);
+
+    await expect(
+      prisma.embeddingProviderCircuit.findUnique({
+        where: { key: 'replicate-image' },
+        select: { generation: true, openUntil: true, lastReason: true },
+      }),
+    ).resolves.toMatchObject({ generation: 1, lastReason: 'provider_unavailable' });
+  }, 30_000);
+
+  it('does not let an ordinary stale success close a newer failure interval', async () => {
+    const nowMs = Date.UTC(2026, 6, 14, 21, 30, 0);
+    const first = await acquireEmbeddingProviderAdmission(nowMs);
+    const sibling = await acquireEmbeddingProviderAdmission(nowMs);
+
+    expect(first.allowed).toBe(true);
+    expect(sibling.allowed).toBe(true);
+    await expect(
+      recordEmbeddingProviderFailure(sibling.lease!, 'provider_unavailable', 45, nowMs + 1_000),
+    ).resolves.toBe(true);
+    await expect(
+      recordEmbeddingProviderSuccess(first.lease!, nowMs + 2_000),
+    ).resolves.toBe(true);
+
+    await expect(
+      prisma.embeddingProviderCircuit.findUnique({
+        where: { key: 'replicate-image' },
+        select: { generation: true, openUntil: true, lastReason: true },
+      }),
+    ).resolves.toMatchObject({ generation: 1, lastReason: 'provider_unavailable' });
   }, 30_000);
 
   it('emits one Canary interval for a cron circuit response without a generic observability duplicate', async () => {

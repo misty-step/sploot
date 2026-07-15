@@ -341,6 +341,39 @@ describe('EmbeddingSchedulerService', () => {
         });
       });
 
+      it('does not issue a legacy pending write after durable admission deferral succeeds', async () => {
+        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
+        mockPrisma.$executeRaw = vi.fn().mockResolvedValue(1);
+        mockCreateEmbeddingService.mockReturnValue({
+          embedImage: vi.fn().mockRejectedValue(new EmbeddingAdmissionError('daily_budget', 3600)),
+        });
+
+        const error = await service.scheduleEmbedding(baseParams).catch((e) => e);
+
+        expect(error).toBeInstanceOf(EmbeddingScheduleError);
+        expect(mockPrisma.$executeRaw).toHaveBeenCalledOnce();
+        expect(mockPrisma.assetEmbedding.upsert).not.toHaveBeenCalled();
+      });
+
+      it('uses the legacy pending write only when durable admission deferral fails', async () => {
+        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
+        mockPrisma.$executeRaw = vi.fn().mockRejectedValue(new Error('migration unavailable'));
+        mockCreateEmbeddingService.mockReturnValue({
+          embedImage: vi.fn().mockRejectedValue(new EmbeddingAdmissionError('daily_budget', 3600)),
+        });
+        mockPrisma.assetEmbedding.upsert.mockResolvedValue({});
+
+        const error = await service.scheduleEmbedding(baseParams).catch((e) => e);
+
+        expect(error).toBeInstanceOf(EmbeddingScheduleError);
+        expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { assetId: 'asset-123' },
+            update: expect.objectContaining({ status: 'pending' }),
+          }),
+        );
+      });
+
       it('should handle database unavailable gracefully', async () => {
         // Setup: no database
         const originalPrisma = vi.mocked(db).prisma;
