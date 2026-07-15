@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => {
       removed = true;
     }),
     claimUpload: vi.fn(async () => upload),
+    renewUploadClaim: vi.fn(async () => true),
     completeUpload: vi.fn(async () => {
       removed = true;
       return true;
@@ -67,6 +68,7 @@ vi.mock('@/hooks/use-offline', () => ({
   useOffline: () => ({ isOffline: mocks.offline, checkConnection: vi.fn() }),
 }));
 vi.mock('@/lib/upload-queue', () => ({
+  UPLOAD_QUEUE_CLAIM_LEASE_MS: 120_000,
   UPLOAD_QUEUE_MAX_RETRIES: 3,
   createUploadId: () => 'stable-tab-owner',
   getUploadQueueManager: () => mocks.manager,

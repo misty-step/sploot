@@ -58,6 +58,25 @@ describe('UploadQueueManager durable boundaries', () => {
     }
   });
 
+  it('renews a held claim beyond its first lease and rejects renewal after reclaim', async () => {
+    const firstTab = UploadQueueManager.create();
+    const secondTab = UploadQueueManager.create();
+    await Promise.all([firstTab.init(), secondTab.init()]);
+    await firstTab.clearAll(OWNER_A);
+    const id = await firstTab.addUpload(new File(['data'], 'renewed.png', { type: 'image/png' }), OWNER_A);
+    const first = await firstTab.claimUpload(id, OWNER_A, 'held-tab', 40);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await expect(firstTab.renewUploadClaim(id, OWNER_A, 'held-tab', first!.claimGeneration, first!.claimToken!, 40)).resolves.toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    await expect(secondTab.claimUpload(id, OWNER_A, 'reclaimer', 40)).resolves.toBeNull();
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const reclaimed = await secondTab.claimUpload(id, OWNER_A, 'reclaimer', 40);
+    expect(reclaimed?.claimGeneration).toBe((first?.claimGeneration ?? 0) + 1);
+    await expect(firstTab.renewUploadClaim(id, OWNER_A, 'held-tab', first!.claimGeneration, first!.claimToken!, 40)).resolves.toBe(false);
+    await expect(firstTab.completeUpload(id, OWNER_A, 'held-tab', first!.claimGeneration, first!.claimToken!)).resolves.toBe(false);
+  });
+
   it('fences stale completion and release by exact attempt token when an owner is reused', async () => {
     const firstTab = UploadQueueManager.create();
     const secondTab = UploadQueueManager.create();
@@ -171,6 +190,18 @@ describe('UploadQueueManager durable boundaries', () => {
     const uploads = await manager.getPendingUploads(OWNER_A);
     expect(uploads).toHaveLength(1);
     expect(uploads[0]).toMatchObject({ id, status: 'terminal', retryCount: 3 });
+  });
+
+  it('persists a permanent URL rejection as terminal so recovery cannot retry it', async () => {
+    const manager = UploadQueueManager.create();
+    await manager.init();
+    await manager.clearAll(OWNER_A);
+    const id = await manager.addUrlUpload('https://example.test/permanent.png', OWNER_A);
+    const claimed = await manager.claimUpload(id, OWNER_A, 'url-worker');
+    await expect(manager.releaseUploadClaim(id, OWNER_A, 'url-worker', claimed!.claimGeneration, claimed!.claimToken!, 'that url is not a meme we can save', true)).resolves.toMatchObject({ status: 'terminal' });
+    await expect(manager.getPendingUploads(OWNER_A)).resolves.toEqual([
+      expect.objectContaining({ id, intent: 'url', status: 'terminal', retryCount: 1 }),
+    ]);
   });
 
   it('retains expired uploads and preserves a bounded explicit queue policy', async () => {

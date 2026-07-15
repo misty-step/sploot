@@ -31,3 +31,19 @@ test('rejects mutation or expansion of the immutable legacy allowlist', () => {
     /Duplicate Prisma migration timestamp prefix 20260714000000/,
   );
 });
+
+test('rejects any unallowlisted legacy date-prefix collision', () => {
+  assert.throws(
+    () => assertUniqueMigrationPrefixes([
+      '20260713000000_first_legacy_migration',
+      '20260713000000_second_legacy_migration',
+    ]),
+    /Duplicate Prisma migration timestamp prefix 20260713000000/,
+  );
+  assert.doesNotThrow(() => assertUniqueMigrationPrefixes([
+    ...LEGACY_DUPLICATES.get('20260714000000'),
+  ]));
+  assert.doesNotThrow(() => assertUniqueMigrationPrefixes([
+    ...LEGACY_DUPLICATES.get('20260518'),
+  ]));
+});

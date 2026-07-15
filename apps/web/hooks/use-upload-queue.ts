@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { error as logError } from '@/lib/logger';
 import { track } from '@/lib/analytics';
-import { createUploadId, getUploadQueueManager, UPLOAD_QUEUE_MAX_RETRIES } from '@/lib/upload-queue';
-import { getUploadNetworkClient, type UploadResult } from '@/lib/upload/upload-network-client';
+import { createUploadId, getUploadQueueManager, UPLOAD_QUEUE_CLAIM_LEASE_MS, UPLOAD_QUEUE_MAX_RETRIES } from '@/lib/upload-queue';
+import { getUploadNetworkClient, UploadError, type UploadResult } from '@/lib/upload/upload-network-client';
 import { deriveUploadOwnerKey } from '@/lib/upload/upload-owner';
 import { useOptionalAuthUser } from '@/lib/auth/client';
 import { useOffline } from './use-offline';
@@ -41,6 +41,8 @@ const queueListeners = new Set<QueueListener>();
 const queueEventListeners = new Set<QueueEventListener>();
 let queueOwner: string | null = null;
 let queueProcessingPromise: Promise<void> | null = null;
+let queueProcessingOwnerKey: string | null = null;
+let queueProcessingRunId = 0;
 let queueAccountKey: string | null = null;
 let queueGeneration = 0;
 const activeAbortControllers = new Map<string, AbortController>();
@@ -145,6 +147,9 @@ export function useUploadQueue({
     queueGeneration += 1;
     activeAbortControllers.forEach((controller) => controller.abort());
     activeAbortControllers.clear();
+    queueProcessingOwnerKey = null;
+    queueProcessingPromise = null;
+    queueProcessingRunId += 1;
     queueAccountKey = ownerKey;
     queueSnapshot = [];
     queueListeners.forEach((listener) => listener());
@@ -248,8 +253,10 @@ export function useUploadQueue({
 
   const processQueue = useCallback(async () => {
     if (isOfflineRef.current || !ownerKey) return;
-    if (queueProcessingPromise) return queueProcessingPromise;
+    if (queueProcessingPromise && queueProcessingOwnerKey === ownerKey) return queueProcessingPromise;
 
+    const runId = queueProcessingRunId + 1;
+    queueProcessingRunId = runId;
     const run = async () => {
       if (isProcessingRef.current) return;
       isProcessingRef.current = true;
@@ -278,13 +285,23 @@ export function useUploadQueue({
               } : item)));
               const controller = new AbortController();
               activeAbortControllers.set(upload.id, controller);
-              const result = claimed.intent === 'url'
-                ? await uploadClient.uploadUrlWithRetry(claimed.sourceUrl!, { idempotencyKey: claimed.id, signal: controller.signal }, UPLOAD_QUEUE_MAX_RETRIES)
-                : await uploadClient.uploadWithRetry(await queueManager.toFile(claimed, ownerKey), {
-                    idempotencyKey: claimed.id,
-                    signal: controller.signal,
-                    onProgress: (event) => emitQueueEvent({ id: upload.id, status: 'uploading', progress: event.percentage }),
-                  }, UPLOAD_QUEUE_MAX_RETRIES);
+              const renewalTimer = setInterval(() => {
+                void queueManager.renewUploadClaim(upload.id, ownerKey, claimOwner, claimed.claimGeneration, claimed.claimToken!).then((renewed) => {
+                  if (!renewed) controller.abort();
+                }).catch(() => controller.abort());
+              }, Math.max(1_000, Math.floor(UPLOAD_QUEUE_CLAIM_LEASE_MS / 3)));
+              let result: UploadResult;
+              try {
+                result = claimed.intent === 'url'
+                  ? await uploadClient.uploadUrlWithRetry(claimed.sourceUrl!, { idempotencyKey: claimed.id, signal: controller.signal }, UPLOAD_QUEUE_MAX_RETRIES)
+                  : await uploadClient.uploadWithRetry(await queueManager.toFile(claimed, ownerKey), {
+                      idempotencyKey: claimed.id,
+                      signal: controller.signal,
+                      onProgress: (event) => emitQueueEvent({ id: upload.id, status: 'uploading', progress: event.percentage }),
+                    }, UPLOAD_QUEUE_MAX_RETRIES);
+              } finally {
+                clearInterval(renewalTimer);
+              }
               if (!result.success) throw new Error(result.error || 'Upload failed');
               const completed = await queueManager.completeUpload(upload.id, ownerKey, claimOwner, claimed.claimGeneration, claimed.claimToken!);
               if (!completed) {
@@ -324,7 +341,8 @@ export function useUploadQueue({
               activeAbortControllers.delete(upload.id);
               const message = error instanceof Error ? error.message : 'Upload failed';
               if (runGeneration !== queueGeneration || queueAccountKey !== ownerKey) continue;
-              const released = await queueManager.releaseUploadClaim(upload.id, ownerKey, claimOwner, claimed.claimGeneration, claimed.claimToken!, message);
+              const terminal = claimed.intent === 'url' && error instanceof UploadError && !error.isRetryable;
+              const released = await queueManager.releaseUploadClaim(upload.id, ownerKey, claimOwner, claimed.claimGeneration, claimed.claimToken!, message, terminal);
               emitQueueEvent({
                 id: upload.id,
                 status: 'failed',
@@ -358,8 +376,12 @@ export function useUploadQueue({
     };
 
     queueProcessingPromise = run().finally(() => {
-      queueProcessingPromise = null;
+      if (queueProcessingRunId === runId) {
+        queueProcessingPromise = null;
+        queueProcessingOwnerKey = null;
+      }
     });
+    queueProcessingOwnerKey = ownerKey;
     return queueProcessingPromise;
   }, [claimOwner, ownerKey, queueManager, uploadClient]);
 

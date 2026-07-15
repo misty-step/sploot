@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 // prefix. Their exact names remain pinned; every other timestamp prefix must
 // be unique so Prisma's ordering cannot become ambiguous.
 export const LEGACY_DUPLICATES = new Map([
+  ['20260518', new Set(['20260518_add_asset_shuffle_key', '20260518_add_storage_quota'])],
   ['20260714000000', new Set(['20260714000000_add_enrollment_relation_fks', '20260714000000_add_stripe_cancellation_ledger'])],
 ]);
 
@@ -15,9 +16,6 @@ export function assertUniqueMigrationPrefixes(migrations) {
     const match = migration.match(/^(\d{8,14})_/);
     if (!match) continue;
     const prefix = match[1];
-    // Legacy migrations used date-only prefixes. They cannot collide with a
-    // newly allocated 14-digit Prisma timestamp and are retained as applied.
-    if (prefix.length < 14) continue;
     const names = byPrefix.get(prefix) ?? [];
     names.push(migration);
     byPrefix.set(prefix, names);

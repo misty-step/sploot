@@ -39,6 +39,11 @@ interface ActiveUpload {
 
 type UploadClaim<T> = CompletedUpload<T> | ActiveUpload;
 
+export interface UploadIdempotencyOptions {
+  leaseMs?: number;
+  renewalIntervalMs?: number;
+}
+
 /**
  * Execute a queue upload once per user/key. A durable lease handles crashed
  * requests and completed JSON is replayed. The idempotency key fences the
@@ -49,30 +54,52 @@ export async function runIdempotentUpload<T>(
   ownerUserId: string,
   key: string,
   execute: () => Promise<T>,
+  options: UploadIdempotencyOptions = {},
 ): Promise<T> {
   if (!prisma) throw new Error('Upload idempotency requires a database');
 
   await cleanupExpiredUploadReceipts();
-  const claim = await claimUpload<T>(ownerUserId, key);
+  const leaseMs = options.leaseMs ?? UPLOAD_IDEMPOTENCY_LEASE_MS;
+  const renewalIntervalMs = options.renewalIntervalMs ?? Math.max(1_000, Math.floor(leaseMs / 3));
+  const claim = await claimUpload<T>(ownerUserId, key, leaseMs);
   if (claim.completed) return claim.result;
+
+  let leaseLost = false;
+  const renewalTimer = setInterval(() => {
+    void prisma!.uploadIdempotency.updateMany({
+      where: {
+        id: claim.claim.id,
+        leaseToken: claim.claim.leaseToken,
+        status: 'processing',
+        leaseExpiresAt: { gt: new Date() },
+      },
+      data: { leaseExpiresAt: new Date(Date.now() + leaseMs) },
+    }).then((renewed) => {
+      if (renewed.count !== 1) leaseLost = true;
+    }).catch(() => {
+      leaseLost = true;
+    });
+  }, renewalIntervalMs);
 
   let result: T;
   try {
     result = await execute();
   } catch (error) {
+    clearInterval(renewalTimer);
     await prisma.uploadIdempotency.deleteMany({
       where: { id: claim.claim.id, leaseToken: claim.claim.leaseToken, status: 'processing' },
     });
     throw error;
   }
+  clearInterval(renewalTimer);
 
   const serialized = JSON.parse(JSON.stringify(result)) as T;
-  const completed = await prisma.uploadIdempotency.updateMany({
-      where: { id: claim.claim.id, leaseToken: claim.claim.leaseToken, status: 'processing' },
+  const completed = leaseLost ? { count: 0 } : await prisma.uploadIdempotency.updateMany({
+      where: { id: claim.claim.id, leaseToken: claim.claim.leaseToken, status: 'processing', leaseExpiresAt: { gt: new Date() } },
       data: {
         status: 'completed',
         result: serialized as Prisma.InputJsonValue,
-        leaseExpiresAt: new Date(Date.now() + UPLOAD_IDEMPOTENCY_LEASE_MS),
+        leaseExpiresAt: new Date(Date.now() + leaseMs),
         retainedUntil: new Date(Date.now() + UPLOAD_IDEMPOTENCY_RETENTION_MS),
       },
     });
@@ -110,11 +137,11 @@ export async function cleanupExpiredUploadReceipts(now = new Date()): Promise<nu
   return result.count;
 }
 
-async function claimUpload<T>(ownerUserId: string, key: string): Promise<UploadClaim<T>> {
+async function claimUpload<T>(ownerUserId: string, key: string, leaseMs = UPLOAD_IDEMPOTENCY_LEASE_MS): Promise<UploadClaim<T>> {
   if (!prisma) throw new Error('Upload idempotency requires a database');
   const now = new Date();
   const leaseToken = randomUUID();
-  const leaseExpiresAt = new Date(now.getTime() + UPLOAD_IDEMPOTENCY_LEASE_MS);
+  const leaseExpiresAt = new Date(now.getTime() + leaseMs);
   const where = { upload_idempotency_owner_key: { ownerUserId, key } } as const;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {

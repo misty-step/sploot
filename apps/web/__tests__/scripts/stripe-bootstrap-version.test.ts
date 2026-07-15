@@ -11,6 +11,24 @@ import { describe, expect, it } from 'vitest';
 const webRoot = process.cwd();
 const repoRoot = resolve(webRoot, '../..');
 const versionFile = resolve(webRoot, 'prisma/stripe-ledger-bootstrap.version');
+const PROTECTED_STRIPE_LEDGER_MIGRATION = '20260714050000_bind_stripe_delivery_bytes_and_purge_subject';
+
+export function assertStripeBootstrapBoundary(migrations: string[], declaredVersion: string): void {
+  const protectedPrefix = PROTECTED_STRIPE_LEDGER_MIGRATION.split('_')[0];
+  if (!migrations.includes(PROTECTED_STRIPE_LEDGER_MIGRATION)) {
+    throw new Error(`Protected Stripe ledger migration is missing or mutated: ${PROTECTED_STRIPE_LEDGER_MIGRATION}`);
+  }
+  if (declaredVersion !== protectedPrefix) {
+    throw new Error(`Stripe bootstrap version must remain bound to ${protectedPrefix}`);
+  }
+  const laterStripeMigrations = migrations.filter((name) => {
+    const prefix = name.split('_')[0];
+    return /^\d{14}$/.test(prefix) && prefix > protectedPrefix && /stripe/i.test(name);
+  });
+  if (laterStripeMigrations.length > 0) {
+    throw new Error(`New Stripe migration crosses the protected bootstrap boundary: ${laterStripeMigrations.join(', ')}`);
+  }
+}
 
 describe('stripe ledger bootstrap version authority', () => {
   const version = readFileSync(versionFile, 'utf8').trim();
@@ -73,14 +91,27 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(version).toMatch(/^\d{14}$/);
   });
 
-  it('matches the newest Prisma migration', () => {
-    const prefixes = readdirSync(resolve(webRoot, 'prisma/migrations'), { withFileTypes: true })
+  it('remains bound to its protected ledger migration while later unrelated migrations are allowed', () => {
+    const migrations = readdirSync(resolve(webRoot, 'prisma/migrations'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name.split('_')[0])
-      .filter((prefix) => /^\d{8,14}$/.test(prefix))
-      .map((prefix) => prefix.padEnd(14, '0'));
-    const newest = prefixes.sort().at(-1);
-    expect(newest).toBe(version);
+      .map((entry) => entry.name);
+    assertStripeBootstrapBoundary(migrations, version);
+  });
+
+  it('rejects mutation or expansion of the protected boundary', () => {
+    const laterQueueMigration = '20260715120000_index_upload_receipt_processing_sweep';
+    expect(() => assertStripeBootstrapBoundary([
+      PROTECTED_STRIPE_LEDGER_MIGRATION.replace('purge_subject', 'purge_subject_mutated'),
+      laterQueueMigration,
+    ], version)).toThrow(/missing or mutated/);
+    expect(() => assertStripeBootstrapBoundary([
+      PROTECTED_STRIPE_LEDGER_MIGRATION,
+      '20260715130000_add_stripe_receipt_probe',
+    ], version)).toThrow(/crosses the protected bootstrap boundary/);
+    expect(() => assertStripeBootstrapBoundary([
+      PROTECTED_STRIPE_LEDGER_MIGRATION,
+      laterQueueMigration,
+    ], '20260715120000')).toThrow(/must remain bound/);
   });
 
   it('is not hardcoded in any bootstrap SQL script', () => {

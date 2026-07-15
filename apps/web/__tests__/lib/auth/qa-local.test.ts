@@ -178,6 +178,11 @@ describe('qa-local auth security contract', () => {
     expect(validateQaLocalDeploymentConfig({ ...env, NODE_ENV: 'production', DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV, SPLOOT_PWA_CAPTURE_MODE: 'enabled' }).valid).toBe(true);
   });
 
+  it('keeps the production-browser QA marker internally consistent', () => {
+    expect(validateQaLocalDeploymentConfig({ ...env, NODE_ENV: 'production', SPLOOT_DEPLOYMENT_ENV: 'local-qa', DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV, SPLOOT_PWA_CAPTURE_MODE: 'enabled' }).valid).toBe(false);
+    expect(validateQaLocalDeploymentConfig({ ...env, NODE_ENV: 'production', SPLOOT_DEPLOYMENT_ENV: 'test', DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV, SPLOOT_PWA_CAPTURE_MODE: 'enabled' }).valid).toBe(true);
+  });
+
   it('requires an explicit local deployment marker even when NODE_ENV is non-production', async () => {
     const result = await verifyQaLocalAuthHeaders(
       new Headers({ [getQaLocalAuthHeader()]: await token(), host: boundary.host, 'x-forwarded-for': boundary.remoteAddress }),

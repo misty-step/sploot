@@ -504,8 +504,40 @@ export class UploadQueueManager {
     });
   }
 
+  /** Extend an active claim only while its exact generation/token is live. */
+  async renewUploadClaim(
+    id: string,
+    ownerKey: string,
+    owner: string,
+    claimGeneration: number,
+    claimToken: string,
+    leaseMs = UPLOAD_QUEUE_CLAIM_LEASE_MS,
+  ): Promise<boolean> {
+    this.assertOwnerKey(ownerKey);
+    if (!this.db) return false;
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(this.STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(this.STORE_NAME);
+      const request = store.get(id);
+      let renewed = false;
+      request.onsuccess = () => {
+        const upload = request.result as PersistedUpload | undefined;
+        if (!upload || upload.ownerKey !== ownerKey || upload.status !== 'uploading' || upload.claimOwner !== owner || upload.claimGeneration !== claimGeneration || upload.claimToken !== claimToken || (upload.claimExpiresAt ?? 0) <= Date.now()) return;
+        upload.claimExpiresAt = Date.now() + leaseMs;
+        const updateRequest = store.put(upload);
+        updateRequest.onsuccess = () => { renewed = true; };
+        updateRequest.onerror = () => reject(updateRequest.error);
+      };
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve(renewed);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error ?? new Error('upload claim renewal transaction aborted'));
+    });
+  }
+
   /** Record a failed attempt only if this manager still owns the claim. */
-  async releaseUploadClaim(id: string, ownerKey: string, owner: string, claimGeneration: number, claimToken: string, error?: string): Promise<PersistedUpload | null> {
+  async releaseUploadClaim(id: string, ownerKey: string, owner: string, claimGeneration: number, claimToken: string, error?: string, terminal = false): Promise<PersistedUpload | null> {
     this.assertOwnerKey(ownerKey);
     if (!this.db) return null;
 
@@ -517,13 +549,13 @@ export class UploadQueueManager {
       request.onsuccess = () => {
         const upload = request.result as PersistedUpload | undefined;
         if (!upload || upload.ownerKey !== ownerKey || upload.claimOwner !== owner || upload.claimGeneration !== claimGeneration || upload.claimToken !== claimToken || (upload.claimExpiresAt ?? 0) <= Date.now()) return;
-        upload.status = 'failed';
+        upload.status = terminal ? 'terminal' : 'failed';
         upload.retryCount += 1;
         upload.error = error;
         delete upload.claimOwner;
         delete upload.claimToken;
         delete upload.claimExpiresAt;
-        if (upload.retryCount >= UPLOAD_QUEUE_MAX_RETRIES) {
+        if (!terminal && upload.retryCount >= UPLOAD_QUEUE_MAX_RETRIES) {
           upload.status = 'terminal';
           upload.error = 'Automatic retries exhausted. Retry or remove this upload.';
         } else if (isUploadExpired(upload, Date.now())) {
