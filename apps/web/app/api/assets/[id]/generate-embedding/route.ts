@@ -281,6 +281,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
 
     // Create a new promise for this embedding generation
     const embeddingPromise = (async (): Promise<EmbeddingResponse> => {
+      let processingClaimUpdatedAt: Date | undefined;
       try {
         const lock = await acquireEmbeddingProcessing(asset.id);
         if (!lock.acquired) {
@@ -354,6 +355,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
             },
           };
         }
+        processingClaimUpdatedAt = lock.updatedAt ?? undefined;
 
         logger.logInfo('generate-embedding.lock-acquired', { assetId: id });
 
@@ -379,7 +381,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
           modelVersion: result.model,
           dim: result.dimension,
           embedding: result.embedding,
-        });
+        }, processingClaimUpdatedAt);
         const dbTime = Date.now() - dbStartTime;
         logger.logInfo('generate-embedding.db-duration', {
           assetId: id,
@@ -447,17 +449,23 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
             asset.id,
             errorMessage,
             'provider_circuit_open',
-            error.retryAfterSec
+            error.retryAfterSec,
+            processingClaimUpdatedAt,
           );
         } else if (isEmbeddingAdmissionFailure(error)) {
           await deferEmbeddingAdmission(
             asset.id,
             errorMessage,
             getEmbeddingAdmissionReason(error) ?? 'limiter_unavailable',
-            error.retryAfterSec
+            error.retryAfterSec,
+            processingClaimUpdatedAt,
           );
         } else if (prisma && typeof prisma.$queryRaw === 'function') {
-          await recordEmbeddingAttemptFailure(asset.id, errorMessage);
+          await recordEmbeddingAttemptFailure(
+            asset.id,
+            errorMessage,
+            processingClaimUpdatedAt,
+          );
         }
 
         throw error;

@@ -298,6 +298,7 @@ export class EmbeddingSchedulerService {
         assetId,
         providerError.message,
         true,
+        lock.updatedAt ?? undefined,
       );
       const terminal = failure?.terminal ?? false;
       throw new EmbeddingScheduleError(
@@ -319,7 +320,7 @@ export class EmbeddingSchedulerService {
         modelVersion: result.model,
         dim: result.dimension,
         embedding: result.embedding,
-      });
+      }, lock.updatedAt ?? undefined);
 
       logger.info('Embedding stored successfully', {
         assetId,
@@ -336,7 +337,8 @@ export class EmbeddingSchedulerService {
           assetId,
           errorMessage,
           'provider_circuit_open',
-          error.retryAfterSec
+          error.retryAfterSec,
+          lock.updatedAt ?? undefined,
         );
         throw new EmbeddingScheduleError(
           `Embedding generation deferred: ${errorMessage}`,
@@ -356,6 +358,7 @@ export class EmbeddingSchedulerService {
           errorMessage,
           reason,
           retryAfterSec,
+          lock.updatedAt ?? undefined,
         );
         throw new EmbeddingScheduleError(
           `Embedding generation deferred: ${errorMessage}`,
@@ -376,7 +379,12 @@ export class EmbeddingSchedulerService {
               ? error.retryAfterSec
               : undefined,
         });
-        await this.recordAttemptFailureOrFallback(assetId, errorMessage, true);
+        await this.recordAttemptFailureOrFallback(
+          assetId,
+          errorMessage,
+          true,
+          lock.updatedAt ?? undefined,
+        );
         throw new EmbeddingScheduleError(
           `Embedding generation deferred: ${errorMessage}`,
           true,
@@ -400,7 +408,12 @@ export class EmbeddingSchedulerService {
       // Keep non-retryable assets bounded too. The durable attempt counter is
       // the poison oracle; the legacy failed write is only a compatibility
       // fallback for clients that predate the resilience migration.
-      await this.recordAttemptFailureOrFallback(assetId, errorMessage, false);
+      await this.recordAttemptFailureOrFallback(
+        assetId,
+        errorMessage,
+        false,
+        lock.updatedAt ?? undefined,
+      );
 
       // Re-throw for sync mode error handling
       throw new EmbeddingScheduleError(
@@ -414,16 +427,29 @@ export class EmbeddingSchedulerService {
   private async recordAttemptFailureOrFallback(
     assetId: string,
     errorMessage: string,
-    pendingFallback: boolean
+    pendingFallback: boolean,
+    expectedProcessingUpdatedAt?: Date,
   ): Promise<EmbeddingAttemptFailure | null> {
     if (prisma && typeof prisma.$queryRaw === 'function') {
-      return recordEmbeddingAttemptFailure(assetId, errorMessage);
+      return recordEmbeddingAttemptFailure(
+        assetId,
+        errorMessage,
+        expectedProcessingUpdatedAt,
+      );
     }
 
     if (pendingFallback) {
-      await this.markEmbeddingPending(assetId, errorMessage);
+      await this.markEmbeddingPending(
+        assetId,
+        errorMessage,
+        expectedProcessingUpdatedAt,
+      );
     } else {
-      await this.markEmbeddingFailed(assetId, errorMessage);
+      await this.markEmbeddingFailed(
+        assetId,
+        errorMessage,
+        expectedProcessingUpdatedAt,
+      );
     }
     return null;
   }
@@ -433,6 +459,7 @@ export class EmbeddingSchedulerService {
     errorMessage: string,
     reason: EmbeddingAdmissionReason | 'provider_circuit_open',
     retryAfterSec?: number,
+    expectedProcessingUpdatedAt?: Date,
   ): Promise<void> {
     try {
       await deferEmbeddingAdmission(
@@ -440,6 +467,7 @@ export class EmbeddingSchedulerService {
         errorMessage,
         reason,
         retryAfterSec,
+        expectedProcessingUpdatedAt,
       );
       return;
     } catch (deferError) {
@@ -453,13 +481,18 @@ export class EmbeddingSchedulerService {
     // Compatibility fallback is reserved for a failed durable deferral. A
     // successful migration-backed update must not be followed by a redundant
     // legacy write that can race or erase retry metadata.
-    await this.markEmbeddingPending(assetId, errorMessage);
+    await this.markEmbeddingPending(
+      assetId,
+      errorMessage,
+      expectedProcessingUpdatedAt,
+    );
   }
 
   /** Keep an acquired placeholder eligible for cron or explicit retry. */
   private async markEmbeddingPending(
     assetId: string,
-    errorMessage: string
+    errorMessage: string,
+    expectedProcessingUpdatedAt?: Date,
   ): Promise<void> {
     try {
       if (!prisma) {
@@ -469,21 +502,29 @@ export class EmbeddingSchedulerService {
         return;
       }
 
-      await prisma.assetEmbedding.upsert({
-        where: { assetId },
-        create: {
-          assetId,
-          modelName: 'pending',
-          modelVersion: 'pending',
-          dim: 0,
-          status: 'pending',
-          error: errorMessage,
-        },
-        update: {
-          status: 'pending',
-          error: errorMessage,
-        },
-      });
+      if (expectedProcessingUpdatedAt) {
+        await prisma.assetEmbedding.updateMany({
+          where: {
+            assetId,
+            status: 'processing',
+            updatedAt: expectedProcessingUpdatedAt,
+          },
+          data: { status: 'pending', error: errorMessage },
+        });
+      } else {
+        await prisma.assetEmbedding.upsert({
+          where: { assetId },
+          create: {
+            assetId,
+            modelName: 'pending',
+            modelVersion: 'pending',
+            dim: 0,
+            status: 'pending',
+            error: errorMessage,
+          },
+          update: { status: 'pending', error: errorMessage },
+        });
+      }
 
       logger.debug('Deferred embedding for retry', { assetId });
     } catch (updateError) {
@@ -503,7 +544,8 @@ export class EmbeddingSchedulerService {
    */
   private async markEmbeddingFailed(
     assetId: string,
-    errorMessage: string
+    errorMessage: string,
+    expectedProcessingUpdatedAt?: Date,
   ): Promise<void> {
     try {
       if (!prisma) {
@@ -513,21 +555,29 @@ export class EmbeddingSchedulerService {
         return;
       }
 
-      await prisma.assetEmbedding.upsert({
-        where: { assetId },
-        create: {
-          assetId,
-          modelName: 'unknown',
-          modelVersion: 'unknown',
-          dim: 0,
-          status: 'failed',
-          error: errorMessage,
-        },
-        update: {
-          status: 'failed',
-          error: errorMessage,
-        },
-      });
+      if (expectedProcessingUpdatedAt) {
+        await prisma.assetEmbedding.updateMany({
+          where: {
+            assetId,
+            status: 'processing',
+            updatedAt: expectedProcessingUpdatedAt,
+          },
+          data: { status: 'failed', error: errorMessage },
+        });
+      } else {
+        await prisma.assetEmbedding.upsert({
+          where: { assetId },
+          create: {
+            assetId,
+            modelName: 'unknown',
+            modelVersion: 'unknown',
+            dim: 0,
+            status: 'failed',
+            error: errorMessage,
+          },
+          update: { status: 'failed', error: errorMessage },
+        });
+      }
 
       logger.debug('Marked embedding as failed', { assetId });
     } catch (updateError) {

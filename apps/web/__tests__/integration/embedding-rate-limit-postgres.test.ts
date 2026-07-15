@@ -176,6 +176,28 @@ describeWithDatabase('Postgres embedding limiter', () => {
     expect(rows[0]?.count).toBe(EMBEDDING_DAILY_BUDGET);
   });
 
+  it('keeps the economic ceilings fail-closed under an older runtime write', async () => {
+    await expect(prisma.$executeRaw`
+      INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
+      VALUES (
+        'embedding:daily:2026-07-10',
+        ${EMBEDDING_DAILY_BUDGET + 1},
+        NOW() + INTERVAL '26 hours',
+        NOW()
+      )
+    `).rejects.toThrow(/embedding_budget_hard_ceiling/);
+
+    await expect(prisma.$executeRaw`
+      INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
+      VALUES (
+        'embedding:monthly:2026-07',
+        ${EMBEDDING_MONTHLY_BUDGET + 1},
+        NOW() + INTERVAL '32 days',
+        NOW()
+      )
+    `).rejects.toThrow(/embedding_budget_hard_ceiling/);
+  });
+
   it('keeps every bucket and lease unchanged when atomic admission is denied by the daily ceiling', async () => {
     const nowMs = Date.UTC(2026, 6, 10, 12, 0, 0);
     const windowId = Math.floor(nowMs / 60_000);

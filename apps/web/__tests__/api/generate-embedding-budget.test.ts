@@ -87,6 +87,8 @@ vi.mock('@/lib/with-observability', () => ({
 import { POST } from '@/app/api/assets/[id]/generate-embedding/route';
 import { EmbeddingAdmissionError } from '@/lib/embeddings';
 
+const PROCESSING_CLAIM_UPDATED_AT = new Date('2026-07-10T00:00:00Z');
+
 function request(assetId: string): NextRequest {
   return new NextRequest(
     `http://localhost:3000/api/assets/${assetId}/generate-embedding`,
@@ -121,6 +123,7 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
     mocks.acquireEmbeddingProcessing.mockResolvedValue({
       acquired: true,
       state: 'processing',
+      updatedAt: PROCESSING_CLAIM_UPDATED_AT,
     });
     mocks.resolveEmbeddingGateState.mockReturnValue({ state: 'available' });
     mocks.createEmbeddingService.mockReturnValue({
@@ -153,7 +156,8 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
       'asset-1',
       'Embedding generation is rate limited',
       'daily_budget',
-      3600
+      3600,
+      PROCESSING_CLAIM_UPDATED_AT,
     );
     expect(mocks.markEmbeddingFailed).not.toHaveBeenCalled();
   });

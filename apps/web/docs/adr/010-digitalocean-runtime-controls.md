@@ -60,17 +60,21 @@ service run command is start-only (`pnpm --filter web start`), so restarts and
 replicas cannot rerun migrations. GitHub CI migrates only its pgvector test
 database and never receives the production Neon connection string.
 
-rolling the application back leaves both tables inert and preserves all user
-data. the previous build fails embedding generation closed when its absent KV
-backend is reached; it does not permit unbounded spend. share-slug resolution
-still falls through to Postgres. forward recovery is therefore preferred, while
-a long rollback would require restoring the previous KV service configuration.
+rolling the application back leaves both tables and the additive
+`embedding_budget_hard_ceiling` constraint in place and preserves all user
+data. The database rejects a daily counter above 684 or a monthly counter above
+20,547, so a former runtime with a higher daily limit fails closed at the
+current ceiling. Because former runtimes do not maintain the monthly counter,
+operators must set `SPLOOT_EMBEDDINGS_ENABLED=false` and verify the disabled
+route response before a deliberate or extended rollback; it stays disabled
+until the current admission runtime and its DB proof are restored. Share-slug
+resolution still falls through to Postgres. Forward recovery is preferred.
 
 ## proof
 
 - a DB-backed integration suite exercises concurrent acquisitions, lease
-  release, expired-lease recovery, window limits, UTC daily rollover, and the
-  fail-closed schema contract;
+  release, expired-lease recovery, window limits, UTC daily/monthly rollover,
+  and direct over-ceiling writes against the fail-closed schema contract;
 - provider-boundary tests prove paid text and image cache misses acquire and
   release admission, budget/limiter failures never call Replicate, and cache
   hits spend no capacity. timeout coverage proves one prediction is aborted in

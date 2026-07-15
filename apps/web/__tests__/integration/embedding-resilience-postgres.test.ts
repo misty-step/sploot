@@ -1,16 +1,22 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { prisma } from '@/lib/db';
+import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import {
   EMBEDDING_MAX_ATTEMPTS,
   EMBEDDING_TERMINAL_REVIVE_QUARANTINE_SECONDS,
   getEmbeddingProviderCircuit,
   deferEmbeddingAdmission,
+  admissionBackoffSeconds,
+  recordEmbeddingAttemptFailure,
   recordEmbeddingAdmissionFailure,
   acquireEmbeddingProviderAdmission,
   recordEmbeddingProviderFailure,
   recordEmbeddingProviderSuccess,
 } from '@/lib/embedding-resilience';
+import {
+  acquireEmbeddingProcessing,
+  EMBEDDING_PROCESSING_TTL_MS,
+} from '@/lib/embedding-guard';
 import { EmbeddingSchedulerService } from '@/lib/upload/embedding-scheduler-service';
 import {
   acquireEmbeddingDailyBudget,
@@ -765,13 +771,119 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     });
 
     const nowMs = Date.UTC(2026, 6, 14, 12, 0, 0);
-    await deferEmbeddingAdmission(assetId, 'user throttled', 'user_rate', 60, nowMs);
+    await deferEmbeddingAdmission(
+      assetId,
+      'user throttled',
+      'user_rate',
+      60,
+      undefined,
+      nowMs,
+    );
     const deferred = await prisma.assetEmbedding.findUnique({ where: { assetId } });
     const untouched = await prisma.assetEmbedding.findUnique({ where: { assetId: secondAssetId } });
 
     expect(deferred?.nextAttemptAt).toEqual(new Date(nowMs + 60_000));
     expect(untouched?.nextAttemptAt).toBeNull();
     expect((await getEmbeddingProviderCircuit(nowMs)).open).toBe(false);
+  }, 30_000);
+
+  it('never shortens an upstream Retry-After lower bound', () => {
+    const retryAfterSec = 2 * 60 * 60;
+    expect(
+      admissionBackoffSeconds(
+        'provider_rate_limit',
+        retryAfterSec,
+        Date.UTC(2026, 6, 14, 12, 0, 0),
+      ),
+    ).toBe(retryAfterSec);
+  });
+
+  it('fences a stale processing worker from every terminal state write', async () => {
+    const firstNowMs = Date.UTC(2026, 6, 14, 12, 0, 0);
+    await prisma.user.create({
+      data: { id: userId, email: `${userId}@example.test` },
+    });
+    await prisma.asset.create({
+      data: {
+        id: assetId,
+        ownerUserId: userId,
+        blobUrl: 'https://embedding-resilience.public.blob.vercel-storage.com/fenced.jpg',
+        pathname: 'fenced.jpg',
+        mime: 'image/jpeg',
+        size: 1,
+        checksumSha256: 'fenced',
+      },
+    });
+    await prisma.assetEmbedding.create({
+      data: {
+        assetId,
+        modelName: 'pending',
+        modelVersion: 'pending',
+        dim: 0,
+        status: 'pending',
+      },
+    });
+
+    const firstClaim = await acquireEmbeddingProcessing(assetId, firstNowMs);
+    expect(firstClaim.acquired).toBe(true);
+    // The canonical database trigger owns updatedAt and replaces the supplied
+    // clock on UPDATE, so advance from the persisted claim timestamp.
+    const secondNowMs = firstClaim.updatedAt!.getTime()
+      + EMBEDDING_PROCESSING_TTL_MS
+      + 1_000;
+    const secondClaim = await acquireEmbeddingProcessing(assetId, secondNowMs);
+    expect(secondClaim.acquired).toBe(true);
+    expect(secondClaim.updatedAt).not.toEqual(firstClaim.updatedAt);
+
+    await expect(
+      deferEmbeddingAdmission(
+        assetId,
+        'stale throttle',
+        'provider_circuit_open',
+        60,
+        firstClaim.updatedAt ?? undefined,
+        secondNowMs,
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      recordEmbeddingAttemptFailure(
+        assetId,
+        'stale failure',
+        firstClaim.updatedAt ?? undefined,
+        secondNowMs,
+      ),
+    ).resolves.toBeNull();
+    await expect(
+      upsertAssetEmbedding(
+        {
+          assetId,
+          modelName: 'stale-model',
+          modelVersion: 'stale-model',
+          dim: 768,
+          embedding: Array(768).fill(0.1),
+        },
+        firstClaim.updatedAt ?? undefined,
+      ),
+    ).resolves.toBeNull();
+
+    await expect(
+      prisma.assetEmbedding.findUnique({
+        where: { assetId },
+        select: {
+          status: true,
+          updatedAt: true,
+          attemptCount: true,
+          nextAttemptAt: true,
+          completedAt: true,
+        },
+      }),
+    ).resolves.toEqual({
+      status: 'processing',
+      updatedAt: secondClaim.updatedAt,
+      attemptCount: 0,
+      nextAttemptAt: null,
+      completedAt: null,
+    });
   }, 30_000);
 
   it('quarantines a fresh terminal row against immediate owner retry without touching state', async () => {

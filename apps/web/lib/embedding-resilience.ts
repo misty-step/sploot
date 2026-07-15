@@ -14,7 +14,6 @@ export type { EmbeddingAdmissionReason } from './embedding-admission';
 
 export const EMBEDDING_MAX_ATTEMPTS = 3;
 export const EMBEDDING_RETRY_BASE_DELAY_SECONDS = 60;
-export const EMBEDDING_RETRY_MAX_DELAY_SECONDS = 60 * 60;
 // Minimum age of `terminal_at` before an owner-initiated revive may re-arm
 // the attempt budget. Long enough that a poisoned asset cannot re-enter a
 // paid retry loop faster than four cycles per hour, short enough that assets
@@ -95,9 +94,12 @@ export function admissionBackoffSeconds(
     );
   }
 
-  return Math.min(
-    EMBEDDING_RETRY_MAX_DELAY_SECONDS,
-    Math.max(EMBEDDING_PROVIDER_MIN_BACKOFF_SECONDS, retryAfterSec ?? 0)
+  // Retry-After is a lower bound supplied by the admission/provider owner.
+  // Capping it locally can reopen the circuit or rediscover an asset before
+  // the upstream window has elapsed, causing avoidable paid calls.
+  return Math.max(
+    EMBEDDING_PROVIDER_MIN_BACKOFF_SECONDS,
+    retryAfterSec ?? 0
   );
 }
 
@@ -502,29 +504,53 @@ export async function deferEmbeddingAdmission(
   errorMessage: string,
   reason: EmbeddingAdmissionReason | 'provider_circuit_open',
   retryAfterSec?: number,
+  expectedProcessingUpdatedAt?: Date,
   nowMs: number = Date.now()
-): Promise<void> {
-  if (!prisma) return;
+): Promise<boolean> {
+  if (!prisma) return false;
 
   const now = new Date(nowMs);
   const nextAttemptAt = new Date(
     nowMs + admissionBackoffSeconds(reason, retryAfterSec, nowMs) * 1000
   );
-  await prisma.$executeRaw`
-    UPDATE "asset_embeddings"
-    SET "status" = 'pending',
-        "error" = ${errorMessage},
-        "next_attempt_at" = ${nextAttemptAt},
-        "terminal_at" = NULL,
-        "updatedAt" = ${now}
-    WHERE "asset_id" = ${assetId}
-      AND "terminal_at" IS NULL
-  `;
+  try {
+    const updated = await prisma.$executeRaw(Prisma.sql`
+      UPDATE "asset_embeddings"
+      SET "status" = 'pending',
+          "error" = ${errorMessage},
+          "next_attempt_at" = ${nextAttemptAt},
+          "terminal_at" = NULL,
+          "updatedAt" = ${now}
+      WHERE "asset_id" = ${assetId}
+        AND "terminal_at" IS NULL
+        ${expectedProcessingUpdatedAt
+          ? Prisma.sql`AND "status" = 'processing' AND "updatedAt" = ${expectedProcessingUpdatedAt}`
+          : Prisma.empty}
+    `);
+    return updated === 1;
+  } catch (error) {
+    logger.logError('embedding-admission.defer-persist-failed', error, {
+      assetId,
+      reason,
+    });
+
+    // A failed deferral must not leave the exact processing claim stranded.
+    // This bounded state retry does not refund or repeat provider capacity; it
+    // only makes the asset recoverable if the second write succeeds.
+    const fallback = await recordEmbeddingAttemptFailure(
+      assetId,
+      `Admission deferral persistence failed: ${errorMessage}`,
+      expectedProcessingUpdatedAt,
+      nowMs,
+    );
+    return fallback !== null;
+  }
 }
 
 export async function recordEmbeddingAttemptFailure(
   assetId: string,
   errorMessage: string,
+  expectedProcessingUpdatedAt?: Date,
   nowMs: number = Date.now()
 ): Promise<EmbeddingAttemptFailure | null> {
   if (!prisma) return null;
@@ -551,6 +577,9 @@ export async function recordEmbeddingAttemptFailure(
       "updatedAt" = ${now}
     WHERE "asset_id" = ${assetId}
       AND "terminal_at" IS NULL
+      ${expectedProcessingUpdatedAt
+        ? Prisma.sql`AND "status" = 'processing' AND "updatedAt" = ${expectedProcessingUpdatedAt}`
+        : Prisma.empty}
     RETURNING
       "attempt_count" AS "attemptCount",
       ("terminal_at" IS NOT NULL) AS terminal,

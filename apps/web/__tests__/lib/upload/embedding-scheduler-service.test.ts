@@ -12,6 +12,8 @@ import { EmbeddingProviderCircuitOpenError } from '@/lib/embedding-errors';
 import * as nextServer from 'next/server';
 import { acquireEmbeddingProcessing } from '@/lib/embedding-guard';
 
+const PROCESSING_CLAIM_UPDATED_AT = new Date('2026-07-10T00:00:00Z');
+
 // Mock dependencies
 vi.mock('next/server');
 vi.mock('@/lib/db');
@@ -47,6 +49,7 @@ describe('EmbeddingSchedulerService', () => {
       assetEmbedding: {
         findUnique: vi.fn(),
         upsert: vi.fn(),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
     };
     Object.defineProperty(vi.mocked(db), 'prisma', {
@@ -69,6 +72,7 @@ describe('EmbeddingSchedulerService', () => {
     vi.mocked(acquireEmbeddingProcessing).mockResolvedValue({
       acquired: true,
       state: 'processing',
+      updatedAt: PROCESSING_CLAIM_UPDATED_AT,
     });
   });
 
@@ -116,13 +120,16 @@ describe('EmbeddingSchedulerService', () => {
           'https://example.com/image.jpg',
           'abc123'
         );
-        expect(mockUpsertAssetEmbedding).toHaveBeenCalledWith({
-          assetId: 'asset-123',
-          modelName: 'test-model',
-          modelVersion: 'test-model',
-          dim: EMBEDDING_DIMENSION,
-          embedding: expect.any(Array),
-        });
+        expect(mockUpsertAssetEmbedding).toHaveBeenCalledWith(
+          {
+            assetId: 'asset-123',
+            modelName: 'test-model',
+            modelVersion: 'test-model',
+            dim: EMBEDDING_DIMENSION,
+            embedding: expect.any(Array),
+          },
+          PROCESSING_CLAIM_UPDATED_AT,
+        );
         expect(mockAfter).not.toHaveBeenCalled();
       });
 
@@ -270,14 +277,13 @@ describe('EmbeddingSchedulerService', () => {
         // execution failures. The legacy mock has no $queryRaw resilience
         // client, so the compatibility fallback keeps the placeholder
         // discoverable instead of stranding it as failed.
-        expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalledWith({
-          where: { assetId: 'asset-123' },
-          create: expect.objectContaining({
+        expect(mockPrisma.assetEmbedding.updateMany).toHaveBeenCalledWith({
+          where: {
             assetId: 'asset-123',
-            status: 'pending',
-            error: 'Embedding service initialization failed',
-          }),
-          update: expect.objectContaining({
+            status: 'processing',
+            updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+          },
+          data: expect.objectContaining({
             status: 'pending',
             error: 'Embedding service initialization failed',
           }),
@@ -309,13 +315,13 @@ describe('EmbeddingSchedulerService', () => {
         expect(error.retryable).toBe(true);
 
         // Retryable provider failures remain discoverable by cron.
-        expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalledWith({
-          where: { assetId: 'asset-123' },
-          create: expect.objectContaining({
-            status: 'pending',
-            error: 'API rate limit exceeded',
-          }),
-          update: expect.objectContaining({
+        expect(mockPrisma.assetEmbedding.updateMany).toHaveBeenCalledWith({
+          where: {
+            assetId: 'asset-123',
+            status: 'processing',
+            updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+          },
+          data: expect.objectContaining({
             status: 'pending',
             error: 'API rate limit exceeded',
           }),
@@ -381,10 +387,14 @@ describe('EmbeddingSchedulerService', () => {
         const error = await service.scheduleEmbedding(baseParams).catch((e) => e);
 
         expect(error).toBeInstanceOf(EmbeddingScheduleError);
-        expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalledWith(
+        expect(mockPrisma.assetEmbedding.updateMany).toHaveBeenCalledWith(
           expect.objectContaining({
-            where: { assetId: 'asset-123' },
-            update: expect.objectContaining({ status: 'pending' }),
+            where: expect.objectContaining({
+              assetId: 'asset-123',
+              status: 'processing',
+              updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+            }),
+            data: expect.objectContaining({ status: 'pending' }),
           }),
         );
       });
@@ -473,7 +483,7 @@ describe('EmbeddingSchedulerService', () => {
         if (afterResult instanceof Promise) {
           await afterResult;
         }
-        expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalled();
+        expect(mockPrisma.assetEmbedding.updateMany).toHaveBeenCalled();
       });
 
       it('should leave admission-denied async work pending for cron recovery', async () => {
@@ -492,17 +502,17 @@ describe('EmbeddingSchedulerService', () => {
           await afterResult;
         }
 
-        expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalledWith({
-          where: { assetId: 'asset-123' },
-          create: expect.objectContaining({
+        expect(mockPrisma.assetEmbedding.updateMany).toHaveBeenCalledWith({
+          where: {
             assetId: 'asset-123',
-            status: 'pending',
-          }),
-          update: expect.objectContaining({
+            status: 'processing',
+            updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+          },
+          data: expect.objectContaining({
             status: 'pending',
           }),
         });
-        expect(JSON.stringify(mockPrisma.assetEmbedding.upsert.mock.calls)).not.toContain(
+        expect(JSON.stringify(mockPrisma.assetEmbedding.updateMany.mock.calls)).not.toContain(
           '"status":"failed"'
         );
       });
@@ -549,25 +559,26 @@ describe('EmbeddingSchedulerService', () => {
         );
 
         // Verify failure marked with generic message
-        expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalledWith({
-          where: { assetId: 'asset-123' },
-          create: expect.objectContaining({
+        expect(mockPrisma.assetEmbedding.updateMany).toHaveBeenCalledWith({
+          where: {
+            assetId: 'asset-123',
+            status: 'processing',
+            updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+          },
+          data: expect.objectContaining({
             status: 'failed',
             error: 'Unknown error',
-          }),
-          update: expect.objectContaining({
-            status: 'failed',
           }),
         });
       });
 
-      it('should handle DB upsert failure during error marking', async () => {
+      it('should handle a fenced DB update failure during error marking', async () => {
         // Setup
         mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
         mockCreateEmbeddingService.mockImplementation(() => {
           throw new Error('Service error');
         });
-        mockPrisma.assetEmbedding.upsert.mockRejectedValue(
+        mockPrisma.assetEmbedding.updateMany.mockRejectedValue(
           new Error('DB connection lost')
         );
 
@@ -577,7 +588,7 @@ describe('EmbeddingSchedulerService', () => {
         );
 
         // Verify: doesn't crash on DB failure
-        expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalled();
+        expect(mockPrisma.assetEmbedding.updateMany).toHaveBeenCalled();
       });
 
       it('should handle null prisma during error marking', async () => {
@@ -638,13 +649,16 @@ describe('EmbeddingSchedulerService', () => {
           'https://example.com/image.jpg',
           'abc123'
         );
-        expect(mockUpsertAssetEmbedding).toHaveBeenCalledWith({
-          assetId: 'asset-123',
-          modelName: 'siglip-base-patch16-384',
-          modelVersion: 'siglip-base-patch16-384',
-          dim: EMBEDDING_DIMENSION,
-          embedding: mockEmbedding,
-        });
+        expect(mockUpsertAssetEmbedding).toHaveBeenCalledWith(
+          {
+            assetId: 'asset-123',
+            modelName: 'siglip-base-patch16-384',
+            modelVersion: 'siglip-base-patch16-384',
+            dim: EMBEDDING_DIMENSION,
+            embedding: mockEmbedding,
+          },
+          PROCESSING_CLAIM_UPDATED_AT,
+        );
       });
 
       it('should preserve retryable flag from EmbeddingError', async () => {

@@ -685,7 +685,8 @@ export interface AssetEmbeddingRecord {
  * Insert or update an asset embedding using raw SQL to support pgvector writes.
  */
 export async function upsertAssetEmbedding(
-  data: AssetEmbeddingWriteArgs
+  data: AssetEmbeddingWriteArgs,
+  expectedProcessingUpdatedAt?: Date,
 ): Promise<AssetEmbeddingRecord | null> {
   const { assetId, modelName, modelVersion, dim, embedding } = data;
   const vectorSql = embeddingVectorSql(embedding, 'asset embedding');
@@ -703,6 +704,38 @@ export async function upsertAssetEmbedding(
   }
 
   try {
+    // A paid worker must only settle the exact processing claim it acquired.
+    // Once a crashed claim is reclaimed, its stale worker can still finish at
+    // the provider; fencing by the claim's updatedAt generation prevents that
+    // late result from overwriting the newer owner's state.
+    if (expectedProcessingUpdatedAt) {
+      const rows = await prisma.$queryRaw<Array<AssetEmbeddingRecord>>(Prisma.sql`
+        UPDATE "asset_embeddings"
+        SET "model_name" = ${modelName},
+            "model_version" = ${modelVersion},
+            "dim" = ${dim},
+            "image_embedding" = ${vectorSql},
+            "status" = 'ready',
+            "error" = NULL,
+            "attempt_count" = 0,
+            "next_attempt_at" = NULL,
+            "terminal_at" = NULL,
+            "completedAt" = NOW(),
+            "updatedAt" = NOW()
+        WHERE "asset_id" = ${assetId}
+          AND "status" = 'processing'
+          AND "updatedAt" = ${expectedProcessingUpdatedAt}
+        RETURNING
+          "asset_id" AS "assetId",
+          "model_name" AS "modelName",
+          "model_version" AS "modelVersion",
+          "dim",
+          "createdAt",
+          "updatedAt";
+      `);
+      return rows[0] ?? null;
+    }
+
     const rows = await prisma.$queryRaw<Array<AssetEmbeddingRecord>>(Prisma.sql`
       INSERT INTO "asset_embeddings" (
         "asset_id",
