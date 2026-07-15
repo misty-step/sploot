@@ -73,13 +73,15 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(version).toMatch(/^\d{14}$/);
   });
 
-  it('matches the newest Prisma migration', () => {
+  it('matches the newest Stripe ledger migration, not unrelated migrations', () => {
     const prefixes = readdirSync(resolve(webRoot, 'prisma/migrations'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
+      .filter((entry) => /stripe/i.test(entry.name))
       .map((entry) => entry.name.split('_')[0])
       .filter((prefix) => /^\d{8,14}$/.test(prefix))
       .map((prefix) => prefix.padEnd(14, '0'));
     const newest = prefixes.sort().at(-1);
+    expect(newest, 'expected at least one Stripe ledger migration').toBeDefined();
     expect(newest).toBe(version);
   });
 
