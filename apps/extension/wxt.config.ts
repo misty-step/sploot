@@ -100,6 +100,18 @@ export default defineConfig({
       action: {
         default_popup: 'popup.html',
       },
+      // This reserved command invokes the same action as a toolbar click and
+      // grants the transient activeTab authority to the active web tab. The
+      // real screenshot request still travels through the normal background
+      // message path after that user action.
+      commands: {
+        _execute_action: {
+          suggested_key: {
+            default: 'Ctrl+Shift+Y',
+            mac: 'Command+Shift+Y',
+          },
+        },
+      },
     };
   },
 });

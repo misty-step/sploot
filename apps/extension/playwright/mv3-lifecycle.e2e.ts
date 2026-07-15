@@ -19,6 +19,7 @@ const LIST_QUEUE = 'sploot:context-menu-save:list-queue';
 const DISCARD = 'sploot:context-menu-save:discard';
 const RETRY = 'sploot:context-menu-save:retry';
 const CAPTURE = 'CAPTURE_VISIBLE_TAB';
+const ACTION_SHORTCUT = 'Control+Shift+Y';
 
 let server: Server;
 let uploadMode: 'success' | 'failure' | 'duplicate' = 'success';
@@ -200,19 +201,37 @@ async function stopAndRestart(
   return runMv3Step(context, testInfo, step, 'service worker termination and bounded restart', async () => {
     const cdp = await context.newCDPSession(popup);
     try {
+      await cdp.send('Target.setDiscoverTargets', { discover: true });
       const targets = await cdp.send('Target.getTargets');
       const target = targets.targetInfos.find(info => info.type === 'service_worker' && info.url.startsWith('chrome-extension://'));
       expect(target).toBeTruthy();
       const terminatedTargetId = target!.targetId;
+
+      let resolveDestroyed!: () => void;
+      let rejectDestroyed!: (error: Error) => void;
+      const destroyed = new Promise<void>((resolve, reject) => {
+        resolveDestroyed = resolve;
+        rejectDestroyed = reject;
+      });
+      const destroyTimer = setTimeout(() => {
+        rejectDestroyed(new Error(`service worker target ${terminatedTargetId} did not emit Target.targetDestroyed`));
+      }, 15_000);
+      const onTargetDestroyed = (event: { targetId: string }) => {
+        if (event.targetId === terminatedTargetId) {
+          clearTimeout(destroyTimer);
+          resolveDestroyed();
+        }
+      };
+      cdp.on('Target.targetDestroyed', onTargetDestroyed);
       await cdp.send('Target.closeTarget', { targetId: terminatedTargetId });
-      await expect.poll(async () => {
-        const current = await cdp.send('Target.getTargets');
-        return !current.targetInfos.some(info => info.targetId === terminatedTargetId);
-      }, { timeout: 15_000 }).toBe(true);
+      await destroyed;
+      cdp.off('Target.targetDestroyed', onTargetDestroyed);
 
       // Chromium does not emit a second Playwright `serviceworker` event for
       // every CDP target restart. The real queue message is the wake trigger;
-      // a different CDP target ID is the bounded worker-restart proof.
+      // a different CDP target ID is the bounded worker-restart proof. The
+      // destroyed event above is the termination boundary, so a stale handle
+      // cannot satisfy this assertion.
       const wake = sendMv3Message<{ ok: boolean }>(
         popup,
         { type: LIST_QUEUE },
@@ -222,9 +241,14 @@ async function stopAndRestart(
         'wake restarted worker through real queue message',
       );
       await wake;
-      // The response can only be produced after the original target was
-      // closed, so this is a stronger restart proof than a URL-only worker
-      // handle or a Chromium event that may not be emitted on restart.
+      await expect.poll(async () => {
+        const current = await cdp.send('Target.getTargets');
+        return current.targetInfos.find(info => (
+          info.type === 'service_worker'
+          && info.url.startsWith('chrome-extension://')
+          && info.targetId !== terminatedTargetId
+        ))?.targetId ?? null;
+      }, { timeout: 15_000 }).toBeTruthy();
       const restarted = context.serviceWorkers().find(worker => worker.url().startsWith('chrome-extension://'));
       expect(restarted).toBeTruthy();
       const worker = restarted!;
@@ -318,6 +342,16 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
         return { url: tab?.url ?? null, windowId: tab?.windowId ?? null };
       });
       expect(activeTab).toEqual({ url: `${API_ORIGIN}/fixture`, windowId: expect.any(Number) });
+    });
+    await runMv3Step(context, testInfo, step, 'real browser-action keyboard activation', async () => {
+      // This is a real Chrome command invocation on the active HTTP tab. It
+      // grants activeTab transiently; the following capture remains the normal
+      // production background message, never a test-only capture substitute.
+      await fixture.keyboard.press(ACTION_SHORTCUT);
+      await expect.poll(async () => worker.evaluate(async () => {
+        const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        return tab?.url ?? null;
+      }), { timeout: 5_000 }).toBe(`${API_ORIGIN}/fixture`);
     });
     uploadMode = 'failure';
     const captureResult = await send<{
