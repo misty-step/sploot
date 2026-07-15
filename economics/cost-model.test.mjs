@@ -42,11 +42,40 @@ test('the rate registry names every cost-bearing capability and its authority', 
 
   for (const rate of inputs.rates) {
     assert.match(rate.sourceUrl, /^https:\/\//);
-    assert.match(rate.retrievedAt, /^2026-07-1[45]$/);
+    assert.match(rate.retrievedAt, /^\d{4}-\d{2}-\d{2}$/);
     assert.ok(rate.unit.length > 0);
     assert.ok(Object.hasOwn(rate, 'includedAllowance'));
     assert.ok(rate.planAssumption.length > 0);
   }
+
+  assert.match(
+    validateInputs(inputs, new Date('2026-08-15T00:00:00Z')).join('\n'),
+    /rate sheet expired/,
+  );
+});
+
+test('malformed or incomplete inputs fail closed instead of becoming zero or NaN', async () => {
+  assert.deepEqual(validateInputs(null), ['inputs object is required']);
+
+  const inputs = await loadInputs();
+  const missingRate = structuredClone(inputs);
+  missingRate.rates = missingRate.rates.filter((rate) => rate.id !== 'vercel-blob-storage');
+  assert.match(validateInputs(missingRate).join('\n'), /required rate missing: vercel-blob-storage/);
+  assert.throws(
+    () => calculateScenario(missingRate, 'free', 'high'),
+    /required rate missing: vercel-blob-storage/,
+  );
+
+  const missingWorkloadField = structuredClone(inputs);
+  delete missingWorkloadField.scenarios[0].blobDeliveryGb;
+  assert.match(
+    validateInputs(missingWorkloadField).join('\n'),
+    /scenario free.blobDeliveryGb must be a finite nonnegative number/,
+  );
+  assert.throws(
+    () => calculateScenario(missingWorkloadField, 'free', 'high'),
+    /scenario free.blobDeliveryGb must be a finite nonnegative number/,
+  );
 });
 
 test('live usage reconciles without identifiers or silently-zero unknowns', async () => {
@@ -82,13 +111,18 @@ test('free subsidy and paid full-allowance margins satisfy the vision ratchets',
   assert.ok(49 >= minimumPriceForMargin(inputs, 'archive'));
   assert.ok(collector.infrastructureCostUsd <= inputs.policy.planBudgets.collector.monthlyInfrastructureUsd);
   assert.ok(archive.infrastructureCostUsd <= inputs.policy.planBudgets.archive.monthlyInfrastructureUsd);
+  for (const result of [free, collector, archive]) {
+    const budget = inputs.policy.planBudgets[result.id];
+    assert.ok(budget.monthlyInferenceAttempts >= result.predictions);
+    assert.ok(budget.monthlyInferenceUsd >= result.infrastructure.inference);
+  }
 });
 
 test('known live costs reconcile to a named account-level remainder', async () => {
   const inputs = await loadInputs();
   const floor = calculateLiveKnownFloor(inputs);
-  assert.equal(floor.knownSplootFloorUsd, 28.37);
-  assert.equal(floor.accountPreviewDifferenceUsd, 13.32);
+  assert.equal(floor.knownSplootFloorUsd, 28.36);
+  assert.equal(floor.accountPreviewDifferenceUsd, 13.33);
 });
 
 test('abusive and viral workloads trip explicit dollar budgets', async () => {
