@@ -219,7 +219,9 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     context = await browser.browserType().launchPersistentContext(userDataDir, {
       baseURL: browserBaseURL,
     });
-    const signedOut = context.pages()[0] ?? await context.newPage();
+    const signedOut = await context.newPage();
+    await context.setOffline(false);
+    await expect.poll(() => signedOut.evaluate(() => navigator.onLine), { timeout: 5_000 }).toBe(true);
     await openSignedOutApp(signedOut);
     const accountATab = await context.newPage();
     const accountBTab = await context.newPage();
