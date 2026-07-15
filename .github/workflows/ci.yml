@@ -152,6 +152,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # GitHub-hosted runners do not include the Playwright browser binary.
       - name: Install Playwright Chromium
         run: pnpm --filter web exec playwright install --with-deps chromium
       - name: Provision restricted migration role without storing credentials
