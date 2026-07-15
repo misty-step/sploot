@@ -57,9 +57,18 @@ test('qa-local authenticated product flow emits an actual telemetry POST', async
     await page.goto('/app', { waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(/\/app/);
 
-    const telemetryResponse = page.waitForResponse((response) =>
-      response.url().endsWith('/api/telemetry') && response.request().method() === 'POST'
-    );
+    const telemetryResponse = page.waitForResponse((response) => {
+      if (!response.url().endsWith('/api/telemetry') || response.request().method() !== 'POST') {
+        return false;
+      }
+
+      try {
+        const body = response.request().postDataJSON();
+        return body?.type === 'analytics' && body.payload?.name === 'search_query_submitted';
+      } catch {
+        return false;
+      }
+    });
     const searchInput = page.locator('[data-search-bar] input').first();
     await expect(searchInput).toBeVisible();
     await searchInput.fill('portable');
