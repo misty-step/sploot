@@ -65,10 +65,19 @@ export class UploadError extends Error {
     public readonly code?: string,
     public readonly action?: UploadErrorAction,
     public readonly quota?: unknown,
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'UploadError';
   }
+}
+
+function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : undefined;
 }
 
 /**
@@ -186,6 +195,7 @@ export class UploadNetworkClient {
             errorCode,
             action,
             quota,
+            parseRetryAfter(xhr.getResponseHeader?.('Retry-After') ?? null),
           ),
         );
       });
@@ -271,11 +281,54 @@ export class UploadNetworkClient {
         // Wait before retrying with exponential backoff
         const delay =
           backoffDelays[attempt] || backoffDelays[backoffDelays.length - 1];
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, lastError?.retryAfterMs ?? delay));
       }
     }
 
     // Should never reach here, but TypeScript doesn't know that
+    throw lastError!;
+  }
+
+  async uploadUrl(url: string, options?: UploadOptions): Promise<UploadResult> {
+    let response: Response;
+    try {
+      response = await fetch(options?.endpoint ?? '/api/upload/url', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(options?.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}),
+        },
+        body: JSON.stringify({ url }),
+        signal: options?.signal,
+      });
+    } catch (error) {
+      throw new UploadError(error instanceof Error ? error.message : 'URL import failed', undefined, error instanceof Error && error.name !== 'AbortError');
+    }
+    const result = await response.json().catch(() => ({})) as UploadResult & { code?: string; retryable?: boolean };
+    if ((response.status >= 200 && response.status < 300) || (response.status === 409 && result.isDuplicate)) return result;
+    throw new UploadError(
+      result.error || `URL import failed with status ${response.status}`,
+      response.status,
+      result.retryable ?? ((response.status >= 500 && response.status < 600) || result.code === 'UPLOAD_IN_PROGRESS'),
+      result.code,
+      undefined,
+      undefined,
+      parseRetryAfter(response.headers.get('Retry-After')),
+    );
+  }
+
+  async uploadUrlWithRetry(url: string, options?: UploadOptions, maxRetries = 3): Promise<UploadResult> {
+    const delays = [1000, 3000, 9000];
+    let lastError: UploadError | undefined;
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      try {
+        return await this.uploadUrl(url, options);
+      } catch (error) {
+        lastError = error instanceof UploadError ? error : new UploadError(error instanceof Error ? error.message : 'URL import failed');
+        if (!lastError.isRetryable || attempt >= maxRetries) throw lastError;
+        await new Promise((resolve) => setTimeout(resolve, lastError?.retryAfterMs ?? delays[attempt] ?? 9000));
+      }
+    }
     throw lastError!;
   }
 

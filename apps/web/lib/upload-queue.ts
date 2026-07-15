@@ -8,17 +8,24 @@ import { UPLOAD, isValidMimeType } from '@sploot/common';
 
 export interface PersistedUpload {
   id: string;
+  /** Hashed Clerk account partition; raw user IDs never enter IndexedDB. */
+  ownerKey: string;
+  intent: 'file' | 'url';
   filename: string;
   mimeType: string;
   size: number;
   lastModified: number;
-  fileData: ArrayBuffer; // Store file content as ArrayBuffer
+  /** Materialized only when this exact claimed file is read for upload. */
+  fileData?: ArrayBuffer;
+  sourceUrl?: string;
   addedAt: number;
   firstAddedAt?: number;
   attemptStartedAt?: number;
   status: 'pending' | 'uploading' | 'failed' | 'terminal';
   error?: string;
   retryCount: number;
+  /** Monotonic generation incremented for every claim, including reclaimed claims. */
+  claimGeneration: number;
   claimOwner?: string;
   /** Random token for this exact claim generation, not just the tab owner. */
   claimToken?: string;
@@ -29,6 +36,7 @@ export const UPLOAD_QUEUE_MAX_RETRIES = 3;
 export const UPLOAD_QUEUE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const UPLOAD_QUEUE_MAX_BYTES = 250 * 1024 * 1024;
 export const UPLOAD_QUEUE_MAX_ENTRIES = 100;
+export const UPLOAD_QUEUE_MAX_URL_LENGTH = 2_048;
 /** Must exceed the network client's 10-second request timeout. */
 export const UPLOAD_QUEUE_CLAIM_LEASE_MS = 2 * 60 * 1000;
 
@@ -77,6 +85,13 @@ export class UploadQueueClaimActiveError extends Error {
   }
 }
 
+export class UploadQueueClaimStaleError extends Error {
+  constructor() {
+    super('Upload claim generation changed; refresh before retrying or removing it.');
+    this.name = 'UploadQueueClaimStaleError';
+  }
+}
+
 /**
  * Manages upload persistence using IndexedDB
  */
@@ -84,8 +99,9 @@ export class UploadQueueManager {
   private static instance: UploadQueueManager | null = null;
   private db: IDBDatabase | null = null;
   private readonly DB_NAME = 'sploot_uploads';
-  private readonly DB_VERSION = 2;
+  private readonly DB_VERSION = 4;
   private readonly STORE_NAME = 'pending_uploads';
+  private readonly PAYLOAD_STORE_NAME = 'upload_payloads';
 
   private constructor() {}
 
@@ -139,6 +155,7 @@ export class UploadQueueManager {
           store.createIndex('claimExpiresAt', 'claimExpiresAt', {
             unique: false,
           });
+          store.createIndex('ownerKey', 'ownerKey', { unique: false });
         } else {
           const store = (event.target as IDBOpenDBRequest).transaction?.objectStore(this.STORE_NAME);
           if (store && !store.indexNames.contains('claimExpiresAt')) {
@@ -146,6 +163,38 @@ export class UploadQueueManager {
               unique: false,
             });
           }
+          if (store && !store.indexNames.contains('ownerKey')) {
+            store.createIndex('ownerKey', 'ownerKey', { unique: false });
+          }
+          if (store) {
+            const cursor = store.openCursor();
+            cursor.onsuccess = () => {
+              if (!cursor.result) return;
+              const record = cursor.result.value as Partial<PersistedUpload>;
+              if (typeof record.claimGeneration !== 'number') {
+                cursor.result.update({ ...record, claimGeneration: 0 });
+              }
+              cursor.result.continue();
+            };
+          }
+        }
+        if (!db.objectStoreNames.contains(this.PAYLOAD_STORE_NAME)) {
+          db.createObjectStore(this.PAYLOAD_STORE_NAME, { keyPath: 'id' });
+        }
+        const metadataStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(this.STORE_NAME);
+        const payloadStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(this.PAYLOAD_STORE_NAME);
+        if (metadataStore && payloadStore) {
+          const cursor = metadataStore.openCursor();
+          cursor.onsuccess = () => {
+            if (!cursor.result) return;
+            const record = cursor.result.value as PersistedUpload;
+            if (record.fileData) {
+              payloadStore.put({ id: record.id, fileData: record.fileData });
+              const { fileData: _fileData, ...metadata } = record;
+              cursor.result.update(metadata);
+            }
+            cursor.result.continue();
+          };
         }
       };
     });
@@ -166,6 +215,12 @@ export class UploadQueueManager {
     }
   }
 
+  private assertOwnerKey(ownerKey: string): void {
+    if (!ownerKey || !/^account-[a-f0-9]{64}$/.test(ownerKey)) {
+      throw new Error('Upload queue requires a valid authenticated account partition.');
+    }
+  }
+
   private validateFileMetadata(file: File): void {
     if (!isValidMimeType(file.type)) {
       throw new UploadQueueFileValidationError(`Unsupported upload file type: ${file.type || 'unknown'}`);
@@ -178,7 +233,8 @@ export class UploadQueueManager {
   /**
    * Add a file to the persisted upload queue
    */
-  async addUpload(file: File, collisionAttempt = 0): Promise<string> {
+  async addUpload(file: File, ownerKey: string, collisionAttempt = 0): Promise<string> {
+    this.assertOwnerKey(ownerKey);
     await this.assertCanEnqueue(file);
 
     const id = createUploadId();
@@ -189,6 +245,8 @@ export class UploadQueueManager {
 
     const upload: PersistedUpload = {
       id,
+      ownerKey,
+      intent: 'file',
       filename: file.name,
       mimeType: file.type,
       size: file.size,
@@ -199,45 +257,44 @@ export class UploadQueueManager {
       attemptStartedAt: addedAt,
       status: 'pending',
       retryCount: 0,
+      claimGeneration: 0,
     };
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
+      const transaction = this.db!.transaction([this.STORE_NAME, this.PAYLOAD_STORE_NAME], 'readwrite');
       const store = transaction.objectStore(this.STORE_NAME);
-      const existingRequest = store.getAll();
+      const payloadStore = transaction.objectStore(this.PAYLOAD_STORE_NAME);
       let failure: Error | DOMException | null = null;
       let committed = false;
-
-      existingRequest.onsuccess = () => {
-        const existing = existingRequest.result as PersistedUpload[];
-        const totalBytes = existing.reduce((total, item) => total + item.size, 0);
-        if (existing.length >= UPLOAD_QUEUE_MAX_ENTRIES || totalBytes + upload.size > UPLOAD_QUEUE_MAX_BYTES) {
+      let count = 0;
+      let totalBytes = 0;
+      const cursorRequest = store.openCursor();
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (cursor) {
+          const existing = cursor.value as PersistedUpload;
+          count += 1;
+          totalBytes += existing.size;
+          cursor.continue();
+          return;
+        }
+        if (count >= UPLOAD_QUEUE_MAX_ENTRIES || totalBytes + upload.size > UPLOAD_QUEUE_MAX_BYTES) {
           failure = new UploadQueueStorageLimitError();
           transaction.abort();
           return;
         }
-
-        const request = store.add(upload);
-
-        request.onsuccess = () => {
-          logger.logInfo('upload-queue.persisted', {
-            filename: file.name,
-            size: file.size,
-          });
-        };
-
+        const { fileData: _fileData, ...metadata } = upload;
+        const request = store.add(metadata);
+        payloadStore.add({ id: upload.id, fileData: arrayBuffer });
+        request.onsuccess = () => logger.logInfo('upload-queue.persisted', { filename: file.name, size: file.size });
         request.onerror = () => {
-          console.error('[UploadQueue] Failed to persist upload:', request.error);
           failure = request.error;
-          if (request.error?.name === 'ConstraintError' && collisionAttempt < 3) {
-            transaction.abort();
-            return;
-          }
+          transaction.abort();
         };
       };
 
-      existingRequest.onerror = () => {
-        failure = existingRequest.error;
+      cursorRequest.onerror = () => {
+        failure = cursorRequest.error;
         transaction.abort();
       };
       transaction.oncomplete = () => {
@@ -250,7 +307,85 @@ export class UploadQueueManager {
       transaction.onabort = () => {
         if (committed) return;
         if (failure?.name === 'ConstraintError' && collisionAttempt < 3) {
-          void this.addUpload(file, collisionAttempt + 1).then(resolve, reject);
+          void this.addUpload(file, ownerKey, collisionAttempt + 1).then(resolve, reject);
+          return;
+        }
+        reject(failure ?? transaction.error ?? new Error('Upload queue transaction aborted before commit.'));
+      };
+    });
+  }
+
+  async addUrlUpload(url: string, ownerKey: string, collisionAttempt = 0): Promise<string> {
+    this.assertOwnerKey(ownerKey);
+    if (!/^https?:\/\/[^\s]{1,2040}$/i.test(url) || url.length > UPLOAD_QUEUE_MAX_URL_LENGTH) {
+      throw new UploadQueueFileValidationError('URL import is invalid or too long.');
+    }
+    if (!this.db) await this.init();
+    if (!this.db) throw new UploadQueueStorageUnavailableError();
+    const usage = await this.getStorageUsage();
+    if (usage.count >= UPLOAD_QUEUE_MAX_ENTRIES) throw new UploadQueueStorageLimitError();
+    const now = Date.now();
+    const upload: PersistedUpload = {
+      id: createUploadId(),
+      ownerKey,
+      intent: 'url',
+      filename: url,
+      mimeType: '',
+      size: 0,
+      lastModified: now,
+      sourceUrl: url,
+      addedAt: now,
+      firstAddedAt: now,
+      attemptStartedAt: now,
+      status: 'pending',
+      retryCount: 0,
+      claimGeneration: 0,
+    };
+    return this.putUpload(upload, ownerKey, collisionAttempt);
+  }
+
+  private async putUpload(upload: PersistedUpload, ownerKey: string, collisionAttempt: number): Promise<string> {
+    if (!this.db) throw new UploadQueueStorageUnavailableError();
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([this.STORE_NAME, this.PAYLOAD_STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(this.STORE_NAME);
+      let failure: Error | DOMException | null = null;
+      let committed = false;
+      let count = 0;
+      const cursorRequest = store.openCursor();
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (cursor) {
+          count += 1;
+          cursor.continue();
+          return;
+        }
+        if (count >= UPLOAD_QUEUE_MAX_ENTRIES) {
+          failure = new UploadQueueStorageLimitError();
+          transaction.abort();
+          return;
+        }
+        const request = store.add(upload);
+        request.onerror = () => {
+          failure = request.error;
+          transaction.abort();
+        };
+      };
+      cursorRequest.onerror = () => {
+        failure = cursorRequest.error;
+        transaction.abort();
+      };
+      transaction.oncomplete = () => {
+        committed = true;
+        resolve(upload.id);
+      };
+      transaction.onerror = () => {
+        if (!failure) failure = transaction.error;
+      };
+      transaction.onabort = () => {
+        if (committed) return;
+        if (failure?.name === 'ConstraintError' && collisionAttempt < 3) {
+          void this.putUpload({ ...upload, id: createUploadId() }, ownerKey, collisionAttempt + 1).then(resolve, reject);
           return;
         }
         reject(failure ?? transaction.error ?? new Error('Upload queue transaction aborted before commit.'));
@@ -266,14 +401,15 @@ export class UploadQueueManager {
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([this.STORE_NAME], 'readonly');
-      const request = transaction.objectStore(this.STORE_NAME).getAll();
-      let usage = { count: 0, totalBytes: 0 };
+      const request = transaction.objectStore(this.STORE_NAME).openCursor();
+      const usage = { count: 0, totalBytes: 0 };
       request.onsuccess = () => {
-        const uploads = request.result as PersistedUpload[];
-        usage = {
-          count: uploads.length,
-          totalBytes: uploads.reduce((total, upload) => total + upload.size, 0),
-        };
+        const cursor = request.result;
+        if (!cursor) return;
+        const upload = cursor.value as PersistedUpload;
+        usage.count += 1;
+        usage.totalBytes += upload.size;
+        cursor.continue();
       };
       request.onerror = () => reject(request.error);
       transaction.oncomplete = () => resolve(usage);
@@ -285,17 +421,18 @@ export class UploadQueueManager {
   /**
    * Update upload status
    */
-  async updateUploadStatus(id: string, status: PersistedUpload['status'], error?: string): Promise<void> {
+  async updateUploadStatus(id: string, ownerKey: string, status: PersistedUpload['status'], error?: string): Promise<void> {
+    this.assertOwnerKey(ownerKey);
     if (!this.db) return;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
+      const transaction = this.db!.transaction([this.STORE_NAME, this.PAYLOAD_STORE_NAME], 'readwrite');
       const store = transaction.objectStore(this.STORE_NAME);
       const getRequest = store.get(id);
 
       getRequest.onsuccess = () => {
         const upload = getRequest.result;
-        if (!upload) {
+        if (!upload || upload.ownerKey !== ownerKey) {
           resolve();
           return;
         }
@@ -325,18 +462,19 @@ export class UploadQueueManager {
   }
 
   /** Atomically claim one upload for a tab/manager, recovering stale claims. */
-  async claimUpload(id: string, owner: string, leaseMs = UPLOAD_QUEUE_CLAIM_LEASE_MS): Promise<PersistedUpload | null> {
+  async claimUpload(id: string, ownerKey: string, owner: string, leaseMs = UPLOAD_QUEUE_CLAIM_LEASE_MS): Promise<PersistedUpload | null> {
+    this.assertOwnerKey(ownerKey);
     if (!this.db) return null;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
+      const transaction = this.db!.transaction([this.STORE_NAME, this.PAYLOAD_STORE_NAME], 'readwrite');
       const store = transaction.objectStore(this.STORE_NAME);
       const request = store.get(id);
       let claimed: PersistedUpload | null = null;
 
       request.onsuccess = () => {
         const upload = request.result as PersistedUpload | undefined;
-        if (!upload || upload.status === 'terminal') return;
+        if (!upload || upload.ownerKey !== ownerKey || upload.status === 'terminal') return;
         const now = Date.now();
         if (upload.status === 'uploading' && (upload.claimExpiresAt ?? 0) > now) return;
         if (upload.retryCount >= UPLOAD_QUEUE_MAX_RETRIES || isUploadExpired(upload, now)) {
@@ -352,6 +490,7 @@ export class UploadQueueManager {
         upload.status = 'uploading';
         upload.claimOwner = owner;
         upload.claimToken = createUploadId();
+        upload.claimGeneration = (upload.claimGeneration ?? 0) + 1;
         upload.claimExpiresAt = now + leaseMs;
         const updateRequest = store.put(upload);
         updateRequest.onsuccess = () => {
@@ -366,17 +505,18 @@ export class UploadQueueManager {
   }
 
   /** Record a failed attempt only if this manager still owns the claim. */
-  async releaseUploadClaim(id: string, owner: string, claimToken: string, error?: string): Promise<PersistedUpload | null> {
+  async releaseUploadClaim(id: string, ownerKey: string, owner: string, claimGeneration: number, claimToken: string, error?: string): Promise<PersistedUpload | null> {
+    this.assertOwnerKey(ownerKey);
     if (!this.db) return null;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
+      const transaction = this.db!.transaction([this.STORE_NAME, this.PAYLOAD_STORE_NAME], 'readwrite');
       const store = transaction.objectStore(this.STORE_NAME);
       const request = store.get(id);
       let released: PersistedUpload | null = null;
       request.onsuccess = () => {
         const upload = request.result as PersistedUpload | undefined;
-        if (!upload || upload.claimOwner !== owner || upload.claimToken !== claimToken || (upload.claimExpiresAt ?? 0) <= Date.now()) return;
+        if (!upload || upload.ownerKey !== ownerKey || upload.claimOwner !== owner || upload.claimGeneration !== claimGeneration || upload.claimToken !== claimToken || (upload.claimExpiresAt ?? 0) <= Date.now()) return;
         upload.status = 'failed';
         upload.retryCount += 1;
         upload.error = error;
@@ -403,18 +543,20 @@ export class UploadQueueManager {
   }
 
   /** Delete an upload only after its owning claim has completed successfully. */
-  async completeUpload(id: string, owner: string, claimToken: string): Promise<boolean> {
+  async completeUpload(id: string, ownerKey: string, owner: string, claimGeneration: number, claimToken: string): Promise<boolean> {
+    this.assertOwnerKey(ownerKey);
     if (!this.db) return false;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
+      const transaction = this.db!.transaction([this.STORE_NAME, this.PAYLOAD_STORE_NAME], 'readwrite');
       const store = transaction.objectStore(this.STORE_NAME);
       const request = store.get(id);
       let completed = false;
       request.onsuccess = () => {
         const upload = request.result as PersistedUpload | undefined;
-        if (!upload || upload.claimOwner !== owner || upload.claimToken !== claimToken || (upload.claimExpiresAt ?? 0) <= Date.now()) return;
+        if (!upload || upload.ownerKey !== ownerKey || upload.claimOwner !== owner || upload.claimGeneration !== claimGeneration || upload.claimToken !== claimToken || (upload.claimExpiresAt ?? 0) <= Date.now()) return;
         store.delete(id);
+        transaction.objectStore(this.PAYLOAD_STORE_NAME).delete(id);
         completed = true;
       };
       request.onerror = () => reject(request.error);
@@ -425,19 +567,23 @@ export class UploadQueueManager {
   }
 
   /** Atomically make a failed upload eligible for a fresh manual attempt. */
-  async resetUploadForRetry(id: string): Promise<void> {
+  async resetUploadForRetry(id: string, ownerKey: string, expectedClaimGeneration: number): Promise<void> {
+    this.assertOwnerKey(ownerKey);
     if (!this.db) return;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
+      const transaction = this.db!.transaction([this.STORE_NAME, this.PAYLOAD_STORE_NAME], 'readwrite');
       const store = transaction.objectStore(this.STORE_NAME);
       const getRequest = store.get(id);
       let failure: Error | null = null;
 
       getRequest.onsuccess = () => {
         const upload = getRequest.result as PersistedUpload | undefined;
-        if (!upload) {
-          resolve();
+        if (!upload || upload.ownerKey !== ownerKey) return;
+
+        if ((upload.claimGeneration ?? 0) !== expectedClaimGeneration) {
+          failure = new UploadQueueClaimStaleError();
+          transaction.abort();
           return;
         }
 
@@ -468,24 +614,31 @@ export class UploadQueueManager {
   /**
    * Remove successfully uploaded file
    */
-  async removeUpload(id: string): Promise<void> {
+  async removeUpload(id: string, ownerKey: string, expectedClaimGeneration: number): Promise<void> {
+    this.assertOwnerKey(ownerKey);
     if (!this.db) return;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
+      const transaction = this.db!.transaction([this.STORE_NAME, this.PAYLOAD_STORE_NAME], 'readwrite');
       const store = transaction.objectStore(this.STORE_NAME);
       const getRequest = store.get(id);
       let failure: Error | null = null;
 
       getRequest.onsuccess = () => {
         const upload = getRequest.result as PersistedUpload | undefined;
-        if (!upload) return;
+        if (!upload || upload.ownerKey !== ownerKey) return;
+        if ((upload.claimGeneration ?? 0) !== expectedClaimGeneration) {
+          failure = new UploadQueueClaimStaleError();
+          transaction.abort();
+          return;
+        }
         if (upload.status === 'uploading' && (upload.claimExpiresAt ?? 0) > Date.now()) {
           failure = new UploadQueueClaimActiveError();
           transaction.abort();
           return;
         }
         const deleteRequest = store.delete(id);
+        transaction.objectStore(this.PAYLOAD_STORE_NAME).delete(id);
         deleteRequest.onerror = () => {
           failure = deleteRequest.error;
           transaction.abort();
@@ -510,7 +663,8 @@ export class UploadQueueManager {
   /**
    * Get all pending uploads
    */
-  async getPendingUploads(): Promise<PersistedUpload[]> {
+  async getPendingUploads(ownerKey: string): Promise<PersistedUpload[]> {
+    this.assertOwnerKey(ownerKey);
     if (!this.db) {
       await this.init();
       if (!this.db) return [];
@@ -519,30 +673,34 @@ export class UploadQueueManager {
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
       const store = transaction.objectStore(this.STORE_NAME);
-      const request = store.getAll();
-      let normalizedUploads: PersistedUpload[] = [];
+      const request = store.index('ownerKey').openCursor(IDBKeyRange.only(ownerKey));
+      const normalizedUploads: PersistedUpload[] = [];
 
       request.onsuccess = () => {
-        const uploads = (request.result || []) as PersistedUpload[];
-        normalizedUploads = uploads.map((upload) => {
-          const normalized = { ...upload };
-          const expired = isUploadExpired(normalized, Date.now());
-          if (normalized.status === 'uploading' && (normalized.claimExpiresAt ?? 0) <= Date.now()) {
-            normalized.status = 'pending';
-            delete normalized.claimOwner;
-            delete normalized.claimToken;
-            delete normalized.claimExpiresAt;
-          }
-          if (normalized.status !== 'terminal' && (expired || normalized.retryCount >= UPLOAD_QUEUE_MAX_RETRIES)) {
-            normalized.status = 'terminal';
-            normalized.error = expired ? 'Upload is older than 24 hours. Retry or remove this upload.' : 'Automatic retries exhausted. Retry or remove this upload.';
-            delete normalized.claimOwner;
-            delete normalized.claimToken;
-            delete normalized.claimExpiresAt;
-          }
-          if (JSON.stringify(normalized) !== JSON.stringify(upload)) store.put(normalized);
-          return normalized;
-        });
+        const cursor = request.result;
+        if (!cursor) return;
+        const upload = cursor.value as PersistedUpload;
+        const normalized = { ...upload };
+        const expired = isUploadExpired(normalized, Date.now());
+        if (normalized.status === 'uploading' && (normalized.claimExpiresAt ?? 0) <= Date.now()) {
+          normalized.status = 'pending';
+          delete normalized.claimOwner;
+          delete normalized.claimToken;
+          delete normalized.claimExpiresAt;
+        }
+        if (normalized.status !== 'terminal' && (expired || normalized.retryCount >= UPLOAD_QUEUE_MAX_RETRIES)) {
+          normalized.status = 'terminal';
+          normalized.error = expired ? 'Upload is older than 24 hours. Retry or remove this upload.' : 'Automatic retries exhausted. Retry or remove this upload.';
+          delete normalized.claimOwner;
+          delete normalized.claimToken;
+          delete normalized.claimExpiresAt;
+        }
+        if (normalized.status !== upload.status || normalized.error !== upload.error || normalized.claimOwner !== upload.claimOwner || normalized.claimToken !== upload.claimToken) {
+          cursor.update(normalized);
+        }
+        const { fileData: _fileData, ...metadata } = normalized;
+        normalizedUploads.push(metadata);
+        cursor.continue();
       };
 
       request.onerror = () => {
@@ -556,47 +714,95 @@ export class UploadQueueManager {
   }
 
   /** Convert persisted upload back to File object. */
-  async toFile(upload: PersistedUpload): Promise<File> {
-    const blob = new Blob([upload.fileData], { type: upload.mimeType });
-    return new File([blob], upload.filename, {
-      type: upload.mimeType,
-      lastModified: upload.lastModified,
+  async toFile(upload: PersistedUpload, ownerKey: string): Promise<File> {
+    this.assertOwnerKey(ownerKey);
+    const stored = await this.getOwnedUpload(upload.id, ownerKey, upload.claimToken, upload.claimGeneration);
+    if (!stored || stored.intent !== 'file' || !stored.fileData || stored.claimToken !== upload.claimToken || stored.claimGeneration !== upload.claimGeneration) {
+      throw new UploadQueueClaimStaleError();
+    }
+    const blob = new Blob([stored.fileData], { type: stored.mimeType });
+    return new File([blob], stored.filename, { type: stored.mimeType, lastModified: stored.lastModified });
+  }
+
+  private async getOwnedUpload(id: string, ownerKey: string, claimToken?: string, claimGeneration?: number): Promise<PersistedUpload | null> {
+    if (!this.db) await this.init();
+    if (!this.db) throw new UploadQueueStorageUnavailableError();
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([this.STORE_NAME, this.PAYLOAD_STORE_NAME], 'readonly');
+      const request = transaction.objectStore(this.STORE_NAME).get(id);
+      const payloadStore = transaction.objectStore(this.PAYLOAD_STORE_NAME);
+      let result: PersistedUpload | null = null;
+      let payload: { fileData?: ArrayBuffer } | undefined;
+      request.onsuccess = () => {
+        const upload = request.result as PersistedUpload | undefined;
+        if (upload?.ownerKey === ownerKey && upload.claimToken === claimToken && upload.claimGeneration === claimGeneration) {
+          result = upload;
+          const payloadRequest = payloadStore.get(id);
+          payloadRequest.onsuccess = () => { payload = payloadRequest.result as { fileData?: ArrayBuffer } | undefined; };
+        }
+      };
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve(result ? { ...result, fileData: payload?.fileData } : null);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error ?? new Error('Upload lookup aborted.'));
     });
   }
 
   /**
    * Clear all persisted uploads
    */
-  async clearAll(): Promise<void> {
+  async clearAll(ownerKey: string): Promise<void> {
+    this.assertOwnerKey(ownerKey);
     if (!this.db) return;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
+      const transaction = this.db!.transaction([this.STORE_NAME, this.PAYLOAD_STORE_NAME], 'readwrite');
       const store = transaction.objectStore(this.STORE_NAME);
-      const request = store.clear();
-
+      const payloadStore = transaction.objectStore(this.PAYLOAD_STORE_NAME);
+      const request = store.openCursor();
       request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          const payloadCursor = payloadStore.openCursor();
+          payloadCursor.onsuccess = () => {
+            const cursor = payloadCursor.result;
+            if (!cursor) return;
+            const metadataRequest = store.get(cursor.primaryKey);
+            metadataRequest.onsuccess = () => {
+              if (!metadataRequest.result) cursor.delete();
+              cursor.continue();
+            };
+            metadataRequest.onerror = () => transaction.abort();
+          };
+          return;
+        }
+        const record = cursor.value as PersistedUpload;
+        if (record.ownerKey === ownerKey) {
+          cursor.delete();
+          payloadStore.delete(cursor.primaryKey);
+        }
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => {
         logger.logInfo('upload-queue.cleared');
         resolve();
       };
-
-      request.onerror = () => {
-        console.error('[UploadQueue] Failed to clear uploads:', request.error);
-        reject(request.error);
-      };
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error ?? new Error('Upload queue clear aborted.'));
     });
   }
 
   /**
    * Get upload statistics
    */
-  async getStats(): Promise<{
+  async getStats(ownerKey: string): Promise<{
     pending: number;
     uploading: number;
     failed: number;
     total: number;
   }> {
-    const uploads = await this.getPendingUploads();
+    const uploads = await this.getPendingUploads(ownerKey);
 
     return {
       pending: uploads.filter((u) => u.status === 'pending').length,

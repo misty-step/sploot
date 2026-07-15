@@ -4,6 +4,8 @@ import { Prisma } from '@prisma/client';
 
 export const UPLOAD_IDEMPOTENCY_LEASE_MS = 2 * 60 * 1000;
 export const UPLOAD_IDEMPOTENCY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+/** Keep an abandoned processing row long enough for normal lease reclaim. */
+export const UPLOAD_IDEMPOTENCY_PROCESSING_SWEEP_GRACE_MS = 10 * 60 * 1000;
 
 export class UploadIdempotencyInProgressError extends Error {
   constructor() {
@@ -85,11 +87,25 @@ export async function runIdempotentUpload<T>(
   throw new UploadIdempotencyLeaseLostError();
 }
 
-/** Remove only completed receipts older than the replay-retention window. */
+/**
+ * Remove replay-expired receipts and only processing rows that are both well
+ * past their lease and stale by updatedAt. The state fence prevents cleanup
+ * from racing a live worker that renewed or reclaimed a receipt.
+ */
 export async function cleanupExpiredUploadReceipts(now = new Date()): Promise<number> {
   if (!prisma) return 0;
+  const processingCutoff = new Date(now.getTime() - UPLOAD_IDEMPOTENCY_PROCESSING_SWEEP_GRACE_MS);
   const result = await prisma.uploadIdempotency.deleteMany({
-    where: { status: 'completed', retainedUntil: { lt: now } },
+    where: {
+      OR: [
+        { status: 'completed', retainedUntil: { lt: now } },
+        {
+          status: 'processing',
+          leaseExpiresAt: { lt: processingCutoff },
+          updatedAt: { lt: processingCutoff },
+        },
+      ],
+    },
   });
   return result.count;
 }

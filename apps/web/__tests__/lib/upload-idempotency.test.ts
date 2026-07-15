@@ -81,12 +81,21 @@ describe('runIdempotentUpload', () => {
       .rejects.toBeInstanceOf(UploadIdempotencyLeaseLostError);
   });
 
-  it('cleans only completed receipts past the explicit retention boundary', async () => {
+  it('cleans retained receipts and only stale processing rows past the state-fenced TTL', async () => {
     mocks.prisma.uploadIdempotency.deleteMany.mockResolvedValue({ count: 2 });
 
     await expect(cleanupExpiredUploadReceipts(new Date('2026-07-15T00:00:00.000Z'))).resolves.toBe(2);
     expect(mocks.prisma.uploadIdempotency.deleteMany).toHaveBeenCalledWith({
-      where: { status: 'completed', retainedUntil: { lt: new Date('2026-07-15T00:00:00.000Z') } },
+      where: {
+        OR: [
+          { status: 'completed', retainedUntil: { lt: new Date('2026-07-15T00:00:00.000Z') } },
+          {
+            status: 'processing',
+            leaseExpiresAt: { lt: new Date('2026-07-14T23:50:00.000Z') },
+            updatedAt: { lt: new Date('2026-07-14T23:50:00.000Z') },
+          },
+        ],
+      },
     });
   });
 });

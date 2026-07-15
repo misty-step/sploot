@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => {
   let removed = false;
   const upload = {
     id: 'queued-1',
+    intent: 'file' as const,
     filename: 'queued.png',
     mimeType: 'image/png',
     size: 4,
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => {
     addedAt: 1,
     status: 'pending',
     retryCount: 0,
+    claimGeneration: 1,
     claimToken: 'attempt-1',
   };
   const manager = {
@@ -28,7 +30,7 @@ const mocks = vi.hoisted(() => {
       removed = true;
       return true;
     }),
-    releaseUploadClaim: vi.fn(async (_id: string, _owner: string, _claimToken: string, error?: string) => ({
+    releaseUploadClaim: vi.fn(async (_id: string, _ownerKey: string, _owner: string, _generation: number, _claimToken: string, error?: string) => ({
       ...upload,
       status: 'failed',
       error,
@@ -40,7 +42,10 @@ const mocks = vi.hoisted(() => {
   };
   const client = {
     uploadFile: vi.fn().mockResolvedValue({ success: true, asset: { id: 'asset-1' } }),
+    uploadWithRetry: vi.fn().mockResolvedValue({ success: true, asset: { id: 'asset-1' } }),
+    uploadUrlWithRetry: vi.fn(),
   };
+  const logError = vi.fn();
   return {
     get offline() {
       return offline;
@@ -54,6 +59,7 @@ const mocks = vi.hoisted(() => {
     },
     manager,
     client,
+    logError,
   };
 });
 
@@ -61,6 +67,7 @@ vi.mock('@/hooks/use-offline', () => ({
   useOffline: () => ({ isOffline: mocks.offline, checkConnection: vi.fn() }),
 }));
 vi.mock('@/lib/upload-queue', () => ({
+  UPLOAD_QUEUE_MAX_RETRIES: 3,
   createUploadId: () => 'stable-tab-owner',
   getUploadQueueManager: () => mocks.manager,
 }));
@@ -68,7 +75,7 @@ vi.mock('@/lib/upload/upload-network-client', () => ({
   getUploadNetworkClient: () => mocks.client,
 }));
 vi.mock('@/lib/analytics', () => ({ track: vi.fn() }));
-vi.mock('@/lib/logger', () => ({ error: vi.fn() }));
+vi.mock('@/lib/logger', () => ({ error: mocks.logError }));
 
 import { useUploadQueue } from '@/hooks/use-upload-queue';
 
@@ -83,7 +90,7 @@ describe('offline recovery', () => {
   });
 
   it('automatically resumes a persisted upload when connectivity returns', async () => {
-    const hook = renderHook(() => useUploadQueue({ autoProcess: true }));
+    const hook = renderHook(() => useUploadQueue({ autoProcess: true, ownerKey: `account-${'a'.repeat(64)}` }));
     await waitFor(() => expect(mocks.manager.getPendingUploads).toHaveBeenCalled());
     expect(mocks.client.uploadFile).not.toHaveBeenCalled();
 
@@ -92,16 +99,16 @@ describe('offline recovery', () => {
       hook.rerender();
     });
 
-    await waitFor(() => expect(mocks.client.uploadFile).toHaveBeenCalledTimes(1));
-    expect(mocks.manager.completeUpload).toHaveBeenCalledWith('queued-1', expect.any(String), 'attempt-1');
-    expect(mocks.client.uploadFile).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({ idempotencyKey: 'queued-1' }));
+    await waitFor(() => expect(mocks.client.uploadWithRetry).toHaveBeenCalledTimes(1));
+    expect(mocks.manager.completeUpload).toHaveBeenCalledWith('queued-1', expect.any(String), expect.any(String), 1, 'attempt-1');
+    expect(mocks.client.uploadWithRetry).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({ idempotencyKey: 'queued-1' }), 3);
     hook.unmount();
   });
 
   it('shares queue additions and atomically resets manual retries across consumers', async () => {
     mocks.offline = false;
-    const first = renderHook(() => useUploadQueue());
-    const second = renderHook(() => useUploadQueue());
+    const first = renderHook(() => useUploadQueue({ ownerKey: `account-${'a'.repeat(64)}` }));
+    const second = renderHook(() => useUploadQueue({ ownerKey: `account-${'a'.repeat(64)}` }));
     await waitFor(() => expect(mocks.manager.getPendingUploads).toHaveBeenCalled());
 
     await act(async () => {
@@ -112,7 +119,7 @@ describe('offline recovery', () => {
     await act(async () => {
       await first.result.current.retryUpload('queued-1');
     });
-    expect(mocks.manager.resetUploadForRetry).toHaveBeenCalledWith('queued-1');
+    expect(mocks.manager.resetUploadForRetry).toHaveBeenCalledWith('queued-1', expect.any(String), 1);
     expect(mocks.manager.resetUploadForRetry.mock.invocationCallOrder[0]).toBeLessThan(mocks.manager.getPendingUploads.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY);
     first.unmount();
     second.unmount();
@@ -121,9 +128,9 @@ describe('offline recovery', () => {
   it('keeps the item when the durable completion fence is lost', async () => {
     mocks.offline = false;
     mocks.manager.completeUpload.mockImplementationOnce(async () => false);
-    const hook = renderHook(() => useUploadQueue({ autoProcess: true }));
+    const hook = renderHook(() => useUploadQueue({ autoProcess: true, ownerKey: `account-${'a'.repeat(64)}` }));
 
-    await waitFor(() => expect(mocks.client.uploadFile).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.client.uploadWithRetry).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(hook.result.current.queue.some((item) => item.id === 'queued-1')).toBe(true));
     expect(mocks.manager.removeUpload).not.toHaveBeenCalled();
     expect(hook.result.current.queue.find((item) => item.id === 'queued-1')?.status).not.toBe('success');
@@ -134,7 +141,7 @@ describe('offline recovery', () => {
     mocks.offline = false;
     mocks.manager.getPendingUploads.mockResolvedValue([]);
     mocks.manager.addUpload.mockRejectedValueOnce(new Error('durable storage unavailable'));
-    const hook = renderHook(() => useUploadQueue({ autoProcess: true }));
+    const hook = renderHook(() => useUploadQueue({ autoProcess: true, ownerKey: `account-${'a'.repeat(64)}` }));
 
     await expect(
       act(async () => {

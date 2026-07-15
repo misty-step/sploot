@@ -508,6 +508,26 @@ describe('UploadNetworkClient', () => {
     });
   });
 
+  describe('uploadUrl', () => {
+    it('uses the durable idempotency key and retries 409 in progress with Retry-After', async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(new Response(JSON.stringify({ success: false, code: 'UPLOAD_IN_PROGRESS', retryable: true }), {
+          status: 409,
+          headers: { 'Retry-After': '0' },
+        }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, asset: { id: 'asset-1' } }), { status: 201 }));
+      vi.stubGlobal('fetch', fetchMock);
+
+      await expect(client.uploadUrlWithRetry('https://example.com/a.png', { idempotencyKey: 'queue-record-1' }, 1))
+        .resolves.toMatchObject({ success: true, asset: { id: 'asset-1' } });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls.map(([, init]) => (init as RequestInit).headers)).toEqual([
+        expect.objectContaining({ 'Idempotency-Key': 'queue-record-1' }),
+        expect.objectContaining({ 'Idempotency-Key': 'queue-record-1' }),
+      ]);
+    });
+  });
+
   describe('uploadBatch', () => {
     it('should upload multiple files in parallel', async () => {
       const files = [

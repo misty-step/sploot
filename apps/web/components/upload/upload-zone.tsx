@@ -6,8 +6,9 @@ import Image from 'next/image';
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useUploadQueue, type UploadQueueEvent } from '@/hooks/use-upload-queue';
+import { useOptionalAuthUser } from '@/lib/auth/client';
 import { useFileValidation } from '@/hooks/use-file-validation';
-import { extractImageUrls, extractZipImages, isTextBundleFile, isZipFile } from '@/lib/upload/bulk-import';
+import { BulkImportLimitError, extractImageUrls, extractZipImages, isTextBundleFile, isZipFile, MAX_TEXT_BUNDLE_BYTES } from '@/lib/upload/bulk-import';
 import { UploadErrorDisplay } from '@/components/upload/upload-error-display';
 import { getStructuredUploadErrorDetails, getUploadStatusCodeFromMessage, UploadErrorDetails } from '@/lib/upload-errors';
 import { EmbeddingStatusIndicator } from '@/components/upload/embedding-status-indicator';
@@ -73,11 +74,20 @@ export function UploadZone({ onUploadComplete, isOnDashboard = false }: UploadZo
   const [fileMetadata, setFileMetadata] = useState(() => new Map<string, FileMetadata>());
   // Keep ref in sync with state to avoid closure issues in async functions
   const fileMetadataRef = useRef(fileMetadata);
+  const { user } = useOptionalAuthUser();
+  const previousAuthUserId = useRef<string | undefined>(user?.id);
   const [isCancelling, setIsCancelling] = useState(false);
   const [uploadStats, setUploadStats] = useState<ProgressStats | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
   const [preparingFileCount, setPreparingFileCount] = useState(0);
   const [preparingTotalSize, setPreparingTotalSize] = useState(0);
+
+  useEffect(() => {
+    if (previousAuthUserId.current === user?.id) return;
+    previousAuthUserId.current = user?.id;
+    setFileMetadata(new Map());
+    fileMetadataRef.current = new Map();
+  }, [user?.id]);
   const router = useRouter();
   const { validateFile, allowedFileTypes } = useFileValidation();
   const hasExternalUploadCompletion = Boolean(onUploadComplete);
@@ -282,7 +292,23 @@ export function UploadZone({ onUploadComplete, isOnDashboard = false }: UploadZo
   }, []);
 
   // Every upload intent enters the durable queue; this is the only network coordinator.
-  const { assertCanEnqueue, addToQueue, processQueue, retryUpload: retryQueuedUpload, removeFromQueue } = useUploadQueue({ onEvent: handleQueueEvent });
+  const { assertCanEnqueue, addToQueue, addUrlToQueue, processQueue, retryUpload: retryQueuedUpload, removeFromQueue } = useUploadQueue({ onEvent: handleQueueEvent });
+
+  const enqueueUrl = useCallback(async (url: string) => {
+    const queueItem = await addUrlToQueue(url);
+    const metadata: FileMetadata = {
+      id: queueItem.id,
+      persistedId: queueItem.id,
+      name: url,
+      size: 0,
+      status: 'queued',
+      progress: 0,
+      addedAt: Date.now(),
+    };
+    setFileMetadata((previous) => new Map(previous).set(metadata.id, metadata));
+    fileMetadataRef.current.set(metadata.id, metadata);
+    return metadata;
+  }, [addUrlToQueue]);
 
   // Queue processing owns network execution, retries, receipt idempotency, and completion fencing.
   // Prepare metadata, durably enqueue, then ask the single coordinator to process it.
@@ -395,33 +421,18 @@ export function UploadZone({ onUploadComplete, isOnDashboard = false }: UploadZo
     async (urls: string[]) => {
       if (urls.length === 0) return;
       showToast(`importing ${urls.length} url${urls.length === 1 ? '' : 's'}...`, 'info');
-      let saved = 0;
-      let duplicates = 0;
       let failed = 0;
-      const queue = [...urls];
-      const workers = Array.from({ length: 3 }, async () => {
-        for (let url = queue.shift(); url !== undefined; url = queue.shift()) {
-          try {
-            const response = await fetch('/api/upload/url', {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ url }),
-            });
-            if (response.status === 201) saved++;
-            else if (response.status === 409) duplicates++;
-            else failed++;
-          } catch {
-            failed++;
-          }
+      for (const url of urls) {
+        try {
+          await enqueueUrl(url);
+        } catch {
+          failed++;
         }
-      });
-      await Promise.all(workers);
-      showToast(`url import: ${saved} saved · ${duplicates} already in library · ${failed} failed`, failed > 0 ? 'error' : 'success', 5000);
-      if (saved + duplicates > 0) {
-        onUploadComplete?.({ uploaded: saved, duplicates, failed });
       }
+      if (urls.length > failed) void processQueue();
+      showToast(`url import: ${urls.length - failed} queued · ${failed} failed`, failed > 0 ? 'error' : 'success', 5000);
     },
-    [onUploadComplete],
+    [enqueueUrl, processQueue],
   );
 
   // Expand bundles (zips, bookmark exports) before the normal pipeline:
@@ -435,15 +446,20 @@ export function UploadZone({ onUploadComplete, isOnDashboard = false }: UploadZo
             const images = await extractZipImages(file);
             showToast(`unpacked ${images.length} image${images.length === 1 ? '' : 's'} from ${file.name}`, images.length > 0 ? 'info' : 'error');
             direct.push(...images);
-          } catch {
-            showToast(`couldn't unpack ${file.name}`, 'error');
+          } catch (error) {
+            showToast(error instanceof Error ? error.message : `couldn't unpack ${file.name}`, 'error');
           }
         } else if (isTextBundleFile(file)) {
-          const urls = extractImageUrls(await file.text());
-          if (urls.length === 0) {
-            showToast(`no image urls found in ${file.name}`, 'info');
-          } else {
-            void importUrls(urls);
+          try {
+            if (file.size > MAX_TEXT_BUNDLE_BYTES) throw new BulkImportLimitError('Bookmark export exceeds the text safety bound.');
+            const urls = extractImageUrls(await file.text());
+            if (urls.length === 0) {
+              showToast(`no image urls found in ${file.name}`, 'info');
+            } else {
+              void importUrls(urls);
+            }
+          } catch (error) {
+            showToast(error instanceof Error ? error.message : `couldn't read ${file.name}`, 'error');
           }
         } else {
           direct.push(file);
@@ -456,32 +472,18 @@ export function UploadZone({ onUploadComplete, isOnDashboard = false }: UploadZo
     [processFilesWithQueue, importUrls],
   );
 
-  // Pasted URLs import server-side through /api/upload/url (shared ingest
-  // pipeline), then reuse the normal completion callback to refresh the grid.
+  // Pasted URLs use the same durable coordinator and receipt key as files.
   const importFromUrl = useCallback(
     async (url: string) => {
-      showToast('importing from url...', 'info');
+      showToast('queueing url import...', 'info');
       try {
-        const response = await fetch('/api/upload/url', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ url }),
-        });
-        const data = await response.json().catch(() => ({}));
-
-        if (response.status === 201) {
-          onUploadComplete?.({ uploaded: 1, duplicates: 0, failed: 0 });
-        } else if (response.status === 409) {
-          showToast('already in your library', 'info');
-          onUploadComplete?.({ uploaded: 0, duplicates: 1, failed: 0 });
-        } else {
-          showToast(typeof data?.error === 'string' ? data.error : 'url import failed', 'error');
-        }
-      } catch {
-        showToast('url import failed', 'error');
+        await enqueueUrl(url);
+        void processQueue();
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'url import failed', 'error');
       }
     },
-    [onUploadComplete],
+    [enqueueUrl, processQueue],
   );
 
   // Remove file from list

@@ -153,6 +153,7 @@ model UploadIdempotency {
   @@unique([ownerUserId, key], name: "upload_idempotency_owner_key")
   @@index([leaseExpiresAt])
   @@index([status, retainedUntil])
+  @@index([status, leaseExpiresAt])
   @@map("upload_idempotency")
 }
 

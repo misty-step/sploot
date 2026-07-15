@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { zipSync } from 'fflate';
-import { extractZipImages, extractImageUrls, isBundleFile } from '@/lib/upload/bulk-import';
+import { BulkImportLimitError, extractZipImages, extractImageUrls, isBundleFile, MAX_ZIP_ENTRIES } from '@/lib/upload/bulk-import';
 
 function makeZip(entries: Record<string, Uint8Array>): File {
   const zipped = zipSync(entries);
@@ -43,6 +43,13 @@ describe('extractZipImages', () => {
   it('returns an empty list for a zip with no images', async () => {
     const zip = makeZip({ 'readme.md': new TextEncoder().encode('hi') });
     expect(await extractZipImages(zip)).toEqual([]);
+  });
+
+  it('rejects ZIP entry-count expansion before inflate', async () => {
+    const entries = Object.fromEntries(
+      Array.from({ length: MAX_ZIP_ENTRIES + 1 }, (_, index) => [`${index}.png`, PNG]),
+    );
+    await expect(extractZipImages(makeZip(entries))).rejects.toBeInstanceOf(BulkImportLimitError);
   });
 });
 

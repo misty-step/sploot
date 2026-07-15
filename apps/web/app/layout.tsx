@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Bungee, Space_Mono, Baloo_2 } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth/client";
+import { getAuth } from "@/lib/auth/server";
 import { Toaster } from "@/components/ui/toast";
 import { EmbeddingStatusProvider } from "@/contexts/embedding-status-context";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -118,13 +119,28 @@ export const viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // The local Chromium seam uses the same verified QA principal on the
+  // server and client so durable queue ownership cannot collapse accounts.
+  // Normal Clerk deployments do not read this branch.
+  let qaUserId: string | null | undefined;
+  if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE === 'enabled' &&
+      process.env.NEXT_PUBLIC_SPLOOT_PWA_CAPTURE_MODE === 'enabled') {
+    try {
+      qaUserId = (await getAuth()).userId;
+    } catch {
+      // Unauthenticated public routes still render through the normal Clerk
+      // path; only a verified QA request receives a client owner identity.
+      qaUserId = undefined;
+    }
+  }
+
   return (
-    <AuthProvider>
+    <AuthProvider qaUserId={qaUserId}>
       <EmbeddingStatusProvider>
         <html lang="en" suppressHydrationWarning>
           <head>
