@@ -43,6 +43,8 @@ export default defineConfig({
       SPLOOT_PUBLIC_TRUTH_E2E_BUILD: 'true',
       SPLOOT_QA_AUTH_MODE: process.env.SPLOOT_QA_AUTH_MODE ?? 'disabled',
       SPLOOT_QA_AUTH_SECRET: qaSecret,
+      NEXT_PUBLIC_TELEMETRY_ENABLED: 'true',
+      NEXT_PUBLIC_TELEMETRY_ENDPOINT: '/api/telemetry',
     },
   },
 });
