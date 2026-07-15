@@ -444,7 +444,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.user_storage_quotas, public.storage_quota_reservations,
   public.assets, public.asset_embeddings, public.tags, public.asset_tags,
   public.search_logs, public.text_embedding_cache, public.embedding_rate_buckets,
-  public.embedding_rate_leases, public.embedding_provider_circuits
+  public.embedding_rate_leases, public.embedding_provider_circuits, public.library_exports
 TO sploot_stripe_app;
 -- Health may inspect migration names to bind the ready marker to the newest
 -- applied schema version. The runtime remains unable to mutate Prisma's ledger.
