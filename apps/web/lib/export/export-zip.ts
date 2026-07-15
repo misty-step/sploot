@@ -16,7 +16,12 @@ import type { ExportFailure } from './export-policy';
  * is handed to `onComplete` BEFORE the stream closes, so by the time a
  * client sees EOF the server has durably recorded what this part contained.
  * A client abort never reaches `onComplete` — an interrupted part is not
- * "served".
+ * "served" and its egress reservation stays charged.
+ *
+ * Egress honesty: `maxBytes` is the reservation admitted before streaming
+ * began. If the real bytes would exceed it (e.g. a provider object drifted
+ * past its recorded size), the stream errors instead of exceeding the
+ * budget — the cap is mechanical, not estimate-dependent.
  */
 
 export interface ExportZipEntry {
@@ -35,6 +40,8 @@ export interface ExportPartOutcome {
 export interface StreamExportPartZipOptions {
   entries: ExportZipEntry[];
   reader: ExportObjectReader;
+  /** Hard byte cap (the admitted egress reservation); exceeding it errors the stream. */
+  maxBytes?: bigint;
   onComplete?: (outcome: ExportPartOutcome) => void | Promise<void>;
 }
 
@@ -45,7 +52,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 export function streamExportPartZip(options: StreamExportPartZipOptions): ReadableStream<Uint8Array> {
-  const { entries, reader, onComplete } = options;
+  const { entries, reader, maxBytes, onComplete } = options;
   let canceled = false;
 
   async function run(controller: ReadableStreamDefaultController<Uint8Array>): Promise<void> {
@@ -58,7 +65,12 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
         zipError = error;
         return;
       }
-      if (canceled || !chunk || chunk.length === 0) return;
+      if (canceled || zipError || !chunk || chunk.length === 0) return;
+      if (maxBytes !== undefined && BigInt(bytesStreamed + chunk.length) > maxBytes) {
+        // Never hand out a byte past the admitted reservation.
+        zipError = new Error('export part would exceed its egress reservation');
+        return;
+      }
       bytesStreamed += chunk.length;
       controller.enqueue(chunk);
     });

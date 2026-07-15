@@ -6,13 +6,15 @@ import {
 } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
+import { exportAdmissionErrorResponse } from '@/lib/export/export-http';
 import { openExportObject } from '@/lib/export/export-objects';
-import { partFileName } from '@/lib/export/export-policy';
+import { estimatePartEgressBytes, partFileName } from '@/lib/export/export-policy';
 import {
   accessExportForDownload,
   entriesForPart,
-  isEgressExhausted,
   recordPartOutcome,
+  refundExportEgress,
+  reserveExportEgress,
 } from '@/lib/export/export-service';
 import { streamExportPartZip } from '@/lib/export/export-zip';
 import type { RouteContext } from '@/lib/with-observability';
@@ -26,8 +28,15 @@ import logger from '@/lib/logger';
  * so an interrupted download is retried by simply requesting the same part
  * again. The server marks a part "served" (and records any missing or
  * corrupt objects) only after the final byte has been handed to the
- * response stream. Total egress per export is capped; the capability dies
- * with the export's expiry or cancellation.
+ * response stream. The capability dies with the export's expiry or
+ * cancellation.
+ *
+ * Egress bound: a conservative reservation for the whole part is atomically
+ * charged BEFORE the first byte streams (no bytes otherwise), the stream
+ * hard-caps at that reservation, and only a cleanly completed stream settles
+ * the charge down to the actual bytes. Aborted or interrupted deliveries
+ * stay charged in full — that is what keeps the advertised cap true under
+ * concurrency, aborts, and process death.
  */
 
 export const runtime = 'nodejs';
@@ -76,24 +85,26 @@ async function getHandler(
       return NextResponse.json({ error: 'Export part not found' }, { status: 404 });
     }
 
-    if (isEgressExhausted(row)) {
-      return NextResponse.json(
-        {
-          error: 'This export hit its download budget. Start a new export from Settings.',
-          code: 'export_egress_exhausted',
-          retryable: false,
-        },
-        { status: 429 },
-      );
+    // Durable pre-stream admission: no response bytes exist unless the whole
+    // part's conservative reservation fits the budget right now.
+    const reserve = estimatePartEgressBytes(row.partBoundaries[partIndex]);
+    const admission = await reserveExportEgress(row, reserve);
+    if (admission.kind !== 'reserved') {
+      return exportAdmissionErrorResponse(admission);
     }
 
     const entries = await entriesForPart(row, partIndex);
     const stream = streamExportPartZip({
       entries,
       reader: openExportObject,
+      maxBytes: reserve,
       onComplete: async ({ failures, bytesStreamed }) => {
         try {
-          await recordPartOutcome(row.id, partIndex, failures, bytesStreamed);
+          await recordPartOutcome(row.id, partIndex, failures);
+          // Clean completion: settle the conservative reservation down to the
+          // bytes actually streamed. If this is lost (crash, DB blip), the
+          // full charge simply stands — conservative, never unbounded.
+          await refundExportEgress(row.id, reserve - BigInt(bytesStreamed));
         } catch (error) {
           // The bytes were delivered; losing the bookkeeping must not break
           // the download. The part simply stays un-served for retry.

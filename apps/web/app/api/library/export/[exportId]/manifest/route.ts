@@ -6,12 +6,13 @@ import {
 } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
+import { exportAdmissionErrorResponse } from '@/lib/export/export-http';
 import { streamExportManifest } from '@/lib/export/export-manifest';
-import { manifestFileName } from '@/lib/export/export-policy';
+import { estimateManifestEgressBytes, manifestFileName } from '@/lib/export/export-policy';
 import {
   accessExportForDownload,
-  addManifestEgress,
-  isEgressExhausted,
+  refundExportEgress,
+  reserveExportEgress,
 } from '@/lib/export/export-service';
 import type { RouteContext } from '@/lib/with-observability';
 import { withObservability } from '@/lib/with-observability';
@@ -56,22 +57,23 @@ async function getHandler(
     }
 
     const row = access.row;
-    if (isEgressExhausted(row)) {
-      return NextResponse.json(
-        {
-          error: 'This export hit its download budget. Start a new export from Settings.',
-          code: 'export_egress_exhausted',
-          retryable: false,
-        },
-        { status: 429 },
-      );
+
+    // Durable pre-stream admission: the manifest shares the export's egress
+    // budget, so its conservative reservation must fit before any byte
+    // streams; the stream hard-caps at the reservation and a clean completion
+    // settles the charge down to actual bytes (aborts stay charged).
+    const reserve = estimateManifestEgressBytes(row.totalAssets, row.partBoundaries.length);
+    const admission = await reserveExportEgress(row, reserve);
+    if (admission.kind !== 'reserved') {
+      return exportAdmissionErrorResponse(admission);
     }
 
     const stream = streamExportManifest({
       row,
+      maxBytes: reserve,
       onComplete: async (bytesStreamed) => {
         try {
-          await addManifestEgress(row.id, bytesStreamed);
+          await refundExportEgress(row.id, reserve - BigInt(bytesStreamed));
         } catch (error) {
           logger.error('library-export:manifest-egress-failed', error);
         }

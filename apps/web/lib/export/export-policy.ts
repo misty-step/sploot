@@ -28,6 +28,37 @@ export const EXPORT_PART_MAX_BYTES = 256 * 1024 * 1024;
 export const EXPORT_EGRESS_FACTOR = 3;
 export const EXPORT_EGRESS_SLACK_BYTES = 128 * 1024 * 1024;
 
+/**
+ * Egress admission is reservation-based: a conservative, deterministic upper
+ * bound for the response is atomically charged against the budget BEFORE the
+ * first byte streams, and settled down to the actual bytes only on clean
+ * completion. An aborted or interrupted delivery forfeits the settlement and
+ * stays charged in full — that is what makes the cap hold under client
+ * aborts, races, and process death.
+ */
+
+/** Per-entry zip framing overhead: local header + data descriptor + central directory. */
+export const EXPORT_PART_RESERVE_ENTRY_OVERHEAD_BYTES = 1024;
+/** Fixed per-part zip framing overhead (end of central directory + margin). */
+export const EXPORT_PART_RESERVE_BASE_BYTES = 64 * 1024;
+/** Conservative per-asset manifest JSON footprint (fields + tags). */
+export const EXPORT_MANIFEST_RESERVE_PER_ASSET_BYTES = 2048;
+/** Fixed manifest overhead: head object, tag list, failures, margin. */
+export const EXPORT_MANIFEST_RESERVE_BASE_BYTES = 256 * 1024;
+/** Per-part footprint inside the manifest head. */
+export const EXPORT_MANIFEST_RESERVE_PER_PART_BYTES = 512;
+
+/**
+ * Tenant-level rolling window bound: cycling sessions (force / cancel /
+ * supersede / expiry) never mints fresh budget. Within any rolling window a
+ * user's exports may collectively egress at most
+ * `EXPORT_EGRESS_WINDOW_FACTOR × one export allowance` — generous enough to
+ * fully download the library repeatedly (never a data hostage), but a hard
+ * ceiling on what an abuse loop can cost.
+ */
+export const EXPORT_EGRESS_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const EXPORT_EGRESS_WINDOW_FACTOR = 2;
+
 /** Page size for keyset scans while planning and streaming manifests. */
 export const EXPORT_SCAN_PAGE_SIZE = 1000;
 
@@ -169,6 +200,37 @@ export function exportEgressAllowance(totalOriginalBytes: bigint | number): bigi
   return (
     BigInt(totalOriginalBytes) * BigInt(EXPORT_EGRESS_FACTOR) +
     BigInt(EXPORT_EGRESS_SLACK_BYTES)
+  );
+}
+
+/** Rolling-window tenant allowance; see EXPORT_EGRESS_WINDOW_MS. */
+export function exportEgressWindowAllowance(totalOriginalBytes: bigint | number): bigint {
+  return exportEgressAllowance(totalOriginalBytes) * BigInt(EXPORT_EGRESS_WINDOW_FACTOR);
+}
+
+/**
+ * Deterministic conservative upper bound for streaming one zip part.
+ * Store-mode zip = raw bytes + per-entry framing + fixed framing, so this
+ * always dominates the real response size; the stream hard-caps at it.
+ */
+export function estimatePartEgressBytes(boundary: ExportPartBoundary): bigint {
+  return (
+    BigInt(boundary.bytes) +
+    BigInt(boundary.count) * BigInt(EXPORT_PART_RESERVE_ENTRY_OVERHEAD_BYTES) +
+    BigInt(EXPORT_PART_RESERVE_BASE_BYTES)
+  );
+}
+
+/**
+ * Deterministic conservative upper bound for streaming the manifest. The
+ * per-asset constant dominates the serialized entry (fields, checksums,
+ * timestamps, tags); the stream hard-caps at the total.
+ */
+export function estimateManifestEgressBytes(totalAssets: number, partCount: number): bigint {
+  return (
+    BigInt(EXPORT_MANIFEST_RESERVE_BASE_BYTES) +
+    BigInt(totalAssets) * BigInt(EXPORT_MANIFEST_RESERVE_PER_ASSET_BYTES) +
+    BigInt(partCount) * BigInt(EXPORT_MANIFEST_RESERVE_PER_PART_BYTES)
   );
 }
 

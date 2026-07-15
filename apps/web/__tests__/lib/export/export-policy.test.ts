@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
+  EXPORT_EGRESS_WINDOW_FACTOR,
+  EXPORT_EGRESS_WINDOW_MS,
+  EXPORT_MANIFEST_RESERVE_BASE_BYTES,
+  EXPORT_MANIFEST_RESERVE_PER_ASSET_BYTES,
   EXPORT_MANIFEST_VERSION,
   EXPORT_PART_MAX_BYTES,
+  EXPORT_PART_RESERVE_BASE_BYTES,
+  EXPORT_PART_RESERVE_ENTRY_OVERHEAD_BYTES,
   EXPORT_TTL_MS,
   archivePathFor,
   computeCompleteness,
+  estimateManifestEgressBytes,
+  estimatePartEgressBytes,
   exportEgressAllowance,
+  exportEgressWindowAllowance,
   flattenFailures,
   isExportExpired,
   partFileName,
@@ -127,6 +136,49 @@ describe('export policy', () => {
   it('bounds egress to a small multiple of the library size', () => {
     const allowance = exportEgressAllowance(BigInt(1000));
     expect(allowance).toBe(BigInt(3000) + BigInt(128 * 1024 * 1024));
+  });
+
+  describe('egress reservations', () => {
+    it('reserves a deterministic, conservative upper bound for a part', () => {
+      const boundary = { index: 0, afterId: null, count: 3, bytes: 1_000_000 };
+      const reserve = estimatePartEgressBytes(boundary);
+      expect(reserve).toBe(
+        BigInt(1_000_000) +
+          BigInt(3 * EXPORT_PART_RESERVE_ENTRY_OVERHEAD_BYTES) +
+          BigInt(EXPORT_PART_RESERVE_BASE_BYTES),
+      );
+      // Conservative: always at least the raw entry bytes.
+      expect(reserve > BigInt(boundary.bytes)).toBe(true);
+      // Deterministic: same boundary, same reservation.
+      expect(estimatePartEgressBytes(boundary)).toBe(reserve);
+    });
+
+    it('reserves a deterministic, conservative upper bound for the manifest', () => {
+      const reserve = estimateManifestEgressBytes(100, 2);
+      expect(reserve).toBe(
+        BigInt(EXPORT_MANIFEST_RESERVE_BASE_BYTES) +
+          BigInt(100 * EXPORT_MANIFEST_RESERVE_PER_ASSET_BYTES) +
+          BigInt(2 * 512),
+      );
+      // Even an empty library gets a positive reservation for the head.
+      expect(estimateManifestEgressBytes(0, 0) > BigInt(0)).toBe(true);
+    });
+
+    it('bounds tenant egress over a rolling window to a fixed multiple of one export allowance', () => {
+      expect(EXPORT_EGRESS_WINDOW_MS).toBe(24 * 60 * 60 * 1000);
+      expect(EXPORT_EGRESS_WINDOW_FACTOR).toBe(2);
+      expect(exportEgressWindowAllowance(BigInt(1000))).toBe(
+        exportEgressAllowance(BigInt(1000)) * BigInt(2),
+      );
+    });
+
+    it('a part reservation always fits a fresh export allowance', () => {
+      // Worst case: one part carrying the entire library.
+      const boundary = { index: 0, afterId: null, count: 100_000, bytes: 256 * 1024 * 1024 };
+      expect(
+        estimatePartEgressBytes(boundary) <= exportEgressAllowance(BigInt(boundary.bytes)),
+      ).toBe(true);
+    });
   });
 
   it('expires exports strictly after expiresAt', () => {

@@ -133,15 +133,45 @@ const fakePrisma = vi.hoisted(() => {
         return { ...row };
       },
       updateMany: async ({ where, data }: any) => {
+        // Mirrors documented Prisma/Postgres semantics: filters (including
+        // comparison operators) and atomic increment/decrement apply per row.
+        // The body is synchronous, so like a row-locked UPDATE it can never
+        // interleave with another updateMany mid-application.
         let count = 0;
         for (const row of state.exports.values()) {
           if (where.id && row.id !== where.id) continue;
           if (where.ownerUserId && row.ownerUserId !== where.ownerUserId) continue;
           if (where.status && row.status !== where.status) continue;
-          Object.assign(row, data, { updatedAt: new Date() });
+          if (where.expiresAt?.gt !== undefined && !(row.expiresAt > where.expiresAt.gt)) continue;
+          if (where.egressBytes?.lte !== undefined && !(row.egressBytes <= where.egressBytes.lte))
+            continue;
+          if (where.egressBytes?.gte !== undefined && !(row.egressBytes >= where.egressBytes.gte))
+            continue;
+          const applied: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(data)) {
+            if (value && typeof value === 'object' && 'increment' in (value as object)) {
+              applied[key] = (row as any)[key] + (value as any).increment;
+            } else if (value && typeof value === 'object' && 'decrement' in (value as object)) {
+              applied[key] = (row as any)[key] - (value as any).decrement;
+            } else {
+              applied[key] = value;
+            }
+          }
+          Object.assign(row, applied, { updatedAt: new Date() });
           count += 1;
         }
         return { count };
+      },
+      aggregate: async ({ where }: any) => {
+        let sum: bigint | null = null;
+        for (const row of state.exports.values()) {
+          if (where.ownerUserId && row.ownerUserId !== where.ownerUserId) continue;
+          if (where.id?.not && row.id === where.id.not) continue;
+          if (where.updatedAt?.gte !== undefined && !(row.updatedAt >= where.updatedAt.gte))
+            continue;
+          sum = (sum ?? BigInt(0)) + row.egressBytes;
+        }
+        return { _sum: { egressBytes: sum } };
       },
       deleteMany: async ({ where }: any) => {
         let count = 0;
@@ -198,7 +228,14 @@ import { GET as listGet, POST as createPost } from '@/app/api/library/export/rou
 import { DELETE as exportDelete, GET as statusGet } from '@/app/api/library/export/[exportId]/route';
 import { GET as partGet } from '@/app/api/library/export/[exportId]/parts/[partIndex]/route';
 import { GET as manifestGet } from '@/app/api/library/export/[exportId]/manifest/route';
-import { EXPORT_TTL_MS, exportEgressAllowance } from '@/lib/export/export-policy';
+import {
+  EXPORT_TTL_MS,
+  estimateManifestEgressBytes,
+  estimatePartEgressBytes,
+  exportEgressAllowance,
+  exportEgressWindowAllowance,
+  type ExportPartBoundary,
+} from '@/lib/export/export-policy';
 
 const USER = 'user-owner';
 const OTHER = 'user-other';
@@ -527,6 +564,169 @@ describe('GET /api/library/export/:exportId/parts/:partIndex', () => {
   });
 });
 
+describe('egress bound — durable reservation admission', () => {
+  function partReserve(created: any): bigint {
+    const row = state.exports.get(created.id)!;
+    return estimatePartEgressBytes(row.partBoundaries[0] as ExportPartBoundary);
+  }
+
+  async function getPart(created: any, index = 0) {
+    return partGet(
+      request(`/api/library/export/${created.id}/parts/${index}`),
+      ctx({ exportId: created.id, partIndex: String(index) }),
+    );
+  }
+
+  async function getManifest(created: any) {
+    return manifestGet(
+      request(`/api/library/export/${created.id}/manifest`),
+      ctx({ exportId: created.id }),
+    );
+  }
+
+  it('charges the reservation before streaming and settles to actual bytes on clean completion', async () => {
+    seedAsset('asset-a', USER, new Uint8Array(1024).fill(3));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+
+    const response = await getPart(created);
+    expect(response.status).toBe(200);
+    const zipBytes = new Uint8Array(await response.arrayBuffer());
+
+    // Fully-delivered part: the conservative reservation was refunded down to
+    // the exact bytes streamed — no double-charge, no free bytes.
+    expect(row.egressBytes).toBe(BigInt(zipBytes.length));
+    expect(row.egressBytes > BigInt(0)).toBe(true);
+  });
+
+  it('keeps the full reservation charged when the client aborts mid-stream', async () => {
+    seedAsset('asset-a', USER, new Uint8Array(256 * 1024).fill(7));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+    const reserve = partReserve(created);
+
+    const response = await getPart(created);
+    expect(response.status).toBe(200);
+    await response.body!.cancel();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    // Aborted delivery: the reservation stays spent and the part is not served.
+    expect(row.egressBytes).toBe(reserve);
+    expect(row.servedParts).toEqual([]);
+  });
+
+  it('admits exactly to the boundary and refuses one byte beyond it', async () => {
+    seedAsset('asset-a', USER, new Uint8Array(100).fill(1));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+    const allowance = exportEgressAllowance(row.totalOriginalBytes);
+    const reserve = partReserve(created);
+
+    // One byte past the exact fit: refused before any bytes stream.
+    row.egressBytes = allowance - reserve + BigInt(1);
+    let response = await getPart(created);
+    expect(response.status).toBe(429);
+    expect((await response.json()).code).toBe('export_egress_exhausted');
+
+    // Exact fit: admitted.
+    row.egressBytes = allowance - reserve;
+    response = await getPart(created);
+    expect(response.status).toBe(200);
+    await response.arrayBuffer();
+    expect(row.egressBytes <= allowance).toBe(true);
+  });
+
+  it('concurrent part requests cannot collectively reserve beyond the allowance', async () => {
+    seedAsset('asset-a', USER, new Uint8Array(100).fill(1));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+    const allowance = exportEgressAllowance(row.totalOriginalBytes);
+    row.egressBytes = allowance - partReserve(created); // budget fits exactly one
+
+    const [first, second] = await Promise.all([getPart(created), getPart(created)]);
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([200, 429]);
+    for (const response of [first, second]) {
+      if (response.status === 200) await response.arrayBuffer();
+    }
+    expect(row.egressBytes <= allowance).toBe(true);
+  });
+
+  it('mixed manifest and part admissions share one budget and cannot jointly exceed it', async () => {
+    seedAsset('asset-a', USER, new Uint8Array(100).fill(1));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+    const allowance = exportEgressAllowance(row.totalOriginalBytes);
+    const manifestReserve = estimateManifestEgressBytes(row.totalAssets, row.partBoundaries.length);
+    // Headroom fits either request alone, but not both.
+    row.egressBytes = allowance - partReserve(created) - manifestReserve + BigInt(1);
+
+    const [part, manifest] = await Promise.all([getPart(created), getManifest(created)]);
+    const statuses = [part.status, manifest.status].sort();
+    expect(statuses).toEqual([200, 429]);
+    for (const response of [part, manifest]) {
+      if (response.status === 200) await response.arrayBuffer();
+    }
+    expect(row.egressBytes <= allowance).toBe(true);
+  });
+
+  it('manifest downloads settle to actual bytes like parts do', async () => {
+    seedAsset('asset-a', USER, new Uint8Array([1, 2, 3]));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+
+    const response = await getManifest(created);
+    expect(response.status).toBe(200);
+    const body = await response.arrayBuffer();
+    expect(row.egressBytes).toBe(BigInt(body.byteLength));
+  });
+
+  it('lifecycle cycling cannot mint fresh egress: the rolling tenant window refuses further downloads', async () => {
+    seedAsset('asset-a', USER, new Uint8Array(100).fill(1));
+    // Two prior sessions in the window, each fully spent to the per-export cap.
+    const first = await createExport();
+    const firstRow = state.exports.get(first.id)!;
+    firstRow.egressBytes = exportEgressAllowance(firstRow.totalOriginalBytes);
+    firstRow.status = 'superseded';
+    firstRow.updatedAt = new Date();
+
+    const second = await createExport();
+    const secondRow = state.exports.get(second.id)!;
+    secondRow.egressBytes = exportEgressAllowance(secondRow.totalOriginalBytes);
+    secondRow.status = 'superseded';
+    secondRow.updatedAt = new Date();
+
+    // Window allowance = 2 × per-export allowance: already fully consumed.
+    const third = await createExport();
+    expect(
+      exportEgressWindowAllowance(secondRow.totalOriginalBytes),
+    ).toBe(exportEgressAllowance(secondRow.totalOriginalBytes) * BigInt(2));
+
+    let response = await getPart(third);
+    expect(response.status).toBe(429);
+    expect((await response.json()).code).toBe('export_egress_window_exhausted');
+
+    response = await getManifest(third);
+    expect(response.status).toBe(429);
+    expect((await response.json()).code).toBe('export_egress_window_exhausted');
+  });
+
+  it('the window slides: export never becomes permanently unavailable and data is never held hostage', async () => {
+    seedAsset('asset-a', USER, new Uint8Array(100).fill(1));
+    const first = await createExport();
+    const firstRow = state.exports.get(first.id)!;
+    firstRow.egressBytes = exportEgressAllowance(firstRow.totalOriginalBytes) * BigInt(2);
+    firstRow.status = 'superseded';
+    // Spent long ago — outside the rolling window.
+    firstRow.updatedAt = new Date(Date.now() - 25 * 60 * 60 * 1000);
+
+    const fresh = await createExport();
+    const response = await getPart(fresh);
+    expect(response.status).toBe(200);
+    await response.arrayBuffer();
+  });
+});
+
 describe('GET /api/library/export/:exportId/manifest', () => {
   it('streams a versioned manifest with complete portable metadata', async () => {
     const a = new Uint8Array([1, 2, 3, 4]);
@@ -589,6 +789,16 @@ describe('GET /api/library/export/:exportId/manifest', () => {
       { assetId: 'asset-a', archivePath: 'assets/asset-a.png', reason: 'object_missing' },
     ]);
     expect(manifest.totals.failedObjects).toBe(1);
+  });
+
+  it('errors instead of streaming past its egress reservation', async () => {
+    seedAsset('asset-a', USER, new Uint8Array([1]));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+
+    const { streamExportManifest } = await import('@/lib/export/export-manifest');
+    const stream = streamExportManifest({ row: row as any, maxBytes: BigInt(16) });
+    await expect(new Response(stream).arrayBuffer()).rejects.toThrow();
   });
 
   it('is tenant-scoped and honors expiry', async () => {

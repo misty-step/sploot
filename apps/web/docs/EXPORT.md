@@ -28,10 +28,23 @@ rules the endpoints enforce.
   creation (HTTP `410`), and immediately on cancel. Tenant-scoped: only the
   owner's session can resolve an export id; provider URLs never reach the
   client, so there are no signed URLs to go stale.
-- **Cost bound.** Total egress per export is capped at
-  `3 × totalOriginalBytes + 128 MB` (covers legitimate retries and manifest
-  downloads). Beyond that: HTTP `429 export_egress_exhausted`; start a fresh
-  export.
+- **Cost bound.** Egress is admitted by *reservation*, not counted after the
+  fact. Before the first byte of a part or the manifest streams, a
+  conservative upper bound for the whole response is atomically charged
+  against the export's budget (`3 × totalOriginalBytes + 128 MB`); if it
+  doesn't fit, the request is refused (`429 export_egress_exhausted`) and no
+  bytes stream. A cleanly completed download settles its charge down to the
+  bytes actually streamed; an aborted or interrupted download keeps the full
+  reservation — interruptions are exactly what the retry headroom is for.
+  Streams hard-cap at their reservation, so a size-drifted object can never
+  stream past the budget.
+- **Tenant window bound.** Restarting sessions (force / cancel / expiry)
+  never mints fresh budget: across a rolling 24-hour window, all of a user's
+  export sessions may collectively egress at most `2 ×` one export allowance
+  (`6 × totalOriginalBytes + 256 MB`). Beyond that:
+  `429 export_egress_window_exhausted` (retryable — the window slides, so a
+  full export is always possible again; data is never held hostage and there
+  is no billing gate).
 - **Always available.** Export never checks storage quota, billing state, or
   upload runtime gates. Over-limit, delinquent, and canceled accounts export
   normally (VISION.md: no data hostage-taking).
@@ -121,8 +134,9 @@ know.
 
 | Situation | Behavior |
 | --- | --- |
-| Download interrupted | Re-request the same part; it is idempotent. |
+| Download interrupted | Re-request the same part; it is idempotent. The interrupted attempt's reservation stays spent — the `3×` budget exists to absorb this. |
 | Object missing at the provider | Entry skipped, recorded in `failures`; the part still serves everything else. |
 | Clean retry of a previously failed part | That part's failure list is replaced wholesale — recovered objects clear their failure records. |
 | Export expired / canceled | `410` with `export_expired` / `export_unavailable`; start a new export. |
-| Egress cap reached | `429 export_egress_exhausted`; start a new export. |
+| Per-export egress cap reached | `429 export_egress_exhausted`; start a new export (subject to the rolling window). |
+| Rolling 24h window cap reached | `429 export_egress_window_exhausted`; retryable — wait for the window to slide. |

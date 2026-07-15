@@ -23,6 +23,8 @@ import type { ExportRowData } from './export-service';
 
 export interface StreamExportManifestOptions {
   row: ExportRowData;
+  /** Hard byte cap (the admitted egress reservation); exceeding it errors the stream. */
+  maxBytes?: bigint;
   onComplete?: (bytesStreamed: number) => void | Promise<void>;
 }
 
@@ -49,7 +51,7 @@ function requireDb(): NonNullable<typeof prisma> {
 export function streamExportManifest(
   options: StreamExportManifestOptions,
 ): ReadableStream<Uint8Array> {
-  const { row, onComplete } = options;
+  const { row, maxBytes, onComplete } = options;
   const encoder = new TextEncoder();
   let canceled = false;
 
@@ -60,6 +62,10 @@ export function streamExportManifest(
     const emit = (text: string) => {
       if (canceled) return;
       const chunk = encoder.encode(text);
+      if (maxBytes !== undefined && BigInt(bytesStreamed + chunk.length) > maxBytes) {
+        // Never hand out a byte past the admitted reservation.
+        throw new Error('export manifest would exceed its egress reservation');
+      }
       bytesStreamed += chunk.length;
       controller.enqueue(chunk);
     };

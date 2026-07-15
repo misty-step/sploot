@@ -1,12 +1,14 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import {
+  EXPORT_EGRESS_WINDOW_MS,
   EXPORT_MANIFEST_VERSION,
   EXPORT_SCAN_PAGE_SIZE,
   EXPORT_TTL_MS,
   archivePathFor,
   computeCompleteness,
   exportEgressAllowance,
+  exportEgressWindowAllowance,
   flattenFailures,
   isExportExpired,
   partFileName,
@@ -63,7 +65,7 @@ export interface LibraryExportView {
   failures: ExportFailure[];
   complete: boolean;
   incompleteReasons: string[];
-  egress: { usedBytes: number; allowanceBytes: number };
+  egress: { usedBytes: number; allowanceBytes: number; windowAllowanceBytes: number };
   downloads: { status: string; manifest: string; parts: string[] };
 }
 
@@ -145,6 +147,7 @@ export function toExportView(row: ExportRowData, now: Date = new Date()): Librar
     egress: {
       usedBytes: Number(row.egressBytes),
       allowanceBytes: Number(exportEgressAllowance(row.totalOriginalBytes)),
+      windowAllowanceBytes: Number(exportEgressWindowAllowance(row.totalOriginalBytes)),
     },
     downloads: {
       status: base,
@@ -279,8 +282,90 @@ export async function accessExportForDownload(
   return { kind: 'ok', row };
 }
 
-export function isEgressExhausted(row: ExportRowData): boolean {
-  return row.egressBytes >= exportEgressAllowance(row.totalOriginalBytes);
+export type ExportEgressAdmission =
+  | { kind: 'reserved'; reservedBytes: bigint }
+  | { kind: 'refused'; code: 'export_egress_exhausted' | 'export_egress_window_exhausted' }
+  | { kind: 'gone' };
+
+/**
+ * Durable, atomic pre-stream egress admission.
+ *
+ * Charges `reserveBytes` against the export's budget in ONE conditional
+ * UPDATE — Postgres serializes concurrent updates on the row and re-checks
+ * the predicate after each lock wait, so concurrent part/manifest admissions
+ * can never collectively exceed the allowance. The reservation is the
+ * charge: an aborted delivery simply keeps it (settle happens only on clean
+ * completion via {@link refundExportEgress}), which makes the bound hold
+ * across client aborts, retries, and process death.
+ *
+ * Two ceilings apply, and the row may only grow to the lower one:
+ * - per-export: `exportEgressAllowance(totalOriginalBytes)`
+ * - tenant window: `exportEgressWindowAllowance(...)` minus what the user's
+ *   OTHER export sessions egressed inside the rolling window. Those rows are
+ *   immutable-upward once no longer active (only the single active session
+ *   can reserve; settlements only decrease), so reading their sum before the
+ *   conditional UPDATE is race-free in the conservative direction.
+ */
+export async function reserveExportEgress(
+  row: ExportRowData,
+  reserveBytes: bigint,
+  now: Date = new Date(),
+): Promise<ExportEgressAdmission> {
+  const db = requireDb();
+  const perExportAllowance = exportEgressAllowance(row.totalOriginalBytes);
+  const windowAllowance = exportEgressWindowAllowance(row.totalOriginalBytes);
+  const windowStart = new Date(now.getTime() - EXPORT_EGRESS_WINDOW_MS);
+
+  const others = await db.libraryExport.aggregate({
+    _sum: { egressBytes: true },
+    where: {
+      ownerUserId: row.ownerUserId,
+      id: { not: row.id },
+      updatedAt: { gte: windowStart },
+    },
+  });
+  const windowSpentElsewhere = others._sum.egressBytes ?? BigInt(0);
+  const windowHeadroom = windowAllowance - windowSpentElsewhere;
+  const ceiling = perExportAllowance < windowHeadroom ? perExportAllowance : windowHeadroom;
+
+  const admitted = await db.libraryExport.updateMany({
+    where: {
+      id: row.id,
+      status: 'active',
+      expiresAt: { gt: now },
+      egressBytes: { lte: ceiling - reserveBytes },
+    },
+    data: { egressBytes: { increment: reserveBytes } },
+  });
+  if (admitted.count === 1) {
+    return { kind: 'reserved', reservedBytes: reserveBytes };
+  }
+
+  // Refused — classify against fresh state (informational only; the refusal
+  // itself was decided atomically above).
+  const fresh = await getOwnedExport(row.ownerUserId, row.id);
+  if (!fresh || fresh.status !== 'active' || isExportExpired(fresh.expiresAt, now)) {
+    return { kind: 'gone' };
+  }
+  if (fresh.egressBytes + reserveBytes > perExportAllowance) {
+    return { kind: 'refused', code: 'export_egress_exhausted' };
+  }
+  return { kind: 'refused', code: 'export_egress_window_exhausted' };
+}
+
+/**
+ * Settle a reservation down to the bytes actually streamed, on clean
+ * completion only. Each stream refunds at most once and at most its own
+ * reservation, so the counter can never go negative or hand out free bytes;
+ * a lost refund (crash, abort) just leaves the conservative full charge.
+ */
+export async function refundExportEgress(exportId: string, refundBytes: bigint): Promise<void> {
+  if (refundBytes <= BigInt(0)) return;
+  const db = requireDb();
+  await db.libraryExport.updateMany({
+    where: { id: exportId, egressBytes: { gte: refundBytes } },
+    data: { egressBytes: { decrement: refundBytes } },
+  });
 }
 
 /** Resolve the concrete asset entries for one part of the frozen snapshot. */
@@ -318,14 +403,15 @@ export async function entriesForPart(
 
 /**
  * Atomically record the outcome of a fully-streamed part: mark it served
- * (idempotently), replace that part's failure list wholesale (so a clean
- * retry clears earlier failures), and account the egress.
+ * (idempotently) and replace that part's failure list wholesale (so a clean
+ * retry clears earlier failures). Egress is never touched here — it was
+ * charged at admission ({@link reserveExportEgress}) and is settled
+ * separately ({@link refundExportEgress}).
  */
 export async function recordPartOutcome(
   exportId: string,
   partIndex: number,
   failures: ExportFailure[],
-  bytesStreamed: number,
 ): Promise<void> {
   const db = requireDb();
   const indexJson = JSON.stringify(partIndex);
@@ -340,18 +426,7 @@ export async function recordPartOutcome(
         ELSE "served_parts" || ${indexJson}::jsonb
       END,
       "failures" = jsonb_set("failures", ARRAY[${partKey}], ${failuresJson}::jsonb, true),
-      "egress_bytes" = "egress_bytes" + ${BigInt(bytesStreamed)},
       "updated_at" = NOW()
-    WHERE "id" = ${exportId}
-  `;
-}
-
-/** Account manifest bytes against the same egress allowance. */
-export async function addManifestEgress(exportId: string, bytes: number): Promise<void> {
-  const db = requireDb();
-  await db.$executeRaw`
-    UPDATE "library_exports"
-    SET "egress_bytes" = "egress_bytes" + ${BigInt(bytes)}, "updated_at" = NOW()
     WHERE "id" = ${exportId}
   `;
 }

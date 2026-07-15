@@ -6,7 +6,13 @@ import {
   createOrReuseExport,
   getOwnedExport,
   recordPartOutcome,
+  refundExportEgress,
+  reserveExportEgress,
 } from '@/lib/export/export-service';
+import {
+  exportEgressAllowance,
+  exportEgressWindowAllowance,
+} from '@/lib/export/export-policy';
 
 /**
  * Database-backed integration tests for library export persistence: the
@@ -135,12 +141,12 @@ describe.skipIf(!dbAvailable)('library export persistence (DB)', () => {
     expect(actives[0].id).toBe(second.id);
   });
 
-  it('records part outcomes atomically: served, failures, egress — and clears failures on a clean retry', async () => {
+  it('records part outcomes atomically: served + failures — and clears failures on a clean retry', async () => {
     const { export: created } = await createOrReuseExport(OWNER);
 
     await recordPartOutcome(created.id, 0, [
       { assetId: 'export-int-asset-1', archivePath: 'assets/export-int-asset-1.png', reason: 'object_missing' },
-    ], 123);
+    ]);
 
     let row = await getOwnedExport(OWNER, created.id);
     expect(row).not.toBeNull();
@@ -148,15 +154,119 @@ describe.skipIf(!dbAvailable)('library export persistence (DB)', () => {
     expect(row!.failures).toEqual({
       '0': [{ assetId: 'export-int-asset-1', archivePath: 'assets/export-int-asset-1.png', reason: 'object_missing' }],
     });
-    expect(row!.egressBytes).toBe(BigInt(123));
+    // Egress is charged at admission time, never by outcome bookkeeping.
+    expect(row!.egressBytes).toBe(BigInt(0));
 
     // Serving the same part again must not duplicate the served marker,
     // and a clean retry clears the previously recorded failures.
-    await recordPartOutcome(created.id, 0, [], 50);
+    await recordPartOutcome(created.id, 0, []);
     row = await getOwnedExport(OWNER, created.id);
     expect(row!.servedParts).toEqual([0]);
     expect(row!.failures).toEqual({ '0': [] });
-    expect(row!.egressBytes).toBe(BigInt(173));
+    expect(row!.egressBytes).toBe(BigInt(0));
+  });
+
+  describe('egress reservation under production-shaped concurrency', () => {
+    it('concurrent reservations serialize on the row and never collectively exceed the allowance', async () => {
+      const { export: created } = await createOrReuseExport(OWNER);
+      const row = (await getOwnedExport(OWNER, created.id))!;
+      const allowance = exportEgressAllowance(row.totalOriginalBytes);
+      // Pick a reservation size where exactly 3 of 8 concurrent requests fit.
+      const reserve = allowance / BigInt(3);
+
+      const results = await Promise.all(
+        Array.from({ length: 8 }, () => reserveExportEgress(row, reserve)),
+      );
+      const admitted = results.filter((result) => result.kind === 'reserved');
+      expect(admitted).toHaveLength(3);
+
+      const after = (await getOwnedExport(OWNER, created.id))!;
+      expect(after.egressBytes).toBe(reserve * BigInt(3));
+      expect(after.egressBytes <= allowance).toBe(true);
+    });
+
+    it('admits exactly to the boundary, refuses beyond it, and classifies the refusal', async () => {
+      const { export: created } = await createOrReuseExport(OWNER);
+      const row = (await getOwnedExport(OWNER, created.id))!;
+      const allowance = exportEgressAllowance(row.totalOriginalBytes);
+
+      const exact = await reserveExportEgress(row, allowance);
+      expect(exact.kind).toBe('reserved');
+
+      const past = await reserveExportEgress(row, BigInt(1));
+      expect(past).toEqual({ kind: 'refused', code: 'export_egress_exhausted' });
+    });
+
+    it('refunds settle to actual bytes, can never double-apply below zero, and cannot exceed the charge', async () => {
+      const { export: created } = await createOrReuseExport(OWNER);
+      const row = (await getOwnedExport(OWNER, created.id))!;
+
+      const reserved = BigInt(10_000);
+      expect((await reserveExportEgress(row, reserved)).kind).toBe('reserved');
+      await refundExportEgress(created.id, reserved - BigInt(1_234));
+      let after = (await getOwnedExport(OWNER, created.id))!;
+      expect(after.egressBytes).toBe(BigInt(1_234));
+
+      // A refund larger than the remaining charge is refused wholesale rather
+      // than driving the counter negative.
+      await refundExportEgress(created.id, BigInt(999_999));
+      after = (await getOwnedExport(OWNER, created.id))!;
+      expect(after.egressBytes).toBe(BigInt(1_234));
+
+      // Zero-byte refunds are a no-op.
+      await refundExportEgress(created.id, BigInt(0));
+      after = (await getOwnedExport(OWNER, created.id))!;
+      expect(after.egressBytes).toBe(BigInt(1_234));
+    });
+
+    it('reservation requires a live capability: canceled and expired sessions refuse admission', async () => {
+      const { export: created } = await createOrReuseExport(OWNER);
+      const row = (await getOwnedExport(OWNER, created.id))!;
+      await cancelExport(OWNER, created.id);
+      const canceled = await reserveExportEgress(row, BigInt(1));
+      expect(canceled.kind).toBe('gone');
+
+      const { export: fresh } = await createOrReuseExport(OWNER, { force: true });
+      await prisma!.libraryExport.update({
+        where: { id: fresh.id },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+      const expiredRow = (await getOwnedExport(OWNER, fresh.id))!;
+      const expired = await reserveExportEgress(expiredRow, BigInt(1));
+      expect(expired.kind).toBe('gone');
+    });
+
+    it('force/cancel/supersede cycling is bounded by the rolling tenant window', async () => {
+      // Session 1: spend the full per-export allowance, then supersede.
+      const { export: first } = await createOrReuseExport(OWNER);
+      const firstRow = (await getOwnedExport(OWNER, first.id))!;
+      const allowance = exportEgressAllowance(firstRow.totalOriginalBytes);
+      expect((await reserveExportEgress(firstRow, allowance)).kind).toBe('reserved');
+
+      // Session 2 (force): window still has exactly one allowance of headroom.
+      const { export: second } = await createOrReuseExport(OWNER, { force: true });
+      const secondRow = (await getOwnedExport(OWNER, second.id))!;
+      expect(exportEgressWindowAllowance(secondRow.totalOriginalBytes)).toBe(
+        allowance * BigInt(2),
+      );
+      expect((await reserveExportEgress(secondRow, allowance)).kind).toBe('reserved');
+
+      // Session 3 (force): the window is fully consumed — no fresh budget.
+      const { export: third } = await createOrReuseExport(OWNER, { force: true });
+      const thirdRow = (await getOwnedExport(OWNER, third.id))!;
+      const refused = await reserveExportEgress(thirdRow, BigInt(1));
+      expect(refused).toEqual({ kind: 'refused', code: 'export_egress_window_exhausted' });
+
+      // The bound is a sliding window, not a padlock: once the old sessions
+      // age out, admission opens again. Simulate the slide directly.
+      await prisma!.$executeRaw`
+        UPDATE "library_exports"
+        SET "updated_at" = NOW() - INTERVAL '25 hours'
+        WHERE "owner_user_id" = ${OWNER} AND "id" <> ${thirdRow.id}
+      `;
+      const reopened = await reserveExportEgress(thirdRow, BigInt(1));
+      expect(reopened.kind).toBe('reserved');
+    });
   });
 
   it('cancel is tenant-scoped and terminal', async () => {

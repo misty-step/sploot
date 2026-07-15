@@ -824,7 +824,7 @@ session and snapshots fresh. At most one active session per user.
     "failures": [],
     "complete": false,
     "incompleteReasons": ["parts_not_fully_downloaded"],
-    "egress": { "usedBytes": 0, "allowanceBytes": 3097222171 },
+    "egress": { "usedBytes": 0, "allowanceBytes": 3097222171, "windowAllowanceBytes": 6194444342 },
     "downloads": {
       "status": "/api/library/export/cm0…",
       "manifest": "/api/library/export/cm0…/manifest",
@@ -856,12 +856,19 @@ Stream one zip part (`application/zip`, attachment). Idempotent: re-request
 the same part to retry an interrupted download. A part is marked served only
 after its final byte was streamed.
 
+Egress is reservation-admitted: a conservative bound for the whole response
+is charged atomically before any byte streams, settled down to actual bytes
+on clean completion, and kept in full if the download is aborted (see
+[`EXPORT.md`](./EXPORT.md)).
+
 **Error Responses:**
 
 - 401: `{"error":"Unauthorized"}`
 - 404: unknown export id, foreign export id, or out-of-range part index
 - 410: `export_expired` | `export_unavailable` (canceled/superseded)
-- 429: `export_egress_exhausted` (per-export download budget spent)
+- 429: `export_egress_exhausted` (per-export download budget spent;
+  `retryable: false`) | `export_egress_window_exhausted` (rolling 24h tenant
+  budget spent; `retryable: true` — the window slides)
 
 #### GET /api/library/export/{exportId}/manifest
 

@@ -155,6 +155,38 @@ describe('streamExportPartZip', () => {
     ]);
   });
 
+  it('errors the stream instead of exceeding its byte reservation, and never reports completion', async () => {
+    // The provider claims 4 bytes but actually holds far more — a size-drifted
+    // object must never stream past the egress reservation admitted up front.
+    const drifted = new Uint8Array(4096).fill(7);
+    const lied = entry('drifted', drifted, { size: 4 });
+    const reader = readerFor({ [lied.url]: drifted });
+
+    let completed = false;
+    const stream = streamExportPartZip({
+      entries: [lied],
+      reader,
+      maxBytes: BigInt(512),
+      onComplete: () => {
+        completed = true;
+      },
+    });
+
+    await expect(collect(stream)).rejects.toThrow(/reservation/i);
+    expect(completed).toBe(false);
+  });
+
+  it('streams normally when the reservation covers the real zip size', async () => {
+    const a = new Uint8Array([1, 2, 3, 4]);
+    const only = entry('asset1', a);
+    const reader = readerFor({ [only.url]: a });
+
+    const zipBytes = await collect(
+      streamExportPartZip({ entries: [only], reader, maxBytes: BigInt(64 * 1024) }),
+    );
+    expect(new Uint8Array(unzipSync(zipBytes)['assets/asset1.png'])).toEqual(a);
+  });
+
   it('produces an empty-but-valid zip when every object is unavailable', async () => {
     const only = entry('gone', new Uint8Array([1]));
     const reader = readerFor({ [only.url]: 'error' });

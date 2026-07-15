@@ -31,6 +31,7 @@ interface ExportView {
   failures: Array<{ assetId: string; archivePath: string; reason: string }>;
   complete: boolean;
   incompleteReasons: string[];
+  egress: { usedBytes: number; allowanceBytes: number; windowAllowanceBytes: number };
   downloads: { status: string; manifest: string; parts: string[] };
 }
 
@@ -256,6 +257,14 @@ export function LibraryExportCard() {
             Download the manifest last — it records exactly which parts were fully
             served and calls out anything missing, so you can prove your backup is
             complete. Your browser may ask permission to download multiple files.
+          </p>
+
+          <p className="text-xs text-muted-foreground">
+            Download budget: {formatBytes(view.egress.usedBytes)} of{' '}
+            {formatBytes(view.egress.allowanceBytes)} used — enough for the whole
+            library about three times over. Interrupted downloads count against it,
+            and restarting the export doesn&apos;t reset it (a rolling 24-hour cap of{' '}
+            {formatBytes(view.egress.windowAllowanceBytes)} applies across sessions).
           </p>
         </div>
       )}
