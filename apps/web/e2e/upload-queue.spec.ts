@@ -246,7 +246,7 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
   const accountB = 'qa-upload-queue-user';
   const accountAKey = await ownerKey(accountA);
   const url = 'https://images.example.test/bookmark.png';
-  const browserBaseURL = baseURL.replace('127.0.0.1', 'localhost');
+  const browserBaseURL = baseURL;
   try {
     context = await browser.browserType().launchPersistentContext(userDataDir, { baseURL: browserBaseURL });
     const signedOut = context.pages()[0] ?? await context.newPage();
