@@ -338,7 +338,6 @@ export class EmbeddingSchedulerService {
           'provider_circuit_open',
           error.retryAfterSec
         );
-        await this.markEmbeddingPending(assetId, errorMessage);
         throw new EmbeddingScheduleError(
           `Embedding generation deferred: ${errorMessage}`,
           true,

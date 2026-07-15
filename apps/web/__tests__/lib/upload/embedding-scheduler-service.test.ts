@@ -8,6 +8,7 @@ import * as db from '@/lib/db';
 import * as embeddings from '@/lib/embeddings';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 import { EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
+import { EmbeddingProviderCircuitOpenError } from '@/lib/embedding-errors';
 import * as nextServer from 'next/server';
 import { acquireEmbeddingProcessing } from '@/lib/embedding-guard';
 
@@ -346,6 +347,20 @@ describe('EmbeddingSchedulerService', () => {
         mockPrisma.$executeRaw = vi.fn().mockResolvedValue(1);
         mockCreateEmbeddingService.mockReturnValue({
           embedImage: vi.fn().mockRejectedValue(new EmbeddingAdmissionError('daily_budget', 3600)),
+        });
+
+        const error = await service.scheduleEmbedding(baseParams).catch((e) => e);
+
+        expect(error).toBeInstanceOf(EmbeddingScheduleError);
+        expect(mockPrisma.$executeRaw).toHaveBeenCalledOnce();
+        expect(mockPrisma.assetEmbedding.upsert).not.toHaveBeenCalled();
+      });
+
+      it('does not issue a legacy pending write after durable circuit deferral succeeds', async () => {
+        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
+        mockPrisma.$executeRaw = vi.fn().mockResolvedValue(1);
+        mockCreateEmbeddingService.mockReturnValue({
+          embedImage: vi.fn().mockRejectedValue(new EmbeddingProviderCircuitOpenError(30)),
         });
 
         const error = await service.scheduleEmbedding(baseParams).catch((e) => e);
