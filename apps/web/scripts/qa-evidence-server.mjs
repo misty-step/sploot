@@ -75,14 +75,15 @@ const server = http.createServer((request, response) => {
   const headers = { ...request.headers };
   delete headers['x-sploot-qa-remote-address'];
   delete headers['x-sploot-qa-proxy-proof'];
-  // The standalone app must build redirects and request URLs against the
-  // public loopback front door. Node otherwise derives Host from the internal
-  // upstream socket, producing localhost:QA_NEXT_PORT redirects that bypass
-  // the signed proof boundary and loop forever in the browser.
+  // The standalone app's auth boundary uses the upstream loopback authority
+  // (`localhost`) for both route and middleware proof validation. Keep that
+  // internal authority consistent; browser-facing redirects are rewritten to
+  // the public front door below.
   const publicHost = host === '::1' ? `[::1]:${publicPort}` : `${host}:${publicPort}`;
-  headers.host = publicHost;
-  headers['x-forwarded-host'] = publicHost;
-  const proof = proxyProof(host, remoteAddress.replace(/^::ffff:/, ''));
+  const upstreamHost = `${appHost === '127.0.0.1' ? 'localhost' : appHost}:${appPort}`;
+  headers.host = upstreamHost;
+  headers['x-forwarded-host'] = upstreamHost;
+  const proof = proxyProof(hostName(upstreamHost), remoteAddress.replace(/^::ffff:/, ''));
   if (proof) headers['x-sploot-qa-proxy-proof'] = proof;
 
   const upstream = http.request({

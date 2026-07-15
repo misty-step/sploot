@@ -5,16 +5,53 @@ import { readFileSync } from 'node:fs';
 const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
 const schema = readFileSync('apps/web/prisma/schema.prisma', 'utf8');
 
-test('CI users fixtures supply the canonical server-managed timestamps', () => {
-  const userModel = schema.match(/model User \{([\s\S]*?)\n\}/)?.[1] ?? '';
-  assert.match(userModel, /createdAt\s+DateTime\s+@default\(now\(\)\)/);
-  assert.match(userModel, /updatedAt\s+DateTime\s+@updatedAt/);
+function timestampContracts(prismaSchema) {
+  return [...prismaSchema.matchAll(/model\s+(\w+)\s+\{([\s\S]*?)\n\}/g)]
+    .map(([, modelName, body]) => {
+      const table = body.match(/@@map\("([^"]+)"\)/)?.[1] ?? `${modelName}s`;
+      const columns = [...body.matchAll(/^\s+(createdAt|updatedAt)\s+DateTime\b([^\n]*)$/gm)]
+        .map(([, fieldName, attributes]) => attributes.match(/@map\("([^"]+)"\)/)?.[1] ?? fieldName);
+      return { modelName, table, columns };
+    })
+    .filter(({ columns }) => columns.length > 0);
+}
 
-  const inserts = [...workflow.matchAll(/INSERT INTO\s+users\s*\(([^)]+)\)/gi)];
-  assert.ok(inserts.length > 0, 'expected at least one synthetic users fixture');
-  for (const match of inserts) {
-    const columns = match[1].replaceAll(/"/g, '').split(',').map((column) => column.trim());
-    assert.ok(columns.includes('createdAt'), `users fixture is missing createdAt: ${match[0]}`);
-    assert.ok(columns.includes('updatedAt'), `users fixture is missing updatedAt: ${match[0]}`);
+function validateCiSqlFixtures(workflowText, prismaSchema) {
+  const contracts = timestampContracts(prismaSchema);
+  const contractByTable = new Map(contracts.map((contract) => [contract.table, contract]));
+  for (const table of ['users', 'assets']) {
+    assert.ok(contractByTable.has(table), `schema must define timestamp contract for ${table}`);
   }
+
+  const inserts = [...workflowText.matchAll(/INSERT INTO\s+(["\w]+)\s*\(([^)]+)\)/gi)];
+  const checkedTables = new Set();
+  for (const match of inserts) {
+    const table = match[1].replaceAll('"', '');
+    const contract = contractByTable.get(table);
+    if (!contract) continue;
+    checkedTables.add(table);
+    const columns = match[2].replaceAll('"', '').split(',').map((column) => column.trim());
+    for (const requiredColumn of contract.columns) {
+      assert.ok(columns.includes(requiredColumn), `${table} fixture is missing ${requiredColumn}: ${match[0]}`);
+    }
+  }
+  assert.ok(checkedTables.has('users'), 'expected at least one synthetic users fixture');
+  assert.ok(checkedTables.has('assets'), 'expected at least one synthetic assets fixture');
+}
+
+test('CI SQL fixtures supply every schema-owned server timestamp', () => {
+  validateCiSqlFixtures(workflow, schema);
+});
+
+test('CI fixture guard rejects a users timestamp omission', () => {
+  const mutated = workflow.replace('"createdAt", "updatedAt"', '"createdAt"');
+  assert.throws(() => validateCiSqlFixtures(mutated, schema), /users fixture is missing updatedAt/);
+});
+
+test('CI fixture guard rejects an assets timestamp omission', () => {
+  const mutated = workflow.replace(
+    'checksum_sha256, "createdAt", "updatedAt"',
+    'checksum_sha256, "createdAt"',
+  );
+  assert.throws(() => validateCiSqlFixtures(mutated, schema), /assets fixture is missing updatedAt/);
 });

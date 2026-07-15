@@ -116,6 +116,32 @@ function assertBuildProvenance(): { manifest: QaProvenanceManifest; manifestDige
 
 test.describe('authenticated seeded gallery', () => {
   test.setTimeout(300_000);
+
+  test('login refreshes the signed cookie before middleware checks /app', async ({ browser, baseURL }) => {
+    const staleHeaderToken = await createQaLocalAuthToken({
+      userId: 'qa-design-user',
+      email: 'qa-design-user@qa.local',
+      secret: qaSecret,
+      expiresInSeconds: 15 * 60,
+    });
+    const context = await browser.newContext();
+    await context.setExtraHTTPHeaders({ 'x-sploot-qa-auth': staleHeaderToken });
+    await context.addCookies([
+      { name: 'sploot_qa_auth', value: staleHeaderToken, url: baseURL },
+    ]);
+
+    const page = await context.newPage();
+    const response = await page.goto('/api/qa-auth/login', {
+      waitUntil: 'domcontentloaded',
+      timeout: 90_000,
+    });
+    expect(response?.status()).toBe(200);
+    await expect(page).toHaveURL(/\/app/);
+    const refreshedCookie = await context.cookies(baseURL);
+    expect(refreshedCookie.find(({ name }) => name === 'sploot_qa_auth')?.value).not.toBe(staleHeaderToken);
+    await context.close();
+  });
+
   test('covers the locked state matrix, keyboard semantics, pagination, and cache', async ({ browser, baseURL }, testInfo) => {
     expect(process.env.PLAYWRIGHT_SERVER_MODE ?? 'production').toBe('production');
     expect(baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/?$/);
