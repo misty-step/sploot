@@ -203,6 +203,7 @@ test('public upload surface durably enqueues metadata without materializing the 
     expect(rows[0]).not.toHaveProperty('fileData');
     expect(await readPayloadIds(page)).toEqual([rows[0].id]);
   } finally {
+    await context.setOffline(false);
     await context.close();
   }
 });
@@ -262,6 +263,7 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     await expect(reopened.getByText(url)).toBeVisible();
     expect(await readRows(reopened, accountAKey)).toHaveLength(2);
   } finally {
+    if (context) await context.setOffline(false);
     await context?.close();
     rmSync(userDataDir, { recursive: true, force: true });
   }
