@@ -130,13 +130,22 @@ export default async function Help() {
               from its detail view on the web app — nothing is locked behind
               a paywall or held hostage.
             </p>
+            <p className="text-muted-foreground mb-3">
+              Want everything at once? <strong className="text-foreground">Settings →
+              Export your library</strong> downloads every original plus a{' '}
+              <code className="text-sm">manifest.json</code> listing all metadata
+              (tags, favorites, checksums, timestamps). Big libraries arrive as
+              zip parts of up to 256&nbsp;MB so an interrupted download only
+              retries one part; links stay valid for 24 hours and you can resume
+              any time within that window. The manifest states explicitly
+              whether your export is complete — including any part you
+              haven&apos;t downloaded yet and any file that couldn&apos;t be
+              fetched — so a partial backup can never silently pose as a full one.
+            </p>
             <p className="text-muted-foreground">
-              What doesn&apos;t exist yet: a single &quot;export everything&quot;
-              action (a zip or archive of your whole library in one click).
-              That&apos;s a real gap against the promise that your memes are
-              never held hostage, and it&apos;s tracked as a follow-up rather
-              than left silent. Until it ships, downloading meme-by-meme is
-              the way out.
+              Exporting works even when you&apos;re over your storage limit,
+              your payment failed, or you canceled — limits stop new uploads,
+              never your way out.
             </p>
           </section>
 

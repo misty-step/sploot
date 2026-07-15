@@ -62,6 +62,7 @@ Protected product API route inventory:
 - `/api/taste/profile`
 - `/api/search`, `/api/search/advanced`
 - `/api/stats`
+- `/api/library/export`, `/api/library/export/{exportId}`, `/api/library/export/{exportId}/parts/{partIndex}`, `/api/library/export/{exportId}/manifest`
 - `/api/tags`, `/api/tags/{tagId}`
 - `/api/analytics/usage`, `/api/telemetry`
 - `/api/cache/stats`, `/api/embeddings/text`, `/api/embeddings/image`, `/api/sse/embedding-updates`
@@ -787,6 +788,86 @@ Return per-user aggregate stats (`assetCount`, `storageBytes`, `storageLimitByte
 - 401: `{"error":"Unauthorized"}`
 - 500: Failed to fetch stats
 - 503: Database not available
+
+---
+
+### Library Export
+
+Complete-library export: every original plus a versioned, portable
+`manifest.json`. Manifest schema, snapshot semantics, retry model, and
+bounds are specified in **[`EXPORT.md`](./EXPORT.md)** — this section is the
+endpoint reference. Session-authenticated only (no upload-token opt-in).
+
+Export deliberately bypasses storage-quota, billing, and upload runtime
+gates: over-limit, delinquent, and canceled accounts export normally.
+
+#### POST /api/library/export
+
+Create the caller's export session, or return the existing active one
+(`reused: true`). Body (optional): `{"force": true}` supersedes the active
+session and snapshots fresh. At most one active session per user.
+
+**Authentication:** Required (session)
+
+**Response (201 created / 200 reused):**
+
+```json
+{
+  "export": {
+    "id": "cm0…",
+    "status": "active",
+    "createdAt": "…", "snapshotAt": "…", "expiresAt": "…",
+    "manifestVersion": "1.0",
+    "totals": { "assets": 1234, "originalBytes": 987654321 },
+    "partCount": 4,
+    "parts": [{ "index": 0, "count": 400, "bytes": 260000000, "served": false, "file": "sploot-export-…-part-001-of-004.zip" }],
+    "failures": [],
+    "complete": false,
+    "incompleteReasons": ["parts_not_fully_downloaded"],
+    "egress": { "usedBytes": 0, "allowanceBytes": 3097222171 },
+    "downloads": {
+      "status": "/api/library/export/cm0…",
+      "manifest": "/api/library/export/cm0…/manifest",
+      "parts": ["/api/library/export/cm0…/parts/0"]
+    }
+  },
+  "reused": false
+}
+```
+
+#### GET /api/library/export
+
+Return the caller's active export session (same shape as above) or
+`{"export": null}` — used to resume an interrupted export.
+
+#### GET /api/library/export/{exportId}
+
+Server-verified status/progress for one export (owner only; 404 otherwise).
+`status` becomes `expired` after `expiresAt`.
+
+#### DELETE /api/library/export/{exportId}
+
+Cancel the export immediately; its download URLs answer 410 afterwards.
+Returns `{"canceled": true|false}`.
+
+#### GET /api/library/export/{exportId}/parts/{partIndex}
+
+Stream one zip part (`application/zip`, attachment). Idempotent: re-request
+the same part to retry an interrupted download. A part is marked served only
+after its final byte was streamed.
+
+**Error Responses:**
+
+- 401: `{"error":"Unauthorized"}`
+- 404: unknown export id, foreign export id, or out-of-range part index
+- 410: `export_expired` | `export_unavailable` (canceled/superseded)
+- 429: `export_egress_exhausted` (per-export download budget spent)
+
+#### GET /api/library/export/{exportId}/manifest
+
+Stream `manifest.json` (`application/json`, attachment). Download it after
+the parts — it records explicit completeness including unserved parts and
+failed/missing objects. Same error contract as parts.
 
 ---
 
