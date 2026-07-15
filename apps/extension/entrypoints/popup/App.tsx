@@ -12,6 +12,7 @@ import {
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
 import { IS_DEV_BUILD } from '../../shared/build-mode'
 import { requestVisibleTabCapture } from '../../shared/capture-messages'
+import { CONTEXT_MENU_SAVE_MESSAGES, type FailedContextMenuSave, type FailedContextMenuSavesResponse } from '../../shared/context-menu-save-messages'
 import { getSaveStatus, onSaveStatusChanged, type SaveStatus } from '../../shared/save-status'
 import { EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
 import { getSplootAppUrl, getSplootSignInUrl } from '../../shared/app-url'
@@ -176,6 +177,16 @@ function SignedInPanel() {
  */
 function LastSaveStrip() {
   const [status, setStatus] = useState<SaveStatus | null>(null)
+  const [failedJobs, setFailedJobs] = useState<FailedContextMenuSave[]>([])
+
+  const refreshFailedJobs = () => {
+    void chrome.runtime.sendMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED })
+      .then(response => {
+        const result = response as FailedContextMenuSavesResponse | undefined
+        setFailedJobs(Array.isArray(result?.jobs) ? result.jobs : [])
+      })
+      .catch(error => console.error('[Popup] Failed to read queued saves', error))
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -184,15 +195,43 @@ function LastSaveStrip() {
         setStatus(current => current ?? stored)
       }
     })
-    const unsubscribe = onSaveStatusChanged(setStatus)
+    refreshFailedJobs()
+    const unsubscribe = onSaveStatusChanged(nextStatus => {
+      setStatus(nextStatus)
+      refreshFailedJobs()
+    })
     return () => {
       cancelled = true
       unsubscribe()
     }
   }, [])
 
-  if (!status) return null
+  const handleQueueAction = (jobId: string, type: typeof CONTEXT_MENU_SAVE_MESSAGES.RETRY | typeof CONTEXT_MENU_SAVE_MESSAGES.DISCARD) => {
+    void chrome.runtime.sendMessage({ type, jobId })
+      .then(() => refreshFailedJobs())
+      .catch(error => console.error('[Popup] Failed to update queued save', error))
+  }
 
+  return (
+    <>
+      {failedJobs.map(job => (
+        <div className="save-strip error queue-failure" role="alert" key={job.id}>
+          <span className="save-dot" aria-hidden="true" />
+          <span className="save-copy">
+            <strong>Save needs attention.</strong> {job.filename}: {job.lastError ?? 'retry limit reached'}
+          </span>
+          <div className="queue-actions">
+            <button onClick={() => handleQueueAction(job.id, CONTEXT_MENU_SAVE_MESSAGES.RETRY)}>Retry</button>
+            <button className="secondary" onClick={() => handleQueueAction(job.id, CONTEXT_MENU_SAVE_MESSAGES.DISCARD)}>Discard</button>
+          </div>
+        </div>
+      ))}
+      {status && <SaveStatusStrip status={status} />}
+    </>
+  )
+}
+
+function SaveStatusStrip({ status }: { status: SaveStatus }) {
   const at = new Date(status.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 
   return (

@@ -394,6 +394,26 @@ button.debug:hover {
   border-color: var(--sploot-red);
 }
 
+.save-strip.queue-failure {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.queue-failure .queue-actions {
+  display: flex;
+  flex: 1 0 100%;
+  gap: 8px;
+  padding-left: 18px;
+}
+
+.queue-failure .queue-actions button {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: var(--font-sm);
+}
+
 /* ── Motion ── */
 
 @keyframes fadeIn {

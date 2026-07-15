@@ -6,8 +6,15 @@
  */
 
 import { IS_DEV_BUILD } from '../../shared/build-mode';
+import { CONTEXT_MENU_SAVE_MESSAGES } from '../../shared/context-menu-save-messages';
 import { runAuthDiagnostics } from './auth-manager';
-import { enqueueContextMenuSave, recoverPendingContextMenuSaves } from './context-menu-save-queue';
+import {
+  discardContextMenuSave,
+  enqueueContextMenuSave,
+  listFailedContextMenuSaves,
+  recoverPendingContextMenuSaves,
+  retryContextMenuSave,
+} from './context-menu-save-queue';
 import { showErrorNotification } from './notifications';
 
 const MENU_ID_SAVE = 'save-to-sploot';
@@ -60,6 +67,40 @@ export function setupContextMenu() {
     return recoverPendingContextMenuSaves().catch(error => {
       console.error('[Background][ContextMenu] Startup recovery failed', error);
     });
+  });
+
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED) {
+      void listFailedContextMenuSaves().then(jobs => {
+        sendResponse({
+          jobs: jobs.map(({ id, filename, createdAt, attempts, lastError }) => ({
+            id,
+            filename,
+            createdAt,
+            attempts,
+            lastError,
+          })),
+        });
+      });
+      return true;
+    }
+
+    if (
+      (message?.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY
+        || message?.type === CONTEXT_MENU_SAVE_MESSAGES.DISCARD)
+      && typeof message.jobId === 'string'
+    ) {
+      const action = message.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY
+        ? retryContextMenuSave(message.jobId)
+        : discardContextMenuSave(message.jobId);
+      void action.then(ok => sendResponse({ ok })).catch(error => {
+        console.error('[Background][ContextMenu] Queue action failed', error);
+        sendResponse({ ok: false });
+      });
+      return true;
+    }
+
+    return false;
   });
 
   // Handle context menu clicks

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { CONTEXT_MENU_SAVE_MESSAGES } from '../../shared/context-menu-save-messages';
 
 const mocks = vi.hoisted(() => ({
   fetchImage: vi.fn(),
@@ -35,8 +36,14 @@ vi.mock('./notifications', () => ({
 import { ensureContextMenus, setupContextMenu } from './context-menu';
 
 type ClickHandler = (info: { menuItemId: string; srcUrl?: string }, tab?: { title?: string }) => Promise<void>;
+type MessageHandler = (
+  message: { type: string; jobId?: string },
+  sender: unknown,
+  sendResponse: (response: unknown) => void,
+) => boolean | undefined;
 let onClicked: ClickHandler;
 let onStartup: (() => Promise<void>) | undefined;
+let onMessage: MessageHandler;
 let contextMenusCreate: ReturnType<typeof vi.fn>;
 let contextMenusRemove: ReturnType<typeof vi.fn>;
 let storedQueue: unknown[] = [];
@@ -56,6 +63,7 @@ beforeEach(() => {
     runtime: {
       onInstalled: { addListener: vi.fn() },
       onStartup: { addListener: vi.fn((fn: () => Promise<void>) => { onStartup = fn; }) },
+      onMessage: { addListener: vi.fn((fn: MessageHandler) => { onMessage = fn; }) },
     },
     storage: {
       local: {
@@ -117,7 +125,10 @@ describe('context menu save', () => {
       imageUrl: 'https://x.test/cat.png',
       filename: 'cat.png',
       state: 'processing',
-      createdAt: 1,
+      createdAt: Date.now(),
+      attempts: 0,
+      nextAttemptAt: Date.now(),
+      processingStartedAt: Date.now() - 5 * 60 * 1000 - 1,
     }];
 
     await onStartup?.();
@@ -133,13 +144,46 @@ describe('context menu save', () => {
       imageUrl: 'https://x.test/cat.png',
       filename: 'cat.png',
       state: 'processing',
-      createdAt: 1,
+      createdAt: Date.now(),
+      attempts: 0,
+      nextAttemptAt: Date.now(),
+      processingStartedAt: Date.now() - 5 * 60 * 1000 - 1,
     }];
 
     await Promise.all([onStartup?.(), onStartup?.()]);
 
     expect(mocks.fetchImage).toHaveBeenCalledOnce();
     expect(mocks.uploadImage).toHaveBeenCalledOnce();
+  });
+
+  it('exposes retained failures to the popup and supports explicit discard', async () => {
+    storedQueue = [{
+      id: 'failed-1',
+      imageUrl: 'https://x.test/cat.png',
+      filename: 'cat.png',
+      state: 'failed',
+      createdAt: Date.now(),
+      attempts: 5,
+      nextAttemptAt: 0,
+      lastError: 'needs attention',
+    }];
+
+    const listResponse = vi.fn();
+    expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED }, {}, listResponse)).toBe(true);
+    await vi.waitFor(() => expect(listResponse).toHaveBeenCalledWith({
+      jobs: [{
+        id: 'failed-1',
+        filename: 'cat.png',
+        createdAt: expect.any(Number),
+        attempts: 5,
+        lastError: 'needs attention',
+      }],
+    }));
+
+    const discardResponse = vi.fn();
+    expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.DISCARD, jobId: 'failed-1' }, {}, discardResponse)).toBe(true);
+    await vi.waitFor(() => expect(discardResponse).toHaveBeenCalledWith({ ok: true }));
+    expect(storedQueue).toEqual([]);
   });
 });
 
