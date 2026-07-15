@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { prisma, syncUser, logSearch } from '@/lib/db';
-import { acquireEmbeddingRateLimit } from '@/lib/embedding-rate-limit';
+import {
+  acquireEmbeddingAdmissionReservation,
+  acquireEmbeddingRateLimit,
+} from '@/lib/embedding-rate-limit';
 import {
   acquireEnrollmentIdentityWriterLock,
   ENROLLMENT_IDENTITY_CONFLICT_CODE,
@@ -161,6 +164,8 @@ describeWithDatabase('identity-backed orphan enrollment migration', () => {
 
     const lateLease = await acquireEmbeddingRateLimit(oldUserId);
     expect(lateLease).toMatchObject({ allowed: false, reason: 'limiter_unavailable' });
+    const lateAdmission = await acquireEmbeddingAdmissionReservation(oldUserId);
+    expect(lateAdmission).toMatchObject({ allowed: false, reason: 'limiter_unavailable' });
     expect(await prisma.embeddingRateLease.count({ where: { userId: oldUserId } })).toBe(0);
   });
 

@@ -22,6 +22,7 @@ const limiterUserIds = [
   'crashed-user',
   'window-user',
   'global-window-overflow',
+  'atomic-denial',
   // The limiter now proves enrollment (an existing users row) inside the
   // admission transaction, so every synthetic caller must be enrolled.
   'atomic-user-a',

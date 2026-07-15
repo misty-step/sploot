@@ -451,6 +451,18 @@ export async function acquireEmbeddingAdmissionReservation(
 
   try {
     return await withLimiterLock(async (tx) => {
+      // Enrollment checks performed by the route can race with orphan
+      // identity replacement. Fence the durable reservation itself so a
+      // migration either moves this lease or completes before we recheck the
+      // user and fail closed; never write spend against a deleted identity.
+      await acquireEnrollmentIdentityWriterLock(tx, userId);
+      const enrolledUser = await tx.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      });
+      if (!enrolledUser) {
+        throw new EnrollmentUnavailableError();
+      }
       await pruneExpiredLimiterState(tx, now);
 
       const userInflight = await tx.embeddingRateLease.count({
