@@ -45,7 +45,10 @@ async function resetLimiterState(): Promise<void> {
         { key: `embedding:rate:global:${TEST_WINDOW_ID}` },
         { key: 'embedding:daily:2026-07-10' },
         { key: 'embedding:daily:2026-07-11' },
+        { key: 'embedding:daily:2026-07-31' },
+        { key: 'embedding:daily:2026-08-01' },
         { key: 'embedding:monthly:2026-07' },
+        { key: 'embedding:monthly:2026-08' },
       ],
     },
   });
@@ -370,6 +373,76 @@ describeWithDatabase('Postgres embedding limiter', () => {
     expect(leases).toEqual([{ userId: allowedUserId }]);
   });
 
+  it('serializes concurrent admissions at the monthly ceiling without partial reservations', async () => {
+    const nowMs = Date.UTC(2026, 6, 10, 13, 30, 0);
+    const windowId = Math.floor(nowMs / 60_000);
+    const monthlyKey = 'embedding:monthly:2026-07';
+    const dailyKey = 'embedding:daily:2026-07-10';
+    const globalKey = `embedding:rate:global:${windowId}`;
+
+    await prisma.$executeRaw`
+      INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
+      VALUES (
+        ${monthlyKey},
+        ${EMBEDDING_MONTHLY_BUDGET - 1},
+        NOW() + INTERVAL '32 days',
+        NOW()
+      )
+    `;
+
+    const [first, second] = await Promise.all([
+      acquireEmbeddingAdmissionReservation('atomic-user-a', nowMs),
+      acquireEmbeddingAdmissionReservation('atomic-user-b', nowMs),
+    ]);
+
+    const allowedResult = first.allowed ? first : second;
+    const deniedResult = first.allowed ? second : first;
+    expect(allowedResult.allowed).toBe(true);
+    expect(deniedResult).toMatchObject({
+      allowed: false,
+      reason: 'monthly_budget',
+    });
+
+    const allowedUserId = allowedResult.reservation!.lease.userId;
+    const deniedUserId = allowedUserId === 'atomic-user-a'
+      ? 'atomic-user-b'
+      : 'atomic-user-a';
+    const buckets = await prisma.embeddingRateBucket.findMany({
+      where: {
+        key: {
+          in: [
+            monthlyKey,
+            dailyKey,
+            globalKey,
+            `embedding:rate:user:atomic-user-a:${windowId}`,
+            `embedding:rate:user:atomic-user-b:${windowId}`,
+          ],
+        },
+      },
+      select: { key: true, count: true },
+    });
+    const leases = await prisma.embeddingRateLease.findMany({
+      where: { userId: { in: ['atomic-user-a', 'atomic-user-b'] } },
+      select: { userId: true },
+    });
+
+    expect(buckets).toContainEqual({
+      key: monthlyKey,
+      count: EMBEDDING_MONTHLY_BUDGET,
+    });
+    expect(buckets).toContainEqual({ key: dailyKey, count: 1 });
+    expect(buckets).toContainEqual({ key: globalKey, count: 1 });
+    expect(buckets).toContainEqual({
+      key: `embedding:rate:user:${allowedUserId}:${windowId}`,
+      count: 1,
+    });
+    expect(buckets).not.toContainEqual({
+      key: `embedding:rate:user:${deniedUserId}:${windowId}`,
+      count: 1,
+    });
+    expect(leases).toEqual([{ userId: allowedUserId }]);
+  });
+
   it('starts a fresh budget bucket at UTC day rollover', async () => {
     const dayOne = await acquireEmbeddingDailyBudget(TEST_DAY_ONE_MS);
     const dayTwo = await acquireEmbeddingDailyBudget(TEST_DAY_TWO_MS);
@@ -386,6 +459,61 @@ describeWithDatabase('Postgres embedding limiter', () => {
     expect(keys.map(({ key }) => key)).toEqual([
       'embedding:daily:2026-07-10',
       'embedding:daily:2026-07-11',
+    ]);
+  });
+
+  it('starts a fresh monthly budget at the UTC month boundary', async () => {
+    const julyEndMs = Date.UTC(2026, 6, 31, 23, 59, 59, 500);
+    const augustStartMs = Date.UTC(2026, 7, 1, 0, 0, 0);
+
+    await prisma.$executeRaw`
+      INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
+      VALUES (
+        'embedding:monthly:2026-07',
+        ${EMBEDDING_MONTHLY_BUDGET},
+        NOW() + INTERVAL '32 days',
+        NOW()
+      )
+    `;
+
+    const julyDenied = await acquireEmbeddingAdmissionReservation(
+      'atomic-user-a',
+      julyEndMs,
+    );
+    expect(julyDenied).toMatchObject({
+      allowed: false,
+      reason: 'monthly_budget',
+      retryAfterSec: 1,
+    });
+
+    const augustAllowed = await acquireEmbeddingAdmissionReservation(
+      'atomic-user-b',
+      augustStartMs,
+    );
+    expect(augustAllowed).toMatchObject({
+      allowed: true,
+      reservation: {
+        dailyReservation: {
+          dateKey: '2026-08-01',
+          monthKey: '2026-08',
+        },
+        counts: {
+          dailyBudget: 1,
+          monthlyBudget: 1,
+        },
+      },
+    });
+
+    const monthlyBuckets = await prisma.embeddingRateBucket.findMany({
+      where: {
+        key: { in: ['embedding:monthly:2026-07', 'embedding:monthly:2026-08'] },
+      },
+      select: { key: true, count: true },
+      orderBy: { key: 'asc' },
+    });
+    expect(monthlyBuckets).toEqual([
+      { key: 'embedding:monthly:2026-07', count: EMBEDDING_MONTHLY_BUDGET },
+      { key: 'embedding:monthly:2026-08', count: 1 },
     ]);
   });
 
