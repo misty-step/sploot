@@ -20,8 +20,11 @@ interface ChromeMock {
   };
   runtime: {
     getURL: ReturnType<typeof vi.fn>;
+    sendMessage: ReturnType<typeof vi.fn>;
+    id: string;
     onMessage: {
       addListener: ReturnType<typeof vi.fn>;
+      removeListener: ReturnType<typeof vi.fn>;
     };
   };
   tabs: {
@@ -31,6 +34,7 @@ interface ChromeMock {
 
 let messageListeners: Array<(message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean>;
 let chromeMock: ChromeMock;
+let clerkListeners: Array<(resources: unknown) => void>;
 
 async function importAuthManager() {
   vi.resetModules();
@@ -49,10 +53,13 @@ beforeEach(() => {
     },
     runtime: {
       getURL: vi.fn(path => `chrome-extension://extension-id/${path}`),
+      sendMessage: vi.fn(async () => undefined),
+      id: 'extension-id',
       onMessage: {
         addListener: vi.fn(listener => {
           messageListeners.push(listener);
         }),
+        removeListener: vi.fn(),
       },
     },
     tabs: {
@@ -62,6 +69,7 @@ beforeEach(() => {
 
   vi.stubGlobal('chrome', chromeMock);
   createClerkClient.mockReset();
+  clerkListeners = [];
 });
 
 describe('auth-manager', () => {
@@ -73,6 +81,11 @@ describe('auth-manager', () => {
         expireAt: new Date('2026-05-18T12:00:00.000Z'),
         getToken: vi.fn(),
       },
+      addListener: vi.fn(listener => {
+        clerkListeners.push(listener);
+        listener({ session: null });
+        return () => undefined;
+      }),
     });
 
     const { isAuthenticated, setupAuthBridge } = await importAuthManager();
@@ -83,7 +96,7 @@ describe('auth-manager', () => {
     let response: unknown;
     messageListeners[0](
       { type: AUTH_MESSAGES.REQUEST_STATE },
-      {},
+      { id: chromeMock.runtime.id },
       nextResponse => {
         response = nextResponse;
       }
@@ -169,7 +182,7 @@ describe('auth-manager', () => {
   });
 
   it('returns null instead of requesting a token when there is no session', async () => {
-    createClerkClient.mockResolvedValue({ session: null });
+    createClerkClient.mockResolvedValue({ session: null, addListener: vi.fn() });
 
     const { getAuthToken } = await importAuthManager();
 
@@ -177,7 +190,13 @@ describe('auth-manager', () => {
   });
 
   it('opens the Sploot web sign-in page instead of the extension popup', async () => {
-    createClerkClient.mockResolvedValue({ session: null });
+    createClerkClient.mockResolvedValue({
+      session: null,
+      addListener: vi.fn(listener => {
+        clerkListeners.push(listener);
+        return () => undefined;
+      }),
+    });
 
     const { promptUserSignIn, setupAuthBridge } = await importAuthManager();
     setupAuthBridge();
@@ -188,16 +207,10 @@ describe('auth-manager', () => {
     expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/sign-in' });
     expect(chromeMock.action.openPopup).not.toHaveBeenCalled();
 
-    const signedInState: AuthState = {
-      status: 'signed-in',
-      userId: 'user_789',
-      sessionId: 'session_789',
-    };
-    messageListeners[0](
-      { type: AUTH_MESSAGES.STATE_UPDATE, payload: signedInState },
-      {},
-      () => undefined
-    );
+    clerkListeners[0]({
+      user: { id: 'user_789' },
+      session: { id: 'session_789', expireAt: null },
+    });
 
     await expect(signInPromise).resolves.toBe(true);
   });
@@ -210,6 +223,10 @@ describe('auth-manager', () => {
         expireAt: new Date('2026-05-18T12:00:00.000Z'),
         getToken: vi.fn(),
       },
+      addListener: vi.fn(listener => {
+        clerkListeners.push(listener);
+        return () => undefined;
+      }),
     });
 
     const { promptUserSignIn } = await importAuthManager();
@@ -220,27 +237,161 @@ describe('auth-manager', () => {
     expect(chromeMock.action.openPopup).not.toHaveBeenCalled();
   });
 
-  it('resolves sign-in waiters when the popup sends a signed-in state update', async () => {
+  it('resolves sign-in waiters when the persistent Clerk listener observes sign-in', async () => {
     const signedInState: AuthState = {
       status: 'signed-in',
       userId: 'user_456',
       sessionId: 'session_456',
     };
+    createClerkClient.mockResolvedValue({
+      session: null,
+      addListener: vi.fn(listener => {
+        clerkListeners.push(listener);
+        return () => undefined;
+      }),
+    });
     const { setupAuthBridge, waitForSignIn } = await importAuthManager();
     setupAuthBridge();
 
     const waitPromise = waitForSignIn(1000);
-    let response: unknown;
-    messageListeners[0](
-      { type: AUTH_MESSAGES.STATE_UPDATE, payload: signedInState },
-      {},
-      nextResponse => {
-        response = nextResponse;
-      }
-    );
+    await new Promise(resolve => setTimeout(resolve, 0));
+    clerkListeners[0]({
+      user: { id: signedInState.userId },
+      session: { id: signedInState.sessionId, expireAt: null },
+    });
 
     await expect(waitPromise).resolves.toBe(true);
-    expect(response).toEqual({ ok: true });
+  });
+
+  it('broadcasts a sanitized Clerk event so an open popup can refresh without polling', async () => {
+    const addListener = vi.fn((listener: (resources: unknown) => void) => {
+      clerkListeners.push(listener);
+      return () => undefined;
+    });
+    createClerkClient.mockResolvedValue({ session: null, addListener });
+
+    const { setupAuthBridge } = await importAuthManager();
+    setupAuthBridge();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    chromeMock.runtime.sendMessage.mockClear();
+
+    const signedInState: AuthState = {
+      status: 'signed-in',
+      userId: 'user_live',
+      sessionId: 'session_live',
+      expiresAt: 1780000000000,
+    };
+    clerkListeners[0]({
+      user: { id: signedInState.userId },
+      session: {
+        id: signedInState.sessionId,
+        expireAt: new Date(signedInState.expiresAt!),
+      },
+      token: 'must-never-cross-the-message-boundary',
+    });
+
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
+      type: AUTH_MESSAGES.STATE_CHANGED,
+      payload: signedInState,
+    });
+    expect(JSON.stringify(chromeMock.runtime.sendMessage.mock.calls)).not.toContain('must-never-cross');
+  });
+
+  it('does not use a polling interval and cleans up a timed-out waiter', async () => {
+    createClerkClient.mockResolvedValue({ session: null, addListener: vi.fn() });
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+
+    const { waitForSignIn } = await importAuthManager();
+    await expect(waitForSignIn(1)).resolves.toBe(false);
+
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+    setIntervalSpy.mockRestore();
+  });
+
+  it('recreates the event boundary after a service-worker restart', async () => {
+    const makeClerk = (sessionId: string) => ({
+      session: {
+        id: sessionId,
+        user: { id: 'restart-user' },
+        expireAt: null,
+        getToken: vi.fn(),
+      },
+      addListener: vi.fn(listener => {
+        clerkListeners.push(listener);
+        return () => undefined;
+      }),
+    });
+    createClerkClient.mockResolvedValueOnce(makeClerk('session-before-restart'));
+    const firstWorker = await importAuthManager();
+    firstWorker.setupAuthBridge();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    createClerkClient.mockResolvedValueOnce(makeClerk('session-after-restart'));
+    const restartedWorker = await importAuthManager();
+    restartedWorker.setupAuthBridge();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(createClerkClient).toHaveBeenCalledTimes(2);
+    expect(messageListeners).toHaveLength(2);
+    let response: unknown;
+    messageListeners[1]({ type: AUTH_MESSAGES.REQUEST_STATE }, { id: chromeMock.runtime.id }, next => {
+      response = next;
+    });
+    expect(response).toEqual({
+      state: {
+        status: 'signed-in',
+        userId: 'restart-user',
+        sessionId: 'session-after-restart',
+        expiresAt: null,
+      },
+    });
+  });
+
+  it('ignores foreign senders and stale inbound state messages', async () => {
+    createClerkClient.mockResolvedValue({
+      session: null,
+      addListener: vi.fn(listener => {
+        clerkListeners.push(listener);
+        return () => undefined;
+      }),
+    });
+    const { setupAuthBridge } = await importAuthManager();
+    setupAuthBridge();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    clerkListeners[0]({
+      user: { id: 'current-user' },
+      session: { id: 'current-session', expireAt: null },
+    });
+
+    let foreignResponse: unknown;
+    expect(
+      messageListeners[0](
+        { type: AUTH_MESSAGES.STATE_CHANGED, payload: { status: 'signed-in', userId: 'foreign' } },
+        { id: 'foreign-extension' },
+        response => {
+          foreignResponse = response;
+        }
+      )
+    ).toBe(false);
+    expect(foreignResponse).toBeUndefined();
+
+    messageListeners[0](
+      { type: AUTH_MESSAGES.STATE_CHANGED, payload: { status: 'signed-out' } },
+      { id: chromeMock.runtime.id },
+      () => undefined
+    );
+    let stateResponse: unknown;
+    messageListeners[0]({ type: AUTH_MESSAGES.REQUEST_STATE }, { id: chromeMock.runtime.id }, response => {
+      stateResponse = response;
+    });
+    expect(stateResponse).toEqual({
+      state: {
+        status: 'signed-in',
+        userId: 'current-user',
+        sessionId: 'current-session',
+        expiresAt: null,
+      },
+    });
   });
 
   it('rejects diagnostics at the runtime message handler in production', async () => {
@@ -251,7 +402,6 @@ describe('auth-manager', () => {
 
     expect(messageListeners[0]({ type: AUTH_MESSAGES.RUN_DIAGNOSTICS }, {}, response)).toBe(false);
     expect(response).not.toHaveBeenCalled();
-    expect(createClerkClient).not.toHaveBeenCalled();
   });
 
   it('keeps diagnostics available through the runtime message handler in development', async () => {

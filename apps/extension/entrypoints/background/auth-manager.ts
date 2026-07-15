@@ -9,15 +9,16 @@ import {
 } from '../../shared/env'
 import { getSplootSignInUrl } from '../../shared/app-url'
 import { IS_DEV_BUILD } from '../../shared/build-mode'
-import { runBestEffort } from '../../shared/best-effort'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
 const SIGN_IN_TIMEOUT_MS = 60000
-const SIGN_IN_POLL_INTERVAL_MS = 1000
 const E2E_AUTH_KEY = 'sploot:e2e-auth-authority'
 
 let cachedState: AuthState = { status: 'unknown' }
 const waiters = new Set<(state: AuthState) => void>()
+let clerkClientPromise: ReturnType<typeof createClerkClient> | undefined
+let removeClerkListener: (() => void) | undefined
+let bridgeListener: Parameters<typeof chrome.runtime.onMessage.addListener>[0] | undefined
 
 /**
  * The Clerk authority behind a durable save job.
@@ -64,10 +65,56 @@ function notifyWaiters(state: AuthState) {
   }
 }
 
+function authStateFromResources(resources: {
+  session?: { id: string; user?: { id: string } | null; expireAt?: Date | null } | null
+  user?: { id: string } | null
+}): AuthState {
+  if (!resources.session) {
+    return { status: 'signed-out', userId: null, sessionId: null, expiresAt: null }
+  }
+
+  return {
+    status: 'signed-in',
+    userId: resources.user?.id ?? resources.session.user?.id ?? null,
+    sessionId: resources.session.id,
+    expiresAt: resources.session.expireAt?.getTime() ?? null,
+  }
+}
+
+function sameAuthState(left: AuthState, right: AuthState): boolean {
+  return (
+    left.status === right.status &&
+    left.userId === right.userId &&
+    left.sessionId === right.sessionId &&
+    left.expiresAt === right.expiresAt
+  )
+}
+
 function updateCachedState(next: AuthState) {
+  if (sameAuthState(cachedState, next)) {
+    return
+  }
+
   cachedState = next
-  console.log('[Auth] State updated', next)
+  console.log('[Auth] State changed', {
+    status: next.status,
+    userId: next.userId,
+    sessionId: next.sessionId,
+    expiresAt: next.expiresAt,
+  })
   notifyWaiters(next)
+
+  try {
+    const result = chrome.runtime.sendMessage({
+      type: AUTH_MESSAGES.STATE_CHANGED,
+      payload: next,
+    })
+    if (result && typeof result.catch === 'function') {
+      void result.catch(() => undefined)
+    }
+  } catch {
+    // The popup may have closed between the state change and this broadcast.
+  }
 }
 
 async function createFreshClerkClient() {
@@ -83,12 +130,37 @@ async function createFreshClerkClient() {
   })
 }
 
+async function getClerkClient() {
+  assertExtensionConfig()
+  clerkClientPromise ??= Promise.resolve(createClerkClient({
+    publishableKey: PUBLISHABLE_KEY,
+    syncHost: CLERK_SYNC_HOST,
+    __experimental_syncHostListener: true,
+  })).catch(error => {
+    clerkClientPromise = undefined
+    throw error
+  })
+  return await clerkClientPromise
+}
+
+async function startAuthSync(): Promise<void> {
+  if (E2E_AUTH_MODE || removeClerkListener) {
+    return
+  }
+
+  const clerk = await getClerkClient()
+  removeClerkListener = clerk.addListener(resources => {
+    updateCachedState(authStateFromResources(resources))
+  })
+  updateCachedState(authStateFromResources(clerk))
+}
+
 export async function isAuthenticated(signal?: AbortSignal): Promise<boolean> {
   try {
     if (E2E_AUTH_MODE) {
       return Boolean(await getE2eAuthority(signal));
     }
-    const clerk = await withAbort(createFreshClerkClient(), signal)
+    const clerk = await withAbort(getClerkClient(), signal)
     const authority = sessionAuthority(clerk.session)
     const hasSession = Boolean(authority)
 
@@ -119,7 +191,7 @@ export async function getAuthToken(signal?: AbortSignal): Promise<string | null>
       const authority = await getE2eAuthority(signal);
       return authority ? `e2e-token-${authority.userId}-${authority.sessionId}` : null;
     }
-    const clerk = await withAbort(createFreshClerkClient(), signal)
+    const clerk = await withAbort(getClerkClient(), signal)
 
     if (!clerk.session) {
       console.warn('[Auth] No session available for token retrieval')
@@ -250,7 +322,6 @@ function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSignal): Promise<boolean> {
   return new Promise(resolve => {
     let settled = false
-    let intervalId: ReturnType<typeof setInterval> | undefined
 
     const finish = (signedIn: boolean) => {
       if (settled) {
@@ -259,9 +330,6 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSign
 
       settled = true
       clearTimeout(timeoutId)
-      if (intervalId) {
-        clearInterval(intervalId)
-      }
       waiters.delete(listener)
       signal?.removeEventListener('abort', abort)
       resolve(signedIn)
@@ -284,21 +352,12 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSign
       }
     }
 
-    const pollForSyncedSession = async () => {
-      if (settled) {
-        return
-      }
-
-      if (await isAuthenticated()) {
-        finish(true)
-      }
+    if (cachedState.status === 'signed-in') {
+      finish(true)
+      return
     }
 
     waiters.add(listener)
-    intervalId = setInterval(() => {
-      runBestEffort('auth sign-in poll', pollForSyncedSession)
-    }, SIGN_IN_POLL_INTERVAL_MS)
-    runBestEffort('auth initial sign-in poll', pollForSyncedSession)
   })
 }
 
@@ -308,6 +367,10 @@ export async function promptUserSignIn(signal?: AbortSignal): Promise<boolean> {
   } catch (error) {
     console.warn('[Auth] Unable to open Sploot sign-in tab', error)
     return false
+  }
+
+  if (await isAuthenticated(signal)) {
+    return true
   }
 
   return await waitForSignIn(SIGN_IN_TIMEOUT_MS, signal)
@@ -348,13 +411,11 @@ export async function runAuthDiagnostics(): Promise<AuthDiagnosticsSnapshot> {
 }
 
 export function setupAuthBridge() {
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type === AUTH_MESSAGES.STATE_UPDATE) {
-      updateCachedState(message.payload)
-      sendResponse({ ok: true })
-      return true
-    }
+  if (bridgeListener) {
+    return
+  }
 
+  bridgeListener = (message, _sender, sendResponse) => {
     if (message?.type === AUTH_MESSAGES.REQUEST_STATE) {
       sendResponse({ state: cachedState })
       return true
@@ -371,5 +432,10 @@ export function setupAuthBridge() {
     }
 
     return false
+  }
+
+  chrome.runtime.onMessage.addListener(bridgeListener)
+  void startAuthSync().catch(error => {
+    console.error('[Auth] Failed to initialize Clerk sync', error)
   })
 }

@@ -92,7 +92,13 @@ async function parseErrorResponse(
   }
 
   if (response.status === 401) {
-    return new SplootApiClientError('Session expired. Please login again.', response.status, 'unauthorized');
+    return new SplootApiClientError(
+      'Session expired. Please login again.',
+      response.status,
+      'unauthorized',
+      false,
+      '/sign-in'
+    );
   }
 
   if (response.status === 413) {

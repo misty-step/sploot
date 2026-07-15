@@ -8,13 +8,13 @@ export interface AuthState {
 }
 
 export const AUTH_MESSAGES = {
-  STATE_UPDATE: 'AUTH_STATE_UPDATE',
+  STATE_CHANGED: 'AUTH_STATE_CHANGED',
   REQUEST_STATE: 'AUTH_REQUEST_STATE',
   RUN_DIAGNOSTICS: 'RUN_AUTH_DIAGNOSTICS',
 } as const
 
-export interface AuthStateUpdateMessage {
-  type: typeof AUTH_MESSAGES.STATE_UPDATE
+export interface AuthStateChangedMessage {
+  type: typeof AUTH_MESSAGES.STATE_CHANGED
   payload: AuthState
 }
 
@@ -27,6 +27,6 @@ export interface AuthDiagnosticsRequestMessage {
 }
 
 export type AuthMessage =
-  | AuthStateUpdateMessage
+  | AuthStateChangedMessage
   | AuthStateRequestMessage
   | AuthDiagnosticsRequestMessage
