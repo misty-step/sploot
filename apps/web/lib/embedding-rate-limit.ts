@@ -327,7 +327,8 @@ export async function refundEmbeddingAdmissionCapacity(
   let lastError: unknown;
   // The transaction is idempotent: a committed lease delete makes a retry a
   // no-op, while a rolled-back transaction leaves the lease and all buckets
-  // charged for the next attempt. Keep the retry bounded and observable.
+  // reserved for the next provider attempt. Keep the retry bounded and observable;
+  // this table is not a durable dollar ledger.
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       await withLimiterLock(async (tx) => {
@@ -404,8 +405,8 @@ export async function acquireEmbeddingDailyBudget(
 
       if (monthlyCount >= EMBEDDING_MONTHLY_BUDGET) {
         logger.logError(
-          'embedding-rate-limit.monthly-budget-breach',
-          new Error('Embedding monthly budget exceeded'),
+          'embedding-rate-limit.monthly-attempt-ceiling-breach',
+          new Error('Embedding monthly attempt ceiling exceeded'),
           { monthKey, count: monthlyCount, limit: EMBEDDING_MONTHLY_BUDGET }
         );
         return {

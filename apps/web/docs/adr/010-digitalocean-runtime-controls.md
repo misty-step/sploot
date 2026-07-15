@@ -9,13 +9,14 @@ Vercel KV remained in three active paths even though production had no KV or
 Upstash configuration:
 
 - per-user and global embedding concurrency limits;
-- per-minute and per-day embedding spend limits;
+- per-minute and per-day embedding attempt/provider-rate limits;
 - share-slug cache warming.
 
 the health route treated the missing KV service as `up`, so the response could
 claim a dependency was healthy when no dependency existed. embedding controls
 cannot become process-local: a restart or second process must not reset the
-daily Replicate spend ceiling or permit more concurrent paid work.
+daily Replicate attempt ceiling or permit more concurrent provider work. These
+controls do not reserve, reconcile, or enforce provider dollars.
 
 ## decision
 
@@ -23,11 +24,11 @@ daily Replicate spend ceiling or permit more concurrent paid work.
    database. one transaction-scoped advisory lock serializes the small critical
    section that checks limits and records a lease. leases expire after three
    minutes, so a crashed worker cannot consume capacity forever.
-2. keep the daily budget in the same expiring bucket table. the limiter fails
+2. keep the daily/monthly attempt ceilings in the same expiring bucket table. the limiter fails
    closed when Postgres or its schema is unavailable. admission lives inside
    the private Replicate service, after its durable cache lookup: every paid
    text or image cache miss must acquire the same user/global rate and
-   concurrency lease plus one daily-budget slot. one admission maps to exactly
+   concurrency lease plus one daily-attempt-ceiling slot. one admission maps to exactly
    one provider prediction attempt: Replicate runs in polling mode, a timeout
    aborts and cancels that prediction, and the lease remains held until the
    provider call settles. any caller-level retry must acquire a new admission.

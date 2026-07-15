@@ -128,6 +128,7 @@ const REQUIRED_LIVE_TIMESTAMP_PATHS = [
   'inference.latestPredictionSample.from',
   'inference.latestPredictionSample.to',
 ];
+const DEFAULT_RATE_CURRENCY = 'USD';
 const round = (value, digits = 4) => Number(value.toFixed(digits));
 const money = (value) => `$${value.toFixed(2)}`;
 const preciseMoney = (value, digits = 10) => `$${value.toFixed(digits)}`;
@@ -140,12 +141,78 @@ const sensitivityPercentText = (inputs, key) => ['low', 'base', 'high']
 const getPath = (value, path) => path.split('.').reduce((current, key) => current?.[key], value);
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const ceilCents = (value) => Math.ceil((value - Number.EPSILON) * 100) / 100;
+const EVIDENCE_KEYS = new Set([
+  'provider',
+  'account',
+  'control',
+  'scope',
+  'value',
+  'unit',
+  'currency',
+  'sourceUrl',
+  'receiptIdentifier',
+  'observedAt',
+  'reviewer',
+  'runsPerUsd',
+]);
+
+function validateEvidence(evidence, expected, path, errors) {
+  if (!isRecord(evidence)) {
+    errors.push(`${path} must be a complete machine-readable object`);
+    return;
+  }
+  for (const key of Object.keys(evidence)) {
+    if (!EVIDENCE_KEYS.has(key)) errors.push(`${path}.${key} is not an allowed evidence field`);
+  }
+  for (const key of ['provider', 'control', 'scope', 'unit', 'currency', 'reviewer']) {
+    if (typeof evidence[key] !== 'string' || evidence[key].trim().length === 0) {
+      errors.push(`${path}.${key} must be a non-empty string`);
+    }
+  }
+  if (evidence.account !== null && (typeof evidence.account !== 'string' || evidence.account.trim().length === 0)) {
+    errors.push(`${path}.account must be a non-empty string or null`);
+  }
+  if (!Number.isFinite(evidence.value) || evidence.value < 0) {
+    errors.push(`${path}.value must be a finite nonnegative number`);
+  }
+  if (!/^https:\/\//.test(evidence.sourceUrl ?? '')
+    && (typeof evidence.receiptIdentifier !== 'string' || evidence.receiptIdentifier.trim().length === 0)) {
+    errors.push(`${path} must include an https sourceUrl or receiptIdentifier`);
+  }
+  if (evidence.sourceUrl !== undefined && !/^https:\/\//.test(evidence.sourceUrl)) {
+    errors.push(`${path}.sourceUrl must use https when present`);
+  }
+  const observedAt = Date.parse(evidence.observedAt);
+  if (!Number.isFinite(observedAt)) errors.push(`${path}.observedAt must be a valid timestamp`);
+  if (expected.provider !== undefined && evidence.provider !== expected.provider) {
+    errors.push(`${path}.provider must match ${expected.provider}`);
+  }
+  if (expected.value !== undefined && evidence.value !== expected.value) {
+    errors.push(`${path}.value must match the reviewed rate/cap value`);
+  }
+  if (expected.unit !== undefined && evidence.unit !== expected.unit) {
+    errors.push(`${path}.unit must match the reviewed rate/cap unit`);
+  }
+  if (expected.currency !== undefined && evidence.currency !== expected.currency) {
+    errors.push(`${path}.currency must match the reviewed currency`);
+  }
+  if (expected.sourceUrl !== undefined && evidence.sourceUrl !== expected.sourceUrl) {
+    errors.push(`${path}.sourceUrl must match the reviewed source URL`);
+  }
+  if (expected.control !== undefined && evidence.control !== expected.control) {
+    errors.push(`${path}.control must match the reviewed control`);
+  }
+  if (expected.scope !== undefined && evidence.scope !== expected.scope) {
+    errors.push(`${path}.scope must match the reviewed scope`);
+  }
+  return observedAt;
+}
 
 export async function loadInputs() {
   const [rates, liveUsage, workloads, policy] = await Promise.all(
     INPUT_FILES.map(async (name) => JSON.parse(await readFile(new URL(name, ROOT), 'utf8'))),
   );
-  return { rates: rates.rates, liveUsage, scenarios: workloads.scenarios, policy };
+  return { rates: rates.rates, rateCurrency: rates.currency, liveUsage, scenarios: workloads.scenarios, policy };
 }
 
 export function validateInputs(inputs, now = new Date()) {
@@ -178,11 +245,26 @@ export function validateInputs(inputs, now = new Date()) {
     }
     if (!rate.sourceUrl || !rate.retrievedAt || !rate.unit || !rate.planAssumption
       || !Object.hasOwn(rate, 'includedAllowance')) errors.push(`authority missing: ${rate.id}`);
-    if (rate.id === 'replicate-clip-prediction'
-      && (typeof rate.sourceEvidence !== 'string' || !rate.sourceEvidence.includes('0.00073')
-        || !rate.sourceEvidence.includes('1369')
-        || rate.sourceEvidenceType !== 'provider_model_page_estimate')) {
-      errors.push('source evidence missing: replicate-clip-prediction');
+    if (rate.id === 'replicate-clip-prediction') {
+      if (rate.sourceEvidenceType !== 'provider_model_page_estimate') {
+        errors.push('source evidence type missing: replicate-clip-prediction');
+      }
+      const observedAt = validateEvidence(rate.sourceEvidence, {
+        provider: rate.provider,
+        value: rate.value,
+        unit: rate.unit,
+        currency: inputs.rateCurrency ?? DEFAULT_RATE_CURRENCY,
+        control: 'model page price estimate',
+        scope: 'krthr/clip-embeddings typical prediction',
+        sourceUrl: rate.sourceUrl,
+      }, `rate ${rate.id}.sourceEvidence`, errors);
+      if (Number.isFinite(observedAt) && rate.retrievedAt !== new Date(observedAt).toISOString().slice(0, 10)) {
+        errors.push(`rate ${rate.id}.sourceEvidence.observedAt must match retrievedAt`);
+      }
+      if (rate.sourceEvidence?.runsPerUsd !== undefined
+        && (!Number.isFinite(rate.sourceEvidence.runsPerUsd) || rate.sourceEvidence.runsPerUsd <= 0)) {
+        errors.push(`rate ${rate.id}.sourceEvidence.runsPerUsd must be positive`);
+      }
     }
     const retrievedAt = Date.parse(`${rate.retrievedAt}T00:00:00Z`);
     if (!Number.isFinite(retrievedAt)) {
@@ -478,14 +560,34 @@ export function validateInputs(inputs, now = new Date()) {
       if (!['unverified', 'verified'].includes(cap.evidenceStatus)) {
         errors.push(`policy.providerHardCaps[${index}].evidenceStatus is invalid`);
       }
-      if (cap.evidenceStatus === 'verified' && (!cap.evidence || typeof cap.lastVerifiedAt !== 'string')) {
-        errors.push(`policy.providerHardCaps[${index}] verified evidence requires lastVerifiedAt and evidence`);
+      if (cap.evidenceStatus === 'verified' && (!isRecord(cap.evidence) || typeof cap.lastVerifiedAt !== 'string')) {
+        errors.push(`policy.providerHardCaps[${index}] verified evidence requires lastVerifiedAt and complete evidence`);
       }
       if (cap.evidenceStatus === 'verified' && typeof cap.lastVerifiedAt === 'string') {
         const verifiedAt = Date.parse(`${cap.lastVerifiedAt}T00:00:00Z`);
         if (!Number.isFinite(verifiedAt)) errors.push(`policy.providerHardCaps[${index}].lastVerifiedAt is invalid`);
         else if (verifiedAt > now.getTime() + 300_000) errors.push(`policy.providerHardCaps[${index}].lastVerifiedAt is future-dated`);
         else if (now.getTime() - verifiedAt > inputs.policy.rateFreshnessDays * 86_400_000) errors.push(`provider cap evidence stale: ${cap.provider}`);
+      }
+      if (cap.evidenceStatus === 'verified' && isRecord(cap.evidence)) {
+        const observedAt = validateEvidence(cap.evidence, {
+          provider: cap.provider,
+          value: cap.amountUsd,
+          unit: cap.evidence.unit,
+          currency: cap.amountUsd === null ? undefined : 'USD',
+          scope: cap.period,
+        }, `policy.providerHardCaps[${index}].evidence`, errors);
+        if (Number.isFinite(observedAt)) {
+          if (observedAt > now.getTime() + 300_000) {
+            errors.push(`provider cap evidence is future-dated: ${cap.provider}`);
+          } else if (now.getTime() - observedAt > inputs.policy.rateFreshnessDays * 86_400_000) {
+            errors.push(`provider cap evidence stale: ${cap.provider}`);
+          }
+        }
+        if (Number.isFinite(observedAt) && typeof cap.lastVerifiedAt === 'string'
+          && cap.lastVerifiedAt !== new Date(observedAt).toISOString().slice(0, 10)) {
+          errors.push(`policy.providerHardCaps[${index}].lastVerifiedAt must match evidence.observedAt`);
+        }
       }
       if (cap.evidenceStatus === 'unverified' && cap.evidence !== null) {
         errors.push(`policy.providerHardCaps[${index}] unverified evidence must be null`);
@@ -652,7 +754,7 @@ export function buildReport(inputs) {
   const storageGapPct = sourceBytesTotal > 0 ? storageGapBytes / sourceBytesTotal * 100 : null;
   return `# Sploot economic safety envelope
 
-Generated deterministically from the versioned inputs in this directory. Rates were refreshed on ${refreshDate} and CI expires them after ${inputs.policy.rateFreshnessDays} days. This is a release gate, not a forecast: paid-tier margins charge on-demand rates so shared included pools cannot make an unprofitable plan look safe.
+Generated deterministically from the versioned inputs in this directory. Rates were refreshed on ${refreshDate} and CI expires them after ${inputs.policy.rateFreshnessDays} days. This is a release gate, not a forecast: paid-tier margins are modeled at on-demand rates so shared included pools cannot make an unprofitable plan look safe.
 
 ## Recommendation
 
@@ -661,7 +763,7 @@ Generated deterministically from the versioned inputs in this directory. Rates w
 - **Archive:** $${plans.archive.priceUsd}/month, ${plans.archive.sourceTrashStorageGb} GB, ${plans.archive.uploads.toLocaleString('en-US')} new indexes, ${plans.archive.uniqueTextQueries.toLocaleString('en-US')} novel text embeddings, and ${plans.archive.blobDeliveryGb} GB delivery. Modeled direct-variable COGS is ${money(archiveHigh.totalCostUsd)}; the fully loaded margin is unavailable until shared provider costs and a paid-customer mix are declared and read back.
 - Existing content remains readable, exportable, and deletable after a cost boundary closes. No plan permits silent overage.
 
-These are target candidates for entitlement and billing cards, not live promises. Enrollment is CLOSED. The runtime currently enforces attempt counters and claim/lease safety, not durable provider-dollar reservation or reconciliation. International/FX Stripe charges, provider-plan readbacks, shared DigitalOcean/Vercel allocation, and hard-cap receipts are unmet GA prerequisites; GA remains fail-closed.
+These are target candidates for entitlement and billing cards, not live promises. Enrollment is CLOSED. The runtime currently enforces attempt counters, provider-rate ceilings, and claim/lease safety, not durable provider-dollar admission, storage-ledger attribution, or reconciliation. International/FX Stripe charges, provider-plan readbacks, shared DigitalOcean/Vercel allocation, and hard-cap receipts are unmet GA prerequisites; GA remains fail-closed.
 
 ## Fully loaded margin status
 
@@ -677,13 +779,13 @@ ${scenarioTable(inputs)}
 
 The abusive and viral rows deliberately exceed their account/global budgets; they prove quotas must cover novel inference, bytes, and request delivery rather than storage alone.
 
-## Dollar-derived budgets
+## Modeled dollar ceilings translated to attempt caps
 
 | Plan | Monthly infrastructure ceiling | Daily inference ceiling | Monthly inference ceiling |
 |---|---:|---:|---:|
 ${budgetTable(inputs)}
 
-${inputs.policy.planBudgetSemantics} Plan inference ceilings include the high-sensitivity ${highInferenceReservePct.toFixed(0)}% retry/cancel reserve. The pre-GA target is capped at ${money(inputs.policy.global.preGaDailyVariableUsd)}/day and ${money(inputs.policy.global.preGaMonthlyVariableUsd)}/month; the runtime currently enforces attempt counters, not dollar reservation/reconciliation. Replicate's target model sub-budget is ${money(inputs.policy.global.replicateDailyUsd)}/day (${inputs.policy.global.replicateDailyAttempts} attempts) and ${money(inputs.policy.global.replicateMonthlyUsd)}/month (${inputs.policy.global.replicateMonthlyAttempts} attempts); live billed dollars remain unknown. After a future paid-admission implementation, the target monthly ceiling is \`${inputs.policy.global.paidMonthlyFormula}\`; it is not a current runtime guarantee.
+${inputs.policy.planBudgetSemantics} Plan inference ceilings include the high-sensitivity ${highInferenceReservePct.toFixed(0)}% retry/cancel reserve. The pre-GA modeled target is capped at ${money(inputs.policy.global.preGaDailyVariableUsd)}/day and ${money(inputs.policy.global.preGaMonthlyVariableUsd)}/month; runtime enforcement is by attempt counters and provider-rate safety, not dollar admission or reconciliation. Replicate's modeled target is ${money(inputs.policy.global.replicateDailyUsd)}/day (${inputs.policy.global.replicateDailyAttempts} attempts) and ${money(inputs.policy.global.replicateMonthlyUsd)}/month (${inputs.policy.global.replicateMonthlyAttempts} attempts); live billed dollars remain unknown. After a future cost-admission/storage-ledger implementation, the target monthly ceiling is \`${inputs.policy.global.paidMonthlyFormula}\`; it is not a current runtime guarantee.
 
 ## Provider control targets and evidence status
 

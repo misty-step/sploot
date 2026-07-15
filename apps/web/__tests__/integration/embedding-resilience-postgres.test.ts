@@ -598,15 +598,12 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     vi.stubEnv('CRON_SECRET', 'embedding-resilience-cron-secret');
     vi.stubEnv('REPLICATE_API_TOKEN', '');
 
-    for (const offset of [0, 60_000, 180_000]) {
-      vi.setSystemTime(baseNowMs + offset);
-      const response = await processEmbeddings(
-        new NextRequest('http://localhost/api/cron/process-embeddings'),
-      );
-      expect(response.status).toBe(503);
-      expect(response.headers.get('Retry-After')).toBe('30');
-      expect(response.headers.get('X-Sploot-Embedding-Outcome')).toBe('provider_unavailable');
-    }
+    const response = await processEmbeddings(
+      new NextRequest('http://localhost/api/cron/process-embeddings'),
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.get('Retry-After')).toBeNull();
+    expect(response.headers.get('X-Sploot-Embedding-Outcome')).toBe('embedding_configuration');
 
     await expect(
       prisma.assetEmbedding.findUnique({
@@ -615,9 +612,9 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       }),
     ).resolves.toMatchObject({
       attemptCount: 0,
-      status: 'pending',
-      nextAttemptAt: new Date(baseNowMs + 210_000),
-      terminalAt: null,
+      status: 'failed',
+      nextAttemptAt: null,
+      terminalAt: expect.any(Date),
     });
     expect(providerRun).not.toHaveBeenCalled();
   }, 30_000);
@@ -926,9 +923,12 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       });
     })();
 
+    // The database trigger owns updatedAt. Use the timestamp that the old
+    // claim actually persisted so this remains a real TTL reclaim even when
+    // the test database clock differs from the synthetic request clock.
     const newerClaim = await acquireEmbeddingProcessing(
       assetId,
-      nowMs + EMBEDDING_PROCESSING_TTL_MS + 1,
+      oldClaim.updatedAt!.getTime() + EMBEDDING_PROCESSING_TTL_MS + 1,
     );
     expect(newerClaim.acquired).toBe(true);
     expect(newerClaim.processingClaimToken).not.toBe(oldClaim.processingClaimToken);

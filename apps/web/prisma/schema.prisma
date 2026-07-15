@@ -245,8 +245,9 @@ model TextEmbeddingCache {
   @@map("text_embedding_cache")
 }
 
-// Durable counters for embedding minute windows and UTC daily/monthly spend
-// ceilings. Expired rows are pruned while holding the limiter advisory lock.
+// Durable counters for embedding minute windows and UTC daily/monthly attempt
+// ceilings derived from the provider-rate model. These are not dollar ledgers.
+// Expired rows are pruned while holding the limiter advisory lock.
 model EmbeddingRateBucket {
   key       String   @id
   count     Int

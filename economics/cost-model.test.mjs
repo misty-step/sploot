@@ -56,8 +56,11 @@ test('the rate registry names every cost-bearing capability and its authority', 
   const replicate = inputs.rates.find((rate) => rate.id === 'replicate-clip-prediction');
   assert.equal(replicate.value, 0.00073);
   assert.equal(replicate.sourceUrl, 'https://replicate.com/krthr/clip-embeddings');
-  assert.match(replicate.sourceEvidence, /0\.00073/);
-  assert.match(replicate.sourceEvidence, /1369/);
+  assert.equal(replicate.sourceEvidence.provider, 'Replicate');
+  assert.equal(replicate.sourceEvidence.value, 0.00073);
+  assert.equal(replicate.sourceEvidence.currency, 'USD');
+  assert.equal(replicate.sourceEvidence.sourceUrl, replicate.sourceUrl);
+  assert.equal(replicate.sourceEvidence.runsPerUsd, 1369);
   assert.equal(replicate.sourceEvidenceType, 'provider_model_page_estimate');
   const vercelOrigin = inputs.rates.find((rate) => rate.id === 'vercel-fast-origin-transfer');
   assert.equal(vercelOrigin.value, 0.06);
@@ -118,6 +121,55 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
   staleProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2020-01-01';
   assert.match(validateInputs(staleProviderEvidence).join('\n'), /provider cap evidence stale/);
 
+  const emptyVerifiedProviderEvidence = structuredClone(inputs);
+  emptyVerifiedProviderEvidence.policy.providerHardCaps[0].evidenceStatus = 'verified';
+  emptyVerifiedProviderEvidence.policy.providerHardCaps[0].evidence = {};
+  emptyVerifiedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15';
+  assert.match(
+    validateInputs(emptyVerifiedProviderEvidence).join('\n'),
+    /complete machine-readable object|\.provider must be a non-empty string/,
+  );
+
+  const incompleteVerifiedProviderEvidence = structuredClone(inputs);
+  incompleteVerifiedProviderEvidence.policy.providerHardCaps[0].evidenceStatus = 'verified';
+  incompleteVerifiedProviderEvidence.policy.providerHardCaps[0].evidence = {
+    provider: 'Application admission',
+    account: null,
+    control: 'monthly cap',
+    scope: 'calendar month',
+    value: 25,
+    unit: 'USD per calendar month',
+    currency: 'USD',
+    receiptIdentifier: 'test-fixture-receipt',
+    observedAt: '2026-07-15',
+    reviewer: 'economics-review',
+    secret: 'must-not-be-accepted',
+  };
+  incompleteVerifiedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15';
+  assert.match(validateInputs(incompleteVerifiedProviderEvidence).join('\n'), /not an allowed evidence field/);
+
+  const validVerifiedProviderEvidence = structuredClone(inputs);
+  validVerifiedProviderEvidence.policy.providerHardCaps[0].evidenceStatus = 'verified';
+  validVerifiedProviderEvidence.policy.providerHardCaps[0].evidence = {
+    provider: 'Application admission',
+    account: null,
+    control: 'monthly cap',
+    scope: 'calendar month',
+    value: 25,
+    unit: 'USD per calendar month',
+    currency: 'USD',
+    receiptIdentifier: 'test-fixture-receipt',
+    observedAt: '2026-07-15',
+    reviewer: 'economics-review',
+  };
+  validVerifiedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15';
+  assert.deepEqual(validateInputs(validVerifiedProviderEvidence), []);
+
+  const staleObservedProviderEvidence = structuredClone(validVerifiedProviderEvidence);
+  staleObservedProviderEvidence.policy.providerHardCaps[0].evidence.observedAt = '2020-01-01';
+  staleObservedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15';
+  assert.match(validateInputs(staleObservedProviderEvidence).join('\n'), /provider cap evidence stale/);
+
   const overConfiguredPreGaCap = structuredClone(inputs);
   overConfiguredPreGaCap.policy.global.preGaMonthlyVariableUsd = 250;
   assert.match(
@@ -132,6 +184,32 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
   const divergentDates = structuredClone(inputs);
   divergentDates.rates[0].retrievedAt = '2026-07-14';
   assert.match(validateInputs(divergentDates).join('\n'), /rate registry must use one retrieval date/);
+});
+
+test('Replicate rate evidence is independent of recomputed policy caps', async () => {
+  const inputs = await loadInputs();
+  const changed = structuredClone(inputs);
+  const newRate = 0.0001;
+  const replicate = changed.rates.find((rate) => rate.id === 'replicate-clip-prediction');
+  replicate.value = newRate;
+  for (const budget of Object.values(changed.policy.planBudgets)) {
+    for (const [usdKey, attemptsKey] of [
+      ['dailyInferenceUsd', 'dailyInferenceAttempts'],
+      ['monthlyInferenceUsd', 'monthlyInferenceAttempts'],
+    ]) {
+      budget[attemptsKey] = Math.floor(budget[usdKey] / newRate);
+      budget[usdKey] = Number((budget[attemptsKey] * newRate).toFixed(6));
+    }
+  }
+  for (const [usdKey, attemptsKey] of [
+    ['replicateDailyUsd', 'replicateDailyAttempts'],
+    ['replicateMonthlyUsd', 'replicateMonthlyAttempts'],
+  ]) {
+    changed.policy.global[attemptsKey] = Math.floor(changed.policy.global[usdKey] / newRate);
+    changed.policy.global[usdKey] = Number((changed.policy.global[attemptsKey] * newRate).toFixed(6));
+  }
+  const errors = validateInputs(changed).join('\n');
+  assert.match(errors, /sourceEvidence\.value must match the reviewed rate\/cap value/);
 });
 
 test('every required live usage field is validated table-first', async () => {
@@ -277,7 +355,12 @@ test('the checked-in report is exactly reproducible', async () => {
 test('recommendations are derived from versioned rates and workloads', async () => {
   const inputs = await loadInputs();
   const changed = structuredClone(inputs);
-  changed.rates.forEach((rate) => { rate.retrievedAt = '2026-07-16'; });
+  changed.rates.forEach((rate) => {
+    rate.retrievedAt = '2026-07-16';
+    if (rate.sourceEvidence && typeof rate.sourceEvidence === 'object') {
+      rate.sourceEvidence.observedAt = '2026-07-16';
+    }
+  });
   const free = changed.scenarios.find((scenario) => scenario.id === 'free');
   const collector = changed.scenarios.find((scenario) => scenario.id === 'collector');
   free.sourceTrashStorageGb = 0.75;

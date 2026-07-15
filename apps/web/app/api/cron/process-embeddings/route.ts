@@ -35,10 +35,11 @@ import {
 import type { EmbeddingOutcome } from '@/lib/embedding-errors';
 import { resolveEmbeddingMediaSource } from '@/lib/embedding-media';
 
-// Hard per-run cap on embeddings generated — the bound on Replicate spend per
+// Hard per-run cap on embedding attempts — the provider-rate safety bound per
 // invocation. With the */5 * * * * schedule this ceilings throughput at
-// ~10/5min. The kill-switch for embedding spend is the `embeddings` runtime
-// gate (checked below); flipping it off halts this cron. See ADR-008.
+// ~10/5min. The kill-switch for embedding attempts is the `embeddings` runtime
+// gate (checked below); flipping it off halts this cron. See ADR-008. Durable
+// dollar admission/reconciliation remains unimplemented.
 const EMBEDDINGS_BATCH_SIZE = 10;
 
 // Performance tracking
@@ -208,9 +209,8 @@ async function getHandler(request: NextRequest) {
       });
     }
 
-    // Keep one service per owner so every paid call is charged to the user
-    // whose asset is being processed. Admission remains enforced by the
-    // provider service's existing Postgres leases and daily budget.
+    // Keep one service per owner so every provider attempt uses the shared
+    // Postgres leases and attempt ceilings; this is not per-user dollar billing.
     const embeddingServices = new Map<string, EmbeddingService>();
 
     // Process each asset

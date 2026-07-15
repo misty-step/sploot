@@ -53,7 +53,7 @@ export interface IngestImageOptions {
   /**
    * Set false when the caller writes a precomputed vector itself (e.g. the
    * starter-pile seed): skips embedding scheduling entirely so no Replicate
-   * call, rate-limit lease, or daily-budget slot is spent on the asset.
+   * call, rate-limit lease, or daily attempt-ceiling slot is spent on the asset.
    */
   scheduleEmbeddings?: boolean;
 }

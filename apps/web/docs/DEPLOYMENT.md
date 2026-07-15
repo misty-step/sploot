@@ -13,8 +13,9 @@ trigger the configured source deployment.
 - Replicate embeddings;
 - Canary diagnostics.
 
-the embedding limiter and daily spend ceiling live in Postgres. there is no KV,
-Redis, or Upstash runtime dependency.
+the embedding limiter and daily/monthly provider-attempt ceilings live in
+Postgres. These counters are provider-rate safety, not durable dollar admission
+or reconciliation. There is no KV, Redis, or Upstash runtime dependency.
 
 ## required environment
 

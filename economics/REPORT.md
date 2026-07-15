@@ -1,6 +1,6 @@
 # Sploot economic safety envelope
 
-Generated deterministically from the versioned inputs in this directory. Rates were refreshed on 2026-07-15 and CI expires them after 30 days. This is a release gate, not a forecast: paid-tier margins charge on-demand rates so shared included pools cannot make an unprofitable plan look safe.
+Generated deterministically from the versioned inputs in this directory. Rates were refreshed on 2026-07-15 and CI expires them after 30 days. This is a release gate, not a forecast: paid-tier margins are modeled at on-demand rates so shared included pools cannot make an unprofitable plan look safe.
 
 ## Recommendation
 
@@ -9,7 +9,7 @@ Generated deterministically from the versioned inputs in this directory. Rates w
 - **Archive:** $49/month, 100 GB, 2,000 new indexes, 2,000 novel text embeddings, and 40 GB delivery. Modeled direct-variable COGS is $14.67; the fully loaded margin is unavailable until shared provider costs and a paid-customer mix are declared and read back.
 - Existing content remains readable, exportable, and deletable after a cost boundary closes. No plan permits silent overage.
 
-These are target candidates for entitlement and billing cards, not live promises. Enrollment is CLOSED. The runtime currently enforces attempt counters and claim/lease safety, not durable provider-dollar reservation or reconciliation. International/FX Stripe charges, provider-plan readbacks, shared DigitalOcean/Vercel allocation, and hard-cap receipts are unmet GA prerequisites; GA remains fail-closed.
+These are target candidates for entitlement and billing cards, not live promises. Enrollment is CLOSED. The runtime currently enforces attempt counters, provider-rate ceilings, and claim/lease safety, not durable provider-dollar admission, storage-ledger attribution, or reconciliation. International/FX Stripe charges, provider-plan readbacks, shared DigitalOcean/Vercel allocation, and hard-cap receipts are unmet GA prerequisites; GA remains fail-closed.
 
 ## Fully loaded margin status
 
@@ -29,7 +29,7 @@ Low/base/high vary physical rendition overhead (1.05×/1.10×/1.20×), Blob orig
 
 The abusive and viral rows deliberately exceed their account/global budgets; they prove quotas must cover novel inference, bytes, and request delivery rather than storage alone.
 
-## Dollar-derived budgets
+## Modeled dollar ceilings translated to attempt caps
 
 | Plan | Monthly infrastructure ceiling | Daily inference ceiling | Monthly inference ceiling |
 |---|---:|---:|---:|
@@ -37,11 +37,11 @@ The abusive and viral rows deliberately exceed their account/global budgets; the
 | collector | $3.00 | $0.07 (90 attempts) | $1.31 (1800 attempts) |
 | archive | $13.00 | $0.22 (300 attempts) | $3.50 (4800 attempts) |
 
-monthlyInfrastructureUsd is a target direct-variable ceiling in unrounded USD for each scenario's high-sensitivity full allowance; it is not a currently enforced provider-dollar cap. Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve. The pre-GA target is capped at $0.75/day and $25.00/month; the runtime currently enforces attempt counters, not dollar reservation/reconciliation. Replicate's target model sub-budget is $0.50/day (684 attempts) and $15.00/month (20547 attempts); live billed dollars remain unknown. After a future paid-admission implementation, the target monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; it is not a current runtime guarantee.
+monthlyInfrastructureUsd is a target direct-variable ceiling in unrounded USD for each scenario's high-sensitivity full allowance; it is not a currently enforced provider-dollar cap. Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve. The pre-GA modeled target is capped at $0.75/day and $25.00/month; runtime enforcement is by attempt counters and provider-rate safety, not dollar admission or reconciliation. Replicate's modeled target is $0.50/day (684 attempts) and $15.00/month (20547 attempts); live billed dollars remain unknown. After a future cost-admission/storage-ledger implementation, the target monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; it is not a current runtime guarantee.
 
 ## Provider control targets and evidence status
 
-- **Application admission:** target $25.00 per calendar month; action: deny new provider work before Blob, Replicate, or public delivery; enforcement: attempt_only; evidence: unverified (Dollar reservation and reconciliation are a later implementation; enrollment is CLOSED.).
+- **Application admission:** target $25.00 per calendar month; action: deny new provider work before Blob, Replicate, or public delivery; enforcement: attempt_only; evidence: unverified (Modeled dollar reservation and reconciliation are a later implementation; enrollment is CLOSED.).
 - **Replicate:** target $15.00 per calendar month; action: deny the target paid-attempt budget before provider work; enforcement: attempt_only; evidence: unverified (Runtime has attempt counters only; provider billed-dollar readback is unavailable.).
 - **Vercel Blob/CDN:** target amount unknown per current billing cycle; action: operator spend action plus application byte/request admission; enforcement: unverified; evidence: unverified (Blob billing is account-wide and unattributed at store level.).
 - **Neon:** target amount unknown per current billing cycle; action: provider plan controls plus application query/work admission; enforcement: unverified; evidence: unverified (Production plan, history, compute, and transfer readbacks are unavailable.).

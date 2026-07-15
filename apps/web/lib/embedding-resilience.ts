@@ -100,7 +100,7 @@ export function admissionBackoffSeconds(
 
   // Retry-After is a lower bound supplied by the admission/provider owner.
   // Capping it locally can reopen the circuit or rediscover an asset before
-  // the upstream window has elapsed, causing avoidable paid calls.
+  // the upstream window has elapsed, causing avoidable provider attempts.
   return Math.max(
     EMBEDDING_PROVIDER_MIN_BACKOFF_SECONDS,
     retryAfterSec ?? 0
