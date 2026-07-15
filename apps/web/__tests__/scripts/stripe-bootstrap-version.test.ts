@@ -175,6 +175,8 @@ describe('stripe ledger bootstrap version authority', () => {
     );
     expect(ci).toContain('CREATE ROLE sploot_stripe_app SUPERUSER INHERIT');
     expect(ci).toContain("test \"$role_converged\" = 't'");
+    expect(ci).toContain('marker_before_fault=');
+    expect(ci).toContain('test "$marker_after_fault" = "$marker_before_fault"');
   });
 
   it('uses normalized exact catalog definitions and converged security state', () => {

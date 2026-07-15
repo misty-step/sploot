@@ -529,14 +529,15 @@ jobs:
           ROLLBACK;
           SQL
 
-          # 3) Injected mid-install post-bootstrap fault: the transaction must
-          #    abort, the marker must stay non-ready, and the existence-safe
-          #    rollback must commit a durable 'failed' state.
+          # 3) Injected post-bootstrap replay fault: the transaction must abort
+          #    without changing the last committed ready marker, and the
+          #    existence-safe rollback must then commit a durable failed state.
+          marker_before_fault="$(psql "$admin_url" -Atc "SELECT phase || ':' || version || ':' || COALESCE(ready_digest, '') FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
           if PGOPTIONS='-c sploot.stripe_bootstrap_fault=post' psql "$admin_url" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-post.sql; then
             echo 'expected injected post-bootstrap fault to fail'; exit 1
           fi
-          marker="$(psql "$admin_url" -Atc "SELECT phase FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
-          test "$marker" = 'preparing'
+          marker_after_fault="$(psql "$admin_url" -Atc "SELECT phase || ':' || version || ':' || COALESCE(ready_digest, '') FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
+          test "$marker_after_fault" = "$marker_before_fault"
           psql "$admin_url" -v ON_ERROR_STOP=1 -f apps/web/prisma/stripe-ledger-bootstrap-rollback.sql
           marker="$(psql "$admin_url" -Atc "SELECT phase FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
           test "$marker" = 'failed'
