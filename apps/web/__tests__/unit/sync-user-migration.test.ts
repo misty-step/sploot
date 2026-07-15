@@ -54,10 +54,12 @@ describe('syncUser migration', () => {
         sql: (...args: any[]) => args,
         join: (vals: any[]) => vals,
         empty: Symbol('empty'),
+        TransactionIsolationLevel: { Serializable: 'Serializable' },
       };
 
       class PrismaClient {
         user = {
+          count: async () => state.users.length,
           findUnique: async ({ where }: any) => {
             if (where.id) return state.users.find((u) => u.id === where.id) ?? null;
             if (where.email) return state.users.find((u) => u.email === where.email) ?? null;
@@ -127,6 +129,23 @@ describe('syncUser migration', () => {
         };
 
         userIdentity = {
+          findUnique: async ({ where }: any) => {
+            const unique = where.unique_provider_subject;
+            return state.identities.find(
+              (identity) => identity.provider === unique.provider && identity.providerSubject === unique.providerSubject
+            ) ?? null;
+          },
+          findMany: async ({ where }: any) => state.identities.filter((identity) => identity.userId === where.userId),
+          updateMany: async ({ where, data }: any) => {
+            let count = 0;
+            state.identities.forEach((identity) => {
+              if (identity.userId === where.userId) {
+                Object.assign(identity, data, { updatedAt: new Date() });
+                count++;
+              }
+            });
+            return { count };
+          },
           upsert: async ({ where, update, create }: any) => {
             const unique = where.unique_provider_subject;
             const existing = state.identities.find(
@@ -155,6 +174,13 @@ describe('syncUser migration', () => {
           // no-op for middleware stubs
         }
 
+        userStorageQuota = { updateMany: async () => ({ count: 0 }) };
+        storageQuotaReservation = { updateMany: async () => ({ count: 0 }) };
+        uploadToken = { updateMany: async () => ({ count: 0 }) };
+        embeddingRateLease = { updateMany: async () => ({ count: 0 }) };
+
+        $executeRaw = async () => 0;
+
         async $transaction(fn: any) {
           return fn(this);
         }
@@ -171,6 +197,13 @@ describe('syncUser migration', () => {
     const newUserId = 'user_new';
 
     __dbState.users.push({ id: oldUserId, email, role: 'user' });
+    __dbState.identities.push({
+      id: 'identity_old',
+      userId: oldUserId,
+      provider: 'clerk',
+      providerSubject: oldUserId,
+      email,
+    });
     __dbState.assets.push({ id: 'asset1', ownerUserId: oldUserId });
     __dbState.tags.push({ id: 'tag1', ownerUserId: oldUserId, name: 'tags ftw' });
     __dbState.searchLogs.push({

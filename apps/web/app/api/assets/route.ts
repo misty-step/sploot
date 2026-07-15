@@ -5,7 +5,7 @@ import {
   isValidMimeType,
   isValidFileSize,
 } from "@sploot/common";
-import { createEmbeddingService, EmbeddingError } from "@/lib/embeddings";
+import { createEmbeddingService, EmbeddingError, type EmbeddingService } from "@/lib/embeddings";
 import crypto from "crypto";
 import { getCacheService } from "@/lib/cache";
 import { getAuthWithUser, requireUserIdWithSync } from "@/lib/auth/server";
@@ -29,6 +29,15 @@ import {
   getTasteWeightedAssets,
   MIN_TASTE_BANGER_EMBEDDINGS,
 } from "@/lib/taste/taste-engine";
+import {
+  assertEnrolledUser,
+  enrollmentDeniedResponse,
+  enrollmentIdentityConflictResponse,
+  enrollmentUnavailableResponse,
+  enrollmentResponseForError,
+  withEnrollmentIdentityWriter,
+  EnrollmentUnavailableError,
+} from "@/lib/enrollment/enrollment-policy";
 
 // Shuffle seed range: 0-1000000 for user-friendly integer values
 // Asset shuffle keys are stable signed BIGINT values.
@@ -270,12 +279,7 @@ async function postHandler(req: NextRequest) {
 
     const checksumSha256 = checksum || crypto.randomBytes(32).toString("hex");
 
-    if (!prisma) {
-      return NextResponse.json(
-        { error: "Database not configured" },
-        { status: 500 },
-      );
-    }
+    if (!prisma) return enrollmentUnavailableResponse();
 
     const existingAsset = await prisma.asset.findFirst({
       where: {
@@ -308,7 +312,7 @@ async function postHandler(req: NextRequest) {
     const quotaReservation = await reserveUploadBytes(userId, size);
     quotaReservationId = quotaReservation.id;
 
-    const asset = await prisma.asset.create({
+    const asset = await withEnrollmentIdentityWriter(prisma, userId, (tx) => tx.asset.create({
       data: {
         ownerUserId: userId,
         blobUrl,
@@ -321,15 +325,8 @@ async function postHandler(req: NextRequest) {
         favorite: false,
         shuffleKey: createAssetShuffleKey(),
       },
-      include: {
-        embedding: true,
-        tags: {
-          include: {
-            tag: true,
-          },
-        },
-      },
-    });
+      include: { embedding: true, tags: { include: { tag: true } } },
+    }));
     await releaseStorageQuotaReservation(quotaReservationId);
     quotaReservationId = null;
 
@@ -398,6 +395,9 @@ async function postHandler(req: NextRequest) {
   } catch (error) {
     await releaseStorageQuotaReservation(quotaReservationId);
 
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
+
     if (isUnauthorizedAuthError(error)) {
       return unauthorizedResponse();
     }
@@ -437,26 +437,29 @@ async function getHandler(req: NextRequest) {
   try {
     // Get auth with explicit sync status before validating request details so
     // signed-out callers consistently receive the auth contract.
-    const { userId, syncStatus, syncError } = await getAuthWithUser();
+    const { userId, syncStatus } = await getAuthWithUser();
+    // Check if database sync failed (prevents empty gallery bug)
+    if (syncStatus === "unavailable") {
+      return enrollmentUnavailableResponse();
+    }
+
+    if (syncStatus === "denied") {
+      return enrollmentDeniedResponse();
+    }
+
+    if (syncStatus === "conflict") {
+      return enrollmentIdentityConflictResponse();
+    }
+
+    if (syncStatus === "failed") {
+      return enrollmentUnavailableResponse();
+    }
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Check if database sync failed (prevents empty gallery bug)
-    if (syncStatus === "failed") {
-      return NextResponse.json(
-        {
-          error: "Account sync in progress. Please refresh in a few seconds.",
-          retry: true,
-          // Include error details in development only
-          ...(process.env.NODE_ENV === "development" && {
-            details: syncError,
-            syncStatus,
-          }),
-        },
-        { status: 503 },
-      );
-    }
+    await assertEnrolledUser(userId, prisma);
 
     // Parse query params INSIDE try block to catch URL parsing errors
     const { searchParams } = new URL(req.url);
@@ -558,12 +561,7 @@ async function getHandler(req: NextRequest) {
       }),
     };
 
-    if (!prisma) {
-      return NextResponse.json(
-        { error: "Database not configured" },
-        { status: 500 },
-      );
-    }
+    if (!prisma) return enrollmentUnavailableResponse();
 
     const shufflePivot =
       shuffleSeed !== undefined ? shuffleSeedToPivot(shuffleSeed) : null;
@@ -723,6 +721,9 @@ async function getHandler(req: NextRequest) {
     );
     return res;
   } catch (error) {
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
+
     unstable_rethrow(error);
     logError("GET /api/assets", error, {
       requestId,
@@ -748,10 +749,10 @@ async function generateEmbeddingAsync(
   assetId: string,
   imageUrl: string,
   checksum: string,
-  embeddingService: any,
+  embeddingService: EmbeddingService,
 ): Promise<void> {
   if (!prisma) {
-    return;
+    throw new EnrollmentUnavailableError();
   }
 
   try {

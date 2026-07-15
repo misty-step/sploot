@@ -19,7 +19,7 @@ vi.mock('@/lib/auth/api', () => ({
   isUnauthorizedAuthError: () => false,
   unauthorizedResponse: () => Response.json({ error: 'Unauthorized' }, { status: 401 }),
 }));
-vi.mock('@/lib/env', () => ({ blobConfigured: true }));
+vi.mock('@/lib/env', () => ({ blobConfigured: true, databaseConfigured: true }));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -29,6 +29,13 @@ vi.mock('@/lib/runtime-gates', () => ({
   runtimeGateResponse: () => Response.json({ error: 'disabled' }, { status: 503 }),
 }));
 vi.mock('@/lib/upload/ingest-image', () => ({ ingestImage: mocks.ingestImage }));
+vi.mock('@/lib/db', () => ({
+  prisma: {
+    user: {
+      findUnique: vi.fn().mockResolvedValue({ id: 'u1' }),
+    },
+  },
+}));
 vi.mock('@/lib/quota/storage-quota-policy', () => ({
   StorageQuotaExceededError: class StorageQuotaExceededError extends Error {},
   storageQuotaError: () => ({ error: 'quota' }),

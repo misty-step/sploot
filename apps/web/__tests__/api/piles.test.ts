@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
   authenticatedUserId: 'user-1',
   getAutomaticPiles: vi.fn(),
+  userFindUnique: vi.fn(),
   PileEmbeddingUnavailableError: class PileEmbeddingUnavailableError extends Error {
     constructor(message: string, public code = 'pile_anchor_embeddings_unavailable') {
       super(message);
@@ -34,6 +35,10 @@ vi.mock('@/lib/piles/semantic-piles', () => ({
   getAutomaticPiles: mocks.getAutomaticPiles,
 }));
 
+vi.mock('@/lib/db', () => ({
+  prisma: { user: { findUnique: mocks.userFindUnique } },
+}));
+
 vi.mock('@/lib/with-observability', () => ({
   withObservability: (handler: any) => handler,
 }));
@@ -52,6 +57,7 @@ describe('GET /api/piles', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.authenticatedUserId = 'user-1';
+    mocks.userFindUnique.mockResolvedValue({ id: 'user-1' });
     mocks.getAutomaticPiles.mockResolvedValue({
       status: 'ready',
       minimumAssets: 50,
@@ -140,5 +146,15 @@ describe('GET /api/piles', () => {
       code: 'pile_anchor_embeddings_unavailable',
       retryable: true,
     });
+  });
+
+  it('denies non-enrolled users before the embedding-backed pile path', async () => {
+    mocks.userFindUnique.mockResolvedValue(null);
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'enrollment_closed' });
+    expect(mocks.getAutomaticPiles).not.toHaveBeenCalled();
   });
 });

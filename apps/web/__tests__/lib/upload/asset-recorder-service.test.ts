@@ -6,6 +6,7 @@ import {
 } from '@/lib/upload/asset-recorder-service';
 import * as db from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { EnrollmentUnavailableError } from '@/lib/enrollment/enrollment-policy';
 
 // Mock dependencies
 vi.mock('@/lib/db');
@@ -45,6 +46,14 @@ describe('AssetRecorderService', () => {
     deletedAt: null,
   };
 
+  function withEnrollmentContract<T extends object>(tx: T) {
+    return {
+      ...tx,
+      $executeRaw: vi.fn().mockResolvedValue(0),
+      user: { findUnique: vi.fn().mockResolvedValue({ id: mockMetadata.ownerUserId }) },
+    };
+  }
+
   beforeEach(() => {
     recorder = new AssetRecorderService();
     vi.clearAllMocks();
@@ -64,7 +73,7 @@ describe('AssetRecorderService', () => {
       };
 
       vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => {
-        return await fn(mockTx);
+        return await fn(withEnrollmentContract(mockTx));
       });
 
       const result = await recorder.recordAsset(mockMetadata);
@@ -102,7 +111,7 @@ describe('AssetRecorderService', () => {
       };
 
       vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => {
-        return await fn(mockTx);
+        return await fn(withEnrollmentContract(mockTx));
       });
 
       const result = await recorder.recordAsset(mockMetadata, tags);
@@ -161,7 +170,7 @@ describe('AssetRecorderService', () => {
       };
 
       vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => {
-        return await fn(mockTx);
+        return await fn(withEnrollmentContract(mockTx));
       });
 
       const result = await recorder.recordAsset(mockMetadata, tags);
@@ -205,7 +214,7 @@ describe('AssetRecorderService', () => {
       };
 
       vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => {
-        return await fn(mockTx);
+        return await fn(withEnrollmentContract(mockTx));
       });
 
       const result = await recorder.recordAsset(mockMetadata, dirtyTags);
@@ -220,16 +229,16 @@ describe('AssetRecorderService', () => {
       });
     });
 
-    it('throws AssetRecordError when database not configured', async () => {
+    it('throws typed enrollment unavailable when database not configured', async () => {
       vi.mocked(db).prisma = null;
 
       await expect(
         recorder.recordAsset(mockMetadata)
-      ).rejects.toThrow(AssetRecordError);
+      ).rejects.toBeInstanceOf(EnrollmentUnavailableError);
 
       await expect(
         recorder.recordAsset(mockMetadata)
-      ).rejects.toThrow('Database not configured');
+      ).rejects.toMatchObject({ code: 'enrollment_unavailable' });
     });
 
     it('throws AssetRecordError on transaction failure', async () => {
@@ -260,7 +269,7 @@ describe('AssetRecorderService', () => {
       };
 
       vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => {
-        return await fn(mockTx);
+        return await fn(withEnrollmentContract(mockTx));
       });
 
       await recorder.recordAsset(mockMetadata, ['tag1', 'tag2']);
@@ -283,7 +292,7 @@ describe('AssetRecorderService', () => {
       };
 
       vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => {
-        return await fn(mockTx);
+        return await fn(withEnrollmentContract(mockTx));
       });
 
       await recorder.recordAsset(mockMetadata);
@@ -324,7 +333,7 @@ describe('AssetRecorderService', () => {
       };
 
       vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => {
-        return await fn(mockTx);
+        return await fn(withEnrollmentContract(mockTx));
       });
 
       const result = await recorder.recordAsset(mockMetadata, []);
@@ -353,7 +362,7 @@ describe('AssetRecorderService', () => {
       };
 
       vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => {
-        return await fn(mockTx);
+        return await fn(withEnrollmentContract(mockTx));
       });
 
       const result = await recorder.recordAsset(mockMetadata, invalidTags);
@@ -388,7 +397,7 @@ describe('AssetRecorderService', () => {
       };
 
       vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => {
-        return await fn(mockTx);
+        return await fn(withEnrollmentContract(mockTx));
       });
 
       const result = await recorder.addTagsToAsset('asset-123', 'user-123', tags);
@@ -404,12 +413,12 @@ describe('AssetRecorderService', () => {
       expect(result.tagsAssociated).toBe(0);
     });
 
-    it('throws error when database not configured', async () => {
+    it('throws typed enrollment unavailable when database not configured', async () => {
       vi.mocked(db).prisma = null;
 
       await expect(
         recorder.addTagsToAsset('asset-123', 'user-123', ['tag1'])
-      ).rejects.toThrow(AssetRecordError);
+      ).rejects.toBeInstanceOf(EnrollmentUnavailableError);
     });
 
     it('logs success message', async () => {
@@ -426,7 +435,7 @@ describe('AssetRecorderService', () => {
       };
 
       vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => {
-        return await fn(mockTx);
+        return await fn(withEnrollmentContract(mockTx));
       });
 
       await recorder.addTagsToAsset('asset-123', 'user-123', ['tag1']);
@@ -485,7 +494,7 @@ describe('AssetRecorderService', () => {
       };
 
       vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => {
-        return await fn(mockTx);
+        return await fn(withEnrollmentContract(mockTx));
       });
 
       await recorder.recordAsset(mockMetadata, tags);
@@ -516,7 +525,7 @@ describe('AssetRecorderService', () => {
       };
 
       vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => {
-        return await fn(mockTx);
+        return await fn(withEnrollmentContract(mockTx));
       });
 
       const result = await recorder.recordAsset(mockMetadata, tags);

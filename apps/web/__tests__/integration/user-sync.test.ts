@@ -15,6 +15,20 @@ describe('User Sync Integration Tests', () => {
   const newUserId = 'user_new_test_67890';
   const testEmail = 'test@sploot-integration-test.com';
 
+  async function createOrphanUser() {
+    await prisma.user.create({
+      data: { id: oldUserId, email: testEmail },
+    });
+    await prisma.userIdentity.create({
+      data: {
+        userId: oldUserId,
+        provider: 'clerk',
+        providerSubject: oldUserId,
+        email: testEmail,
+      },
+    });
+  }
+
   beforeEach(async () => {
     // Clean up any existing test data
     await prisma?.searchLog.deleteMany({
@@ -169,9 +183,7 @@ describe('User Sync Integration Tests', () => {
       }
 
       // Setup: Create old user with assets
-      await prisma.user.create({
-        data: { id: oldUserId, email: testEmail },
-      });
+      await createOrphanUser();
 
       const assetIds = await Promise.all([
         prisma.asset.create({
@@ -229,9 +241,7 @@ describe('User Sync Integration Tests', () => {
       }
 
       // Setup: Create old user with tags
-      await prisma.user.create({
-        data: { id: oldUserId, email: testEmail },
-      });
+      await createOrphanUser();
 
       const tagIds = await Promise.all([
         prisma.tag.create({
@@ -268,9 +278,7 @@ describe('User Sync Integration Tests', () => {
       }
 
       // Setup: Create old user with search logs
-      await prisma.user.create({
-        data: { id: oldUserId, email: testEmail },
-      });
+      await createOrphanUser();
 
       await Promise.all([
         prisma.searchLog.create({
@@ -314,9 +322,7 @@ describe('User Sync Integration Tests', () => {
       }
 
       // Setup: Create old user with no assets
-      await prisma.user.create({
-        data: { id: oldUserId, email: testEmail },
-      });
+      await createOrphanUser();
 
       // Act: Sync new user
       const result = await syncUser(newUserId, testEmail);
@@ -377,9 +383,7 @@ describe('User Sync Integration Tests', () => {
       }
 
       // Setup: Create old user
-      await prisma.user.create({
-        data: { id: oldUserId, email: testEmail },
-      });
+      await createOrphanUser();
 
       // Act: Sync (triggers migration)
       await syncUser(newUserId, testEmail);

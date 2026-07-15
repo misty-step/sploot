@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { clerkConfigured, blobConfigured, databaseConfigured, replicateConfigured } from '@/lib/env';
 import { prisma } from '@/lib/db';
-import { currentUser } from '@clerk/nextjs/server';
+import { getAuthWithUser } from '@/lib/auth/server';
 import { canaryConfigured, checkCanaryStatus } from '@/lib/canary-reporter';
 import { withObservability } from '@/lib/with-observability';
+import {
+  enrollmentDeniedResponse,
+  enrollmentIdentityConflictResponse,
+  enrollmentUnavailableResponse,
+} from '@/lib/enrollment/enrollment-policy';
 
 /**
  * Service health check endpoint
@@ -21,12 +26,15 @@ async function getHandler(req: NextRequest) {
   // Check Clerk Authentication
   try {
     if (clerkConfigured) {
-      const user = await currentUser();
+      const auth = await getAuthWithUser();
+      if (auth.syncStatus === 'denied') return enrollmentDeniedResponse();
+      if (auth.syncStatus === 'conflict') return enrollmentIdentityConflictResponse();
+      if (auth.syncStatus === 'unavailable' || auth.syncStatus === 'failed') return enrollmentUnavailableResponse();
       services.clerk = {
         name: 'Authentication (Clerk)',
-        status: user ? 'healthy' : 'degraded',
+        status: auth.userId ? 'healthy' : 'degraded',
         configured: true,
-        message: user ? `Authenticated as ${user.emailAddresses[0]?.emailAddress}` : 'No active session',
+        message: auth.userId ? 'Authenticated' : 'No active session',
       };
     } else {
       services.clerk = {

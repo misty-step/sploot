@@ -1,7 +1,7 @@
 export type AuthProvider = 'clerk' | 'qa-local' | 'upload-token';
 export type AuthSource = 'clerk-request' | 'qa-local' | 'upload-token';
 export type AuthCredentialKind = 'cookie-or-bearer' | 'qa-local' | 'upload-token';
-export type AuthSyncStatus = 'success' | 'failed' | 'skipped';
+export type AuthSyncStatus = 'success' | 'failed' | 'denied' | 'unavailable' | 'conflict' | 'skipped';
 
 export interface AuthenticatedPrincipal {
   userId: string;
@@ -20,6 +20,11 @@ export interface AuthenticatedResult {
   syncError?: string;
 }
 
+export interface EnrollmentUnavailableAuthResult {
+  status: 'unavailable';
+  reason: 'enrollment_unavailable';
+}
+
 export interface UnauthenticatedResult {
   status: 'unauthenticated';
   reason: string;
@@ -33,7 +38,8 @@ export interface ForbiddenAuthResult {
 export type RequestAuthResult =
   | AuthenticatedResult
   | UnauthenticatedResult
-  | ForbiddenAuthResult;
+  | ForbiddenAuthResult
+  | EnrollmentUnavailableAuthResult;
 
 export interface AuthPolicy {
   allowClerk?: boolean;
@@ -44,6 +50,5 @@ export interface AuthPolicy {
    * token upload-only. See lib/auth/upload-token.ts.
    */
   allowUploadToken?: boolean;
-  requireUserSync?: boolean;
   env?: Record<string, string | undefined>;
 }

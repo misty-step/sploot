@@ -1,6 +1,11 @@
 import { prisma } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import type { Asset } from '@prisma/client';
+import { Prisma, type Asset } from '@prisma/client';
+import {
+  acquireEnrollmentIdentityWriterLock,
+  EnrollmentUnavailableError,
+  isEnrollmentUnavailableError,
+} from '@/lib/enrollment/enrollment-policy';
 
 /**
  * Asset recording error
@@ -63,10 +68,7 @@ export class AssetRecorderService {
     tags: string[] = []
   ): Promise<AssetRecordResult> {
     if (!prisma) {
-      throw new AssetRecordError(
-        'Database not configured',
-        false // Not retryable - configuration issue
-      );
+      throw new EnrollmentUnavailableError();
     }
 
     // Sanitize and deduplicate tags
@@ -80,6 +82,15 @@ export class AssetRecorderService {
 
     try {
       const result = await prisma.$transaction(async (tx) => {
+        await acquireEnrollmentIdentityWriterLock(tx, metadata.ownerUserId);
+        const enrolledUser = await tx.user.findUnique({
+          where: { id: metadata.ownerUserId },
+          select: { id: true },
+        });
+        if (!enrolledUser) {
+          throw new EnrollmentUnavailableError();
+        }
+
         // Create the asset
         const asset = await tx.asset.create({
           data: {
@@ -135,6 +146,7 @@ export class AssetRecorderService {
         error: error instanceof Error ? error.message : String(error),
       });
 
+      if (isEnrollmentUnavailableError(error)) throw error;
       throw new AssetRecordError(
         'Failed to record asset in database',
         true, // Retryable - could be transient DB issue
@@ -159,7 +171,7 @@ export class AssetRecorderService {
    * Total: 3 queries regardless of tag count
    */
   private async batchCreateTags(
-    tx: any,
+    tx: Prisma.TransactionClient,
     userId: string,
     tagNames: string[],
     assetId: string
@@ -261,7 +273,7 @@ export class AssetRecorderService {
     tags: string[]
   ): Promise<{ tagsCreated: number; tagsAssociated: number }> {
     if (!prisma) {
-      throw new AssetRecordError('Database not configured', false);
+      throw new EnrollmentUnavailableError();
     }
 
     const uniqueTags = this.sanitizeTags(tags);
@@ -278,6 +290,14 @@ export class AssetRecorderService {
 
     try {
       const result = await prisma.$transaction(async (tx) => {
+        await acquireEnrollmentIdentityWriterLock(tx, userId);
+        const enrolledUser = await tx.user.findUnique({
+          where: { id: userId },
+          select: { id: true },
+        });
+        if (!enrolledUser) {
+          throw new EnrollmentUnavailableError();
+        }
         return await this.batchCreateTags(tx, userId, uniqueTags, assetId);
       });
 
@@ -295,6 +315,7 @@ export class AssetRecorderService {
         error: error instanceof Error ? error.message : String(error),
       });
 
+      if (isEnrollmentUnavailableError(error)) throw error;
       throw new AssetRecordError(
         'Failed to add tags to asset',
         true,

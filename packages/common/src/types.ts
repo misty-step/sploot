@@ -12,6 +12,9 @@ export type SplootApiErrorCode =
   | 'embeddings_disabled'
   | 'invalid_upload'
   | 'rate_limited'
+  | 'enrollment_closed'
+  | 'enrollment_unavailable'
+  | 'enrollment_identity_conflict'
   | 'server_error';
 
 export type SplootApiErrorActionType =

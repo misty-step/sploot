@@ -77,4 +77,13 @@ describe('verifyBearerOrThrow', () => {
       verifyBearerOrThrow(new NextRequest('http://localhost:3001/api/upload'))
     ).rejects.toThrow('Unauthorized');
   });
+
+  it('surfaces provider failures for the shared request seam to classify as 503', async () => {
+    authenticateRequest.mockRejectedValue(new Error('Clerk provider unavailable'));
+    const { authenticateRequest: authenticate } = await import('@/lib/auth/request-auth');
+
+    const result = await authenticate(new NextRequest('http://localhost:3001/api/upload'));
+
+    expect(result).toMatchObject({ status: 'unavailable', reason: 'enrollment_unavailable' });
+  });
 });

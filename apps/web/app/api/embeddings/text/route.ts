@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
-import { getAuth } from '@/lib/auth/server';
+import { createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
 import { withObservability } from '@/lib/with-observability';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
+import { prisma } from '@/lib/db';
+import {
+  assertEnrolledUser,
+  enrollmentDeniedResponse,
+  enrollmentUnavailableResponse,
+  isEnrollmentDeniedError,
+  isEnrollmentUnavailableError,
+} from '@/lib/enrollment/enrollment-policy';
 
-async function postHandler(req: NextRequest) {
+async function postHandler(req: NextRequest, _context: unknown, { principal }: AuthenticatedApiContext) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     const body = await req.json();
     const { query } = body;
@@ -35,6 +38,8 @@ async function postHandler(req: NextRequest) {
     if (!embeddingGate.enabled) {
       return runtimeGateResponse(embeddingGate);
     }
+
+    await assertEnrolledUser(userId, prisma);
 
     let embeddingService;
     try {
@@ -61,11 +66,13 @@ async function postHandler(req: NextRequest) {
     });
 
   } catch (error) {
+    if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
+    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
     // Error generating text embedding
 
     if (error instanceof EmbeddingError) {
       return NextResponse.json(
-        { error: error.message },
+        { error: error.message, ...(error instanceof EmbeddingAdmissionError && error.code ? { code: error.code } : {}) },
         { status: error.statusCode || 500 }
       );
     }
@@ -77,4 +84,4 @@ async function postHandler(req: NextRequest) {
   }
 }
 
-export const POST = withObservability(postHandler, { operation: 'embeddings:text' });
+export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'embeddings:text' });

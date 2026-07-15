@@ -1,4 +1,5 @@
 import { PrismaClient, Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 import { databaseConfigured } from './env';
 import logger from './logger';
@@ -6,6 +7,18 @@ import { shuffleWithSeed } from './seeded-random';
 import { getPerformanceMonitor } from './performance-monitor';
 import { logger as observabilityLogger } from './observability-logger';
 import { embeddingVectorSql } from './embedding-vector-sql';
+import {
+  acquireEnrollmentAdvisoryLock,
+  acquireEnrollmentIdentityWriterLock,
+  assertNewEnrollmentAllowed,
+  getEnrollmentStatus,
+  EnrollmentIdentityConflictError,
+  EnrollmentDeniedError,
+  EnrollmentUnavailableError,
+  isEnrollmentDeniedError,
+  isEnrollmentIdentityConflictError,
+  isEnrollmentUnavailableError,
+} from './enrollment/enrollment-policy';
 
 // Declare global type for PrismaClient to prevent multiple instances in development
 declare global {
@@ -137,148 +150,211 @@ export const prisma = prismaClient as unknown as PrismaClient;
  */
 export async function syncUser(clerkUserId: string, email: string) {
   if (!prisma) {
+    const enrollmentStatus = getEnrollmentStatus();
+    const deploymentMarker = process.env.SPLOOT_DEPLOYMENT_ENV?.trim().toLowerCase();
+    const explicitlyLocal =
+      process.env.NODE_ENV === 'development' ||
+      process.env.NODE_ENV === 'test' ||
+      deploymentMarker === 'development' ||
+      deploymentMarker === 'test';
+    if (!explicitlyLocal || enrollmentStatus.configuration !== 'valid') {
+      throw new EnrollmentUnavailableError();
+    }
+
     return {
       id: clerkUserId,
       email,
       role: 'user',
       createdAt: new Date(),
       updatedAt: new Date(),
-    } as any;
+    };
   }
 
-  // 1. Check if there's an orphaned user with this email but different ID
-  const existingUserByEmail = await prisma.user.findUnique({
-    where: { email },
-  });
+  try {
+    return await executeUserSyncTransaction(async (tx) => {
+    // User identity replacement and new-account admission share one
+    // application-wide serialization point. This keeps the email lookup,
+    // identity decision, and ownership move on the same database timeline.
+    await acquireEnrollmentAdvisoryLock(tx);
+    const existingUserById = await tx.user.findUnique({ where: { id: clerkUserId } });
+    const existingUserByEmail = await tx.user.findUnique({ where: { email } });
 
-  // 2. Normal case: no orphaned record, use upsert for idempotent create/update
-  // This avoids race conditions when concurrent requests try to create the same user
-  if (!existingUserByEmail || existingUserByEmail.id === clerkUserId) {
-    try {
-      const user = await prisma.user.upsert({
-        where: { id: clerkUserId },
-        update: { email },
-        create: { id: clerkUserId, email },
-      });
-      await syncClerkIdentity(clerkUserId, user.id, email);
-      return user;
-    } catch (e) {
-      // Handle race condition: if unique constraint fails, fetch the user
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        const user = await prisma.user.findUnique({ where: { id: clerkUserId } });
-        if (user) {
-          await syncClerkIdentity(clerkUserId, user.id, email);
-          return user;
-        }
+    if (existingUserById) {
+      if (existingUserByEmail && existingUserByEmail.id !== clerkUserId) {
+        throw new EnrollmentIdentityConflictError();
       }
-      throw e;
+
+      const user = await tx.user.update({
+        where: { id: clerkUserId },
+        data: { email },
+      });
+      await syncClerkIdentity(tx, clerkUserId, user.id, email);
+      return user;
     }
-  }
 
-  // 3. Orphaned record detected: user with this email has a different Clerk ID
-  if (existingUserByEmail) {
+    if (!existingUserByEmail) {
+      await assertNewEnrollmentAllowed(tx);
+      const user = await tx.user.create({ data: { id: clerkUserId, email } });
+      await syncClerkIdentity(tx, clerkUserId, user.id, email);
+      return user;
+    }
 
-    // Orphaned record detected: user with this email has a different Clerk ID
-    // Simplified migration: 3 atomic steps (Ousterhout: reduce complexity)
-    logger.warn('Detected orphaned user record, migrating to current Clerk user', {
+    // A user that already carries a replacement/current Clerk subject is a
+    // real account, not an orphan to migrate again. Replacing it would make a
+    // second concurrent recovery silently move the same library onward.
+    const emailUserClerkIdentities = await tx.userIdentity.findMany({
+      where: { userId: existingUserByEmail.id, provider: 'clerk' },
+      select: { providerSubject: true },
+    });
+    if (emailUserClerkIdentities.some((identity) => identity.providerSubject !== existingUserByEmail.id)) {
+      throw new EnrollmentIdentityConflictError();
+    }
+
+    logger.warn('Detected identity-backed orphaned user, migrating ownership', {
       orphanedId: existingUserByEmail.id,
       newClerkUserId: clerkUserId,
       email,
     });
-
-    return await prisma.$transaction(async (tx) => {
-      const oldUserId = existingUserByEmail.id;
-      const newUserId = clerkUserId;
-
-      // Step 1: Create new user with correct ID and email
-      // Uses temporary email suffix to avoid unique constraint during migration
-      const tempEmail = `${email}.migrating.${Date.now()}`;
-      const newUser = await tx.user.create({
-        data: {
-          id: newUserId,
-          email: tempEmail,
-        },
-      });
-
-      // Step 2: Re-parent data to new user
-      // Prisma rejects multi-statement executeRaw; run explicit updates instead
-      await tx.asset.updateMany({
-        where: { ownerUserId: oldUserId },
-        data: { ownerUserId: newUserId },
-      });
-
-      await tx.tag.updateMany({
-        where: { ownerUserId: oldUserId },
-        data: { ownerUserId: newUserId },
-      });
-
-      await tx.searchLog.updateMany({
-        where: { userId: oldUserId },
-        data: { userId: newUserId },
-      });
-
-      // Step 3: Delete old user, then fix new user's email
-      // (old user has no more references due to step 2, so DELETE succeeds)
-      await tx.user.delete({ where: { id: oldUserId } });
-
-      // Now we can set the real email (unique constraint is free)
-      const user = await tx.user.update({
-        where: { id: newUserId },
-        data: { email },
-      });
-      await tx.userIdentity.upsert({
-        where: {
-          unique_provider_subject: {
-            provider: 'clerk',
-            providerSubject: clerkUserId,
-          },
-        },
-        update: {
-          userId: user.id,
-          email,
-        },
-        create: {
-          userId: user.id,
-          provider: 'clerk',
-          providerSubject: clerkUserId,
-          email,
-        },
-      });
-
-      return user;
-    }, {
-      // Increase timeout for migration transactions (default 5s may be too short)
-      timeout: 15000,
-      // Use SERIALIZABLE isolation to prevent concurrent migrations
-      isolationLevel: 'Serializable',
-    });
-  }
-
-  // Unreachable: upsert handles all non-orphaned cases
-  throw new Error('syncUser: unexpected code path');
-}
-
-async function syncClerkIdentity(clerkUserId: string, userId: string, email: string) {
-  try {
-    await syncClerkIdentityStrict(clerkUserId, userId, email);
-  } catch (e) {
-    // Identity mirroring is a secondary index of the Clerk linkage; the user
-    // row itself synced fine. Schema drift here (e.g. migration not yet
-    // applied) must not fail auth for every signed-in user.
-    // Incident 2026-06-09: missing user_identities table 503'd the whole app.
-    if (e instanceof Prisma.PrismaClientKnownRequestError && (e.code === 'P2021' || e.code === 'P2022')) {
-      logger.error('syncClerkIdentity skipped: schema out of date', {
-        code: e.code,
-        clerkUserId,
-      });
-      return;
+    return migrateOrphanedUser(tx, existingUserByEmail.id, clerkUserId, email);
+    }, 5, 15000);
+  } catch (error: unknown) {
+    if (
+      error instanceof EnrollmentDeniedError ||
+      isEnrollmentDeniedError(error) ||
+      isEnrollmentUnavailableError(error) ||
+      isEnrollmentIdentityConflictError(error)
+    ) {
+      throw error;
     }
-    throw e;
+    throw new EnrollmentUnavailableError();
   }
 }
 
-async function syncClerkIdentityStrict(clerkUserId: string, userId: string, email: string) {
-  await prisma.userIdentity.upsert({
+async function executeUserSyncTransaction<T>(
+  action: (tx: Prisma.TransactionClient) => Promise<T>,
+  maxAttempts = 5,
+  timeout = 5000,
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await prisma!.$transaction(action, {
+        timeout,
+        // The per-identity advisory fence can wait for a writer that started
+        // before this transaction. READ COMMITTED gives the first relation
+        // statement after that fence a fresh snapshot, so a writer-held
+        // SearchLog/lease cannot commit behind an old serializable snapshot.
+        // Admission remains indivisible because its aggregate lock and User
+        // INSERT are in this same transaction. P2034/deadlock retries remain
+        // enabled for providers that surface them.
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      });
+    } catch (error: unknown) {
+      const pgCode = getPrismaErrorCode(error);
+      const isSerializationConflict =
+        pgCode === 'P2034' ||
+        pgCode === '40001' || pgCode === '40P01' ||
+        (error instanceof Error && (
+          error.message.includes('write conflict') ||
+          error.message.includes('deadlock detected') ||
+          error.message.includes('serialization failure')
+        ));
+
+      if (!isSerializationConflict || attempt === maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 10 * attempt));
+    }
+  }
+
+  throw new Error('BUG: user sync transaction retry loop terminated');
+}
+
+async function migrateOrphanedUser(
+  tx: Prisma.TransactionClient,
+  oldUserId: string,
+  newUserId: string,
+  email: string,
+) {
+  await acquireEnrollmentAdvisoryLock(tx);
+  await acquireEnrollmentIdentityWriterLock(tx, oldUserId);
+  const [targetUser, currentIdentity, oldIdentities] = await Promise.all([
+    tx.user.findUnique({ where: { id: newUserId } }),
+    tx.userIdentity.findUnique({
+      where: {
+        unique_provider_subject: {
+          provider: 'clerk',
+          providerSubject: newUserId,
+        },
+      },
+    }),
+    tx.userIdentity.findMany({ where: { userId: oldUserId } }),
+  ]);
+
+  if (targetUser || (currentIdentity && currentIdentity.userId !== oldUserId)) {
+    throw new EnrollmentIdentityConflictError();
+  }
+
+  const clerkSubjects = oldIdentities
+    .filter((identity) => identity.provider === 'clerk')
+    .map((identity) => identity.providerSubject);
+  if (clerkSubjects.length === 0 || clerkSubjects.some((subject) => subject !== oldUserId && subject !== newUserId)) {
+    throw new EnrollmentIdentityConflictError();
+  }
+
+  const tempEmail = `${email}.migrating.${randomUUID()}`;
+  await tx.user.create({ data: { id: newUserId, email: tempEmail } });
+
+  // Keep this list explicit: these are every user-owned relation in the
+  // Prisma schema, plus the lease table whose user_id is intentionally
+  // unmodeled because it is ephemeral and does not have a foreign key.
+  await tx.asset.updateMany({ where: { ownerUserId: oldUserId }, data: { ownerUserId: newUserId } });
+  await tx.tag.updateMany({ where: { ownerUserId: oldUserId }, data: { ownerUserId: newUserId } });
+  await tx.searchLog.updateMany({ where: { userId: oldUserId }, data: { userId: newUserId } });
+  await tx.userStorageQuota.updateMany({ where: { userId: oldUserId }, data: { userId: newUserId } });
+  await tx.storageQuotaReservation.updateMany({ where: { ownerUserId: oldUserId }, data: { ownerUserId: newUserId } });
+  await tx.uploadToken.updateMany({ where: { userId: oldUserId }, data: { userId: newUserId } });
+  await tx.embeddingRateLease.updateMany({ where: { userId: oldUserId }, data: { userId: newUserId } });
+  await tx.userIdentity.updateMany({ where: { userId: oldUserId }, data: { userId: newUserId } });
+
+  await tx.user.delete({ where: { id: oldUserId } });
+  const user = await tx.user.update({ where: { id: newUserId }, data: { email } });
+  // Validate the identity replacement itself, not a database-wide count that
+  // can legitimately change under READ COMMITTED while unrelated enrollments
+  // complete. This transaction must leave exactly one of the old/new IDs.
+  if (await tx.user.count({ where: { id: { in: [oldUserId, newUserId] } } }) !== 1) {
+    throw new EnrollmentUnavailableError();
+  }
+  await syncClerkIdentity(tx, newUserId, user.id, email);
+  return user;
+}
+
+function getPrismaErrorCode(error: unknown): string | undefined {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return error.code;
+  }
+
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = error.code;
+    return typeof code === 'string' ? code : undefined;
+  }
+
+  return undefined;
+}
+
+async function syncClerkIdentity(
+  tx: Prisma.TransactionClient,
+  clerkUserId: string,
+  userId: string,
+  email: string,
+) {
+  await syncClerkIdentityStrict(tx, clerkUserId, userId, email);
+}
+
+async function syncClerkIdentityStrict(
+  tx: Prisma.TransactionClient,
+  clerkUserId: string,
+  userId: string,
+  email: string,
+) {
+  await tx.userIdentity.upsert({
     where: {
       unique_provider_subject: {
         provider: 'clerk',
@@ -334,7 +410,7 @@ export async function assetExists(
     /**
      * Run inside a transaction for concurrency safety
      */
-    tx?: any;
+    tx?: Prisma.TransactionClient;
     /**
      * Include embedding existence check
      */
@@ -432,13 +508,16 @@ export async function findOrCreateAsset(
   }
 ): Promise<ExistingAssetMetadata> {
   if (!prisma) {
-    throw new Error('Database not available');
+    throw new EnrollmentUnavailableError();
   }
 
   // Use a transaction to handle race conditions
   return await prisma.$transaction(async (tx) => {
+    await acquireEnrollmentIdentityWriterLock(tx, userId);
+    const enrolledUser = await tx.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (!enrolledUser) throw new EnrollmentUnavailableError();
     // First check if asset already exists
-    const existing = await assetExists(userId, assetData.checksumSha256, { tx: tx as any });
+    const existing = await assetExists(userId, assetData.checksumSha256, { tx });
 
     if (existing) {
       return existing;
@@ -492,7 +571,7 @@ export async function findOrCreateAsset(
       // Handle unique constraint violation (another request created it)
       if (error instanceof Error && error.message.includes('Unique constraint')) {
         // Try to fetch the asset again
-        const existing = await assetExists(userId, assetData.checksumSha256, { tx: tx as any });
+        const existing = await assetExists(userId, assetData.checksumSha256, { tx });
         if (existing) {
           return existing;
         }
@@ -782,13 +861,16 @@ export async function logSearch(
   }
 
   try {
-    await prisma.searchLog.create({
-      data: {
-        userId,
-        query,
-        resultCount,
-        queryTime,
-      },
+    await prisma.$transaction(async (tx) => {
+      await acquireEnrollmentIdentityWriterLock(tx, userId);
+      const enrolledUser = await tx.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      });
+      if (!enrolledUser) return;
+      await tx.searchLog.create({
+        data: { userId, query, resultCount, queryTime },
+      });
     });
   } catch (error) {
     // Log search analytics failures shouldn't break the app

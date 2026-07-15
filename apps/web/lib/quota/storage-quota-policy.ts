@@ -1,6 +1,12 @@
 import { Prisma } from '@prisma/client';
 import type { StorageQuotaSnapshot } from '@sploot/common';
 import { prisma } from '@/lib/db';
+import {
+  acquireEnrollmentIdentityWriterLock,
+  EnrollmentUnavailableError,
+  getEnrollmentStatus,
+  isEnrollmentUnavailableError,
+} from '@/lib/enrollment/enrollment-policy';
 
 export const DEFAULT_STORAGE_QUOTA_BYTES = 1024 * 1024 * 1024;
 const RESERVATION_TTL_MS = 15 * 60 * 1000;
@@ -55,8 +61,12 @@ function toPublicSnapshot(snapshot: StorageQuotaSnapshotBigInt): StorageQuotaSna
   };
 }
 
-async function readSnapshot(tx: any, userId: string, incomingBytes?: bigint): Promise<StorageQuotaSnapshotBigInt> {
+async function readSnapshot(tx: Prisma.TransactionClient, userId: string, incomingBytes?: bigint): Promise<StorageQuotaSnapshotBigInt> {
   const now = new Date();
+
+  await acquireEnrollmentIdentityWriterLock(tx, userId);
+  const enrolledUser = await tx.user.findUnique({ where: { id: userId }, select: { id: true } });
+  if (!enrolledUser) throw new EnrollmentUnavailableError();
 
   await tx.userStorageQuota.upsert({
     where: { userId },
@@ -112,7 +122,11 @@ async function readSnapshot(tx: any, userId: string, incomingBytes?: bigint): Pr
 }
 
 export async function getStorageQuotaSnapshot(userId: string): Promise<StorageQuotaSnapshot> {
-  if (!prisma || typeof (prisma as any).$transaction !== 'function') {
+  if (!prisma || typeof prisma.$transaction !== 'function') {
+    const deploymentMarker = getEnrollmentStatus().deploymentMarker;
+    if (deploymentMarker === 'production' || deploymentMarker === 'staging') {
+      throw new EnrollmentUnavailableError();
+    }
     return {
       usedBytes: 0,
       limitBytes: DEFAULT_STORAGE_QUOTA_BYTES,
@@ -129,16 +143,9 @@ export async function getStorageQuotaSnapshot(userId: string): Promise<StorageQu
     // request can reach this read before its users row exists. The quota
     // upsert then hits the user FK; degrade to the default snapshot instead
     // of failing the whole stats read.
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === 'P2003'
-    ) {
-      return {
-        usedBytes: 0,
-        limitBytes: DEFAULT_STORAGE_QUOTA_BYTES,
-        remainingBytes: DEFAULT_STORAGE_QUOTA_BYTES,
-        reservedBytes: 0,
-      };
+    if (isEnrollmentUnavailableError(error)) throw error;
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+      throw new EnrollmentUnavailableError();
     }
     throw error;
   }
@@ -153,7 +160,7 @@ export async function reserveUploadBytes(
   }
 
   if (!prisma) {
-    throw new Error('Database not configured');
+    throw new EnrollmentUnavailableError();
   }
 
   return executeTransactionWithRetry(async (tx) => {
@@ -190,7 +197,7 @@ export async function checkUploadBytesAllowed(
   }
 
   if (!prisma) {
-    throw new Error('Database not configured');
+    throw new EnrollmentUnavailableError();
   }
 
   const snapshot = await executeTransactionWithRetry(async (tx) => {
@@ -213,7 +220,7 @@ export async function checkUploadBytesAllowed(
  * Follows exponential backoff with jitter to maximize concurrency throughput.
  */
 async function executeTransactionWithRetry<T>(
-  action: (tx: any) => Promise<T>,
+  action: (tx: Prisma.TransactionClient) => Promise<T>,
   maxAttempts = 5,
   baseDelayMs = 50
 ): Promise<T> {
@@ -222,12 +229,12 @@ async function executeTransactionWithRetry<T>(
       return await prisma!.$transaction(action, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Detect P2034 (Prisma serialization failure)
       const isSerializationError =
         error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034';
       // Detect raw PostgreSQL transaction rollback/deadlock codes ('40001' is serialization failure, '40P01' is deadlock)
-      const pgCode = error?.code || error?.meta?.code || '';
+      const pgCode = getDatabaseErrorCode(error);
       const isRawPgConflict = pgCode === '40001' || pgCode === '40P01';
       // Fallback to error message parsing if error properties are wrapped differently by drivers
       const isDeadlockMsg =
@@ -247,6 +254,13 @@ async function executeTransactionWithRetry<T>(
     }
   }
   throw new Error('BUG: Transaction retry loop terminated without throwing or returning.');
+}
+
+function getDatabaseErrorCode(error: unknown): string {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) return error.code;
+  if (typeof error !== 'object' || error === null || !('code' in error)) return '';
+  const code = error.code;
+  return typeof code === 'string' ? code : '';
 }
 
 export async function releaseStorageQuotaReservation(reservationId: string | null | undefined): Promise<void> {

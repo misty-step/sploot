@@ -3,44 +3,29 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const appRoot = join(fileURLToPath(new URL('..', import.meta.url)));
-const apiRoot = join(appRoot, 'app/api');
+const routeRoot = join(appRoot, 'app');
 
 const restrictedImports = [
   '@clerk/nextjs/server',
   '@clerk/backend',
-  '@/lib/auth/server',
-  '@/lib/auth/verify-bearer',
 ];
 
-const legacyAllowlist = new Set([
-  'app/api/analytics/usage/route.ts',
-  'app/api/assets/[id]/embedding-status/route.ts',
-  'app/api/assets/[id]/generate-embedding/route.ts',
-  'app/api/assets/[id]/route.ts',
-  'app/api/assets/[id]/share/route.ts',
-  'app/api/assets/[id]/similar/route.ts',
-  'app/api/assets/[id]/tags/route.ts',
-  'app/api/assets/audit/route.ts',
-  'app/api/assets/batch/embedding-status/route.ts',
-  'app/api/assets/route.ts',
-  'app/api/embeddings/image/route.ts',
-  'app/api/embeddings/text/route.ts',
-  'app/api/health/services/route.ts',
-  'app/api/health/user-sync/route.ts',
-  'app/api/search/advanced/route.ts',
-  'app/api/search/route.ts',
-  'app/api/sse/embedding-updates/route.ts',
-  'app/api/stats/route.ts',
-  'app/api/tags/[tagId]/route.ts',
-  'app/api/tags/route.ts',
-  'app/api/telemetry/route.ts',
-  'app/api/upload/check/route.ts',
-  'app/api/upload/route.ts',
-]);
-
 const violations = [];
+const authenticatedSeamMarkers = [
+  'authenticateRequest(',
+  'getAuthWithUser(',
+  'verifyBearerOrThrow(',
+  'requireUserIdWithSync(',
+];
 
-for (const file of walk(apiRoot)) {
+const routeEntrypoints = [...walk(routeRoot)].filter(file => (
+  (file.endsWith('/route.ts') || file.endsWith('/route.tsx')) &&
+  !file.includes('/node_modules/') &&
+  !file.includes('/.next/') &&
+  !file.includes('/public/')
+));
+
+for (const file of routeEntrypoints) {
   if (!file.endsWith('.ts') && !file.endsWith('.tsx')) {
     continue;
   }
@@ -49,13 +34,35 @@ for (const file of walk(apiRoot)) {
   const source = readFileSync(file, 'utf8');
   const hasRestrictedImport = restrictedImports.some(importPath => source.includes(importPath));
 
-  if (hasRestrictedImport && !legacyAllowlist.has(rel)) {
+  if (hasRestrictedImport) {
     violations.push(rel);
+  }
+
+  const isAuthenticatedEntrypoint = authenticatedSeamMarkers.some(marker => source.includes(marker));
+  const hasAdmissionBoundary = [
+    'withAuthenticatedApi(',
+    'assertEnrolledUser(',
+    'enrollmentUnavailableResponse(',
+    'enrollmentResponseForError(',
+  ].some(marker => source.includes(marker));
+  if (isAuthenticatedEntrypoint && !hasAdmissionBoundary) {
+    violations.push(`${rel}: authenticated entrypoint has no enrollment/error boundary`);
+  }
+
+  if (source.includes('withAuthenticatedApi(')) {
+    const wrappedHandlers = new Set([...source.matchAll(/(?:const|let)\s+(\w+)\s*=\s*(?:withObservability\()?withAuthenticatedApi\(/g)].map(match => match[1]));
+    const exportedMethods = [...source.matchAll(/export\s+const\s+(GET|POST|PUT|PATCH|DELETE)\s*=([\s\S]*?);/g)];
+    for (const [, method, declaration] of exportedMethods) {
+      const dominated = declaration.includes('withAuthenticatedApi(') || [...wrappedHandlers].some(handler => declaration.includes(handler));
+      if (!dominated) {
+        violations.push(`${rel}: ${method} is not dominated by withAuthenticatedApi`);
+      }
+    }
   }
 }
 
 if (violations.length > 0) {
-  console.error('Protected API routes must use lib/auth/with-authenticated-api instead of direct provider imports.');
+  console.error('Route entrypoints must use the shared auth seam instead of direct Clerk provider imports.');
   for (const violation of violations) {
     console.error(`- ${violation}`);
   }

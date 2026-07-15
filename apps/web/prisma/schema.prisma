@@ -31,6 +31,8 @@ model User {
   storageQuota             UserStorageQuota?
   storageQuotaReservations StorageQuotaReservation[]
   uploadTokens             UploadToken[]
+  searchLogs               SearchLog[]
+  embeddingRateLeases      EmbeddingRateLease[]
 
   @@map("users")
 }
@@ -198,6 +200,8 @@ model SearchLog {
   queryTime   Int      @map("query_time") // milliseconds
   createdAt   DateTime @default(now())
 
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // Indexes
   @@index([userId, createdAt])
   @@index([createdAt])
@@ -236,6 +240,8 @@ model EmbeddingRateLease {
   userId    String   @map("user_id")
   expiresAt DateTime @map("expires_at")
   createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
   @@index([expiresAt])

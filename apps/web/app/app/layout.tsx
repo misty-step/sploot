@@ -6,13 +6,30 @@ import { FilterProvider } from '@/contexts/filter-context';
 import { BlobCircuitBreakerProvider } from '@/contexts/blob-circuit-breaker-context';
 import { BlobErrorBanner } from '@/components/library/blob-error-banner';
 import { getAuthWithUser } from '@/lib/auth/server';
+import {
+  EnrollmentIdentityConflict,
+  EnrollmentPaused,
+  EnrollmentUnavailable,
+} from '@/components/enrollment/enrollment-paused';
 
 export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { userId } = await getAuthWithUser();
+  const { userId, syncStatus } = await getAuthWithUser();
+
+  if (syncStatus === 'denied') {
+    return <EnrollmentPaused />;
+  }
+
+  if (syncStatus === 'conflict') {
+    return <EnrollmentIdentityConflict />;
+  }
+
+  if (syncStatus === 'unavailable' || syncStatus === 'failed') {
+    return <EnrollmentUnavailable />;
+  }
 
   if (!userId) {
     redirect('/sign-in');

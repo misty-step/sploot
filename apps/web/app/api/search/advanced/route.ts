@@ -2,14 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
 import { unstable_rethrow } from 'next/navigation';
 import { Prisma } from '@prisma/client';
-import { prisma } from '@/lib/db';
-import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
+import { prisma, logSearch } from '@/lib/db';
+import { createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
-import { getAuth } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 import { embeddingVectorSql as createEmbeddingVectorSql } from '@/lib/embedding-vector-sql';
 import { logError } from '@/lib/observability-logger';
+import {
+  assertEnrolledUser,
+  enrollmentDeniedResponse,
+  enrollmentIdentityConflictResponse,
+  enrollmentUnavailableResponse,
+  isEnrollmentDeniedError,
+  isEnrollmentIdentityConflictError,
+  isEnrollmentUnavailableError,
+} from '@/lib/enrollment/enrollment-policy';
 
 interface SearchFilters {
   favorites?: boolean;
@@ -21,7 +31,7 @@ interface SearchFilters {
   minHeight?: number;
 }
 
-async function postHandler(req: NextRequest) {
+async function postHandler(req: NextRequest, _context: unknown, { principal }: AuthenticatedApiContext) {
   const startTime = Date.now();
   let query: string = '';
   let filters: SearchFilters = {};
@@ -31,13 +41,7 @@ async function postHandler(req: NextRequest) {
   let sortBy: string = 'relevance';
 
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     const body = await req.json();
     ({
@@ -62,12 +66,7 @@ async function postHandler(req: NextRequest) {
       );
     }
 
-    if (!prisma) {
-      return NextResponse.json(
-        { error: 'Database not configured' },
-        { status: 500 }
-      );
-    }
+    await assertEnrolledUser(userId, prisma);
 
     // Get cache service
     const cache = getCacheService();
@@ -299,14 +298,7 @@ async function postHandler(req: NextRequest) {
     }
 
     // Log search
-    prisma!.searchLog.create({
-      data: {
-        userId,
-        query,
-        resultCount: formattedResults.length,
-        queryTime,
-      },
-    }).catch(() => {});
+    logSearch(userId, query, formattedResults.length, queryTime).catch(() => {});
 
     return NextResponse.json({
       results: formattedResults,
@@ -327,12 +319,17 @@ async function postHandler(req: NextRequest) {
 
   } catch (error) {
     unstable_rethrow(error);
+
+    if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
+    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
+    if (isEnrollmentIdentityConflictError(error)) return enrollmentIdentityConflictResponse();
     // Error performing advanced search
 
     if (error instanceof EmbeddingError) {
       return NextResponse.json(
         {
           error: error.message,
+          ...(error instanceof EmbeddingAdmissionError && error.code ? { code: error.code } : {}),
           results: [],
           query: query || '',
           pagination: { total: 0, limit: limit || 30, offset: offset || 0, hasMore: false },
@@ -353,7 +350,7 @@ async function postHandler(req: NextRequest) {
   }
 }
 
-export const POST = withObservability(postHandler, { operation: 'search:advanced' });
+export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'search:advanced' });
 
 // Fallback metadata search when embeddings are unavailable
 async function performMetadataSearch(

@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 
 import { prisma } from '@/lib/db';
 import { logger } from '@/lib/observability-logger';
+import { acquireEnrollmentIdentityWriterLock, EnrollmentUnavailableError } from '@/lib/enrollment/enrollment-policy';
 
 export const EMBEDDING_RATE_WINDOW_SECONDS = 60;
 export const EMBEDDING_USER_WINDOW_LIMIT = 5;
@@ -80,7 +81,7 @@ async function withLimiterLock<T>(
   work: (tx: Prisma.TransactionClient) => Promise<T>
 ): Promise<T> {
   if (!prisma) {
-    throw new Error('Postgres is not configured');
+    throw new EnrollmentUnavailableError();
   }
 
   return prisma.$transaction(
@@ -130,6 +131,14 @@ export async function acquireEmbeddingRateLimit(
 
   try {
     return await withLimiterLock(async (tx) => {
+      await acquireEnrollmentIdentityWriterLock(tx, userId);
+      const enrolledUser = await tx.user.findUnique({
+        where: { id: userId },
+        select: { id: true },
+      });
+      if (!enrolledUser) {
+        throw new EnrollmentUnavailableError();
+      }
       await pruneExpiredLimiterState(tx, now);
 
       const [userInflight, globalInflight, userBucket, globalBucket] = await Promise.all([

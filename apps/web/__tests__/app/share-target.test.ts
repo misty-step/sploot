@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
   authenticateRequest: vi.fn(),
   ingestImage: vi.fn(),
+  userFindUnique: vi.fn(),
   uploadGateEnabled: true,
 }));
 
@@ -13,6 +14,10 @@ vi.mock('@/lib/auth/request-auth', () => ({
 
 vi.mock('@/lib/upload/ingest-image', () => ({
   ingestImage: mocks.ingestImage,
+}));
+
+vi.mock('@/lib/db', () => ({
+  prisma: { user: { findUnique: mocks.userFindUnique } },
 }));
 
 vi.mock('@/lib/runtime-gates', () => ({
@@ -61,6 +66,7 @@ function pngFile(name = 'shared.png'): File {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.uploadGateEnabled = true;
+  mocks.userFindUnique.mockResolvedValue({ id: 'qa-design-user' });
 });
 
 describe('POST /share-target', () => {
@@ -71,6 +77,19 @@ describe('POST /share-target', () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get('location')).toBe(`${BASE}/sign-in`);
+    expect(mocks.ingestImage).not.toHaveBeenCalled();
+  });
+
+  it('redirects auth-provider unavailability to the typed enrollment state', async () => {
+    mocks.authenticateRequest.mockResolvedValue({
+      status: 'unavailable',
+      reason: 'enrollment_unavailable',
+    });
+
+    const response = await POST(shareRequest([pngFile()]));
+
+    expect(response.status).toBe(303);
+    expect(new URL(response.headers.get('location')!).search).toBe('?enrollment=unavailable');
     expect(mocks.ingestImage).not.toHaveBeenCalled();
   });
 
@@ -124,6 +143,28 @@ describe('POST /share-target', () => {
     const response = await POST(shareRequest([pngFile()]));
 
     expect(response.status).toBe(303);
+    expect(mocks.ingestImage).not.toHaveBeenCalled();
+  });
+
+  it('redirects denied users before consuming multipart data', async () => {
+    authed();
+    mocks.userFindUnique.mockResolvedValue(null);
+
+    const response = await POST(shareRequest([pngFile()]));
+
+    expect(response.status).toBe(303);
+    expect(new URL(response.headers.get('location')!).search).toBe('?enrollment=closed');
+    expect(mocks.ingestImage).not.toHaveBeenCalled();
+  });
+
+  it('keeps unavailable enrollment distinct from denial', async () => {
+    authed();
+    mocks.userFindUnique.mockRejectedValue(new Error('database down'));
+
+    const response = await POST(shareRequest([pngFile()]));
+
+    expect(response.status).toBe(303);
+    expect(new URL(response.headers.get('location')!).search).toBe('?enrollment=unavailable');
     expect(mocks.ingestImage).not.toHaveBeenCalled();
   });
 });

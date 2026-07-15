@@ -1,24 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { getCacheService } from '@/lib/cache';
-import { getAuth } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
 import { invalidateSlugCache } from '@/lib/slug-cache';
 import { withObservability } from '@/lib/with-observability';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import type { RouteContext } from '@/lib/with-observability';
+import { acquireEnrollmentIdentityWriterLock, enrollmentResponseForError, enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
 
 async function getHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext,
 ) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     const params = await context.params;
     const id = params?.id;
@@ -30,12 +27,7 @@ async function getHandler(
       );
     }
 
-    if (!prisma) {
-      return NextResponse.json(
-        { error: 'Database not configured' },
-        { status: 500 }
-      );
-    }
+    if (!prisma) return enrollmentUnavailableResponse();
 
     const asset = await prisma.asset.findFirst({
       where: {
@@ -82,6 +74,8 @@ async function getHandler(
     });
   } catch (error) {
     unstable_rethrow(error);
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     // Error fetching asset
     return NextResponse.json(
       { error: 'Failed to fetch asset' },
@@ -92,16 +86,11 @@ async function getHandler(
 
 async function patchHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext,
 ) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     const params = await context.params;
     const id = params?.id;
@@ -115,86 +104,41 @@ async function patchHandler(
     const body = await req.json();
     const { favorite, tags } = body;
 
-    if (!prisma) {
-      return NextResponse.json(
-        { error: 'Database not configured' },
-        { status: 500 }
-      );
-    }
+    if (!prisma) return enrollmentUnavailableResponse();
 
-    const existingAsset = await prisma.asset.findFirst({
-      where: {
-        id,
-        ownerUserId: userId,
-        deletedAt: null,
-      },
-    });
-
-    if (!existingAsset) {
-      return NextResponse.json(
-        { error: 'Asset not found' },
-        { status: 404 }
-      );
-    }
-
-    const updateData: any = {};
-    if (favorite !== undefined) {
-      updateData.favorite = favorite;
-    }
-
-    const asset = await prisma.asset.update({
-      where: { id },
-      data: updateData,
-      include: {
-        embedding: true,
-        tags: {
-          include: {
-            tag: true,
-          },
-        },
-      },
-    });
-
-    if (tags && Array.isArray(tags)) {
-      await prisma.assetTag.deleteMany({
-        where: { assetId: id },
+    const updatedAsset = await prisma.$transaction(async (tx) => {
+      await acquireEnrollmentIdentityWriterLock(tx, userId);
+      const existingAsset = await tx.asset.findFirst({
+        where: { id, ownerUserId: userId, deletedAt: null },
       });
+      if (!existingAsset) return null;
 
-      for (const tagName of tags) {
-        const tag = await prisma.tag.upsert({
-          where: {
-            unique_user_tag: {
-              ownerUserId: userId,
-              name: tagName,
-            },
-          },
-          update: {},
-          create: {
-            ownerUserId: userId,
-            name: tagName,
-          },
-        });
+      const updateData: { favorite?: boolean } = {};
+      if (typeof favorite === 'boolean') updateData.favorite = favorite;
+      await tx.asset.update({ where: { id }, data: updateData });
 
-        await prisma.assetTag.create({
-          data: {
-            assetId: id,
-            tagId: tag.id,
-          },
-        });
+      if (tags && Array.isArray(tags)) {
+        await tx.assetTag.deleteMany({ where: { assetId: id } });
+        for (const tagName of tags) {
+          if (typeof tagName !== 'string') continue;
+          const tag = await tx.tag.upsert({
+            where: { unique_user_tag: { ownerUserId: userId, name: tagName } },
+            update: {},
+            create: { ownerUserId: userId, name: tagName },
+          });
+          await tx.assetTag.create({ data: { assetId: id, tagId: tag.id } });
+        }
       }
-    }
 
-    const updatedAsset = await prisma.asset.findUnique({
-      where: { id },
-      include: {
-        embedding: true,
-        tags: {
-          include: {
-            tag: true,
-          },
-        },
-      },
+      return tx.asset.findUnique({
+        where: { id },
+        include: { embedding: true, tags: { include: { tag: true } } },
+      });
     });
+
+    if (!updatedAsset) {
+      return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
+    }
 
     // Invalidate cache after update (favorites affect search results)
     // Clear only asset and search caches (preserve embeddings)
@@ -227,6 +171,8 @@ async function patchHandler(
     });
   } catch (error) {
     unstable_rethrow(error);
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     // Error updating asset
     return NextResponse.json(
       { error: 'Failed to update asset' },
@@ -237,16 +183,11 @@ async function patchHandler(
 
 async function deleteHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext,
 ) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     const params = await context.params;
     const id = params?.id;
@@ -260,65 +201,44 @@ async function deleteHandler(
     const { searchParams } = new URL(req.url);
     const permanent = searchParams.get('permanent') === 'true';
 
-    if (!prisma) {
-      return NextResponse.json(
-        { error: 'Database not configured' },
-        { status: 500 }
-      );
-    }
+    if (!prisma) return enrollmentUnavailableResponse();
 
-    const existingAsset = await prisma.asset.findFirst({
-      where: {
-        id,
-        ownerUserId: userId,
-      },
+    const result = await prisma.$transaction(async (tx) => {
+      await acquireEnrollmentIdentityWriterLock(tx, userId);
+      const existingAsset = await tx.asset.findFirst({ where: { id, ownerUserId: userId } });
+      if (!existingAsset) return null;
+
+      if (permanent) {
+        await tx.assetTag.deleteMany({ where: { assetId: id } });
+        await tx.assetEmbedding.deleteMany({ where: { assetId: id } });
+        await tx.asset.delete({ where: { id } });
+        return { kind: 'permanent' as const, shareSlug: existingAsset.shareSlug };
+      }
+
+      const asset = await tx.asset.update({ where: { id }, data: { deletedAt: new Date() } });
+      return { kind: 'soft' as const, shareSlug: existingAsset.shareSlug, asset };
     });
 
-    if (!existingAsset) {
-      return NextResponse.json(
-        { error: 'Asset not found' },
-        { status: 404 }
-      );
+    if (!result) {
+      return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
     }
 
-    if (permanent) {
-      await prisma.assetTag.deleteMany({
-        where: { assetId: id },
-      });
+    await invalidateDeletedAssetCaches(result.shareSlug);
 
-      await prisma.assetEmbedding.deleteMany({
-        where: { assetId: id },
-      });
-
-      await prisma.asset.delete({
-        where: { id },
-      });
-
-      await invalidateDeletedAssetCaches(existingAsset.shareSlug);
-
+    if (result.kind === 'permanent') {
       return NextResponse.json({
         message: 'Asset permanently deleted',
       });
-    } else {
-      const asset = await prisma.asset.update({
-        where: { id },
-        data: {
-          deletedAt: new Date(),
-        },
-      });
-
-      await invalidateDeletedAssetCaches(existingAsset.shareSlug);
-
-      return NextResponse.json({
-        message: 'Asset soft deleted',
-        asset: {
-          id: asset.id,
-          deletedAt: asset.deletedAt,
-        },
-      });
     }
+
+    return NextResponse.json({
+      message: 'Asset soft deleted',
+      asset: { id: result.asset.id, deletedAt: result.asset.deletedAt },
+    });
   } catch (error) {
     unstable_rethrow(error);
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     // Error deleting asset
     return NextResponse.json(
       { error: 'Failed to delete asset' },
@@ -337,6 +257,6 @@ async function invalidateDeletedAssetCaches(shareSlug: string | null): Promise<v
   }
 }
 
-export const GET = withObservability(getHandler, { operation: 'assets:detail' });
-export const PATCH = withObservability(patchHandler, { operation: 'assets:update' });
-export const DELETE = withObservability(deleteHandler, { operation: 'assets:delete' });
+export const GET = withObservability(withAuthenticatedApi(getHandler), { operation: 'assets:detail' });
+export const PATCH = withObservability(withAuthenticatedApi(patchHandler), { operation: 'assets:update' });
+export const DELETE = withObservability(withAuthenticatedApi(deleteHandler), { operation: 'assets:delete' });

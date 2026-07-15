@@ -10,6 +10,8 @@
  *   NODE_ENV=production pnpm validate:env  # Validate production config
  */
 
+import { hasValidDeploymentIdentity } from '../lib/enrollment/enrollment-policy';
+
 interface ValidationResult {
   valid: boolean;
   errors: string[];
@@ -123,8 +125,62 @@ function printResult(result: ValidationResult) {
   }
 }
 
+function validateEnrollmentConfig(): ValidationResult {
+  const result: ValidationResult = { valid: true, errors: [], warnings: [] };
+  const deploymentMarker = process.env.SPLOOT_DEPLOYMENT_ENV?.trim().toLowerCase();
+  const deployedMarker = deploymentMarker === 'production' || deploymentMarker === 'staging';
+  const explicitLocalMarker = deploymentMarker === 'development' || deploymentMarker === 'test';
+  const explicitLocalNodeEnv = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+
+  if (!deployedMarker && !explicitLocalMarker && !explicitLocalNodeEnv) {
+    result.valid = false;
+    result.errors.push('SPLOOT_DEPLOYMENT_ENV or NODE_ENV must explicitly identify a deployment or local/test environment');
+    return result;
+  }
+
+  if (deploymentMarker && !['production', 'staging', 'development', 'test'].includes(deploymentMarker)) {
+    result.valid = false;
+    result.errors.push('SPLOOT_DEPLOYMENT_ENV must be production, staging, development, or test');
+    return result;
+  }
+
+  if (process.env.NODE_ENV === 'production' && !deployedMarker) {
+    result.valid = false;
+    result.errors.push('NODE_ENV=production requires SPLOOT_DEPLOYMENT_ENV=production or staging');
+    return result;
+  }
+
+  if (!deployedMarker) return result;
+
+  if (!hasValidDeploymentIdentity(process.env)) {
+    result.valid = false;
+    result.errors.push('Production/staging requires nonempty, well-formed SPLOOT_DEPLOYMENT_APP_ID, SPLOOT_DEPLOYMENT_COMMIT, and SPLOOT_DEPLOYMENT_CHANGE_ID');
+  }
+
+  const mode = process.env.SPLOOT_ENROLLMENT_MODE?.trim().toLowerCase();
+  if (mode === 'ga' || mode === 'closed') return result;
+
+  if (mode !== 'capped') {
+    result.valid = false;
+    result.errors.push('SPLOOT_ENROLLMENT_MODE must be capped, closed, or ga in production');
+    return result;
+  }
+
+  const maxAccounts = process.env.SPLOOT_ENROLLMENT_MAX_ACCOUNTS;
+  const parsed = Number(maxAccounts);
+  if (!maxAccounts || !/^\d+$/.test(maxAccounts) || parsed <= 0 || !Number.isSafeInteger(parsed)) {
+    result.valid = false;
+    result.errors.push('SPLOOT_ENROLLMENT_MAX_ACCOUNTS must be a positive safe integer when mode=capped');
+  }
+  return result;
+}
+
 function main() {
   const result = validateDatabaseUrl();
+  const enrollment = validateEnrollmentConfig();
+  result.valid = result.valid && enrollment.valid;
+  result.errors.push(...enrollment.errors);
+  result.warnings.push(...enrollment.warnings);
   printResult(result);
 
   if (!result.valid) {

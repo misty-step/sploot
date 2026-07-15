@@ -15,6 +15,7 @@ describe('/api/qa-auth/login', () => {
   beforeEach(() => {
     process.env.SPLOOT_QA_AUTH_MODE = 'enabled';
     process.env.SPLOOT_QA_AUTH_SECRET = QA_SECRET;
+    process.env.SPLOOT_DEPLOYMENT_ENV = 'test';
   });
 
   afterEach(() => {
@@ -52,6 +53,7 @@ describe('/api/qa-auth/login', () => {
 
   it('returns 404 in production even when mode is enabled', async () => {
     process.env.NODE_ENV = 'production';
+    process.env.SPLOOT_DEPLOYMENT_ENV = 'production';
 
     const res = await GET(makeRequest());
     expect(res.status).toBe(404);

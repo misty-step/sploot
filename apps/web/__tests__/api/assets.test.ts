@@ -15,6 +15,9 @@ const mocks = vi.hoisted(() => {
     assetEmbedding: {
       findUnique: vi.fn(),
     },
+    user: {
+      findUnique: vi.fn(),
+    },
     $queryRaw: vi.fn(),
   };
 
@@ -51,7 +54,7 @@ vi.mock("@/lib/embeddings", () => ({
   EmbeddingError: class EmbeddingError extends Error {},
 }));
 
-import { GET } from "@/app/api/assets/route";
+import { GET, POST } from "@/app/api/assets/route";
 
 function request(searchParams: Record<string, string> = {}) {
   const url = new URL("http://localhost:3000/api/assets");
@@ -68,10 +71,11 @@ describe("GET /api/assets", () => {
 
     mocks.getAuthWithUser.mockResolvedValue({
       userId: "user-123",
-      syncStatus: "synced",
+      syncStatus: "success",
       syncError: null,
     });
     mocks.getDbFingerprint.mockReturnValue({ host: "test-db", hash: "abc123" });
+    mocks.prisma.user.findUnique.mockResolvedValue({ id: "user-123" });
     mocks.prisma.asset.count.mockResolvedValue(2);
     mocks.prisma.asset.findMany.mockResolvedValue([]);
     mocks.prisma.assetTag.findMany.mockResolvedValue([]);
@@ -361,5 +365,19 @@ describe("GET /api/assets", () => {
     expect(response.status).toBe(400);
     expect(body.error).toBe("Invalid limit parameter. Must be integer 1-100.");
     expect(mocks.prisma.asset.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/assets", () => {
+  it("preserves the stable enrollment denial from the legacy asset path", async () => {
+    mocks.requireUserIdWithSync.mockRejectedValue({ code: "enrollment_closed" });
+
+    const response = await POST(
+      new NextRequest("http://localhost:3000/api/assets", { method: "POST" }),
+      { params: Promise.resolve({}) },
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "enrollment_closed" });
   });
 });

@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import { prisma } from './db';
 import { Prisma } from '@prisma/client';
+import { EnrollmentUnavailableError, withEnrollmentIdentityWriter } from './enrollment/enrollment-policy';
 
 /**
  * Error thrown when asset is not found
@@ -55,33 +56,26 @@ const SLUG_LENGTH = 10;
  * // Returns: 'aB3dF9Gh12'
  * ```
  */
-export async function getOrCreateShareSlug(assetId: string): Promise<string> {
+export async function getOrCreateShareSlug(assetId: string, ownerUserId?: string): Promise<string> {
   if (!prisma) {
-    throw new Error('Database not configured');
+    throw new EnrollmentUnavailableError();
   }
 
-  // 1. Check if asset exists and already has a slug
-  const asset = await prisma.asset.findUnique({
-    where: { id: assetId },
-    select: { id: true, shareSlug: true },
-  });
+  const readOrCreate = async (db: Prisma.TransactionClient | typeof prisma): Promise<string> => {
+    const asset = await db.asset.findUnique({
+      where: { id: assetId },
+      select: { id: true, shareSlug: true },
+    });
 
-  if (!asset) {
-    throw new AssetNotFoundError(assetId);
-  }
+    if (!asset) throw new AssetNotFoundError(assetId);
+    if (asset.shareSlug) return asset.shareSlug;
 
-  // 2. If slug exists, return it (idempotency)
-  if (asset.shareSlug) {
-    return asset.shareSlug;
-  }
-
-  // 3. Generate new slug with collision retry logic
-  for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+    for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     const slug = nanoid(SLUG_LENGTH);
 
     try {
       // 4. Attempt to update asset with new slug
-      const updated = await prisma.asset.update({
+      const updated = await db.asset.update({
         where: { id: assetId },
         data: { shareSlug: slug },
         select: { shareSlug: true },
@@ -112,8 +106,13 @@ export async function getOrCreateShareSlug(assetId: string): Promise<string> {
       // Unexpected error - rethrow
       throw error;
     }
-  }
+    }
 
-  // Should never reach here, but TypeScript requires it
-  throw new SlugCollisionError(MAX_RETRY_ATTEMPTS);
+    throw new SlugCollisionError(MAX_RETRY_ATTEMPTS);
+  };
+
+  if (ownerUserId) {
+    return withEnrollmentIdentityWriter(prisma, ownerUserId, (tx) => readOrCreate(tx));
+  }
+  return readOrCreate(prisma);
 }

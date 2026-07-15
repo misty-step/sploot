@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import { logger } from '@/lib/observability-logger';
 import type { AuthenticatedPrincipal } from './types';
+import { EnrollmentUnavailableError } from '@/lib/enrollment/enrollment-policy';
 
 /**
  * Personal upload tokens — hashed, revocable, upload-only credentials.
@@ -29,6 +30,11 @@ export interface MintedUploadToken {
   prefix: string;
   /** sha256(token), hex — the only representation stored at rest. */
   tokenHash: string;
+}
+
+export interface UploadTokenPrincipal extends AuthenticatedPrincipal {
+  credentialKind: 'upload-token';
+  uploadTokenId: string;
 }
 
 /** Generate a fresh token + its hash. The caller persists hash + prefix only. */
@@ -77,10 +83,10 @@ export async function hashUploadToken(token: string): Promise<string> {
  * never a 500. Revoked and unknown tokens are indistinguishable: both miss the
  * `revokedAt IS NULL` lookup and return null with no reason/latency tell.
  */
-export async function verifyUploadToken(token: string): Promise<AuthenticatedPrincipal | null> {
+export async function verifyUploadToken(token: string): Promise<UploadTokenPrincipal | null> {
   try {
     if (!prisma) {
-      return null;
+      throw new EnrollmentUnavailableError();
     }
 
     const tokenHash = await hashUploadToken(token);
@@ -93,28 +99,25 @@ export async function verifyUploadToken(token: string): Promise<AuthenticatedPri
       return null;
     }
 
-    // Best-effort, never blocks the request and never resurrects a revoked row
-    // (updateMany guarded on revokedAt: null matches zero if revoked meanwhile).
-    void touchLastUsed(row.id);
-
     return {
       userId: row.userId,
       provider: 'upload-token',
       providerSubject: row.userId,
       source: 'upload-token',
       credentialKind: 'upload-token',
+      uploadTokenId: row.id,
     };
   } catch (error) {
     logger.logError('auth:upload-token-verify-failed', error as Error);
-    return null;
+    throw error instanceof EnrollmentUnavailableError
+      ? error
+      : new EnrollmentUnavailableError();
   }
 }
 
-async function touchLastUsed(id: string): Promise<void> {
+export async function recordUploadTokenUsage(id: string): Promise<void> {
   try {
-    if (!prisma) {
-      return;
-    }
+    if (!prisma) return;
     await prisma.uploadToken.updateMany({
       where: { id, revokedAt: null },
       data: { lastUsedAt: new Date() },

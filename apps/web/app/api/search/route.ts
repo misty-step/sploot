@@ -1,13 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { prisma, vectorSearch, logSearch, type VectorSearchRow } from '@/lib/db';
-import { CLIP_MODEL, createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
+import { CLIP_MODEL, createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
 import { getAuthWithUser } from '@/lib/auth/server';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import { withObservability } from '@/lib/with-observability';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 import { SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
+import {
+  assertEnrolledUser,
+  enrollmentDeniedResponse,
+  enrollmentIdentityConflictResponse,
+  enrollmentUnavailableResponse,
+  isEnrollmentDeniedError,
+  isEnrollmentUnavailableError,
+} from '@/lib/enrollment/enrollment-policy';
 
 // POST opts into upload-token auth (allowUploadToken: true) so a personal API
 // token can drive search — the read half of the token-scoped external
@@ -41,12 +49,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       );
     }
 
-    if (!prisma) {
-      return NextResponse.json(
-        { error: 'Database not configured' },
-        { status: 500 }
-      );
-    }
+    await assertEnrolledUser(userId, prisma);
 
     // Get cache service
     const cache = getCacheService();
@@ -195,6 +198,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       return NextResponse.json(
         {
           error: error.message,
+          ...(error instanceof EmbeddingAdmissionError && error.code ? { code: error.code } : {}),
           results: [],
           query: query || '',
           total: 0,
@@ -202,6 +206,9 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
         { status: error.statusCode || 500 }
       );
     }
+
+    if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
+    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
 
     return NextResponse.json(
       {
@@ -218,25 +225,18 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
 export const POST = withObservability(postHandler, { operation: 'search:query' });
 
 // GET endpoint for search suggestions or recent searches
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   try {
-    const { userId } = await getAuthWithUser();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { userId, syncStatus } = await getAuthWithUser();
+    if (syncStatus === 'denied') return enrollmentDeniedResponse();
+    if (syncStatus === 'conflict') return enrollmentIdentityConflictResponse();
+    if (syncStatus === 'unavailable' || syncStatus === 'failed') return enrollmentUnavailableResponse();
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type') || 'recent';
 
-    if (!prisma) {
-      return NextResponse.json(
-        { error: 'Database not configured' },
-        { status: 500 }
-      );
-    }
+    await assertEnrolledUser(userId, prisma);
 
     if (type === 'recent') {
       const recentSearches = await prisma.searchLog.findMany({
@@ -283,6 +283,8 @@ export async function GET(req: NextRequest) {
     );
 
   } catch (error) {
+    if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
+    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
     // Error fetching search suggestions
     return NextResponse.json(
       { error: 'Failed to fetch search suggestions' },
@@ -290,3 +292,5 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export const GET = withObservability(withAuthenticatedApi(getHandler), { operation: 'search:suggestions' });

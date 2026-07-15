@@ -10,6 +10,8 @@ import {
   releaseStorageQuotaReservation,
   reserveUploadBytes,
 } from '@/lib/quota/storage-quota-policy';
+import { prisma } from '@/lib/db';
+import { assertEnrolledUser } from '@/lib/enrollment/enrollment-policy';
 
 /**
  * Shared server-side image ingestion pipeline.
@@ -62,6 +64,10 @@ export async function ingestImage({
   syncEmbeddings = false,
   scheduleEmbeddings = true,
 }: IngestImageOptions): Promise<IngestImageResult> {
+  // This is the shared server-owned boundary for every ingestion surface.
+  // It runs before image processing, Blob writes, or embedding scheduling.
+  await assertEnrolledUser(userId, prisma);
+
   const startTime = Date.now();
   let quotaReservationId: string | null = null;
 

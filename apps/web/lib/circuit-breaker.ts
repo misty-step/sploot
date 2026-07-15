@@ -82,6 +82,7 @@ export class CircuitBreaker {
     options?: {
       fallback?: () => T | Promise<T>;
       bypassCheck?: boolean;
+      ignoreFailure?: (error: unknown) => boolean;
     }
   ): Promise<T> {
     this.totalRequests++;
@@ -120,7 +121,9 @@ export class CircuitBreaker {
 
     } catch (error) {
       // Record failure
-      this.recordFailure(error);
+      if (!options?.ignoreFailure?.(error)) {
+        this.recordFailure(error);
+      }
 
       throw error;
     }

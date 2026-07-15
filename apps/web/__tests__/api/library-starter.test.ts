@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   setTextEmbedding: vi.fn(),
   uploadGateEnabled: true,
   fetch: vi.fn(),
+  userFindUnique: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/request-auth', () => ({
@@ -19,7 +20,7 @@ vi.mock('@/lib/upload/ingest-image', () => ({
 }));
 
 vi.mock('@/lib/db', () => ({
-  prisma: {},
+  prisma: { user: { findUnique: mocks.userFindUnique } },
   upsertAssetEmbedding: mocks.upsertAssetEmbedding,
 }));
 
@@ -75,6 +76,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
   mocks.uploadGateEnabled = true;
+  mocks.userFindUnique.mockResolvedValue({ id: 'user-1' });
 });
 
 describe('POST /api/library/starter', () => {

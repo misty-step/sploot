@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
 import { getStorageQuotaSnapshot } from '@/lib/quota/storage-quota-policy';
+import { enrollmentResponseForError, enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
 
 /**
  * GET /api/stats
@@ -24,10 +25,7 @@ async function getHandler(_req: NextRequest) {
     const userId = await requireUserIdWithSync();
 
     if (!prisma) {
-      return NextResponse.json(
-        { error: 'Database not available' },
-        { status: 503 }
-      );
+      return enrollmentUnavailableResponse();
     }
 
     const aggregate = await prisma.asset.aggregate({
@@ -64,6 +62,8 @@ async function getHandler(_req: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     if (isUnauthorizedAuthError(error)) {
       return unauthorizedResponse();
     }

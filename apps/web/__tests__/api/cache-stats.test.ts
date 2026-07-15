@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GET, POST } from '@/app/api/cache/stats/route';
 import { createMockRequest } from '../utils/test-helpers';
 import { getCacheService } from '@/lib/cache';
@@ -6,6 +7,9 @@ import { createQaLocalAuthToken, getQaLocalAuthHeader } from '@/lib/auth/qa-loca
 
 // Mock dependencies
 vi.mock('@/lib/cache');
+vi.mock('@/lib/db', () => ({
+  prisma: { user: { findUnique: vi.fn().mockResolvedValue({ id: 'test-user-id' }) } },
+}));
 
 const mockGetCacheService = vi.mocked(getCacheService);
 const defaultContext = { params: Promise.resolve({}) };
@@ -34,6 +38,7 @@ describe('/api/cache/stats', () => {
     vi.clearAllMocks();
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
     vi.stubEnv('SPLOOT_QA_AUTH_SECRET', QA_SECRET);
+    vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'test');
     vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', '');
     vi.stubEnv('CLERK_SECRET_KEY', '');
   });
@@ -43,7 +48,7 @@ describe('/api/cache/stats', () => {
     searchParams?: Record<string, string>
   ) {
     const token = await createQaLocalAuthToken({
-      userId: 'test-user-id',
+      userId: 'qa-test-user-id',
       secret: QA_SECRET,
       expiresInSeconds: 60,
     });

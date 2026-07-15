@@ -15,21 +15,55 @@ const describeWithDatabase = process.env.DATABASE_URL && prisma
   ? describe.sequential
   : describe.skip;
 
+const limiterUserIds = [
+  'user-lease',
+  'crashed-user',
+  'window-user',
+  'global-window-overflow',
+  ...Array.from({ length: EMBEDDING_GLOBAL_CONCURRENCY_LIMIT + 5 }, (_, index) => `concurrent-user-${index}`),
+  ...Array.from({ length: EMBEDDING_GLOBAL_WINDOW_LIMIT }, (_, index) => `global-window-${index}`),
+];
+const TEST_WINDOW_MS = Date.now();
+const TEST_WINDOW_ID = Math.floor(TEST_WINDOW_MS / 60_000);
+const TEST_DAY_ONE_MS = Date.UTC(2026, 6, 10, 12, 0, 0);
+const TEST_DAY_TWO_MS = Date.UTC(2026, 6, 11, 0, 0, 0);
+
 async function resetLimiterState(): Promise<void> {
-  await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "embedding_rate_leases", "embedding_rate_buckets"'
-  );
+  await prisma.embeddingRateLease.deleteMany({
+    where: { userId: { in: limiterUserIds } },
+  });
+  await prisma.embeddingRateBucket.deleteMany({
+    where: {
+      OR: [
+        ...limiterUserIds.map((userId) => ({ key: { startsWith: `embedding:rate:user:${userId}:` } })),
+        { key: `embedding:rate:global:${TEST_WINDOW_ID}` },
+        { key: 'embedding:daily:2026-07-10' },
+        { key: 'embedding:daily:2026-07-11' },
+      ],
+    },
+  });
+}
+
+async function resetLimiterUsers(): Promise<void> {
+  await prisma.user.deleteMany({ where: { id: { in: limiterUserIds } } });
+  await prisma.user.createMany({
+    data: limiterUserIds.map((id) => ({ id, email: `${id}@example.test` })),
+  });
 }
 
 describeWithDatabase('Postgres embedding limiter', () => {
-  beforeEach(resetLimiterState);
+  beforeEach(async () => {
+    await resetLimiterState();
+    await resetLimiterUsers();
+  });
 
   afterAll(async () => {
     await resetLimiterState();
+    await prisma.user.deleteMany({ where: { id: { in: limiterUserIds } } });
   });
 
   it('persists a releasable lease for an allowed request', async () => {
-    const result = await acquireEmbeddingRateLimit('user-lease');
+    const result = await acquireEmbeddingRateLimit('user-lease', TEST_WINDOW_MS);
 
     expect(result.allowed).toBe(true);
     expect(result.lease).toMatchObject({ userId: 'user-lease' });
@@ -53,7 +87,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
   });
 
   it('serializes concurrent acquisitions at the global concurrency cap', async () => {
-    const nowMs = Date.now();
+    const nowMs = TEST_WINDOW_MS;
     const results = await Promise.all(
       Array.from({ length: EMBEDDING_GLOBAL_CONCURRENCY_LIMIT + 5 }, (_, index) =>
         acquireEmbeddingRateLimit(`concurrent-user-${index}`, nowMs)
@@ -67,7 +101,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
   });
 
   it('recovers capacity from an expired lease after a crashed worker', async () => {
-    const first = await acquireEmbeddingRateLimit('crashed-user');
+    const first = await acquireEmbeddingRateLimit('crashed-user', TEST_WINDOW_MS);
     expect(first.allowed).toBe(true);
 
     await prisma.$executeRaw`
@@ -76,12 +110,12 @@ describeWithDatabase('Postgres embedding limiter', () => {
       WHERE "user_id" = 'crashed-user'
     `;
 
-    const replacement = await acquireEmbeddingRateLimit('crashed-user');
+    const replacement = await acquireEmbeddingRateLimit('crashed-user', TEST_WINDOW_MS);
     expect(replacement.allowed).toBe(true);
   });
 
   it('enforces the per-user minute window after leases are released', async () => {
-    const nowMs = Date.now();
+    const nowMs = TEST_WINDOW_MS;
     for (let index = 0; index < EMBEDDING_USER_WINDOW_LIMIT; index += 1) {
       const result = await acquireEmbeddingRateLimit('window-user', nowMs);
       expect(result.allowed).toBe(true);
@@ -93,7 +127,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
   });
 
   it('enforces the global minute window across users', async () => {
-    const nowMs = Date.now();
+    const nowMs = TEST_WINDOW_MS;
     for (let index = 0; index < EMBEDDING_GLOBAL_WINDOW_LIMIT; index += 1) {
       const result = await acquireEmbeddingRateLimit(`global-window-${index}`, nowMs);
       expect(result.allowed).toBe(true);
@@ -105,7 +139,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
   });
 
   it('keeps the daily budget at its ceiling without an over-budget increment', async () => {
-    const nowMs = Date.UTC(2026, 6, 10, 12, 0, 0);
+    const nowMs = TEST_DAY_ONE_MS;
     await prisma.$executeRaw`
       INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
       VALUES (
@@ -133,8 +167,8 @@ describeWithDatabase('Postgres embedding limiter', () => {
   });
 
   it('starts a fresh budget bucket at UTC day rollover', async () => {
-    const dayOne = await acquireEmbeddingDailyBudget(Date.UTC(2026, 6, 10, 23, 59, 59));
-    const dayTwo = await acquireEmbeddingDailyBudget(Date.UTC(2026, 6, 11, 0, 0, 0));
+    const dayOne = await acquireEmbeddingDailyBudget(TEST_DAY_ONE_MS);
+    const dayTwo = await acquireEmbeddingDailyBudget(TEST_DAY_TWO_MS);
 
     expect(dayOne).toMatchObject({ allowed: true, count: 1 });
     expect(dayTwo).toMatchObject({ allowed: true, count: 1 });
@@ -142,7 +176,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
     const keys = await prisma.$queryRaw<Array<{ key: string }>>`
       SELECT "key"
       FROM "embedding_rate_buckets"
-      WHERE "key" LIKE 'embedding:daily:%'
+      WHERE "key" IN ('embedding:daily:2026-07-10', 'embedding:daily:2026-07-11')
       ORDER BY "key"
     `;
     expect(keys.map(({ key }) => key)).toEqual([

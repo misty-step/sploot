@@ -131,7 +131,7 @@ describe('/api/stats', () => {
       const data = await response.json();
 
       expect(response.status).toBe(503);
-      expect(data.error).toBe('Database not available');
+      expect(data.code).toBe('enrollment_unavailable');
 
       // Database query should not be attempted
       expect(mockPrisma.asset.aggregate).not.toHaveBeenCalled();

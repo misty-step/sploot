@@ -110,6 +110,44 @@ Check API availability and system status.
 
 ### Upload Management
 
+#### Pre-GA enrollment containment
+
+New account admission is server-owned and applies before any Blob, storage,
+starter-pile, embedding, or search work. A request for an authenticated Clerk
+identity that has not yet been admitted returns the stable denial below; UI
+state, direct API calls, extension saves, URL imports, share-target posts, and
+embedding endpoints cannot bypass it.
+
+```json
+{
+  "success": false,
+  "error": "New account enrollment is temporarily paused.",
+  "code": "enrollment_closed",
+  "retryable": true,
+  "action": { "type": "try_later", "label": "Try again later" }
+}
+```
+
+The response is `403`. Production configuration is fail-closed; see
+[`DEPLOYMENT.md`](./DEPLOYMENT.md) for the capped mode, exact operator
+readback, and the explicit `SPLOOT_ENROLLMENT_MODE=ga` lift action. Existing
+users retain read, download/export, and delete behavior because they are not
+re-admitted on each request.
+
+If the server cannot prove the enrollment boundary because Prisma or an
+admission lookup is unavailable, routes return `503` with
+`code: "enrollment_unavailable"`; callers must not treat that response as a
+new-account denial or bypass the boundary.
+
+If a verified identity conflicts with an existing Clerk identity, routes return
+`409` with `code: "enrollment_identity_conflict"`; this is an identity repair
+condition, not a new-account admission.
+
+The operator probe is `GET /api/health/enrollment`; it returns the current
+mode, configuration validity, aggregate account count, remaining capacity, and
+`gaLifted` state. Use the repo-owned `probe:enrollment` command against the
+exact active deployment URL.
+
 #### POST /api/upload
 
 Uploads are guarded by the same runtime and quota policy:
@@ -999,6 +1037,12 @@ Perform semantic search using text queries.
 When Replicate is not configured, the route returns `503` with an `error`
 explaining search is unavailable.
 
+Enrollment errors are stable on this route: `403` with
+`code: "enrollment_closed"`, `409` with
+`code: "enrollment_identity_conflict"`, or `503` with
+`code: "enrollment_unavailable"`. The same statuses apply to search
+suggestions and `/api/search/advanced` before cache or vector work.
+
 #### GET /api/search
 
 Get recent or popular search suggestions.
@@ -1025,11 +1069,18 @@ Get recent or popular search suggestions.
 
 for `type=popular`, each search object contains `query` and `count`.
 
+The same `403`/`409`/`503` enrollment responses apply before reading search
+logs or aggregates.
+
 #### POST /api/search/advanced
 
 Advanced search with multiple filters and sorting options.
 
 **Authentication:** Required
+
+Enrollment errors are `403 enrollment_closed`, `409
+enrollment_identity_conflict`, or `503 enrollment_unavailable`; they are
+returned before cache, embedding, metadata, or vector work.
 
 **Request Body:**
 
