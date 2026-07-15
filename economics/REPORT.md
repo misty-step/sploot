@@ -73,7 +73,7 @@ Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve, s
 | Vercel Blob | blob-operations, renditions | $5.00 / million advanced operations | Hobby: first 2,000 advanced operations | [official source](https://vercel.com/docs/vercel-blob/usage-and-pricing) | 2026-07-15 |
 | Vercel Blob | blob-egress | $0.050 / GB transferred | Hobby: first 10 GB | [official source](https://vercel.com/docs/vercel-blob/usage-and-pricing) | 2026-07-15 |
 | Vercel CDN | blob-egress | $2.00 / million edge requests | Hobby: first 1,000,000; Pro: first 10,000,000 | [official source](https://vercel.com/docs/manage-cdn-usage) | 2026-07-15 |
-| Vercel CDN | blob-egress | $0.060 / GB origin transfer | Hobby: up to 10 GB; Pro: usage-based under the plan's shared monthly credit | [official source](https://vercel.com/docs/manage-cdn-usage) | 2026-07-15 |
+| Vercel CDN | blob-egress | $0.060 / GB origin transfer | Hobby: up to 10 GB; Pro: usage-based under the plan's shared monthly credit | [official source](https://vercel.com/docs/limits) | 2026-07-15 |
 | Replicate | image-inference, text-inference | $0.000730 / typical prediction | none | [official source](https://replicate.com/krthr/clip-embeddings) | 2026-07-15 |
 | Neon | database-compute, vector-storage | $0.106 / CU-hour | Free: 100 CU-hours per project | [official source](https://neon.com/pricing) | 2026-07-15 |
 | Neon | vector-storage | $0.350 / GB-month | Free: 0.5 GB per project | [official source](https://neon.com/pricing) | 2026-07-15 |
