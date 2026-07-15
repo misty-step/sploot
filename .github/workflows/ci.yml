@@ -82,6 +82,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build without runtime database or provider secrets
         run: pnpm deployment:build
+      - name: Validate generated PWA install assets
+        run: pnpm --filter web validate:pwa
 
   design:
     name: Design
