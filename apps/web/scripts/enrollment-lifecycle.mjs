@@ -36,6 +36,18 @@ function boundedInteger(value, fallback, maximum) {
   return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= maximum ? parsed : fallback;
 }
 
+function lifecycleReadback(readback, { appId, changeId, commit, marker }) {
+  return {
+    deploymentAppId: appId,
+    deploymentChangeId: changeId,
+    deploymentCommit: commit,
+    deploymentMarker: marker,
+    configuration: readback?.configuration,
+    mode: readback?.mode,
+    status: readback?.status,
+  };
+}
+
 const mode = argument('--mode');
 const appId = argument('--app-id');
 const specPath = argument('--spec');
@@ -283,7 +295,11 @@ async function main() {
           validateSpec: rollbackValidate,
           probeRuntime: rollbackProbe,
         });
-        if (!legacyBootstrap && (restored.readback?.gaLifted || restored.readback?.acceptingNewAccounts)) fail('compensation readback still reports GA admission');
+        if (!legacyBootstrap && (
+          restored.readback?.configuration !== 'valid' ||
+          restored.readback?.mode !== 'closed' ||
+          restored.readback?.status !== 'paused'
+        )) fail('compensation readback is not the valid paused public state');
       } catch (compensationError) {
         fail(`operator recovery required: closed compensation refused after ${error instanceof Error ? error.message : 'unknown lifecycle failure'}; ${compensationError instanceof Error ? compensationError.message : 'unknown provider state'}`);
       }
@@ -307,13 +323,7 @@ async function main() {
       mode,
       providerDeploymentId: stageResult.providerDeploymentId,
       deploymentUrl,
-      deploymentAppId: stageResult.readback?.deploymentAppId,
-      deploymentChangeId: stageResult.readback?.deploymentChangeId,
-      deploymentCommit: stageResult.readback?.deploymentCommit,
-      deploymentMarker: stageResult.readback?.deploymentMarker,
-      gaLifted: stageResult.readback?.gaLifted,
-      acceptingNewAccounts: stageResult.readback?.acceptingNewAccounts,
-      accountCount: stageResult.readback?.accountCount,
+      ...lifecycleReadback(stageResult.readback, { appId: current.appId, changeId, commit, marker }),
     }, null, 2));
     return;
   }
@@ -342,13 +352,7 @@ async function main() {
     stagedProviderDeploymentId: stageResult.providerDeploymentId,
     providerDeploymentId: finalResult.providerDeploymentId,
     deploymentUrl,
-    deploymentAppId: finalResult.readback?.deploymentAppId,
-    deploymentChangeId: finalResult.readback?.deploymentChangeId,
-    deploymentCommit: finalResult.readback?.deploymentCommit,
-    deploymentMarker: finalResult.readback?.deploymentMarker,
-    gaLifted: finalResult.readback?.gaLifted,
-    acceptingNewAccounts: finalResult.readback?.acceptingNewAccounts,
-    accountCount: finalResult.readback?.accountCount,
+    ...lifecycleReadback(finalResult.readback, { appId: current.appId, changeId, commit, marker }),
   }, null, 2));
 }
 

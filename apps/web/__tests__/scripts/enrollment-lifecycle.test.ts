@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  assertReadbackBinding,
+  assertPublicEnrollmentState,
   assertDeploymentContents,
   assertLegacyClosedSnapshot,
   assertRoutedSpecBindings,
@@ -409,11 +409,12 @@ describe('strict DigitalOcean response contracts', () => {
       { key: 'SPLOOT_DEPLOYMENT_COMMIT', value: '${APP_ID}' },
       { key: 'SPLOOT_DEPLOYMENT_CHANGE_ID', value: 'old-change' },
     ] }, { mode: 'ga', marker: 'production', changeId: 'new-change' })).toThrow();
-    expect(() => assertReadbackBinding({
-      configuration: 'valid', mode: 'ga', gaLifted: true, acceptingNewAccounts: true,
-      deploymentMarker: 'production', deploymentAppId: 'app-test', deploymentChangeId: 'old-change',
-      deploymentCommit: 'deadbeef',
-    }, { mode: 'ga', appId: 'app-test', changeId: 'new-change', marker: 'production', commit: 'deadbeef' })).toThrow();
+    expect(assertPublicEnrollmentState({
+      configuration: 'valid', mode: 'ga', status: 'open',
+    }, { mode: 'ga' })).toEqual({ configuration: 'valid', mode: 'ga', status: 'open' });
+    expect(() => assertPublicEnrollmentState({
+      configuration: 'valid', mode: 'ga', status: 'open', accountCount: 1,
+    }, { mode: 'ga' })).toThrow('public_shape_mismatch');
   });
 
   it('resolves only the web component and rejects scope ambiguity', () => {
@@ -599,7 +600,7 @@ async function runAppliedLifecycle(
     targetSpec: targetSpecObject,
     unrelatedSpec: { services: [{ name: 'web', envs: [{ key: 'UNRELATED', value: 'operator-change' }] }] },
   }));
-  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyPath, '-out', certPath, '-subj', '/CN=127.0.0.1', '-days', '1'], { stdio: 'ignore' });
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyPath, '-out', certPath, '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1', '-days', '1'], { stdio: 'ignore' });
   const fakeDoctl = writeFakeDoctl(directory, statePath);
   let probeCount = 0;
   const server = createServer({ key: readFileSync(keyPath), cert: readFileSync(certPath) }, (request, response) => {
@@ -608,19 +609,13 @@ async function runAppliedLifecycle(
     const target = state.phase === 'final';
     if ((state.failFinalProbe && target) || (state.failStageProbe && state.phase === 'stage')) {
       response.writeHead(503, { 'content-type': 'application/json' });
-      response.end(JSON.stringify({ configuration: 'valid', mode: 'ga', gaLifted: true, acceptingNewAccounts: true, deploymentMarker: 'production', deploymentAppId: 'app-test', deploymentChangeId: 'change-test', deploymentCommit: 'deadbeef', accountCount: 1 }));
+      response.end(JSON.stringify({ configuration: 'valid', mode: 'ga', status: 'open' }));
       return;
     }
     const snapshot = {
       configuration: 'valid',
       mode: target ? 'ga' : 'closed',
-      gaLifted: target,
-      acceptingNewAccounts: target,
-      deploymentMarker: 'production',
-      deploymentAppId: 'app-test',
-      deploymentChangeId: state.phase === 'closed' ? 'change-closed' : 'change-test',
-      deploymentCommit: state.phase === 'closed' ? 'cafebabe' : 'deadbeef',
-      accountCount: 1,
+      status: target ? 'open' : 'paused',
     };
     response.writeHead(200, { 'content-type': 'application/json' });
     response.end(JSON.stringify(snapshot));
@@ -632,7 +627,7 @@ async function runAppliedLifecycle(
     '--url', `https://127.0.0.1:${address.port}`, '--marker', options.marker ?? 'production', '--commit', options.commit ?? (options.bootstrapBindings ? 'cafebabe' : 'deadbeef'), '--change-id', 'change-test',
     '--closed-deployment-id', 'provider-closed', ...(options.bootstrapBindings ? ['--bootstrap-bindings'] : []), '--apply'], {
     env: { ...process.env, DOCTL_BIN: fakeDoctl, FAKE_DOCTL_STATE: statePath,
-      NODE_TLS_REJECT_UNAUTHORIZED: '0', FAKE_SECRET: 'EV[never-print-this-secret]', NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost',
+      NODE_EXTRA_CA_CERTS: certPath, FAKE_SECRET: 'EV[never-print-this-secret]', NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost',
       SPLOOT_LIFECYCLE_POLL_ATTEMPTS: '2', SPLOOT_LIFECYCLE_POLL_DELAY_MS: '0' },
   });
   let stdout = '';
@@ -666,12 +661,20 @@ describe('enrollment lifecycle command graph', () => {
   it('uses one update transaction, never unsupported exec or a second create-deployment, and records provider ID separately', async () => {
     const { result, state } = await runAppliedLifecycle();
     expect(result.status, result.stderr).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({
+    const receipt = JSON.parse(result.stdout);
+    expect(receipt).toMatchObject({
       stagedProviderDeploymentId: 'provider-stage',
       providerDeploymentId: 'provider-final',
       deploymentAppId: 'app-test',
       deploymentChangeId: 'change-test',
+      deploymentCommit: 'deadbeef',
+      deploymentMarker: 'production',
+      configuration: 'valid',
+      mode: 'ga',
+      status: 'open',
     });
+    expect(receipt).not.toHaveProperty('accountCount');
+    expect(receipt).not.toHaveProperty('remainingAccounts');
     expect(state.commands.some((command: string) => command.includes('create-deployment') || command.includes(' exec '))).toBe(false);
     expect(state.commands.filter((command: string) => command.startsWith('apps update')).length).toBe(2);
     expect(state.commands.some((command: string) => command.includes('/dev/stdin'))).toBe(false);
@@ -694,6 +697,7 @@ describe('enrollment lifecycle command graph', () => {
     expect(state.commands.filter((command: string) => command.startsWith('apps update')).length).toBe(1);
     expect(result.stderr).not.toContain(secretValue);
     expect(result.stderr).not.toContain(secretHash);
+    expect(result.stderr).not.toContain('NODE_TLS_REJECT_UNAUTHORIZED');
   });
 
   it('refuses compensation over a staged deployment that reached ERROR', async () => {
