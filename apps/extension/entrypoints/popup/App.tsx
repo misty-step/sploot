@@ -14,17 +14,28 @@ import { IS_DEV_BUILD } from '../../shared/build-mode'
 import { requestVisibleTabCapture } from '../../shared/capture-messages'
 import { CONTEXT_MENU_SAVE_MESSAGES, type ContextMenuSaveJobSummary } from '../../shared/context-menu-save-messages'
 import { getSaveStatus, onSaveStatusChanged, type SaveStatus } from '../../shared/save-status'
-import { EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
+import { E2E_AUTH_MODE, EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
 import { getSplootAppUrl, getSplootSignInUrl } from '../../shared/app-url'
 import { runBestEffort } from '../../shared/best-effort'
 import { performContextMenuSaveAction, requestContextMenuSaveQueue } from './queue-recovery'
 import './style.css'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
+const E2E_AUTH_KEY = 'sploot:e2e-auth-authority'
+
+type E2EAuthority = {
+  userId: string
+  accountId: string
+  sessionId: string
+}
 
 function App() {
   if (EXTENSION_CONFIG_ERROR) {
     return <ConfigErrorPanel message={EXTENSION_CONFIG_ERROR} />
+  }
+
+  if (E2E_AUTH_MODE) {
+    return <E2EPopup />
   }
 
   return (
@@ -58,6 +69,65 @@ function App() {
         </div>
       </div>
     </ClerkProvider>
+  )
+}
+
+/**
+ * Test-only popup authority. It reads the same durable storage authority as
+ * the real background auth manager; queue listing/actions still cross the
+ * normal runtime message boundary. Production builds reject this mode in
+ * wxt.config.ts, so it cannot become a Clerk substitute in the store artifact.
+ */
+function E2EPopup() {
+  const [authority, setAuthority] = useState<E2EAuthority | null>(null)
+
+  useEffect(() => {
+    const readAuthority = () => {
+      void chrome.storage.local.get(E2E_AUTH_KEY).then(stored => {
+        const value = stored[E2E_AUTH_KEY]
+        if (!value || typeof value !== 'object') {
+          setAuthority(null)
+          return
+        }
+        const candidate = value as Partial<E2EAuthority>
+        setAuthority(
+          typeof candidate.userId === 'string' && typeof candidate.sessionId === 'string'
+            ? {
+                userId: candidate.userId,
+                accountId: typeof candidate.accountId === 'string' ? candidate.accountId : candidate.userId,
+                sessionId: candidate.sessionId,
+              }
+            : null,
+        )
+      })
+    }
+    readAuthority()
+    chrome.storage.onChanged.addListener(readAuthority)
+    return () => chrome.storage.onChanged.removeListener(readAuthority)
+  }, [])
+
+  return (
+    <div className="popup-frame">
+      <div className="popup-container">
+        <header>
+          <h1>
+            <img src={chrome.runtime.getURL('icon-128.png')} alt="Sploot" className="logo-icon" />
+            Sploot
+          </h1>
+        </header>
+        <main>
+          {authority ? (
+            <div className="signed-in-panel">
+              <p>Signed in as <strong>{authority.userId}</strong></p>
+              <div className="actions">
+                <button onClick={() => void requestVisibleTabCapture()}>Screenshot this tab</button>
+              </div>
+            </div>
+          ) : <SignedOutPanel />}
+          <LastSaveStrip />
+        </main>
+      </div>
+    </div>
   )
 }
 

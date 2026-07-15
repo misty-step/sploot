@@ -6,18 +6,20 @@
  */
 
 import { IS_DEV_BUILD } from '../../shared/build-mode';
+import { E2E_AUTH_MODE } from '../../shared/env';
 import {
   CONTEXT_MENU_SAVE_MESSAGES,
   type QueueActionResponse,
   type QueueErrorCode,
   type QueueListResponse,
 } from '../../shared/context-menu-save-messages';
-import { runAuthDiagnostics } from './auth-manager';
+import { getAuthAuthority, runAuthDiagnostics } from './auth-manager';
 import {
   discardContextMenuSave,
   enqueueContextMenuSave,
   listContextMenuSaves,
-  listFailedContextMenuSaves,
+  listContextMenuSavesForOwner,
+  listFailedContextMenuSavesForOwner,
   recoverPendingContextMenuSaves,
   retryContextMenuSave,
   setupContextMenuSaveQueue,
@@ -82,13 +84,27 @@ export function setupContextMenu() {
   });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (E2E_AUTH_MODE && message?.type === CONTEXT_MENU_SAVE_MESSAGES.E2E_SAVE) {
+      if (typeof message.imageUrl !== 'string' || typeof message.filename !== 'string') {
+        sendResponse({ ok: false, error: 'Invalid E2E save request.' });
+        return true;
+      }
+      void handleImageSave(message.imageUrl, { title: message.filename }).then(
+        () => sendResponse({ ok: true }),
+        error => sendResponse({ ok: false, error: error instanceof Error ? error.message : 'Save failed.' }),
+      );
+      return true;
+    }
+
     const listType = message?.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_QUEUE
       || message?.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED;
     if (listType) {
-      const list = message.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED
-        ? listFailedContextMenuSaves()
-        : listContextMenuSaves();
-      void list.then(jobs => {
+      void getAuthAuthority().then(owner => {
+        if (message.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED) {
+          return listFailedContextMenuSavesForOwner(owner);
+        }
+        return listContextMenuSavesForOwner(owner);
+      }).then(jobs => {
         sendResponse({ ok: true, jobs: jobs.map(toQueueSummary) } satisfies QueueListResponse);
       }).catch(error => {
         sendResponse(queueErrorResponse(error));
@@ -104,10 +120,10 @@ export function setupContextMenu() {
         return true;
       }
 
-      const action = message.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY
-        ? retryContextMenuSave(message.jobId)
-        : discardContextMenuSave(message.jobId);
-      void action.then(ok => {
+      void getAuthAuthority().then(owner => message.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY
+        ? retryContextMenuSave(message.jobId, owner)
+        : discardContextMenuSave(message.jobId, owner)
+      ).then(ok => {
         if (!ok) {
           sendResponse({ ok: false, code: 'not-found', error: 'Queue job not found.' } satisfies QueueActionResponse);
           return;
@@ -163,7 +179,7 @@ function queueErrorResponse(error: unknown): QueueListResponse | QueueActionResp
  */
 async function handleImageSave(
   imageUrl: string | undefined,
-  tab: chrome.tabs.Tab | undefined
+  tab: Pick<chrome.tabs.Tab, 'title'> | undefined,
 ): Promise<void> {
   if (!imageUrl) {
     showErrorNotification('No image URL found');

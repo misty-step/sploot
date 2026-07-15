@@ -13,6 +13,7 @@ export const MAX_CONTEXT_MENU_SAVE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const PROCESSING_STALE_TIMEOUT_MS = 5 * 60 * 1000;
 export const RETRY_BACKOFF_BASE_MS = 30 * 1000;
 export const RETRY_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000;
+export const MAX_CONTEXT_MENU_SAVE_CONCURRENCY = 2;
 /** Base64-encoded source bytes retained across worker crashes. */
 export const MAX_CONTEXT_MENU_SAVE_STORAGE_BYTES = 8 * 1024 * 1024;
 /** Fetch, conversion, and upload each have a finite worker deadline. */
@@ -30,6 +31,8 @@ export interface ContextMenuSaveJob {
   nextAttemptAt: number;
   processingStartedAt?: number;
   processingToken?: string;
+  /** A timed-out operation must settle before its token can be retried. */
+  processingSettling?: boolean;
   lastError?: string;
   failedAt?: number;
   /** Exact Clerk authority that created the durable job. Never shown in popup summaries. */
@@ -51,6 +54,29 @@ export class ContextMenuSaveQueueError extends Error {
 
 let queueOperations = Promise.resolve();
 let jobMutations = Promise.resolve();
+
+class ConcurrencyGate {
+  private active = 0;
+  private readonly waiters: Array<() => void> = [];
+
+  constructor(private readonly limit: number) {}
+
+  async run<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.active >= this.limit) {
+      await new Promise<void>(resolve => this.waiters.push(resolve));
+    }
+    this.active += 1;
+    try {
+      return await operation();
+    } finally {
+      this.active -= 1;
+      this.waiters.shift()?.();
+    }
+  }
+}
+
+const fetchAdmission = new ConcurrencyGate(MAX_CONTEXT_MENU_SAVE_CONCURRENCY);
+const recoveryAdmission = new ConcurrencyGate(MAX_CONTEXT_MENU_SAVE_CONCURRENCY);
 
 function exclusively<T>(operation: () => Promise<T>): Promise<T> {
   const next = queueOperations.then(operation, operation);
@@ -115,6 +141,9 @@ function normalizeJob(job: unknown): ContextMenuSaveJob | null {
   }
   if (typeof candidate.processingToken === 'string') {
     normalized.processingToken = candidate.processingToken;
+  }
+  if (candidate.processingSettling === true) {
+    normalized.processingSettling = true;
   }
   if (typeof candidate.lastError === 'string') {
     normalized.lastError = candidate.lastError;
@@ -194,6 +223,7 @@ function terminalFailure(job: ContextMenuSaveJob, now: number, error: string): C
     nextAttemptAt: 0,
     processingStartedAt: undefined,
     processingToken: undefined,
+    processingSettling: undefined,
     lastError: error,
     failedAt: now,
   };
@@ -206,8 +236,38 @@ function pauseForOwnerChange(job: ContextMenuSaveJob): ContextMenuSaveJob {
     nextAttemptAt: 0,
     processingStartedAt: undefined,
     processingToken: undefined,
+    processingSettling: undefined,
     lastError: 'Sign in to the original Sploot account to resume this save.',
   };
+}
+
+async function releaseTimedOutProcessing(processing: ContextMenuSaveJob): Promise<void> {
+  await mutateJobs(async () => {
+    const latest = await readJobs();
+    const active = latest.find(candidate => (
+      candidate.id === processing.id
+      && candidate.state === 'processing'
+      && candidate.processingToken === processing.processingToken
+      && candidate.processingSettling === true
+    ));
+    if (!active) return;
+
+    const retryable: ContextMenuSaveJob = {
+      ...active,
+      state: 'pending',
+      processingStartedAt: undefined,
+      processingToken: undefined,
+      processingSettling: undefined,
+      nextAttemptAt: Date.now() + retryDelayMs(active.attempts),
+    };
+    await writeJobs(latest.map(candidate => candidate.id === active.id ? retryable : candidate));
+    setSaveStatus({
+      state: 'retrying',
+      label: `Retry scheduled for ${retryable.filename}.`,
+      nextAttemptAt: retryable.nextAttemptAt,
+      at: Date.now(),
+    });
+  });
 }
 
 function notifyTerminalFailure(job: ContextMenuSaveJob): void {
@@ -220,17 +280,30 @@ function notifyTerminalFailure(job: ContextMenuSaveJob): void {
   }
 }
 
-function withDeadline<T>(promise: Promise<T>, message: string, timeoutMs = CONTEXT_MENU_SAVE_DEADLINE_MS): Promise<T> {
+function withDeadline<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  message: string,
+  timeoutMs = CONTEXT_MENU_SAVE_DEADLINE_MS,
+): Promise<T> {
+  const controller = new AbortController();
   return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
-    promise.then(
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      callback();
+    };
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+      finish(() => reject(new Error(message)));
+    }, timeoutMs);
+    operation(controller.signal).then(
       value => {
-        clearTimeout(timeoutId);
-        resolve(value);
+        finish(() => resolve(value));
       },
       error => {
-        clearTimeout(timeoutId);
-        reject(error);
+        finish(() => reject(error));
       },
     );
   });
@@ -328,7 +401,10 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
     return;
   }
 
-  const currentOwner = await getAuthAuthority();
+  const currentOwner = await withDeadline(
+    signal => getAuthAuthority(signal),
+    'Auth check timed out; retry scheduled.',
+  ).catch(() => null);
   if (!sameAuthAuthority(currentOwner, current.owner)) {
     await mutateJobs(async () => {
       const latest = await readJobs();
@@ -349,6 +425,7 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
     attempts: current.attempts + 1,
     processingStartedAt: now,
     processingToken: crypto.randomUUID(),
+    processingSettling: undefined,
   };
   let processingPersisted = false;
   await mutateJobs(async () => {
@@ -363,19 +440,56 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
     return;
   }
 
+  const controller = new AbortController();
+  const sourceBlob = storedSourceToBlob(processing);
+  const operationPromise = Promise.resolve().then(() => saveToSploot(
+    async () => ({ blob: sourceBlob, filename: processing.filename }),
+    'image',
+    { owner: processing.owner, signal: controller.signal },
+  ));
   let outcome: Awaited<ReturnType<typeof saveToSploot>>;
+  let timedOut = false;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+      reject(new Error('Save processing timed out; retry waits for cancellation.'));
+    }, CONTEXT_MENU_SAVE_DEADLINE_MS);
+  });
   try {
-    const sourceBlob = storedSourceToBlob(processing);
-    outcome = await withDeadline(
-      saveToSploot(
-        async () => ({ blob: sourceBlob, filename: processing.filename }),
-        'image',
-        { owner: processing.owner },
-      ),
-      'Save processing timed out; retry scheduled.',
-    );
+    outcome = await Promise.race([operationPromise, timeoutPromise]);
   } catch (error) {
     outcome = { ok: false, error: queueError(error) };
+  } finally {
+    if (!timedOut && timeoutId) clearTimeout(timeoutId);
+  }
+
+  if (timedOut) {
+    await mutateJobs(async () => {
+      const latest = await readJobs();
+      const activeLatest = latest.find(candidate => (
+        candidate.id === processing.id
+        && candidate.state === 'processing'
+        && candidate.processingToken === processing.processingToken
+      ));
+      if (activeLatest) {
+        await writeJobs(latest.map(candidate => candidate.id === processing.id
+          ? {
+              ...candidate,
+              processingSettling: true,
+              lastError: (outcome.ok
+                ? new Error('Save processing timed out; retry waits for cancellation.')
+                : outcome.error).message,
+            }
+          : candidate));
+      }
+    });
+    void operationPromise.then(
+      () => releaseTimedOutProcessing(processing),
+      () => releaseTimedOutProcessing(processing),
+    );
+    return;
   }
 
   const remaining = await readJobs();
@@ -409,6 +523,7 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
     state: 'pending',
     processingStartedAt: undefined,
     processingToken: undefined,
+    processingSettling: undefined,
     lastError: outcome.error.message,
     nextAttemptAt: Date.now() + retryDelayMs(processing.attempts),
   };
@@ -459,9 +574,19 @@ async function recoverPendingSavesLocked(): Promise<void> {
     await writeJobs(recovered);
   }
 
-  // A bounded job deadline plus fan-out means one hung source/upload cannot
-  // serially starve other eligible durable jobs.
-  await Promise.all(recovered.map(job => processJob(job)));
+  const eligible = recovered.filter(job => job.state === 'pending');
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < eligible.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      await recoveryAdmission.run(() => processJob(eligible[index]));
+    }
+  };
+  const firstWorker = worker();
+  const secondWorker = worker();
+  await firstWorker;
+  await secondWorker;
   await scheduleContextMenuSaveQueueWakeup();
 }
 
@@ -478,9 +603,12 @@ export function setupContextMenuSaveQueue(): void {
 
 /** Persist captured bytes and owner in one authoritative storage transition. */
 export function enqueueCapturedSave(blob: Blob, filename: string, imageUrl = 'captured://visible-tab'): Promise<void> {
-  return withDeadline(blobToStoredSource(blob), 'Image preparation timed out; save was not queued.')
+  return withDeadline(() => blobToStoredSource(blob), 'Image preparation timed out; save was not queued.')
     .then(retained => exclusively(async () => {
-      const owner = await getAuthAuthority();
+      const owner = await withDeadline(
+        signal => getAuthAuthority(signal),
+        'Auth check timed out; save was not queued.',
+      );
       if (!owner) {
         throw new ContextMenuSaveQueueError('Sign in to Sploot before saving this image.', 'owner-unavailable');
       }
@@ -520,8 +648,10 @@ export function enqueueCapturedSave(blob: Blob, filename: string, imageUrl = 'ca
 
 /** Fetch once with a deadline, then enqueue immutable bytes; retries never refetch. */
 export function enqueueContextMenuSave(imageUrl: string, filename: string): Promise<void> {
-  return withDeadline(fetchImage(imageUrl), 'Image fetch timed out; retry scheduled without blocking other saves.')
-    .then(blob => enqueueCapturedSave(blob, filename, imageUrl));
+  return fetchAdmission.run(() => withDeadline(
+    signal => fetchImage(imageUrl, signal),
+    'Image fetch timed out; retry scheduled without blocking other saves.',
+  )).then(blob => enqueueCapturedSave(blob, filename, imageUrl));
 }
 
 export function recoverPendingContextMenuSaves(): Promise<void> {
@@ -532,11 +662,24 @@ export function listContextMenuSaves(): Promise<ContextMenuSaveJob[]> {
   return readJobs();
 }
 
+export function listContextMenuSavesForOwner(owner: AuthAuthority | null): Promise<ContextMenuSaveJob[]> {
+  if (!owner) return Promise.resolve([]);
+  return readJobs().then(jobs => jobs.filter(job => sameAuthAuthority(job.owner ?? null, owner)));
+}
+
 export function listFailedContextMenuSaves(): Promise<ContextMenuSaveJob[]> {
   return readJobs().then(jobs => jobs.filter(job => job.state === 'failed' || job.state === 'paused'));
 }
 
-export function retryContextMenuSave(jobId: string): Promise<boolean> {
+export function listFailedContextMenuSavesForOwner(owner: AuthAuthority | null): Promise<ContextMenuSaveJob[]> {
+  if (!owner) return Promise.resolve([]);
+  return readJobs().then(jobs => jobs.filter(job => (
+    (job.state === 'failed' || job.state === 'paused')
+    && sameAuthAuthority(job.owner ?? null, owner)
+  )));
+}
+
+export function retryContextMenuSave(jobId: string, expectedOwner?: AuthAuthority | null): Promise<boolean> {
   return exclusively(async () => {
     const jobs = await readJobs();
     const failed = jobs.find(job => (job.state === 'failed' || job.state === 'paused') && job.id === jobId);
@@ -544,7 +687,7 @@ export function retryContextMenuSave(jobId: string): Promise<boolean> {
       return false;
     }
 
-    const owner = await getAuthAuthority();
+    const owner = expectedOwner === undefined ? await getAuthAuthority() : expectedOwner;
     if (!sameAuthAuthority(owner, failed.owner)) {
       return false;
     }
@@ -558,6 +701,7 @@ export function retryContextMenuSave(jobId: string): Promise<boolean> {
       nextAttemptAt: now,
       processingStartedAt: undefined,
       processingToken: undefined,
+      processingSettling: undefined,
       failedAt: undefined,
       lastError: undefined,
     };
@@ -567,10 +711,15 @@ export function retryContextMenuSave(jobId: string): Promise<boolean> {
   });
 }
 
-export function discardContextMenuSave(jobId: string): Promise<boolean> {
+export function discardContextMenuSave(jobId: string, expectedOwner?: AuthAuthority | null): Promise<boolean> {
   return exclusively(async () => {
     const jobs = await readJobs();
-    if (!jobs.some(job => (job.state === 'failed' || job.state === 'paused') && job.id === jobId)) {
+    const owner = expectedOwner === undefined ? await getAuthAuthority() : expectedOwner;
+    if (!owner || !jobs.some(job => (
+      (job.state === 'failed' || job.state === 'paused')
+      && job.id === jobId
+      && sameAuthAuthority(job.owner ?? null, owner)
+    ))) {
       return false;
     }
     await writeJobs(jobs.filter(job => job.id !== jobId));

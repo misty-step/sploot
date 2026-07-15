@@ -101,7 +101,9 @@ describe('durable context-menu save queue', () => {
   it('removes a job only after the save pipeline reports success', async () => {
     await enqueueContextMenuSave('https://x.test/cat.png', 'cat.png');
 
-    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(expect.any(Function), 'image', { owner: OWNER }));
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(
+      expect.any(Function), 'image', { owner: OWNER, signal: expect.any(AbortSignal) },
+    ));
     await vi.waitFor(() => expect(storedQueue).toEqual([]));
   });
 
@@ -179,7 +181,9 @@ describe('durable context-menu save queue', () => {
     });
 
     expect(mocks.saveToSploot).toHaveBeenCalledOnce();
-    expect(mocks.saveToSploot).toHaveBeenCalledWith(expect.any(Function), 'image', { owner: OWNER });
+    expect(mocks.saveToSploot).toHaveBeenCalledWith(
+      expect.any(Function), 'image', { owner: OWNER, signal: expect.any(AbortSignal) },
+    );
     expect(storedQueue.find(job => job.id === 'fresh')).toMatchObject({
       state: 'processing',
       processingStartedAt: 1_000_000,
@@ -362,7 +366,9 @@ describe('durable context-menu save queue', () => {
     mocks.saveToSploot.mockResolvedValueOnce({ ok: false, error: new Error('offline') });
 
     alarmListener!({ name: CONTEXT_MENU_SAVE_ALARM_NAME });
-    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(expect.any(Function), 'image', { owner: OWNER }));
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(
+      expect.any(Function), 'image', { owner: OWNER, signal: expect.any(AbortSignal) },
+    ));
     await vi.waitFor(() => expect(storedQueue[0].nextAttemptAt).toBeGreaterThan(Date.now()));
     expect(storedQueue[0].state).toBe('pending');
 
@@ -497,7 +503,66 @@ describe('durable context-menu save queue', () => {
     vi.advanceTimersByTime(CONTEXT_MENU_SAVE_DEADLINE_MS);
     await recovery;
 
-    expect(storedQueue.find(job => job.id === 'hung')).toMatchObject({ state: 'pending', attempts: 1 });
+    expect(storedQueue.find(job => job.id === 'hung')).toMatchObject({
+      state: 'processing', attempts: 1, processingSettling: true,
+    });
+  });
+
+  it('keeps recovery concurrency bounded instead of fanning out every job', async () => {
+    storedQueue = Array.from({ length: 5 }, (_, index) => ({
+      id: `bounded-${index}`,
+      imageUrl: `https://x.test/${index}.png`,
+      filename: `${index}.png`,
+      state: 'pending' as const,
+      createdAt: Date.now(),
+      attempts: 0,
+      nextAttemptAt: Date.now(),
+      owner: OWNER,
+    }));
+    let active = 0;
+    let maximum = 0;
+    const resolvers: Array<() => void> = [];
+    mocks.saveToSploot.mockImplementation(async () => {
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise<void>(resolve => resolvers.push(resolve));
+      active -= 1;
+      return { ok: true, filename: 'bounded.png', isDuplicate: false };
+    });
+
+    const recovery = recoverPendingContextMenuSaves();
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledTimes(2));
+    expect(maximum).toBe(2);
+    expect(mocks.saveToSploot).toHaveBeenCalledTimes(2);
+    resolvers.splice(0, 2).forEach(resolve => resolve());
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledTimes(4));
+    resolvers.splice(0, 2).forEach(resolve => resolve());
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledTimes(5));
+    resolvers.shift()?.();
+    await recovery;
+    expect(maximum).toBe(2);
+    expect(storedQueue).toEqual([]);
+  });
+
+  it('keeps a late success fenced until the timed-out operation settles', async () => {
+    storedQueue = [{
+      id: 'late', imageUrl: 'https://x.test/late.png', filename: 'late.png', state: 'pending',
+      createdAt: Date.now(), attempts: 0, nextAttemptAt: Date.now(), owner: OWNER,
+    }];
+    let resolveLate!: (outcome: { ok: true; filename: string; isDuplicate: boolean }) => void;
+    mocks.saveToSploot.mockReturnValue(new Promise(resolve => { resolveLate = resolve; }));
+
+    const recovery = recoverPendingContextMenuSaves();
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledOnce());
+    vi.advanceTimersByTime(CONTEXT_MENU_SAVE_DEADLINE_MS);
+    await recovery;
+    expect(storedQueue[0]).toMatchObject({ state: 'processing', processingSettling: true });
+
+    resolveLate({ ok: true, filename: 'late.png', isDuplicate: false });
+    await vi.waitFor(() => expect(storedQueue[0]).toMatchObject({ state: 'pending', attempts: 1 }));
+    expect(storedQueue).toHaveLength(1);
+    await recoverPendingContextMenuSaves();
+    expect(mocks.saveToSploot).toHaveBeenCalledOnce();
   });
 
   it('persists screenshot bytes before processing and replays them after an upload failure', async () => {
@@ -527,12 +592,37 @@ describe('durable context-menu save queue', () => {
 
     const hung = enqueueContextMenuSave('https://x.test/hung.png', 'hung.png');
     const later = enqueueContextMenuSave('https://x.test/later.png', 'later.png');
-    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(expect.any(Function), 'image', { owner: OWNER }));
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(
+      expect.any(Function), 'image', { owner: OWNER, signal: expect.any(AbortSignal) },
+    ));
     expect(storedQueue).toEqual([]);
     vi.advanceTimersByTime(CONTEXT_MENU_SAVE_DEADLINE_MS);
     const results = await Promise.allSettled([hung, later]);
     expect(results[0].status).not.toBe('pending');
     expect(results[1]).toEqual({ status: 'fulfilled', value: undefined });
+  });
+
+  it('admits no more than two initial source fetches at once', async () => {
+    let active = 0;
+    let maximum = 0;
+    const resolvers: Array<() => void> = [];
+    mocks.fetchImage.mockImplementation(async () => {
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise<void>(resolve => resolvers.push(resolve));
+      active -= 1;
+      return new Blob(['admitted'], { type: 'image/png' });
+    });
+    const enqueues = Array.from({ length: 5 }, (_, index) => enqueueContextMenuSave(`https://x.test/${index}.png`, `${index}.png`));
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
+    expect(maximum).toBe(2);
+    resolvers.splice(0, 2).forEach(resolve => resolve());
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
+    resolvers.splice(0, 2).forEach(resolve => resolve());
+    await vi.waitFor(() => expect(resolvers).toHaveLength(1));
+    resolvers.shift()?.();
+    await Promise.all(enqueues);
+    expect(maximum).toBe(2);
   });
 
   it('does not upload if the worker terminates before source bytes are persisted', async () => {

@@ -83,11 +83,11 @@ test('rejects a production artifact if its marker or provenance changes', () => 
 test('rejects one malicious operator packet across every proof boundary', () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'sploot-proof-'));
   mkdirSync(path.join(root, 'evidence'));
-  const writeArtifact = (name, bytes) => {
+  const writeArtifact = (name, bytes, kind = 'screenshot') => {
     const reference = `evidence/${name}`;
     writeFileSync(path.join(root, reference), bytes);
     return {
-      kind: name.includes('receipt') ? 'receipt' : name.includes('install') ? 'install' : 'screenshot',
+      kind,
       reference,
       sha256: createHash('sha256').update(bytes).digest('hex'),
       byteLength: bytes.length,
@@ -96,22 +96,30 @@ test('rejects one malicious operator packet across every proof boundary', () => 
     };
   };
   const extensionId = 'a'.repeat(32);
+  const accountId = 'account-a';
   const itemUrl = `https://chromewebstore.google.com/detail/sploot/${extensionId}`;
-  const proof = (artifact, kind) => ({
+  const proof = (artifact, kind, capturedAt = new Date(now).toISOString(), providerUrl = kind === 'screenshot' ? 'https://www.sploot.app/app' : itemUrl) => ({
     candidateSha,
     artifactSha256: artifactSha,
     version: '1.0.0',
     extensionId,
-    capturedAt: new Date().toISOString(),
+    accountId,
+    capturedAt,
     artifact: { ...artifact, kind },
-    providerUrl: kind === 'screenshot' ? 'https://www.sploot.app/app' : itemUrl,
+    providerUrl,
     itemUrl,
     observed: kind === 'receipt' ? { httpStatus: 409, isDuplicate: true } : { authState: 'signed-in' },
   });
-  const screenshot = writeArtifact('save.png', Buffer.from('save'));
-  const receipt = writeArtifact('duplicate-receipt.json', Buffer.from('{}'));
-  const install = writeArtifact('install.png', Buffer.from('install'));
   const now = Date.parse('2026-07-15T16:00:00.000Z');
+  const capturedAt = new Date(now).toISOString();
+  const screenshot = writeArtifact('save.png', Buffer.from('save'));
+  const copiedScreenshot = writeArtifact('copied-save.png', Buffer.from('save'));
+  const libraryScreenshot = writeArtifact('library.png', Buffer.from('library'));
+  const signoutScreenshot = writeArtifact('signout.png', Buffer.from('signout'));
+  const receipt = writeArtifact('duplicate-receipt.json', Buffer.from('{}'), 'receipt');
+  const webStoreReceipt = writeArtifact('web-store-receipt.json', Buffer.from('{"receipt":true}'), 'receipt');
+  const install = writeArtifact('install.png', Buffer.from('install'), 'install');
+  const approvalArtifact = writeArtifact('approval.json', Buffer.from('{"decision":"approved"}'), 'approval');
   const packet = {
     schemaVersion: 1,
     binding: {
@@ -120,12 +128,13 @@ test('rejects one malicious operator packet across every proof boundary', () => 
       artifactSha256: artifactSha,
       version: '1.0.0',
       extensionId,
+      accountId,
     },
     chrome: {
-      authenticatedRightClickSave: proof(screenshot, 'screenshot'),
-      duplicate409: proof(receipt, 'receipt'),
-      library: proof(screenshot, 'screenshot'),
-      signout: { ...proof(screenshot, 'screenshot'), observed: { authState: 'signed-out' } },
+      authenticatedRightClickSave: proof(screenshot, 'screenshot', capturedAt),
+      duplicate409: proof(receipt, 'receipt', capturedAt, 'https://www.sploot.app/app'),
+      library: proof(libraryScreenshot, 'screenshot', capturedAt),
+      signout: { ...proof(signoutScreenshot, 'screenshot', capturedAt), observed: { authState: 'signed-out' } },
     },
     webStore: {
       origin: 'https://chromewebstore.google.com',
@@ -133,7 +142,7 @@ test('rejects one malicious operator packet across every proof boundary', () => 
       itemUrl,
       status: 'in_review',
       verifiedAt: new Date(now).toISOString(),
-      receipt: proof(receipt, 'receipt'),
+      receipt: proof(webStoreReceipt, 'receipt'),
       installed: proof(install, 'install'),
     },
     providerVerification: {
@@ -143,14 +152,63 @@ test('rejects one malicious operator packet across every proof boundary', () => 
       status: 'in_review',
       verifiedAt: new Date(now).toISOString(),
     },
+    approval: {
+      reviewerId: 'github:user/reviewer',
+      identity: { provider: 'github', subject: 'user/reviewer' },
+      decision: 'approved',
+      decidedAt: capturedAt,
+      recordSha256: approvalArtifact.sha256,
+      artifact: {
+        ...approvalArtifact,
+        metadata: {
+          sourceSha: candidateSha,
+          zipSha256: artifactSha,
+          extensionId,
+        },
+      },
+    },
   };
+
+  for (const proofValue of [
+    packet.chrome.authenticatedRightClickSave,
+    packet.chrome.duplicate409,
+    packet.chrome.library,
+    packet.chrome.signout,
+    packet.webStore.receipt,
+    packet.webStore.installed,
+  ]) {
+    proofValue.artifact.metadata = {
+      releaseBinding: {
+        transport: 'redownloaded-zip',
+        sourceSha: candidateSha,
+        zipSha256: artifactSha,
+        extensionId,
+        capturedAt: proofValue.capturedAt,
+        accountId,
+      },
+        accountId,
+    };
+  }
+
+  const validErrors = validateOperatorEvidenceAt(packet, {
+    candidateSha,
+    artifactPath: 'dist/extension-1.0.0-chrome.zip',
+    artifactSha256: artifactSha,
+    version: '1.0.0',
+  }, { evidenceRoot: root, now });
+  assert.deepEqual(validErrors, []);
 
   packet.schemaVersion = 999;
   packet.binding.extensionId = 'extension-id';
   packet.chrome.authenticatedRightClickSave.capturedAt = '2099-01-01T00:00:00.000Z';
   packet.chrome.duplicate409.artifact.reference = '../outside.json';
-  packet.chrome.library.artifact.reference = 'evidence/missing.png';
+  packet.webStore.installed.artifact.reference = 'evidence/missing.png';
   packet.chrome.signout.artifact.sha256 = 'c'.repeat(64);
+  packet.chrome.library.artifact = {
+    ...packet.chrome.authenticatedRightClickSave.artifact,
+    reference: copiedScreenshot.reference,
+  };
+  packet.approval.decision = 'rejected';
   packet.webStore.origin = 'https://example.invalid';
   packet.webStore.itemUrl = 'https://chromewebstore.google.com/detail/other/a'.repeat(1);
   packet.webStore.status = 'draft';
@@ -170,6 +228,7 @@ test('rejects one malicious operator packet across every proof boundary', () => 
   assert.match(message, /escapes the evidence packet/);
   assert.match(message, /referenced evidence artifact is missing/);
   assert.match(message, /SHA-256 does not match/);
+  assert.match(message, /reuses an evidence artifact/);
   assert.match(message, /Web Store origin/);
   assert.match(message, /itemUrl/);
   assert.match(message, /status/);

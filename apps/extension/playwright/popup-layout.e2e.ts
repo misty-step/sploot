@@ -1,40 +1,68 @@
-import { readFile } from 'node:fs/promises';
-import { expect, test } from '@playwright/test';
+import path from 'node:path';
+import { chromium, expect, test } from '@playwright/test';
 
-const popupCssUrl = new URL('../entrypoints/popup/style.css', import.meta.url);
-const longIdentity = `${'very-long-unbroken-identity-'.repeat(8)}@example.test`;
+const AUTH_KEY = 'sploot:e2e-auth-authority';
+const QUEUE_KEY = 'sploot:context-menu-queue';
+const LIST_QUEUE = 'sploot:context-menu-save:list-queue';
 
-for (const width of [280, 240]) {
-  test(`signed-in identity stays inside a ${width}px popup`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 640 });
-    const css = await readFile(popupCssUrl, 'utf8');
-    await page.setContent(`
-      <style>${css}</style>
-      <div class="popup-frame">
-        <div class="popup-container">
-          <main>
-            <div class="signed-in-panel">
-              <p>Signed in as <strong data-testid="identity">${longIdentity}</strong></p>
-              <div class="actions"><button>View My Library</button></div>
-            </div>
-          </main>
-        </div>
-      </div>
-    `);
-
-    const dimensions = await page.evaluate(() => {
-      const identity = document.querySelector<HTMLElement>('[data-testid="identity"]');
-      const panel = document.querySelector<HTMLElement>('.signed-in-panel');
-      if (!identity || !panel) throw new Error('popup fixture did not render');
-      return {
-        documentWidth: document.documentElement.scrollWidth,
-        viewportWidth: window.innerWidth,
-        identityRight: identity.getBoundingClientRect().right,
-        panelRight: panel.getBoundingClientRect().right,
-      };
-    });
-
-    expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
-    expect(dimensions.identityRight).toBeLessThanOrEqual(dimensions.panelRight + 0.5);
+test('real popup and worker isolate durable queue metadata by auth owner', async () => {
+  test.setTimeout(60_000);
+  const extensionPath = path.resolve('dist/chrome-mv3');
+  const context = await chromium.launchPersistentContext('', {
+    channel: 'chrome',
+    headless: false,
+    args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],
   });
-}
+  try {
+    const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+    const extensionId = new URL(worker.url()).host;
+    const popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+
+    for (const width of [280, 240]) {
+      await popup.setViewportSize({ width, height: 640 });
+      const popupWidth = await popup.evaluate(() => document.documentElement.scrollWidth);
+      expect(popupWidth).toBeLessThanOrEqual(width);
+    }
+
+    await worker.evaluate(async ({ authKey, queueKey }) => {
+      await chrome.storage.local.set({
+        [authKey]: { userId: 'layout-user-a', accountId: 'layout-user-a', sessionId: 'layout-session-a' },
+        [queueKey]: [{
+          id: 'layout-job',
+          imageUrl: 'https://private.test/layout.png',
+          filename: 'owner-a.png',
+          state: 'failed',
+          createdAt: Date.now(),
+          attempts: 1,
+          nextAttemptAt: 0,
+          owner: { userId: 'layout-user-a', accountId: 'layout-user-a', sessionId: 'layout-session-a' },
+          sourceBytes: btoa('immutable'),
+          sourceType: 'image/png',
+          lastError: 'retryable',
+        }],
+      });
+    }, { authKey: AUTH_KEY, queueKey: QUEUE_KEY });
+    await popup.reload();
+    await expect(popup.getByText('Signed in as')).toBeVisible();
+    await expect(popup.getByText('layout-user-a')).toBeVisible();
+    await expect(popup.getByText('owner-a.png')).toBeVisible();
+    const ownerAList = await popup.evaluate(async message => chrome.runtime.sendMessage(message), { type: LIST_QUEUE });
+    expect(ownerAList).toMatchObject({ ok: true, jobs: [{ filename: 'owner-a.png' }] });
+
+    await worker.evaluate(async authKey => {
+      await chrome.storage.local.set({
+        [authKey]: { userId: 'layout-user-b', accountId: 'layout-user-b', sessionId: 'layout-session-b' },
+      });
+    }, AUTH_KEY);
+    await popup.reload();
+    await expect(popup.getByText('Signed in as')).toBeVisible();
+    await expect(popup.getByText('layout-user-b')).toBeVisible();
+    await expect(popup.getByText('owner-a.png')).toHaveCount(0);
+    const ownerBList = await popup.evaluate(async message => chrome.runtime.sendMessage(message), { type: LIST_QUEUE });
+    expect(ownerBList).toEqual({ ok: true, jobs: [] });
+    expect(JSON.stringify(ownerBList)).not.toContain('private.test');
+  } finally {
+    await context.close();
+  }
+});

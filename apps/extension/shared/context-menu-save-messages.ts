@@ -3,6 +3,8 @@ export const CONTEXT_MENU_SAVE_MESSAGES = {
   LIST_FAILED: 'sploot:context-menu-save:list-failed',
   RETRY: 'sploot:context-menu-save:retry',
   DISCARD: 'sploot:context-menu-save:discard',
+  /** Test-only seam; the production manifest never enables E2E_AUTH_MODE. */
+  E2E_SAVE: 'sploot:e2e:context-menu-save',
 } as const;
 
 export type ContextMenuSaveJobState = 'pending' | 'processing' | 'failed' | 'paused';

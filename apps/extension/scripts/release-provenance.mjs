@@ -11,7 +11,7 @@ const CHROME_EXTENSION_ID_PATTERN = /^[a-p]{32}$/;
 const WEB_STORE_ORIGIN = 'https://chromewebstore.google.com';
 const SPLOOT_ORIGINS = new Set(['https://www.sploot.app', 'https://sploot.app']);
 const WEB_STORE_STATUSES = new Set(['in_review', 'published']);
-
+const APPROVED_CHROME_PROOF_ORIGINS = new Set(['https://www.sploot.app', 'https://sploot.app']);
 export function assertCandidateSha(actualSha, expectedSha) {
   if (!COMMIT_PATTERN.test(actualSha)) {
     throw new Error(`invalid checked-out candidate SHA: ${actualSha}`);
@@ -116,11 +116,13 @@ export function validateOperatorEvidenceAt(evidence, expected, options = {}) {
     'library',
     'signout',
   ];
+  const usedArtifacts = new Map();
   for (const proofName of chromeProofs) {
     validateProof(evidence?.chrome?.[proofName], `chrome.${proofName}`, binding, errors, {
       expectedKind: proofName === 'duplicate409' ? 'receipt' : 'screenshot',
       evidenceRoot,
       now,
+      usedArtifacts,
     });
   }
 
@@ -150,12 +152,14 @@ export function validateOperatorEvidenceAt(evidence, expected, options = {}) {
     evidenceRoot,
     now,
     provider: webStore,
+    usedArtifacts,
   });
   validateProof(webStore?.installed, 'webStore.installed', binding, errors, {
     expectedKind: 'install',
     evidenceRoot,
     now,
     provider: webStore,
+    usedArtifacts,
   });
 
   const providerVerification = evidence?.providerVerification;
@@ -177,6 +181,8 @@ export function validateOperatorEvidenceAt(evidence, expected, options = {}) {
     validTimestamp(providerVerification.verifiedAt, now, errors, 'providerVerification.verifiedAt');
   }
 
+  validateApproval(evidence?.approval, binding, evidenceRoot, now, errors);
+
   return errors;
 }
 
@@ -192,6 +198,11 @@ function validateProof(proof, label, binding, errors, options) {
     if (proof[field] !== binding[field]) {
       errors.push(`${label} ${field} is not bound to the packet release`);
     }
+  }
+  if (typeof binding.accountId !== 'string' || binding.accountId.length === 0) {
+    errors.push('operator evidence binding accountId is required');
+  } else if (proof.accountId !== binding.accountId) {
+    errors.push(`${label} accountId is not bound to the packet account`);
   }
 
   const artifact = proof.artifact;
@@ -232,6 +243,23 @@ function validateProof(proof, label, binding, errors, options) {
   }
   if (!artifact.metadata || typeof artifact.metadata !== 'object') {
     errors.push(`${label} artifact machine metadata is required`);
+  } else {
+    validateArtifactReleaseBinding(artifact.metadata.releaseBinding, label, proof, binding, errors);
+    if (artifact.metadata.releaseBinding?.capturedAt !== proof.capturedAt) {
+      errors.push(`${label} artifact timestamp does not match proof timestamp`);
+    }
+    if (artifact.metadata.releaseBinding?.accountId !== proof.accountId) {
+      errors.push(`${label} artifact account does not match proof account`);
+    }
+  }
+
+  // A copied screenshot under a different filename is still the same proof;
+  // semantic proof roles must each have independently captured bytes.
+  const artifactIdentity = artifact.sha256;
+  if (options.usedArtifacts?.has(artifactIdentity)) {
+    errors.push(`${label} reuses an evidence artifact already assigned to ${options.usedArtifacts.get(artifactIdentity)}`);
+  } else {
+    options.usedArtifacts?.set(artifactIdentity, label);
   }
 
   const providerUrl = proof.providerUrl;
@@ -241,6 +269,10 @@ function validateProof(proof, label, binding, errors, options) {
     }
     if (proof.itemUrl !== options.provider?.itemUrl) {
       errors.push(`${label} itemUrl does not match the verified Web Store item`);
+    }
+  } else if (label.startsWith('chrome.')) {
+    if (!approvedProviderUrl(proof.providerUrl, APPROVED_CHROME_PROOF_ORIGINS)) {
+      errors.push(`${label} providerUrl must use an approved Sploot HTTPS origin`);
     }
   } else if (proof.providerUrl !== undefined) {
     try {
@@ -260,6 +292,92 @@ function validateProof(proof, label, binding, errors, options) {
   }
   if (label === 'chrome.signout' && proof.observed?.authState !== 'signed-out') {
     errors.push(`${label} must carry signed-out machine metadata`);
+  }
+}
+
+function validateArtifactReleaseBinding(releaseBinding, label, proof, binding, errors) {
+  if (!releaseBinding || typeof releaseBinding !== 'object') {
+    errors.push(`${label} artifact must bind to the uploaded or re-downloaded release ZIP`);
+    return;
+  }
+  if (!['uploaded-zip', 'redownloaded-zip'].includes(releaseBinding.transport)) {
+    errors.push(`${label} artifact release transport must be uploaded-zip or redownloaded-zip`);
+  }
+  if (releaseBinding.sourceSha !== binding.candidateSha) {
+    errors.push(`${label} artifact source SHA is not bound to the exact release`);
+  }
+  if (releaseBinding.zipSha256 !== binding.artifactSha256) {
+    errors.push(`${label} artifact ZIP SHA-256 is not bound to the exact release`);
+  }
+  if (releaseBinding.extensionId !== binding.extensionId) {
+    errors.push(`${label} artifact extension ID is not bound to the exact release`);
+  }
+  if (releaseBinding.capturedAt !== proof.capturedAt) {
+    errors.push(`${label} artifact capture timestamp is not machine-bound`);
+  }
+}
+
+function validateApproval(approval, binding, evidenceRoot, now, errors) {
+  if (!approval || typeof approval !== 'object') {
+    errors.push('missing immutable reviewer approval record');
+    return;
+  }
+  if (typeof approval.reviewerId !== 'string' || approval.reviewerId.length === 0) {
+    errors.push('approval reviewerId is required');
+  }
+  if (!approval.identity || typeof approval.identity !== 'object'
+    || typeof approval.identity.provider !== 'string'
+    || typeof approval.identity.subject !== 'string'
+    || approval.identity.subject.length === 0) {
+    errors.push('approval immutable reviewer identity provider and subject are required');
+  }
+  if (approval.decision !== 'approved') {
+    errors.push('approval decision must be approved');
+  }
+  validTimestamp(approval.decidedAt, now, errors, 'approval.decidedAt');
+  const artifact = approval.artifact;
+  if (!artifact || typeof artifact !== 'object') {
+    errors.push('approval must include an immutable hashed approval artifact');
+    return;
+  }
+  if (artifact.kind !== 'approval') {
+    errors.push('approval artifact kind must be approval');
+  }
+  if (typeof artifact.reference !== 'string' || !safeRelativeReference(artifact.reference)) {
+    errors.push('approval artifact reference must be a safe local packet path');
+    return;
+  }
+  if (!evidenceRoot) {
+    errors.push('approval referenced evidence artifact is missing');
+    return;
+  }
+  const artifactPath = path.resolve(evidenceRoot, artifact.reference);
+  if (!isWithin(evidenceRoot, artifactPath) || !existsSync(artifactPath) || !statSync(artifactPath).isFile()) {
+    errors.push('approval referenced evidence artifact is missing');
+    return;
+  }
+  const bytes = readFileSync(artifactPath);
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  if (artifact.sha256 !== digest || approval.recordSha256 !== digest) {
+    errors.push('approval artifact SHA-256 does not match its immutable record');
+  }
+  if (artifact.byteLength !== bytes.length) {
+    errors.push('approval artifact byteLength does not match its immutable record');
+  }
+  if (artifact.metadata?.sourceSha !== binding.candidateSha
+    || artifact.metadata?.zipSha256 !== binding.artifactSha256
+    || artifact.metadata?.extensionId !== binding.extensionId) {
+    errors.push('approval artifact is not bound to the exact release source, ZIP, and extension ID');
+  }
+}
+
+function approvedProviderUrl(value, origins) {
+  if (typeof value !== 'string') return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' && origins.has(parsed.origin);
+  } catch {
+    return false;
   }
 }
 

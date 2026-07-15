@@ -60,12 +60,30 @@ pnpm build:prod:unpacked
 3. Click **Load Unpacked**.
 4. Select `apps/extension/dist/chrome-mv3`.
 
+### CI-only MV3 acceptance
+
+CI builds a separate unpacked `dist/chrome-mv3` with
+`VITE_E2E_AUTH_MODE=true`, then loads that directory in a persistent real
+Chromium context. The harness resolves the generated extension ID, talks to
+the real service worker through `chrome.runtime`, persists real
+`chrome.storage` and alarm queue state, closes and restarts the worker, and
+exercises the actual popup queue listing/actions, image fetch, capture, retry,
+duplicate response, owner switch, and abort paths. The popup layout oracle
+runs the same real artifact at both 280px and 240px.
+
+Native Chrome context-menu UI cannot be clicked by Playwright in the CI
+browser seam, so the E2E-only message invokes the same production
+`handleImageSave` path that the registered `chrome.contextMenus.onClicked`
+listener uses; it is not present in production builds. `wxt.config.ts` rejects
+the E2E authority mode for both production and manifest-check builds. Real
+Clerk device authentication and live Web Store/provider evidence remain
+operator-only and keep the release gate red until supplied.
+
 ## 🛒 Publishing to the Chrome Web Store
 
-The extension ships as a **live public listing**:
-**https://chromewebstore.google.com/detail/sploot/fbhkflbcnllfogefckablkafjknmcfnd**
-(also linked from the repo README and the sploot.app footer). A stranger with
-no repo access installs it straight from that URL — no sideloading required.
+The extension is **not submitted or published** in the Chrome Web Store. The
+production build in `dist/` is a local/release candidate artifact only; no live
+listing URL or publication receipt exists yet.
 
 To publish an **update**:
 
@@ -76,14 +94,14 @@ To publish an **update**:
    (`scripts/validate-store-release.mjs`) verifies the manifest, icons, and
    production config without claiming external Chrome/Web Store proof.
 3. **Build the store zip** — `pnpm --filter extension zip:prod` — produces the
-   production-config `.zip` under `apps/extension/.output/`.
-4. **Upload** the zip to the existing item in the
+   production-config `.zip` under `apps/extension/dist/`.
+4. **Upload** the zip to the operator-authorized Chrome Web Store item in the
    [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole)
    and submit for review. (Store credentials live with the operator's Google
    account; there is no CI-automated publish today — this is a deliberate
    manual gate.)
-5. **Verify** the listing URL still resolves and the new version is live before
-   closing the release.
+5. **Verify** the provider receipt, downloaded ZIP digest, extension ID, and
+   publication status before claiming a submission or publication.
 
 The strict `pnpm --filter extension release:check` gate is intentionally
 nonzero until the operator supplies an exact-provenance Chrome/Web Store

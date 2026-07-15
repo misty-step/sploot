@@ -5,6 +5,7 @@ import {
   CLERK_ENVIRONMENT,
   CLERK_PUBLISHABLE_KEY,
   CLERK_SYNC_HOST,
+  E2E_AUTH_MODE,
 } from '../../shared/env'
 import { getSplootSignInUrl } from '../../shared/app-url'
 import { IS_DEV_BUILD } from '../../shared/build-mode'
@@ -13,6 +14,7 @@ import { runBestEffort } from '../../shared/best-effort'
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
 const SIGN_IN_TIMEOUT_MS = 60000
 const SIGN_IN_POLL_INTERVAL_MS = 1000
+const E2E_AUTH_KEY = 'sploot:e2e-auth-authority'
 
 let cachedState: AuthState = { status: 'unknown' }
 const waiters = new Set<(state: AuthState) => void>()
@@ -65,9 +67,12 @@ async function createFreshClerkClient() {
   })
 }
 
-export async function isAuthenticated(): Promise<boolean> {
+export async function isAuthenticated(signal?: AbortSignal): Promise<boolean> {
   try {
-    const clerk = await createFreshClerkClient()
+    if (E2E_AUTH_MODE) {
+      return Boolean(await getE2eAuthority(signal));
+    }
+    const clerk = await withAbort(createFreshClerkClient(), signal)
     const authority = sessionAuthority(clerk.session)
     const hasSession = Boolean(authority)
 
@@ -92,16 +97,20 @@ export async function isAuthenticated(): Promise<boolean> {
   }
 }
 
-export async function getAuthToken(): Promise<string | null> {
+export async function getAuthToken(signal?: AbortSignal): Promise<string | null> {
   try {
-    const clerk = await createFreshClerkClient()
+    if (E2E_AUTH_MODE) {
+      const authority = await getE2eAuthority(signal);
+      return authority ? `e2e-token-${authority.userId}-${authority.sessionId}` : null;
+    }
+    const clerk = await withAbort(createFreshClerkClient(), signal)
 
     if (!clerk.session) {
       console.warn('[Auth] No session available for token retrieval')
       return null
     }
 
-    const token = await clerk.session.getToken()
+    const token = await withAbort(clerk.session.getToken(), signal)
 
     console.log('[Auth] Token retrieved', {
       hasToken: Boolean(token),
@@ -125,9 +134,12 @@ export async function getAuthToken(): Promise<string | null> {
 }
 
 /** Read the current session authority without exposing it in user-facing copy. */
-export async function getAuthAuthority(): Promise<AuthAuthority | null> {
+export async function getAuthAuthority(signal?: AbortSignal): Promise<AuthAuthority | null> {
   try {
-    const clerk = await createFreshClerkClient()
+    if (E2E_AUTH_MODE) {
+      return await getE2eAuthority(signal);
+    }
+    const clerk = await withAbort(createFreshClerkClient(), signal)
     const authority = sessionAuthority(clerk.session)
     if (authority) {
       updateCachedState({
@@ -147,21 +159,63 @@ export async function getAuthAuthority(): Promise<AuthAuthority | null> {
 }
 
 /** Obtain a token only while the original durable-job authority is still active. */
-export async function getAuthTokenForAuthority(expected: AuthAuthority): Promise<string | null> {
+export async function getAuthTokenForAuthority(expected: AuthAuthority, signal?: AbortSignal): Promise<string | null> {
   try {
-    const clerk = await createFreshClerkClient()
+    if (E2E_AUTH_MODE) {
+      const actual = await getE2eAuthority(signal);
+      return sameAuthAuthority(actual, expected)
+        ? `e2e-token-${expected.userId}-${expected.sessionId}`
+        : null;
+    }
+    const clerk = await withAbort(createFreshClerkClient(), signal)
     const actual = sessionAuthority(clerk.session)
     if (!sameAuthAuthority(actual, expected) || !clerk.session) {
       return null
     }
-    return await clerk.session.getToken()
+    return await withAbort(clerk.session.getToken(), signal)
   } catch (error) {
     console.error('[Auth] Failed to get owner-fenced token', error)
     return null
   }
 }
 
-export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS): Promise<boolean> {
+async function getE2eAuthority(signal?: AbortSignal): Promise<AuthAuthority | null> {
+  const stored = await withAbort(chrome.storage.local.get(E2E_AUTH_KEY), signal);
+  const value = stored[E2E_AUTH_KEY];
+  if (!value || typeof value !== 'object') return null;
+  const authority = value as Partial<AuthAuthority>;
+  if (typeof authority.userId !== 'string' || typeof authority.sessionId !== 'string') return null;
+  return {
+    userId: authority.userId,
+    accountId: typeof authority.accountId === 'string' ? authority.accountId : authority.userId,
+    sessionId: authority.sessionId,
+  };
+}
+
+function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) {
+    return promise
+  }
+  if (signal.aborted) {
+    return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'))
+  }
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(new DOMException('The operation was aborted.', 'AbortError'))
+    signal.addEventListener('abort', abort, { once: true })
+    promise.then(
+      value => {
+        signal.removeEventListener('abort', abort)
+        resolve(value)
+      },
+      error => {
+        signal.removeEventListener('abort', abort)
+        reject(error)
+      },
+    )
+  })
+}
+
+export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSignal): Promise<boolean> {
   return new Promise(resolve => {
     let settled = false
     let intervalId: ReturnType<typeof setInterval> | undefined
@@ -177,12 +231,20 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS): Promise<boolean> 
         clearInterval(intervalId)
       }
       waiters.delete(listener)
+      signal?.removeEventListener('abort', abort)
       resolve(signedIn)
     }
+
+    const abort = () => finish(false)
 
     const timeoutId = setTimeout(() => {
       finish(false)
     }, timeoutMs)
+    if (signal?.aborted) {
+      abort()
+      return
+    }
+    signal?.addEventListener('abort', abort, { once: true })
 
     const listener = (state: AuthState) => {
       if (state.status === 'signed-in') {
@@ -208,7 +270,7 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS): Promise<boolean> 
   })
 }
 
-export async function promptUserSignIn(): Promise<boolean> {
+export async function promptUserSignIn(signal?: AbortSignal): Promise<boolean> {
   try {
     await chrome.tabs.create({ url: getSplootSignInUrl() })
   } catch (error) {
@@ -216,7 +278,7 @@ export async function promptUserSignIn(): Promise<boolean> {
     return false
   }
 
-  return await waitForSignIn()
+  return await waitForSignIn(SIGN_IN_TIMEOUT_MS, signal)
 }
 
 export interface AuthDiagnosticsSnapshot {

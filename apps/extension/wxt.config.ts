@@ -23,6 +23,9 @@ export default defineConfig({
     const isProduction = process.env.WXT_MODE === 'production';
     const isManifestCheck = process.env.WXT_MODE === 'manifest-check';
     const isReleaseLike = isProduction || isManifestCheck;
+    if (process.env.VITE_E2E_AUTH_MODE === 'true' && isReleaseLike) {
+      throw new Error('VITE_E2E_AUTH_MODE is test-only and cannot be used for production or manifest-check builds');
+    }
     const includeCrxKey = isProduction && process.env.INCLUDE_CRX_KEY === 'true';
     const publishableKey = process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ?? '';
 

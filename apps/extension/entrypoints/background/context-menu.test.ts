@@ -114,8 +114,10 @@ describe('context menu save', () => {
   it('fetches and uploads the right-clicked image, then reports success', async () => {
     await onClicked({ menuItemId: 'save-to-sploot', srcUrl: 'https://x.test/cat.png' }, { title: 'Cat' });
 
-    await vi.waitFor(() => expect(mocks.fetchImage).toHaveBeenCalledWith('https://x.test/cat.png'));
-    await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'cat.png', expect.anything()));
+    await vi.waitFor(() => expect(mocks.fetchImage).toHaveBeenCalledWith('https://x.test/cat.png', expect.any(AbortSignal)));
+    await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledWith(
+      expect.any(Blob), 'cat.png', expect.anything(), expect.any(AbortSignal),
+    ));
     await vi.waitFor(() => expect(mocks.showSuccessNotification).toHaveBeenCalled());
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
   });
@@ -157,7 +159,9 @@ describe('context menu save', () => {
     await onStartup?.();
 
     expect(mocks.fetchImage).not.toHaveBeenCalled();
-    expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'cat.png', expect.anything());
+    expect(mocks.uploadImage).toHaveBeenCalledWith(
+      expect.any(Blob), 'cat.png', expect.anything(), expect.any(AbortSignal),
+    );
     await vi.waitFor(() => expect(storedQueue).toEqual([]));
   });
 
@@ -207,6 +211,39 @@ describe('context menu save', () => {
     expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.DISCARD, jobId: 'failed-1' }, {}, discardResponse)).toBe(true);
     await vi.waitFor(() => expect(discardResponse).toHaveBeenCalledWith({ ok: true, action: 'discarded' }));
     expect(storedQueue).toEqual([]);
+  });
+
+  it('returns no queue metadata and refuses discard for a different or signed-out owner', async () => {
+    storedQueue = [{
+      id: 'owner-a',
+      imageUrl: 'https://private.test/a.png',
+      filename: 'private-a.png',
+      state: 'failed',
+      createdAt: Date.now(),
+      attempts: 5,
+      nextAttemptAt: 0,
+      owner: { userId: 'user-a', sessionId: 'session-a' },
+      sourceBytes: btoa('private-bytes'),
+      sourceType: 'image/png',
+    }];
+    mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-b', sessionId: 'session-b' });
+
+    const otherList = vi.fn();
+    expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.LIST_QUEUE }, {}, otherList)).toBe(true);
+    await vi.waitFor(() => expect(otherList).toHaveBeenCalledWith({ ok: true, jobs: [] }));
+    const otherDiscard = vi.fn();
+    expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.DISCARD, jobId: 'owner-a' }, {}, otherDiscard)).toBe(true);
+    await vi.waitFor(() => expect(otherDiscard).toHaveBeenCalledWith({ ok: false, code: 'not-found', error: 'Queue job not found.' }));
+    expect(storedQueue).toHaveLength(1);
+
+    mocks.getAuthAuthority.mockResolvedValue(null);
+    const signedOutList = vi.fn();
+    onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.LIST_QUEUE }, {}, signedOutList);
+    await vi.waitFor(() => expect(signedOutList).toHaveBeenCalledWith({ ok: true, jobs: [] }));
+    const signedOutDiscard = vi.fn();
+    onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.DISCARD, jobId: 'owner-a' }, {}, signedOutDiscard);
+    await vi.waitFor(() => expect(signedOutDiscard).toHaveBeenCalledWith({ ok: false, code: 'not-found', error: 'Queue job not found.' }));
+    expect(storedQueue).toHaveLength(1);
   });
 
   it('returns a stable error when LIST_FAILED storage access rejects', async () => {

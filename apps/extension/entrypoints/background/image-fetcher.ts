@@ -12,7 +12,7 @@ import {
   prepareImageForUpload,
 } from '@sploot/common';
 
-export async function fetchImage(url: string): Promise<Blob> {
+export async function fetchImage(url: string, signal?: AbortSignal): Promise<Blob> {
   let urlObj: URL;
   try {
     urlObj = new URL(url);
@@ -25,7 +25,11 @@ export async function fetchImage(url: string): Promise<Blob> {
   }
 
   try {
+    signal?.throwIfAborted();
     const controller = new AbortController();
+    const abortFromCaller = () => controller.abort(signal?.reason);
+    if (signal?.aborted) abortFromCaller();
+    else signal?.addEventListener('abort', abortFromCaller, { once: true });
     const timeoutId = setTimeout(() => controller.abort(), UPLOAD.timeout);
     let response: Response;
     try {
@@ -36,6 +40,7 @@ export async function fetchImage(url: string): Promise<Blob> {
       }), 'Image fetch timed out');
     } finally {
       clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', abortFromCaller);
     }
 
     if (!response.ok) {
@@ -47,11 +52,13 @@ export async function fetchImage(url: string): Promise<Blob> {
       throw new Error(`Invalid content type: ${contentType || 'unknown'}`);
     }
 
-    const blob = await withDeadline(response.blob(), 'Image conversion timed out');
+    signal?.throwIfAborted();
+    const blob = await withDeadline(response.blob(), 'Image conversion timed out', signal);
     const typedBlob = isValidMimeType(blob.type)
       ? blob
       : new Blob([blob], { type: contentType || 'image/jpeg' });
-    return await withDeadline(prepareFetchedImage(typedBlob), 'Image conversion timed out');
+    signal?.throwIfAborted();
+    return await withDeadline(prepareFetchedImage(typedBlob), 'Image conversion timed out', signal);
   } catch (error) {
     if (error instanceof Error && (
       error.message.includes('too large')
@@ -63,25 +70,36 @@ export async function fetchImage(url: string): Promise<Blob> {
     }
 
     console.warn('[ImageFetcher] Fetch failed, trying bounded fallback:', error);
-    return await fetchViaImageElement(url);
+    return await fetchViaImageElement(url, signal);
   }
 }
 
-function fetchViaImageElement(url: string): Promise<Blob> {
+function fetchViaImageElement(url: string, signal?: AbortSignal): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     let settled = false;
-    let timeoutId: ReturnType<typeof setTimeout>;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     const finish = (callback: () => void) => {
       if (settled) {
         return;
       }
       settled = true;
-      clearTimeout(timeoutId);
+      if (timeoutId) clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', abort);
       callback();
     };
+
+    const abort = () => finish(() => {
+      img.src = '';
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+    });
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    signal?.addEventListener('abort', abort, { once: true });
 
     img.onload = () => {
       try {
@@ -92,8 +110,8 @@ function fetchViaImageElement(url: string): Promise<Blob> {
         }
         context.drawImage(img, 0, 0);
         canvas.convertToBlob({ type: 'image/webp', quality: UPLOAD.compressionQuality })
-          .then(blob => withDeadline(prepareFetchedImage(blob), 'Image conversion timed out'))
-          .then(blob => finish(() => resolve(blob)), error => finish(() => reject(error)));
+          .then(blob => withDeadline(prepareFetchedImage(blob), 'Image conversion timed out', signal))
+      .then(blob => finish(() => resolve(blob)), error => finish(() => reject(error)));
       } catch (error) {
         finish(() => reject(error));
       }
@@ -105,14 +123,26 @@ function fetchViaImageElement(url: string): Promise<Blob> {
   });
 }
 
-function withDeadline<T>(promise: Promise<T>, message: string): Promise<T> {
+function withDeadline<T>(promise: Promise<T>, message: string, signal?: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => reject(new Error(message)), UPLOAD.timeout);
+    const abort = () => {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', abort);
+      reject(new DOMException('The operation was aborted.', 'AbortError'));
+    };
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    signal?.addEventListener('abort', abort, { once: true });
     promise.then(value => {
       clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', abort);
       resolve(value);
     }, error => {
       clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', abort);
       reject(error);
     });
   });

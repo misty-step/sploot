@@ -212,8 +212,6 @@ jobs:
         run: pnpm --filter extension lint
       - name: Test extension
         run: pnpm --filter extension test
-      - name: Test extension narrow layouts in Chrome
-        run: pnpm --filter extension test:layout
       - name: Assert production artifact/provenance immediately before upload
         env:
           RELEASE_CANDIDATE_SHA: ${{ github.sha }}
@@ -226,6 +224,16 @@ jobs:
             apps/extension/dist/
             ${{ runner.temp }}/extension-release-provenance.json
           retention-days: 7
+      - name: Build real unpacked MV3 lifecycle harness
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: pk_test_ci_lifecycle
+          VITE_API_BASE_URL: http://127.0.0.1:3345
+          VITE_CLERK_SYNC_HOST: http://127.0.0.1:3345
+        run: pnpm --filter extension build:e2e
+      - name: Exercise real popup owner isolation in Chromium
+        run: xvfb-run -a pnpm --filter extension test:layout
+      - name: Exercise real unpacked MV3 lifecycle in Chromium
+        run: xvfb-run -a pnpm --filter extension test:mv3
 
   verify-extension-dist:
     name: Verify uploaded extension artifact

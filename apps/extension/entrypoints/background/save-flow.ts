@@ -29,6 +29,7 @@ export interface SaveOptions {
   prepareBeforeAuth?: boolean;
   /** When present, upload is fenced to this exact Clerk user/session. */
   owner?: AuthAuthority;
+  signal?: AbortSignal;
 }
 
 export type SaveOutcome =
@@ -50,10 +51,10 @@ export async function saveToSploot(
     setSaveStatus({ state: 'saving', label: `Saving ${subject}…`, at: Date.now() });
     const preparedImage = options.prepareBeforeAuth ? await produce() : undefined;
 
-    const authenticated = await isAuthenticated();
+    const authenticated = await isAuthenticated(options.signal);
     if (!authenticated) {
       showErrorNotification(`Opening Sploot sign-in. Try saving the ${subject} again after signing in.`);
-      const signedIn = await promptUserSignIn();
+      const signedIn = await promptUserSignIn(options.signal);
       if (!signedIn) {
         const error = new Error(`Sign in on Sploot, then try saving the ${subject} again.`);
         showErrorNotification(error.message);
@@ -64,18 +65,18 @@ export async function saveToSploot(
     const { blob, filename } = preparedImage ?? await produce();
     const owner = options.owner;
     if (owner) {
-      const currentOwner = await getAuthAuthority();
+      const currentOwner = await getAuthAuthority(options.signal);
       if (!sameAuthAuthority(currentOwner, owner)) {
         throw new Error('The original Sploot account is no longer active. Sign in to that account to resume this save.');
       }
       const result = await uploadImage(blob, filename, {
-        getToken: () => getAuthTokenForAuthority(owner),
-      });
+        getToken: signal => getAuthTokenForAuthority(owner, signal),
+      }, options.signal);
       showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
       return { ok: true, filename, isDuplicate: result.isDuplicate };
     }
 
-    const result = await uploadImage(blob, filename);
+    const result = await uploadImage(blob, filename, undefined, options.signal);
     showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
     return { ok: true, filename, isDuplicate: result.isDuplicate };
   } catch (error) {
