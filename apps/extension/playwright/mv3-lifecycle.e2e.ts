@@ -189,20 +189,11 @@ async function stopAndRestart(
         step,
         'wake restarted worker through real queue message',
       );
-      let restarted: Worker | undefined;
-      let restartedTargetId: string | undefined;
-      await expect.poll(async () => {
-        const activeTargets = await cdp.send('Target.getTargets');
-        const activeTarget = activeTargets.targetInfos.find(info => (
-          info.type === 'service_worker'
-          && info.url.startsWith('chrome-extension://')
-          && info.targetId !== terminatedTargetId
-        ));
-        restartedTargetId = activeTarget?.targetId;
-        restarted = context.serviceWorkers().find(worker => worker.url().startsWith('chrome-extension://'));
-        return Boolean(restartedTargetId && restarted);
-      }, { timeout: 15_000 }).toBe(true);
       await wake;
+      // The response can only be produced after the original target was
+      // closed, so this is a stronger restart proof than a URL-only worker
+      // handle or a Chromium event that may not be emitted on restart.
+      const restarted = context.serviceWorkers().find(worker => worker.url().startsWith('chrome-extension://'));
       expect(restarted).toBeTruthy();
       const worker = restarted!;
       await wakeMv3Worker(worker, context, testInfo, step);
