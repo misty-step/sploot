@@ -30,7 +30,7 @@ export interface SaveOptions {
 export async function saveToSploot(
   produce: () => Promise<ProducedImage>,
   subject: string,
-  options: SaveOptions = {}
+  options: SaveOptions = {},
 ): Promise<void> {
   try {
     // Live progress for the popup's persistent status strip.

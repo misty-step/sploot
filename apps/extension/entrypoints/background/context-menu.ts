@@ -82,7 +82,7 @@ async function handleImageSave(
       blob: await fetchImage(imageUrl), // handles CORS
       filename: extractFilename(imageUrl, tab?.title),
     }),
-    'image'
+    'image',
   );
 }
 

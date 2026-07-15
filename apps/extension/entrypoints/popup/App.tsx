@@ -120,7 +120,7 @@ function SignedInPanel() {
   const handleScreenshot = () => {
     // The capture + upload runs in the background worker (the popup closes the
     // moment it loses focus). Outcome is confirmed via badge + notification.
-    void requestVisibleTabCapture()
+    void requestVisibleTabCapture().catch(() => undefined)
   }
 
   const handleDiagnostics = () => {

@@ -27,35 +27,39 @@ export function setupScreenshotCapture(): void {
 }
 
 export function captureAndSaveVisibleTab(): Promise<void> {
-  return saveToSploot(async () => {
-    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (!tab || tab.windowId === undefined) {
-      throw new Error('No active tab to screenshot.');
-    }
+  return saveToSploot(
+    async () => {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (!tab || tab.windowId === undefined) {
+        throw new Error('No active tab to screenshot.');
+      }
 
-    const tabUrl = ensureHttpTabUrl(tab.url);
+      const tabUrl = ensureHttpTabUrl(tab.url);
 
-    let dataUrl: string;
-    try {
-      dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
-    } catch (error) {
-      console.warn('[Screenshot] captureVisibleTab failed', error);
-      throw new Error(CAPTURE_ERROR);
-    }
-    const capturedBlob = await (await fetch(dataUrl)).blob();
-    const filename = screenshotFilename(tabUrl);
-    const prepared = await prepareImageForUpload(new File([capturedBlob], filename, {
-      type: capturedBlob.type || 'image/png',
-      lastModified: Date.now(),
-    }));
+      let dataUrl: string;
+      try {
+        dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+      } catch (error) {
+        console.warn('[Background][Screenshot] captureVisibleTab failed', error);
+        throw new Error(CAPTURE_ERROR);
+      }
+      const capturedBlob = await (await fetch(dataUrl)).blob();
+      const filename = screenshotFilename(tabUrl);
+      const prepared = await prepareImageForUpload(new File([capturedBlob], filename, {
+        type: capturedBlob.type || 'image/png',
+        lastModified: Date.now(),
+      }));
 
-    if (prepared.file.size > UPLOAD.multipartSafeSize) {
-      const sizeMB = (prepared.file.size / 1024 / 1024).toFixed(2);
-      throw new Error(`Image too large after compression: ${sizeMB}MB`);
-    }
+      if (prepared.file.size > UPLOAD.multipartSafeSize) {
+        const sizeMB = (prepared.file.size / 1024 / 1024).toFixed(2);
+        throw new Error(`Image too large after compression: ${sizeMB}MB`);
+      }
 
-    return { blob: prepared.file, filename: prepared.file.name };
-  }, 'screenshot', { prepareBeforeAuth: true });
+      return { blob: prepared.file, filename: prepared.file.name };
+    },
+    'screenshot',
+    { prepareBeforeAuth: true },
+  );
 }
 
 /** e.g. "screenshot-twitter.com-1750000000000.png". */

@@ -59,6 +59,9 @@
     --sploot-on-red: #3a0d14;
     --sploot-on-void: #fff3dc;
 
+    --sploot-coral: var(--sploot-magenta);
+    --sploot-violet: var(--sploot-purple);
+
     --sploot-shadow-color: #090720;
     --sploot-dot: rgba(255, 255, 255, 0.09);
     --sploot-grid-line: rgba(255, 243, 220, 0.06);
@@ -219,7 +222,7 @@ main {
 }
 
 .signed-in-panel .meta.warning {
-  color: var(--sploot-orange);
+  color: var(--sploot-ink);
   font-weight: 800;
 }
 
@@ -374,6 +377,13 @@ button.debug:hover {
 
 .save-strip.error {
   border-color: var(--sploot-red);
+}
+
+.save-strip.error .save-copy {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .save-strip.error .save-dot {
