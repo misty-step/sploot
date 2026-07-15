@@ -734,6 +734,9 @@ export async function upsertAssetEmbedding(
         "image_embedding" = EXCLUDED."image_embedding",
         "status" = 'ready',
         "error" = NULL,
+        "attempt_count" = 0,
+        "next_attempt_at" = NULL,
+        "terminal_at" = NULL,
         "completedAt" = NOW(),
         "updatedAt" = NOW()
       RETURNING

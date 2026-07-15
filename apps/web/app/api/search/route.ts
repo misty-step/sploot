@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { prisma, vectorSearch, logSearch, type VectorSearchRow } from '@/lib/db';
 import { CLIP_MODEL, createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
+import { embeddingRetryHeaders } from '@/lib/embedding-errors';
 import { getCacheService } from '@/lib/cache';
 import { getAuthWithUser } from '@/lib/auth/server';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
@@ -89,14 +90,13 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
         return runtimeGateResponse(embeddingGate);
       }
 
-      // Initialize embedding service
+      // Initialize embedding service. Typed provider configuration failures
+      // flow to the shared EmbeddingError HTTP mapping below.
       let embeddingService;
       try {
         embeddingService = createEmbeddingService(userId);
       } catch (error) {
-        // Failed to initialize embedding service. A degraded backend must not
-        // masquerade as an honest empty result set (HTTP 200 + results: []
-        // renders as "no matches" in the client).
+        if (error instanceof EmbeddingError) throw error;
         return NextResponse.json(
           {
             error: 'Search is temporarily unavailable: embedding service is not configured.',
@@ -203,7 +203,10 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
           query: query || '',
           total: 0,
         },
-        { status: error.statusCode || 500 }
+        {
+          status: error.statusCode || 500,
+          headers: embeddingRetryHeaders(error),
+        }
       );
     }
 

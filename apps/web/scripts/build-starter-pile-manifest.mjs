@@ -7,7 +7,8 @@
  * lib/starter-pile/manifest.json.
  *
  * Run manually when the starter images or captions change:
- *   REPLICATE_API_TOKEN=... node scripts/build-starter-pile-manifest.mjs
+ *   SPLOOT_EMBEDDING_MAINTENANCE_MODE=offline REPLICATE_API_TOKEN=... \
+ *     node scripts/build-starter-pile-manifest.mjs
  *
  * Committing the vectors keeps the seed endpoint deterministic and free of
  * Replicate calls: a new user's "load the starter pile" never waits on (or
@@ -18,6 +19,15 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Replicate from 'replicate';
+
+if (
+  process.env.NODE_ENV === 'production' ||
+  process.env.SPLOOT_EMBEDDING_MAINTENANCE_MODE !== 'offline'
+) {
+  throw new Error(
+    'Starter manifest embedding requires a non-production process and explicit SPLOOT_EMBEDDING_MAINTENANCE_MODE=offline.'
+  );
+}
 
 const CLIP_MODEL =
   'krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4';

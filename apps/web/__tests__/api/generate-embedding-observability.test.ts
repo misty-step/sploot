@@ -1,0 +1,161 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
+
+const mocks = vi.hoisted(() => ({
+  getAuth: vi.fn(),
+  findAsset: vi.fn(),
+  upsertAssetEmbedding: vi.fn(),
+  createEmbeddingService: vi.fn(),
+  acquireEmbeddingProcessing: vi.fn(),
+  resolveEmbeddingGateState: vi.fn(),
+  deferEmbeddingAdmission: vi.fn(),
+  recordEmbeddingAttemptFailure: vi.fn(),
+  wrapperLogInfo: vi.fn(),
+  wrapperLogTiming: vi.fn(),
+  wrapperLogError: vi.fn(),
+  reportCanaryError: vi.fn(() => Promise.resolve()),
+  withTraceId: vi.fn(),
+  measureAsync: vi.fn(async (_operation: string, run: () => Promise<unknown>) => run()),
+  nanoid: vi.fn(() => 'trace-test'),
+}));
+
+vi.mock('@/lib/auth/server', () => ({ getAuth: mocks.getAuth }));
+
+vi.mock('@/lib/db', () => ({
+  prisma: {
+    asset: { findFirst: mocks.findAsset },
+    assetEmbedding: { findUnique: vi.fn() },
+  },
+  upsertAssetEmbedding: mocks.upsertAssetEmbedding,
+}));
+
+vi.mock('@/lib/embeddings', () => ({
+  createEmbeddingService: mocks.createEmbeddingService,
+  EmbeddingError: class EmbeddingError extends Error {
+    constructor(
+      message: string,
+      public statusCode?: number
+    ) {
+      super(message);
+    }
+  },
+  EmbeddingAdmissionError: class EmbeddingAdmissionError extends Error {
+    name = 'EmbeddingAdmissionError';
+    statusCode: number;
+    retryable = true;
+
+    constructor(
+      public reason: string,
+      public retryAfterSec?: number
+    ) {
+      super('Embedding generation is rate limited');
+      this.statusCode = reason === 'limiter_unavailable' ? 503 : 429;
+    }
+  },
+}));
+
+vi.mock('@/lib/embedding-guard', () => ({
+  resolveEmbeddingGateState: mocks.resolveEmbeddingGateState,
+  acquireEmbeddingProcessing: mocks.acquireEmbeddingProcessing,
+}));
+
+vi.mock('@/lib/embedding-resilience', () => ({
+  getEmbeddingProviderCircuit: vi.fn().mockResolvedValue({ available: true, open: false }),
+  isEmbeddingAdmissionFailure: () => false,
+  getEmbeddingAdmissionReason: () => undefined,
+  deferEmbeddingAdmission: mocks.deferEmbeddingAdmission,
+  recordEmbeddingAttemptFailure: mocks.recordEmbeddingAttemptFailure,
+}));
+
+vi.mock('@/lib/sse-broadcaster', () => ({
+  broadcastEmbeddingUpdate: vi.fn(),
+}));
+
+vi.mock('@/lib/performance-monitor', () => ({
+  getPerformanceMonitor: vi.fn(() => ({ measureAsync: mocks.measureAsync })),
+}));
+
+vi.mock('nanoid', () => ({
+  nanoid: mocks.nanoid,
+}));
+
+vi.mock('@/lib/observability-logger', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/observability-logger')>(
+    '@/lib/observability-logger'
+  );
+  return {
+    ...actual,
+    withTraceId: mocks.withTraceId,
+  };
+});
+
+vi.mock('@/lib/canary-reporter', () => ({
+  reportCanaryError: mocks.reportCanaryError,
+}));
+
+import { POST } from '@/app/api/assets/[id]/generate-embedding/route';
+import { logger as routeLogger } from '@/lib/observability-logger';
+
+function request(assetId: string): NextRequest {
+  return new NextRequest(
+    `http://localhost:3000/api/assets/${assetId}/generate-embedding`,
+    { method: 'POST' }
+  );
+}
+
+describe('POST /api/assets/[id]/generate-embedding observability composition', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(routeLogger, 'logInfo');
+    vi.spyOn(routeLogger, 'logError');
+    mocks.getAuth.mockResolvedValue({ userId: 'user-1' });
+    mocks.findAsset.mockResolvedValue({
+      id: 'asset-1',
+      blobUrl: 'https://blob.example/image.jpg',
+      checksumSha256: 'sha-256',
+      embedding: null,
+    });
+    mocks.acquireEmbeddingProcessing.mockResolvedValue({
+      acquired: true,
+      state: 'processing',
+    });
+    mocks.resolveEmbeddingGateState.mockReturnValue({ state: 'available' });
+    mocks.createEmbeddingService.mockReturnValue({
+      embedImage: vi.fn().mockRejectedValue(new Error('unexpected provider shape')),
+    });
+    mocks.withTraceId.mockReturnValue({
+      logInfo: mocks.wrapperLogInfo,
+      logTiming: mocks.wrapperLogTiming,
+      logError: mocks.wrapperLogError,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('emits exactly one Canary report for a generic failure across route and wrapper', async () => {
+    const response = await POST(request('asset-generic-failure'), {
+      params: Promise.resolve({ id: 'asset-generic-failure' }),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get('X-Sploot-Canary-Owner')).toBe('route');
+    await vi.waitFor(() => expect(mocks.reportCanaryError).toHaveBeenCalledTimes(1));
+    expect(routeLogger.logError).toHaveBeenCalledWith(
+      'generate-embedding:failed',
+      expect.any(Error),
+      expect.objectContaining({ processingTimeMs: expect.any(Number) }),
+    );
+    expect(routeLogger.logInfo).not.toHaveBeenCalledWith(
+      'generate-embedding:failed',
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(mocks.wrapperLogError).not.toHaveBeenCalledWith(
+      'request:server-error-status',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+});

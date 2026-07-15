@@ -194,20 +194,23 @@ describe('EmbeddingSchedulerService', () => {
           EmbeddingScheduleError
         );
         await expect(service.scheduleEmbedding(baseParams)).rejects.toThrow(
-          'Failed to initialize embedding service'
+          'Embedding generation deferred: Embedding service initialization failed'
         );
 
-        // Verify failure was marked in DB
+        // Initialization failures use the same retryable durable transition as
+        // execution failures. The legacy mock has no $queryRaw resilience
+        // client, so the compatibility fallback keeps the placeholder
+        // discoverable instead of stranding it as failed.
         expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalledWith({
           where: { assetId: 'asset-123' },
           create: expect.objectContaining({
             assetId: 'asset-123',
-            status: 'failed',
-            error: 'Failed to initialize embedding service',
+            status: 'pending',
+            error: 'Embedding service initialization failed',
           }),
           update: expect.objectContaining({
-            status: 'failed',
-            error: 'Failed to initialize embedding service',
+            status: 'pending',
+            error: 'Embedding service initialization failed',
           }),
         });
       });
@@ -247,6 +250,26 @@ describe('EmbeddingSchedulerService', () => {
             status: 'pending',
             error: 'API rate limit exceeded',
           }),
+        });
+      });
+
+      it('preserves typed admission status and retry metadata through sync scheduling', async () => {
+        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
+        const admission = new EmbeddingAdmissionError('daily_budget', 3600);
+        mockCreateEmbeddingService.mockReturnValue({
+          embedImage: vi.fn().mockRejectedValue(admission),
+        });
+        mockPrisma.assetEmbedding.upsert.mockResolvedValue({});
+
+        const error = await service.scheduleEmbedding(baseParams).catch((e) => e);
+
+        expect(error).toBeInstanceOf(EmbeddingScheduleError);
+        expect(error).toMatchObject({
+          statusCode: 429,
+          retryable: true,
+          retryAfterSec: 3600,
+          reason: 'daily_budget',
+          cause: admission,
         });
       });
 

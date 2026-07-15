@@ -22,6 +22,7 @@ import {
   isEnrollmentDeniedError,
   isEnrollmentUnavailableError,
 } from '@/lib/enrollment/enrollment-policy';
+import { EmbeddingError, embeddingRetryHeaders } from '@/lib/embedding-errors';
 
 /**
  * Configure route segment options
@@ -119,6 +120,25 @@ async function postHandler(req: NextRequest, _context: RouteContext, { principal
 
     if (error instanceof StorageQuotaExceededError) {
       return NextResponse.json(storageQuotaError(error.snapshot), { status: 403 });
+    }
+
+    // Typed embedding outcomes keep their 429/503 + Retry-After contract and
+    // must precede the duck-typed enrollment check (an
+    // EmbeddingAdmissionError(limiter_unavailable) carries the shared
+    // enrollment_unavailable code).
+    if (error instanceof EmbeddingError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+          reason: 'reason' in error ? error.reason : undefined,
+          retryAfter: error.retryAfterSec,
+        },
+        {
+          status: error.statusCode || 503,
+          headers: embeddingRetryHeaders(error),
+        }
+      );
     }
 
     if (isEnrollmentDeniedError(error)) {

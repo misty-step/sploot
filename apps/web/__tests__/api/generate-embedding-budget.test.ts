@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
   upsertAssetEmbedding: vi.fn(),
   createEmbeddingService: vi.fn(),
   acquireEmbeddingProcessing: vi.fn(),
+  resolveEmbeddingGateState: vi.fn(),
   markEmbeddingFailed: vi.fn(),
+  deferEmbeddingAdmission: vi.fn(),
   logInfo: vi.fn(),
   logError: vi.fn(),
   userFindUnique: vi.fn(),
@@ -52,9 +54,17 @@ vi.mock('@/lib/embeddings', () => ({
 }));
 
 vi.mock('@/lib/embedding-guard', () => ({
-  resolveEmbeddingGateState: vi.fn(() => ({ state: 'available' })),
+  resolveEmbeddingGateState: mocks.resolveEmbeddingGateState,
   acquireEmbeddingProcessing: mocks.acquireEmbeddingProcessing,
   markEmbeddingFailed: mocks.markEmbeddingFailed,
+}));
+
+vi.mock('@/lib/embedding-resilience', () => ({
+  getEmbeddingProviderCircuit: vi.fn().mockResolvedValue({ available: true, open: false }),
+  isEmbeddingAdmissionFailure: (error: unknown) => error instanceof Error && error.name === 'EmbeddingAdmissionError',
+  getEmbeddingAdmissionReason: (error: { reason: string }) => error.reason,
+  deferEmbeddingAdmission: mocks.deferEmbeddingAdmission,
+  recordEmbeddingAttemptFailure: vi.fn(),
 }));
 
 vi.mock('@/lib/sse-broadcaster', () => ({
@@ -108,6 +118,7 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
       acquired: true,
       state: 'processing',
     });
+    mocks.resolveEmbeddingGateState.mockReturnValue({ state: 'available' });
     mocks.createEmbeddingService.mockReturnValue({
       embedImage: vi
         .fn()
@@ -134,9 +145,49 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
     });
     expect(mocks.acquireEmbeddingProcessing).toHaveBeenCalledOnce();
     expect(mocks.createEmbeddingService).toHaveBeenCalledWith('user-1');
-    expect(mocks.markEmbeddingFailed).toHaveBeenCalledWith(
+    expect(mocks.deferEmbeddingAdmission).toHaveBeenCalledWith(
       'asset-1',
-      'Embedding generation is rate limited'
+      'Embedding generation is rate limited',
+      'daily_budget',
+      3600
     );
+    expect(mocks.markEmbeddingFailed).not.toHaveBeenCalled();
+  });
+
+  it('marks generic 5xx Canary ownership on the route response', async () => {
+    mocks.createEmbeddingService.mockReturnValue({
+      embedImage: vi.fn().mockRejectedValue(new Error('unexpected provider shape')),
+    });
+
+    const response = await POST(request('asset-generic-failure'), {
+      params: Promise.resolve({ id: 'asset-generic-failure' }),
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get('X-Sploot-Canary-Owner')).toBe('route');
+    expect(mocks.logError).toHaveBeenCalledWith(
+      'generate-embedding:failed',
+      expect.any(Error),
+      expect.objectContaining({ processingTimeMs: expect.any(Number) }),
+    );
+  });
+
+  it.each([
+    ['missing', undefined, '30'],
+    ['malformed', Number.NaN, '30'],
+    ['negative', -20, '1'],
+    ['excessive', 999999000, '86400'],
+  ])('normalizes %s manual cooldown Retry-After metadata', async (_label, retryAfterMs, expected) => {
+    mocks.resolveEmbeddingGateState.mockReturnValue({
+      state: 'cooldown',
+      retryAfterMs,
+    });
+
+    const response = await POST(request(`asset-${_label}`), {
+      params: Promise.resolve({ id: `asset-${_label}` }),
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get('Retry-After')).toBe(expected);
   });
 });

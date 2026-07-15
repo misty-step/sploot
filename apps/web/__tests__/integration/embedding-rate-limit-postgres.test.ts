@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  acquireEmbeddingAdmissionReservation,
   acquireEmbeddingDailyBudget,
   acquireEmbeddingRateLimit,
   releaseEmbeddingRateLimit,
@@ -166,6 +167,102 @@ describeWithDatabase('Postgres embedding limiter', () => {
       WHERE "key" = 'embedding:daily:2026-07-10'
     `;
     expect(rows[0]?.count).toBe(EMBEDDING_DAILY_BUDGET);
+  });
+
+  it('keeps every bucket and lease unchanged when atomic admission is denied by the daily ceiling', async () => {
+    const nowMs = Date.UTC(2026, 6, 10, 12, 0, 0);
+    const windowId = Math.floor(nowMs / 60_000);
+    const dailyKey = 'embedding:daily:2026-07-10';
+    const userKey = `embedding:rate:user:atomic-denial:${windowId}`;
+    const globalKey = `embedding:rate:global:${windowId}`;
+
+    await prisma.$executeRaw`
+      INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
+      VALUES (
+        ${dailyKey},
+        ${EMBEDDING_DAILY_BUDGET},
+        NOW() + INTERVAL '26 hours',
+        NOW()
+      )
+    `;
+
+    const before = await prisma.$queryRaw<Array<{ key: string; count: number }>>`
+      SELECT "key", "count"
+      FROM "embedding_rate_buckets"
+      WHERE "key" IN (${dailyKey}, ${userKey}, ${globalKey})
+      ORDER BY "key"
+    `;
+
+    const denied = await acquireEmbeddingAdmissionReservation('atomic-denial', nowMs);
+    expect(denied).toMatchObject({ allowed: false, reason: 'daily_budget' });
+
+    const after = await prisma.$queryRaw<Array<{ key: string; count: number }>>`
+      SELECT "key", "count"
+      FROM "embedding_rate_buckets"
+      WHERE "key" IN (${dailyKey}, ${userKey}, ${globalKey})
+      ORDER BY "key"
+    `;
+    const leaseCount = await prisma.embeddingRateLease.count({
+      where: { userId: 'atomic-denial' },
+    });
+
+    expect(after).toEqual(before);
+    expect(leaseCount).toBe(0);
+  });
+
+  it('serializes concurrent denials without over-refunding a surviving reservation', async () => {
+    const nowMs = Date.UTC(2026, 6, 10, 13, 0, 0);
+    const windowId = Math.floor(nowMs / 60_000);
+    const dailyKey = 'embedding:daily:2026-07-10';
+
+    await prisma.$executeRaw`
+      INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
+      VALUES (
+        ${dailyKey},
+        ${EMBEDDING_DAILY_BUDGET - 1},
+        NOW() + INTERVAL '26 hours',
+        NOW()
+      )
+    `;
+
+    const [first, second] = await Promise.all([
+      acquireEmbeddingAdmissionReservation('atomic-user-a', nowMs),
+      acquireEmbeddingAdmissionReservation('atomic-user-b', nowMs),
+    ]);
+
+    const allowedResult = first.allowed ? first : second;
+    const deniedResult = first.allowed ? second : first;
+    expect(allowedResult.allowed).toBe(true);
+    expect(deniedResult).toMatchObject({ allowed: false, reason: 'daily_budget' });
+
+    const userAKey = `embedding:rate:user:atomic-user-a:${windowId}`;
+    const userBKey = `embedding:rate:user:atomic-user-b:${windowId}`;
+    const globalKey = `embedding:rate:global:${windowId}`;
+    const allowedUserId = allowedResult.reservation!.lease.userId;
+    const deniedUserKey =
+      allowedUserId === 'atomic-user-a' ? userBKey : userAKey;
+    const buckets = await prisma.$queryRaw<Array<{ key: string; count: number }>>`
+      SELECT "key", "count"
+      FROM "embedding_rate_buckets"
+      WHERE "key" IN (${dailyKey}, ${userAKey}, ${userBKey}, ${globalKey})
+      ORDER BY "key"
+    `;
+    const leases = await prisma.embeddingRateLease.findMany({
+      where: { userId: { in: ['atomic-user-a', 'atomic-user-b'] } },
+      select: { userId: true },
+    });
+
+    expect(buckets).toContainEqual({ key: dailyKey, count: EMBEDDING_DAILY_BUDGET });
+    expect(buckets).toContainEqual({ key: globalKey, count: 1 });
+    expect(buckets).toContainEqual({
+      key: `embedding:rate:user:${allowedUserId}:${windowId}`,
+      count: 1,
+    });
+    expect(buckets).not.toContainEqual({
+      key: deniedUserKey,
+      count: 1,
+    });
+    expect(leases).toEqual([{ userId: allowedUserId }]);
   });
 
   it('starts a fresh budget bucket at UTC day rollover', async () => {
