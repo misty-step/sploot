@@ -1,6 +1,6 @@
 # Sploot economic safety envelope
 
-Generated deterministically from the versioned inputs in this directory. Rates were refreshed on 2026-07-15. This is a release gate, not a forecast: paid-tier margins charge on-demand rates so shared included pools cannot make an unprofitable plan look safe.
+Generated deterministically from the versioned inputs in this directory. Rates were refreshed on 2026-07-15 and CI expires them after 30 days. This is a release gate, not a forecast: paid-tier margins charge on-demand rates so shared included pools cannot make an unprofitable plan look safe.
 
 ## Recommendation
 
@@ -29,11 +29,11 @@ The abusive and viral rows deliberately exceed their account/global budgets; the
 
 | Plan | Monthly infrastructure ceiling | Daily inference ceiling | Monthly inference ceiling |
 |---|---:|---:|---:|
-| free | $0.28 | $0.01 (10 attempts) | $0.11 (200 attempts) |
-| collector | $2.75 | $0.04 (75 attempts) | $0.81 (1500 attempts) |
-| archive | $12.50 | $0.14 (250 attempts) | $2.70 (5000 attempts) |
+| free | $0.28 | $0.01 (12 attempts) | $0.13 (240 attempts) |
+| collector | $2.75 | $0.05 (90 attempts) | $0.97 (1800 attempts) |
+| archive | $12.50 | $0.16 (300 attempts) | $3.24 (6000 attempts) |
 
-Pre-GA global variable spend is capped at $0.75/day and $25.00/month. Replicate is a sub-budget of $0.50/day (925 attempts) and $15.00/month. After paid admission, the monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; daily is `paidMonthlyBudget / 30`. Counters reserve worst-case dollars transactionally before work and reconcile provider usage afterward.
+Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve, so full advertised use cannot exhaust its own budget merely because a provider attempt is retried. Pre-GA global variable spend is capped at $0.75/day and $25.00/month. Replicate is a sub-budget of $0.50/day (925 attempts) and $15.00/month. After paid admission, the monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; daily is `paidMonthlyBudget / 30`. Counters reserve worst-case dollars transactionally before work and reconcile provider usage afterward.
 
 ## Provider hard-cap map
 
@@ -52,7 +52,7 @@ Pre-GA global variable spend is capped at $0.75/day and $25.00/month. Replicate 
 - Replicate: latest 100 predictions were 95 failed, 1 canceled, and 4 succeeded. This is operational usage, not a bill. Public-model failed predictions are documented as unbilled, while canceled/time-based work may bill; exact Replicate dollars are unavailable to the API authority.
 - DigitalOcean: invoice preview $41.69 versus account month-to-date usage $43.76, a named $2.07 variance. Preview and balance endpoints update on different cadences and cover the entire account, which hosts multiple apps. DigitalOcean exposes no per-app accrued-transfer or invoice-preview allocation, so Sploot's exact July line item is not inferable from this authority.
 - Fixed baseline: the Sploot web service is $25.00/month. The current sleep-heavy embedding schedule is estimated at $3.33/month before other short jobs; Canary is a $5.00/month service shared across projects. These fixed costs are visible but excluded from the Vision's $25 variable free-subsidy ratchet and per-account margin.
-- Known-cost reconciliation: current web, embedding-job schedule, Blob bytes, and database bytes produce a $28.37 monthly floor. The $13.32 difference to the account-wide invoice preview is deliberately not attributed to Sploot: it contains unrelated apps, Canary allocation, other jobs, transfer/operations, and endpoint timing.
+- Modeled known-cost reconciliation: current web, embedding-job schedule, Blob bytes at the on-demand rate, and database bytes at the Launch storage rate produce a $28.36 monthly baseline. It deliberately excludes unknown history/WAL, operations, and transfer rather than treating them as zero. The $13.33 difference to the account-wide invoice preview is deliberately not attributed to Sploot: it contains unrelated apps, Canary allocation, other jobs, transfer/operations, and endpoint timing.
 - Canary: 5,917 Sploot errors in 30 days. Canary is a self-hosted shared DigitalOcean component. This is event usage, not a separate vendor bill; the model allocates fixed component cost instead of inventing a per-event price.
 - GitHub: public repository, 16 active caches / 6.37 GiB. 6.37 GiB is below the separate 10 GiB per-repository cache allowance; standard public-repository runners are free.
 
