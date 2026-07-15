@@ -76,6 +76,7 @@
   --sploot-on-red: #ffffff;
   --sploot-on-void: #cfe7ff;        /* text on void chrome (void is dark in BOTH themes) */
   --sploot-on-purple: #ffffff;
+  --sploot-on-yellow: #1c1547;
   /* Back-compat aliases — old component code & lint still reference these names */
   --sploot-coral: var(--sploot-magenta);
   --sploot-violet: var(--sploot-purple);
@@ -181,6 +182,7 @@
   --color-sploot-red: var(--sploot-red);
   --color-sploot-purple: var(--sploot-purple);
   --color-sploot-on-blue: var(--sploot-on-blue);
+  --color-sploot-on-yellow: var(--sploot-on-yellow);
   --color-sploot-on-red: var(--sploot-on-red);
   --color-sploot-on-void: var(--sploot-on-void);
   --color-sploot-on-purple: var(--sploot-on-purple);
@@ -348,6 +350,11 @@
 
 /* Reduced motion: collapse all animation and transition theatrics. */
 @media (prefers-reduced-motion: reduce) {
+  [data-sploot-grid-item] {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+
   *,
   *::before,
   *::after {
@@ -465,6 +472,7 @@ select:focus-visible {
   --sploot-on-red: #3a0d14;
   --sploot-on-void: #fff3dc;
   --sploot-on-purple: #221546;
+  --sploot-on-yellow: #1c1547;
   --sploot-coral: var(--sploot-magenta);
   --sploot-violet: var(--sploot-purple);
   --sploot-shadow-color: #090720;

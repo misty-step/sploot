@@ -17,8 +17,10 @@ export function useOffline() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      const response = await fetch('/api/health', {
-        method: 'HEAD',
+      // Health performs database/schema diagnostics and can legitimately take
+      // longer than a browser connectivity probe. The public version route is
+      // a small authenticated-loop-safe reachability check for this client.
+      const response = await fetch('/api/version', {
         cache: 'no-cache',
         signal: controller.signal,
       });

@@ -27,6 +27,7 @@ interface ImageTileProps {
   onSelect?: (asset: Asset) => void;
   onToggleFavorite?: () => void;
   preserveAspectRatio?: boolean;
+  squareFrame?: boolean;
   onClick?: () => void;
   onAssetUpdate?: (id: string, updates: Partial<Asset>) => void;
   showSimilarityScore?: boolean;
@@ -41,6 +42,7 @@ function ImageTileComponent({
   onSelect,
   onToggleFavorite,
   preserveAspectRatio = true,
+  squareFrame = false,
   onClick,
   onAssetUpdate,
   showSimilarityScore = false,
@@ -178,12 +180,12 @@ function ImageTileComponent({
   }, [embeddingStatus, isDebugMode, asset.id]);
 
   const aspectRatioStyle = useMemo<CSSProperties | undefined>(() => {
-    if (!preserveAspectRatio) return undefined;
+    if (!preserveAspectRatio || squareFrame) return undefined;
     if (!asset.width || !asset.height) return undefined;
     if (asset.width <= 0 || asset.height <= 0) return undefined;
 
     return { aspectRatio: `${asset.width} / ${asset.height}` };
-  }, [preserveAspectRatio, asset.width, asset.height]);
+  }, [preserveAspectRatio, squareFrame, asset.width, asset.height]);
 
   const { share: shareMeme, loading: shareLoading } = useShareMeme({
     assetId: asset.id,
@@ -326,14 +328,6 @@ function ImageTileComponent({
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
-  // Extract similarity score from search results
-  const similarityScore = useMemo(() => {
-    if (!showSimilarityScore) return null;
-    const score = (asset as any).similarity;
-    if (typeof score !== 'number') return null;
-    return score.toFixed(2);
-  }, [showSimilarityScore, asset]);
-
   // A found tile gets a candy shell: lime for a locked match, grape for a near
   // hit. The card keeps its ink shell + drop otherwise. Tokens only.
   const scoreCardClass = useMemo(() => {
@@ -355,9 +349,9 @@ function ImageTileComponent({
       case 'ready':
         return null; // Hide embedded status (default state)
       case 'processing':
-        return { icon: Loader2, label: 'processing', color: 'text-muted-foreground' };
+        return { icon: Loader2, label: 'processing', color: 'text-sploot-cyan' };
       case 'pending':
-        return { icon: Clock, label: 'pending', color: 'text-muted-foreground' };
+        return { icon: Clock, label: 'pending', color: 'text-sploot-ink' };
       case 'failed':
         return { icon: AlertCircle, label: 'failed', color: 'text-destructive' };
       default:
@@ -406,31 +400,29 @@ function ImageTileComponent({
 
   return (
     <>
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label={`open ${asset.filename || asset.pathname?.split('/').pop() || 'meme'}`}
-        onClick={onClick || (() => onSelect?.(asset))}
-        onKeyDown={(e) => {
-          if (e.target !== e.currentTarget) return;
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            (onClick || (() => onSelect?.(asset)))();
-          }
-        }}
+      <article
         className={cn(
-          'sploot-press-sm group flex cursor-pointer flex-col overflow-hidden',
+          'relative sploot-press-sm group flex flex-col overflow-hidden',
           'rounded-[var(--sploot-radius)] border-[3px] border-sploot-ink bg-sploot-panel sploot-shadow-sm',
           scoreCardClass
         )}
       >
+        {/* Keep the open affordance beside the action rail so the card has no
+            nested interactive roles. */}
+        <button
+          type="button"
+          aria-label={`open ${asset.filename || asset.pathname?.split('/').pop() || 'meme'}`}
+          onClick={onClick || (() => onSelect?.(asset))}
+          className="absolute inset-x-0 top-0 z-10 h-[calc(100%-4.5rem)] cursor-pointer rounded-[calc(var(--sploot-radius)-3px)] bg-transparent outline-none focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-[-4px] focus-visible:outline-sploot-focus"
+        />
+        <div className="pointer-events-none">
         {/* Media frame — object-contain, never cropped, aspect preserved */}
         <div
           className={cn(
             'relative m-2 mb-0 overflow-hidden rounded-[var(--sploot-radius-inner)] border-2 border-sploot-ink bg-sploot-paper-warm',
             // No known dimensions -> stable square letterbox; the media still
             // renders complete via object-contain (never cropped).
-            (!preserveAspectRatio || !aspectRatioStyle) && 'aspect-square'
+            (squareFrame || !preserveAspectRatio || !aspectRatioStyle) && 'aspect-square'
           )}
           style={aspectRatioStyle}
         >
@@ -444,6 +436,7 @@ function ImageTileComponent({
               <Button
                 variant="destructive"
                 size="sm"
+                className="pointer-events-auto relative z-20"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDelete();
@@ -526,13 +519,13 @@ function ImageTileComponent({
 
         {/* Machine metadata — mono, quiet, desktop-only per the mobile contract */}
         <div className="flex items-center justify-end gap-2 px-2.5 pt-1.5">
-          <span className="hidden font-mono text-xs text-muted-foreground tabular-nums whitespace-nowrap sm:inline">
+          <span className="hidden font-mono text-xs text-sploot-ink tabular-nums whitespace-nowrap sm:inline">
             {asset.width}×{asset.height} {formatFileSize(asset.size || 0)}
           </span>
 
           {typeof asset.relevance === 'number' && (
             <>
-              <span className="hidden text-muted-foreground/30 sm:inline">|</span>
+              <span className="hidden text-sploot-ink/40 sm:inline">|</span>
               <span
                 className={cn(
                   'hidden font-mono text-xs tabular-nums sm:inline',
@@ -544,18 +537,9 @@ function ImageTileComponent({
             </>
           )}
 
-          {similarityScore !== null && (
-            <>
-              <span className="hidden text-muted-foreground/30 sm:inline">|</span>
-              <span className="hidden font-mono text-xs text-sploot-cyan tabular-nums sm:inline">
-                {similarityScore}
-              </span>
-            </>
-          )}
-
           {embeddingStatusInfo && (
             <>
-              <span className="hidden text-muted-foreground/30 sm:inline">|</span>
+              <span className="hidden text-sploot-ink/40 sm:inline">|</span>
               <span className={cn('hidden shrink-0 font-mono text-xs sm:inline', embeddingStatusInfo.color)}>
                 {embeddingStatusInfo.label}
               </span>
@@ -563,21 +547,9 @@ function ImageTileComponent({
           )}
         </div>
 
-        {/* Action rail — heart (banger) / share / delete, inside the card so it
-            travels with the hover lift. Never over the media. */}
-        <TileActionRail
-          banger={!!asset.favorite}
-          disabled={isLoading}
-          shareLoading={shareLoading}
-          onToggleBanger={handleFavoriteToggle}
-          onShare={shareMeme}
-          onDelete={handleDelete}
-          className="mt-1.5 rounded-b-[calc(var(--sploot-radius)-3px)]"
-        />
-
         {/* Debug info strip */}
         {isDebugMode && (embeddingStatus !== 'ready' || debugInfo.apiResponseTime) && (
-          <div className="border-t-2 border-dashed border-sploot-ink px-2.5 py-1 font-mono text-[9px] text-muted-foreground">
+          <div className="border-t-2 border-dashed border-sploot-ink px-2.5 py-1 font-mono text-[9px] text-sploot-ink">
             <div className="flex items-center gap-2">
               <span className="text-sploot-blue">debug:</span>
               <span>{embeddingStatus}</span>
@@ -586,7 +558,19 @@ function ImageTileComponent({
             </div>
           </div>
         )}
-      </div>
+        </div>
+        <div className="relative z-20">
+          <TileActionRail
+            banger={!!asset.favorite}
+            disabled={isLoading}
+            shareLoading={shareLoading}
+            onToggleBanger={handleFavoriteToggle}
+            onShare={shareMeme}
+            onDelete={handleDelete}
+            className="mt-1.5 rounded-b-[calc(var(--sploot-radius)-3px)]"
+          />
+        </div>
+      </article>
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmation.targetAsset && (
@@ -671,6 +655,7 @@ function arePropsEqual(prevProps: ImageTileProps, nextProps: ImageTileProps) {
 
   // Re-render if preserveAspectRatio prop changed
   if (prevProps.preserveAspectRatio !== nextProps.preserveAspectRatio) return false;
+  if (prevProps.squareFrame !== nextProps.squareFrame) return false;
 
   // Re-render if showSimilarityScore prop changed
   if (prevProps.showSimilarityScore !== nextProps.showSimilarityScore) return false;

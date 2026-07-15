@@ -1,5 +1,6 @@
 import { GET } from '@/app/api/qa-auth/login/route';
 import { verifyQaLocalAuthHeaders } from '@/lib/auth/qa-local';
+import { getQaLocalRemoteAddressHeader } from '@/lib/auth/qa-local';
 import { NextRequest } from 'next/server';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
@@ -14,8 +15,14 @@ describe('/api/qa-auth/login', () => {
 
   beforeEach(() => {
     process.env.SPLOOT_QA_AUTH_MODE = 'enabled';
+    process.env.SPLOOT_QA_EVIDENCE_MODE = 'enabled';
+    process.env.SPLOOT_QA_DEPLOYMENT_ID = 'sploot-gallery-qa-local';
+    process.env.SPLOOT_QA_DEPLOYMENT_AUDIENCE = 'sploot-gallery-evidence';
+    process.env.DEPLOYMENT_ENV = 'qa-local';
     process.env.SPLOOT_QA_AUTH_SECRET = QA_SECRET;
     process.env.SPLOOT_DEPLOYMENT_ENV = 'test';
+    delete process.env.CLERK_SECRET_KEY;
+    delete process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   });
 
   afterEach(() => {
@@ -35,7 +42,11 @@ describe('/api/qa-auth/login', () => {
     const token = decodeURIComponent(
       setCookie.split(';')[0].replace('sploot_qa_auth=', '')
     );
-    const headers = new Headers({ cookie: `sploot_qa_auth=${token}` });
+    const headers = new Headers({
+      host: 'localhost:3001',
+      cookie: `sploot_qa_auth=${token}`,
+      [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+    });
     const auth = await verifyQaLocalAuthHeaders(headers);
     expect(auth.status).toBe('authenticated');
     if (auth.status === 'authenticated') {
@@ -54,6 +65,7 @@ describe('/api/qa-auth/login', () => {
   it('returns 404 in production even when mode is enabled', async () => {
     process.env.NODE_ENV = 'production';
     process.env.SPLOOT_DEPLOYMENT_ENV = 'production';
+    process.env.DEPLOYMENT_ENV = 'production';
 
     const res = await GET(makeRequest());
     expect(res.status).toBe(404);

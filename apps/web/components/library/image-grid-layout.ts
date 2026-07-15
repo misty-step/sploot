@@ -3,7 +3,7 @@ export const IMAGE_GRID_BREAKPOINT_COLS = Object.freeze({
   1280: 4,
   1024: 3,
   768: 2,
-  640: 1,
+  640: 2,
 });
 
 export const IMAGE_GRID_SCROLL_CLASS =

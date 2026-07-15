@@ -1,17 +1,21 @@
 import type { AuthenticatedPrincipal, RequestAuthResult } from './types';
-import { isQaLocalAuthEnabled } from './qa-local-enabled';
-
-export { isQaLocalAuthEnabled } from './qa-local-enabled';
 
 const QA_LOCAL_AUTH_HEADER = 'x-sploot-qa-auth';
 const QA_LOCAL_AUTH_COOKIE = 'sploot_qa_auth';
+const QA_LOCAL_REMOTE_ADDRESS_HEADER = 'x-sploot-qa-remote-address';
 const TOKEN_VERSION = 1;
 const QA_USER_ID_PATTERN = /^qa-[a-z0-9-]{1,64}$/;
 const MAX_TOKEN_LIFETIME_SECONDS = 8 * 60 * 60;
+export const QA_PROOF_DEPLOYMENT_ID = 'sploot-gallery-qa-local';
+export const QA_PROOF_AUDIENCE = 'sploot-gallery-evidence';
+const ALLOWED_PROOF_DEPLOYMENTS = new Set([QA_PROOF_DEPLOYMENT_ID]);
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
 interface QaLocalAuthPayload {
   v: typeof TOKEN_VERSION;
   userId: string;
+  deploymentId?: string;
+  audience?: string;
   email?: string;
   sessionId?: string;
   iat: number;
@@ -20,6 +24,8 @@ interface QaLocalAuthPayload {
 
 interface CreateQaLocalAuthTokenOptions {
   userId: string;
+  deploymentId?: string;
+  audience?: string;
   email?: string;
   sessionId?: string;
   secret: string;
@@ -42,21 +48,77 @@ export function hasQaLocalAuthInput(headers: Headers): boolean {
   );
 }
 
-/**
- * Terminal request-auth resolution for qa-local input: returns null when the
- * request carries no qa-local credential at all, otherwise the (possibly
- * forbidden/unauthenticated) qa verdict that must never fall through to Clerk.
- */
+/** Resolve qa-local credentials as terminal input when present. */
 export async function resolveQaLocalRequestAuth(
   headers: Headers,
   env: Record<string, string | undefined> = process.env,
+  request?: QaProofRequestContext,
 ): Promise<RequestAuthResult | null> {
   if (!hasQaLocalAuthInput(headers)) return null;
-  return verifyQaLocalAuthHeaders(headers, env);
+  return verifyQaLocalAuthHeaders(headers, env, request);
+}
+
+export function getQaLocalRemoteAddressHeader(): string {
+  return QA_LOCAL_REMOTE_ADDRESS_HEADER;
+}
+
+export function getQaProofRequestContext(headers: Headers): QaProofRequestContext {
+  const rawHost = headers.get('host') ?? '';
+  const host = rawHost.startsWith('[')
+    ? rawHost.slice(1, rawHost.indexOf(']'))
+    : rawHost.split(':')[0];
+  return {
+    host,
+    remoteAddress: headers.get(QA_LOCAL_REMOTE_ADDRESS_HEADER) ?? '',
+  };
+}
+
+export interface QaProofRequestContext {
+  host: string;
+  remoteAddress: string;
+}
+
+export interface QaProofConfigResult {
+  valid: boolean;
+  reason?: string;
+}
+
+export function validateQaProofConfig(
+  env: Record<string, string | undefined> = process.env,
+): QaProofConfigResult {
+  if (env.SPLOOT_QA_EVIDENCE_MODE !== 'enabled') {
+    return { valid: false, reason: 'qa-evidence-disabled' };
+  }
+  if (env.SPLOOT_QA_DEPLOYMENT_ID !== QA_PROOF_DEPLOYMENT_ID ||
+      !ALLOWED_PROOF_DEPLOYMENTS.has(env.SPLOOT_QA_DEPLOYMENT_ID)) {
+    return { valid: false, reason: 'qa-evidence-deployment-not-allowlisted' };
+  }
+  if (env.SPLOOT_QA_DEPLOYMENT_AUDIENCE !== QA_PROOF_AUDIENCE) {
+    return { valid: false, reason: 'qa-evidence-audience-mismatch' };
+  }
+  if (env.NODE_ENV === 'production' && env.DEPLOYMENT_ENV === 'production') {
+    return { valid: false, reason: 'qa-evidence-forbidden-in-production' };
+  }
+  if (env.DEPLOYMENT_ENV !== 'qa-local') {
+    return { valid: false, reason: 'qa-evidence-non-production-marker-required' };
+  }
+  if (env.CLERK_SECRET_KEY || env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+    return { valid: false, reason: 'qa-evidence-cannot-coexist-with-clerk' };
+  }
+  if (!env.SPLOOT_QA_AUTH_SECRET) {
+    return { valid: false, reason: 'qa-evidence-secret-missing' };
+  }
+  return { valid: true };
+}
+
+export function isQaLocalAuthEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.SPLOOT_QA_AUTH_MODE === 'enabled' && validateQaProofConfig(env).valid;
 }
 
 export async function createQaLocalAuthToken({
   userId,
+  deploymentId = QA_PROOF_DEPLOYMENT_ID,
+  audience = QA_PROOF_AUDIENCE,
   email,
   sessionId,
   secret,
@@ -81,6 +143,8 @@ export async function createQaLocalAuthToken({
   const payload: QaLocalAuthPayload = {
     v: TOKEN_VERSION,
     userId,
+    deploymentId,
+    audience,
     ...(email ? { email } : {}),
     ...(sessionId ? { sessionId } : {}),
     iat: issuedAt,
@@ -94,7 +158,8 @@ export async function createQaLocalAuthToken({
 
 export async function verifyQaLocalAuthHeaders(
   headers: Headers,
-  env: Record<string, string | undefined> = process.env
+  env: Record<string, string | undefined> = process.env,
+  request?: QaProofRequestContext,
 ): Promise<RequestAuthResult> {
   const cookieHeader = headers.get('cookie');
   const headerToken = headers.get(QA_LOCAL_AUTH_HEADER);
@@ -106,8 +171,15 @@ export async function verifyQaLocalAuthHeaders(
       : { status: 'unauthenticated', reason: 'qa-local-missing' };
   }
 
-  if (!isQaLocalAuthEnabled(env)) {
+  const config = validateQaProofConfig(env);
+  if (!env.SPLOOT_QA_AUTH_MODE || !config.valid) {
     return { status: 'forbidden', reason: 'qa-local-disabled' };
+  }
+
+  const host = request?.host ?? getQaProofRequestContext(headers).host;
+  const remoteAddress = request?.remoteAddress ?? headers.get(QA_LOCAL_REMOTE_ADDRESS_HEADER) ?? '';
+  if (!LOOPBACK_HOSTS.has(host) || !isLoopbackAddress(remoteAddress)) {
+    return { status: 'forbidden', reason: 'qa-local-non-loopback' };
   }
 
   const secret = env.SPLOOT_QA_AUTH_SECRET;
@@ -115,7 +187,10 @@ export async function verifyQaLocalAuthHeaders(
     return { status: 'forbidden', reason: 'qa-local-secret-missing' };
   }
 
-  const payload = await verifyQaLocalAuthToken(token, secret);
+  const payload = await verifyQaLocalAuthToken(token, secret, {
+    deploymentId: env.SPLOOT_QA_DEPLOYMENT_ID,
+    audience: env.SPLOOT_QA_DEPLOYMENT_AUDIENCE,
+  });
   if (!payload) {
     return { status: 'unauthenticated', reason: 'qa-local-invalid' };
   }
@@ -127,7 +202,11 @@ export async function verifyQaLocalAuthHeaders(
   };
 }
 
-async function verifyQaLocalAuthToken(token: string, secret: string): Promise<QaLocalAuthPayload | null> {
+async function verifyQaLocalAuthToken(
+  token: string,
+  secret: string,
+  binding: Pick<QaLocalAuthPayload, 'deploymentId' | 'audience'>,
+): Promise<QaLocalAuthPayload | null> {
   const [encodedPayload, signature, extra] = token.split('.');
   if (!encodedPayload || !signature || extra !== undefined) {
     return null;
@@ -146,6 +225,7 @@ async function verifyQaLocalAuthToken(token: string, secret: string): Promise<Qa
   }
 
   if (!isBoundedQaPayload(payload)) {
+  if (payload.deploymentId !== binding.deploymentId || payload.audience !== binding.audience) {
     return null;
   }
 
@@ -158,6 +238,11 @@ async function verifyQaLocalAuthToken(token: string, secret: string): Promise<Qa
   }
 
   return payload;
+}
+
+function isLoopbackAddress(value: string): boolean {
+  const normalized = value.trim().toLowerCase().replace(/^::ffff:/, '');
+  return normalized === '127.0.0.1' || normalized === '::1' || normalized === 'localhost';
 }
 
 function principalFromPayload(payload: QaLocalAuthPayload): AuthenticatedPrincipal {

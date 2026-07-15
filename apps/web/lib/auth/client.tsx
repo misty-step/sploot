@@ -1,42 +1,72 @@
 'use client';
 
 import { ClerkProvider, useClerk, useUser } from '@clerk/nextjs';
-import { usePathname } from 'next/navigation';
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 
-export function shouldOmitClerkProvider(
-  pathname: string | null,
-  flags: { publicTruthE2E: boolean; qaAuthBuild: boolean },
-): boolean {
-  // A missing pathname is not evidence that the route is public. Keep Clerk
-  // mounted until Next supplies a concrete pathname.
-  if (pathname === null) return false;
+interface AuthClientState {
+  user: {
+    firstName?: string | null;
+    username?: string | null;
+    imageUrl?: string;
+    emailAddresses: Array<{ emailAddress: string }>;
+  } | null;
+  signOut: () => Promise<void>;
+}
 
-  const needsClerkProvider =
-    pathname.startsWith('/app') || pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up');
-  return !needsClerkProvider && (flags.publicTruthE2E || flags.qaAuthBuild);
+const AuthClientContext = createContext<AuthClientState | null>(null);
+const qaClientAuthEnabled = process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE === 'enabled' &&
+  process.env.NEXT_PUBLIC_SPLOOT_QA_EVIDENCE_MODE === 'enabled' &&
+  process.env.NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID === 'sploot-gallery-qa-local';
+
+function ClerkAuthBridge({ children }: { children: React.ReactNode }) {
+  const { user } = useUser();
+  const { signOut } = useClerk();
+
+  return (
+    <AuthClientContext.Provider value={{ user: user ?? null, signOut }}>
+      {children}
+    </AuthClientContext.Provider>
+  );
+}
+
+function QaAuthBridge({ children }: { children: React.ReactNode }) {
+  const user = {
+    firstName: 'QA',
+    username: 'qa-design-user',
+    emailAddresses: [{ emailAddress: 'qa-design-user@qa.local' }],
+  };
+  const signOut = async () => {
+    document.cookie = 'sploot_qa_auth=; Max-Age=0; Path=/';
+    window.location.assign('/');
+  };
+
+  return (
+    <AuthClientContext.Provider value={{ user, signOut }}>
+      {children}
+    </AuthClientContext.Provider>
+  );
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  // The production-start QA build is provider-independent on public pages. Its
-  // signed-out requests have no Clerk credentials, so omit the SDK there while
-  // protected and auth routes retain Clerk for their hooks and components.
-  const pathname = usePathname();
-
-  if (shouldOmitClerkProvider(pathname, {
-    publicTruthE2E: process.env.NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E === 'true',
-    qaAuthBuild: process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true',
-  })) {
-    return children;
+  if (qaClientAuthEnabled) {
+    return <QaAuthBridge>{children}</QaAuthBridge>;
   }
 
-  return <ClerkProvider telemetry={{ disabled: true }}>{children}</ClerkProvider>;
+  return (
+    <ClerkProvider>
+      <ClerkAuthBridge>{children}</ClerkAuthBridge>
+    </ClerkProvider>
+  );
 }
 
 export function useAuthUser() {
-  return useUser();
+  const state = useContext(AuthClientContext);
+  if (!state) throw new Error('AuthProvider is required');
+  return { user: state.user };
 }
 
 export function useAuthActions() {
-  return useClerk();
+  const state = useContext(AuthClientContext);
+  if (!state) throw new Error('AuthProvider is required');
+  return { signOut: state.signOut };
 }

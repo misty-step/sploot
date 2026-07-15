@@ -5,10 +5,12 @@ const mocks = vi.hoisted(() => ({
   authenticatedUserId: 'qa-design-user',
   createEmbeddingService: vi.fn(),
   getSearchResults: vi.fn(),
+  getSearchResultPage: vi.fn(),
   setSearchResults: vi.fn(),
+  setSearchResultPage: vi.fn(),
   getTextEmbedding: vi.fn(),
   findManyAssetTags: vi.fn(),
-  vectorSearch: vi.fn(),
+  vectorSearchPage: vi.fn(),
   logSearch: vi.fn(),
 }));
 
@@ -44,8 +46,8 @@ vi.mock('@/lib/embeddings', () => ({
 
 vi.mock('@/lib/cache', () => ({
   getCacheService: () => ({
-    getSearchResults: mocks.getSearchResults,
-    setSearchResults: mocks.setSearchResults,
+    getSearchResultPage: mocks.getSearchResultPage,
+    setSearchResultPage: mocks.setSearchResultPage,
     getTextEmbedding: mocks.getTextEmbedding,
   }),
 }));
@@ -59,7 +61,7 @@ vi.mock('@/lib/db', () => ({
       findMany: mocks.findManyAssetTags,
     },
   },
-  vectorSearch: mocks.vectorSearch,
+  vectorSearchPage: mocks.vectorSearchPage,
   logSearch: mocks.logSearch,
 }));
 
@@ -81,8 +83,8 @@ describe('/api/search with a cached query embedding', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.authenticatedUserId = 'qa-design-user';
-    mocks.getSearchResults.mockResolvedValue(null);
-    mocks.setSearchResults.mockResolvedValue(undefined);
+    mocks.getSearchResultPage.mockResolvedValue(null);
+    mocks.setSearchResultPage.mockResolvedValue(undefined);
     mocks.findManyAssetTags.mockResolvedValue([]);
     mocks.logSearch.mockResolvedValue(undefined);
   });
@@ -93,7 +95,7 @@ describe('/api/search with a cached query embedding', () => {
     mocks.createEmbeddingService.mockImplementation(() => {
       throw new Error('Replicate API token not configured');
     });
-    mocks.vectorSearch.mockResolvedValue([
+    mocks.vectorSearchPage.mockResolvedValue({ results: [
       {
         id: 'asset-1',
         blob_url: 'https://sploot-qa-seed.public.blob.vercel-storage.com/a.png',
@@ -107,15 +109,17 @@ describe('/api/search with a cached query embedding', () => {
         created_at: new Date().toISOString(),
         distance: 0.91,
       },
-    ]);
+    ], total: 41 });
 
     const res = await search(searchRequest({ query: 'reaction face meme' }));
     const body = await res.json();
 
     expect(res.status).toBe(200);
     expect(body.results).toHaveLength(1);
+    expect(body.total).toBe(41);
+    expect(body.hasMore).toBe(true);
     expect(body.results[0].id).toBe('asset-1');
-    expect(mocks.vectorSearch).toHaveBeenCalledWith(
+    expect(mocks.vectorSearchPage).toHaveBeenCalledWith(
       'qa-design-user',
       cachedEmbedding,
       expect.objectContaining({ limit: 30 })
@@ -131,6 +135,6 @@ describe('/api/search with a cached query embedding', () => {
 
     const res = await search(searchRequest({ query: 'query nobody cached' }));
     expect(res.status).toBe(503);
-    expect(mocks.vectorSearch).not.toHaveBeenCalled();
+    expect(mocks.vectorSearchPage).not.toHaveBeenCalled();
   });
 });

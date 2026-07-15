@@ -1,6 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse, type NextRequest } from 'next/server'
-import { isQaLocalAuthEnabled } from '@/lib/auth/qa-local-enabled'
 
 // Define protected routes that require authentication
 const isProtectedRoute = createRouteMatcher([
@@ -35,32 +34,55 @@ export function getCanonicalWebRedirectUrl(req: Pick<NextRequest, 'method'> & { 
   return new URL(`${url.pathname}${url.search}`, CANONICAL_WEB_ORIGIN)
 }
 
-const clerkAuthMiddleware = clerkMiddleware(async (auth, req) => {
+const clerkProtectedMiddleware = clerkMiddleware(async (auth, req) => {
   const canonicalUrl = getCanonicalWebRedirectUrl(req)
   if (canonicalUrl) {
     return NextResponse.redirect(canonicalUrl, 308)
   }
 
   if (isProtectedRoute(req)) {
-    // Compile-time omission: only explicit dev/test qa builds inline this
-    // flag to 'true'. Production builds eliminate the qa-local bypass (and
-    // its markers) entirely — proven by the production public-truth guard.
-    if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
-      const { verifyQaLocalAuthHeaders } = await import('@/lib/auth/qa-local')
-      const qaAuth = await verifyQaLocalAuthHeaders(req.headers ?? new Headers())
-      if (qaAuth.status === 'authenticated') {
-        return
-      }
+    const headers = req.headers ?? new Headers()
+    const { getQaProofRequestContext, verifyQaLocalAuthHeaders } = await import('@/lib/auth/qa-local')
+    const qaAuth = await verifyQaLocalAuthHeaders(headers, process.env, {
+      ...getQaProofRequestContext(headers),
+      host: req.nextUrl?.hostname ?? getQaProofRequestContext(headers).host,
+    })
+    if (qaAuth.status === 'authenticated') {
+      return
     }
 
     await auth.protect({ unauthenticatedUrl: new URL('/sign-in', req.url).toString() })
   }
 })
 
+// The signed local QA principal is resolved by the route/auth layer and must
+// be able to exercise a production Next server without a Clerk key. This
+// branch is compile-time selected only for the explicit local evidence mode;
+// normal development and production retain Clerk's middleware boundary.
+const qaEvidenceMiddleware = async (req: NextRequest) => {
+  const canonicalUrl = getCanonicalWebRedirectUrl(req)
+  if (canonicalUrl) {
+    return NextResponse.redirect(canonicalUrl, 308)
+  }
+
+  if (isProtectedRoute(req)) {
+    const headers = req.headers ?? new Headers()
+    const { getQaProofRequestContext, verifyQaLocalAuthHeaders } = await import('@/lib/auth/qa-local')
+    const qaAuth = await verifyQaLocalAuthHeaders(headers, process.env, {
+      ...getQaProofRequestContext(headers),
+      host: req.nextUrl?.hostname ?? getQaProofRequestContext(headers).host,
+    })
+    if (qaAuth.status !== 'authenticated') {
+      return NextResponse.redirect(new URL('/sign-in', req.url))
+    }
+  }
+
+  return
+}
+
 /**
- * The production-shaped anonymous artifact has no provider credentials. Its
- * build-time-only seam makes the signed-out boundary explicit for public proof;
- * production authority rejects the artifact and always uses Clerk below.
+ * The production-shaped anonymous artifact has no provider credentials.
+ * Its build-time-only seam makes the signed-out boundary explicit for public proof.
  */
 const publicTruthSignedOutMiddleware = (req: NextRequest) => {
   const canonicalUrl = getCanonicalWebRedirectUrl(req)
@@ -73,33 +95,18 @@ const isPublicTruthSignedOutBuild =
   process.env.NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E === 'true' &&
   (process.env.SPLOOT_DEPLOYMENT_ENV === 'test' || process.env.SPLOOT_DEPLOYMENT_ENV === 'evidence')
 
-export default async function middleware(...args: Parameters<typeof clerkAuthMiddleware>) {
-  const req = args[0] as NextRequest
-  if (isPublicTruthSignedOutBuild) {
-    return publicTruthSignedOutMiddleware(req)
-  }
+const isQaLocalEvidenceBuild = process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' ||
+  (process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && process.env.SPLOOT_QA_EVIDENCE_MODE === 'enabled' && process.env.DEPLOYMENT_ENV === 'qa-local')
 
-  // Local production-shaped QA remains compile-time gated so production
-  // bundles cannot carry an authentication bypass.
-  if (
-    process.env.NODE_ENV === 'production' &&
-    process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' &&
-    isQaLocalAuthEnabled()
-  ) {
-    const { verifyQaLocalAuthHeaders } = await import('@/lib/auth/qa-local')
-    const canonicalUrl = getCanonicalWebRedirectUrl(req)
-    if (canonicalUrl) return NextResponse.redirect(canonicalUrl, 308)
-
-    if (isProtectedRoute(req)) {
-      const qaAuth = await verifyQaLocalAuthHeaders(req.headers ?? new Headers())
-      if (qaAuth.status !== 'authenticated') {
-        return NextResponse.redirect(new URL('/sign-in', req.url))
-      }
-    }
-    return
-  }
-
-  return clerkAuthMiddleware(...args)
+export default function middleware(...args: any[]) {
+  // Next invokes the compiled middleware with (request, event); the mocked
+  // Clerk adapter in unit tests invokes the callback with (auth, request).
+  // Select the request by shape so the QA seam never reads the event as a URL.
+  const req = args[0]?.nextUrl ? args[0] : args[1] ?? args[0]
+  if (isPublicTruthSignedOutBuild) return publicTruthSignedOutMiddleware(req)
+  return isQaLocalEvidenceBuild
+    ? qaEvidenceMiddleware(req)
+    : (clerkProtectedMiddleware as unknown as (...middlewareArgs: unknown[]) => unknown)(...args)
 }
 
 export const config = {

@@ -849,67 +849,82 @@ export interface VectorSearchRow {
   distance: number;
 }
 
-export async function vectorSearch(
+export interface VectorSearchPage {
+  results: VectorSearchRow[];
+  total: number;
+}
+
+export function paginateSeededSearchResults<T>(
+  results: T[],
+  shuffleSeed: number,
+  offset: number,
+  limit: number,
+): T[] {
+  return shuffleWithSeed(results, shuffleSeed).slice(offset, offset + limit);
+}
+
+export async function vectorSearchPage(
   userId: string,
   queryEmbedding: number[],
   options?: {
     limit?: number;
     threshold?: number;
     shuffleSeed?: number;
+    offset?: number;
   }
-) {
+): Promise<VectorSearchPage> {
   if (!prisma) {
-    return [];
+    return { results: [], total: 0 };
   }
 
-  const { limit = 30, threshold, shuffleSeed } = options || {};
+  const { limit = 30, threshold, shuffleSeed, offset = 0 } = options || {};
 
   const vectorSql = embeddingVectorSql(queryEmbedding, 'search query embedding');
-
-  // Fetch more candidates when shuffling or thresholding for better pool
-  const fetchLimit = shuffleSeed !== undefined
-    ? Math.min(limit * 3, 120) // Fetch 3x for better shuffle pool
-    : (typeof threshold === 'number' && threshold > 0
-        ? Math.min(limit * 3, 120)
-        : limit);
+  const thresholdClause = typeof threshold === 'number' && threshold > 0
+    ? Prisma.sql`AND 1 - (ae.image_embedding <=> ${vectorSql}) >= ${threshold}`
+    : Prisma.empty;
+  const pageClause = shuffleSeed === undefined
+    ? Prisma.sql`LIMIT ${limit} OFFSET ${offset}`
+    : Prisma.empty;
 
   try {
-    // ALWAYS order by similarity (preserve semantic ranking)
-    // Shuffle happens in application code after fetching top results
-    const results = await prisma.$queryRaw<VectorSearchRow[]>(Prisma.sql`
-      SELECT
-        a.id,
-        a.blob_url,
-        a.thumbnail_url,
-        a.pathname,
-        a.mime,
-        a.width,
-        a.height,
-        a.favorite,
-        a.size,
-        a."createdAt" AS created_at,
-        1 - (ae.image_embedding <=> ${vectorSql}) AS distance
-      FROM "assets" a
-      INNER JOIN "asset_embeddings" ae ON a.id = ae.asset_id
-      WHERE
-        a.owner_user_id = ${userId}
-        AND a.deleted_at IS NULL
-      ORDER BY ae.image_embedding <=> ${vectorSql}
-      LIMIT ${fetchLimit}
+    // Define the complete match set before pagination. A seeded page slices
+    // one deterministic shuffle; changing the SQL candidate window by offset
+    // causes overlaps and omissions.
+    const rows = await prisma.$queryRaw<Array<VectorSearchRow & { total_count: bigint | number }>>(Prisma.sql`
+      WITH ranked AS (
+        SELECT
+          a.id,
+          a.blob_url,
+          a.thumbnail_url,
+          a.pathname,
+          a.mime,
+          a.width,
+          a.height,
+          a.favorite,
+          a.size,
+          a."createdAt" AS created_at,
+          1 - (ae.image_embedding <=> ${vectorSql}) AS distance
+        FROM "assets" a
+        INNER JOIN "asset_embeddings" ae ON a.id = ae.asset_id
+        WHERE
+          a.owner_user_id = ${userId}
+          AND a.deleted_at IS NULL
+          ${thresholdClause}
+      )
+      SELECT ranked.*, COUNT(*) OVER() AS total_count
+      FROM ranked
+      ORDER BY ranked.distance DESC, ranked.id ASC
+      ${pageClause}
     `);
 
-    // Filter by threshold if provided
-    const filteredResults =
-      typeof threshold === 'number' && threshold > 0
-        ? results.filter(result => result.distance >= threshold)
-        : results;
+    const total = Number(rows[0]?.total_count ?? 0);
+    const candidates = rows.map(({ total_count: _totalCount, ...row }) => row);
+    const results = shuffleSeed === undefined
+      ? candidates
+      : paginateSeededSearchResults(candidates, shuffleSeed, offset, limit);
 
-    // Shuffle top results if seed provided (preserves semantic relevance)
-    const finalResults = shuffleSeed !== undefined
-      ? shuffleWithSeed(filteredResults, shuffleSeed).slice(0, limit)
-      : filteredResults.slice(0, limit);
-
-    return finalResults;
+    return { results, total };
   } catch (error) {
     logger.error('Vector search query failed', {
       userId,
@@ -920,6 +935,20 @@ export async function vectorSearch(
     });
     throw error;
   }
+}
+
+export async function vectorSearch(
+  userId: string,
+  queryEmbedding: number[],
+  options?: {
+    limit?: number;
+    threshold?: number;
+    shuffleSeed?: number;
+    offset?: number;
+  }
+) {
+  const page = await vectorSearchPage(userId, queryEmbedding, options);
+  return page.results;
 }
 
 export async function logSearch(

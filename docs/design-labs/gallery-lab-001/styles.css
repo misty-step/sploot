@@ -1,0 +1,66 @@
+/* gallery-lab-001 · viewer shell styles (shell only; frame.css styles options) */
+:root {
+  --sh-bg: #eef2f8;
+  --sh-panel: #ffffff;
+  --sh-ink: #1c1547;
+  --sh-line: #c9d4e4;
+  --sh-accent: #087bc1;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --sh-bg: #14102e; --sh-panel: #201a45; --sh-ink: #fff3dc; --sh-line: #372f68; --sh-accent: #63c3ff; }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  font-family: 'Baloo 2', system-ui, sans-serif; background: var(--sh-bg); color: var(--sh-ink);
+}
+.mono { font-family: 'Space Mono', monospace; }
+#topbar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 14px; border-bottom: 2px solid var(--sh-line); background: var(--sh-panel);
+}
+#labname { text-transform: lowercase; }
+#viewports { display: flex; gap: 4px; }
+#viewports button, #themebtn, #staterow button {
+  border: 2px solid var(--sh-line); border-radius: 8px; background: transparent;
+  color: var(--sh-ink); font: inherit; font-size: 0.75rem; padding: 4px 9px; cursor: pointer;
+}
+#viewports button[aria-pressed='true'], #staterow button[aria-pressed='true'] {
+  background: var(--sh-accent); color: #fff; border-color: var(--sh-accent);
+}
+#customvp { display: flex; align-items: center; gap: 4px; }
+#customvp input {
+  width: 62px; border: 2px solid var(--sh-line); border-radius: 8px; background: transparent;
+  color: var(--sh-ink); font: inherit; font-size: 0.75rem; padding: 4px 6px;
+}
+#vpreadout { font-size: 0.68rem; opacity: 0.75; min-width: 150px; }
+#staterow { display: flex; gap: 4px; flex-wrap: wrap; }
+#main { flex: 1; display: flex; min-height: 0; }
+#sidebar {
+  width: 280px; flex-shrink: 0; overflow-y: auto; display: flex; flex-direction: column;
+  border-right: 2px solid var(--sh-line); background: var(--sh-panel);
+}
+#roundline { font-size: 0.65rem; padding: 10px 12px 4px; margin: 0; opacity: 0.8; }
+#optlist { flex: 1; padding: 6px; }
+#optlist h3 {
+  margin: 12px 6px 4px; font-size: 0.68rem; text-transform: lowercase; opacity: 0.6;
+  font-family: 'Space Mono', monospace; font-weight: 400;
+}
+#optlist button.opt {
+  display: block; width: 100%; text-align: left; margin: 2px 0; padding: 8px 10px;
+  border: 2px solid transparent; border-radius: 10px; background: transparent;
+  color: var(--sh-ink); font: inherit; cursor: pointer;
+}
+#optlist button.opt:hover { border-color: var(--sh-line); }
+#optlist button.opt[aria-pressed='true'] { border-color: var(--sh-accent); background: color-mix(in srgb, var(--sh-accent) 12%, transparent); }
+#optlist .oid { font-family: 'Space Mono', monospace; font-size: 0.68rem; font-weight: 700; }
+#optlist .badge {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+  font-family: 'Space Mono', monospace; font-size: 0.58rem; background: var(--sh-line);
+}
+#optlist .oname { display: block; font-size: 0.82rem; font-weight: 700; text-transform: lowercase; }
+#optlist .omove { display: block; font-size: 0.68rem; opacity: 0.7; line-height: 1.3; }
+#sidefoot { padding: 8px 12px; font-size: 0.6rem; opacity: 0.6; border-top: 2px solid var(--sh-line); }
+#stage { flex: 1; display: grid; place-items: center; overflow: auto; padding: 14px; min-width: 0; }
+#framebox { background: #000; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25); border-radius: 4px; }
+#frame { display: block; border: 0; width: 100%; height: 100%; background: #fff; border-radius: 4px; }

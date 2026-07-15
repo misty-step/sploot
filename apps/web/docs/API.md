@@ -1140,6 +1140,7 @@ Perform semantic search using text queries.
 {
   "query": "distracted boyfriend",
   "limit": 30,
+  "offset": 0,
   "threshold": 0.2,
   "shuffleSeed": 424242
 }
@@ -1149,6 +1150,9 @@ Perform semantic search using text queries.
 
 - `query` (string, required): Search text (max 500 characters)
 - `limit` (number, optional): requested result count (default: 30).
+- `offset` (number, optional): page offset from the same semantic result set
+  (default: 0, max: 500). Search pagination remains on this route and never
+  falls back to `/api/assets`.
 - `threshold` (number, optional): Minimum similarity score (0-1, default: 0.2)
   Results below this score are not returned; a real miss returns an empty
   `results` array rather than low-similarity padding.
@@ -1182,6 +1186,7 @@ Perform semantic search using text queries.
   ],
   "query": "distracted boyfriend",
   "total": 1,
+  "hasMore": false,
   "limit": 30,
   "requestedLimit": 30,
   "threshold": 0.2,

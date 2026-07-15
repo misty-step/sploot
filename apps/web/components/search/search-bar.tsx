@@ -83,9 +83,8 @@ export function SearchBar({
         setShowHistory(false);
         setSelectedIndex(-1);
       } else {
-        // Clear search input
-        setQuery('');
-        // Blur the input to remove focus
+      // Clear both the input and the parent result state.
+      handleClear();
         e.currentTarget.blur();
       }
     }
@@ -102,7 +101,7 @@ export function SearchBar({
     if (onSearch) {
       onSearch({
         query: '',
-        timestamp: Date.now(),
+        timestamp: 0,
         updateUrl: false
       });
     }

@@ -26,16 +26,16 @@ export async function authenticateRequest(
     ...policy,
   };
   const env = resolvedPolicy.env ?? process.env;
+  const hasQaInput = Boolean(req.headers.get('x-sploot-qa-auth') || req.headers.get('cookie')?.split(';').some((part) => part.trim().startsWith('sploot_qa_auth=')));
 
-  // Compile-time omission: production builds inline this flag to 'false' and
-  // dead-code-eliminate the qa-local seam out of every API route bundle. QA
-  // credentials remain terminal input in qa builds: a malformed, expired,
-  // disabled, or otherwise forbidden QA credential never falls through to
-  // Clerk.
-  if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
-    const { resolveQaLocalRequestAuth } = await import('./qa-local');
-    const qaResult = await resolveQaLocalRequestAuth(req.headers, env);
-    if (qaResult) return qaResult;
+  if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' && resolvedPolicy.allowQaLocal && hasQaInput) {
+    const { getQaProofRequestContext, verifyQaLocalAuthHeaders } = await import('./qa-local');
+    const requestContext = getQaProofRequestContext(req.headers);
+    requestContext.host = req.nextUrl?.hostname || new URL(req.url).hostname || requestContext.host;
+    const qaResult = await verifyQaLocalAuthHeaders(req.headers, env, requestContext);
+    // QA credentials are terminal input. A malformed, expired, disabled, or
+    // otherwise forbidden QA credential must never fall through to Clerk.
+    return qaResult;
   }
 
   if (resolvedPolicy.allowUploadToken) {

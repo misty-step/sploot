@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@clerk/nextjs/server', () => {
   const createRouteMatcher = (patterns: string[]) => {
@@ -19,15 +19,21 @@ vi.mock('@clerk/nextjs/server', () => {
 });
 
 import middleware, { config } from '@/middleware';
-import { createQaLocalAuthToken, getQaLocalAuthHeader } from '@/lib/auth/qa-local';
+import { createQaLocalAuthToken, getQaLocalAuthHeader, getQaLocalRemoteAddressHeader } from '@/lib/auth/qa-local';
 
 describe('middleware auth boundary', () => {
   const QA_SECRET = 'test-secret-with-enough-entropy';
 
   beforeEach(() => {
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
+    vi.stubEnv('CLERK_SECRET_KEY', '');
+    vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', '');
     vi.stubEnv('SPLOOT_QA_AUTH_SECRET', QA_SECRET);
     vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'test');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it.each([
@@ -86,6 +92,10 @@ describe('middleware auth boundary', () => {
   );
 
   it('allows signed qa-local app navigation without Clerk protect outside production', async () => {
+    vi.stubEnv('SPLOOT_QA_EVIDENCE_MODE', 'enabled');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ID', 'sploot-gallery-qa-local');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_AUDIENCE', 'sploot-gallery-evidence');
+    vi.stubEnv('DEPLOYMENT_ENV', 'qa-local');
     const protect = vi.fn();
     const token = await createQaLocalAuthToken({
       userId: 'qa-user-1',
@@ -98,8 +108,12 @@ describe('middleware auth boundary', () => {
       {
         method: 'GET',
         nextUrl: { pathname: '/app' },
-        url: 'https://www.sploot.app/app',
-        headers: new Headers({ [getQaLocalAuthHeader()]: token }),
+        url: 'http://localhost:3001/app',
+        headers: new Headers({
+          host: 'localhost:3001',
+          [getQaLocalAuthHeader()]: token,
+          [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+        }),
       } as any
     );
 
