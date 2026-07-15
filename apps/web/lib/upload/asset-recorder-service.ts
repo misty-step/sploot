@@ -30,6 +30,14 @@ export interface AssetMetadata {
   thumbnailUrl: string | null;
   pathname: string;
   thumbnailPath: string | null;
+  storageProvider?: string;
+  storageKey?: string | null;
+  thumbnailStorageKey?: string | null;
+  storageConfigFingerprint?: string | null;
+  storageSize?: number | null;
+  storageSha256?: string | null;
+  thumbnailStorageSize?: number | null;
+  thumbnailStorageSha256?: string | null;
   mime: string;
   width: number | null;
   height: number | null;
@@ -99,6 +107,14 @@ export class AssetRecorderService {
             thumbnailUrl: metadata.thumbnailUrl,
             pathname: metadata.pathname,
             thumbnailPath: metadata.thumbnailPath,
+            ...(metadata.storageProvider ? { storageProvider: metadata.storageProvider } : {}),
+            ...(metadata.storageKey !== undefined ? { storageKey: metadata.storageKey } : {}),
+            ...(metadata.thumbnailStorageKey !== undefined ? { thumbnailStorageKey: metadata.thumbnailStorageKey } : {}),
+            ...(metadata.storageConfigFingerprint !== undefined ? { storageConfigFingerprint: metadata.storageConfigFingerprint } : {}),
+            ...(metadata.storageSize !== undefined ? { storageSize: metadata.storageSize } : {}),
+            ...(metadata.storageSha256 !== undefined ? { storageSha256: metadata.storageSha256 } : {}),
+            ...(metadata.thumbnailStorageSize !== undefined ? { thumbnailStorageSize: metadata.thumbnailStorageSize } : {}),
+            ...(metadata.thumbnailStorageSha256 !== undefined ? { thumbnailStorageSha256: metadata.thumbnailStorageSha256 } : {}),
             mime: metadata.mime,
             width: metadata.width,
             height: metadata.height,

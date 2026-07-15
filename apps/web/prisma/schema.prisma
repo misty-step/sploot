@@ -105,6 +105,14 @@ model Asset {
   thumbnailUrl   String?   @map("thumbnail_url") // URL for 256px thumbnail. Validated via CHECK constraint if set
   pathname       String // Path in blob storage
   thumbnailPath  String?   @map("thumbnail_path") // Path for thumbnail in blob storage
+  storageProvider          String  @default("vercel") @map("storage_provider")
+  storageKey               String? @map("storage_key")
+  thumbnailStorageKey      String? @map("thumbnail_storage_key")
+  storageConfigFingerprint String? @map("storage_config_fingerprint")
+  storageSize              Int?    @map("storage_size")
+  storageSha256            String? @map("storage_sha256")
+  thumbnailStorageSize     Int?    @map("thumbnail_storage_size")
+  thumbnailStorageSha256   String? @map("thumbnail_storage_sha256")
   mime           String
   width          Int?
   height         Int?
@@ -386,4 +394,46 @@ model StripeCancellationMaintenanceToken {
   consumedAt    DateTime? @map("consumed_at")
 
   @@map("stripe_cancellation_maintenance_tokens")
+}
+
+// Durable provider-neutral migration receipt. Claims are leased so a dead
+// worker can resume without allowing two workers to finish the same row.
+model StorageMigrationEntry {
+  id              String    @id @default(cuid())
+  logicalKey      String    @unique @map("logical_key")
+  sourceProvider  String    @map("source_provider")
+  sourceKey       String    @map("source_key")
+  targetProvider  String    @map("target_provider")
+  targetKey       String    @map("target_key")
+  size            Int
+  sha256          String
+  contentType     String?   @map("content_type")
+  status          String    @default("pending")
+  attempts        Int       @default(0)
+  leaseGeneration Int       @default(0) @map("lease_generation")
+  workerId        String?   @map("worker_id")
+  leaseExpiresAt  DateTime? @map("lease_expires_at")
+  lastError       String?   @map("last_error")
+  verifiedAt      DateTime? @map("verified_at")
+  rolledBackAt    DateTime? @map("rolled_back_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, leaseExpiresAt, logicalKey])
+  @@map("storage_migration_entries")
+}
+
+model StorageCutoverState {
+  id                  String    @id
+  phase               String
+  generation          Int       @default(0)
+  providerFingerprint String    @map("provider_fingerprint")
+  manifestSha256      String?   @map("manifest_sha256")
+  verifiedAt          DateTime? @map("verified_at")
+  rollbackAt          DateTime? @map("rollback_at")
+  legacyDeleteAfter   DateTime? @map("legacy_delete_after")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  @@map("storage_cutover_state")
 }
