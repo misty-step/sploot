@@ -48,4 +48,12 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(ci).not.toMatch(/ready:\d{14}/);
     expect(ci).not.toMatch(/bootstrap_version=\d/);
   });
+
+  it('keeps the inert legacy-owner migration path self-contained before privileged activation', () => {
+    const firstStripeMigration = readFileSync(
+      resolve(webRoot, 'prisma/migrations/20260714000000_add_stripe_cancellation_ledger/migration.sql'),
+      'utf8',
+    );
+    expect(firstStripeMigration).toMatch(/CREATE EXTENSION IF NOT EXISTS pgcrypto/i);
+  });
 });

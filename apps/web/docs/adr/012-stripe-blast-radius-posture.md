@@ -93,10 +93,14 @@ recovery client pins the Stripe origin, uses `redirect: error`, revalidates
 request/response targets, and retries only bounded transient failures with a
 stable idempotency key.
 
-Production migration is a two-authority operation: the privileged
-`migrate-deploy.mjs` path runs the transactional pre-bootstrap, restricted
-Prisma migration, and transactional post-bootstrap; missing either production
-URL or the bootstrap authority fails closed. The bootstrap is an explicit
+The additive ledger schema can land inertly under the existing migration owner
+before billing activation; its first migration installs trusted `pgcrypto`
+idempotently so later digest backfills do not depend on an undeclared database
+prerequisite. Billing activation is a two-authority operation: with
+`STRIPE_LEDGER_BOOTSTRAP_REQUIRED=true`, the privileged `migrate-deploy.mjs`
+path runs the transactional pre-bootstrap, restricted Prisma migration, and
+transactional post-bootstrap; missing either production URL or the bootstrap
+authority fails closed. The bootstrap is an explicit
 durable state machine (`sploot_bootstrap.stripe_ledger_bootstrap_state`:
 `preparing` → `ready`, any failure → `failed`) versioned by the single
 declared contract version in `prisma/stripe-ledger-bootstrap.version`, which

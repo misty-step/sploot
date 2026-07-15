@@ -1,6 +1,13 @@
 -- Durable, append-audited Stripe cancellation monitoring state. Event and
 -- audit rows are intentionally not given update/delete paths in application
 -- code; alert delivery flags are the only mutable operational state.
+--
+-- The inert schema may land before privileged Stripe activation. Keep that
+-- legacy-owner migration self-contained because later additive migrations use
+-- digest(); the privileged pre-bootstrap repeats this idempotently before the
+-- restricted-owner path.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE "stripe_cancellation_events" (
   "event_id" TEXT NOT NULL,
   "event_type" TEXT NOT NULL,
