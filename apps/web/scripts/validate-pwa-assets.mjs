@@ -40,7 +40,7 @@ const repoDir = resolve(publicDir, '../..', '..');
 const execFileAsync = promisify(execFile);
 const SOURCE_PATHS = ['apps/web', 'packages/common', 'scripts', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'turbo.json', '.npmrc'];
 const SOURCE_EXCLUDED_PREFIXES = ['apps/web/public/screenshots/', 'apps/web/public/sw.js', 'apps/web/public/workbox-'];
-const BUILD_GENERATED_PATHS = ['apps/web/public/sw.js', 'apps/web/public/workbox-0434ae86.js.map'];
+const BUILD_GENERATED_PATHS = ['apps/web/public/sw.js'];
 const BUILD_CACHE_PREFIX = 'apps/web/.next/cache/';
 const BUILD_INVENTORY_EXCLUSIONS = ['apps/web/.next/cache/** — Next incremental cache; it is nondeterministic and is not required to run the production artifact'];
 

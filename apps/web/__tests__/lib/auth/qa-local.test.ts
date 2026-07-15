@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   createQaLocalAuthToken,
   getQaLocalAuthHeader,
@@ -53,6 +53,10 @@ async function token(options: Partial<Parameters<typeof createQaLocalAuthToken>[
 }
 
 describe('qa-local auth security contract', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('authenticates only a signed principal at the loopback boundary', async () => {
     const result = await verifyQaLocalAuthHeaders(
       new Headers({ [getQaLocalAuthHeader()]: await token(), host: boundary.host, 'x-forwarded-for': boundary.remoteAddress }),

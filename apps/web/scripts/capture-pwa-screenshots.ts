@@ -41,10 +41,10 @@ const CAPTURE_OUTPUTS = new Set([
   'apps/web/public/screenshots/capture-manifest.json',
   'apps/web/public/screenshots/desktop-home.png',
   'apps/web/public/screenshots/mobile-home.png',
+  'apps/web/public/screenshots/mobile-home-dark.png',
 ]);
 const BUILD_GENERATED_PATHS = new Set([
   'apps/web/public/sw.js',
-  'apps/web/public/workbox-0434ae86.js.map',
 ]);
 const SOURCE_PATHS = ['apps/web', 'packages/common', 'scripts', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'turbo.json', '.npmrc'];
 const SOURCE_EXCLUDED_PREFIXES = ['apps/web/public/screenshots/', 'apps/web/public/sw.js', 'apps/web/public/workbox-'];

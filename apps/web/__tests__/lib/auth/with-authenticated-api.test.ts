@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
-import { createQaLocalAuthToken, getQaLocalAuthHeader } from '@/lib/auth/qa-local';
+import {
+  createQaLocalAuthToken,
+  getQaLocalAuthHeader,
+  QA_LOCAL_AUDIENCE,
+  QA_LOCAL_DEPLOYMENT_ENV,
+  QA_LOCAL_DEPLOYMENT_ID,
+} from '@/lib/auth/qa-local';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 
 const mocks = vi.hoisted(() => ({
@@ -49,9 +55,9 @@ describe('withAuthenticatedApi', () => {
           SPLOOT_DEPLOYMENT_ENV: 'test',
           SPLOOT_QA_AUTH_MODE: 'enabled',
           SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
-          SPLOOT_QA_DEPLOYMENT_ID: 'local-pwa-capture-v1',
-          SPLOOT_QA_DEPLOYMENT_ENV: 'local-qa',
-          SPLOOT_QA_AUDIENCE: 'sploot-pwa-capture',
+          SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
+          SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
+          SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
         },
       }
     );
@@ -113,6 +119,9 @@ describe('withAuthenticatedApi', () => {
           SPLOOT_DEPLOYMENT_ENV: 'test',
           SPLOOT_QA_AUTH_MODE: 'enabled',
           SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
+          SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
+          SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
+          SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
         },
       }
     );
@@ -124,7 +133,7 @@ describe('withAuthenticatedApi', () => {
 
     const response = await handler(
       new NextRequest('http://localhost:3001/api/cache/stats', {
-        headers: { [getQaLocalAuthHeader()]: token },
+        headers: { [getQaLocalAuthHeader()]: token, 'x-forwarded-for': '127.0.0.1' },
       }),
       { params: Promise.resolve({}) }
     );
@@ -151,11 +160,14 @@ describe('withAuthenticatedApi', () => {
           SPLOOT_DEPLOYMENT_ENV: 'test',
           SPLOOT_QA_AUTH_MODE: 'enabled',
           SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
+          SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
+          SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
+          SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
         },
       }
     )(
       new NextRequest('http://localhost:3001/api/cache/stats', {
-        headers: { [getQaLocalAuthHeader()]: token },
+        headers: { [getQaLocalAuthHeader()]: token, 'x-forwarded-for': '127.0.0.1' },
       }),
       { params: Promise.resolve({}) }
     );
