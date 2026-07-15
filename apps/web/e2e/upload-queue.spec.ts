@@ -214,10 +214,14 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
   const accountB = 'qa-upload-queue-user';
   const accountAKey = await ownerKey(accountA);
   const url = 'https://images.example.test/bookmark.png';
-  const browserBaseURL = baseURL;
+  const browserBaseURL = baseURL.replace('127.0.0.1', 'localhost');
+  const persistentBrowserArgs = [
+    '--no-proxy-server',
+    '--host-resolver-rules=MAP localhost 127.0.0.1',
+  ];
   try {
     context = await browser.browserType().launchPersistentContext(userDataDir, {
-      args: ['--no-proxy-server'],
+      args: persistentBrowserArgs,
       baseURL: browserBaseURL,
     });
     await context.setOffline(false);
@@ -253,7 +257,7 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     context = undefined;
 
     context = await browser.browserType().launchPersistentContext(userDataDir, {
-      args: ['--no-proxy-server'],
+      args: persistentBrowserArgs,
       baseURL: browserBaseURL,
     });
     const reopened = await context.newPage();
