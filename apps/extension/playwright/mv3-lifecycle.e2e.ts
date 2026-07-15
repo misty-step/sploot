@@ -167,17 +167,21 @@ async function stopAndRestart(
 ): Promise<Worker> {
   return runMv3Step(context, testInfo, step, 'service worker termination and bounded restart', async () => {
     const cdp = await context.newCDPSession(popup);
-    const restarted = context.waitForEvent('serviceworker', {
-      timeout: 15_000,
-      predicate: candidate => candidate.url().startsWith('chrome-extension://'),
-    });
-    let wake: Promise<{ ok: boolean }> | undefined;
     try {
       const targets = await cdp.send('Target.getTargets');
       const target = targets.targetInfos.find(info => info.type === 'service_worker' && info.url.startsWith('chrome-extension://'));
       expect(target).toBeTruthy();
-      await cdp.send('Target.closeTarget', { targetId: target!.targetId });
-      wake = sendMv3Message<{ ok: boolean }>(
+      const terminatedTargetId = target!.targetId;
+      await cdp.send('Target.closeTarget', { targetId: terminatedTargetId });
+      await expect.poll(async () => {
+        const current = await cdp.send('Target.getTargets');
+        return !current.targetInfos.some(info => info.targetId === terminatedTargetId);
+      }, { timeout: 15_000 }).toBe(true);
+
+      // Chromium does not emit a second Playwright `serviceworker` event for
+      // every CDP target restart. The real queue message is the wake trigger;
+      // a different CDP target ID is the bounded worker-restart proof.
+      const wake = sendMv3Message<{ ok: boolean }>(
         popup,
         { type: LIST_QUEUE },
         context,
@@ -185,13 +189,24 @@ async function stopAndRestart(
         step,
         'wake restarted worker through real queue message',
       );
-      const worker = await restarted;
+      let restarted: Worker | undefined;
+      let restartedTargetId: string | undefined;
+      await expect.poll(async () => {
+        const activeTargets = await cdp.send('Target.getTargets');
+        const activeTarget = activeTargets.targetInfos.find(info => (
+          info.type === 'service_worker'
+          && info.url.startsWith('chrome-extension://')
+          && info.targetId !== terminatedTargetId
+        ));
+        restartedTargetId = activeTarget?.targetId;
+        restarted = context.serviceWorkers().find(worker => worker.url().startsWith('chrome-extension://'));
+        return Boolean(restartedTargetId && restarted);
+      }, { timeout: 15_000 }).toBe(true);
       await wake;
+      expect(restarted).toBeTruthy();
+      const worker = restarted!;
       await wakeMv3Worker(worker, context, testInfo, step);
       return worker;
-    } catch (error) {
-      await wake?.catch(() => undefined);
-      throw error;
     } finally {
       const detach = cdp.detach();
       await Promise.race([
