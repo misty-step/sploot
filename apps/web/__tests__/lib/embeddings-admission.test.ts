@@ -380,7 +380,10 @@ describe('central Replicate admission boundary', () => {
     ['missing output', undefined],
     ['empty output', []],
     ['wrong dimension', new Array(EMBEDDING_DIMENSION - 1).fill(0.1)],
-    ['non-numeric output', [NaN]],
+    [
+      'non-numeric output',
+      Object.assign(new Array(EMBEDDING_DIMENSION).fill(0.1), { 0: NaN }),
+    ],
   ])('treats %s as a leased provider failure', async (_label, output) => {
     mocks.replicateRun.mockResolvedValue(output);
     const service = createEmbeddingService('user-1');

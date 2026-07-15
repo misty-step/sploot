@@ -18,6 +18,9 @@ frees. Actual provider 429, timeout, and 5xx outcomes are typed provider
 failures: each requires the exact admitted generation/probe/token lease and
 opens the same circuit only when that lease still owns the row; stale late
 failures are no-ops. They are also counted against the asset attempt budget.
+Failures before a paid provider attempt, including provider-client
+initialization, only persist a claim-fenced `pending` deferral and never
+consume `attempt_count` or revival budget.
 Per-user rate and
 per-user concurrency decisions
 only defer that user's asset and never halt unrelated users. Cron reads the
@@ -66,6 +69,19 @@ timestamps are computed from the caller-supplied clock; retry delays are
 exponential (60s, 120s, then terminal). Admission denials do not consume an
 asset attempt; provider 429s and retryable provider timeouts do.
 
+Every embedding mutation is claim-fenced. Provider success writes require the
+exact processing token; unclaimed compatibility writes atomically refuse ready,
+vector-bearing, terminal, or actively claimed rows. A lost claim returns a
+no-op rather than reporting a persisted embedding. Circuit reads happen only
+after no-work states (ready, processing, cooldown, and unsupported media) are
+resolved. Batch `Retry-After` is selected together with its matching outcome
+reason.
+
+When provider admission loses a race after reserving capacity, refund deletes
+the lease and decrements minute/day/month buckets in one transaction. Refund
+errors are logged, retried once, and rethrown; cleanup never deletes the only
+lease after an unsuccessful refund, so a later retry cannot double-refund.
+
 The two build-time fixture scripts are the only direct Replicate callers
 outside this runtime boundary. They are enforceably restricted to an explicit
 `SPLOOT_EMBEDDING_MAINTENANCE_MODE=offline` invocation and refuse
@@ -74,8 +90,12 @@ search, and semantic piles cannot use this exception.
 
 ## Deploy and readback
 
-The migration is additive and is applied by the existing `prisma migrate deploy`
-startup/build path and the CI production migration job. After deploy, read back:
+The migration is additive and is applied by the repo-owned
+`apps/web/scripts/migrate-deploy.mjs` path. Prisma 6.19.3 runs migration SQL in
+a transaction, so the pending-attempt index is built by the runner after
+Prisma commits, using an autocommit `CREATE INDEX CONCURRENTLY`; a failed
+postcondition leaves the deploy failed and is safely retryable. After deploy,
+read back:
 
 ```sql
 SELECT key, failure_count, generation, open_until, probe_until,
@@ -87,6 +107,10 @@ SELECT status, attempt_count, next_attempt_at, terminal_at
 FROM asset_embeddings
 WHERE status = 'failed' OR terminal_at IS NOT NULL
 ORDER BY updatedAt DESC;
+
+SELECT indexname
+FROM pg_indexes
+WHERE indexname = 'asset_embeddings_pending_next_attempt_idx';
 ```
 
 The first cron invocation should return `stats.successCount`,
@@ -113,4 +137,6 @@ Rollback application code first, then leave the additive columns/table in place;
 the previous application ignores them and existing ready vectors remain valid.
 The follow-up generation/probe migration is also additive and uses
 `IF NOT EXISTS`, so a partially applied deploy can be retried safely. Do not
-delete terminal rows or vectors as part of rollback.
+delete terminal rows or vectors as part of rollback. The budget ceiling is
+added `NOT VALID` and validated separately, preserving online writes during
+constraint creation; the database ceiling remains in force for old runtimes.

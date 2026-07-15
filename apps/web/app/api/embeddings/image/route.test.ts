@@ -1,27 +1,44 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import type { AuthenticatedApiHandler } from '@/lib/auth/with-authenticated-api';
+import type { RouteHandler } from '@/lib/with-observability';
+
+const testPrincipal = {
+  userId: 'user-1',
+  provider: 'qa-local' as const,
+  providerSubject: 'user-1',
+  source: 'qa-local' as const,
+  credentialKind: 'qa-local' as const,
+};
+const testAuthContext = {
+  principal: testPrincipal,
+  auth: {
+    status: 'authenticated' as const,
+    principal: testPrincipal,
+    syncStatus: 'success' as const,
+  },
+};
 
 const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
   embedImage: vi.fn(),
+  upsertAssetEmbedding: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/with-authenticated-api', () => ({
-  withAuthenticatedApi: (handler: any) => (request: NextRequest) =>
-    handler(request, {}, {
-      principal: { userId: 'user-1' },
-    }),
+  withAuthenticatedApi: (handler: AuthenticatedApiHandler) => (request: NextRequest) =>
+    handler(request, { params: Promise.resolve({}) }, testAuthContext),
 }));
 
 vi.mock('@/lib/with-observability', () => ({
-  withObservability: (handler: any) => handler,
+  withObservability: (handler: RouteHandler) => handler,
 }));
 
 vi.mock('@/lib/db', () => ({
   prisma: {
     asset: { findFirst: mocks.findFirst },
   },
-  upsertAssetEmbedding: vi.fn(),
+  upsertAssetEmbedding: mocks.upsertAssetEmbedding,
 }));
 
 vi.mock('@/lib/enrollment/enrollment-policy', () => ({
@@ -60,6 +77,7 @@ function request(body: Record<string, unknown>): NextRequest {
 describe('POST /api/embeddings/image asset media selection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.upsertAssetEmbedding.mockResolvedValue({});
   });
 
   it('uses the stored video poster instead of the raw asset blob', async () => {
@@ -111,5 +129,32 @@ describe('POST /api/embeddings/image asset media selection', () => {
 
     expect(response.status).toBe(422);
     expect(mocks.embedImage).not.toHaveBeenCalled();
+  });
+
+  it('does not report success when a concurrent claim rejects the asset write', async () => {
+    mocks.findFirst.mockResolvedValue({
+      id: 'asset-raced',
+      ownerUserId: 'user-1',
+      blobUrl: 'https://blob.example/image.jpg',
+      thumbnailUrl: null,
+      mime: 'image/jpeg',
+      checksumSha256: 'image-checksum',
+    });
+    mocks.embedImage.mockResolvedValue({
+      embedding: [0.1],
+      model: 'test-model',
+      dimension: 1,
+      processingTime: 1,
+    });
+    mocks.upsertAssetEmbedding.mockResolvedValue(null);
+
+    const response = await POST(
+      request({ assetId: 'asset-raced', imageUrl: 'https://blob.example/image.jpg' }),
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Embedding state changed; retry the request',
+    });
   });
 });

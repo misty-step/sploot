@@ -89,20 +89,6 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
       return runtimeGateResponse(embeddingGate);
     }
 
-    const providerCircuit = await getEmbeddingProviderCircuit();
-    if (providerCircuit.open) {
-      const retryAfterSec = providerCircuit.retryAfterSec;
-      return NextResponse.json(
-        { success: false, status: 'provider_backoff', error: 'Embedding provider temporarily unavailable', retryAfter: retryAfterSec },
-        {
-          status: 503,
-          headers: embeddingRetryHeaders(
-            new EmbeddingProviderCircuitOpenError(retryAfterSec),
-          ),
-        }
-      );
-    }
-
     // Check for in-flight request (deduplication)
     const requestKey = `${userId}-${id}`;
     const existingRequest = inFlightRequests.get(requestKey);
@@ -374,6 +360,14 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
 
         logger.logInfo('generate-embedding.lock-acquired', { assetId: id });
 
+        // Read provider state only after all no-work outcomes and the durable
+        // asset claim have been resolved. A circuit outage must not hide a
+        // ready, processing, cooldown, or unsupported-media response.
+        const providerCircuit = await getEmbeddingProviderCircuit();
+        if (providerCircuit.open) {
+          throw new EmbeddingProviderCircuitOpenError(providerCircuit.retryAfterSec);
+        }
+
         // Generate embedding
         const embeddingService = createEmbeddingService(userId);
 
@@ -475,7 +469,11 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
             error.retryAfterSec,
             processingClaimToken,
           );
-        } else if (prisma && typeof prisma.$queryRaw === 'function') {
+        } else if (
+          processingClaimToken &&
+          prisma &&
+          typeof prisma.$queryRaw === 'function'
+        ) {
           await recordEmbeddingAttemptFailure(
             asset.id,
             errorMessage,

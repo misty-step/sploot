@@ -49,6 +49,24 @@ interface EmbeddingServiceConfig {
   timeout?: number;
 }
 
+interface ReplicateResponseEnvelope {
+  status?: unknown;
+  statusCode?: unknown;
+  headers?: unknown;
+}
+
+interface ReplicateErrorEnvelope extends ReplicateResponseEnvelope {
+  response?: ReplicateResponseEnvelope;
+  retryAfter?: unknown;
+  retryAfterSec?: unknown;
+}
+
+function asReplicateErrorEnvelope(error: unknown): ReplicateErrorEnvelope {
+  return error && typeof error === 'object'
+    ? (error as ReplicateErrorEnvelope)
+    : {};
+}
+
 export interface EmbeddingService {
   embedText(query: string): Promise<EmbeddingResult>;
   embedImage(imageUrl: string, checksum?: string): Promise<EmbeddingResult>;
@@ -278,6 +296,7 @@ class ReplicateEmbeddingService implements EmbeddingService {
     }
 
     let reservedLease: EmbeddingRateLimitLease | undefined;
+    let reservationRefundRequired = false;
     try {
       const admissionReservation = await acquireEmbeddingAdmissionReservation(this.userId);
       if (!admissionReservation.allowed || !admissionReservation.reservation) {
@@ -292,8 +311,10 @@ class ReplicateEmbeddingService implements EmbeddingService {
       const providerAdmission = await acquireEmbeddingProviderAdmission();
       if (!providerAdmission.allowed || !providerAdmission.lease) {
         // The circuit can open after the paid reservation commits. Refund the
-        // exact minute lease and daily bucket that were actually persisted.
+        // exact minute/day/month reservation that was actually persisted.
+        reservationRefundRequired = true;
         await refundEmbeddingAdmissionCapacity(lease, dailyReservation);
+        reservationRefundRequired = false;
         if (providerAdmission.reason === 'provider_rate_limit') {
           throw new EmbeddingProviderCircuitOpenError(
             providerAdmission.retryAfterSec
@@ -315,7 +336,9 @@ class ReplicateEmbeddingService implements EmbeddingService {
         throw error;
       }
     } finally {
-      await releaseEmbeddingRateLimit(reservedLease);
+      if (!reservationRefundRequired) {
+        await releaseEmbeddingRateLimit(reservedLease);
+      }
     }
   }
 
@@ -393,10 +416,11 @@ class ReplicateEmbeddingService implements EmbeddingService {
     // Replicate's ApiError keeps the HTTP response under `response`; retain
     // that provider contract here so real 429/5xx outcomes do not fall
     // through to the generic unavailable path.
-    const response = (error as any)?.response;
+    const envelope = asReplicateErrorEnvelope(error);
+    const response = envelope.response;
     const status =
-      (error as any)?.status ??
-      (error as any)?.statusCode ??
+      envelope.status ??
+      envelope.statusCode ??
       response?.status ??
       response?.statusCode;
     const message =

@@ -53,6 +53,14 @@ export function readBootstrapVersion(root = repoRoot) {
   return version;
 }
 
+function applyOnlineEmbeddingIndex(databaseUrl, env) {
+  const helper = resolve(repoRoot, 'apps/web/scripts/apply-online-embedding-index.mjs');
+  execFileSync(process.execPath, [helper], {
+    stdio: 'inherit',
+    env: { ...env, DATABASE_URL: databaseUrl },
+  });
+}
+
 // Last-resort durable failed state, independent of the rollback script.
 const FAILED_MARKER_SQL = `
 CREATE SCHEMA IF NOT EXISTS sploot_bootstrap;
@@ -88,7 +96,7 @@ function psqlEnvironment(rawUrl, env) {
   return childEnv;
 }
 
-export function runMigrateDeploy(env = process.env) {
+export function runMigrateDeploy(env = process.env, options = {}) {
   const pooled = env.DATABASE_URL;
   const bootstrapUrl = env.STRIPE_LEDGER_BOOTSTRAP_DATABASE_URL;
   const bootstrapRequired = env.STRIPE_LEDGER_BOOTSTRAP_REQUIRED === 'true';
@@ -116,6 +124,10 @@ export function runMigrateDeploy(env = process.env) {
     stage = 'prisma-migrate';
     console.log('[migrate-deploy] running prisma migrate deploy...');
     execSync('prisma migrate deploy', { stdio: 'inherit', env: { ...env, DATABASE_URL: migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl } });
+    if (options.applyOnlineIndex ?? (env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test')) {
+      stage = 'online-embedding-index';
+      applyOnlineEmbeddingIndex(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl, env);
+    }
     stage = 'post-bootstrap';
     if (bootstrapUrl) privileged(post);
   } catch (error) {

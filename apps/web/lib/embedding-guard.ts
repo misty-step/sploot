@@ -215,59 +215,107 @@ export async function acquireEmbeddingProcessing(
 
 export async function markEmbeddingFailed(
   assetId: string,
-  errorMessage: string
+  errorMessage: string,
+  expectedProcessingClaimToken?: string,
 ): Promise<void> {
   if (!prisma) {
     return;
   }
 
-  await prisma.assetEmbedding.upsert({
-    where: { assetId },
-    create: {
-      assetId,
-      modelName: 'unknown',
-      modelVersion: 'unknown',
-      dim: 0,
-      status: 'failed',
-      error: errorMessage,
-    },
-    update: {
-      status: 'failed',
-      error: errorMessage,
-      processingClaimToken: null,
-    },
-  });
+  if (expectedProcessingClaimToken) {
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE "asset_embeddings"
+      SET "status" = 'failed',
+          "error" = ${errorMessage},
+          "processing_claim_token" = NULL,
+          "updatedAt" = NOW()
+      WHERE "asset_id" = ${assetId}
+        AND "status" = 'processing'
+        AND "processing_claim_token" = ${expectedProcessingClaimToken}
+        AND "image_embedding" IS NULL
+        AND ("dim" IS NULL OR "dim" = 0)
+        AND "terminal_at" IS NULL
+    `);
+    return;
+  }
+
+  await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO "asset_embeddings" (
+      "asset_id", "model_name", "model_version", "dim", "status", "error",
+      "createdAt", "updatedAt"
+    ) VALUES (
+      ${assetId}, 'unknown', 'unknown', 0, 'failed', ${errorMessage}, NOW(), NOW()
+    )
+    ON CONFLICT ("asset_id") DO UPDATE SET
+      "status" = 'failed',
+      "error" = EXCLUDED."error",
+      "processing_claim_token" = NULL,
+      "updatedAt" = NOW()
+    WHERE "asset_embeddings"."image_embedding" IS NULL
+      AND ("asset_embeddings"."dim" IS NULL OR "asset_embeddings"."dim" = 0)
+      AND NOT (
+        "asset_embeddings"."status" = 'processing'
+        AND "asset_embeddings"."processing_claim_token" IS NOT NULL
+      )
+      AND "asset_embeddings"."terminal_at" IS NULL
+  `);
 }
 
 export async function markEmbeddingTerminalSkipped(
   assetId: string,
-  errorMessage: string
+  errorMessage: string,
+  expectedProcessingClaimToken?: string,
 ): Promise<void> {
   if (!prisma) {
     return;
   }
 
-  const now = new Date();
-  await prisma.assetEmbedding.upsert({
-    where: { assetId },
-    create: {
-      assetId,
-      modelName: 'unsupported-media',
-      modelVersion: 'unsupported-media',
-      dim: 0,
-      status: 'failed',
-      error: errorMessage,
-      terminalAt: now,
-    },
-    update: {
-      modelName: 'unsupported-media',
-      modelVersion: 'unsupported-media',
-      dim: 0,
-      status: 'failed',
-      error: errorMessage,
-      nextAttemptAt: null,
-      terminalAt: now,
-      processingClaimToken: null,
-    },
-  });
+  if (expectedProcessingClaimToken) {
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE "asset_embeddings"
+      SET "model_name" = 'unsupported-media',
+          "model_version" = 'unsupported-media',
+          "dim" = 0,
+          "status" = 'failed',
+          "error" = ${errorMessage},
+          "next_attempt_at" = NULL,
+          "terminal_at" = NOW(),
+          "processing_claim_token" = NULL,
+          "updatedAt" = NOW()
+      WHERE "asset_id" = ${assetId}
+        AND "status" = 'processing'
+        AND "processing_claim_token" = ${expectedProcessingClaimToken}
+        AND "image_embedding" IS NULL
+        AND ("dim" IS NULL OR "dim" = 0)
+        AND "terminal_at" IS NULL
+    `);
+    return;
+  }
+
+  await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO "asset_embeddings" (
+      "asset_id", "model_name", "model_version", "dim", "status", "error",
+      "terminal_at", "createdAt", "updatedAt"
+    ) VALUES (
+      ${assetId}, 'unsupported-media', 'unsupported-media', 0, 'failed',
+      ${errorMessage}, NOW(), NOW(), NOW()
+    )
+    ON CONFLICT ("asset_id") DO UPDATE SET
+      "model_name" = 'unsupported-media',
+      "model_version" = 'unsupported-media',
+      "dim" = 0,
+      "status" = 'failed',
+      "error" = EXCLUDED."error",
+      "next_attempt_at" = NULL,
+      "terminal_at" = NOW(),
+      "processing_claim_token" = NULL,
+      "updatedAt" = NOW()
+    WHERE "asset_embeddings"."image_embedding" IS NULL
+      AND ("asset_embeddings"."dim" IS NULL OR "asset_embeddings"."dim" = 0)
+      AND NOT (
+        "asset_embeddings"."status" = 'processing'
+        AND "asset_embeddings"."processing_claim_token" IS NOT NULL
+      )
+      AND "asset_embeddings"."terminal_at" IS NULL
+  `);
 }

@@ -726,6 +726,9 @@ export async function upsertAssetEmbedding(
         WHERE "asset_id" = ${assetId}
           AND "status" = 'processing'
           AND "processing_claim_token" = ${expectedProcessingClaimToken}
+          AND "image_embedding" IS NULL
+          AND ("dim" IS NULL OR "dim" = 0)
+          AND "terminal_at" IS NULL
         RETURNING
           "asset_id" AS "assetId",
           "model_name" AS "modelName",
@@ -774,6 +777,13 @@ export async function upsertAssetEmbedding(
         "processing_claim_token" = NULL,
         "completedAt" = NOW(),
         "updatedAt" = NOW()
+      WHERE "asset_embeddings"."image_embedding" IS NULL
+        AND ("asset_embeddings"."dim" IS NULL OR "asset_embeddings"."dim" = 0)
+        AND NOT (
+          "asset_embeddings"."status" = 'processing'
+          AND "asset_embeddings"."processing_claim_token" IS NOT NULL
+        )
+        AND "asset_embeddings"."terminal_at" IS NULL
       RETURNING
         "asset_id" AS "assetId",
         "model_name" AS "modelName",

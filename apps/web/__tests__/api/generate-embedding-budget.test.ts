@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   markEmbeddingFailed: vi.fn(),
   markEmbeddingTerminalSkipped: vi.fn(),
   deferEmbeddingAdmission: vi.fn(),
+  getEmbeddingProviderCircuit: vi.fn(),
   logInfo: vi.fn(),
   logError: vi.fn(),
   userFindUnique: vi.fn(),
@@ -62,7 +63,7 @@ vi.mock('@/lib/embedding-guard', () => ({
 }));
 
 vi.mock('@/lib/embedding-resilience', () => ({
-  getEmbeddingProviderCircuit: vi.fn().mockResolvedValue({ available: true, open: false }),
+  getEmbeddingProviderCircuit: mocks.getEmbeddingProviderCircuit,
   isEmbeddingAdmissionFailure: (error: unknown) => error instanceof Error && error.name === 'EmbeddingAdmissionError',
   getEmbeddingAdmissionReason: (error: { reason: string }) => error.reason,
   deferEmbeddingAdmission: mocks.deferEmbeddingAdmission,
@@ -126,6 +127,7 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
       processingClaimToken: PROCESSING_CLAIM_TOKEN,
     });
     mocks.resolveEmbeddingGateState.mockReturnValue({ state: 'available' });
+    mocks.getEmbeddingProviderCircuit.mockResolvedValue({ available: true, open: false });
     mocks.createEmbeddingService.mockReturnValue({
       embedImage: vi
         .fn()
@@ -202,10 +204,40 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
     });
     expect(mocks.acquireEmbeddingProcessing).not.toHaveBeenCalled();
     expect(mocks.createEmbeddingService).not.toHaveBeenCalled();
+    expect(mocks.getEmbeddingProviderCircuit).not.toHaveBeenCalled();
     expect(mocks.markEmbeddingTerminalSkipped).toHaveBeenCalledWith(
       'asset-video',
       'Unsupported video without a poster thumbnail'
     );
+  });
+
+  it('does not read the provider circuit for ready, processing, or cooldown work', async () => {
+    for (const state of ['ready', 'processing', 'cooldown'] as const) {
+      vi.clearAllMocks();
+      mocks.getAuth.mockResolvedValue({ userId: 'user-1' });
+      mocks.authenticateRequest.mockResolvedValue({
+        status: 'authenticated',
+        principal: { userId: 'user-1' },
+        syncStatus: 'success',
+      });
+      mocks.userFindUnique.mockResolvedValue({ id: 'user-1' });
+      mocks.findAsset.mockResolvedValue({
+        id: `asset-${state}`,
+        blobUrl: 'https://blob.example/image.jpg',
+        checksumSha256: 'sha-256',
+        mime: 'image/jpeg',
+        thumbnailUrl: null,
+        embedding: state === 'ready' ? { dim: 768 } : null,
+      });
+      mocks.resolveEmbeddingGateState.mockReturnValue({ state, retryAfterMs: 30_000 });
+
+      await POST(request(`asset-${state}`), {
+        params: Promise.resolve({ id: `asset-${state}` }),
+      });
+
+      expect(mocks.getEmbeddingProviderCircuit).not.toHaveBeenCalled();
+      expect(mocks.createEmbeddingService).not.toHaveBeenCalled();
+    }
   });
 
   it.each([

@@ -321,46 +321,54 @@ export async function releaseEmbeddingRateLimit(
 export async function refundEmbeddingAdmissionCapacity(
   lease: EmbeddingRateLimitLease,
   dailyReservation: EmbeddingDailyBudgetReservation | undefined,
-): Promise<void> {
-  if (!prisma) return;
+): Promise<boolean> {
+  if (!prisma) throw new Error('Postgres is not configured');
 
-  try {
-    await withLimiterLock(async (tx) => {
-      const deleted = await tx.embeddingRateLease.deleteMany({
-        where: { id: lease.id },
-      });
-      if (deleted.count === 0) return;
-
-      const windowId = lease.windowId ?? getWindowId(Date.now());
-      await tx.embeddingRateBucket.updateMany({
-        where: {
-          key: {
-            in: [
-              `embedding:rate:user:${lease.userId}:${windowId}`,
-              `${GLOBAL_WINDOW_KEY_PREFIX}:${windowId}`,
-            ],
-          },
-          count: { gt: 0 },
-        },
-        data: { count: { decrement: 1 } },
-      });
-
-      if (dailyReservation) {
-        await tx.embeddingRateBucket.updateMany({
-          where: {
-            key: `embedding:daily:${dailyReservation.dateKey}`,
-            count: { gt: 0 },
-          },
-          data: { count: { decrement: 1 } },
+  let lastError: unknown;
+  // The transaction is idempotent: a committed lease delete makes a retry a
+  // no-op, while a rolled-back transaction leaves the lease and all buckets
+  // charged for the next attempt. Keep the retry bounded and observable.
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await withLimiterLock(async (tx) => {
+        const deleted = await tx.embeddingRateLease.deleteMany({
+          where: { id: lease.id },
         });
-      }
-    });
-  } catch (error) {
-    logger.logError('embedding-rate-limit.refund-failed', error, {
-      leaseId: lease.id,
-      userId: lease.userId,
-    });
+        if (deleted.count === 0) return;
+
+        const windowId = lease.windowId ?? getWindowId(Date.now());
+        await decrementReservedBucket(
+          tx,
+          `embedding:rate:user:${lease.userId}:${windowId}`
+        );
+        await decrementReservedBucket(tx, `${GLOBAL_WINDOW_KEY_PREFIX}:${windowId}`);
+
+        if (dailyReservation) {
+          await decrementReservedBucket(
+            tx,
+            `embedding:daily:${dailyReservation.dateKey}`
+          );
+          await decrementReservedBucket(
+            tx,
+            `embedding:monthly:${dailyReservation.monthKey}`
+          );
+        }
+      });
+      return true;
+    } catch (error) {
+      lastError = error;
+      logger.logError('embedding-rate-limit.refund-failed', error, {
+        leaseId: lease.id,
+        userId: lease.userId,
+        attempt,
+        retrying: attempt < 2,
+      });
+    }
   }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Embedding admission refund failed');
 }
 
 export async function acquireEmbeddingDailyBudget(

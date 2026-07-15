@@ -23,7 +23,7 @@
     "stripe:recreate": "tsx scripts/stripe-recreate-subscriptions.ts",
     "auth:guard": "node scripts/check-auth-boundary.mjs",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy",
+    "db:migrate": "node scripts/migrate-deploy.mjs",
     "db:migrate:dev": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",

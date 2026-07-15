@@ -6,9 +6,10 @@ ALTER TABLE "asset_embeddings"
   ADD COLUMN IF NOT EXISTS "next_attempt_at" TIMESTAMP(3),
   ADD COLUMN IF NOT EXISTS "terminal_at" TIMESTAMP(3);
 
-CREATE INDEX IF NOT EXISTS "asset_embeddings_pending_next_attempt_idx"
-  ON "asset_embeddings"("status", "next_attempt_at", "createdAt")
-  WHERE "status" = 'pending' AND "terminal_at" IS NULL;
+-- The pending-attempt index is created concurrently by the repo-owned
+-- migrate-deploy runner after this migration commits. Prisma 6.19.3 wraps
+-- migration SQL in a transaction, so keeping CREATE INDEX CONCURRENTLY here
+-- would make every deploy fail before the resilience columns are usable.
 
 CREATE TABLE IF NOT EXISTS "embedding_provider_circuits" (
   "key" TEXT NOT NULL,

@@ -185,12 +185,19 @@ export function validateInputs(inputs, now = new Date()) {
   );
   if (retrievalDates.size !== 1) errors.push('rate registry must use one retrieval date');
 
+  const scenarioIds = new Set();
   for (const scenario of inputs.scenarios) {
     if (!scenario || typeof scenario !== 'object' || Array.isArray(scenario)) {
       errors.push('scenario entries must be objects');
       continue;
     }
-    if (typeof scenario.id !== 'string' || scenario.id.length === 0) errors.push('scenario id is required');
+    if (typeof scenario.id !== 'string' || scenario.id.length === 0) {
+      errors.push('scenario id is required');
+    } else if (scenarioIds.has(scenario.id)) {
+      errors.push(`duplicate scenario: ${scenario.id}`);
+    } else {
+      scenarioIds.add(scenario.id);
+    }
     if (typeof scenario.label !== 'string' || scenario.label.length === 0) errors.push(`scenario ${scenario.id ?? '<unknown>'}.label is required`);
     for (const key of REQUIRED_SCENARIO_NUMBERS) {
       const value = scenario[key];

@@ -18,4 +18,7 @@ ALTER TABLE "embedding_rate_buckets"
   CHECK (
     ("key" NOT LIKE 'embedding:daily:%' OR "count" <= 684)
     AND ("key" NOT LIKE 'embedding:monthly:%' OR "count" <= 20547)
-  );
+  ) NOT VALID;
+
+ALTER TABLE "embedding_rate_buckets"
+  VALIDATE CONSTRAINT "embedding_budget_hard_ceiling";

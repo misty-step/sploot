@@ -23,6 +23,7 @@ import {
 } from '@/lib/embedding-guard';
 import {
   deferEmbeddingAdmission,
+  deferEmbeddingProviderInitialization,
   getEmbeddingAdmissionReason,
   getEmbeddingProviderCircuit,
   isGlobalEmbeddingAdmissionReason,
@@ -261,10 +262,8 @@ async function getHandler(request: NextRequest) {
           try {
             embeddingService = createEmbeddingService(asset.ownerUserId);
           } catch (error) {
-            // Initialization is part of the durable attempt, not a preflight
-            // escape hatch.  A malformed/missing runtime configuration must
-            // therefore poison this claimed asset on the same bounded path as
-            // an execution failure instead of leaving `processing` stranded.
+            // Initialization happens before any paid provider attempt. Defer
+            // the exact claim without consuming the asset's poison budget.
             const providerError =
               error instanceof EmbeddingProviderCircuitOpenError ||
               error instanceof EmbeddingProviderRateLimitError ||
@@ -301,9 +300,10 @@ async function getHandler(request: NextRequest) {
               });
               break;
             }
-            const failure = await recordEmbeddingAttemptFailure(
+            const deferred = await deferEmbeddingProviderInitialization(
               asset.id,
               errorMessage,
+              retryAfterSec,
               processingClaimToken,
             );
             stats.failureCount++;
@@ -316,10 +316,10 @@ async function getHandler(request: NextRequest) {
               retryAfterSec,
             });
             batchOutcomeReason = providerError.reason;
-            logger.logInfo('cron.process-embeddings.initialization-failure-recorded', {
+            logger.logInfo('cron.process-embeddings.initialization-deferred', {
               assetId: asset.id,
-              attemptCount: failure?.attemptCount,
-              terminal: failure?.terminal,
+              deferred,
+              attemptCount: 0,
               reason: providerError.reason,
             });
             batchOutcome = 'backoff';
@@ -434,11 +434,11 @@ async function getHandler(request: NextRequest) {
             batchOutcomeReason = reason;
             break;
           }
-          batchRetryAfterSec = Math.max(
-            batchRetryAfterSec ?? 0,
-            retryAfterSec ?? 30
-          );
-          batchOutcomeReason ??= reason;
+          const candidateRetryAfterSec = retryAfterSec ?? 30;
+          if (candidateRetryAfterSec >= (batchRetryAfterSec ?? 0)) {
+            batchRetryAfterSec = candidateRetryAfterSec;
+            batchOutcomeReason = reason;
+          }
           continue;
         }
 

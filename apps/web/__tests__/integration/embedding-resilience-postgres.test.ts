@@ -16,6 +16,7 @@ import {
 import {
   acquireEmbeddingProcessing,
   EMBEDDING_PROCESSING_TTL_MS,
+  markEmbeddingTerminalSkipped,
 } from '@/lib/embedding-guard';
 import { EmbeddingSchedulerService } from '@/lib/upload/embedding-scheduler-service';
 import {
@@ -531,9 +532,9 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
         select: { attemptCount: true, status: true, nextAttemptAt: true, terminalAt: true },
       }),
     ).resolves.toMatchObject({
-      attemptCount: 1,
+      attemptCount: 0,
       status: 'pending',
-      nextAttemptAt: new Date(nowMs + 60_000),
+      nextAttemptAt: new Date(nowMs + 30_000),
       terminalAt: null,
     });
 
@@ -580,7 +581,7 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     ).resolves.toMatchObject({ attemptCount: 0, status: 'ready', terminalAt: null });
   }, 30_000);
 
-  it('claims a null embedding before cron initialization and poison-bounds restart rediscovery', async () => {
+  it('claims a null embedding before cron initialization without consuming poison budget', async () => {
     const nullAssetId = chainAssetIds[9];
     const nullUserId = chainUserIds[9];
     const baseNowMs = Date.UTC(2026, 6, 14, 19, 0, 0);
@@ -620,10 +621,10 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
         select: { attemptCount: true, status: true, nextAttemptAt: true, terminalAt: true },
       }),
     ).resolves.toMatchObject({
-      attemptCount: 3,
-      status: 'failed',
-      nextAttemptAt: null,
-      terminalAt: new Date(baseNowMs + 180_000),
+      attemptCount: 0,
+      status: 'pending',
+      nextAttemptAt: new Date(baseNowMs + 210_000),
+      terminalAt: null,
     });
     expect(providerRun).not.toHaveBeenCalled();
   }, 30_000);
@@ -725,7 +726,7 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     expect(providerRun).not.toHaveBeenCalled();
   }, 30_000);
 
-  it('poisons repeated scheduler initialization failures without stranding failed state', async () => {
+  it('keeps repeated scheduler initialization failures retryable without consuming poison budget', async () => {
     const baseNowMs = Date.UTC(2026, 6, 14, 17, 0, 0);
     vi.useFakeTimers();
     vi.setSystemTime(baseNowMs);
@@ -743,10 +744,10 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
         select: { attemptCount: true, status: true, nextAttemptAt: true, terminalAt: true },
       }),
     ).resolves.toMatchObject({
-      attemptCount: EMBEDDING_MAX_ATTEMPTS,
-      status: 'failed',
-      nextAttemptAt: null,
-      terminalAt: new Date(baseNowMs + 180_000),
+      attemptCount: 0,
+      status: 'pending',
+      nextAttemptAt: new Date(baseNowMs + 210_000),
+      terminalAt: null,
     });
   }, 30_000);
 
@@ -885,6 +886,80 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       nextAttemptAt: null,
       completedAt: null,
     });
+  }, 30_000);
+
+  it('refuses unclaimed writes against ready and actively claimed rows', async () => {
+    await prisma.user.create({
+      data: { id: userId, email: `${userId}@example.test` },
+    });
+    await prisma.asset.create({
+      data: {
+        id: assetId,
+        ownerUserId: userId,
+        blobUrl: 'https://embedding-resilience.public.blob.vercel-storage.com/guarded.jpg',
+        pathname: 'guarded.jpg',
+        mime: 'image/jpeg',
+        size: 1,
+        checksumSha256: 'guarded',
+      },
+    });
+    await prisma.assetEmbedding.create({
+      data: {
+        assetId,
+        modelName: 'pending',
+        modelVersion: 'pending',
+        dim: 0,
+        status: 'pending',
+      },
+    });
+
+    const claim = await acquireEmbeddingProcessing(assetId);
+    expect(claim.acquired).toBe(true);
+    await expect(
+      upsertAssetEmbedding({
+        assetId,
+        modelName: 'unclaimed-model',
+        modelVersion: 'unclaimed-model',
+        dim: 768,
+        embedding: Array(768).fill(0.1),
+      }),
+    ).resolves.toBeNull();
+    await markEmbeddingTerminalSkipped(assetId, 'unsupported');
+    await expect(
+      prisma.assetEmbedding.findUnique({
+        where: { assetId },
+        select: { status: true, dim: true, processingClaimToken: true },
+      }),
+    ).resolves.toMatchObject({
+      status: 'processing',
+      dim: 0,
+      processingClaimToken: claim.processingClaimToken,
+    });
+
+    await prisma.assetEmbedding.update({
+      where: { assetId },
+      data: {
+        status: 'ready',
+        dim: 768,
+        processingClaimToken: null,
+      },
+    });
+    await expect(
+      upsertAssetEmbedding({
+        assetId,
+        modelName: 'late-model',
+        modelVersion: 'late-model',
+        dim: 768,
+        embedding: Array(768).fill(0.2),
+      }),
+    ).resolves.toBeNull();
+    await markEmbeddingTerminalSkipped(assetId, 'unsupported');
+    await expect(
+      prisma.assetEmbedding.findUnique({
+        where: { assetId },
+        select: { status: true, dim: true },
+      }),
+    ).resolves.toMatchObject({ status: 'ready', dim: 768 });
   }, 30_000);
 
   it('quarantines a fresh terminal row against immediate owner retry without touching state', async () => {

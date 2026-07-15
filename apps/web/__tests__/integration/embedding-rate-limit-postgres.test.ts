@@ -203,6 +203,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
     const nowMs = Date.UTC(2026, 6, 10, 12, 0, 0);
     const windowId = Math.floor(nowMs / 60_000);
     const dailyKey = 'embedding:daily:2026-07-10';
+    const monthlyKey = 'embedding:monthly:2026-07';
     const userKey = `embedding:rate:user:atomic-denial:${windowId}`;
     const globalKey = `embedding:rate:global:${windowId}`;
 
@@ -215,11 +216,15 @@ describeWithDatabase('Postgres embedding limiter', () => {
         NOW()
       )
     `;
+    await prisma.$executeRaw`
+      INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
+      VALUES (${monthlyKey}, 7, NOW() + INTERVAL '32 days', NOW())
+    `;
 
     const before = await prisma.$queryRaw<Array<{ key: string; count: number }>>`
       SELECT "key", "count"
       FROM "embedding_rate_buckets"
-      WHERE "key" IN (${dailyKey}, ${userKey}, ${globalKey})
+      WHERE "key" IN (${dailyKey}, ${monthlyKey}, ${userKey}, ${globalKey})
       ORDER BY "key"
     `;
 
@@ -229,7 +234,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
     const after = await prisma.$queryRaw<Array<{ key: string; count: number }>>`
       SELECT "key", "count"
       FROM "embedding_rate_buckets"
-      WHERE "key" IN (${dailyKey}, ${userKey}, ${globalKey})
+      WHERE "key" IN (${dailyKey}, ${monthlyKey}, ${userKey}, ${globalKey})
       ORDER BY "key"
     `;
     const leaseCount = await prisma.embeddingRateLease.count({
@@ -309,6 +314,66 @@ describeWithDatabase('Postgres embedding limiter', () => {
     })).toBe(0);
   });
 
+  it('keeps the only lease when an atomic refund fails, then retries safely', async () => {
+    const nowMs = Date.UTC(2026, 6, 10, 14, 30, 0);
+    const admitted = await acquireEmbeddingAdmissionReservation('atomic-user-a', nowMs);
+    expect(admitted.allowed).toBe(true);
+    const reservation = admitted.reservation!;
+
+    await prisma.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION sploot_test_refund_failure()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'forced refund failure';
+      END;
+      $$
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TRIGGER sploot_test_refund_failure_trigger
+      BEFORE UPDATE ON "embedding_rate_buckets"
+      FOR EACH ROW EXECUTE FUNCTION sploot_test_refund_failure()
+    `);
+
+    try {
+      await expect(
+        refundEmbeddingAdmissionCapacity(
+          reservation.lease,
+          reservation.dailyReservation,
+        ),
+      ).rejects.toThrow('forced refund failure');
+
+      expect(await prisma.embeddingRateLease.count({
+        where: { id: reservation.lease.id },
+      })).toBe(1);
+      const windowId = reservation.lease.windowId ?? Math.floor(nowMs / 60_000);
+      const reservationKeys = [
+        `embedding:rate:user:${reservation.lease.userId}:${windowId}`,
+        `embedding:rate:global:${windowId}`,
+        `embedding:daily:${reservation.dailyReservation?.dateKey}`,
+        `embedding:monthly:${reservation.dailyReservation?.monthKey}`,
+      ];
+      const charged = await prisma.embeddingRateBucket.findMany({
+        where: { key: { in: reservationKeys } },
+        select: { count: true },
+      });
+      expect(charged).toHaveLength(4);
+      expect(charged.filter(({ count }) => count === 1)).toHaveLength(4);
+    } finally {
+      await prisma.$executeRawUnsafe('DROP TRIGGER IF EXISTS sploot_test_refund_failure_trigger ON "embedding_rate_buckets"');
+      await prisma.$executeRawUnsafe('DROP FUNCTION IF EXISTS sploot_test_refund_failure()');
+    }
+
+    await expect(
+      refundEmbeddingAdmissionCapacity(
+        reservation.lease,
+        reservation.dailyReservation,
+      ),
+    ).resolves.toBe(true);
+    expect(await prisma.embeddingRateLease.count({
+      where: { id: reservation.lease.id },
+    })).toBe(0);
+  });
+
   it('releases the lease and surviving capacity when one reserved bucket was pruned', async () => {
     const nowMs = Date.UTC(2026, 6, 10, 14, 5, 0);
     const windowId = Math.floor(nowMs / 60_000);
@@ -345,6 +410,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
     const nowMs = Date.UTC(2026, 6, 10, 13, 0, 0);
     const windowId = Math.floor(nowMs / 60_000);
     const dailyKey = 'embedding:daily:2026-07-10';
+    const monthlyKey = 'embedding:monthly:2026-07';
 
     await prisma.$executeRaw`
       INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
@@ -375,7 +441,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
     const buckets = await prisma.$queryRaw<Array<{ key: string; count: number }>>`
       SELECT "key", "count"
       FROM "embedding_rate_buckets"
-      WHERE "key" IN (${dailyKey}, ${userAKey}, ${userBKey}, ${globalKey})
+      WHERE "key" IN (${dailyKey}, ${monthlyKey}, ${userAKey}, ${userBKey}, ${globalKey})
       ORDER BY "key"
     `;
     const leases = await prisma.embeddingRateLease.findMany({
@@ -384,6 +450,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
     });
 
     expect(buckets).toContainEqual({ key: dailyKey, count: EMBEDDING_DAILY_BUDGET });
+    expect(buckets).toContainEqual({ key: monthlyKey, count: 1 });
     expect(buckets).toContainEqual({ key: globalKey, count: 1 });
     expect(buckets).toContainEqual({
       key: `embedding:rate:user:${allowedUserId}:${windowId}`,

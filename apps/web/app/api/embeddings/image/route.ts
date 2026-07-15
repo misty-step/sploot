@@ -102,13 +102,19 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     );
 
     if (assetId && prisma) {
-      await upsertAssetEmbedding({
+      const storedEmbedding = await upsertAssetEmbedding({
         assetId,
         modelName: result.model,
         modelVersion: result.model,
         dim: result.dimension,
         embedding: result.embedding,
       });
+      if (!storedEmbedding) {
+        return NextResponse.json(
+          { error: 'Embedding state changed; retry the request' },
+          { status: 409 },
+        );
+      }
     }
 
     return NextResponse.json({

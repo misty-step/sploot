@@ -526,8 +526,13 @@ export async function deferEmbeddingAdmission(
       WHERE "asset_id" = ${assetId}
         AND "terminal_at" IS NULL
         ${expectedProcessingClaimToken
-          ? Prisma.sql`AND "status" = 'processing' AND "processing_claim_token" = ${expectedProcessingClaimToken}`
-          : Prisma.empty}
+          ? Prisma.sql`AND "status" = 'processing'
+              AND "processing_claim_token" = ${expectedProcessingClaimToken}
+              AND "image_embedding" IS NULL
+              AND ("dim" IS NULL OR "dim" = 0)`
+          : Prisma.sql`AND "image_embedding" IS NULL
+              AND ("dim" IS NULL OR "dim" = 0)
+              AND NOT ("status" = 'processing' AND "processing_claim_token" IS NOT NULL)`}
     `);
     return updated === 1;
   } catch (error) {
@@ -546,6 +551,49 @@ export async function deferEmbeddingAdmission(
       nowMs,
     );
     return fallback !== null;
+  }
+}
+
+/**
+ * Defer work that failed before a paid provider attempt existed. This path is
+ * claim-fenced but deliberately does not increment the poison counter: a
+ * missing token or malformed provider client is an operational deferral, not
+ * an asset attempt.
+ */
+export async function deferEmbeddingProviderInitialization(
+  assetId: string,
+  errorMessage: string,
+  retryAfterSec: number | undefined,
+  expectedProcessingClaimToken: string | undefined,
+  nowMs: number = Date.now(),
+): Promise<boolean> {
+  if (!prisma || !expectedProcessingClaimToken) return false;
+
+  const now = new Date(nowMs);
+  const nextAttemptAt = new Date(
+    nowMs + admissionBackoffSeconds('provider_unavailable', retryAfterSec, nowMs) * 1000,
+  );
+  try {
+    const updated = await prisma.$executeRaw(Prisma.sql`
+      UPDATE "asset_embeddings"
+      SET "status" = 'pending',
+          "error" = ${errorMessage},
+          "next_attempt_at" = ${nextAttemptAt},
+          "terminal_at" = NULL,
+          "processing_claim_token" = NULL,
+          "updatedAt" = ${now}
+      WHERE "asset_id" = ${assetId}
+        AND "status" = 'processing'
+        AND "processing_claim_token" = ${expectedProcessingClaimToken}
+        AND "terminal_at" IS NULL
+    `);
+    return updated === 1;
+  } catch (error) {
+    logger.logError('embedding-provider.initialization-deferral-failed', error, {
+      assetId,
+      retryAfterSec,
+    });
+    return false;
   }
 }
 
@@ -581,8 +629,13 @@ export async function recordEmbeddingAttemptFailure(
     WHERE "asset_id" = ${assetId}
       AND "terminal_at" IS NULL
       ${expectedProcessingClaimToken
-        ? Prisma.sql`AND "status" = 'processing' AND "processing_claim_token" = ${expectedProcessingClaimToken}`
-        : Prisma.empty}
+        ? Prisma.sql`AND "status" = 'processing'
+            AND "processing_claim_token" = ${expectedProcessingClaimToken}
+            AND "image_embedding" IS NULL
+            AND ("dim" IS NULL OR "dim" = 0)`
+        : Prisma.sql`AND "image_embedding" IS NULL
+            AND ("dim" IS NULL OR "dim" = 0)
+            AND NOT ("status" = 'processing' AND "processing_claim_token" IS NOT NULL)`}
     RETURNING
       "attempt_count" AS "attemptCount",
       ("terminal_at" IS NOT NULL) AS terminal,

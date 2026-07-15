@@ -1,4 +1,5 @@
 import { after } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import {
   createEmbeddingService,
@@ -20,6 +21,7 @@ import {
 } from '@/lib/embedding-media';
 import {
   deferEmbeddingAdmission,
+  deferEmbeddingProviderInitialization,
   type EmbeddingAttemptFailure,
   type EmbeddingAdmissionReason,
   getEmbeddingAdmissionReason,
@@ -294,16 +296,20 @@ export class EmbeddingSchedulerService {
         : new EmbeddingProviderUnavailableError(
             'Embedding service initialization failed',
           );
-      const failure = await this.recordAttemptFailureOrFallback(
+      const deferred = await deferEmbeddingProviderInitialization(
         assetId,
         providerError.message,
-        true,
+        providerError.retryAfterSec,
         lock.processingClaimToken,
       );
-      const terminal = failure?.terminal ?? false;
+      if (!deferred) {
+        logger.warn('Embedding initialization deferral was fenced or unavailable', {
+          assetId,
+        });
+      }
       throw new EmbeddingScheduleError(
         `Embedding generation deferred: ${providerError.message}`,
-        !terminal,
+        true,
         providerError,
       );
     }
@@ -314,13 +320,20 @@ export class EmbeddingSchedulerService {
       const result = await embeddingService.embedImage(media.sourceUrl, checksum);
 
       // Store embedding in database
-      await upsertAssetEmbedding({
+      const embedding = await upsertAssetEmbedding({
         assetId,
         modelName: result.model,
         modelVersion: result.model,
         dim: result.dimension,
         embedding: result.embedding,
       }, lock.processingClaimToken);
+
+      if (!embedding) {
+        logger.warn('Embedding write fenced by a newer processing claim', {
+          assetId,
+        });
+        return false;
+      }
 
       logger.info('Embedding stored successfully', {
         assetId,
@@ -503,31 +516,30 @@ export class EmbeddingSchedulerService {
       }
 
       if (expectedProcessingClaimToken) {
-        await prisma.assetEmbedding.updateMany({
-          where: {
-            assetId,
-            status: 'processing',
-            processingClaimToken: expectedProcessingClaimToken,
-          },
-          data: {
-            status: 'pending',
-            error: errorMessage,
-            processingClaimToken: null,
-          },
-        });
+        await prisma.$executeRaw(Prisma.sql`
+          UPDATE "asset_embeddings"
+          SET "status" = 'pending',
+              "error" = ${errorMessage},
+              "processing_claim_token" = NULL
+          WHERE "asset_id" = ${assetId}
+            AND "status" = 'processing'
+            AND "processing_claim_token" = ${expectedProcessingClaimToken}
+            AND "image_embedding" IS NULL
+            AND ("dim" IS NULL OR "dim" = 0)
+            AND "terminal_at" IS NULL
+        `);
       } else {
-        await prisma.assetEmbedding.upsert({
-          where: { assetId },
-          create: {
-            assetId,
-            modelName: 'pending',
-            modelVersion: 'pending',
-            dim: 0,
-            status: 'pending',
-            error: errorMessage,
-          },
-          update: { status: 'pending', error: errorMessage },
-        });
+        await prisma.$executeRaw(Prisma.sql`
+          UPDATE "asset_embeddings"
+          SET "status" = 'pending',
+              "error" = ${errorMessage},
+              "processing_claim_token" = NULL
+          WHERE "asset_id" = ${assetId}
+            AND "image_embedding" IS NULL
+            AND ("dim" IS NULL OR "dim" = 0)
+            AND "terminal_at" IS NULL
+            AND NOT ("status" = 'processing' AND "processing_claim_token" IS NOT NULL)
+        `);
       }
 
       logger.debug('Deferred embedding for retry', { assetId });
@@ -560,31 +572,30 @@ export class EmbeddingSchedulerService {
       }
 
       if (expectedProcessingClaimToken) {
-        await prisma.assetEmbedding.updateMany({
-          where: {
-            assetId,
-            status: 'processing',
-            processingClaimToken: expectedProcessingClaimToken,
-          },
-          data: {
-            status: 'failed',
-            error: errorMessage,
-            processingClaimToken: null,
-          },
-        });
+        await prisma.$executeRaw(Prisma.sql`
+          UPDATE "asset_embeddings"
+          SET "status" = 'failed',
+              "error" = ${errorMessage},
+              "processing_claim_token" = NULL
+          WHERE "asset_id" = ${assetId}
+            AND "status" = 'processing'
+            AND "processing_claim_token" = ${expectedProcessingClaimToken}
+            AND "image_embedding" IS NULL
+            AND ("dim" IS NULL OR "dim" = 0)
+            AND "terminal_at" IS NULL
+        `);
       } else {
-        await prisma.assetEmbedding.upsert({
-          where: { assetId },
-          create: {
-            assetId,
-            modelName: 'unknown',
-            modelVersion: 'unknown',
-            dim: 0,
-            status: 'failed',
-            error: errorMessage,
-          },
-          update: { status: 'failed', error: errorMessage },
-        });
+        await prisma.$executeRaw(Prisma.sql`
+          UPDATE "asset_embeddings"
+          SET "status" = 'failed',
+              "error" = ${errorMessage},
+              "processing_claim_token" = NULL
+          WHERE "asset_id" = ${assetId}
+            AND "image_embedding" IS NULL
+            AND ("dim" IS NULL OR "dim" = 0)
+            AND "terminal_at" IS NULL
+            AND NOT ("status" = 'processing' AND "processing_claim_token" IS NOT NULL)
+        `);
       }
 
       logger.debug('Marked embedding as failed', { assetId });

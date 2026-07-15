@@ -87,6 +87,17 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
     /scenario free.blobDeliveryGb must be a finite nonnegative number/,
   );
 
+  const duplicateScenarioIds = structuredClone(inputs);
+  duplicateScenarioIds.scenarios[1].id = duplicateScenarioIds.scenarios[0].id;
+  assert.match(
+    validateInputs(duplicateScenarioIds).join('\n'),
+    /duplicate scenario: free/,
+  );
+  assert.throws(
+    () => calculateScenario(duplicateScenarioIds, 'free', 'high'),
+    /duplicate scenario: free/,
+  );
+
   const malformedPolicy = structuredClone(inputs);
   malformedPolicy.policy.planBudgets.free.monthlyInfrastructureUsd = Number.NaN;
   malformedPolicy.policy.global.replicateDailyAttempts = -1;

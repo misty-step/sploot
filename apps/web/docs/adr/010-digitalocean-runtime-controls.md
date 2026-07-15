@@ -54,11 +54,14 @@ daily Replicate spend ceiling or permit more concurrent paid work.
 
 the migration is additive: it creates `embedding_rate_buckets` and
 `embedding_rate_leases` plus expiry indexes, without rewriting existing rows.
-DigitalOcean applies Prisma migrations in the singleton
+DigitalOcean applies the repo-owned migration runner in the singleton
 `web-pre-deploy-migrate` `PRE_DEPLOY` job before replacing the web service. The
-service run command is start-only (`pnpm --filter web start`), so restarts and
-replicas cannot rerun migrations. GitHub CI migrates only its pgvector test
-database and never receives the production Neon connection string.
+runner applies Prisma migrations, then builds the pending-attempt index through
+an autocommit `CREATE INDEX CONCURRENTLY` because the pinned Prisma 6.19.3
+engine wraps migration SQL in a transaction. The service run command is
+start-only (`pnpm --filter web start`), so restarts and replicas cannot rerun
+migrations. GitHub CI migrates only its pgvector test database and never
+receives the production Neon connection string.
 
 rolling the application back leaves both tables and the additive
 `embedding_budget_hard_ceiling` constraint in place and preserves all user
@@ -67,7 +70,10 @@ data. The database rejects a daily counter above 684 or a monthly counter above
 current ceiling. Because former runtimes do not maintain the monthly counter,
 operators must set `SPLOOT_EMBEDDINGS_ENABLED=false` and verify the disabled
 route response before a deliberate or extended rollback; it stays disabled
-until the current admission runtime and its DB proof are restored. Share-slug
+until the current admission runtime and its DB proof are restored. The additive
+budget ceiling is installed `NOT VALID` and validated separately, so the old
+runtime remains fail-closed without a blocking constraint-creation scan.
+Share-slug
 resolution still falls through to Postgres. Forward recovery is preferred.
 
 ## proof

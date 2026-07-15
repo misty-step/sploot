@@ -28,6 +28,7 @@ const mockAcquireEmbeddingProcessing = vi.fn();
 const mockGetEmbeddingProviderCircuit = vi.fn();
 const mockRecordEmbeddingAdmissionFailure = vi.fn();
 const mockDeferEmbeddingAdmission = vi.fn();
+const mockDeferEmbeddingProviderInitialization = vi.fn();
 const mockRecordEmbeddingAttemptFailure = vi.fn();
 const mockResetEmbeddingProviderCircuit = vi.fn();
 const mockMarkEmbeddingTerminalSkipped = vi.fn();
@@ -63,6 +64,8 @@ vi.mock('@/lib/embedding-resilience', () => ({
     mockRecordEmbeddingAdmissionFailure(...args),
   deferEmbeddingAdmission: (...args: unknown[]) =>
     mockDeferEmbeddingAdmission(...args),
+  deferEmbeddingProviderInitialization: (...args: unknown[]) =>
+    mockDeferEmbeddingProviderInitialization(...args),
   recordEmbeddingAttemptFailure: (...args: unknown[]) =>
     mockRecordEmbeddingAttemptFailure(...args),
   resetEmbeddingProviderCircuit: () => mockResetEmbeddingProviderCircuit(),
@@ -771,11 +774,13 @@ describe('/api/cron/process-embeddings', () => {
       expect(response.headers.get('X-Sploot-Embedding-Outcome')).toBe(
         'provider_unavailable',
       );
-      expect(mockRecordEmbeddingAttemptFailure).toHaveBeenCalledWith(
+      expect(mockDeferEmbeddingProviderInitialization).toHaveBeenCalledWith(
         'asset-1',
         'Embedding service initialization failed',
+        30,
         PROCESSING_CLAIM_TOKEN,
       );
+      expect(mockRecordEmbeddingAttemptFailure).not.toHaveBeenCalled();
 
       // Assets should have been found first
       expect(mockPrisma.asset.findMany).toHaveBeenCalled();
