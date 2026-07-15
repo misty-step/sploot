@@ -25,6 +25,36 @@ BEGIN
 END
 $$;
 
+-- Create every managed role before convergence. This remains inside the same
+-- transaction, so a later failure still rolls back fresh roles together with
+-- grants, ownership changes, and the durable marker.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_ledger_owner') THEN
+    CREATE ROLE sploot_stripe_ledger_owner NOLOGIN NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_schema_migrator') THEN
+    CREATE ROLE sploot_stripe_schema_migrator NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_ledger_issuer') THEN
+    CREATE ROLE sploot_stripe_ledger_issuer NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_ledger_consumer') THEN
+    CREATE ROLE sploot_stripe_ledger_consumer NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_ledger_maintenance') THEN
+    CREATE ROLE sploot_stripe_ledger_maintenance NOLOGIN NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_adversary') THEN
+    CREATE ROLE sploot_stripe_adversary NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_app') THEN
+    CREATE ROLE sploot_stripe_app NOLOGIN
+      NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
+END
+$$;
+
 -- Existing roles are not trusted merely because they already exist. Converge
 -- every managed role to the least-privilege contract before migration DDL,
 -- including installations where an operator previously made a role
@@ -68,33 +98,6 @@ $$;
 
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_ledger_owner') THEN
-    CREATE ROLE sploot_stripe_ledger_owner NOLOGIN NOINHERIT;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_schema_migrator') THEN
-    CREATE ROLE sploot_stripe_schema_migrator NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_ledger_issuer') THEN
-    CREATE ROLE sploot_stripe_ledger_issuer NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_ledger_consumer') THEN
-    CREATE ROLE sploot_stripe_ledger_consumer NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_ledger_maintenance') THEN
-    CREATE ROLE sploot_stripe_ledger_maintenance NOLOGIN NOINHERIT;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_adversary') THEN
-    CREATE ROLE sploot_stripe_adversary NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_app') THEN
-    CREATE ROLE sploot_stripe_app NOLOGIN
-      NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-  END IF;
-END
-$$;
 
 -- Deliberate mid-setup failure hook for atomicity proof. Enabled by running
 -- the script under PGOPTIONS="-c sploot.stripe_bootstrap_fault=pre". Because

@@ -103,6 +103,18 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(postSql).toContain('final embedding column type/default/nullability contract is incomplete');
   });
 
+  it('creates managed Stripe roles before converging their privileges', () => {
+    const preSql = readFileSync(resolve(webRoot, 'prisma/stripe-ledger-bootstrap-pre.sql'), 'utf8');
+    const convergence = preSql.indexOf("'ALTER ROLE %I NOSUPERUSER");
+
+    expect(convergence).toBeGreaterThan(-1);
+    for (const role of ['sploot_stripe_ledger_owner', 'sploot_stripe_app']) {
+      const creation = preSql.indexOf(`CREATE ROLE ${role}`);
+      expect(creation, `${role} must be created on a fresh database`).toBeGreaterThan(-1);
+      expect(creation, `${role} must exist before ALTER ROLE convergence`).toBeLessThan(convergence);
+    }
+  });
+
   it('keeps the final embedding contract syntactically balanced before isolated DB execution', () => {
     const postSql = readFileSync(resolve(webRoot, 'prisma/stripe-ledger-bootstrap-post.sql'), 'utf8');
     const finalContract = postSql.slice(postSql.indexOf('-- The bootstrap contract is not ready'));
