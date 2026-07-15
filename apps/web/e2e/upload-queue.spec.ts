@@ -217,13 +217,13 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
   const browserBaseURL = baseURL.replace('127.0.0.1', 'sploot-pwa.test');
   const persistentBrowserArgs = [
     '--no-proxy-server',
+    '--proxy-bypass-list=*',
     '--host-resolver-rules=MAP sploot-pwa.test 127.0.0.1',
   ];
   try {
     context = await browser.browserType().launchPersistentContext(userDataDir, {
       args: persistentBrowserArgs,
       baseURL: browserBaseURL,
-      proxy: { server: 'direct://' },
     });
     await context.setOffline(false);
     const signedOut = context.pages()[0] ?? await context.newPage();
@@ -260,7 +260,6 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     context = await browser.browserType().launchPersistentContext(userDataDir, {
       args: persistentBrowserArgs,
       baseURL: browserBaseURL,
-      proxy: { server: 'direct://' },
     });
     const reopened = await context.newPage();
     await context.setOffline(true);
