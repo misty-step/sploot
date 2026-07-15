@@ -26,6 +26,7 @@ let imageBytes = 'original-image';
 const uploadBodies: string[] = [];
 const uploadPayloads: Buffer[] = [];
 const requestLog: string[] = [];
+const workerConsole: string[] = [];
 
 function json(response: import('node:http').ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
@@ -100,6 +101,7 @@ test.beforeEach(() => {
   uploadBodies.length = 0;
   uploadPayloads.length = 0;
   requestLog.length = 0;
+  workerConsole.length = 0;
   uploadMode = 'success';
   imageBytes = 'original-image';
 });
@@ -122,10 +124,36 @@ async function openExtension(testInfo: import('@playwright/test').TestInfo, step
     ],
   }));
   const worker = await waitForMv3Worker(context, testInfo, step);
+  observeWorker(worker);
   await wakeMv3Worker(worker, context, testInfo, step);
   const extensionId = new URL(worker.url()).host;
   const popup = await openMv3Popup(context, extensionId, testInfo, step);
   return { context, popup, worker, extensionId };
+}
+
+function observeWorker(worker: Worker): void {
+  worker.on('console', message => {
+    workerConsole.push(`[${message.type()}] ${message.text().replaceAll(/user-[ab]/g, '<owner>')}`);
+  });
+}
+
+async function screenshotRuntimeDiagnostics(worker: Worker) {
+  return worker.evaluate(async () => {
+    const stored = await chrome.storage.local.get(['sploot:last-save', 'sploot:context-menu-queue']);
+    const notifications = await chrome.notifications.getAll();
+    const jobs = Array.isArray(stored['sploot:context-menu-queue'])
+      ? (stored['sploot:context-menu-queue'] as Array<Record<string, unknown>>).map(job => ({
+        filename: job.filename,
+        state: job.state,
+        hasSourceBytes: Boolean(job.sourceBytes),
+      }))
+      : [];
+    return {
+      saveStatus: stored['sploot:last-save'] ?? null,
+      notificationIds: Object.keys(notifications),
+      jobs,
+    };
+  });
 }
 
 async function setAuth(worker: Worker, userId: string | null) {
@@ -200,6 +228,7 @@ async function stopAndRestart(
       const restarted = context.serviceWorkers().find(worker => worker.url().startsWith('chrome-extension://'));
       expect(restarted).toBeTruthy();
       const worker = restarted!;
+      observeWorker(worker);
       await wakeMv3Worker(worker, context, testInfo, step);
       return worker;
     } finally {
@@ -283,9 +312,31 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     const fixture = await context.newPage();
     await fixture.goto(`${API_ORIGIN}/fixture`);
     await fixture.bringToFront();
+    await runMv3Step(context, testInfo, step, 'active HTTP screenshot tab', async () => {
+      const activeTab = await worker.evaluate(async () => {
+        const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+        return { url: tab?.url ?? null, windowId: tab?.windowId ?? null };
+      });
+      expect(activeTab).toEqual({ url: `${API_ORIGIN}/fixture`, windowId: expect.any(Number) });
+    });
     uploadMode = 'failure';
-    const captureResult = await send<{ completed: boolean }>({ type: CAPTURE }, 'screenshot capture message');
-    expect(captureResult).toEqual({ completed: true });
+    const captureResult = await send<{
+      completed: boolean;
+      stage?: string;
+      reason?: string;
+    }>({ type: CAPTURE }, 'screenshot capture message');
+    await runMv3Step(context, testInfo, step, 'screenshot capture acknowledged by background', async () => {
+      if (!captureResult.completed) {
+        const runtime = await screenshotRuntimeDiagnostics(worker);
+        throw new Error([
+          `screenshot capture failed: ${JSON.stringify(captureResult)}`,
+          `runtime=${JSON.stringify(runtime)}`,
+          `workerConsole=${JSON.stringify(workerConsole)}`,
+          `requests=${JSON.stringify(requestLog)}`,
+        ].join(' '));
+      }
+      expect(captureResult).toEqual({ completed: true });
+    });
     await waitForQueue(worker, context, testInfo, step, 'screenshot bytes persisted', jobs => jobs.some(job => (
       job.filename.startsWith('screenshot-')
       && job.sourceBytes

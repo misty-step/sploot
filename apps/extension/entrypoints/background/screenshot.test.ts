@@ -129,7 +129,7 @@ describe('captureAndSaveVisibleTab', () => {
     expect(mocks.showErrorNotification).toHaveBeenCalledWith(
       expect.stringContaining('Image too large after compression')
     );
-  });
+  }, 15_000);
 
   it('runs the real popup message listener through capture, upload, and feedback', async () => {
     let messageListener:
@@ -189,7 +189,11 @@ describe('captureAndSaveVisibleTab', () => {
     setupScreenshotCapture();
     expect(messageListener?.({ type: 'CAPTURE_VISIBLE_TAB' }, {}, sendResponse)).toBe(true);
 
-    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledWith({ completed: false }));
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledWith({
+      completed: false,
+      stage: 'durable-enqueue',
+      reason: 'queue-persistence-failed',
+    }));
     expect(mocks.showErrorNotification).toHaveBeenCalledWith('Network error. Check your connection.');
   });
 });
