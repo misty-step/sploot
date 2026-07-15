@@ -35,6 +35,8 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       ...process.env,
+      NO_PROXY: [process.env.NO_PROXY, 'localhost', '127.0.0.1'].filter(Boolean).join(','),
+      no_proxy: [process.env.no_proxy, 'localhost', '127.0.0.1'].filter(Boolean).join(','),
       PORT: String(port),
       SPLOOT_DEPLOYMENT_ENV: process.env.SPLOOT_DEPLOYMENT_ENV ?? 'test',
       SPLOOT_ENROLLMENT_MODE: process.env.SPLOOT_ENROLLMENT_MODE ?? 'closed',

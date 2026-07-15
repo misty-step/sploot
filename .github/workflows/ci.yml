@@ -206,6 +206,8 @@ jobs:
           SPLOOT_QA_AUTH_SECRET: local-playwright-secret-with-enough-entropy
           SPLOOT_DEPLOYMENT_ENV: development
           SPLOOT_ENROLLMENT_MODE: ga
+          NO_PROXY: localhost,127.0.0.1
+          no_proxy: localhost,127.0.0.1
         run: pnpm --filter web e2e:auth -- e2e/portable-telemetry.spec.ts
       - name: Report production-start Playwright failures
         if: ${{ failure() }}
