@@ -17,7 +17,7 @@ export type EmbeddingMediaSelection =
   | {
       sourceUrl: null;
       sourceKind: 'unsupported';
-    skipReason: EmbeddingMediaSkipReason;
+      skipReason: EmbeddingMediaSkipReason;
     };
 
 function normalizeEmbeddingMediaUrl(value: string | null | undefined): string | null {

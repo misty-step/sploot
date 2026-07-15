@@ -28,6 +28,7 @@ import { assertEnrolledUser } from '@/lib/enrollment/enrollment-policy';
 export interface IngestedAsset {
   id: string;
   blobUrl: string;
+  thumbnailUrl?: string | null;
   pathname: string;
   filename: string;
   mimeType: string;
@@ -134,6 +135,7 @@ export async function ingestImage({
       asset: {
         id: deduplicationResult.existingAsset.id,
         blobUrl: deduplicationResult.existingAsset.blobUrl,
+        thumbnailUrl: deduplicationResult.existingAsset.thumbnailUrl ?? null,
         pathname: deduplicationResult.existingAsset.pathname,
         filename: file.name,
         mimeType: deduplicationResult.existingAsset.mime,
@@ -224,6 +226,7 @@ export async function ingestImage({
         asset: {
           id: recordResult.asset.id,
           blobUrl: uploadResult.mainUrl,
+          thumbnailUrl: uploadResult.thumbnailUrl,
           pathname: uploadResult.mainPathname,
           filename: file.name,
           mimeType: file.type,
@@ -268,6 +271,7 @@ export async function ingestImage({
             asset: {
               id: existingAsset.id,
               blobUrl: existingAsset.blobUrl,
+              thumbnailUrl: existingAsset.thumbnailUrl ?? null,
               pathname: existingAsset.pathname,
               filename: file.name,
               mimeType: existingAsset.mime,

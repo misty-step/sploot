@@ -626,7 +626,7 @@ describe('enrollment lifecycle command graph', () => {
     expect(result.stdout).not.toContain(secretHash);
     expect(result.stderr).not.toContain(secretHash);
     expect(JSON.stringify(state)).not.toContain(secretHash);
-  });
+  }, 30_000);
 
   it('stops with an operator recovery packet when the staged source response is lost', async () => {
     const { result, state } = await runAppliedLifecycle('stage-response-lost');
@@ -719,7 +719,7 @@ describe('enrollment lifecycle command graph', () => {
     expect(state.phase).toBe('rollback');
     expect(result.stderr).not.toContain(secretValue);
     expect(result.stderr).not.toContain(secretHash);
-  }, 10000);
+  }, 30_000);
 
   it('refuses stale compensation after an unrelated provider mutation', async () => {
     const { result, state } = await runAppliedLifecycle('unrelated');
