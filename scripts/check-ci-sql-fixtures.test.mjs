@@ -5,6 +5,21 @@ import { readFileSync } from 'node:fs';
 const workflow = readFileSync('.github/workflows/ci.yml', 'utf8');
 const schema = readFileSync('apps/web/prisma/schema.prisma', 'utf8');
 
+function validateHnswPlanProbe(workflowText) {
+  const probe = workflowText.match(/seed_and_explain_hnsw\(\) \{([\s\S]*?)\n          \}\n\n          assert_hnsw_contract/);
+  assert.ok(probe, 'CI must keep one repo-owned HNSW plan probe');
+  const source = probe[1];
+  assert.match(source, /owner_user_id/);
+  assert.match(source, /ae\.status = 'ready'/);
+  assert.match(source, /1 - \(ae\.image_embedding <=>/);
+  assert.match(source, /a\.id ASC/);
+  assert.match(source, /SET LOCAL enable_seqscan = off/);
+  assert.match(source, /BEGIN; SET LOCAL enable_seqscan = off; EXPLAIN[\s\S]*ROLLBACK/);
+  assert.match(source, /Index Scan using asset_embeddings_hnsw_idx/);
+  assert.match(source, /default_plan/);
+  assert.match(source, /transaction-local HNSW capability plan/);
+}
+
 function timestampContracts(prismaSchema) {
   return [...prismaSchema.matchAll(/model\s+(\w+)\s+\{([\s\S]*?)\n\}/g)]
     .map(([, modelName, body]) => {
@@ -54,4 +69,17 @@ test('CI fixture guard rejects an assets timestamp omission', () => {
     'checksum_sha256, "createdAt"',
   );
   assert.throws(() => validateCiSqlFixtures(mutated, schema), /assets fixture is missing updatedAt/);
+});
+
+test('HNSW probe guards the semantic query and deterministic capability oracle', () => {
+  validateHnswPlanProbe(workflow);
+});
+
+test('HNSW probe mutation cannot waive index-use proof or semantic filters', () => {
+  assert.throws(
+    () => validateHnswPlanProbe(workflow.replace("grep -F 'Index Scan using asset_embeddings_hnsw_idx'", "test -n \"$indexed_plan\"")),
+  );
+  assert.throws(
+    () => validateHnswPlanProbe(workflow.replace("ae.status = 'ready'", "ae.status = 'processing'")),
+  );
 });
