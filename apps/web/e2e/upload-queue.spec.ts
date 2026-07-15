@@ -223,6 +223,7 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     context = await browser.browserType().launchPersistentContext(userDataDir, {
       args: persistentBrowserArgs,
       baseURL: browserBaseURL,
+      proxy: { server: 'direct://' },
     });
     await context.setOffline(false);
     const signedOut = context.pages()[0] ?? await context.newPage();
@@ -259,6 +260,7 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     context = await browser.browserType().launchPersistentContext(userDataDir, {
       args: persistentBrowserArgs,
       baseURL: browserBaseURL,
+      proxy: { server: 'direct://' },
     });
     const reopened = await context.newPage();
     await context.setOffline(true);
