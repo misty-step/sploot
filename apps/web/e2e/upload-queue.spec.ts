@@ -62,48 +62,16 @@ async function establishOrigin(page: Page, userId: string): Promise<void> {
 }
 
 async function waitForBrowserHealth(page: Page, timeoutMs = 10_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  let lastFailure: unknown;
-
-  while (Date.now() < deadline) {
-    const remainingMs = Math.max(1, deadline - Date.now());
-    try {
-      const response = await page.goto('/api/health', {
-        waitUntil: 'commit',
-        timeout: Math.min(1_000, remainingMs),
-      });
-      const body = await response?.json() as { status?: string } | undefined;
-      expect(response?.ok()).toBe(true);
-      expect(response?.status()).toBe(200);
-      expect(body).toMatchObject({ status: 'ok' });
-      return;
-    } catch (error) {
-      lastFailure = error;
-    }
-  }
-
-  throw new Error('browser could not establish the production origin through /api/health', { cause: lastFailure });
+  const response = await page.goto('/api/health', { waitUntil: 'commit', timeout: timeoutMs });
+  const body = await response?.json() as { status?: string } | undefined;
+  expect(response?.ok()).toBe(true);
+  expect(response?.status()).toBe(200);
+  expect(body).toMatchObject({ status: 'ok' });
 }
 
 async function openSignedOutApp(page: Page): Promise<void> {
-  const deadline = Date.now() + 10_000;
-  let lastFailure: unknown;
-
-  while (Date.now() < deadline) {
-    try {
-      await waitForBrowserHealth(page, Math.min(1_000, Math.max(1, deadline - Date.now())));
-      await page.goto('/app?upload=1', {
-        waitUntil: 'domcontentloaded',
-        timeout: Math.min(1_000, Math.max(1, deadline - Date.now())),
-      });
-      return;
-    } catch (error) {
-      if (!(error instanceof Error) || !error.message.includes('ERR_NAME_NOT_RESOLVED')) throw error;
-      lastFailure = error;
-    }
-  }
-
-  throw new Error('browser could not navigate to the signed-out app after /api/health', { cause: lastFailure });
+  await waitForBrowserHealth(page);
+  await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
 }
 
 function intentList(page: Page) {
