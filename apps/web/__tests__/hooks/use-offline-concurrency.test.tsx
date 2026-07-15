@@ -27,4 +27,15 @@ describe('useOffline connectivity probe', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     unmount();
   });
+
+  it('marks the client offline when health returns a non-success response', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result, unmount } = renderHook(() => useOffline());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.isOffline).toBe(true));
+    await expect(result.current.checkConnection()).resolves.toBe(false);
+    unmount();
+  });
 });

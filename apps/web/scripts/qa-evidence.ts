@@ -287,6 +287,13 @@ async function main() {
     SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
     SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
     SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
+    SPLOOT_DEPLOYMENT_ENV: 'development',
+    SPLOOT_QA_BIND_HOST: '127.0.0.1',
+    SPLOOT_QA_LOCAL_CAPABILITY: randomBytes(24).toString('hex'),
+    NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: 'enabled',
+    NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
+    NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
+    NEXT_PUBLIC_SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
     CI: '1',
   };
 
@@ -692,7 +699,7 @@ async function main() {
       const port = 3100 + Math.floor(Math.random() * 400);
       baseUrl = `http://localhost:${port}`;
       console.log(`[qa-evidence] booting dev server at ${baseUrl}`);
-      server = spawn('pnpm', ['exec', 'next', 'dev', '-p', String(port)], {
+      server = spawn('pnpm', ['exec', 'next', 'dev', '-H', '127.0.0.1', '-p', String(port)], {
         env,
         cwd: process.cwd(),
         stdio: 'ignore',

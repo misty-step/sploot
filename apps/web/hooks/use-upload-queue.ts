@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { error as logError } from '@/lib/logger';
 import { track } from '@/lib/analytics';
 import { getUploadQueueManager } from '@/lib/upload-queue';
@@ -20,6 +20,24 @@ export interface QueuedUpload {
   error?: string;
   addedAt: number;
   retryCount: number;
+}
+
+type QueueListener = () => void;
+let queueSnapshot: QueuedUpload[] = [];
+const queueListeners = new Set<QueueListener>();
+
+function subscribeToQueue(listener: QueueListener): () => void {
+  queueListeners.add(listener);
+  return () => queueListeners.delete(listener);
+}
+
+function getQueueSnapshot(): QueuedUpload[] {
+  return queueSnapshot;
+}
+
+function publishQueue(next: QueuedUpload[] | ((previous: QueuedUpload[]) => QueuedUpload[])): void {
+  queueSnapshot = typeof next === 'function' ? next(queueSnapshot) : next;
+  queueListeners.forEach((listener) => listener());
 }
 
 function toQueuedUpload(upload: {
@@ -51,7 +69,7 @@ function toQueuedUpload(upload: {
 
 export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean } = {}) {
   const { isOffline } = useOffline();
-  const [queue, setQueue] = useState<QueuedUpload[]>([]);
+  const queue = useSyncExternalStore(subscribeToQueue, getQueueSnapshot, getQueueSnapshot);
   const [isProcessing, setIsProcessing] = useState(false);
   const isOfflineRef = useRef(isOffline);
   const isProcessingRef = useRef(false);
@@ -66,7 +84,7 @@ export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean 
     try {
       await queueManager.init();
       const pending = await queueManager.getPendingUploads();
-      setQueue(pending.map(toQueuedUpload));
+      publishQueue(pending.map(toQueuedUpload));
     } catch (error) {
       logError('Error loading upload queue:', error);
     }
@@ -98,18 +116,20 @@ export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean 
       addedAt: Date.now(),
       retryCount: 0,
     };
-    setQueue((previous) => [...previous, queuedUpload]);
+    publishQueue((previous) => [...previous, queuedUpload]);
     return queuedUpload;
   }, [queueManager]);
 
   const removeFromQueue = useCallback((id: string) => {
-    setQueue((previous) => previous.filter((item) => item.id !== id));
+    publishQueue((previous) => previous.filter((item) => item.id !== id));
     void queueManager.removeUpload(id).catch((error) => logError('Error removing upload queue item:', error));
   }, [queueManager]);
 
   const updateQueueItem = useCallback((id: string, updates: Partial<QueuedUpload>) => {
-    setQueue((previous) => previous.map((item) => item.id === id ? { ...item, ...updates } : item));
-    if (updates.status) {
+    publishQueue((previous) => previous.map((item) => item.id === id ? { ...item, ...updates } : item));
+    if (updates.status === 'queued' && updates.retryCount === 0) {
+      void queueManager.resetUploadForRetry(id).catch((error) => logError('Error resetting upload retry count:', error));
+    } else if (updates.status) {
       const persistedStatus: 'pending' | 'uploading' | 'failed' = updates.status === 'error' ? 'failed' : updates.status === 'uploading' ? 'uploading' : 'pending';
       void queueManager.updateUploadStatus(id, persistedStatus, updates.error).catch((error) => logError('Error updating upload queue item:', error));
     }
@@ -124,17 +144,17 @@ export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean 
       for (const upload of pending) {
         try {
           await queueManager.updateUploadStatus(upload.id, 'uploading');
-          setQueue((previous) => previous.map((item) => item.id === upload.id ? { ...item, status: 'uploading' } : item));
+          publishQueue((previous) => previous.map((item) => item.id === upload.id ? { ...item, status: 'uploading' } : item));
           const file = await queueManager.toFile(upload);
           const result = await uploadClient.uploadFile(file);
           if (!result.success) throw new Error(result.error || 'Upload failed');
           await queueManager.removeUpload(upload.id);
-          setQueue((previous) => previous.filter((item) => item.id !== upload.id));
+          publishQueue((previous) => previous.filter((item) => item.id !== upload.id));
           track({ name: 'upload_completed', properties: { assetId: upload.id, duration: 0, size: upload.size } });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Upload failed';
           await queueManager.updateUploadStatus(upload.id, 'failed', message);
-          setQueue((previous) => previous.map((item) => item.id === upload.id ? {
+          publishQueue((previous) => previous.map((item) => item.id === upload.id ? {
             ...item,
             status: 'error',
             error: message,
@@ -151,6 +171,12 @@ export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean 
     }
   }, [queueManager, uploadClient]);
 
+  const retryUpload = useCallback(async (id: string) => {
+    await queueManager.resetUploadForRetry(id);
+    publishQueue((previous) => previous.map((item) => item.id === id ? { ...item, status: 'queued', error: undefined, retryCount: 0 } : item));
+    await processQueue();
+  }, [processQueue, queueManager]);
+
   useEffect(() => {
     if (!autoProcess || isOffline) return;
     queueMicrotask(() => {
@@ -163,6 +189,7 @@ export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean 
     addToQueue,
     removeFromQueue,
     updateQueueItem,
+    retryUpload,
     processQueue,
     isProcessing,
     queueSize: queue.length,

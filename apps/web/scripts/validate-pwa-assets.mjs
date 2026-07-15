@@ -41,8 +41,11 @@ const execFileAsync = promisify(execFile);
 const SOURCE_PATHS = ['apps/web', 'packages/common', 'scripts', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'turbo.json', '.npmrc'];
 const SOURCE_EXCLUDED_PREFIXES = ['apps/web/public/screenshots/', 'apps/web/public/sw.js', 'apps/web/public/workbox-'];
 const BUILD_GENERATED_PATHS = ['apps/web/public/sw.js'];
-const BUILD_CACHE_PREFIX = 'apps/web/.next/cache/';
-const BUILD_INVENTORY_EXCLUSIONS = ['apps/web/.next/cache/** — Next incremental cache; it is nondeterministic and is not required to run the production artifact'];
+const BUILD_CACHE_PREFIXES = ['apps/web/.next/cache/', 'apps/web/.next/dev/'];
+const BUILD_INVENTORY_EXCLUSIONS = [
+  'apps/web/.next/cache/** — Next incremental cache; it is nondeterministic and is not required to run the production artifact',
+  'apps/web/.next/dev/** — Next development artifacts are not part of the production server artifact',
+];
 
 function fail(message) {
   throw new Error(message);
@@ -56,13 +59,12 @@ function fail(message) {
  *   entry must byte-match the live worktree and `.next` production artifact.
  *   This is the tier the capture rig itself enforces (nonzero on failure)
  *   immediately after writing the manifest, before the evidence is committed.
- * - `recorded`: the deterministic subset that must keep holding at any later
- *   commit (CI has no production build and a different merge commit): manifest
- *   structure, screenshot-hash binding, rendered-proof gates, inventory
- *   shape/path safety, and recomputation of the provenance digest over the
- *   recorded base commit/tree + contract + inventories. Any tampering with the
- *   recorded evidence still fails; only live-file byte comparison is deferred
- *   to the capture-time `live` run.
+ * - `recorded`: the Git-anchored evidence tier used when the production build
+ *   is not present. Source inventory entries are checked against the recorded
+ *   commit's tree/blob objects, and the complete build attestation is required
+ *   to be the canonical manifest blob committed at HEAD. This keeps a copied
+ *   manifest from accepting a self-consistent rewrite; live mode additionally
+ *   rechecks every current source/build byte.
  *
  * `auto` resolves to `live` exactly when the repository is still in the
  * capture state (production build present and HEAD equals the manifest's base
@@ -169,18 +171,45 @@ async function gitOutput(args) {
 
 async function canonicalSourcePaths() {
   const tracked = await gitOutput(['ls-files', '--', ...SOURCE_PATHS]);
-  const untracked = await gitOutput(['ls-files', '--others', '--exclude-standard', '--', ...SOURCE_PATHS]);
-  return [...tracked.split('\n'), ...untracked.split('\n')]
+  return tracked.split('\n')
     .filter((path) => path && !SOURCE_EXCLUDED_PREFIXES.some((prefix) => path === prefix.slice(0, -1) || path.startsWith(prefix)))
     .sort()
     .filter((path, index, paths) => path !== paths[index - 1]);
+}
+
+async function gitBlob(spec) {
+  const result = await execFileAsync('git', ['show', spec], { cwd: repoDir, encoding: 'buffer', maxBuffer: 20 * 1024 * 1024 });
+  return Buffer.isBuffer(result.stdout) ? result.stdout : Buffer.from(result.stdout);
+}
+
+async function gitAnchoredSourceInventory(commit) {
+  const listing = await gitOutput(['ls-tree', '-r', '-l', commit, '--', ...SOURCE_PATHS]);
+  const entries = [];
+  for (const line of listing.split('\n').filter(Boolean)) {
+    const [metadata, path] = line.split('\t', 2);
+    const [modeText, objectType, objectId, sizeText] = metadata.split(/\s+/);
+    if (objectType !== 'blob' || !path || SOURCE_EXCLUDED_PREFIXES.some((prefix) => path === prefix.slice(0, -1) || path.startsWith(prefix))) continue;
+    const bytes = await gitBlob(`${commit}:${path}`);
+    const symlink = modeText === '120000';
+    const symlinkTarget = symlink ? bytes.toString('utf8') : undefined;
+    entries.push({
+      path,
+      kind: symlink ? 'symlink' : 'file',
+      mode: symlink ? 0o777 : Number.parseInt(modeText.slice(-4), 8),
+      bytes: symlink ? 0 : Number(sizeText),
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      ...(symlinkTarget === undefined ? {} : { symlinkTarget }),
+      _objectId: objectId,
+    });
+  }
+  return entries.map(({ _objectId, ...entry }) => entry);
 }
 
 async function walkBuildFiles(relativeDir) {
   const files = [];
   for (const entry of await readdir(resolve(repoDir, relativeDir), { withFileTypes: true })) {
     const relativePath = join(relativeDir, entry.name).replaceAll('\\', '/');
-    if (relativePath === BUILD_CACHE_PREFIX.slice(0, -1) || relativePath.startsWith(BUILD_CACHE_PREFIX)) continue;
+    if (BUILD_CACHE_PREFIXES.some((prefix) => relativePath === prefix.slice(0, -1) || relativePath.startsWith(prefix))) continue;
     if (entry.isDirectory()) files.push(...await walkBuildFiles(relativePath));
     else if (entry.isFile() || entry.isSymbolicLink()) files.push(relativePath);
   }
@@ -191,6 +220,23 @@ async function canonicalBuildPaths() {
   return [...await walkBuildFiles('apps/web/.next'), ...BUILD_GENERATED_PATHS]
     .sort()
     .filter((path, index, paths) => path !== paths[index - 1]);
+}
+
+async function validateRecordedGitAnchor(manifest) {
+  const anchoredTree = await gitOutput(['rev-parse', `${manifest.gitCommit}^{tree}`]).catch(() => null);
+  if (anchoredTree !== manifest.gitTree) fail('recorded provenance base tree is not an authoritative Git tree');
+
+  const manifestPath = resolve(CAPTURE_MANIFEST_FILE);
+  const canonicalManifestBlob = await gitOutput(['rev-parse', 'HEAD:apps/web/public/screenshots/capture-manifest.json']).catch(() => null);
+  const suppliedManifestBlob = await gitOutput(['hash-object', manifestPath]).catch(() => null);
+  if (!canonicalManifestBlob || suppliedManifestBlob !== canonicalManifestBlob) {
+    fail('recorded provenance must be the canonical capture manifest committed at HEAD');
+  }
+
+  const expectedSource = await gitAnchoredSourceInventory(manifest.gitCommit);
+  if (JSON.stringify(manifest.sourceInventory) !== JSON.stringify(expectedSource)) {
+    fail('recorded source inventory is not anchored to the recorded Git objects');
+  }
 }
 
 async function inventoryPaths(paths) {
@@ -391,6 +437,8 @@ async function validateScreenshotCaptureManifest() {
     const currentHead = await gitOutput(['rev-parse', 'HEAD']);
     const currentTree = await gitOutput(['rev-parse', 'HEAD^{tree}']);
     if (manifest.gitCommit !== currentHead || manifest.gitTree !== currentTree) fail('capture base commit/tree no longer matches the repository');
+  } else {
+    await validateRecordedGitAnchor(manifest);
   }
   for (const screenshot of SCREENSHOTS) {
     const proof = manifest.screenshots?.[screenshot.name];

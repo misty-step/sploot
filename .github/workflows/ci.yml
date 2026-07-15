@@ -72,13 +72,27 @@ jobs:
   web-build:
     name: Web production build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Recorded PWA provenance resolves the immutable capture base/tree
+          # from Git objects even on synthetic merge heads.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
+      - name: Fetch immutable PWA capture base
+        shell: bash
+        run: |
+          set -euo pipefail
+          capture_base="$(node -e "console.log(JSON.parse(require('fs').readFileSync('apps/web/public/screenshots/capture-manifest.json', 'utf8')).gitCommit)")"
+          git fetch --no-tags --depth=1 origin "$capture_base"
+          git cat-file -e "$capture_base^{commit}"
+          git cat-file -e "$capture_base^{tree}"
       - run: pnpm install --frozen-lockfile
       - name: Build without runtime database or provider secrets
         run: pnpm deployment:build
@@ -141,11 +155,23 @@ jobs:
       DATABASE_URL: postgresql://test:test@localhost:5432/sploot_test?sslmode=disable
     steps:
       - uses: actions/checkout@v6
+        with:
+          # pwa-contract validates the checked-in capture manifest against its
+          # independent immutable Git base, which must exist in this job.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
+      - name: Fetch immutable PWA capture base
+        shell: bash
+        run: |
+          set -euo pipefail
+          capture_base="$(node -e "console.log(JSON.parse(require('fs').readFileSync('apps/web/public/screenshots/capture-manifest.json', 'utf8')).gitCommit)")"
+          git fetch --no-tags --depth=1 origin "$capture_base"
+          git cat-file -e "$capture_base^{commit}"
+          git cat-file -e "$capture_base^{tree}"
       - run: pnpm install --frozen-lockfile
       - name: Provision restricted migration role without storing credentials
         shell: bash

@@ -32,6 +32,9 @@ export function useOffline() {
           if (mountedRef.current) setIsOffline(false);
           return true;
         }
+
+        if (mountedRef.current) setIsOffline(true);
+        return false;
       } catch {
         // Network error or timeout
         if (mountedRef.current) setIsOffline(true);
@@ -40,8 +43,6 @@ export function useOffline() {
         clearTimeout(timeoutId);
         if (probeControllerRef.current === controller) probeControllerRef.current = null;
       }
-
-      return false;
     })();
 
     probePromiseRef.current = probe;

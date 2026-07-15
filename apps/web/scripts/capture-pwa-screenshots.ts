@@ -10,7 +10,7 @@
  * rendered-app checks. It launches the built production server only.
  */
 
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { lstat, mkdir, readFile, readlink, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -48,8 +48,11 @@ const BUILD_GENERATED_PATHS = new Set([
 ]);
 const SOURCE_PATHS = ['apps/web', 'packages/common', 'scripts', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'turbo.json', '.npmrc'];
 const SOURCE_EXCLUDED_PREFIXES = ['apps/web/public/screenshots/', 'apps/web/public/sw.js', 'apps/web/public/workbox-'];
-const BUILD_CACHE_PREFIXES = ['apps/web/.next/cache/'];
-const BUILD_INVENTORY_EXCLUSIONS = ['apps/web/.next/cache/** — Next incremental cache; it is nondeterministic and is not required to run the production artifact'];
+const BUILD_CACHE_PREFIXES = ['apps/web/.next/cache/', 'apps/web/.next/dev/'];
+const BUILD_INVENTORY_EXCLUSIONS = [
+  'apps/web/.next/cache/** — Next incremental cache; it is nondeterministic and is not required to run the production artifact',
+  'apps/web/.next/dev/** — Next development artifacts are not part of the production server artifact',
+];
 const SPECS = [
   { name: 'desktop-home.png', width: 1920, height: 1080, theme: 'light' },
   { name: 'mobile-home.png', width: 390, height: 844, theme: 'light' },
@@ -672,6 +675,8 @@ async function main() {
     SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
     SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
     SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
+    SPLOOT_QA_BIND_HOST: '127.0.0.1',
+    SPLOOT_QA_LOCAL_CAPABILITY: randomBytes(24).toString('hex'),
     NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
     NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
     NEXT_PUBLIC_SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,

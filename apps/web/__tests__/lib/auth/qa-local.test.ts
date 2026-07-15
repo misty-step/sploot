@@ -45,6 +45,8 @@ const env = {
   SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
   SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
   SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
+  SPLOOT_QA_BIND_HOST: '127.0.0.1',
+  SPLOOT_QA_LOCAL_CAPABILITY: 'a'.repeat(48),
 };
 const boundary = { host: '127.0.0.1:3112', remoteAddress: '127.0.0.1' };
 
@@ -149,16 +151,26 @@ describe('qa-local auth security contract', () => {
 
   it.each([
     ['expired token', { now: new Date(Date.now() - 120_000), expiresInSeconds: 60 }, boundary, {}],
-    ['non-loopback host', {}, { ...boundary, host: 'evil.example:3112' }, {}],
-    ['non-loopback remote', {}, { ...boundary, remoteAddress: '203.0.113.4' }, {}],
-    ['forwarded host', {}, boundary, { 'x-forwarded-host': 'evil.example' }],
-    ['forwarded chain', {}, boundary, { 'x-forwarded-for': '127.0.0.1, 203.0.113.4' }],
     ['production Clerk cookie coexistence', {}, boundary, { cookie: '__session=production-token' }],
     ['production authorization coexistence', {}, boundary, { authorization: 'Bearer production-token' }],
   ])('rejects %s', async (_label, options, request, extra) => {
     const headers = new Headers({ [getQaLocalAuthHeader()]: await token(options), host: request.host, 'x-forwarded-for': request.remoteAddress, ...extra });
     const result = await verifyQaLocalAuthHeaders(headers, env, request);
     expect(['forbidden', 'unauthenticated']).toContain(result.status);
+  });
+
+  it('ignores client-controlled peer headers when the process-private boundary is valid', async () => {
+    const result = await verifyQaLocalAuthHeaders(
+      new Headers({
+        [getQaLocalAuthHeader()]: await token(),
+        host: 'evil.example:3112',
+        'x-forwarded-for': '203.0.113.4, 127.0.0.1',
+        'x-real-ip': '203.0.113.4',
+      }),
+      env,
+      { peerAddress: null },
+    );
+    expect(result.status).toBe('authenticated');
   });
 
   it('rejects a production process unless it is explicitly the local-qa capture deployment', () => {

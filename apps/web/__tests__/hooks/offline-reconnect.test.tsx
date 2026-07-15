@@ -18,9 +18,10 @@ const mocks = vi.hoisted(() => {
   const manager = {
     init: vi.fn().mockResolvedValue(undefined),
     getPendingUploads: vi.fn(async () => removed ? [] : [upload]),
-    addUpload: vi.fn(),
+    addUpload: vi.fn().mockResolvedValue('queued-2'),
     removeUpload: vi.fn(async () => { removed = true; }),
     updateUploadStatus: vi.fn().mockResolvedValue(undefined),
+    resetUploadForRetry: vi.fn().mockResolvedValue(undefined),
     toFile: vi.fn(async () => new File(['data'], upload.filename, { type: upload.mimeType })),
   };
   const client = {
@@ -69,5 +70,27 @@ describe('offline recovery', () => {
     await waitFor(() => expect(mocks.client.uploadFile).toHaveBeenCalledTimes(1));
     expect(mocks.manager.removeUpload).toHaveBeenCalledWith('queued-1');
     hook.unmount();
+  });
+
+  it('shares queue additions and atomically resets manual retries across consumers', async () => {
+    mocks.offline = false;
+    const first = renderHook(() => useUploadQueue());
+    const second = renderHook(() => useUploadQueue());
+    await waitFor(() => expect(mocks.manager.getPendingUploads).toHaveBeenCalled());
+
+    await act(async () => {
+      await first.result.current.addToQueue(new File(['data'], 'retry.png', { type: 'image/png' }));
+    });
+    await waitFor(() => expect(second.result.current.queue.some((item) => item.id === 'queued-2')).toBe(true));
+
+    await act(async () => {
+      await first.result.current.retryUpload('queued-1');
+    });
+    expect(mocks.manager.resetUploadForRetry).toHaveBeenCalledWith('queued-1');
+    expect(mocks.manager.resetUploadForRetry.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.manager.getPendingUploads.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY,
+    );
+    first.unmount();
+    second.unmount();
   });
 });

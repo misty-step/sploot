@@ -165,6 +165,36 @@ export class UploadQueueManager {
     });
   }
 
+  /** Atomically make a failed upload eligible for a fresh manual attempt. */
+  async resetUploadForRetry(id: string): Promise<void> {
+    if (!this.db) return;
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(this.STORE_NAME);
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const upload = getRequest.result as PersistedUpload | undefined;
+        if (!upload) {
+          resolve();
+          return;
+        }
+
+        upload.status = 'pending';
+        upload.retryCount = 0;
+        delete upload.error;
+        const updateRequest = store.put(upload);
+        updateRequest.onerror = () => reject(updateRequest.error);
+      };
+
+      getRequest.onerror = () => reject(getRequest.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error ?? new Error('upload retry reset transaction aborted'));
+    });
+  }
+
   /**
    * Remove successfully uploaded file
    */

@@ -3,17 +3,17 @@
 import { ReactNode } from 'react';
 import { UploadQueueDisplay } from './upload-queue-display';
 import { useUploadQueue } from '@/hooks/use-upload-queue';
+import { error as logError } from '@/lib/logger';
 
 interface OfflineProviderProps {
   children: ReactNode;
 }
 
 export function OfflineProvider({ children }: OfflineProviderProps) {
-  const { queue, removeFromQueue, updateQueueItem, processQueue } = useUploadQueue({ autoProcess: true });
+  const { queue, removeFromQueue, retryUpload } = useUploadQueue({ autoProcess: true });
 
   const handleRetry = (id: string) => {
-    updateQueueItem(id, { status: 'queued', retryCount: 0 });
-    void processQueue();
+    void retryUpload(id).catch((error) => logError('Error retrying upload:', error));
   };
 
   return (

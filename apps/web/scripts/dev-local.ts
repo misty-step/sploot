@@ -357,6 +357,13 @@ async function main() {
     SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
     SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
     SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
+    SPLOOT_DEPLOYMENT_ENV: 'development',
+    SPLOOT_QA_BIND_HOST: '127.0.0.1',
+    SPLOOT_QA_LOCAL_CAPABILITY: randomBytes(24).toString('hex'),
+    NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: 'enabled',
+    NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
+    NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
+    NEXT_PUBLIC_SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
     PORT: String(args.port),
   };
 
@@ -365,7 +372,7 @@ async function main() {
 
   const baseUrl = `http://localhost:${args.port}`;
   log(`starting dev server on ${baseUrl}...`);
-  const server: ChildProcess = spawn('pnpm', ['dev'], { env, cwd: APP_ROOT, stdio: 'inherit' });
+  const server: ChildProcess = spawn('pnpm', ['dev', '-H', '127.0.0.1'], { env, cwd: APP_ROOT, stdio: 'inherit' });
   const serverExit = new Promise<number | null>((resolvePromise) => {
     server.on('close', (code) => resolvePromise(code));
   });

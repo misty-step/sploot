@@ -69,7 +69,10 @@ function ImageTileComponent({
   const deleteConfirmation = useDeleteConfirmation();
   const { recordBlobError, recordBlobSuccess } = useBlobCircuitBreaker();
   const tileMediaRef = useRef<HTMLDivElement>(null);
-  const shouldUseLazyBoundary = typeof IntersectionObserver !== 'undefined' && process.env.NODE_ENV !== 'test';
+  const shouldUseLazyBoundary = process.env.NODE_ENV !== 'test';
+  // Keep the first render independent of browser-only APIs so SSR and
+  // hydration produce the same markup. The effect below promotes the media
+  // once the browser can decide whether observation is available.
   const [isMediaInView, setIsMediaInView] = useState(() => !shouldUseLazyBoundary);
 
   // Debug mode tracking
@@ -105,11 +108,17 @@ function ImageTileComponent({
     asset.height,
     preserveAspectRatio,
     initialImageSrc,
+    shouldUseLazyBoundary,
   ]);
 
   useEffect(() => {
     const node = tileMediaRef.current;
-    if (!node || !shouldUseLazyBoundary) return;
+    if (!shouldUseLazyBoundary) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      queueMicrotask(() => setIsMediaInView(true));
+      return;
+    }
+    if (!node) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -120,7 +129,7 @@ function ImageTileComponent({
       },
       {
         root: null,
-        rootMargin: '0px',
+        rootMargin: '200px',
         threshold: 0.01,
       }
     );
