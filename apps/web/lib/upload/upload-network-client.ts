@@ -53,6 +53,8 @@ export interface UploadOptions {
   endpoint?: string;
   /** AbortController signal for cancellation */
   signal?: AbortSignal;
+  /** Stable durable-queue key used to make stale-lease recovery idempotent. */
+  idempotencyKey?: string;
 }
 
 export class UploadError extends Error {
@@ -223,6 +225,9 @@ export class UploadNetworkClient {
 
       // Start the upload
       xhr.open('POST', endpoint);
+      if (options?.idempotencyKey) {
+        xhr.setRequestHeader('Idempotency-Key', options.idempotencyKey);
+      }
       xhr.timeout = timeout;
       xhr.send(formData);
     });

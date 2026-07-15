@@ -20,6 +20,7 @@ describe('UploadNetworkClient', () => {
       this.upload = { addEventListener: vi.fn() };
       this.addEventListener = vi.fn();
       this.open = vi.fn();
+      this.setRequestHeader = vi.fn();
       this.send = vi.fn();
       this.abort = vi.fn();
       this.status = 200;
@@ -36,6 +37,17 @@ describe('UploadNetworkClient', () => {
   });
 
   describe('uploadFile', () => {
+    it('sends the stable queue idempotency key', async () => {
+      const file = new File(['content'], 'stable.jpg', { type: 'image/jpeg' });
+      const uploadPromise = client.uploadFile(file, { idempotencyKey: 'queue-123' });
+      const xhr = xhrInstances[0];
+      xhr.responseText = JSON.stringify({ success: true });
+      const loadHandler = xhr.addEventListener.mock.calls.find((call: any[]) => call[0] === 'load')[1];
+      loadHandler();
+      await uploadPromise;
+      expect(xhr.setRequestHeader).toHaveBeenCalledWith('Idempotency-Key', 'queue-123');
+    });
+
     it('should upload file successfully', async () => {
       const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
       const mockResponse: UploadResult = {

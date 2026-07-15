@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { error as logError } from '@/lib/logger';
 import { track } from '@/lib/analytics';
 import { getUploadQueueManager } from '@/lib/upload-queue';
@@ -16,7 +16,7 @@ export interface QueuedUpload {
     type: string;
     lastModified: number;
   };
-  status: 'queued' | 'uploading' | 'success' | 'error';
+  status: 'queued' | 'uploading' | 'success' | 'error' | 'terminal';
   error?: string;
   addedAt: number;
   retryCount: number;
@@ -60,7 +60,7 @@ function toQueuedUpload(upload: {
       type: upload.mimeType,
       lastModified: upload.lastModified,
     },
-    status: upload.status === 'failed' ? 'error' : upload.status === 'uploading' ? 'uploading' : 'queued',
+    status: upload.status === 'terminal' ? 'terminal' : upload.status === 'failed' ? 'error' : upload.status === 'uploading' ? 'uploading' : 'queued',
     error: upload.error,
     addedAt: upload.addedAt,
     retryCount: upload.retryCount,
@@ -73,6 +73,7 @@ export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean 
   const [isProcessing, setIsProcessing] = useState(false);
   const isOfflineRef = useRef(isOffline);
   const isProcessingRef = useRef(false);
+  const claimOwner = `queue-${useId()}`;
   const queueManager = useMemo(() => getUploadQueueManager(), []);
   const uploadClient = useMemo(() => getUploadNetworkClient(), []);
 
@@ -142,23 +143,25 @@ export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean 
     try {
       const pending = await queueManager.getPendingUploads();
       for (const upload of pending) {
+        if (upload.status === 'terminal') continue;
+        const claimed = await queueManager.claimUpload(upload.id, claimOwner);
+        if (!claimed) continue;
         try {
-          await queueManager.updateUploadStatus(upload.id, 'uploading');
           publishQueue((previous) => previous.map((item) => item.id === upload.id ? { ...item, status: 'uploading' } : item));
-          const file = await queueManager.toFile(upload);
-          const result = await uploadClient.uploadFile(file);
+          const file = await queueManager.toFile(claimed);
+          const result = await uploadClient.uploadFile(file, { idempotencyKey: claimed.id });
           if (!result.success) throw new Error(result.error || 'Upload failed');
-          await queueManager.removeUpload(upload.id);
+          await queueManager.completeUpload(upload.id, claimOwner);
           publishQueue((previous) => previous.filter((item) => item.id !== upload.id));
           track({ name: 'upload_completed', properties: { assetId: upload.id, duration: 0, size: upload.size } });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Upload failed';
-          await queueManager.updateUploadStatus(upload.id, 'failed', message);
+          const released = await queueManager.releaseUploadClaim(upload.id, claimOwner, message);
           publishQueue((previous) => previous.map((item) => item.id === upload.id ? {
             ...item,
-            status: 'error',
-            error: message,
-            retryCount: item.retryCount + 1,
+            status: released?.status === 'terminal' ? 'terminal' : 'error',
+            error: released?.error ?? message,
+            retryCount: released?.retryCount ?? item.retryCount + 1,
           } : item));
           track({ name: 'upload_failed', properties: { reason: message, size: upload.size } });
         }
@@ -169,7 +172,7 @@ export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean 
       isProcessingRef.current = false;
       setIsProcessing(false);
     }
-  }, [queueManager, uploadClient]);
+  }, [claimOwner, queueManager, uploadClient]);
 
   const retryUpload = useCallback(async (id: string) => {
     await queueManager.resetUploadForRetry(id);

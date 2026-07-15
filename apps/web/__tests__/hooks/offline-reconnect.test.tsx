@@ -20,6 +20,9 @@ const mocks = vi.hoisted(() => {
     getPendingUploads: vi.fn(async () => removed ? [] : [upload]),
     addUpload: vi.fn().mockResolvedValue('queued-2'),
     removeUpload: vi.fn(async () => { removed = true; }),
+    claimUpload: vi.fn(async () => upload),
+    completeUpload: vi.fn(async () => { removed = true; return true; }),
+    releaseUploadClaim: vi.fn(async (_id: string, _owner: string, error?: string) => ({ ...upload, status: 'failed', error, retryCount: upload.retryCount + 1 })),
     updateUploadStatus: vi.fn().mockResolvedValue(undefined),
     resetUploadForRetry: vi.fn().mockResolvedValue(undefined),
     toFile: vi.fn(async () => new File(['data'], upload.filename, { type: upload.mimeType })),
@@ -68,7 +71,8 @@ describe('offline recovery', () => {
     });
 
     await waitFor(() => expect(mocks.client.uploadFile).toHaveBeenCalledTimes(1));
-    expect(mocks.manager.removeUpload).toHaveBeenCalledWith('queued-1');
+    expect(mocks.manager.completeUpload).toHaveBeenCalledWith('queued-1', expect.any(String));
+    expect(mocks.client.uploadFile).toHaveBeenCalledWith(expect.any(File), { idempotencyKey: 'queued-1' });
     hook.unmount();
   });
 

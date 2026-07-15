@@ -53,7 +53,7 @@ export function UploadQueueDisplay({ queue, onRemove, onRetry }: UploadQueueDisp
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                     />
                   </svg>
-                ) : item.status === 'error' ? (
+                ) : item.status === 'error' || item.status === 'terminal' ? (
                   <svg
                     className="w-5 h-5 text-destructive"
                     fill="none"
@@ -110,12 +110,17 @@ export function UploadQueueDisplay({ queue, onRemove, onRetry }: UploadQueueDisp
                       (Retry {item.retryCount}/{3})
                     </span>
                   )}
+                  {item.status === 'terminal' && (
+                    <span className="block text-destructive">
+                      Needs attention: retry limit or 24-hour retention reached.
+                    </span>
+                  )}
                 </p>
               </div>
 
               {/* Actions */}
               <div className="flex items-center gap-1">
-                {item.status === 'error' && onRetry && (
+                {(item.status === 'error' || item.status === 'terminal') && onRetry && (
                   <IconButton label="retry upload" onClick={() => onRetry(item.id)}>
                     <svg
                       fill="none"
@@ -158,7 +163,8 @@ export function UploadQueueDisplay({ queue, onRemove, onRetry }: UploadQueueDisp
 
         <div className="mt-3 pt-3 border-t border-border">
           <p className="text-xs text-muted-foreground/80">
-            Uploads will resume automatically when you&apos;re back online
+            Uploads resume automatically for 24 hours or 3 attempts. Older or
+            exhausted files stay here until you retry or remove them.
           </p>
         </div>
       </div>
