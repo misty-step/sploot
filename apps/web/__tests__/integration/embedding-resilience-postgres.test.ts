@@ -1311,6 +1311,10 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
         SET "attempt_count" = 0,
             "status" = 'pending',
             "terminal_at" = NULL,
+            "image_embedding" = NULL,
+            "processing_claim_token" = NULL,
+            "next_attempt_at" = NULL,
+            "error" = NULL,
             "updatedAt" = NOW()
         WHERE "asset_id" = ${chainAssetIds[3]}
       `

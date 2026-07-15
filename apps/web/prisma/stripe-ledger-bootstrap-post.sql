@@ -345,9 +345,9 @@ ALTER FUNCTION public.sploot_stripe_ledger_append_only() OWNER TO sploot_stripe_
 DROP TRIGGER IF EXISTS stripe_cancellation_events_append_only ON public.stripe_cancellation_events;
 DROP TRIGGER IF EXISTS stripe_cancellation_audit_append_only ON public.stripe_cancellation_audit;
 DROP TRIGGER IF EXISTS stripe_cancellation_maintenance_append_only ON public.stripe_cancellation_maintenance;
-CREATE TRIGGER stripe_cancellation_events_append_only BEFORE UPDATE OR DELETE ON public.stripe_cancellation_events FOR EACH ROW EXECUTE FUNCTION public.sploot_stripe_ledger_append_only();
-CREATE TRIGGER stripe_cancellation_audit_append_only BEFORE UPDATE OR DELETE ON public.stripe_cancellation_audit FOR EACH ROW EXECUTE FUNCTION public.sploot_stripe_ledger_append_only();
-CREATE TRIGGER stripe_cancellation_maintenance_append_only BEFORE UPDATE OR DELETE ON public.stripe_cancellation_maintenance FOR EACH ROW EXECUTE FUNCTION public.sploot_stripe_ledger_append_only();
+CREATE TRIGGER stripe_cancellation_events_append_only BEFORE DELETE OR UPDATE ON public.stripe_cancellation_events FOR EACH ROW EXECUTE FUNCTION public.sploot_stripe_ledger_append_only();
+CREATE TRIGGER stripe_cancellation_audit_append_only BEFORE DELETE OR UPDATE ON public.stripe_cancellation_audit FOR EACH ROW EXECUTE FUNCTION public.sploot_stripe_ledger_append_only();
+CREATE TRIGGER stripe_cancellation_maintenance_append_only BEFORE DELETE OR UPDATE ON public.stripe_cancellation_maintenance FOR EACH ROW EXECUTE FUNCTION public.sploot_stripe_ledger_append_only();
 ALTER TABLE public.stripe_cancellation_events ENABLE ALWAYS TRIGGER stripe_cancellation_events_append_only;
 ALTER TABLE public.stripe_cancellation_audit ENABLE ALWAYS TRIGGER stripe_cancellation_audit_append_only;
 ALTER TABLE public.stripe_cancellation_maintenance ENABLE ALWAYS TRIGGER stripe_cancellation_maintenance_append_only;

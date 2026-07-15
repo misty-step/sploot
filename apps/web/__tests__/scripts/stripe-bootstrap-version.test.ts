@@ -107,6 +107,9 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(postSql).toContain(
       'create trigger stripe_cancellation_events_append_only before delete or update on stripe_cancellation_events',
     );
+    expect(postSql).toContain(
+      'CREATE TRIGGER stripe_cancellation_events_append_only BEFORE DELETE OR UPDATE ON public.stripe_cancellation_events',
+    );
   });
 
   it('creates managed Stripe roles before converging their privileges', () => {
