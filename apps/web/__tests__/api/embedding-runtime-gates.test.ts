@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   logSearch: vi.fn(),
   userFindUnique: vi.fn(),
   authenticateRequest: vi.fn(),
+  decodeVectorSearchCursor: vi.fn(),
+  createVectorSearchContext: vi.fn((context: unknown) => context),
+  vectorSearchCursorMatchesContext: vi.fn(() => true),
 }));
 
 vi.mock('@/lib/auth/server', () => ({
@@ -62,6 +65,10 @@ vi.mock('@/lib/db', () => ({
   vectorSearchPage: mocks.vectorSearchPage,
   vectorSearch: mocks.vectorSearch,
   logSearch: mocks.logSearch,
+  decodeVectorSearchCursor: mocks.decodeVectorSearchCursor,
+  createVectorSearchContext: mocks.createVectorSearchContext,
+  vectorSearchCursorMatchesContext: mocks.vectorSearchCursorMatchesContext,
+  VECTOR_SEARCH_CURSOR_CONTEXT_ERROR: 'Search cursor does not match search context',
   upsertAssetEmbedding: vi.fn(),
 }));
 
@@ -88,6 +95,7 @@ describe('embedding runtime gates', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('SPLOOT_EMBEDDINGS_ENABLED', 'false');
+    mocks.decodeVectorSearchCursor.mockReturnValue(null);
     mocks.getAuth.mockResolvedValue({ userId: 'user-1' });
     mocks.getAuthWithUser.mockResolvedValue({ userId: 'user-1' });
     mocks.userFindUnique.mockResolvedValue({ id: 'user-1' });
@@ -189,7 +197,7 @@ describe('search degraded-service honesty', () => {
     expect(mocks.vectorSearchPage).toHaveBeenCalledWith(
       'user-1',
       [0.1, 0.2, 0.3],
-      { limit: 5, threshold: 0.9, shuffleSeed: undefined }
+      expect.objectContaining({ limit: 5, threshold: 0.9, favoriteOnly: false, tagId: null })
     );
   });
 });

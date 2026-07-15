@@ -232,6 +232,54 @@ describe('CacheService', () => {
       expect(cached2).toEqual(results2);
     });
 
+    it('should use the canonical query for paged search cache keys', async () => {
+      const page = { results, total: 2, hasMore: false };
+
+      await cacheService.setSearchResultPage(userId, '  Funny   Cats  ', filters, page.results, page.total, page.hasMore);
+
+      await expect(cacheService.getSearchResultPage(userId, 'funny cats', filters)).resolves.toEqual(page);
+    });
+
+    it('should isolate every semantic page-shaping filter', async () => {
+      const baseFilters = {
+        limit: 10,
+        threshold: 0.2,
+        sort: 'relevance' as const,
+        direction: 'desc' as const,
+        favoriteOnly: false,
+        tagId: null,
+        cursor: 'cursor-a',
+      };
+      const variants = [
+        { ...baseFilters, threshold: 0.3 },
+        { ...baseFilters, sort: 'relevance' as const, direction: 'desc' as const, favoriteOnly: true },
+        { ...baseFilters, tagId: 'tag-cats' },
+        { ...baseFilters, limit: 20 },
+        { ...baseFilters, cursor: 'cursor-b' },
+      ];
+
+      await Promise.all(variants.map((variant, index) =>
+        cacheService.setSearchResultPage(userId, 'cats', variant, [{ id: `asset-${index}` }], 1, false)
+      ));
+
+      await expect(cacheService.getSearchResultPage(userId, 'cats', baseFilters)).resolves.toBeNull();
+      for (const [index, variant] of variants.entries()) {
+        await expect(cacheService.getSearchResultPage(userId, 'cats', variant)).resolves.toEqual({
+          results: [{ id: `asset-${index}` }],
+          total: 1,
+          hasMore: false,
+        });
+      }
+
+      const reordered = { cursor: 'cursor-a', tagId: null, favoriteOnly: false, direction: 'desc' as const, sort: 'relevance' as const, threshold: 0.2, limit: 10 };
+      await cacheService.setSearchResultPage(userId, 'cats', reordered, [{ id: 'asset-reordered' }], 1, false);
+      await expect(cacheService.getSearchResultPage(userId, 'cats', baseFilters)).resolves.toEqual({
+        results: [{ id: 'asset-reordered' }],
+        total: 1,
+        hasMore: false,
+      });
+    });
+
     it('should use search: prefix for search result keys', async () => {
       await cacheService.setSearchResults(userId, query, filters, results);
 

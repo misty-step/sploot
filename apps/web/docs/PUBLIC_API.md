@@ -145,7 +145,7 @@ web app itself calls.
 **Request:**
 
 ```json
-{ "query": "distracted boyfriend", "limit": 30, "threshold": 0.2 }
+{ "query": "distracted boyfriend", "limit": 30, "threshold": 0.2, "favoriteOnly": false, "tagId": null }
 ```
 
 - `query` (string, required, max 500 chars)
@@ -158,6 +158,15 @@ web app itself calls.
 - `threshold` (number, optional, 0–1, default 0.2) — results below this
   similarity are not returned; a real miss is an empty `results` array, never
   low-similarity padding.
+- `favoriteOnly` (boolean, optional, default `false`) — restrict results to
+  favorited assets.
+- `tagId` (string, optional) — restrict results to assets carrying this tag.
+
+Semantic results are always ordered by descending vector relevance, with asset
+id as the deterministic tie-breaker. The gallery shuffle seed is not part of
+this endpoint. Each opaque cursor is structurally bound to the normalized
+query, threshold, relevance order, favorite/tag filters, and page size; a
+cross-context replay returns `400 {"error":"Search cursor does not match search context"}` before vector or database work.
 
 **`200`:**
 

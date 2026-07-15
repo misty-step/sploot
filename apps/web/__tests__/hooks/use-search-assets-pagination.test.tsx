@@ -36,6 +36,34 @@ describe('useSearchAssets pagination', () => {
     vi.unstubAllGlobals();
   });
 
+  it('sends server-side favorite and tag filters on the initial page', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      results: [{ id: 'tagged-favorite' }],
+      total: 1,
+      hasMore: false,
+    }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { result } = renderHook(() => useSearchAssets('cats', {
+      limit: 5,
+      threshold: 0.3,
+      favoriteOnly: true,
+      tagId: 'tag-cats',
+    }));
+
+    await waitFor(() => expect(result.current.assets).toEqual([{ id: 'tagged-favorite' }]));
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      query: 'cats',
+      limit: 5,
+      threshold: 0.3,
+      favoriteOnly: true,
+      tagId: 'tag-cats',
+    });
+
+    vi.unstubAllGlobals();
+  });
+
   it('keys metadata to the settled query and clears abort state on query changes', async () => {
     let resolveCats!: (response: Response) => void;
     let resolveDogs!: (response: Response) => void;

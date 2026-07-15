@@ -1141,7 +1141,8 @@ Perform semantic search using text queries.
   "query": "distracted boyfriend",
   "limit": 30,
   "threshold": 0.2,
-  "shuffleSeed": 424242
+  "favoriteOnly": false,
+  "tagId": null
 }
 ```
 
@@ -1157,7 +1158,16 @@ Perform semantic search using text queries.
 - `threshold` (number, optional): Minimum similarity score (0-1, default: 0.2)
   Results below this score are not returned; a real miss returns an empty
   `results` array rather than low-similarity padding.
-- `shuffleSeed` (number, optional): Seed used by vector search when supported
+- `favoriteOnly` (boolean, optional): Restrict results to favorited assets.
+- `tagId` (string, optional): Restrict results to assets carrying this tag.
+
+Semantic search is always ordered by descending vector relevance, with asset id
+as the deterministic tie-breaker. The gallery's seeded shuffle is a library
+view concern and is not applied to semantic search. Cursors are opaque and
+bound to the normalized query, threshold, relevance order, favorite/tag
+filters, and page size; replaying one with a different context returns `400`
+with `{"error":"Search cursor does not match search context"}` before vector
+or database work.
 
 **Success Response (200):**
 
