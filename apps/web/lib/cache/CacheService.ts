@@ -35,7 +35,8 @@ function serializeSearchFilters(filters: SearchFilters): string {
 const CACHE_KEYS = {
   TEXT_EMBEDDING: (text: string, model: string) =>
     `txt:${CACHE_KEY_VERSION}:${stableIdentity(model)}:${stableIdentity(normalizeSearchQuery(text))}`,
-  IMAGE_EMBEDDING: (checksum: string) => `img:${checksum}`,
+  IMAGE_EMBEDDING: (checksum: string, model: string) =>
+    `img:${CACHE_KEY_VERSION}:${stableIdentity(model)}:${stableIdentity(checksum)}`,
   SEARCH_RESULTS: (userId: string, query: string, filters: string) =>
     `search:${CACHE_KEY_VERSION}:${userId}:${stableIdentity(normalizeSearchQuery(query))}:${stableIdentity(filters)}`,
   ASSET_LIST: (userId: string, params: string) =>
@@ -114,9 +115,9 @@ export class CacheService {
 
   // Image Embedding Methods
 
-  async getImageEmbedding(checksum: string): Promise<number[] | null> {
+  async getImageEmbedding(checksum: string, model: string): Promise<number[] | null> {
     try {
-      const key = CACHE_KEYS.IMAGE_EMBEDDING(checksum);
+      const key = CACHE_KEYS.IMAGE_EMBEDDING(checksum, model);
       const embedding = await this.backend.get<number[]>(key);
       if (embedding) {
         this.incrementHit();
@@ -135,9 +136,9 @@ export class CacheService {
     }
   }
 
-  async setImageEmbedding(checksum: string, embedding: number[]): Promise<void> {
+  async setImageEmbedding(checksum: string, model: string, embedding: number[]): Promise<void> {
     try {
-      const key = CACHE_KEYS.IMAGE_EMBEDDING(checksum);
+      const key = CACHE_KEYS.IMAGE_EMBEDDING(checksum, model);
       await this.backend.set(key, embedding);
     } catch (error) {
       console.error('[CacheService] setImageEmbedding failed:', {

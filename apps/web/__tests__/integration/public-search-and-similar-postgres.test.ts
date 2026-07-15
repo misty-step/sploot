@@ -4,12 +4,22 @@ import { EMBEDDING_DIMENSION } from '@sploot/common';
 
 const AUTH_USER_ID = 'public-vector-route-user';
 
-vi.mock('@/lib/auth/with-authenticated-api', () => ({
-  withAuthenticatedApi: (handler: (request: NextRequest, context: any, auth: any) => Promise<Response>) =>
-    (request: NextRequest, context: any = {}) => handler(request, context, {
-      principal: { userId: AUTH_USER_ID, credentialKind: 'upload-token' },
-      auth: { status: 'authenticated' },
-    }),
+const authState = vi.hoisted(() => ({ authenticated: true }));
+
+vi.mock('@/lib/auth/request-auth', () => ({
+  authenticateRequest: vi.fn(async () => authState.authenticated
+    ? {
+        status: 'authenticated',
+        principal: {
+          userId: AUTH_USER_ID,
+          provider: 'upload-token',
+          providerSubject: AUTH_USER_ID,
+          source: 'upload-token',
+          credentialKind: 'upload-token',
+        },
+        syncStatus: 'skipped',
+      }
+    : { status: 'unauthenticated', reason: 'upload-token-missing' }),
 }));
 
 import { GET as similarAssets } from '@/app/api/assets/[id]/similar/route';
@@ -27,7 +37,7 @@ const neighborId = `${AUTH_USER_ID}-b-neighbor`;
 const query = 'public-route-search-fixture';
 const embedding = Array(EMBEDDING_DIMENSION).fill(0.1);
 
-describeWithDatabase('pgvector public route seams', () => {
+describeWithDatabase('pgvector authenticated published/token-scoped route seams', () => {
   beforeAll(async () => {
     await prisma.user.deleteMany({ where: { id: AUTH_USER_ID } });
     await prisma.user.create({ data: { id: AUTH_USER_ID, email: `${AUTH_USER_ID}@example.test` } });
@@ -63,7 +73,7 @@ describeWithDatabase('pgvector public route seams', () => {
     await prisma.user.deleteMany({ where: { id: AUTH_USER_ID } });
   });
 
-  it('serves the public search route from real pgvector results and preserves its page contract', async () => {
+  it('serves the authenticated published token-scoped search route from real pgvector results', async () => {
     const response = await publicSearch(new NextRequest('http://localhost/api/search', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -80,7 +90,7 @@ describeWithDatabase('pgvector public route seams', () => {
     expect(body.nextCursor).toEqual(expect.any(String));
   });
 
-  it('serves similar assets through the direct pgvector path', async () => {
+  it('serves similar assets through the direct pgvector path for the authenticated token principal', async () => {
     const response = await similarAssets(
       new NextRequest(`http://localhost/api/assets/${sourceId}/similar?limit=1`),
       { params: Promise.resolve({ id: sourceId }) },
@@ -90,5 +100,19 @@ describeWithDatabase('pgvector public route seams', () => {
     expect(response.status).toBe(200);
     expect(body.reason).toBeNull();
     expect(body.results.map((result: { id: string }) => result.id)).toEqual([neighborId]);
+  });
+
+  it('rejects the same published route contract without authentication', async () => {
+    authState.authenticated = false;
+
+    const response = await publicSearch(new NextRequest('http://localhost/api/search', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query, limit: 1 }),
+    }));
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' });
+    authState.authenticated = true;
   });
 });

@@ -177,7 +177,7 @@ test.describe('authenticated seeded gallery', () => {
             body: JSON.stringify({ ...body, assets: body.assets?.slice(0, 24) ?? [] }),
           });
         });
-        await page.goto('/app', { waitUntil: 'domcontentloaded', timeout: 90_000 });
+        await page.goto('/api/qa-auth/login', { waitUntil: 'domcontentloaded', timeout: 90_000 });
         await expect(page).toHaveURL(/\/app/);
         await expect(page.getByRole('list', { name: 'meme results' })).toBeVisible({ timeout: 30_000 });
         await assertCleanSurface(page);
@@ -382,7 +382,7 @@ test.describe('authenticated seeded gallery', () => {
             const body = await response.json() as { assets?: unknown[] };
             await route.fulfill({ response, body: JSON.stringify({ ...body, assets: body.assets?.slice(0, 24) ?? [] }) });
           });
-          await reducedPage.goto('/app', { waitUntil: 'domcontentloaded', timeout: 90_000 });
+          await reducedPage.goto('/api/qa-auth/login', { waitUntil: 'domcontentloaded', timeout: 90_000 });
           await expect(reducedPage.getByRole('list', { name: 'meme results' })).toBeVisible({ timeout: 30_000 });
           await assertCleanSurface(reducedPage);
           const reducedCounts = await assertDecodedCards(reducedPage, 'light 390x844 reduced motion');

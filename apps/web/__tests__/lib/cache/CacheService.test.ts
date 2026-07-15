@@ -45,6 +45,7 @@ class MockBackend implements ICacheBackend {
 }
 
 describe('CacheService', () => {
+  const imageModel = 'image-model:v1';
   let mockBackend: MockBackend;
   let cacheService: CacheService;
 
@@ -139,7 +140,7 @@ describe('CacheService', () => {
 
   describe('Image Embeddings', () => {
     it('should return null on cache miss', async () => {
-      const result = await cacheService.getImageEmbedding('abc123');
+      const result = await cacheService.getImageEmbedding('abc123', imageModel);
       expect(result).toBeNull();
     });
 
@@ -147,8 +148,8 @@ describe('CacheService', () => {
       const embedding = [0.7, 0.8, 0.9];
       const checksum = 'abc123def456';
 
-      await cacheService.setImageEmbedding(checksum, embedding);
-      const result = await cacheService.getImageEmbedding(checksum);
+      await cacheService.setImageEmbedding(checksum, imageModel, embedding);
+      const result = await cacheService.getImageEmbedding(checksum, imageModel);
 
       expect(result).toEqual(embedding);
     });
@@ -157,24 +158,39 @@ describe('CacheService', () => {
       const embedding = [0.1, 0.2, 0.3];
       const checksum = 'test-checksum';
 
-      await cacheService.setImageEmbedding(checksum, embedding);
+      await cacheService.setImageEmbedding(checksum, imageModel, embedding);
 
       const store = mockBackend.getStore();
       const keys = Array.from(store.keys());
 
-      // Image embedding keys should be img:checksum
-      expect(keys.some(key => key === `img:${checksum}`)).toBe(true);
+      // Image embedding keys are versioned and bound to the exact model revision.
+      expect(keys.some(key => key.startsWith('img:v2:'))).toBe(true);
+    });
+
+    it('does not cross-contaminate the same checksum across model revisions', async () => {
+      const checksum = 'same-image-checksum';
+      const modelV1 = 'image-model:v1';
+      const modelV2 = 'image-model:v2';
+
+      await cacheService.setImageEmbedding(checksum, modelV1, [0.1]);
+
+      await expect(cacheService.getImageEmbedding(checksum, modelV2)).resolves.toBeNull();
+      await expect(cacheService.getImageEmbedding(checksum, modelV1)).resolves.toEqual([0.1]);
+
+      await cacheService.setImageEmbedding(checksum, modelV2, [0.2]);
+      await expect(cacheService.getImageEmbedding(checksum, modelV1)).resolves.toEqual([0.1]);
+      await expect(cacheService.getImageEmbedding(checksum, modelV2)).resolves.toEqual([0.2]);
     });
 
     it('should track stats for image embedding hits and misses', async () => {
       const embedding = [0.1, 0.2, 0.3];
 
       // Miss
-      await cacheService.getImageEmbedding('checksum1');
+      await cacheService.getImageEmbedding('checksum1', imageModel);
 
       // Set and hit
-      await cacheService.setImageEmbedding('checksum1', embedding);
-      await cacheService.getImageEmbedding('checksum1');
+      await cacheService.setImageEmbedding('checksum1', imageModel, embedding);
+      await cacheService.getImageEmbedding('checksum1', imageModel);
 
       const stats = cacheService.getStats();
       expect(stats.hits).toBe(1);
@@ -402,13 +418,13 @@ describe('CacheService', () => {
   describe('Cache Invalidation', () => {
     it('should clear all caches when no namespace provided', async () => {
       await cacheService.setTextEmbedding('text1', [0.1]);
-      await cacheService.setImageEmbedding('img1', [0.2]);
+      await cacheService.setImageEmbedding('img1', imageModel, [0.2]);
       await cacheService.setSearchResults('user1', 'query', { limit: 50 }, []);
 
       await cacheService.clear();
 
       const text = await cacheService.getTextEmbedding('text1');
-      const image = await cacheService.getImageEmbedding('img1');
+      const image = await cacheService.getImageEmbedding('img1', imageModel);
       const search = await cacheService.getSearchResults('user1', 'query', { limit: 50 });
 
       expect(text).toBeNull();
@@ -418,12 +434,12 @@ describe('CacheService', () => {
 
     it('should clear only specified namespace', async () => {
       await cacheService.setTextEmbedding('text1', [0.1]);
-      await cacheService.setImageEmbedding('img1', [0.2]);
+      await cacheService.setImageEmbedding('img1', imageModel, [0.2]);
 
       await cacheService.clear('txt');
 
       const text = await cacheService.getTextEmbedding('text1');
-      const image = await cacheService.getImageEmbedding('img1');
+      const image = await cacheService.getImageEmbedding('img1', imageModel);
 
       expect(text).toBeNull();
       expect(image).toEqual([0.2]); // Image cache should still exist
@@ -449,12 +465,12 @@ describe('CacheService', () => {
     it('should handle mixed cache operations correctly', async () => {
       // Add various types of cached data
       await cacheService.setTextEmbedding('query1', [0.1, 0.2]);
-      await cacheService.setImageEmbedding('img1', [0.3, 0.4]);
+      await cacheService.setImageEmbedding('img1', imageModel, [0.3, 0.4]);
       await cacheService.setSearchResults('user1', 'cats', { limit: 10 }, [{ id: '1' }]);
 
       // Retrieve them
       const text = await cacheService.getTextEmbedding('query1');
-      const image = await cacheService.getImageEmbedding('img1');
+      const image = await cacheService.getImageEmbedding('img1', imageModel);
       const search = await cacheService.getSearchResults('user1', 'cats', { limit: 10 });
 
       expect(text).toEqual([0.1, 0.2]);
@@ -472,8 +488,8 @@ describe('CacheService', () => {
       await cacheService.getTextEmbedding('miss1');
 
       // Hit
-      await cacheService.setImageEmbedding('img1', [0.1]);
-      await cacheService.getImageEmbedding('img1');
+      await cacheService.setImageEmbedding('img1', imageModel, [0.1]);
+      await cacheService.getImageEmbedding('img1', imageModel);
 
       // Miss
       await cacheService.getSearchResults('user1', 'query', { limit: 10 });
