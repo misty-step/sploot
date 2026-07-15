@@ -21,14 +21,7 @@ const STORAGE_KEY = 'sploot:last-save';
 
 /** Record the latest save outcome. Fire-and-forget safe: never throws. */
 export function setSaveStatus(status: SaveStatus): void {
-  try {
-    void chrome.storage.local.set({ [STORAGE_KEY]: status }).catch((error: unknown) => {
-      console.error('[SaveStatus] Failed to persist save status', error);
-    });
-  } catch (error) {
-    // Status is companion feedback; never let it break a save.
-    console.error('[SaveStatus] Failed to persist save status', error);
-  }
+  runBestEffort('storage.local.set save status', () => chrome.storage.local.set({ [STORAGE_KEY]: status }));
 }
 
 export async function getSaveStatus(): Promise<SaveStatus | null> {
@@ -59,3 +52,4 @@ export function onSaveStatusChanged(callback: (status: SaveStatus) => void): () 
   chrome.storage.onChanged.addListener(listener);
   return () => chrome.storage.onChanged.removeListener(listener);
 }
+import { runBestEffort } from './best-effort';

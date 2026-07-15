@@ -7,6 +7,8 @@ import {
   CLERK_SYNC_HOST,
 } from '../../shared/env'
 import { getSplootSignInUrl } from '../../shared/app-url'
+import { IS_DEV_BUILD } from '../../shared/build-mode'
+import { runBestEffort } from '../../shared/best-effort'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
 const SIGN_IN_TIMEOUT_MS = 60000
@@ -135,9 +137,9 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS): Promise<boolean> 
 
     waiters.add(listener)
     intervalId = setInterval(() => {
-      void pollForSyncedSession()
+      runBestEffort('auth sign-in poll', pollForSyncedSession)
     }, SIGN_IN_POLL_INTERVAL_MS)
-    void pollForSyncedSession()
+    runBestEffort('auth initial sign-in poll', pollForSyncedSession)
   })
 }
 
@@ -200,6 +202,9 @@ export function setupAuthBridge() {
     }
 
     if (message?.type === AUTH_MESSAGES.RUN_DIAGNOSTICS) {
+      if (!IS_DEV_BUILD) {
+        return false
+      }
       runAuthDiagnostics()
         .then(snapshot => sendResponse({ snapshot }))
         .catch(error => sendResponse({ error: error instanceof Error ? error.message : String(error) }))

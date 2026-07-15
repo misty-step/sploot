@@ -37,6 +37,8 @@ interface StoredJob {
   processingStartedAt?: number;
   processingToken?: string;
   lastError?: string;
+  sourceBytes?: string;
+  sourceType?: string;
 }
 
 let storedQueue: StoredJob[];
@@ -405,5 +407,31 @@ describe('durable context-menu save queue', () => {
     await processing;
 
     expect(storedQueue[0]).toMatchObject({ state: 'failed', lastError: 'manual transition' });
+  });
+
+  it('replays the retained original bytes when the remote URL changes after a crash', async () => {
+    let saveAttempt = 0;
+    mocks.fetchImage
+      .mockResolvedValueOnce(new Blob(['original'], { type: 'image/png' }))
+      .mockResolvedValueOnce(new Blob(['changed'], { type: 'image/png' }));
+    mocks.saveToSploot.mockImplementation(async (produce: () => Promise<{ blob: Blob; filename: string }>) => {
+      saveAttempt += 1;
+      const produced = await produce();
+      expect(await produced.blob.text()).toBe('original');
+      if (saveAttempt === 1) {
+        return { ok: false, error: new Error('worker crashed after upload') };
+      }
+      return { ok: true, filename: produced.filename, isDuplicate: true };
+    });
+
+    await enqueueContextMenuSave('https://x.test/changing.png', 'changing.png');
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(storedQueue[0]?.state).toBe('pending'));
+    vi.setSystemTime(storedQueue[0].nextAttemptAt!);
+    await recoverPendingContextMenuSaves();
+
+    expect(mocks.fetchImage).toHaveBeenCalledOnce();
+    expect(mocks.saveToSploot).toHaveBeenCalledTimes(2);
+    expect(storedQueue).toEqual([]);
   });
 });

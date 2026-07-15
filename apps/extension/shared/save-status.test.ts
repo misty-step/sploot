@@ -70,4 +70,16 @@ describe('save-status', () => {
     ).not.toThrow();
     expect(await getSaveStatus()).toBeNull();
   });
+
+  it('contains a rejected storage.local.set without breaking the caller', async () => {
+    const report = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    chrome.storage.local.set = vi.fn().mockRejectedValue(new Error('storage rejected'));
+
+    expect(() => setSaveStatus({ state: 'saving', label: 'Saving…', at: 2 })).not.toThrow();
+    await vi.waitFor(() => expect(report).toHaveBeenCalledWith(
+      '[BestEffort] storage.local.set save status failed',
+      expect.any(Error),
+    ));
+    report.mockRestore();
+  });
 });

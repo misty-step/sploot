@@ -180,17 +180,27 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Validate production manifest policy before release build
+        run: pnpm --filter extension build:manifest-check && pnpm --filter extension manifest:check
       - name: Build production extension release artifacts
         env:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
         run: pnpm --filter extension zip:prod
-      - name: Validate candidate release provenance
+      - name: Validate candidate release structure and provenance
         env:
           RELEASE_CANDIDATE_SHA: ${{ github.sha }}
           RELEASE_PROVENANCE_PATH: ${{ runner.temp }}/extension-release-provenance.json
-        run: pnpm --filter extension release:check
-      - name: Validate production manifest policy
-        run: pnpm --filter extension manifest:check
+        run: pnpm --filter extension release:structural
+      - name: Assert strict release gate remains fail-closed without operator evidence
+        env:
+          RELEASE_CANDIDATE_SHA: ${{ github.sha }}
+          RELEASE_PROVENANCE_PATH: ${{ runner.temp }}/extension-release-provenance.json
+        run: |
+          if pnpm --filter extension release:check; then
+            echo 'strict release:check unexpectedly passed without exact external Chrome/Web Store evidence'
+            exit 1
+          fi
+          echo 'strict release:check correctly failed closed: external operator evidence is absent'
       - name: Test manifest policy
         run: pnpm --filter extension manifest:test
       - name: Lint extension
@@ -199,6 +209,11 @@ jobs:
         run: pnpm --filter extension test
       - name: Test extension narrow layouts in Chrome
         run: pnpm --filter extension test:layout
+      - name: Assert production artifact/provenance immediately before upload
+        env:
+          RELEASE_CANDIDATE_SHA: ${{ github.sha }}
+          RELEASE_PROVENANCE_PATH: ${{ runner.temp }}/extension-release-provenance.json
+        run: pnpm --filter extension exec node scripts/assert-release-artifact.mjs
       - uses: actions/upload-artifact@v7
         with:
           name: extension-dist

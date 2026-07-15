@@ -12,6 +12,7 @@
     "build:prod:unpacked": "VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://www.sploot.app} VITE_CLERK_SYNC_HOST=${VITE_CLERK_SYNC_HOST:-https://clerk.sploot.app} INCLUDE_CRX_KEY=true WXT_MODE=production wxt build",
     "build:firefox": "WXT_MODE=development wxt build -b firefox",
     "release:check": "node scripts/validate-store-release.mjs",
+    "release:structural": "RELEASE_STRUCTURAL_ONLY=true node scripts/validate-store-release.mjs",
     "release:test": "node --test scripts/release-provenance.node-test.mjs",
     "manifest:check": "node scripts/validate-manifest.mjs",
     "manifest:test": "node --test scripts/manifest-policy.node-test.mjs",

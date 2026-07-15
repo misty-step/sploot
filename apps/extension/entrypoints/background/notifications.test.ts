@@ -282,4 +282,38 @@ describe('notifications', () => {
       expect(persistedStorage['sploot:notification-actions']).toHaveLength(32);
     });
   });
+
+  it('contains rejected notification, badge, status, action-write, clear, and timer APIs so later saves continue', async () => {
+    const report = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    chromeMock.notifications.create.mockRejectedValue(new Error('notifications unavailable'));
+    chromeMock.notifications.clear.mockRejectedValue(new Error('clear unavailable'));
+    chromeMock.action.setBadgeText.mockRejectedValue(new Error('badge unavailable'));
+    chromeMock.action.setBadgeBackgroundColor.mockRejectedValue(new Error('badge color unavailable'));
+    chromeMock.storage.local.set.mockRejectedValue(new Error('storage unavailable'));
+
+    const { setupNotificationFeedback, showSuccessNotification, showErrorNotification } = await import('./notifications');
+    setupNotificationFeedback();
+    expect(() => showSuccessNotification('first.jpg')).not.toThrow();
+    vi.advanceTimersByTime(5000);
+    await Promise.resolve();
+
+    expect(() => showErrorNotification('second failure')).not.toThrow();
+    await vi.waitFor(() => expect(report).toHaveBeenCalled());
+    report.mockRestore();
+  });
+
+  it('contains a rejected notification action tab open and still clears the notification', async () => {
+    const report = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    chromeMock.tabs.create.mockRejectedValue(new Error('tabs unavailable'));
+    const { setupNotificationFeedback, showSuccessNotification } = await import('./notifications');
+    setupNotificationFeedback();
+    showSuccessNotification('click.jpg');
+    const id = chromeMock.notifications.create.mock.calls[0][0] as string;
+    clickListeners[0](id);
+
+    await vi.waitFor(() => expect(chromeMock.notifications.clear).toHaveBeenCalledWith(id));
+    expect(() => showSuccessNotification('after-click.jpg')).not.toThrow();
+    expect(report).toHaveBeenCalled();
+    report.mockRestore();
+  });
 });

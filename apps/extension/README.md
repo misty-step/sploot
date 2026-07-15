@@ -72,9 +72,9 @@ To publish an **update**:
 1. **Bump the version** — set the new `version` in `wxt.config.ts` (the manifest
    source of truth); Chrome rejects an upload whose version is not strictly
    higher than the published one.
-2. **Validate the release** — `pnpm --filter extension release:check`
+2. **Validate the release structure** — `pnpm --filter extension release:structural`
    (`scripts/validate-store-release.mjs`) verifies the manifest, icons, and
-   production config before you build.
+   production config without claiming external Chrome/Web Store proof.
 3. **Build the store zip** — `pnpm --filter extension zip:prod` — produces the
    production-config `.zip` under `apps/extension/.output/`.
 4. **Upload** the zip to the existing item in the
@@ -84,6 +84,10 @@ To publish an **update**:
    manual gate.)
 5. **Verify** the listing URL still resolves and the new version is live before
    closing the release.
+
+The strict `pnpm --filter extension release:check` gate is intentionally
+nonzero until the operator supplies an exact-provenance Chrome/Web Store
+evidence packet through `RELEASE_OPERATOR_EVIDENCE_PATH`.
 
 Firefox has a parallel `zip:firefox` target for a future AMO listing.
 

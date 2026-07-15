@@ -16,6 +16,7 @@ import { CONTEXT_MENU_SAVE_MESSAGES, type ContextMenuSaveJobSummary } from '../.
 import { getSaveStatus, onSaveStatusChanged, type SaveStatus } from '../../shared/save-status'
 import { EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
 import { getSplootAppUrl, getSplootSignInUrl } from '../../shared/app-url'
+import { runBestEffort } from '../../shared/best-effort'
 import { performContextMenuSaveAction, requestContextMenuSaveQueue } from './queue-recovery'
 import './style.css'
 
@@ -62,7 +63,7 @@ function App() {
 
 function SignedOutPanel() {
   const handleSignIn = () => {
-    chrome.tabs.create({ url: getSplootSignInUrl() })
+    runBestEffort('tabs.create sign-in', () => chrome.tabs.create({ url: getSplootSignInUrl() }))
   }
 
   return (
@@ -116,7 +117,7 @@ function SignedInPanel() {
     // Mark as used when opening library
     localStorage.setItem('sploot-has-used', 'true')
     setHasUsedExtension(true)
-    chrome.tabs.create({ url: getSplootAppUrl() })
+    runBestEffort('tabs.create library', () => chrome.tabs.create({ url: getSplootAppUrl() }))
   }
 
   const handleScreenshot = () => {
@@ -126,7 +127,7 @@ function SignedInPanel() {
   }
 
   const handleDiagnostics = () => {
-    chrome.runtime.sendMessage({ type: AUTH_MESSAGES.RUN_DIAGNOSTICS })
+    runBestEffort('runtime.sendMessage diagnostics', () => chrome.runtime.sendMessage({ type: AUTH_MESSAGES.RUN_DIAGNOSTICS }))
   }
 
   // Calculate session expiry time remaining (in seconds)

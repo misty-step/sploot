@@ -12,6 +12,7 @@ import {
   getTrustedSplootAppUrl,
 } from '../../shared/app-url';
 import { setSaveStatus } from '../../shared/save-status';
+import { runBestEffort } from '../../shared/best-effort';
 import { flashErrorBadge, flashSuccessBadge } from './badge';
 
 export interface ErrorNotificationInput {
@@ -76,13 +77,13 @@ function rememberAction(notificationId: string, url: string): void {
     }
   }
 
-  void enqueueActionWrite(async () => {
+  runBestEffort('notification action persistence', () => enqueueActionWrite(async () => {
     const actions = (await loadPersistedActions()).filter(action => action.notificationId !== notificationId);
     actions.push({ notificationId, url: trustedUrl });
     await chrome.storage.local.set({
       [ACTIONS_STORAGE_KEY]: actions.slice(-MAX_PERSISTED_ACTIONS),
     });
-  });
+  }));
 }
 
 async function forgetAction(notificationId: string): Promise<void> {
@@ -103,21 +104,21 @@ export function setupNotificationFeedback(): void {
 
   clickListenerRegistered = true;
   chrome.notifications.onClicked.addListener((notificationId) => {
-    void (async () => {
+    runBestEffort('notification click handling', async () => {
       const url = notificationActions.get(notificationId)
         ?? (await loadPersistedActions()).find(action => action.notificationId === notificationId)?.url;
       const trustedUrl = url ? getTrustedSplootAppUrl(url) : undefined;
       if (trustedUrl) {
-        chrome.tabs.create({ url: trustedUrl });
+        runBestEffort('tabs.create notification action', () => chrome.tabs.create({ url: trustedUrl }));
       }
-      await dismiss(notificationId);
-    })();
+      dismiss(notificationId);
+    });
   });
 }
 
-async function dismiss(notificationId: string): Promise<void> {
-  await forgetAction(notificationId);
-  chrome.notifications.clear(notificationId);
+function dismiss(notificationId: string): void {
+  runBestEffort('notification action removal', () => forgetAction(notificationId));
+  runBestEffort('notifications.clear', () => chrome.notifications.clear(notificationId));
 }
 
 /**
@@ -133,14 +134,14 @@ export function showSuccessNotification(
 ): void {
   const notificationId = `success-${crypto.randomUUID()}`;
 
-  chrome.notifications.create(notificationId, {
+  runBestEffort('notifications.create success', () => chrome.notifications.create(notificationId, {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icon-128.png'), // Always use local icon
     title: options?.isDuplicate ? 'Already in Sploot' : 'Saved to Sploot',
     message: filename,
     priority: 1,
     isClickable: true,
-  });
+  }));
 
   rememberAction(notificationId, getSplootAppUrl());
   flashSuccessBadge();
@@ -152,7 +153,7 @@ export function showSuccessNotification(
     at: Date.now(),
   });
 
-  setTimeout(() => dismiss(notificationId), SUCCESS_DISMISS_MS);
+  setTimeout(() => runBestEffort('success notification timer', () => dismiss(notificationId)), SUCCESS_DISMISS_MS);
 }
 
 /**
@@ -194,14 +195,14 @@ export function showErrorNotification(error: string | ErrorNotificationInput): v
   const actionHref = typeof error === 'string' ? undefined : error.actionHref;
   const actionUrl = actionHref ? getTrustedSplootAppUrl(actionHref) : undefined;
 
-  chrome.notifications.create(notificationId, {
+  runBestEffort('notifications.create error', () => chrome.notifications.create(notificationId, {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icon-128.png'),
     title: 'Save Failed',
     message: userMessage,
     priority: 2,
     isClickable: Boolean(actionUrl),
-  });
+  }));
 
   if (actionUrl) {
     rememberAction(notificationId, actionUrl);
@@ -209,5 +210,5 @@ export function showErrorNotification(error: string | ErrorNotificationInput): v
   flashErrorBadge();
   setSaveStatus({ state: 'error', message: userMessage, at: Date.now() });
 
-  setTimeout(() => dismiss(notificationId), ERROR_DISMISS_MS);
+  setTimeout(() => runBestEffort('error notification timer', () => dismiss(notificationId)), ERROR_DISMISS_MS);
 }

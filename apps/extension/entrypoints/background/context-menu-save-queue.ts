@@ -1,4 +1,5 @@
 import { setSaveStatus } from '../../shared/save-status';
+import { UPLOAD } from '@sploot/common';
 import { fetchImage } from './image-fetcher';
 import { showErrorNotification } from './notifications';
 import { saveToSploot } from './save-flow';
@@ -11,6 +12,8 @@ export const MAX_CONTEXT_MENU_SAVE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export const PROCESSING_STALE_TIMEOUT_MS = 5 * 60 * 1000;
 export const RETRY_BACKOFF_BASE_MS = 30 * 1000;
 export const RETRY_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000;
+/** Base64-encoded source bytes retained across worker crashes. */
+export const MAX_CONTEXT_MENU_SAVE_STORAGE_BYTES = 8 * 1024 * 1024;
 
 export type ContextMenuSaveJobState = 'pending' | 'processing' | 'failed';
 
@@ -26,6 +29,9 @@ export interface ContextMenuSaveJob {
   processingToken?: string;
   lastError?: string;
   failedAt?: number;
+  /** Original fetched bytes, retained so a retry cannot silently fetch new content. */
+  sourceBytes?: string;
+  sourceType?: string;
 }
 
 export class ContextMenuSaveQueueError extends Error {
@@ -89,6 +95,10 @@ function normalizeJob(job: unknown): ContextMenuSaveJob | null {
   if (typeof candidate.failedAt === 'number' && Number.isFinite(candidate.failedAt)) {
     normalized.failedAt = candidate.failedAt;
   }
+  if (typeof candidate.sourceBytes === 'string' && typeof candidate.sourceType === 'string') {
+    normalized.sourceBytes = candidate.sourceBytes;
+    normalized.sourceType = candidate.sourceType;
+  }
 
   return normalized;
 }
@@ -108,6 +118,37 @@ async function readJobs(): Promise<ContextMenuSaveJob[]> {
 
 function queueError(error: unknown): Error {
   return error instanceof Error ? error : new Error('Queue storage is unavailable.');
+}
+
+function retainedSourceBytes(jobs: ContextMenuSaveJob[]): number {
+  return jobs.reduce((total, job) => total + (job.sourceBytes?.length ?? 0), 0);
+}
+
+async function blobToStoredSource(blob: Blob): Promise<Pick<ContextMenuSaveJob, 'sourceBytes' | 'sourceType'>> {
+  if (blob.size > UPLOAD.multipartSafeSize) {
+    throw new Error('Original image exceeds the bounded retry storage budget; retry will fetch the current remote URL.');
+  }
+
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return {
+    sourceBytes: btoa(binary),
+    sourceType: blob.type || 'application/octet-stream',
+  };
+}
+
+function storedSourceToBlob(job: ContextMenuSaveJob): Blob {
+  if (!job.sourceBytes || !job.sourceType) {
+    throw new Error('Retained image bytes are incomplete; retry will fetch the current remote URL.');
+  }
+
+  const binary = atob(job.sourceBytes);
+  const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+  return new Blob([bytes], { type: job.sourceType });
 }
 
 function retryDelayMs(attempts: number): number {
@@ -165,6 +206,9 @@ export async function scheduleContextMenuSaveQueueWakeup(): Promise<void> {
 }
 
 async function writeJobs(jobs: ContextMenuSaveJob[]): Promise<void> {
+  if (retainedSourceBytes(jobs) > MAX_CONTEXT_MENU_SAVE_STORAGE_BYTES) {
+    throw new Error('Original image bytes exceed the bounded retry storage budget; retry will fetch the current remote URL.');
+  }
   await chrome.storage.local.set({ [CONTEXT_MENU_QUEUE_KEY]: jobs });
   await scheduleContextMenuSaveQueueWakeup();
 }
@@ -221,9 +265,32 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
 
   let outcome: Awaited<ReturnType<typeof saveToSploot>>;
   try {
+    let sourceBlob: Blob;
+    if (current.sourceBytes) {
+      sourceBlob = storedSourceToBlob(current);
+    } else {
+      sourceBlob = await fetchImage(current.imageUrl);
+      const retained = await blobToStoredSource(sourceBlob);
+      const latestJobs = await readJobs();
+      const activeLatest = latestJobs.find(candidate => (
+        candidate.id === current.id
+        && candidate.state === 'processing'
+        && candidate.processingToken === processing.processingToken
+      ));
+      if (!activeLatest) {
+        return;
+      }
+      await writeJobs(latestJobs.map(candidate => candidate.id === current.id
+        ? { ...candidate, ...retained }
+        : candidate));
+    }
+
     outcome = await saveToSploot(
       async () => ({
-        blob: await fetchImage(current.imageUrl),
+        // Replay the exact bytes retained before upload. A URL can serve new
+        // content between attempts, so URL refetching is not an idempotency
+        // guarantee by itself.
+        blob: sourceBlob,
         filename: current.filename,
       }),
       'image',

@@ -205,7 +205,7 @@ Gate:
 
 ```bash
 pnpm --filter extension zip:prod
-pnpm --filter extension release:check
+pnpm --filter extension release:structural
 ```
 
 ## Operator-only evidence before submission
@@ -221,3 +221,11 @@ Until then:
 ```text
 Status: not submitted.
 ```
+
+The strict `release:check` gate consumes an operator-created JSON packet via
+`RELEASE_OPERATOR_EVIDENCE_PATH`; it does not generate or accept a self-attested
+pass. The packet must bind the exact source, ZIP, version, extension ID, and
+Web Store item, and carry independently captured proof references for
+authenticated right-click/save, the 409 duplicate, library visibility,
+sign-out, the Web Store receipt, and installation. Each proof must repeat the
+same `candidateSha`, `artifactSha256`, `version`, and `extensionId` binding.

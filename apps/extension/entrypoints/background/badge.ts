@@ -9,16 +9,11 @@
 const BADGE_CLEAR_MS = 3000;
 
 function flashBadge(text: string, color: string): void {
-  try {
-    chrome.action.setBadgeBackgroundColor({ color });
-    chrome.action.setBadgeText({ text });
-    setTimeout(() => {
-      chrome.action.setBadgeText({ text: '' });
-    }, BADGE_CLEAR_MS);
-  } catch (error) {
-    // Badge is non-essential feedback; never let it break a save.
-    console.error('[Badge] Failed to set action badge', error);
-  }
+  runBestEffort('action.setBadgeBackgroundColor', () => chrome.action.setBadgeBackgroundColor({ color }));
+  runBestEffort('action.setBadgeText', () => chrome.action.setBadgeText({ text }));
+  setTimeout(() => {
+    runBestEffort('action.setBadgeText clear', () => chrome.action.setBadgeText({ text: '' }));
+  }, BADGE_CLEAR_MS);
 }
 
 // Toybox palette (apps/web/app/globals.css): the badge API needs concrete
@@ -33,3 +28,4 @@ export function flashSuccessBadge(): void {
 export function flashErrorBadge(): void {
   flashBadge('!', SPLOOT_RED);
 }
+import { runBestEffort } from '../../shared/best-effort';

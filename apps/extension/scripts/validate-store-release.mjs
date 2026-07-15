@@ -8,7 +8,11 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
 import { validateManifest } from './manifest-policy.mjs';
-import { assertCandidateSha, createReleaseProvenance } from './release-provenance.mjs';
+import {
+  assertCandidateSha,
+  createReleaseProvenance,
+  validateOperatorEvidence,
+} from './release-provenance.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
@@ -20,10 +24,16 @@ const buildMarkerPath = path.resolve(root, 'dist/release-build-provenance.json')
 const provenancePath = path.resolve(
   process.env.RELEASE_PROVENANCE_PATH ?? 'dist/extension-1.0.0-chrome.provenance.json'
 );
+const operatorEvidencePath = path.resolve(
+  process.env.RELEASE_OPERATOR_EVIDENCE_PATH ?? 'dist/extension-1.0.0-chrome.operator-evidence.json'
+);
+const structuralOnly = process.env.RELEASE_STRUCTURAL_ONLY === 'true';
 
 const pass = [];
 const localBlockers = [];
 const externalBlockers = [];
+let releaseCandidateSha;
+let releaseArtifactSha256;
 
 async function checkedOutCandidateSha() {
   const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root });
@@ -88,36 +98,35 @@ async function validateZip() {
     return;
   }
 
-  if (existsSync(listingPath)) {
-    const listing = await readFile(listingPath, 'utf8');
-    const actualSha = await sha256File(zipPath);
-    const candidateSha = await checkedOutCandidateSha();
-    try {
-      assertCandidateSha(candidateSha, process.env.RELEASE_CANDIDATE_SHA);
-      if (!existsSync(buildMarkerPath)) {
-        throw new Error(`missing release build provenance: ${rel(buildMarkerPath)}`);
-      }
-      const buildMarker = JSON.parse(await readFile(buildMarkerPath, 'utf8'));
-      if (buildMarker.candidateSha !== candidateSha) {
-        throw new Error(`release build candidate drift: marker has ${buildMarker.candidateSha}, checked out ${candidateSha}`);
-      }
-      if (buildMarker.artifact?.path !== rel(zipPath)) {
-        throw new Error(`release build artifact path drift: marker has ${buildMarker.artifact?.path}, expected ${rel(zipPath)}`);
-      }
-      if (buildMarker.artifact?.sha256 !== actualSha) {
-        throw new Error(`release build artifact drift: marker has ${buildMarker.artifact?.sha256}, actual is ${actualSha}`);
-      }
-      const provenance = createReleaseProvenance({
-        candidateSha,
-        artifactPath: rel(zipPath),
-        artifactSha256: actualSha,
-        version: '1.0.0',
-      });
-      await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
-      recordPass(`release provenance binds ${candidateSha} to ${actualSha}`);
-    } catch (error) {
-      recordLocal(error instanceof Error ? error.message : 'invalid release provenance');
+  const actualSha = await sha256File(zipPath);
+  const candidateSha = await checkedOutCandidateSha();
+  releaseCandidateSha = candidateSha;
+  releaseArtifactSha256 = actualSha;
+  try {
+    assertCandidateSha(candidateSha, process.env.RELEASE_CANDIDATE_SHA);
+    if (!existsSync(buildMarkerPath)) {
+      throw new Error(`missing release build provenance: ${rel(buildMarkerPath)}`);
     }
+    const buildMarker = JSON.parse(await readFile(buildMarkerPath, 'utf8'));
+    if (buildMarker.candidateSha !== candidateSha) {
+      throw new Error(`release build candidate drift: marker has ${buildMarker.candidateSha}, checked out ${candidateSha}`);
+    }
+    if (buildMarker.artifact?.path !== rel(zipPath)) {
+      throw new Error(`release build artifact path drift: marker has ${buildMarker.artifact?.path}, expected ${rel(zipPath)}`);
+    }
+    if (buildMarker.artifact?.sha256 !== actualSha) {
+      throw new Error(`release build artifact drift: marker has ${buildMarker.artifact?.sha256}, actual is ${actualSha}`);
+    }
+    const provenance = createReleaseProvenance({
+      candidateSha,
+      artifactPath: rel(zipPath),
+      artifactSha256: actualSha,
+      version: '1.0.0',
+    });
+    await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+    recordPass(`release provenance binds ${candidateSha} to ${actualSha}`);
+  } catch (error) {
+    recordLocal(error instanceof Error ? error.message : 'invalid release provenance');
   }
 
   const entries = await zipEntries(zipPath);
@@ -248,6 +257,36 @@ async function validateListing() {
   }
 }
 
+async function validateExternalEvidence() {
+  if (structuralOnly) {
+    recordPass('strict operator evidence gate intentionally not evaluated in structural mode');
+    return;
+  }
+
+  if (!existsSync(operatorEvidencePath)) {
+    recordExternal(`missing exact-provenance operator evidence: ${rel(operatorEvidencePath)}`);
+    return;
+  }
+
+  try {
+    const evidence = JSON.parse(await readFile(operatorEvidencePath, 'utf8'));
+    const errors = validateOperatorEvidence(evidence, {
+      candidateSha: releaseCandidateSha,
+      artifactPath: rel(zipPath),
+      artifactSha256: releaseArtifactSha256,
+      version: '1.0.0',
+    });
+    for (const error of errors) {
+      recordExternal(error);
+    }
+    if (errors.length === 0) {
+      recordPass('operator evidence binds exact source, ZIP, version, Chrome item, and Web Store receipt/install proof');
+    }
+  } catch (error) {
+    recordExternal(`invalid operator evidence: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function printSection(title, items) {
   console.log(`\n${title}`);
   if (items.length === 0) {
@@ -269,6 +308,7 @@ await validateImages(promoDir, [
   { width: 440, height: 280 },
 ], 'small promo tile');
 await validateListing();
+await validateExternalEvidence();
 
 printSection('pass', pass);
 printSection('local blockers', localBlockers);

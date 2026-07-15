@@ -2,9 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages';
 
 const createClerkClient = vi.hoisted(() => vi.fn());
+const buildMode = vi.hoisted(() => ({ dev: true }));
 
 vi.mock('@clerk/chrome-extension/background', () => ({
   createClerkClient,
+}));
+
+vi.mock('../../shared/build-mode', () => ({
+  get IS_DEV_BUILD() {
+    return buildMode.dev;
+  },
 }));
 
 interface ChromeMock {
@@ -35,6 +42,7 @@ async function importAuthManager() {
 
 beforeEach(() => {
   messageListeners = [];
+  buildMode.dev = true;
   chromeMock = {
     action: {
       openPopup: vi.fn(async () => undefined),
@@ -164,5 +172,28 @@ describe('auth-manager', () => {
 
     await expect(waitPromise).resolves.toBe(true);
     expect(response).toEqual({ ok: true });
+  });
+
+  it('rejects diagnostics at the runtime message handler in production', async () => {
+    buildMode.dev = false;
+    const { setupAuthBridge } = await importAuthManager();
+    setupAuthBridge();
+    const response = vi.fn();
+
+    expect(messageListeners[0]({ type: AUTH_MESSAGES.RUN_DIAGNOSTICS }, {}, response)).toBe(false);
+    expect(response).not.toHaveBeenCalled();
+    expect(createClerkClient).not.toHaveBeenCalled();
+  });
+
+  it('keeps diagnostics available through the runtime message handler in development', async () => {
+    createClerkClient.mockResolvedValue({ session: null });
+    const { setupAuthBridge } = await importAuthManager();
+    setupAuthBridge();
+    const response = vi.fn();
+
+    expect(messageListeners[0]({ type: AUTH_MESSAGES.RUN_DIAGNOSTICS }, {}, response)).toBe(true);
+    await vi.waitFor(() => expect(response).toHaveBeenCalledWith({
+      snapshot: expect.objectContaining({ status: 'signed-out' }),
+    }));
   });
 });
