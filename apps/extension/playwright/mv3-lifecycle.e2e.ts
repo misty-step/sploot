@@ -200,9 +200,7 @@ async function stopAndRestart(
   step: Mv3Step,
 ): Promise<Worker> {
   return runMv3Step(context, testInfo, step, 'service worker termination and bounded restart', async () => {
-    const browser = context.browser();
-    if (!browser) throw new Error('persistent MV3 context has no browser CDP authority');
-    const cdp = await browser.newBrowserCDPSession();
+    const cdp = await context.newCDPSession(popup);
     const targetUrl = previousWorker.url();
     let latestVersion: {
       versionId: string;
