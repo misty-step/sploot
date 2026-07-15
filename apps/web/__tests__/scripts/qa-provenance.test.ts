@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -54,8 +54,9 @@ describe('QA capture provenance', () => {
 
   it('rejects a manifest altered after build', () => {
     const repositoryRoot = process.cwd().replace(/\/apps\/web$/, '');
-    if (!existsSync(canonicalStandaloneRoot(repositoryRoot))) return;
-    const manifest = createQaProvenanceManifest(repositoryRoot, canonicalStandaloneRoot(repositoryRoot));
+    const artifactRoot = canonicalStandaloneRoot(repositoryRoot);
+    if (!existsSync(join(artifactRoot, 'server.js')) || readdirSync(artifactRoot).length === 0) return;
+    const manifest = createQaProvenanceManifest(repositoryRoot, artifactRoot);
     const altered = { ...manifest, artifactDigest: 'f'.repeat(64) };
     expect(() => verifyQaProvenanceManifest(repositoryRoot, altered)).toThrow(/built artifact changed/);
   });

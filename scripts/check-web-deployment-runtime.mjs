@@ -27,7 +27,9 @@ export function validateWebDeploymentRuntime({
   if (start !== 'next start') {
     failures.push('source deployment must use the plain next start command');
   }
-  if (/output\s*:\s*["']standalone["']/.test(nextConfig)) {
+  const hasLoopbackQaStandaloneGate =
+    /SPLOOT_QA_AUTH_MODE\s*===\s*['"]enabled['"][\s\S]*SPLOOT_QA_EVIDENCE_MODE\s*===\s*['"]enabled['"][\s\S]*SPLOOT_QA_DEPLOYMENT_ID[\s\S]*sploot-gallery-qa-local[\s\S]*SPLOOT_QA_DEPLOYMENT_AUDIENCE[\s\S]*sploot-gallery-evidence[\s\S]*DEPLOYMENT_ENV\s*===\s*['"]qa-local['"]/.test(nextConfig);
+  if (/output\s*:\s*["']standalone["']/.test(nextConfig) && !hasLoopbackQaStandaloneGate) {
     failures.push('standalone output is incompatible with the source-based next start contract');
   }
   if (/getAuth\s*\(/.test(homePage) && !/export\s+const\s+dynamic\s*=\s*["']force-dynamic["']/.test(homePage)) {

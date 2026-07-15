@@ -224,8 +224,9 @@ async function verifyQaLocalAuthToken(
     return null;
   }
 
-  if (!isBoundedQaPayload(payload)) {
-  if (payload.deploymentId !== binding.deploymentId || payload.audience !== binding.audience) {
+  if (!isBoundedQaPayload(payload) ||
+      payload.deploymentId !== binding.deploymentId ||
+      payload.audience !== binding.audience) {
     return null;
   }
 
@@ -360,7 +361,7 @@ function isBoundedQaPayload(payload: unknown): payload is QaLocalAuthPayload {
   }
 
   const record = payload as Record<string, unknown>;
-  const allowedKeys = new Set(['v', 'userId', 'iat', 'exp', 'email', 'sessionId']);
+  const allowedKeys = new Set(['v', 'userId', 'deploymentId', 'audience', 'iat', 'exp', 'email', 'sessionId']);
   if (Object.keys(record).some((key) => !allowedKeys.has(key))) {
     return false;
   }
@@ -368,6 +369,8 @@ function isBoundedQaPayload(payload: unknown): payload is QaLocalAuthPayload {
   return record.v === TOKEN_VERSION &&
     typeof record.userId === 'string' &&
     QA_USER_ID_PATTERN.test(record.userId) &&
+    typeof record.deploymentId === 'string' &&
+    typeof record.audience === 'string' &&
     typeof record.iat === 'number' &&
     Number.isSafeInteger(record.iat) &&
     typeof record.exp === 'number' &&
