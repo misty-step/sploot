@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { prisma, vectorSearch, logSearch, type VectorSearchRow } from '@/lib/db';
 import { CLIP_MODEL, createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
-import { embeddingRetryHeaders } from '@/lib/embedding-errors';
+import {
+  EmbeddingConfigurationError,
+  embeddingConfigurationHeaders,
+  embeddingRetryHeaders,
+  reportEmbeddingConfigurationErrorOnce,
+} from '@/lib/embedding-errors';
 import { getCacheService } from '@/lib/cache';
 import { getAuthWithUser } from '@/lib/auth/server';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
@@ -194,6 +199,10 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     unstable_rethrow(error);
     // Error performing search
 
+    if (error instanceof EmbeddingConfigurationError) {
+      reportEmbeddingConfigurationErrorOnce(error, 'search:configuration');
+    }
+
     if (error instanceof EmbeddingError) {
       return NextResponse.json(
         {
@@ -205,7 +214,9 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
         },
         {
           status: error.statusCode || 500,
-          headers: embeddingRetryHeaders(error),
+          headers: error instanceof EmbeddingConfigurationError
+            ? embeddingConfigurationHeaders(error)
+            : embeddingRetryHeaders(error),
         }
       );
     }

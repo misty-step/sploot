@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
 import {
+  embeddingConfigurationHeaders,
   embeddingRetryAfterHeader,
   embeddingRetryHeaders,
   EmbeddingProviderCircuitOpenError,
   EmbeddingProviderUnavailableError,
   EmbeddingConfigurationError,
+  reportEmbeddingConfigurationErrorOnce,
 } from '@/lib/embedding-errors';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
@@ -183,7 +185,15 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     }
 
     if (!asset) {
-      const embeddingService = createEmbeddingService(userId);
+      let embeddingService;
+      try {
+        embeddingService = createEmbeddingService(userId);
+      } catch (error) {
+        if (error instanceof EmbeddingConfigurationError) {
+          reportEmbeddingConfigurationErrorOnce(error, 'embeddings:image:configuration');
+        }
+        throw error;
+      }
       const result = await embeddingService.embedImage(media.sourceUrl);
       return NextResponse.json({
         success: true,
@@ -249,8 +259,9 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
         try {
           embeddingService = createEmbeddingService(userId);
         } catch (error) {
-          if (error instanceof EmbeddingConfigurationError && processingClaimToken) {
+          if (error instanceof EmbeddingConfigurationError) {
             providerInitializationDeferred = true;
+            reportEmbeddingConfigurationErrorOnce(error, 'embeddings:image:configuration');
             await recordEmbeddingConfigurationFailure(asset.id, error, processingClaimToken);
           }
           throw error;
@@ -315,7 +326,9 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
         { error: error.message, ...(error instanceof EmbeddingAdmissionError && error.code ? { code: error.code } : {}) },
         {
           status: error.statusCode || 500,
-          headers: embeddingRetryHeaders(error),
+          headers: error instanceof EmbeddingConfigurationError
+            ? embeddingConfigurationHeaders(error)
+            : embeddingRetryHeaders(error),
         }
       );
     }

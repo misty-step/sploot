@@ -39,11 +39,24 @@ vi.mock('@prisma/client', () => ({
 const healthyDatabaseRow = [{
   limiter_buckets: 'embedding_rate_buckets',
   limiter_leases: 'embedding_rate_leases',
+  provider_circuits: 'embedding_provider_circuits',
+  circuit_generation: 'generation',
+  circuit_probe_until: 'probe_until',
+  circuit_probe_generation: 'probe_generation',
+  circuit_probe_lease_token: 'probe_lease_token',
+  attempt_count: 'attempt_count',
+  next_attempt_at: 'next_attempt_at',
+  terminal_at: 'terminal_at',
   processing_claim_token: 'processing_claim_token',
   revive_count: 'revive_count',
+  attempt_ceiling_constraint: true,
   claim_token_constraint: true,
   revive_constraint: true,
   revival_trigger: true,
+  pending_index: 'asset_embeddings_pending_next_attempt_idx',
+  circuit_index: 'embedding_provider_circuits_open_until_idx',
+  bootstrap_phase: 'ready',
+  bootstrap_version: '20260715055000',
 }];
 const context = { params: Promise.resolve({}) };
 
@@ -79,11 +92,24 @@ describe('/api/health', () => {
     mockPrisma.$queryRaw.mockResolvedValue([{
       limiter_buckets: null,
       limiter_leases: null,
+      provider_circuits: null,
+      circuit_generation: null,
+      circuit_probe_until: null,
+      circuit_probe_generation: null,
+      circuit_probe_lease_token: null,
+      attempt_count: null,
+      next_attempt_at: null,
+      terminal_at: null,
       processing_claim_token: null,
       revive_count: null,
+      attempt_ceiling_constraint: false,
       claim_token_constraint: false,
       revive_constraint: false,
       revival_trigger: false,
+      pending_index: null,
+      circuit_index: null,
+      bootstrap_phase: 'preparing',
+      bootstrap_version: '20260715055000',
     }]);
 
     const res = await GET(createMockRequest('GET', null), context);
@@ -98,6 +124,34 @@ describe('/api/health', () => {
     expect(data.error).toContain('Embedding limiter schema unavailable');
     expect(data.diagnostics.embedding_limiter_schema).toBe(false);
   });
+
+  for (const field of [
+    'provider_circuits',
+    'circuit_generation',
+    'circuit_probe_until',
+    'circuit_probe_generation',
+    'circuit_probe_lease_token',
+    'attempt_count',
+    'next_attempt_at',
+    'terminal_at',
+    'processing_claim_token',
+    'revive_count',
+    'attempt_ceiling_constraint',
+    'claim_token_constraint',
+    'revive_constraint',
+    'revival_trigger',
+    'pending_index',
+    'circuit_index',
+    'bootstrap_phase',
+    'bootstrap_version',
+  ]) {
+    it(`fails closed when final schema field ${field} drifts`, async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([{ ...healthyDatabaseRow[0], [field]: null }]);
+      const res = await GET(createMockRequest('GET', null), context);
+      expect(res.status).toBe(503);
+      expect((await res.json()).diagnostics.embedding_limiter_schema).toBe(false);
+    });
+  }
 
   it('returns 503 when Postgres is down', async () => {
     mockPrisma.$queryRaw.mockRejectedValue(new Error('DB Connection Failed'));

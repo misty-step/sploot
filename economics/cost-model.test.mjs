@@ -60,6 +60,7 @@ test('the rate registry names every cost-bearing capability and its authority', 
   assert.equal(replicate.sourceEvidence.value, 0.00073);
   assert.equal(replicate.sourceEvidence.currency, 'USD');
   assert.equal(replicate.sourceEvidence.sourceUrl, replicate.sourceUrl);
+  assert.equal(replicate.sourceEvidence.reviewerRole, 'economics reviewer');
   assert.equal(replicate.sourceEvidence.runsPerUsd, 1369);
   assert.equal(replicate.sourceEvidenceType, 'provider_model_page_estimate');
   const vercelOrigin = inputs.rates.find((rate) => rate.id === 'vercel-fast-origin-transfer');
@@ -111,6 +112,10 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
   assert.match(policyErrors, /policy\.global\.replicateDailyAttempts/);
   assert.match(policyErrors, /policy\.providerHardCaps must be a non-empty array/);
 
+  const unsupportedPolicySchema = structuredClone(inputs);
+  unsupportedPolicySchema.policy.schemaVersion = 2;
+  assert.match(validateInputs(unsupportedPolicySchema).join('\n'), /policy\.schemaVersion must be 1/);
+
   const missingProviderCap = structuredClone(inputs);
   missingProviderCap.policy.providerHardCaps = missingProviderCap.policy.providerHardCaps.slice(1);
   assert.match(validateInputs(missingProviderCap).join('\n'), /exactly the required provider set/);
@@ -118,13 +123,13 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
   const staleProviderEvidence = structuredClone(inputs);
   staleProviderEvidence.policy.providerHardCaps[0].evidenceStatus = 'verified';
   staleProviderEvidence.policy.providerHardCaps[0].evidence = { source: 'redacted' };
-  staleProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2020-01-01';
+  staleProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2020-01-01T00:00:00Z';
   assert.match(validateInputs(staleProviderEvidence).join('\n'), /provider cap evidence stale/);
 
   const emptyVerifiedProviderEvidence = structuredClone(inputs);
   emptyVerifiedProviderEvidence.policy.providerHardCaps[0].evidenceStatus = 'verified';
   emptyVerifiedProviderEvidence.policy.providerHardCaps[0].evidence = {};
-  emptyVerifiedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15';
+  emptyVerifiedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15T10:00:00Z';
   assert.match(
     validateInputs(emptyVerifiedProviderEvidence).join('\n'),
     /complete machine-readable object|\.provider must be a non-empty string/,
@@ -135,40 +140,83 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
   incompleteVerifiedProviderEvidence.policy.providerHardCaps[0].evidence = {
     provider: 'Application admission',
     account: null,
-    control: 'monthly cap',
+    control: 'application admission',
     scope: 'calendar month',
     value: 25,
     unit: 'USD per calendar month',
     currency: 'USD',
     receiptIdentifier: 'test-fixture-receipt',
-    observedAt: '2026-07-15',
+    receiptClass: 'internal-control-record',
+    observedAt: '2026-07-15T10:00:00Z',
     reviewer: 'economics-review',
     secret: 'must-not-be-accepted',
   };
-  incompleteVerifiedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15';
+  incompleteVerifiedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15T10:00:00Z';
   assert.match(validateInputs(incompleteVerifiedProviderEvidence).join('\n'), /not an allowed evidence field/);
 
-  const validVerifiedProviderEvidence = structuredClone(inputs);
-  validVerifiedProviderEvidence.policy.providerHardCaps[0].evidenceStatus = 'verified';
-  validVerifiedProviderEvidence.policy.providerHardCaps[0].evidence = {
+  const evidenceNow = new Date('2026-07-15T14:00:00Z');
+  const validEvidence = {
     provider: 'Application admission',
     account: null,
-    control: 'monthly cap',
+    control: 'application admission',
     scope: 'calendar month',
     value: 25,
     unit: 'USD per calendar month',
     currency: 'USD',
     receiptIdentifier: 'test-fixture-receipt',
-    observedAt: '2026-07-15',
+    receiptClass: 'internal-control-record',
+    observedAt: '2026-07-15T10:00:00Z',
     reviewer: 'economics-review',
+    reviewerRole: 'economics reviewer',
   };
-  validVerifiedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15';
-  assert.deepEqual(validateInputs(validVerifiedProviderEvidence), []);
+  const validVerifiedProviderEvidence = structuredClone(inputs);
+  validVerifiedProviderEvidence.policy.providerHardCaps[0].evidenceStatus = 'verified';
+  validVerifiedProviderEvidence.policy.providerHardCaps[0].evidence = structuredClone(validEvidence);
+  validVerifiedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15T10:00:00Z';
+  assert.deepEqual(validateInputs(validVerifiedProviderEvidence, evidenceNow), []);
+
+  const evidenceMutations = [
+    ['wrong account', { account: 'wrong-account' }],
+    ['wrong control', { control: 'monthly cap' }],
+    ['wrong scope', { scope: 'billing period' }],
+    ['wrong value', { value: 25.01 }],
+    ['wrong unit', { unit: 'USD per upload' }],
+    ['wrong currency', { currency: 'EUR' }],
+    ['alternate https source', { sourceUrl: 'https://example.com/receipt' }],
+    ['wrong reviewer', { reviewer: 'other-reviewer' }],
+    ['empty evidence', {}],
+    ['partial evidence', { reviewerRole: undefined }],
+    ['stale observedAt', { observedAt: '2020-01-01T00:00:00Z' }],
+    ['one-minute future observedAt within prior grace', { observedAt: '2026-07-15T14:01:00Z' }],
+    ['one-minute future lastVerifiedAt within prior grace', { lastVerifiedAt: '2026-07-15T14:01:00Z' }],
+    ['NaN value', { value: Number.NaN }],
+    ['Infinity value', { value: Number.POSITIVE_INFINITY }],
+    ['rounding value', { value: 25.0000000001 }],
+  ];
+  for (const [label, mutation] of evidenceMutations) {
+    const changed = structuredClone(validVerifiedProviderEvidence);
+    if (label === 'empty evidence') {
+      changed.policy.providerHardCaps[0].evidence = {};
+    } else {
+      const evidenceMutation = { ...mutation };
+      if (label === 'alternate https source') {
+        delete changed.policy.providerHardCaps[0].evidence.receiptIdentifier;
+        delete changed.policy.providerHardCaps[0].evidence.receiptClass;
+      }
+      if (label === 'partial evidence') delete changed.policy.providerHardCaps[0].evidence.reviewerRole;
+      if (Object.hasOwn(mutation, 'lastVerifiedAt')) delete evidenceMutation.lastVerifiedAt;
+      Object.assign(changed.policy.providerHardCaps[0].evidence, evidenceMutation);
+      if (Object.hasOwn(mutation, 'lastVerifiedAt')) {
+        changed.policy.providerHardCaps[0].lastVerifiedAt = mutation.lastVerifiedAt;
+      }
+    }
+    assert.notDeepEqual(validateInputs(changed, evidenceNow), [], label);
+  }
 
   const staleObservedProviderEvidence = structuredClone(validVerifiedProviderEvidence);
-  staleObservedProviderEvidence.policy.providerHardCaps[0].evidence.observedAt = '2020-01-01';
-  staleObservedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15';
-  assert.match(validateInputs(staleObservedProviderEvidence).join('\n'), /provider cap evidence stale/);
+  staleObservedProviderEvidence.policy.providerHardCaps[0].evidence.observedAt = '2020-01-01T00:00:00Z';
+  staleObservedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15T10:00:00Z';
+  assert.match(validateInputs(staleObservedProviderEvidence).join('\n'), /provider cap evidence stale|evidence\.observedAt is stale/);
 
   const overConfiguredPreGaCap = structuredClone(inputs);
   overConfiguredPreGaCap.policy.global.preGaMonthlyVariableUsd = 250;
@@ -208,8 +256,18 @@ test('Replicate rate evidence is independent of recomputed policy caps', async (
     changed.policy.global[attemptsKey] = Math.floor(changed.policy.global[usdKey] / newRate);
     changed.policy.global[usdKey] = Number((changed.policy.global[attemptsKey] * newRate).toFixed(6));
   }
+  for (const cap of changed.policy.providerHardCaps) {
+    if (cap.amountUsd !== null) cap.amountUsd = Number((cap.amountUsd * newRate / 0.00073).toFixed(6));
+  }
   const errors = validateInputs(changed).join('\n');
-  assert.match(errors, /sourceEvidence\.value must match the reviewed rate\/cap value/);
+  assert.match(errors, /value must match the policy evidence contract|value does not match the evidence contract/);
+});
+
+test('Replicate runsPerUsd is derived from the reviewed rate', async () => {
+  const inputs = await loadInputs();
+  const changed = structuredClone(inputs);
+  changed.rates.find((rate) => rate.id === 'replicate-clip-prediction').sourceEvidence.runsPerUsd = 1370;
+  assert.match(validateInputs(changed).join('\n'), /runsPerUsd must equal floor\(1 \/ reviewed value\)/);
 });
 
 test('every required live usage field is validated table-first', async () => {
@@ -358,7 +416,7 @@ test('recommendations are derived from versioned rates and workloads', async () 
   changed.rates.forEach((rate) => {
     rate.retrievedAt = '2026-07-16';
     if (rate.sourceEvidence && typeof rate.sourceEvidence === 'object') {
-      rate.sourceEvidence.observedAt = '2026-07-16';
+      rate.sourceEvidence.observedAt = '2026-07-16T00:00:00Z';
     }
   });
   const free = changed.scenarios.find((scenario) => scenario.id === 'free');
@@ -367,7 +425,7 @@ test('recommendations are derived from versioned rates and workloads', async () 
   collector.priceUsd = 13;
   changed.policy.planBudgets.free.monthlyInfrastructureUsd = 999;
 
-  const report = buildReport(changed);
+  const report = buildReport(changed, new Date('2026-07-16T12:00:00Z'));
   assert.match(report, /Rates were refreshed on 2026-07-16/);
   assert.match(report, /Cardless Free:\*\* 0\.75 GB/);
   assert.match(report, /Collector:\*\* \$13\/month/);

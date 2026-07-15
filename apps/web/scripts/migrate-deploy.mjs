@@ -22,6 +22,7 @@ import { execFileSync, execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { checkDatabaseMigrationHistory } from '../../../scripts/check-migration-history.mjs';
 
 export function deriveDirectUrl(raw) {
   const url = new URL(raw);
@@ -122,8 +123,14 @@ export function runMigrateDeploy(env = process.env, options = {}) {
   try {
     if (bootstrapUrl) privileged(pre);
     stage = 'prisma-migrate';
+    checkDatabaseMigrationHistory(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl, env);
     console.log('[migrate-deploy] running prisma migrate deploy...');
-    execSync('prisma migrate deploy', { stdio: 'inherit', env: { ...env, DATABASE_URL: migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl } });
+    const migrationEnv = {
+      ...env,
+      DATABASE_URL: migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl,
+      PGOPTIONS: [env.PGOPTIONS, '-c lock_timeout=5s', '-c statement_timeout=30s'].filter(Boolean).join(' '),
+    };
+    execSync('prisma migrate deploy', { stdio: 'inherit', env: migrationEnv });
     if (options.applyOnlineIndex ?? (env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test')) {
       stage = 'online-embedding-index';
       applyOnlineEmbeddingIndex(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl, env);

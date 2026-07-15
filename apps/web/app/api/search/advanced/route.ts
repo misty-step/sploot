@@ -4,7 +4,12 @@ import { unstable_rethrow } from 'next/navigation';
 import { Prisma } from '@prisma/client';
 import { prisma, logSearch } from '@/lib/db';
 import { createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
-import { embeddingRetryHeaders } from '@/lib/embedding-errors';
+import {
+  EmbeddingConfigurationError,
+  embeddingConfigurationHeaders,
+  embeddingRetryHeaders,
+  reportEmbeddingConfigurationErrorOnce,
+} from '@/lib/embedding-errors';
 import { getCacheService } from '@/lib/cache';
 import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
@@ -332,6 +337,9 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
       return enrollmentUnavailableResponse();
     }
     if (isEnrollmentIdentityConflictError(error)) return enrollmentIdentityConflictResponse();
+    if (error instanceof EmbeddingConfigurationError) {
+      reportEmbeddingConfigurationErrorOnce(error, 'advanced-search:configuration');
+    }
     // Error performing advanced search
 
     if (error instanceof EmbeddingError) {
@@ -345,7 +353,9 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
         },
         {
           status: error.statusCode || 500,
-          headers: embeddingRetryHeaders(error),
+          headers: error instanceof EmbeddingConfigurationError
+            ? embeddingConfigurationHeaders(error)
+            : embeddingRetryHeaders(error),
         }
       );
     }

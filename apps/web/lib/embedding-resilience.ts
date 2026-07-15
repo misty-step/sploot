@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { logger } from '@/lib/observability-logger';
 import {
   EmbeddingConfigurationError,
+  reportEmbeddingConfigurationErrorOnce,
 } from './embedding-errors';
 import {
   EmbeddingAdmissionError,
@@ -565,8 +566,8 @@ export function normalizeEmbeddingConfigurationError(error: unknown): EmbeddingC
 
 /**
  * Shared deterministic-initialization policy. Configuration failures are
- * terminal without incrementing the paid-attempt counter. The claim is
- * cleared atomically, and observability logging forwards the Canary signal.
+ * terminal without incrementing the provider-attempt counter. The claim is
+ * cleared atomically, and the shared reporter forwards one Canary signal.
  */
 export async function recordEmbeddingConfigurationFailure(
   assetId: string,
@@ -575,11 +576,11 @@ export async function recordEmbeddingConfigurationFailure(
   nowMs: number = Date.now(),
 ): Promise<boolean> {
   const configurationError = normalizeEmbeddingConfigurationError(error);
-  logger.logError('embedding-provider.configuration-failed', configurationError, {
-    assetId,
-    retryable: false,
-    providerAttempt: false,
-  });
+  reportEmbeddingConfigurationErrorOnce(
+    configurationError,
+    'embedding-provider.configuration-failed',
+    { assetId },
+  );
 
   if (!prisma || !expectedProcessingClaimToken) return false;
 

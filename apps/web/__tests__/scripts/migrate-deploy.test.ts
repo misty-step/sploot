@@ -114,14 +114,31 @@ describe('online migration transaction contract', () => {
     }
   });
 
+  it('enforces bounded DDL timeouts at the migration runner boundary without rewriting applied SQL', () => {
+    const runner = readFileSync(join(process.cwd(), 'scripts/migrate-deploy.mjs'), 'utf8');
+    expect(runner).toContain("-c lock_timeout=5s");
+    expect(runner).toContain("-c statement_timeout=30s");
+  });
+
   it('asserts the final embedding schema in the deployment bootstrap contract', () => {
     const post = readFileSync(join(process.cwd(), 'prisma/stripe-ledger-bootstrap-post.sql'), 'utf8');
     for (const name of [
+      'embedding_provider_circuits',
+      'generation',
+      'probe_until',
+      'probe_generation',
+      'probe_lease_token',
+      'attempt_count',
+      'next_attempt_at',
+      'terminal_at',
+      'embedding_attempt_count_ceiling',
       'processing_claim_token',
       'revive_count',
       'asset_embeddings_processing_claim_token_state',
       'asset_embeddings_revive_count_bounded',
       'asset_embeddings_revival_budget',
+      'asset_embeddings_pending_next_attempt_idx',
+      'embedding_provider_circuits_open_until_idx',
     ]) {
       expect(post).toContain(name);
     }

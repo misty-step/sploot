@@ -7,12 +7,14 @@ import {
   EmbeddingError,
 } from '@/lib/embeddings';
 import {
+  embeddingConfigurationHeaders,
   embeddingRetryHeaders,
   embeddingRetryAfterHeader,
   EmbeddingProviderCircuitOpenError,
   EmbeddingProviderRateLimitError,
   EmbeddingProviderUnavailableError,
   EmbeddingConfigurationError,
+  reportEmbeddingConfigurationErrorOnce,
 } from '@/lib/embedding-errors';
 import {
   acquireEmbeddingProcessing,
@@ -379,8 +381,9 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
         try {
           embeddingService = createEmbeddingService(userId);
         } catch (error) {
-          if (error instanceof EmbeddingConfigurationError && processingClaimToken) {
+          if (error instanceof EmbeddingConfigurationError) {
             providerInitializationDeferred = true;
+            reportEmbeddingConfigurationErrorOnce(error, 'generate-embedding:configuration');
             await recordEmbeddingConfigurationFailure(
               asset.id,
               error,
@@ -538,7 +541,8 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
       error instanceof EmbeddingAdmissionError ||
       error instanceof EmbeddingProviderCircuitOpenError ||
       error instanceof EmbeddingProviderRateLimitError ||
-      error instanceof EmbeddingProviderUnavailableError;
+      error instanceof EmbeddingProviderUnavailableError ||
+      error instanceof EmbeddingConfigurationError;
     if (isTypedEmbeddingOutcome) {
       logger.logInfo('generate-embedding:typed-failure', {
         processingTimeMs: processingTime,
@@ -579,7 +583,9 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
         },
         {
           status: error.statusCode || 503,
-          headers: embeddingRetryHeaders(error),
+          headers: error instanceof EmbeddingConfigurationError
+            ? embeddingConfigurationHeaders(error)
+            : embeddingRetryHeaders(error),
         }
       );
     }

@@ -40,20 +40,72 @@ interface DatabaseHealth {
 interface LimiterSchemaRow {
   limiter_buckets: string | null;
   limiter_leases: string | null;
+  provider_circuits: string | null;
+  circuit_generation: string | null;
+  circuit_probe_until: string | null;
+  circuit_probe_generation: string | null;
+  circuit_probe_lease_token: string | null;
+  attempt_count: string | null;
+  next_attempt_at: string | null;
+  terminal_at: string | null;
   processing_claim_token: string | null;
   revive_count: string | null;
+  attempt_ceiling_constraint: boolean;
   claim_token_constraint: boolean;
   revive_constraint: boolean;
   revival_trigger: boolean;
+  pending_index: string | null;
+  circuit_index: string | null;
+  bootstrap_phase: string | null;
+  bootstrap_version: string | null;
 }
 
 const TIMEOUT_MS = 5_000;
+// The bootstrap file is the version authority. This value must advance with
+// that file so a pre-final-schema database cannot report healthy by accident.
+const FINAL_BOOTSTRAP_VERSION = '20260715055000';
 
 async function queryRuntimeSchema(): Promise<LimiterSchemaRow[]> {
   return prisma.$queryRaw<LimiterSchemaRow[]>`
     SELECT
       to_regclass('public.embedding_rate_buckets')::text AS limiter_buckets,
       to_regclass('public.embedding_rate_leases')::text AS limiter_leases,
+      to_regclass('public.embedding_provider_circuits')::text AS provider_circuits,
+      (
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
+          AND column_name = 'generation'
+      ) AS circuit_generation,
+      (
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
+          AND column_name = 'probe_until'
+      ) AS circuit_probe_until,
+      (
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
+          AND column_name = 'probe_generation'
+      ) AS circuit_probe_generation,
+      (
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
+          AND column_name = 'probe_lease_token'
+      ) AS circuit_probe_lease_token,
+      (
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
+          AND column_name = 'attempt_count'
+      ) AS attempt_count,
+      (
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
+          AND column_name = 'next_attempt_at'
+      ) AS next_attempt_at,
+      (
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
+          AND column_name = 'terminal_at'
+      ) AS terminal_at,
       (
         SELECT column_name FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
@@ -64,6 +116,14 @@ async function queryRuntimeSchema(): Promise<LimiterSchemaRow[]> {
         WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
           AND column_name = 'revive_count'
       ) AS revive_count,
+      EXISTS (
+        SELECT 1 FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE c.conname = 'embedding_attempt_count_ceiling'
+          AND t.relname = 'embedding_rate_buckets' AND n.nspname = 'public'
+          AND c.convalidated
+      ) AS attempt_ceiling_constraint,
       EXISTS (
         SELECT 1 FROM pg_constraint c
         JOIN pg_class t ON t.oid = c.conrelid
@@ -88,6 +148,14 @@ async function queryRuntimeSchema(): Promise<LimiterSchemaRow[]> {
           AND t.relname = 'asset_embeddings' AND n.nspname = 'public'
           AND NOT tr.tgisinternal
       ) AS revival_trigger
+      ,to_regclass('public.asset_embeddings_pending_next_attempt_idx')::text AS pending_index
+      ,to_regclass('public.embedding_provider_circuits_open_until_idx')::text AS circuit_index
+      ,(
+        SELECT phase FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id = TRUE
+      ) AS bootstrap_phase
+      ,(
+        SELECT version FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id = TRUE
+      ) AS bootstrap_version
   `;
 }
 
@@ -96,11 +164,24 @@ function schemaIsReady(rows: LimiterSchemaRow[]): boolean {
   return Boolean(
     row?.limiter_buckets &&
     row.limiter_leases &&
+    row.provider_circuits &&
+    row.circuit_generation &&
+    row.circuit_probe_until &&
+    row.circuit_probe_generation &&
+    row.circuit_probe_lease_token &&
+    row.attempt_count &&
+    row.next_attempt_at &&
+    row.terminal_at &&
     row.processing_claim_token &&
     row.revive_count &&
+    row.attempt_ceiling_constraint &&
     row.claim_token_constraint &&
     row.revive_constraint &&
-    row.revival_trigger,
+    row.revival_trigger &&
+    row.pending_index &&
+    row.circuit_index &&
+    row.bootstrap_phase === 'ready' &&
+    row.bootstrap_version === FINAL_BOOTSTRAP_VERSION,
   );
 }
 

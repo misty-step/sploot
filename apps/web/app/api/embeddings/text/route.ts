@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
-import { embeddingRetryHeaders } from '@/lib/embedding-errors';
+import {
+  EmbeddingConfigurationError,
+  embeddingConfigurationHeaders,
+  embeddingRetryHeaders,
+  reportEmbeddingConfigurationErrorOnce,
+} from '@/lib/embedding-errors';
 import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
@@ -71,6 +76,9 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     if (isEnrollmentUnavailableError(error) && !(error instanceof EmbeddingAdmissionError)) {
       return enrollmentUnavailableResponse();
     }
+    if (error instanceof EmbeddingConfigurationError) {
+      reportEmbeddingConfigurationErrorOnce(error, 'embeddings:text:configuration');
+    }
     // Error generating text embedding
 
     if (error instanceof EmbeddingError) {
@@ -78,7 +86,9 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
         { error: error.message, ...(error instanceof EmbeddingAdmissionError && error.code ? { code: error.code } : {}) },
         {
           status: error.statusCode || 500,
-          headers: embeddingRetryHeaders(error),
+          headers: error instanceof EmbeddingConfigurationError
+            ? embeddingConfigurationHeaders(error)
+            : embeddingRetryHeaders(error),
         }
       );
     }

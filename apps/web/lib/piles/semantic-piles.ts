@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { CLIP_MODEL, createEmbeddingService } from '@/lib/embeddings';
-import { EmbeddingError } from '@/lib/embedding-errors';
+import { EmbeddingConfigurationError, EmbeddingError } from '@/lib/embedding-errors';
 import { getCacheService } from '@/lib/cache';
 import { prisma } from '@/lib/db';
 import { getRuntimeGate } from '@/lib/runtime-gates';
@@ -324,6 +324,7 @@ async function loadAnchorEmbeddings(
   try {
     embeddingService = createEmbeddingService(userId);
   } catch (error) {
+    if (error instanceof EmbeddingConfigurationError) throw error;
     if (error instanceof EmbeddingError) {
       throw new PileEmbeddingUnavailableError(
         error.message,
@@ -349,6 +350,7 @@ async function loadAnchorEmbeddings(
         });
       }
     } catch (error) {
+      if (error instanceof EmbeddingConfigurationError) throw error;
       if (error instanceof EmbeddingError) {
         throw new PileEmbeddingUnavailableError(
           error.message,

@@ -6,8 +6,6 @@ import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 
-const COST_PER_UPLOAD = 0.00022; // $0.00022 per upload
-
 async function getHandler(_req: NextRequest, _context: unknown, { principal }: AuthenticatedApiContext) {
   try {
     const userId = principal.userId;
@@ -82,13 +80,12 @@ async function getHandler(_req: NextRequest, _context: unknown, { principal }: A
     const isSustainedHighRate =
       lastTwoHoursCounts.length === 2 && lastTwoHoursCounts.every((count) => count > 200);
 
-    const estimatedCost = Number((uploadsLast7Days * COST_PER_UPLOAD).toFixed(4));
-
+    // Upload counts are operational telemetry. Billed-dollar authority is not
+    // available here, so this endpoint must not present an observed spend estimate.
     return NextResponse.json({
       uploadsLastHour,
       uploadsLastDay,
       uploadsLast7Days,
-      estimatedCost,
       isSustainedHighRate,
     });
   } catch (error) {

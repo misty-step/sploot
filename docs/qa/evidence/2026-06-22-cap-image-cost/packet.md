@@ -39,9 +39,10 @@ viral share. Cap it in place, independent of any migration.
 
 Needs Vercel/Neon account access (and a running app with data):
 
-1. **Vercel Spend Management cap** (the hard ceiling): Vercel → project →
+1. **Vercel Spend Management cap** (unverified operator control): Vercel → project →
    Settings → Billing → Spend Management → set an amount + enable the pause/notify
-   action. No CLI; dashboard-only. **This is the true uncapped-bill backstop.**
+   action. No CLI; dashboard-only. This is not verified billed-dollar authority
+   or a durable spend ledger in this repository.
 2. **Neon autosuspend**: Neon console → project `lively-lake-63852609` → Compute →
    confirm autosuspend (suspend after idle) is on so solo idle floors near $0.
 3. **Observability sanity** (optional): confirm in Vercel Observability that
@@ -54,5 +55,6 @@ Needs Vercel/Neon account access (and a running app with data):
   cache). The ~20× win — grid serving 256px thumbnails directly — is **048**
   (wire `thumbnailUrl` into the list/shuffle/search/similar reads, then
   `unoptimized`), which needs a live render/fallback check this env can't run.
-- The dashboard caps (1, 2) remain operator activation items and are the real
-  hard ceiling.
+- The dashboard caps (1, 2) remain unverified operator activation items; the
+  verified posture is optimization/attempt/provider-rate safety. Billed-dollar
+  authority and reconciliation remain unproven.

@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { NextRequest, NextResponse } from 'next/server';
+import {
+  EmbeddingConfigurationError,
+  embeddingConfigurationHeaders,
+  embeddingRetryHeaders,
+  reportEmbeddingConfigurationErrorOnce,
+} from '@/lib/embedding-errors';
 
 interface LoggerRecord {
   traceId: string;
@@ -240,6 +246,30 @@ describe('withObservability', () => {
         statusCode: 503,
         reason: 'provider_circuit_open',
       }),
+    );
+    expect(record?.logger.logError).not.toHaveBeenCalled();
+  });
+
+  it('keeps deterministic configuration terminal, non-retryable, and route-owned', async () => {
+    const error = new EmbeddingConfigurationError('missing provider configuration');
+    const unownedHeaders = new Headers(embeddingRetryHeaders(error));
+    expect(unownedHeaders.get('X-Sploot-Canary-Owner')).toBeNull();
+    expect(reportEmbeddingConfigurationErrorOnce(error, 'test:configuration')).toBe(true);
+    const headers = new Headers(embeddingConfigurationHeaders(error));
+    expect(headers.get('Retry-After')).toBeNull();
+    expect(headers.get('X-Sploot-Embedding-Outcome')).toBe('embedding_configuration');
+    expect(headers.get('X-Sploot-Canary-Owner')).toBe('route');
+
+    const handler = vi.fn(async () => ({
+      status: 503,
+      headers,
+    }) as unknown as NextResponse);
+    const wrapped = withObservability(handler);
+    await wrapped(createRequest('https://sploot.dev/api/embedding'), defaultContext);
+    const record = loggerRecords[0];
+    expect(record?.logger.logInfo).toHaveBeenCalledWith(
+      'request:typed-embedding-outcome',
+      expect.objectContaining({ reason: 'embedding_configuration' }),
     );
     expect(record?.logger.logError).not.toHaveBeenCalled();
   });

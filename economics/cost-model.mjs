@@ -128,7 +128,7 @@ const REQUIRED_LIVE_TIMESTAMP_PATHS = [
   'inference.latestPredictionSample.from',
   'inference.latestPredictionSample.to',
 ];
-const DEFAULT_RATE_CURRENCY = 'USD';
+const SUPPORTED_POLICY_SCHEMA_VERSION = 1;
 const round = (value, digits = 4) => Number(value.toFixed(digits));
 const money = (value) => `$${value.toFixed(2)}`;
 const preciseMoney = (value, digits = 10) => `$${value.toFixed(digits)}`;
@@ -151,12 +151,120 @@ const EVIDENCE_KEYS = new Set([
   'currency',
   'sourceUrl',
   'receiptIdentifier',
+  'receiptClass',
   'observedAt',
   'reviewer',
+  'reviewerRole',
   'runsPerUsd',
 ]);
 
-function validateEvidence(evidence, expected, path, errors) {
+const PROVIDER_EVIDENCE_CONTRACTS = Object.freeze({
+  'Application admission': Object.freeze({
+    account: null,
+    control: 'application admission',
+    scope: 'calendar month',
+    value: 25,
+    unit: 'USD per calendar month',
+    currency: 'USD',
+    sourceOrigins: Object.freeze([]),
+    receiptClasses: Object.freeze(['internal-control-record']),
+    reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
+  }),
+  Replicate: Object.freeze({
+    account: 'replicate-production-redacted',
+    control: 'monthly provider spend control',
+    scope: 'calendar month',
+    value: 15,
+    unit: 'USD per calendar month',
+    currency: 'USD',
+    sourceOrigins: Object.freeze(['https://replicate.com']),
+    receiptClasses: Object.freeze(['provider-billing-export']),
+    reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
+  }),
+  'Vercel Blob/CDN': Object.freeze({
+    account: null,
+    control: 'provider billing control',
+    scope: 'current billing cycle',
+    value: null,
+    unit: 'USD per current billing cycle',
+    currency: 'USD',
+    sourceOrigins: Object.freeze(['https://vercel.com']),
+    receiptClasses: Object.freeze(['provider-billing-export']),
+    reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
+  }),
+  Neon: Object.freeze({
+    account: null,
+    control: 'provider billing control',
+    scope: 'current billing cycle',
+    value: null,
+    unit: 'USD per current billing cycle',
+    currency: 'USD',
+    sourceOrigins: Object.freeze(['https://neon.com']),
+    receiptClasses: Object.freeze(['provider-billing-export']),
+    reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
+  }),
+  DigitalOcean: Object.freeze({
+    account: null,
+    control: 'provider billing control',
+    scope: 'current billing cycle',
+    value: null,
+    unit: 'USD per current billing cycle',
+    currency: 'USD',
+    sourceOrigins: Object.freeze(['https://www.digitalocean.com']),
+    receiptClasses: Object.freeze(['provider-billing-export']),
+    reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
+  }),
+  Clerk: Object.freeze({
+    account: null,
+    control: 'provider billing control',
+    scope: 'current billing cycle',
+    value: null,
+    unit: 'USD per current billing cycle',
+    currency: 'USD',
+    sourceOrigins: Object.freeze(['https://clerk.com']),
+    receiptClasses: Object.freeze(['provider-billing-export']),
+    reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
+  }),
+  Stripe: Object.freeze({
+    account: null,
+    control: 'provider billing control',
+    scope: 'current billing cycle',
+    value: null,
+    unit: 'USD per current billing cycle',
+    currency: 'USD',
+    sourceOrigins: Object.freeze(['https://stripe.com']),
+    receiptClasses: Object.freeze(['provider-billing-export']),
+    reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
+  }),
+});
+
+const REPLICATE_RATE_EVIDENCE_CONTRACT = Object.freeze({
+  provider: 'Replicate',
+  account: null,
+  control: 'model page price estimate',
+  scope: 'krthr/clip-embeddings typical prediction',
+  value: 0.00073,
+  unit: 'typical prediction',
+  currency: 'USD',
+  exactSourceUrl: 'https://replicate.com/krthr/clip-embeddings',
+  sourceOrigins: Object.freeze(['https://replicate.com']),
+  receiptClasses: Object.freeze(['provider-model-page-estimate']),
+  reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
+});
+
+const ISO_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
+
+function parseEvidenceTimestamp(value, path, errors) {
+  if (typeof value !== 'string' || !ISO_UTC_TIMESTAMP.test(value)) {
+    errors.push(`${path} must be an ISO-8601 UTC timestamp`);
+    return Number.NaN;
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) errors.push(`${path} must be a valid timestamp`);
+  return timestamp;
+}
+
+function validateEvidence(evidence, expected, path, errors, now, freshnessDays) {
   if (!isRecord(evidence)) {
     errors.push(`${path} must be a complete machine-readable object`);
     return;
@@ -164,7 +272,7 @@ function validateEvidence(evidence, expected, path, errors) {
   for (const key of Object.keys(evidence)) {
     if (!EVIDENCE_KEYS.has(key)) errors.push(`${path}.${key} is not an allowed evidence field`);
   }
-  for (const key of ['provider', 'control', 'scope', 'unit', 'currency', 'reviewer']) {
+  for (const key of ['provider', 'control', 'scope', 'unit', 'currency', 'reviewer', 'reviewerRole']) {
     if (typeof evidence[key] !== 'string' || evidence[key].trim().length === 0) {
       errors.push(`${path}.${key} must be a non-empty string`);
     }
@@ -172,38 +280,52 @@ function validateEvidence(evidence, expected, path, errors) {
   if (evidence.account !== null && (typeof evidence.account !== 'string' || evidence.account.trim().length === 0)) {
     errors.push(`${path}.account must be a non-empty string or null`);
   }
-  if (!Number.isFinite(evidence.value) || evidence.value < 0) {
-    errors.push(`${path}.value must be a finite nonnegative number`);
+  if (evidence.value !== null && (!Number.isFinite(evidence.value) || evidence.value < 0)) {
+    errors.push(`${path}.value must be null or a finite nonnegative number`);
   }
-  if (!/^https:\/\//.test(evidence.sourceUrl ?? '')
-    && (typeof evidence.receiptIdentifier !== 'string' || evidence.receiptIdentifier.trim().length === 0)) {
-    errors.push(`${path} must include an https sourceUrl or receiptIdentifier`);
+  const hasSourceUrl = evidence.sourceUrl !== undefined;
+  const hasReceipt = evidence.receiptIdentifier !== undefined;
+  if (hasSourceUrl === hasReceipt) {
+    errors.push(`${path} must include exactly one sourceUrl or receiptIdentifier`);
   }
-  if (evidence.sourceUrl !== undefined && !/^https:\/\//.test(evidence.sourceUrl)) {
-    errors.push(`${path}.sourceUrl must use https when present`);
+  if (hasSourceUrl) {
+    try {
+      const source = new URL(evidence.sourceUrl);
+      if (source.protocol !== 'https:' || !expected.sourceOrigins.includes(source.origin)) {
+        errors.push(`${path}.sourceUrl is not authorized by the evidence contract`);
+      }
+    } catch {
+      errors.push(`${path}.sourceUrl must be a valid https URL`);
+    }
   }
-  const observedAt = Date.parse(evidence.observedAt);
-  if (!Number.isFinite(observedAt)) errors.push(`${path}.observedAt must be a valid timestamp`);
-  if (expected.provider !== undefined && evidence.provider !== expected.provider) {
-    errors.push(`${path}.provider must match ${expected.provider}`);
+  if (hasReceipt) {
+    if (typeof evidence.receiptIdentifier !== 'string' || evidence.receiptIdentifier.trim().length === 0) {
+      errors.push(`${path}.receiptIdentifier must be a non-empty string`);
+    }
+    if (!expected.receiptClasses.includes(evidence.receiptClass)) {
+      errors.push(`${path}.receiptClass is not authorized by the evidence contract`);
+    }
+  } else if (evidence.receiptClass !== undefined) {
+    errors.push(`${path}.receiptClass requires receiptIdentifier`);
   }
-  if (expected.value !== undefined && evidence.value !== expected.value) {
-    errors.push(`${path}.value must match the reviewed rate/cap value`);
+  const observedAt = parseEvidenceTimestamp(evidence.observedAt, `${path}.observedAt`, errors);
+  if (Number.isFinite(observedAt)) {
+    if (observedAt > now.getTime()) errors.push(`${path}.observedAt is future-dated`);
+    if (now.getTime() - observedAt > freshnessDays * 86_400_000) errors.push(`${path}.observedAt is stale`);
   }
-  if (expected.unit !== undefined && evidence.unit !== expected.unit) {
-    errors.push(`${path}.unit must match the reviewed rate/cap unit`);
+  if (evidence.provider !== expected.provider) errors.push(`${path}.provider does not match the evidence contract`);
+  if (evidence.account !== expected.account) errors.push(`${path}.account does not match the evidence contract`);
+  if (evidence.control !== expected.control) errors.push(`${path}.control does not match the evidence contract`);
+  if (evidence.scope !== expected.scope) errors.push(`${path}.scope does not match the evidence contract`);
+  if (evidence.value !== expected.value) errors.push(`${path}.value does not match the evidence contract`);
+  if (evidence.unit !== expected.unit) errors.push(`${path}.unit does not match the evidence contract`);
+  if (evidence.currency !== expected.currency) errors.push(`${path}.currency does not match the evidence contract`);
+  if (evidence.reviewer !== expected.reviewers[0]?.identity
+    || evidence.reviewerRole !== expected.reviewers[0]?.role) {
+    errors.push(`${path}.reviewer identity or role is not authorized by the evidence contract`);
   }
-  if (expected.currency !== undefined && evidence.currency !== expected.currency) {
-    errors.push(`${path}.currency must match the reviewed currency`);
-  }
-  if (expected.sourceUrl !== undefined && evidence.sourceUrl !== expected.sourceUrl) {
-    errors.push(`${path}.sourceUrl must match the reviewed source URL`);
-  }
-  if (expected.control !== undefined && evidence.control !== expected.control) {
-    errors.push(`${path}.control must match the reviewed control`);
-  }
-  if (expected.scope !== undefined && evidence.scope !== expected.scope) {
-    errors.push(`${path}.scope must match the reviewed scope`);
+  if (expected.exactSourceUrl !== undefined && evidence.sourceUrl !== expected.exactSourceUrl) {
+    errors.push(`${path}.sourceUrl must match the exact reviewed source URL`);
   }
   return observedAt;
 }
@@ -229,6 +351,9 @@ export function validateInputs(inputs, now = new Date()) {
     errors.push('inputs.liveUsage must be an object');
   }
   if (errors.length > 0) return errors;
+  if (inputs.policy.schemaVersion !== SUPPORTED_POLICY_SCHEMA_VERSION) {
+    errors.push(`policy.schemaVersion must be ${SUPPORTED_POLICY_SCHEMA_VERSION}`);
+  }
 
   const rateIds = new Set();
   for (const rate of inputs.rates) {
@@ -249,21 +374,18 @@ export function validateInputs(inputs, now = new Date()) {
       if (rate.sourceEvidenceType !== 'provider_model_page_estimate') {
         errors.push('source evidence type missing: replicate-clip-prediction');
       }
-      const observedAt = validateEvidence(rate.sourceEvidence, {
-        provider: rate.provider,
-        value: rate.value,
-        unit: rate.unit,
-        currency: inputs.rateCurrency ?? DEFAULT_RATE_CURRENCY,
-        control: 'model page price estimate',
-        scope: 'krthr/clip-embeddings typical prediction',
-        sourceUrl: rate.sourceUrl,
-      }, `rate ${rate.id}.sourceEvidence`, errors);
+      const observedAt = validateEvidence(rate.sourceEvidence, REPLICATE_RATE_EVIDENCE_CONTRACT,
+        `rate ${rate.id}.sourceEvidence`, errors, now, inputs.policy.rateFreshnessDays);
+      if (rate.value !== REPLICATE_RATE_EVIDENCE_CONTRACT.value) {
+        errors.push(`rate ${rate.id}.value must match the policy evidence contract`);
+      }
       if (Number.isFinite(observedAt) && rate.retrievedAt !== new Date(observedAt).toISOString().slice(0, 10)) {
         errors.push(`rate ${rate.id}.sourceEvidence.observedAt must match retrievedAt`);
       }
       if (rate.sourceEvidence?.runsPerUsd !== undefined
-        && (!Number.isFinite(rate.sourceEvidence.runsPerUsd) || rate.sourceEvidence.runsPerUsd <= 0)) {
-        errors.push(`rate ${rate.id}.sourceEvidence.runsPerUsd must be positive`);
+        && (!Number.isFinite(rate.sourceEvidence.runsPerUsd)
+          || rate.sourceEvidence.runsPerUsd !== Math.floor(1 / REPLICATE_RATE_EVIDENCE_CONTRACT.value))) {
+        errors.push(`rate ${rate.id}.sourceEvidence.runsPerUsd must equal floor(1 / reviewed value)`);
       }
     }
     const retrievedAt = Date.parse(`${rate.retrievedAt}T00:00:00Z`);
@@ -564,29 +686,36 @@ export function validateInputs(inputs, now = new Date()) {
         errors.push(`policy.providerHardCaps[${index}] verified evidence requires lastVerifiedAt and complete evidence`);
       }
       if (cap.evidenceStatus === 'verified' && typeof cap.lastVerifiedAt === 'string') {
-        const verifiedAt = Date.parse(`${cap.lastVerifiedAt}T00:00:00Z`);
-        if (!Number.isFinite(verifiedAt)) errors.push(`policy.providerHardCaps[${index}].lastVerifiedAt is invalid`);
-        else if (verifiedAt > now.getTime() + 300_000) errors.push(`policy.providerHardCaps[${index}].lastVerifiedAt is future-dated`);
-        else if (now.getTime() - verifiedAt > inputs.policy.rateFreshnessDays * 86_400_000) errors.push(`provider cap evidence stale: ${cap.provider}`);
+        const verifiedAt = parseEvidenceTimestamp(
+          cap.lastVerifiedAt,
+          `policy.providerHardCaps[${index}].lastVerifiedAt`,
+          errors,
+        );
+        if (Number.isFinite(verifiedAt)) {
+          if (verifiedAt > now.getTime()) errors.push(`policy.providerHardCaps[${index}].lastVerifiedAt is future-dated`);
+          if (now.getTime() - verifiedAt > inputs.policy.rateFreshnessDays * 86_400_000) errors.push(`provider cap evidence stale: ${cap.provider}`);
+        }
       }
       if (cap.evidenceStatus === 'verified' && isRecord(cap.evidence)) {
-        const observedAt = validateEvidence(cap.evidence, {
-          provider: cap.provider,
-          value: cap.amountUsd,
-          unit: cap.evidence.unit,
-          currency: cap.amountUsd === null ? undefined : 'USD',
-          scope: cap.period,
-        }, `policy.providerHardCaps[${index}].evidence`, errors);
-        if (Number.isFinite(observedAt)) {
-          if (observedAt > now.getTime() + 300_000) {
-            errors.push(`provider cap evidence is future-dated: ${cap.provider}`);
-          } else if (now.getTime() - observedAt > inputs.policy.rateFreshnessDays * 86_400_000) {
-            errors.push(`provider cap evidence stale: ${cap.provider}`);
+        const contract = PROVIDER_EVIDENCE_CONTRACTS[cap.provider];
+        if (!contract) {
+          errors.push(`policy.providerHardCaps[${index}] has no evidence authority contract`);
+        } else {
+          if (cap.period !== contract.scope) {
+            errors.push(`policy.providerHardCaps[${index}].period must match the evidence authority contract`);
           }
-        }
-        if (Number.isFinite(observedAt) && typeof cap.lastVerifiedAt === 'string'
-          && cap.lastVerifiedAt !== new Date(observedAt).toISOString().slice(0, 10)) {
-          errors.push(`policy.providerHardCaps[${index}].lastVerifiedAt must match evidence.observedAt`);
+          validateEvidence(cap.evidence, {
+            provider: cap.provider,
+            account: contract.account,
+            control: contract.control,
+            scope: contract.scope,
+            value: contract.value,
+            unit: contract.unit,
+            currency: contract.currency,
+            sourceOrigins: contract.sourceOrigins,
+            receiptClasses: contract.receiptClasses,
+            reviewers: contract.reviewers,
+          }, `policy.providerHardCaps[${index}].evidence`, errors, now, inputs.policy.rateFreshnessDays);
         }
       }
       if (cap.evidenceStatus === 'unverified' && cap.evidence !== null) {
@@ -604,8 +733,8 @@ export function validateInputs(inputs, now = new Date()) {
   return errors;
 }
 
-function assertValidInputs(inputs) {
-  const errors = validateInputs(inputs);
+function assertValidInputs(inputs, now = new Date()) {
+  const errors = validateInputs(inputs, now);
   if (errors.length > 0) throw new Error(errors.join('\n'));
 }
 
@@ -645,8 +774,8 @@ function calculateScenarioRaw(inputs, workload, sensitivity) {
   return { infrastructure, predictions, infrastructureCostUsd, paymentFeeUsd, totalCostUsd, grossMarginPct };
 }
 
-export function calculateScenario(inputs, scenarioId, sensitivityId = 'base') {
-  assertValidInputs(inputs);
+export function calculateScenario(inputs, scenarioId, sensitivityId = 'base', now = new Date()) {
+  assertValidInputs(inputs, now);
   const workload = inputs.scenarios.find((scenario) => scenario.id === scenarioId);
   if (!workload) throw new Error(`unknown scenario: ${scenarioId}`);
   const sensitivity = inputs.policy.sensitivity[sensitivityId];
@@ -666,8 +795,8 @@ export function calculateScenario(inputs, scenarioId, sensitivityId = 'base') {
   };
 }
 
-export function minimumPriceForMargin(inputs, scenarioId, targetMargin = 0.7) {
-  assertValidInputs(inputs);
+export function minimumPriceForMargin(inputs, scenarioId, targetMargin = 0.7, now = new Date()) {
+  assertValidInputs(inputs, now);
   const workload = inputs.scenarios.find((scenario) => scenario.id === scenarioId);
   if (!workload) throw new Error(`unknown scenario: ${scenarioId}`);
   const result = calculateScenarioRaw(inputs, workload, inputs.policy.sensitivity.high);
@@ -680,8 +809,8 @@ export function minimumPriceForMargin(inputs, scenarioId, targetMargin = 0.7) {
   );
 }
 
-export function calculateLiveKnownFloor(inputs) {
-  assertValidInputs(inputs);
+export function calculateLiveKnownFloor(inputs, now = new Date()) {
+  assertValidInputs(inputs, now);
   const rates = rateMap(inputs);
   const live = inputs.liveUsage;
   const blobStorage = live.storage.blobBytes / 1_000_000_000 * rates['vercel-blob-storage'].value;
@@ -702,11 +831,11 @@ export function calculateLiveKnownFloor(inputs) {
   };
 }
 
-function scenarioTable(inputs) {
+function scenarioTable(inputs, now = new Date()) {
   return inputs.scenarios.map((scenario) => {
-    const low = calculateScenario(inputs, scenario.id, 'low');
-    const base = calculateScenario(inputs, scenario.id, 'base');
-    const high = calculateScenario(inputs, scenario.id, 'high');
+    const low = calculateScenario(inputs, scenario.id, 'low', now);
+    const base = calculateScenario(inputs, scenario.id, 'base', now);
+    const high = calculateScenario(inputs, scenario.id, 'high', now);
     return `| ${scenario.label} | ${money(scenario.priceUsd)} | ${money(low.totalCostUsd)} | ${money(base.totalCostUsd)} | ${money(high.totalCostUsd)} | ${percent(high.grossMarginPct)} |`;
   }).join('\n');
 }
@@ -722,14 +851,14 @@ const budgetTable = (inputs) => Object.entries(inputs.policy.planBudgets)
   .map(([plan, budget]) => `| ${plan} | ${money(budget.monthlyInfrastructureUsd)} | ${money(budget.dailyInferenceUsd)} (${budget.dailyInferenceAttempts} attempts) | ${money(budget.monthlyInferenceUsd)} (${budget.monthlyInferenceAttempts} attempts) |`)
   .join('\n');
 
-export function buildReport(inputs) {
-  assertValidInputs(inputs);
-  const freeHigh = calculateScenario(inputs, 'free', 'high');
-  const collectorHigh = calculateScenario(inputs, 'collector', 'high');
-  const archiveHigh = calculateScenario(inputs, 'archive', 'high');
-  const collectorFloor = minimumPriceForMargin(inputs, 'collector');
-  const archiveFloor = minimumPriceForMargin(inputs, 'archive');
-  const liveFloor = calculateLiveKnownFloor(inputs);
+export function buildReport(inputs, now = new Date()) {
+  assertValidInputs(inputs, now);
+  const freeHigh = calculateScenario(inputs, 'free', 'high', now);
+  const collectorHigh = calculateScenario(inputs, 'collector', 'high', now);
+  const archiveHigh = calculateScenario(inputs, 'archive', 'high', now);
+  const collectorFloor = minimumPriceForMargin(inputs, 'collector', 0.7, now);
+  const archiveFloor = minimumPriceForMargin(inputs, 'archive', 0.7, now);
+  const liveFloor = calculateLiveKnownFloor(inputs, now);
   const freePool = freeHigh.totalCostUsd * inputs.policy.freeFullAllowanceAccounts;
   const live = inputs.liveUsage;
   const plans = Object.fromEntries(inputs.scenarios.map((scenario) => [scenario.id, scenario]));
@@ -775,7 +904,7 @@ Low/base/high vary ${sensitivitySummary}. Storage includes retained trash.
 
 | Workload | Revenue | Low COGS | Base COGS | High COGS | High gross margin |
 |---|---:|---:|---:|---:|---:|
-${scenarioTable(inputs)}
+${scenarioTable(inputs, now)}
 
 The abusive and viral rows deliberately exceed their account/global budgets; they prove quotas must cover novel inference, bytes, and request delivery rather than storage alone.
 

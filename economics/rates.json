@@ -86,8 +86,9 @@
         "unit": "typical prediction",
         "currency": "USD",
         "sourceUrl": "https://replicate.com/krthr/clip-embeddings",
-        "observedAt": "2026-07-15",
+        "observedAt": "2026-07-15T00:00:00Z",
         "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
         "runsPerUsd": 1369
       },
       "sourceEvidenceType": "provider_model_page_estimate",

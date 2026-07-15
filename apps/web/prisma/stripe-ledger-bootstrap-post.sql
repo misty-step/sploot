@@ -509,6 +509,44 @@ BEGIN
       AND t.relname = 'asset_embeddings'
       AND n.nspname = 'public'
       AND NOT tr.tgisinternal
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
+      AND column_name = 'attempt_count'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
+      AND column_name = 'next_attempt_at'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
+      AND column_name = 'terminal_at'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
+      AND column_name = 'generation'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
+      AND column_name = 'probe_until'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
+      AND column_name = 'probe_generation'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
+      AND column_name = 'probe_lease_token'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE c.conname = 'embedding_attempt_count_ceiling'
+      AND t.relname = 'embedding_rate_buckets'
+      AND n.nspname = 'public'
+      AND c.convalidated
+  ) OR to_regclass('public.asset_embeddings_pending_next_attempt_idx') IS NULL
+    OR to_regclass('public.embedding_provider_circuits_open_until_idx') IS NULL
   ) THEN
     RAISE EXCEPTION 'final embedding claim-token schema contract is incomplete';
   END IF;

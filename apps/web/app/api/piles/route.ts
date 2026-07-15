@@ -18,7 +18,13 @@ import {
   isEnrollmentDeniedError,
   isEnrollmentUnavailableError,
 } from '@/lib/enrollment/enrollment-policy';
-import { EmbeddingError, embeddingRetryHeaders } from '@/lib/embedding-errors';
+import {
+  EmbeddingConfigurationError,
+  EmbeddingError,
+  embeddingConfigurationHeaders,
+  embeddingRetryHeaders,
+  reportEmbeddingConfigurationErrorOnce,
+} from '@/lib/embedding-errors';
 
 const MIN_LIMIT = 1;
 const MAX_LIMIT = 12;
@@ -75,6 +81,14 @@ async function getHandler(req: NextRequest, _context: unknown, { principal }: { 
     // genuine enrollment failures take the duck-typed enrollment path.
     if (isEnrollmentUnavailableError(error) && !(error instanceof EmbeddingError)) {
       return enrollmentUnavailableResponse();
+    }
+
+    if (error instanceof EmbeddingConfigurationError) {
+      reportEmbeddingConfigurationErrorOnce(error, 'piles:embedding-configuration');
+      return NextResponse.json(
+        { error: error.message, reason: error.reason, retryable: false },
+        { status: error.statusCode ?? 503, headers: embeddingConfigurationHeaders(error) },
+      );
     }
 
     if (error instanceof PileEmbeddingUnavailableError) {

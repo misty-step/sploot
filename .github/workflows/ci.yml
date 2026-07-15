@@ -169,7 +169,9 @@ jobs:
             echo "STRIPE_LEDGER_CONSUMER_DATABASE_URL=postgresql://sploot_stripe_ledger_consumer:${consumer_password}@localhost:5432/sploot_test?sslmode=disable"
           } >> "$GITHUB_ENV"
       - name: Run database migrations
-        run: DATABASE_URL="$STRIPE_LEDGER_MIGRATION_DATABASE_URL" pnpm --filter web db:migrate
+        run: PGOPTIONS='-c lock_timeout=5s -c statement_timeout=30s' DATABASE_URL="$STRIPE_LEDGER_MIGRATION_DATABASE_URL" pnpm --filter web db:migrate
+      - name: Verify migration history immutability
+        run: DATABASE_URL="$STRIPE_LEDGER_MIGRATION_DATABASE_URL" node scripts/check-migration-history.mjs
       - name: Install privileged ledger owners and grants
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/sploot_test?sslmode=disable
@@ -354,11 +356,18 @@ jobs:
           ALTER ROLE sploot_stripe_ledger_consumer LOGIN PASSWORD :'consumer_password';
           SQL
           fresh_migrator_url="postgresql://sploot_stripe_schema_migrator:${fresh_migrator_password}@localhost:5432/${fresh_db}?sslmode=disable"
-          DATABASE_URL="$fresh_migrator_url" pnpm --filter web exec prisma migrate deploy
+          DATABASE_URL="$fresh_url" \
+          STRIPE_LEDGER_BOOTSTRAP_REQUIRED=true \
+          STRIPE_LEDGER_BOOTSTRAP_DATABASE_URL="$fresh_url" \
+          STRIPE_LEDGER_MIGRATION_DATABASE_URL="$fresh_migrator_url" \
+          pnpm --filter web exec node scripts/migrate-deploy.mjs
 
           # Replay the additive/validation SQL twice after Prisma's ledger
           # commit. This is the real commit-before-ledger uncertainty oracle.
           for migration in \
+            20260715000000_add_embedding_resilience \
+            20260715010000_add_embedding_circuit_generation \
+            20260715020000_add_embedding_probe_lease_token \
             20260715030000_enforce_embedding_attempt_ceiling \
             20260715035000_validate_embedding_attempt_ceiling \
             20260715040000_add_embedding_processing_claim_token \
@@ -372,8 +381,20 @@ jobs:
           psql "$fresh_url" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-post.sql
           fresh_marker="$(psql "$fresh_url" -Atc "SELECT phase || ':' || version FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
           test "$fresh_marker" = "ready:${bootstrap_version}"
-          fresh_schema="$(psql "$fresh_url" -Atc "SELECT (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='asset_embeddings' AND column_name='processing_claim_token')) AND (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='asset_embeddings' AND column_name='revive_count')) AND (EXISTS (SELECT 1 FROM pg_constraint WHERE conname='asset_embeddings_processing_claim_token_state' AND convalidated)) AND (EXISTS (SELECT 1 FROM pg_constraint WHERE conname='asset_embeddings_revive_count_bounded' AND convalidated)) AND (EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='asset_embeddings_revival_budget' AND NOT tgisinternal))")"
-          test "$fresh_schema" = 't'
+          DATABASE_URL="$fresh_url" node apps/web/scripts/assert-final-embedding-schema.mjs
+
+          # Real lock-contention rehearsal: a holder keeps the circuit table
+          # locked longer than the migration's bounded timeout. The replay
+          # must fail fast rather than queue an ACCESS EXCLUSIVE lock.
+          (
+            PGPASSWORD=test psql "$fresh_url" -v ON_ERROR_STOP=1 -c 'BEGIN; LOCK TABLE public.embedding_provider_circuits IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(7); COMMIT;'
+          ) &
+          holder_pid=$!
+          sleep 1
+          if PGOPTIONS='-c lock_timeout=1s -c statement_timeout=5s' PGPASSWORD="$fresh_migrator_password" psql "$fresh_migrator_url" -v ON_ERROR_STOP=1 -f apps/web/prisma/migrations/20260715010000_add_embedding_circuit_generation/migration.sql; then
+            echo 'expected bounded lock timeout during migration replay'; exit 1
+          fi
+          wait "$holder_pid"
 
           # 2) Real upgrade flow: install every pre-Stripe migration as the
           #    legacy owner, record it in Prisma's ledger, then prove the
@@ -381,7 +402,7 @@ jobs:
           for migration in apps/web/prisma/migrations/*; do
             [[ -d "$migration" ]] || continue
             migration_name="$(basename "$migration")"
-            if [[ "$migration_name" == *stripe* ]]; then continue; fi
+            if [[ "$migration_name" == *stripe* || "$migration_name" == 20260715* ]]; then continue; fi
             psql "$admin_url" -v ON_ERROR_STOP=1 -f "$migration/migration.sql"
             DATABASE_URL="$admin_url" pnpm --filter web exec prisma migrate resolve --applied "$migration_name"
           done
@@ -399,7 +420,11 @@ jobs:
           ALTER ROLE sploot_stripe_ledger_issuer LOGIN PASSWORD :'issuer_password';
           ALTER ROLE sploot_stripe_ledger_consumer LOGIN PASSWORD :'consumer_password';
           SQL
-          DATABASE_URL="postgresql://sploot_stripe_schema_migrator:${migrator_password}@localhost:5432/sploot_upgrade?sslmode=disable" pnpm --filter web exec prisma migrate deploy
+          DATABASE_URL="$admin_url" \
+          STRIPE_LEDGER_BOOTSTRAP_REQUIRED=true \
+          STRIPE_LEDGER_BOOTSTRAP_DATABASE_URL="$admin_url" \
+          STRIPE_LEDGER_MIGRATION_DATABASE_URL="postgresql://sploot_stripe_schema_migrator:${migrator_password}@localhost:5432/sploot_upgrade?sslmode=disable" \
+          pnpm --filter web exec node scripts/migrate-deploy.mjs
 
           # Ownership, not a table grant, is the durable migration oracle.
           # Exercise representative future DDL against an object that existed
@@ -429,8 +454,7 @@ jobs:
           psql "$admin_url" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-post.sql
           marker="$(psql "$admin_url" -Atc "SELECT phase || ':' || version FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
           test "$marker" = "ready:${bootstrap_version}"
-          final_schema="$(psql "$admin_url" -Atc "SELECT (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='asset_embeddings' AND column_name='processing_claim_token')) AND (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='asset_embeddings' AND column_name='revive_count')) AND (EXISTS (SELECT 1 FROM pg_constraint WHERE conname='asset_embeddings_processing_claim_token_state' AND convalidated)) AND (EXISTS (SELECT 1 FROM pg_constraint WHERE conname='asset_embeddings_revive_count_bounded' AND convalidated)) AND (EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='asset_embeddings_revival_budget' AND NOT tgisinternal))")"
-          test "$final_schema" = 't'
+          DATABASE_URL="$admin_url" node apps/web/scripts/assert-final-embedding-schema.mjs
           public_exec="$(psql "$admin_url" -Atc "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.prosecdef AND EXISTS (SELECT 1 FROM aclexplode(COALESCE(p.proacl, acldefault('f',p.proowner))) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')")"
           test "$public_exec" = '0'
           app_ledger_dml="$(PGPASSWORD="$app_password" psql "postgresql://sploot_stripe_app:${app_password}@localhost:5432/sploot_upgrade?sslmode=disable" -Atc "SELECT has_table_privilege(current_user, 'public.stripe_cancellation_deliveries', 'INSERT') OR has_table_privilege(current_user, 'public.stripe_cancellation_deliveries', 'UPDATE') OR has_table_privilege(current_user, 'public.stripe_cancellation_deliveries', 'DELETE')")"

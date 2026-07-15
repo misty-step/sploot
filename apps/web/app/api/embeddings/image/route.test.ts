@@ -87,8 +87,10 @@ vi.mock('@/lib/embeddings', () => ({
 }));
 
 vi.mock('@/lib/embedding-errors', () => ({
+  embeddingConfigurationHeaders: () => undefined,
   embeddingRetryHeaders: () => undefined,
   embeddingRetryAfterHeader: () => undefined,
+  reportEmbeddingConfigurationErrorOnce: vi.fn(),
   EmbeddingProviderCircuitOpenError: class EmbeddingProviderCircuitOpenError extends Error {
     retryAfterSec?: number;
     constructor(retryAfterSec?: number) { super('provider circuit open'); this.retryAfterSec = retryAfterSec; }

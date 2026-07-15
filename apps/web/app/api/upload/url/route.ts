@@ -17,7 +17,12 @@ import {
   isEnrollmentDeniedError,
   isEnrollmentUnavailableError,
 } from '@/lib/enrollment/enrollment-policy';
-import { EmbeddingError, embeddingRetryHeaders } from '@/lib/embedding-errors';
+import {
+  EmbeddingError,
+  embeddingConfigurationHeaders,
+  embeddingRetryHeaders,
+  reportEmbeddingConfigurationErrorOnce,
+} from '@/lib/embedding-errors';
 
 /**
  * URL import endpoint: POST { url } fetches a remote image server-side and
@@ -109,6 +114,10 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     }
 
     if (error instanceof EmbeddingError) {
+      const isConfiguration = 'reason' in error && error.reason === 'embedding_configuration';
+      if (isConfiguration) {
+        reportEmbeddingConfigurationErrorOnce(error, 'upload:url:embedding-configuration');
+      }
       return NextResponse.json(
         {
           success: false,
@@ -118,7 +127,9 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
         },
         {
           status: error.statusCode || 503,
-          headers: embeddingRetryHeaders(error),
+          headers: isConfiguration
+            ? embeddingConfigurationHeaders(error)
+            : embeddingRetryHeaders(error),
         }
       );
     }

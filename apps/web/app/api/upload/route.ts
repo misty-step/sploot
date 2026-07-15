@@ -22,7 +22,12 @@ import {
   isEnrollmentDeniedError,
   isEnrollmentUnavailableError,
 } from '@/lib/enrollment/enrollment-policy';
-import { EmbeddingError, embeddingRetryHeaders } from '@/lib/embedding-errors';
+import {
+  EmbeddingError,
+  embeddingConfigurationHeaders,
+  embeddingRetryHeaders,
+  reportEmbeddingConfigurationErrorOnce,
+} from '@/lib/embedding-errors';
 
 /**
  * Configure route segment options
@@ -127,6 +132,10 @@ async function postHandler(req: NextRequest, _context: RouteContext, { principal
     // EmbeddingAdmissionError(limiter_unavailable) carries the shared
     // enrollment_unavailable code).
     if (error instanceof EmbeddingError) {
+      const isConfiguration = 'reason' in error && error.reason === 'embedding_configuration';
+      if (isConfiguration) {
+        reportEmbeddingConfigurationErrorOnce(error, 'upload:embedding-configuration');
+      }
       return NextResponse.json(
         {
           success: false,
@@ -136,7 +145,9 @@ async function postHandler(req: NextRequest, _context: RouteContext, { principal
         },
         {
           status: error.statusCode || 503,
-          headers: embeddingRetryHeaders(error),
+          headers: isConfiguration
+            ? embeddingConfigurationHeaders(error)
+            : embeddingRetryHeaders(error),
         }
       );
     }

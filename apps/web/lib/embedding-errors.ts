@@ -1,3 +1,5 @@
+import { reportCanaryError } from './canary-reporter';
+
 /** Errors crossing every embedding entrypoint. Keep policy and provider
  * outcomes distinct so callers can persist the right state and HTTP status. */
 export interface AdmittedEmbeddingProviderLease {
@@ -138,20 +140,90 @@ export class EmbeddingConfigurationError extends EmbeddingError {
   }
 }
 
+const configurationReports = new WeakSet<object>();
+
+function isConfigurationErrorLike(error: unknown): error is {
+  message: string;
+  name?: string;
+  stack?: string;
+  cause?: unknown;
+  reason?: unknown;
+} {
+  return Boolean(error && typeof error === 'object' && 'message' in error);
+}
+
+/**
+ * Emit the deterministic configuration signal exactly once for an error
+ * chain. Route-owned response headers are only valid after this returns (or
+ * after a caller observes that the same chain was already reported).
+ */
+export function reportEmbeddingConfigurationErrorOnce(
+  error: unknown,
+  context: string,
+  metadata: Record<string, unknown> = {},
+): boolean {
+  if (!isConfigurationErrorLike(error)) return false;
+  let current: unknown = error;
+  let reportTarget: { message: string; name?: string; stack?: string } = error;
+  for (let depth = 0; depth < 5 && isConfigurationErrorLike(current); depth += 1) {
+    if (configurationReports.has(current)) return false;
+    if (current.reason === 'embedding_configuration') reportTarget = current;
+    current = current.cause;
+  }
+
+  configurationReports.add(reportTarget);
+  void reportCanaryError({
+    context,
+    error: {
+      name: reportTarget.name ?? 'EmbeddingConfigurationError',
+      message: reportTarget.message,
+      stack: reportTarget.stack,
+    },
+    metadata: {
+      ...metadata,
+      retryable: false,
+      providerAttempt: false,
+    },
+  });
+  return true;
+}
+
+export function hasEmbeddingConfigurationReport(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; depth < 5 && isConfigurationErrorLike(current); depth += 1) {
+    if (configurationReports.has(current)) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
 export function embeddingRetryHeaders(error: EmbeddingError): HeadersInit | undefined {
   const retryAfter = error.retryAfterSec === undefined && error.statusCode === 429
     ? EMBEDDING_DEFAULT_RETRY_AFTER_SECONDS
     : error.retryAfterSec;
-  if (retryAfter === undefined) return undefined;
-
-  const headers: Record<string, string> = {
-    'Retry-After': normalizeEmbeddingRetryAfter(retryAfter).toString(),
-  };
   const reason = 'reason' in error && typeof error.reason === 'string'
     ? error.reason
     : undefined;
+  if (retryAfter === undefined && reason === undefined) return undefined;
+
+  const headers: Record<string, string> = {};
+  if (retryAfter !== undefined) {
+    headers['Retry-After'] = normalizeEmbeddingRetryAfter(retryAfter).toString();
+  }
   if (reason) headers['X-Sploot-Embedding-Outcome'] = reason;
   return headers;
+}
+
+/** Add the observability suppression marker only after a route-owned report. */
+export function embeddingConfigurationHeaders(error: EmbeddingError): HeadersInit | undefined {
+  const headers = embeddingRetryHeaders(error);
+  const reason = 'reason' in error && typeof error.reason === 'string'
+    ? error.reason
+    : undefined;
+  if (reason !== 'embedding_configuration' || !hasEmbeddingConfigurationReport(error)) {
+    return headers;
+  }
+  return { ...(headers ?? {}), 'X-Sploot-Canary-Owner': 'route' };
 }
 
 export function embeddingRetryAfterHeader(value: unknown): HeadersInit {

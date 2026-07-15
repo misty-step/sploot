@@ -18,7 +18,14 @@ import { withObservability } from "@/lib/with-observability";
 import { logger as observabilityLogger } from "@/lib/observability-logger";
 import { getDbFingerprint } from "@/lib/db-fingerprint";
 import { getRuntimeGate, runtimeGateResponse } from "@/lib/runtime-gates";
-import { EmbeddingSchedulerService } from "@/lib/upload/embedding-scheduler-service";
+import {
+  EmbeddingScheduleError,
+  EmbeddingSchedulerService,
+} from "@/lib/upload/embedding-scheduler-service";
+import {
+  embeddingConfigurationHeaders,
+  reportEmbeddingConfigurationErrorOnce,
+} from "@/lib/embedding-errors";
 import {
   releaseStorageQuotaReservation,
   reserveUploadBytes,
@@ -397,6 +404,29 @@ async function postHandler(req: NextRequest) {
       return NextResponse.json(storageQuotaError(error.snapshot), {
         status: 403,
       });
+    }
+
+    if (
+      error instanceof EmbeddingScheduleError
+      && error.reason === "embedding_configuration"
+    ) {
+      reportEmbeddingConfigurationErrorOnce(
+        error,
+        "assets:embedding-configuration",
+        { requestId },
+      );
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+          reason: "embedding_configuration",
+          retryable: false,
+        },
+        {
+          status: 503,
+          headers: embeddingConfigurationHeaders(error),
+        },
+      );
     }
 
     unstable_rethrow(error);

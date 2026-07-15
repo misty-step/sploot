@@ -6,7 +6,9 @@ import {
 } from '@/lib/embeddings';
 import {
   EmbeddingError,
+  hasEmbeddingConfigurationReport,
   embeddingOutcomeHeaders,
+  reportEmbeddingConfigurationErrorOnce,
   embeddingRetryHeaders,
   EmbeddingProviderCircuitOpenError,
   EmbeddingProviderRateLimitError,
@@ -83,6 +85,7 @@ async function getHandler(request: NextRequest) {
   let batchOutcome: BatchOutcome = 'success';
   let batchRetryAfterSec: number | undefined;
   let batchOutcomeReason: EmbeddingOutcome | undefined;
+  let configurationCanaryOwned = false;
 
   try {
     // Verify cron authorization - required in all environments
@@ -309,6 +312,12 @@ async function getHandler(request: NextRequest) {
               break;
             }
             const configurationError = normalizeEmbeddingConfigurationError(error);
+            reportEmbeddingConfigurationErrorOnce(
+              configurationError,
+              'cron:process-embeddings:configuration',
+              { assetId: asset.id },
+            );
+            configurationCanaryOwned = hasEmbeddingConfigurationReport(configurationError);
             const deferred = await recordEmbeddingConfigurationFailure(
               asset.id,
               configurationError,
@@ -545,7 +554,12 @@ async function getHandler(request: NextRequest) {
             batchRetryAfterSec,
           )
         : batchOutcomeReason
-          ? { 'X-Sploot-Embedding-Outcome': batchOutcomeReason }
+              ? {
+              'X-Sploot-Embedding-Outcome': batchOutcomeReason,
+              ...(batchOutcomeReason === 'embedding_configuration' && configurationCanaryOwned
+                ? { 'X-Sploot-Canary-Owner': 'route' }
+                : {}),
+            }
         : undefined,
     });
   } catch (error) {

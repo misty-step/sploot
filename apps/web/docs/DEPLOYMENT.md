@@ -212,10 +212,13 @@ maintain the monthly bucket, which is why the kill switch is mandatory for any
 deliberate or extended rollback. Forward recovery is preferred.
 
 The embedding migrations that add `NOT VALID` constraints and their
-`VALIDATE CONSTRAINT` scans are separate Prisma migrations. Each sets a
-five-second transaction-local `lock_timeout`; a timeout aborts that migration
-and leaves the previous committed phase intact. Do not combine an ADD and
-VALIDATE step or manually remove the claim-token/revival constraints during
-rollback. The deploy runner and CI post-bootstrap read back both columns,
-both validated constraints, and `asset_embeddings_revival_budget` before
+`VALIDATE CONSTRAINT` scans are separate Prisma migrations. The repo-owned
+runner supplies five-second `lock_timeout` and 30-second `statement_timeout`
+to every Prisma migration, including the immutable 150000/150100/150200
+additive history; a timeout aborts that migration and leaves the previous
+committed phase intact. Do not combine an ADD and VALIDATE step or manually
+remove the claim-token/revival constraints during rollback. The deploy runner
+and CI post-bootstrap read back the full circuit columns, attempt ceiling,
+both required indexes, both validated constraints, and
+`asset_embeddings_revival_budget` before
 declaring the bootstrap ready.

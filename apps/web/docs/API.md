@@ -66,6 +66,10 @@ Protected product API route inventory:
 - `/api/analytics/usage`, `/api/telemetry`
 - `/api/cache/stats`, `/api/embeddings/text`, `/api/embeddings/image`, `/api/sse/embedding-updates`
 
+`GET /api/analytics/usage` returns upload-count telemetry and a sustained-rate
+signal. It intentionally does not return spend or an estimated dollar amount:
+the application has no billed-dollar authority for observed upload cost.
+
 ## Response Format
 
 successful responses are endpoint-specific json objects. error responses use

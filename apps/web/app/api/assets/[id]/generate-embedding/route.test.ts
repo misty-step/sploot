@@ -198,5 +198,11 @@ describe('POST /api/assets/[id]/generate-embedding observability composition', (
       'claim-1',
     );
     expect(mocks.recordEmbeddingAttemptFailure).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(mocks.reportCanaryError).toHaveBeenCalledTimes(1));
+    expect(routeLogger.logError).not.toHaveBeenCalledWith(
+      'generate-embedding:failed',
+      expect.anything(),
+      expect.anything(),
+    );
   });
 });

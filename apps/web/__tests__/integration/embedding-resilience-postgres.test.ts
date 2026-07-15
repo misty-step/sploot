@@ -904,24 +904,39 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       },
     });
 
-    const oldStarted = Promise.resolve();
+    let signalOldStarted!: () => void;
+    const oldStarted = new Promise<void>((resolve) => { signalOldStarted = resolve; });
     let releaseOld!: () => void;
     const oldBlocked = new Promise<void>((resolve) => { releaseOld = resolve; });
-    const nowMs = Date.UTC(2026, 6, 15, 10, 0, 0);
+    const nowMs = Date.now();
     const oldClaim = await acquireEmbeddingProcessing(assetId, nowMs);
     expect(oldClaim.acquired).toBe(true);
     const oldWorker = (async () => {
-      await oldStarted;
+      signalOldStarted();
       await oldBlocked;
-      // This is the origin/master-era writer: it has no generation token.
-      return upsertAssetEmbedding({
-        assetId,
-        modelName: 'old-worker',
-        modelVersion: 'old-worker',
-        dim: 768,
-        embedding: Array(768).fill(0.1),
-      });
+      // Exact origin/master-era SQL: no generation token and an unconditional
+      // ON CONFLICT DO UPDATE. The durable state constraint must reject it.
+      const legacyVector = embeddingVectorSql(Array(768).fill(0.1), 'legacy late writer');
+      return prisma.$queryRaw(Prisma.sql`
+        INSERT INTO "asset_embeddings" (
+          "asset_id", "model_name", "model_version", "dim", "image_embedding",
+          "status", "error", "completedAt", "createdAt", "updatedAt"
+        ) VALUES (
+          ${assetId}, 'old-worker', 'old-worker', 768, ${legacyVector},
+          'ready', NULL, NOW(), NOW(), NOW()
+        )
+        ON CONFLICT ("asset_id") DO UPDATE SET
+          "model_name" = EXCLUDED."model_name",
+          "model_version" = EXCLUDED."model_version",
+          "dim" = EXCLUDED."dim",
+          "image_embedding" = EXCLUDED."image_embedding",
+          "status" = 'ready',
+          "error" = NULL,
+          "completedAt" = NOW(),
+          "updatedAt" = NOW()
+      `);
     })();
+    await oldStarted;
 
     // The database trigger owns updatedAt. Use the timestamp that the old
     // claim actually persisted so this remains a real TTL reclaim even when
@@ -933,7 +948,7 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     expect(newerClaim.acquired).toBe(true);
     expect(newerClaim.processingClaimToken).not.toBe(oldClaim.processingClaimToken);
     releaseOld();
-    await expect(oldWorker).resolves.toBeNull();
+    await expect(oldWorker).rejects.toThrow(/asset_embeddings_processing_claim_token_state/);
 
     await expect(
       prisma.assetEmbedding.findUnique({

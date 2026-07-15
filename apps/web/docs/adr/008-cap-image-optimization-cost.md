@@ -41,14 +41,18 @@ Cap the cost in place, independent of any stack migration:
 3. **Remove the inert `includeRecent`/`batchSize` cron params** and name the
    per-run cap + the runtime-gate kill-switch, so the dead params can't later be
    wired into an unbounded re-embed.
-4. **Operator backstops (one-time, dashboard) — the true hard ceiling:** a Vercel
-   Spend Management cap + auto-pause webhook, and explicit Neon autosuspend.
+4. **Operator backstops (one-time, dashboard) — unverified provider controls:** a
+   Vercel Spend Management cap + auto-pause webhook, and explicit Neon
+   autosuspend. These controls are not verified billed-dollar authority in this
+   repository.
 
 ## Consequences
 
 - Variants-per-image drop 8 → 3 and the long TTL collapses cache-write churn —
   the two biggest optimization-cost drivers — without any rendering regression.
-  The hard ceiling is the Vercel Spend cap (operator).
+  The verified posture is an optimization, attempt, and provider-rate bound;
+  the Vercel Spend cap remains unverified. Billed-dollar account authority,
+  receipts, and durable spend reconciliation are missing.
 - A config-guard test pins the cost-safe `deviceSizes`/TTL so they can't silently
   regress to 8 / no-TTL.
 - The bigger structural win (grid serves 256px thumbnails directly, ~20× fewer

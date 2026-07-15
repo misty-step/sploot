@@ -83,6 +83,7 @@ export {
   EmbeddingProviderCircuitOpenError,
   EmbeddingProviderRateLimitError,
   EmbeddingProviderUnavailableError,
+  EmbeddingConfigurationError,
 } from './embedding-errors';
 
 /**

@@ -9,8 +9,9 @@ pnpm economics -- --write
 
 `rates.json` records official list prices and assumptions. The Replicate rate is
 bound to a structured `sourceEvidence` record containing provider, model scope,
-value, unit, currency, source URL, observed date, and reviewer; changing the
-reviewed value requires refreshing that evidence at the same time. `live-usage.json`
+value, unit, currency, source URL, observed UTC timestamp, and reviewer role;
+changing the reviewed value requires refreshing that evidence at the same time.
+`live-usage.json`
 contains aggregate, redacted readbacks, including project-attributed Vercel
 effective usage; unavailable post-allowance and account-wide Blob attribution
 values are `null` and explained. `workloads.json` defines full-allowance and
@@ -24,10 +25,17 @@ Paid tiers are modeled at on-demand rates even while current free allowances abs
 This model does not activate plans, open enrollment, or substitute for provider
 hard-cap receipts. Current hard-cap entries remain `unverified` because no real
 receipt is present. If an operator intentionally verifies one, evidence must
-include the provider/account/control/scope, reviewed value, unit/currency,
-source URL or receipt identifier, observed-at date, and reviewer; update the
-evidence and reviewed value together. Refresh rates and redacted usage on any
-vendor, plan, limit, or billing-unit change.
+include the provider/account/control/scope, reviewed value, exact unit/currency,
+authorized source URL or receipt class plus identifier, observed-at UTC
+timestamp, and authorized reviewer identity/role; the policy-owned evidence
+contract compares every field independently. Update the evidence and reviewed
+value together. Any optional `runsPerUsd` must equal `floor(1 / reviewed value)`.
+To intentionally refresh evidence, obtain a real provider receipt or source
+record, record its date, URL/receipt identifier, currency, unit, reviewed value,
+and reviewer, then update both the structured evidence and policy value and run
+`pnpm test:economics`. Never add secrets or fabricate a receipt. Future dates,
+stale records, missing fields, or mismatches fail closed. Refresh rates and
+redacted usage on any vendor, plan, limit, or billing-unit change.
 
 ## Future composition
 
