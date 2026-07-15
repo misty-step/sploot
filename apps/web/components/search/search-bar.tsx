@@ -137,9 +137,13 @@ export function SearchBar({
     handleSubmit(historyQuery, true);
   };
 
-  const handleHistoryRemove = (e: React.MouseEvent, historyQuery: string) => {
+  const handleHistoryRemove = (e: React.MouseEvent, historyQuery: string, historyIndex: number) => {
     e.stopPropagation();
     removeFromHistory(historyQuery);
+    // Removing the active option must not leave aria-activedescendant pointing
+    // at a deleted node. Resetting is also deterministic when the list
+    // reindexes the remaining history entries.
+    setSelectedIndex((current) => current === historyIndex ? -1 : current > historyIndex ? current - 1 : current);
   };
 
   return (
@@ -254,18 +258,20 @@ export function SearchBar({
             {history.map((item, index) => (
               <div
                 key={item.timestamp}
-                id={`search-history-option-${index}`}
-                role="option"
-                aria-selected={selectedIndex === index}
-                tabIndex={-1}
                 className={`
                   flex items-center justify-between px-4 py-3
-                  hover:bg-muted cursor-pointer group
+                  group
                   ${selectedIndex === index ? 'bg-sploot-yellow text-[#1c1547] border-l-[3px] border-sploot-ink' : ''}
                 `}
-                onClick={() => handleHistorySelect(item.query)}
               >
-                <div className="flex items-center gap-3 flex-1">
+                <div
+                  id={`search-history-option-${index}`}
+                  role="option"
+                  aria-selected={selectedIndex === index}
+                  tabIndex={-1}
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 hover:bg-muted"
+                  onClick={() => handleHistorySelect(item.query)}
+                >
                   <svg
                     className="w-4 h-4 text-muted-foreground/80 flex-shrink-0"
                     fill="none"
@@ -283,9 +289,9 @@ export function SearchBar({
                 </div>
                 <button
                   type="button"
-                  onClick={(e) => handleHistoryRemove(e, item.query)}
-                  className="p-1 text-muted-foreground/80 hover:text-destructive opacity-0 group-hover:opacity-100 cursor-pointer"
-                  aria-label="Remove from history"
+                  onClick={(e) => handleHistoryRemove(e, item.query, index)}
+                  className="ml-2 flex min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)] items-center justify-center p-1 text-muted-foreground/80 opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 cursor-pointer"
+                  aria-label={`Remove “${item.query}” from search history`}
                 >
                   <svg
                     className="w-4 h-4"
