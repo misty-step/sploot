@@ -84,8 +84,10 @@ Accepted media types: JPEG, PNG, WebP, GIF, MP4, WebM.
 `needsEmbedding: false`.
 
 **Errors:** `400` missing/invalid file · `401` bad or missing token ·
-`403 {"code":"quota_exceeded"}` storage quota exceeded · `413` file too large ·
-`429` rate limited · `503 {"code":"uploads_disabled"}` uploads paused.
+`403 {"code":"quota_exceeded"}` storage quota exceeded or
+`{"code":"enrollment_closed"}` new-account admission paused · `503
+{"code":"enrollment_unavailable"}` enrollment boundary unavailable · `413` file too
+large · `429` rate limited · `503 {"code":"uploads_disabled"}` uploads paused.
 
 ```bash
 curl -X POST https://www.sploot.app/api/upload \
@@ -109,8 +111,10 @@ dedupe/quota pipeline as bytes upload.
 **Response contract:** identical `201`/`409` asset shape as bytes upload above.
 
 **Errors:** `400` missing/invalid/private URL · `401` bad or missing token ·
-`422` remote fetch failed or was not an image · `403` quota exceeded ·
-`503` uploads paused.
+`422` remote fetch failed or was not an image · `403` quota exceeded or
+`{"code":"enrollment_closed"}` new-account admission paused · `503
+{"code":"enrollment_unavailable"}` enrollment boundary unavailable or uploads
+paused.
 
 ```bash
 curl -X POST https://www.sploot.app/api/upload/url \
@@ -163,8 +167,11 @@ web app itself calls.
 }
 ```
 
-**Errors:** `400` missing/invalid/too-long query · `401` bad or missing token
-· `503` embedding service unavailable (Replicate not configured or paused).
+**Errors:** `400` missing/invalid/too-long query · `401` bad or missing token ·
+`403 {"code":"enrollment_closed"}` admission paused ·
+`409 {"code":"enrollment_identity_conflict"}` identity repair required ·
+`503 {"code":"enrollment_unavailable"}` admission boundary unavailable or
+embedding service unavailable (Replicate not configured or paused).
 
 ```bash
 curl -X POST https://www.sploot.app/api/search \

@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
   const tx = {
+    user: {
+      findUnique: vi.fn(),
+    },
     userStorageQuota: {
       upsert: vi.fn(),
       findUniqueOrThrow: vi.fn(),
@@ -43,6 +46,7 @@ describe('storage quota policy', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.tx.userStorageQuota.upsert.mockResolvedValue({});
+    mocks.tx.user.findUnique.mockResolvedValue({ id: 'user-1' });
     mocks.tx.userStorageQuota.findUniqueOrThrow.mockResolvedValue({ limitBytes: 1000n });
     mocks.tx.asset.aggregate.mockResolvedValue({ _sum: { size: 400 } });
     mocks.tx.storageQuotaReservation.aggregate.mockResolvedValue({ _sum: { bytes: 100n } });
@@ -61,7 +65,7 @@ describe('storage quota policy', () => {
       },
     });
 
-    expect(mocks.tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(mocks.tx.$executeRaw).toHaveBeenCalledTimes(2);
     expect(mocks.tx.storageQuotaReservation.deleteMany).toHaveBeenCalledWith({
       where: {
         ownerUserId: 'user-1',
@@ -134,7 +138,7 @@ describe('storage quota policy', () => {
     expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(2);
   });
 
-  it('degrades to the default snapshot when the users row is missing (quota FK violation)', async () => {
+  it('returns enrollment_unavailable when the users row is missing', async () => {
     const { Prisma } = await import('@prisma/client');
     const fkViolation = new Prisma.PrismaClientKnownRequestError(
       'Foreign key constraint violated: user_storage_quotas_user_id_fkey',
@@ -142,11 +146,7 @@ describe('storage quota policy', () => {
     );
     mocks.tx.userStorageQuota.upsert.mockRejectedValue(fkViolation);
 
-    await expect(getStorageQuotaSnapshot('user-without-row')).resolves.toEqual({
-      usedBytes: 0,
-      limitBytes: 1024 * 1024 * 1024,
-      remainingBytes: 1024 * 1024 * 1024,
-      reservedBytes: 0,
-    });
+    mocks.tx.user.findUnique.mockResolvedValue(null);
+    await expect(getStorageQuotaSnapshot('user-without-row')).rejects.toMatchObject({ code: 'enrollment_unavailable' });
   });
 });

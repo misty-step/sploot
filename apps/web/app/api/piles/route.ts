@@ -10,6 +10,14 @@ import {
 import { createErrorResponse } from '@/lib/error-response';
 import { withObservability } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
+import { prisma } from '@/lib/db';
+import {
+  assertEnrolledUser,
+  enrollmentDeniedResponse,
+  enrollmentUnavailableResponse,
+  isEnrollmentDeniedError,
+  isEnrollmentUnavailableError,
+} from '@/lib/enrollment/enrollment-policy';
 
 const MIN_LIMIT = 1;
 const MAX_LIMIT = 12;
@@ -54,10 +62,15 @@ async function getHandler(req: NextRequest, _context: unknown, { principal }: { 
       );
     }
 
+    await assertEnrolledUser(principal.userId, prisma);
+
     const result = await getAutomaticPiles({ userId: principal.userId, maxPiles, minimumAssets });
     return NextResponse.json(result);
   } catch (error) {
     unstable_rethrow(error);
+
+    if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
+    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
 
     if (error instanceof PileEmbeddingUnavailableError) {
       return NextResponse.json(

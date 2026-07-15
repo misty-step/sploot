@@ -12,6 +12,13 @@ import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/logger';
 import { STARTER_IMAGES, STARTER_QUERIES, STARTER_PILE_TAG } from '@/lib/starter-pile';
+import {
+  assertEnrolledUser,
+  enrollmentDeniedResponse,
+  enrollmentUnavailableResponse,
+  isEnrollmentDeniedError,
+  isEnrollmentUnavailableError,
+} from '@/lib/enrollment/enrollment-policy';
 
 /**
  * Seed the signed-in user's library with the starter pile: 8 bundled,
@@ -35,15 +42,12 @@ async function postHandler(
 
   try {
     const userId = principal.userId;
-
     const uploadGate = getRuntimeGate('uploads');
     if (!uploadGate.enabled) {
       return runtimeGateResponse(uploadGate);
     }
 
-    if (!prisma) {
-      return NextResponse.json({ error: 'Database not configured' }, { status: 500 });
-    }
+    await assertEnrolledUser(userId, prisma);
 
     // The starter images ship in public/starter-pile/; fetch them from this
     // deployment's own static origin so local and hosted runtimes use the same
@@ -129,6 +133,8 @@ async function postHandler(
     });
   } catch (error) {
     unstable_rethrow(error);
+    if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
+    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
     logger.error('Starter pile seeding failed', {
       error: error instanceof Error ? error.message : String(error),
     });

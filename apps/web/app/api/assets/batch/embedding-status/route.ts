@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { logError, logInfo } from '@/lib/observability-logger';
+import { enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
 
 interface BatchEmbeddingStatusRequest {
   assetIds: string[];
@@ -27,24 +30,14 @@ interface BatchEmbeddingStatusResponse {
  * Request body: { assetIds: string[] }
  * Response: { statuses: { [assetId]: { hasEmbedding, status, error? } } }
  */
-async function postHandler(request: NextRequest) {
+async function postHandler(request: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   const startTime = Date.now();
 
   try {
-    const { userId } = await auth();
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     if ( !prisma) {
-      return NextResponse.json(
-        { error: 'Database unavailable' },
-        { status: 503 }
-      );
+      return enrollmentUnavailableResponse();
     }
 
     // Parse request body
@@ -150,6 +143,6 @@ async function postHandler(request: NextRequest) {
   }
 }
 
-export const POST = withObservability(postHandler, {
+export const POST = withObservability(withAuthenticatedApi(postHandler), {
   operation: 'assets:batch-embedding-status',
 });

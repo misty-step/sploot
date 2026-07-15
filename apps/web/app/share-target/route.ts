@@ -6,6 +6,13 @@ import { getRuntimeGate } from '@/lib/runtime-gates';
 import { StorageQuotaExceededError } from '@/lib/quota/storage-quota-policy';
 import { logger } from '@/lib/logger';
 import { withObservability } from '@/lib/with-observability';
+import { prisma } from '@/lib/db';
+import {
+  assertEnrolledUser,
+  isEnrollmentDeniedError,
+  isEnrollmentUnavailableError,
+} from '@/lib/enrollment/enrollment-policy';
+import { recordUploadTokenUsage } from '@/lib/auth/upload-token';
 
 /**
  * PWA share-target receiver (manifest.json `share_target`).
@@ -25,6 +32,9 @@ function redirectTo(req: NextRequest, path: string, status = 303): NextResponse 
 
 async function postHandler(req: NextRequest) {
   const auth = await authenticateRequest(req);
+  if (auth.status === 'unavailable') {
+    return redirectTo(req, '/app?enrollment=unavailable');
+  }
   if (auth.status !== 'authenticated') {
     return redirectTo(req, '/sign-in');
   }
@@ -33,6 +43,18 @@ async function postHandler(req: NextRequest) {
   const uploadGate = getRuntimeGate('uploads');
   if (!uploadGate.enabled) {
     return redirectTo(req, '/app?share=paused');
+  }
+
+  try {
+    await assertEnrolledUser(userId, prisma);
+    if (auth.principal.credentialKind === 'upload-token' && 'uploadTokenId' in auth.principal && typeof auth.principal.uploadTokenId === 'string') {
+      await recordUploadTokenUsage(auth.principal.uploadTokenId);
+    }
+  } catch (error) {
+    unstable_rethrow(error);
+    if (isEnrollmentDeniedError(error)) return redirectTo(req, '/app?enrollment=closed');
+    if (isEnrollmentUnavailableError(error)) return redirectTo(req, '/app?enrollment=unavailable');
+    throw error;
   }
 
   const formData = await req.formData();
@@ -61,6 +83,8 @@ async function postHandler(req: NextRequest) {
         logger.warn('Share-target ingest hit storage quota', { userId });
         break;
       }
+      if (isEnrollmentDeniedError(error)) return redirectTo(req, '/app?enrollment=closed');
+      if (isEnrollmentUnavailableError(error)) return redirectTo(req, '/app?enrollment=unavailable');
       logger.error('Share-target ingest failed', {
         userId,
         filename: file.name,

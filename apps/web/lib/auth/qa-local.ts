@@ -3,6 +3,8 @@ import type { AuthenticatedPrincipal, RequestAuthResult } from './types';
 const QA_LOCAL_AUTH_HEADER = 'x-sploot-qa-auth';
 const QA_LOCAL_AUTH_COOKIE = 'sploot_qa_auth';
 const TOKEN_VERSION = 1;
+const QA_USER_ID_PATTERN = /^qa-[a-z0-9-]{1,64}$/;
+const MAX_TOKEN_LIFETIME_SECONDS = 8 * 60 * 60;
 
 interface QaLocalAuthPayload {
   v: typeof TOKEN_VERSION;
@@ -30,9 +32,17 @@ export function getQaLocalAuthCookieName(): string {
   return QA_LOCAL_AUTH_COOKIE;
 }
 
+export function hasQaLocalAuthInput(headers: Headers): boolean {
+  return Boolean(
+    headers.get(QA_LOCAL_AUTH_HEADER) ||
+    hasCookie(headers.get('cookie'), QA_LOCAL_AUTH_COOKIE),
+  );
+}
+
 export function isQaLocalAuthEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  const deploymentMarker = env.SPLOOT_DEPLOYMENT_ENV?.trim().toLowerCase();
   return env.SPLOOT_QA_AUTH_MODE === 'enabled' &&
-    env.NODE_ENV !== 'production';
+    (deploymentMarker === 'development' || deploymentMarker === 'test');
 }
 
 export async function createQaLocalAuthToken({
@@ -46,18 +56,25 @@ export async function createQaLocalAuthToken({
   if (!userId) {
     throw new Error('qa-local token requires userId');
   }
+  if (!QA_USER_ID_PATTERN.test(userId)) {
+    throw new Error('qa-local token requires a qa-user namespace');
+  }
   if (!secret) {
     throw new Error('qa-local token requires secret');
   }
+  if (!Number.isSafeInteger(expiresInSeconds) || expiresInSeconds <= 0 || expiresInSeconds > MAX_TOKEN_LIFETIME_SECONDS) {
+    throw new Error('qa-local token lifetime is out of bounds');
+  }
 
   const issuedAt = Math.floor(now.getTime() / 1000);
+  const expiresAt = issuedAt + expiresInSeconds;
   const payload: QaLocalAuthPayload = {
     v: TOKEN_VERSION,
     userId,
     ...(email ? { email } : {}),
     ...(sessionId ? { sessionId } : {}),
     iat: issuedAt,
-    exp: issuedAt + expiresInSeconds,
+    exp: expiresAt,
   };
   const encodedPayload = base64UrlEncode(JSON.stringify(payload));
   const signature = await signPayload(encodedPayload, secret);
@@ -69,9 +86,14 @@ export async function verifyQaLocalAuthHeaders(
   headers: Headers,
   env: Record<string, string | undefined> = process.env
 ): Promise<RequestAuthResult> {
-  const token = headers.get(QA_LOCAL_AUTH_HEADER) ?? readCookie(headers.get('cookie'), QA_LOCAL_AUTH_COOKIE);
+  const cookieHeader = headers.get('cookie');
+  const headerToken = headers.get(QA_LOCAL_AUTH_HEADER);
+  const cookieToken = readCookie(cookieHeader, QA_LOCAL_AUTH_COOKIE);
+  const token = headerToken ?? cookieToken;
   if (!token) {
-    return { status: 'unauthenticated', reason: 'qa-local-missing' };
+    return hasCookie(cookieHeader, QA_LOCAL_AUTH_COOKIE) || headerToken !== null
+      ? { status: 'unauthenticated', reason: 'qa-local-invalid' }
+      : { status: 'unauthenticated', reason: 'qa-local-missing' };
   }
 
   if (!isQaLocalAuthEnabled(env)) {
@@ -113,12 +135,15 @@ async function verifyQaLocalAuthToken(token: string, secret: string): Promise<Qa
     return null;
   }
 
-  if (payload.v !== TOKEN_VERSION || typeof payload.userId !== 'string' || payload.userId.length === 0) {
+  if (!isBoundedQaPayload(payload)) {
     return null;
   }
 
   const now = Math.floor(Date.now() / 1000);
-  if (typeof payload.exp !== 'number' || payload.exp <= now) {
+  if (payload.iat > now || payload.exp <= now || payload.exp <= payload.iat) {
+    return null;
+  }
+  if (payload.exp - payload.iat > MAX_TOKEN_LIFETIME_SECONDS) {
     return null;
   }
 
@@ -170,7 +195,27 @@ function readCookie(cookieHeader: string | null, name: string): string | null {
     .map(part => part.trim())
     .find(part => part.startsWith(prefix));
 
-  return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : null;
+  if (!cookie) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(cookie.slice(prefix.length));
+  } catch {
+    return null;
+  }
+}
+
+function hasCookie(cookieHeader: string | null, name: string): boolean {
+  if (!cookieHeader) {
+    return false;
+  }
+
+  const prefix = `${name}=`;
+  return cookieHeader
+    .split(';')
+    .map(part => part.trim())
+    .some(part => part.startsWith(prefix));
 }
 
 function base64UrlEncode(value: string): string {
@@ -212,4 +257,26 @@ function constantTimeEqual(left: string, right: string): boolean {
   }
 
   return diff === 0;
+}
+
+function isBoundedQaPayload(payload: unknown): payload is QaLocalAuthPayload {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return false;
+  }
+
+  const record = payload as Record<string, unknown>;
+  const allowedKeys = new Set(['v', 'userId', 'iat', 'exp', 'email', 'sessionId']);
+  if (Object.keys(record).some((key) => !allowedKeys.has(key))) {
+    return false;
+  }
+
+  return record.v === TOKEN_VERSION &&
+    typeof record.userId === 'string' &&
+    QA_USER_ID_PATTERN.test(record.userId) &&
+    typeof record.iat === 'number' &&
+    Number.isSafeInteger(record.iat) &&
+    typeof record.exp === 'number' &&
+    Number.isSafeInteger(record.exp) &&
+    (record.email === undefined || typeof record.email === 'string') &&
+    (record.sessionId === undefined || typeof record.sessionId === 'string');
 }

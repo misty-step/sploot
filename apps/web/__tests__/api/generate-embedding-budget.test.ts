@@ -10,12 +10,16 @@ const mocks = vi.hoisted(() => ({
   markEmbeddingFailed: vi.fn(),
   logInfo: vi.fn(),
   logError: vi.fn(),
+  userFindUnique: vi.fn(),
+  authenticateRequest: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/server', () => ({ getAuth: mocks.getAuth }));
+vi.mock('@/lib/auth/request-auth', () => ({ authenticateRequest: mocks.authenticateRequest }));
 
 vi.mock('@/lib/db', () => ({
   prisma: {
+    user: { findUnique: mocks.userFindUnique },
     asset: { findFirst: mocks.findAsset },
     assetEmbedding: { findUnique: vi.fn() },
   },
@@ -82,6 +86,18 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getAuth.mockResolvedValue({ userId: 'user-1' });
+    mocks.authenticateRequest.mockResolvedValue({
+      status: 'authenticated',
+      principal: {
+        userId: 'user-1',
+        provider: 'qa-local',
+        providerSubject: 'user-1',
+        source: 'qa-local',
+        credentialKind: 'qa-local',
+      },
+      syncStatus: 'success',
+    });
+    mocks.userFindUnique.mockResolvedValue({ id: 'user-1' });
     mocks.findAsset.mockResolvedValue({
       id: 'asset-1',
       blobUrl: 'https://blob.example/image.jpg',

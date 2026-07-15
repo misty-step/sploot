@@ -40,6 +40,7 @@ describe('validateImportUrl', () => {
   it('allows localhost only under the QA harness escape hatch', () => {
     vi.stubEnv('SPLOOT_QA_ALLOW_LOCAL_URL_IMPORT', '1');
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
+    vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'test');
     vi.stubEnv('NODE_ENV', 'test');
 
     expect(validateImportUrl('http://localhost:3000/qa-blob-seed/x.png')).toMatchObject({
@@ -50,6 +51,7 @@ describe('validateImportUrl', () => {
   it('keeps non-loopback private hosts blocked even under the QA escape hatch', () => {
     vi.stubEnv('SPLOOT_QA_ALLOW_LOCAL_URL_IMPORT', '1');
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
+    vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'test');
     vi.stubEnv('NODE_ENV', 'test');
 
     expect(validateImportUrl('http://169.254.169.254/latest/meta-data')).toMatchObject({
@@ -61,6 +63,7 @@ describe('validateImportUrl', () => {
   it('keeps localhost blocked in production even with the QA flag set', () => {
     vi.stubEnv('SPLOOT_QA_ALLOW_LOCAL_URL_IMPORT', '1');
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
+    vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'production');
     vi.stubEnv('NODE_ENV', 'production');
 
     expect(validateImportUrl('http://localhost:3000/x.png')).toMatchObject({ ok: false });

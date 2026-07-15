@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { getAuth } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
 import { getOrCreateShareSlug, AssetNotFoundError } from '@/lib/share';
 import { apiError } from '@/lib/api-error';
-import { unauthorizedResponse } from '@/lib/auth/api';
 import { withObservability } from '@/lib/with-observability';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import type { RouteContext } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
+import { enrollmentResponseForError, enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
 
 /**
  * Generate a share link for an asset
@@ -25,14 +26,12 @@ import { logError } from '@/lib/observability-logger';
  */
 async function postHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext,
 ) {
   try {
     // 1. Extract and verify auth
-    const { userId } = await getAuth();
-    if (!userId) {
-      return unauthorizedResponse();
-    }
+    const userId = principal.userId;
 
     // 2. Extract asset ID from params
     const params = await context.params;
@@ -44,7 +43,7 @@ async function postHandler(
 
     // 3. Verify database is configured
     if (!prisma) {
-      return apiError('INTERNAL_ERROR', 'Database not configured');
+      return enrollmentUnavailableResponse();
     }
 
     // 4. Check asset ownership and existence
@@ -65,7 +64,7 @@ async function postHandler(
     }
 
     // 5. Get or create share slug (idempotent)
-    const slug = await getOrCreateShareSlug(id);
+    const slug = await getOrCreateShareSlug(id, userId);
 
     // 6. Build share URL
     // Use NEXT_PUBLIC_BASE_URL from env, fallback to request origin
@@ -77,6 +76,9 @@ async function postHandler(
   } catch (error) {
     // Rethrow Next.js internal errors
     unstable_rethrow(error);
+
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
 
     // Handle known errors
     if (error instanceof AssetNotFoundError) {
@@ -92,4 +94,4 @@ async function postHandler(
   }
 }
 
-export const POST = withObservability(postHandler, { operation: 'assets:share' });
+export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'assets:share' });

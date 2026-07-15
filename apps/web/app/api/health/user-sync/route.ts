@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthWithUser } from '@/lib/auth/server';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import {
+  assertEnrolledUser,
+  enrollmentDeniedResponse,
+  enrollmentIdentityConflictResponse,
+  enrollmentResponseForError,
+  enrollmentUnavailableResponse,
+} from '@/lib/enrollment/enrollment-policy';
 
 /**
  * User Sync Health Check Endpoint
@@ -18,6 +25,10 @@ async function getHandler(req: NextRequest) {
     // Get auth with explicit sync status
     const { userId, syncStatus, syncError } = await getAuthWithUser();
 
+    if (syncStatus === 'denied') return enrollmentDeniedResponse();
+    if (syncStatus === 'conflict') return enrollmentIdentityConflictResponse();
+    if (syncStatus === 'unavailable' || syncStatus === 'failed') return enrollmentUnavailableResponse();
+
     if (!userId) {
       return NextResponse.json({
         status: 'unauthenticated',
@@ -25,6 +36,8 @@ async function getHandler(req: NextRequest) {
         message: 'User not authenticated',
       });
     }
+
+    await assertEnrolledUser(userId, prisma);
 
     // Check if user actually exists in database
     const dbUser = await prisma?.user.findUnique({
@@ -55,6 +68,8 @@ async function getHandler(req: NextRequest) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     return NextResponse.json(
       {
         status: 'error',

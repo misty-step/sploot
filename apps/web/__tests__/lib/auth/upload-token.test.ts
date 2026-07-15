@@ -86,18 +86,16 @@ describe('verifyUploadToken', () => {
       providerSubject: 'user_42',
       source: 'upload-token',
       credentialKind: 'upload-token',
+      uploadTokenId: 'tok_1',
     });
   });
 
-  it('bumps last-used best-effort, guarded on revokedAt: null', async () => {
+  it('does not write last-used during pure credential verification', async () => {
     mocks.findFirst.mockResolvedValue({ id: 'tok_1', userId: 'user_42' });
 
     await verifyUploadToken('splt_valid');
 
-    expect(mocks.updateMany).toHaveBeenCalledWith({
-      where: { id: 'tok_1', revokedAt: null },
-      data: expect.objectContaining({ lastUsedAt: expect.any(Date) }),
-    });
+    expect(mocks.updateMany).not.toHaveBeenCalled();
   });
 
   it('only queries un-revoked rows (revoked ≡ unknown)', async () => {
@@ -115,8 +113,8 @@ describe('verifyUploadToken', () => {
     expect(await verifyUploadToken('splt_revoked_or_unknown')).toBeNull();
   });
 
-  it('is throw-safe: a DB error resolves to null, never throws (→ 401, not 500)', async () => {
+  it('surfaces a DB error as enrollment unavailable', async () => {
     mocks.findFirst.mockRejectedValue(new Error('relation "upload_tokens" does not exist'));
-    await expect(verifyUploadToken('splt_x')).resolves.toBeNull();
+    await expect(verifyUploadToken('splt_x')).rejects.toMatchObject({ code: 'enrollment_unavailable' });
   });
 });

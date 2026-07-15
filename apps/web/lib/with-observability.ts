@@ -4,6 +4,14 @@ import type { NextRequest, NextResponse } from 'next/server';
 
 import { withTraceId } from './observability-logger';
 import { getPerformanceMonitor } from './performance-monitor';
+import {
+  enrollmentDeniedResponse,
+  enrollmentIdentityConflictResponse,
+  enrollmentUnavailableResponse,
+  isEnrollmentDeniedError,
+  isEnrollmentUnavailableError,
+  isEnrollmentIdentityConflictError,
+} from './enrollment/enrollment-policy';
 
 /**
  * Next.js route handler signature extended with optional context param.
@@ -148,6 +156,10 @@ export function withObservability(
           // Silently ignore logging failures
         }
       }
+
+      if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
+      if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
+      if (isEnrollmentIdentityConflictError(error)) return enrollmentIdentityConflictResponse();
 
       unstable_rethrow(error);
       throw error;

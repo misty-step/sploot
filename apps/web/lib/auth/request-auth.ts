@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { isUnauthorizedAuthError } from './api';
-import { verifyQaLocalAuthHeaders } from './qa-local';
+import { hasQaLocalAuthInput, verifyQaLocalAuthHeaders } from './qa-local';
 import type {
   AuthPolicy,
   AuthenticatedPrincipal,
@@ -8,14 +8,14 @@ import type {
 } from './types';
 import { extractUploadToken, verifyUploadToken } from './upload-token';
 import { verifyBearerOrThrow } from './verify-bearer';
+import { isEnrollmentUnavailableError } from '@/lib/enrollment/enrollment-policy';
 
 const DEFAULT_AUTH_POLICY: Required<
-  Pick<AuthPolicy, 'allowClerk' | 'allowQaLocal' | 'allowUploadToken' | 'requireUserSync'>
+  Pick<AuthPolicy, 'allowClerk' | 'allowQaLocal' | 'allowUploadToken'>
 > = {
   allowClerk: true,
   allowQaLocal: true,
   allowUploadToken: false,
-  requireUserSync: false,
 };
 
 export async function authenticateRequest(
@@ -27,18 +27,27 @@ export async function authenticateRequest(
     ...policy,
   };
   const env = resolvedPolicy.env ?? process.env;
+  const hasQaInput = hasQaLocalAuthInput(req.headers);
 
-  if (resolvedPolicy.allowQaLocal) {
+  if (hasQaInput) {
     const qaResult = await verifyQaLocalAuthHeaders(req.headers, env);
-    if (qaResult.status !== 'unauthenticated' && qaResult.status !== 'forbidden') {
-      return qaResult;
-    }
+    // QA credentials are terminal input. A malformed, expired, disabled, or
+    // otherwise forbidden QA credential must never fall through to Clerk.
+    return qaResult;
   }
 
   if (resolvedPolicy.allowUploadToken) {
     const uploadToken = extractUploadToken(req.headers);
     if (uploadToken) {
-      const principal = await verifyUploadToken(uploadToken);
+      let principal: Awaited<ReturnType<typeof verifyUploadToken>>;
+      try {
+        principal = await verifyUploadToken(uploadToken);
+      } catch (error: unknown) {
+        if (isEnrollmentUnavailableError(error)) {
+          return { status: 'unavailable', reason: 'enrollment_unavailable' };
+        }
+        throw error;
+      }
       if (principal) {
         return { status: 'authenticated', principal, syncStatus: 'skipped' };
       }
@@ -57,14 +66,16 @@ export async function authenticateRequest(
     return {
       status: 'authenticated',
       principal: clerkPrincipal(userId),
-      syncStatus: resolvedPolicy.requireUserSync ? 'skipped' : 'skipped',
+      // Durable enrollment is asserted by withAuthenticatedApi immediately
+      // after authentication, before a route receives the principal.
+      syncStatus: 'skipped',
     };
   } catch (error) {
     if (isUnauthorizedAuthError(error)) {
       return { status: 'unauthenticated', reason: 'clerk-unauthorized' };
     }
 
-    throw error;
+    return { status: 'unavailable', reason: 'enrollment_unavailable' };
   }
 }
 

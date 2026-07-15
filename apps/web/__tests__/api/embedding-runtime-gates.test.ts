@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   findManyAssetTags: vi.fn(),
   vectorSearch: vi.fn(),
   logSearch: vi.fn(),
+  userFindUnique: vi.fn(),
+  authenticateRequest: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/server', () => ({
@@ -20,23 +22,8 @@ vi.mock('@/lib/auth/server', () => ({
   getAuthWithUser: mocks.getAuthWithUser,
 }));
 
-// POST /api/search resolves auth through withAuthenticatedApi (sploot-071);
-// getAuthWithUser above still covers /api/embeddings/text and
-// /api/embeddings/image, which stayed on the legacy door.
-vi.mock('@/lib/auth/with-authenticated-api', () => ({
-  withAuthenticatedApi: (handler: any) => async (req: any, context: any = {}) => {
-    if (!mocks.authenticatedUserId) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-
-    return handler(req, context, {
-      principal: { userId: mocks.authenticatedUserId },
-      auth: { status: 'authenticated' },
-    });
-  },
+vi.mock('@/lib/auth/request-auth', () => ({
+  authenticateRequest: mocks.authenticateRequest,
 }));
 
 vi.mock('@/lib/embeddings', () => ({
@@ -59,6 +46,7 @@ vi.mock('@/lib/cache', () => ({
 
 vi.mock('@/lib/db', () => ({
   prisma: {
+    user: { findUnique: mocks.userFindUnique },
     asset: {
       findFirst: mocks.findFirst,
     },
@@ -96,7 +84,19 @@ describe('embedding runtime gates', () => {
     vi.stubEnv('SPLOOT_EMBEDDINGS_ENABLED', 'false');
     mocks.getAuth.mockResolvedValue({ userId: 'user-1' });
     mocks.getAuthWithUser.mockResolvedValue({ userId: 'user-1' });
+    mocks.userFindUnique.mockResolvedValue({ id: 'user-1' });
     mocks.authenticatedUserId = 'user-1';
+    mocks.authenticateRequest.mockResolvedValue({
+      status: 'authenticated',
+      principal: {
+        userId: 'user-1',
+        provider: 'qa-local',
+        providerSubject: 'user-1',
+        source: 'qa-local',
+        credentialKind: 'qa-local',
+      },
+      syncStatus: 'success',
+    });
     mocks.getSearchResults.mockResolvedValue(null);
     mocks.findFirst.mockResolvedValue({ id: 'asset-1' });
   });
@@ -130,6 +130,7 @@ describe('search degraded-service honesty', () => {
     vi.stubEnv('SPLOOT_EMBEDDINGS_ENABLED', 'true');
     mocks.getAuth.mockResolvedValue({ userId: 'user-1' });
     mocks.getAuthWithUser.mockResolvedValue({ userId: 'user-1' });
+    mocks.userFindUnique.mockResolvedValue({ id: 'user-1' });
     mocks.authenticatedUserId = 'user-1';
     mocks.getSearchResults.mockResolvedValue(null);
     mocks.logSearch.mockResolvedValue(undefined);

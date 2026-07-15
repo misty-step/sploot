@@ -3,7 +3,9 @@ import { requireUserIdWithSync } from '@/lib/auth/server';
 import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import { enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
 import { logError } from '@/lib/observability-logger';
+import { enrollmentResponseForError, withEnrollmentIdentityWriter } from '@/lib/enrollment/enrollment-policy';
 
 /**
  * GET /api/tags - Get all tags for the current user
@@ -13,10 +15,7 @@ async function getHandler(req: NextRequest) {
     const userId = await requireUserIdWithSync();
 
     if ( !prisma) {
-      return NextResponse.json(
-        { error: 'Database unavailable' },
-        { status: 503 }
-      );
+      return enrollmentUnavailableResponse();
     }
 
     const tags = await prisma.tag.findMany({
@@ -47,6 +46,8 @@ async function getHandler(req: NextRequest) {
       })),
     });
   } catch (error) {
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     if (isUnauthorizedAuthError(error)) {
       return unauthorizedResponse();
     }
@@ -75,34 +76,25 @@ async function postHandler(req: NextRequest) {
     }
 
     if ( !prisma) {
-      return NextResponse.json(
-        { error: 'Database unavailable' },
-        { status: 503 }
-      );
+      return enrollmentUnavailableResponse();
     }
 
-    // Check if tag already exists
-    const existingTag = await prisma.tag.findFirst({
-      where: {
-        ownerUserId: userId,
-        name: name.trim().toLowerCase(),
-      },
+    const tag = await withEnrollmentIdentityWriter(prisma, userId, async (tx) => {
+      const existingTag = await tx.tag.findFirst({
+        where: { ownerUserId: userId, name: name.trim().toLowerCase() },
+      });
+      if (existingTag) return null;
+      return tx.tag.create({
+        data: { ownerUserId: userId, name: name.trim().toLowerCase(), color: color || null },
+      });
     });
 
-    if (existingTag) {
+    if (!tag) {
       return NextResponse.json(
         { error: 'Tag already exists' },
         { status: 409 }
       );
     }
-
-    const tag = await prisma.tag.create({
-      data: {
-        ownerUserId: userId,
-        name: name.trim().toLowerCase(),
-        color: color || null,
-      },
-    });
 
     return NextResponse.json({
       success: true,
@@ -115,6 +107,8 @@ async function postHandler(req: NextRequest) {
       },
     });
   } catch (error) {
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     if (isUnauthorizedAuthError(error)) {
       return unauthorizedResponse();
     }

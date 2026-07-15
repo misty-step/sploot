@@ -4,6 +4,7 @@ import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
+import { enrollmentResponseForError, enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
 
 interface AuditResult {
   id: string;
@@ -41,10 +42,7 @@ async function getHandler(req: NextRequest) {
     const userId = await requireUserIdWithSync();
 
     if (!prisma) {
-      return NextResponse.json(
-        { error: 'Database not available' },
-        { status: 503 }
-      );
+      return enrollmentUnavailableResponse();
     }
 
     // Fetch all assets for the user
@@ -123,6 +121,8 @@ async function getHandler(req: NextRequest) {
 
     return NextResponse.json(summary, { status: 200 });
   } catch (error) {
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     if (isUnauthorizedAuthError(error)) {
       return unauthorizedResponse();
     }

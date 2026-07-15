@@ -47,6 +47,11 @@ vi.mock('@/lib/auth/api', () => ({
 
 vi.mock('@/lib/env', () => ({
   blobConfigured: true,
+  databaseConfigured: false,
+}));
+
+vi.mock('@/lib/db', () => ({
+  prisma: { user: { findUnique: vi.fn().mockResolvedValue({ id: 'user-1' }) } },
 }));
 
 vi.mock('@/lib/logger', () => ({

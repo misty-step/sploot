@@ -2,15 +2,23 @@ import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { POST } from '@/app/api/telemetry/route';
 import { createMockRequest } from '../utils/test-helpers';
-import { getAuth } from '@/lib/auth/server';
 import { logger } from '@/lib/observability-logger';
 import {
   postBlobLoadFailure,
   postPerformanceMetric,
 } from '@/lib/telemetry-client';
 
-vi.mock('@/lib/auth/server', () => ({
-  getAuth: vi.fn(),
+const authMock = vi.hoisted(() => ({
+  authenticateRequest: vi.fn(),
+  userFindUnique: vi.fn(),
+}));
+
+vi.mock('@/lib/auth/request-auth', () => ({
+  authenticateRequest: authMock.authenticateRequest,
+}));
+
+vi.mock('@/lib/db', () => ({
+  prisma: { user: { findUnique: authMock.userFindUnique } },
 }));
 
 const observabilityLoggerMock = vi.hoisted(() => ({
@@ -25,7 +33,6 @@ vi.mock('@/lib/observability-logger', () => ({
   withTraceId: vi.fn(() => observabilityLoggerMock),
 }));
 
-const mockGetAuth = vi.mocked(getAuth);
 const mockLogger = vi.mocked(logger);
 const defaultContext = { params: Promise.resolve({}) };
 
@@ -40,7 +47,18 @@ const AUTH_USER = {
 describe('/api/telemetry', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetAuth.mockResolvedValue(AUTH_USER);
+    authMock.authenticateRequest.mockResolvedValue({
+      status: 'authenticated',
+      principal: {
+        userId: AUTH_USER.userId,
+        provider: 'qa-local',
+        providerSubject: AUTH_USER.userId,
+        source: 'qa-local',
+        credentialKind: 'qa-local',
+      },
+      syncStatus: 'success',
+    });
+    authMock.userFindUnique.mockResolvedValue({ id: AUTH_USER.userId });
   });
 
   afterEach(() => {
@@ -48,13 +66,7 @@ describe('/api/telemetry', () => {
   });
 
   it('returns 401 when auth is missing', async () => {
-    mockGetAuth.mockResolvedValue({
-      userId: null,
-      sessionId: null,
-      async getToken() {
-        return null;
-      },
-    });
+    authMock.authenticateRequest.mockResolvedValue({ status: 'unauthenticated', reason: 'test' });
 
     const request = createMockRequest('POST');
     const response = await POST(request, defaultContext);

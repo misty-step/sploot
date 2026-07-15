@@ -2,17 +2,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
-  getAuth: vi.fn(),
+  authenticateRequest: vi.fn(),
+  userFindUnique: vi.fn(),
   findAsset: vi.fn(),
   updateAsset: vi.fn(),
   clearCache: vi.fn(),
   invalidateSlugCache: vi.fn(),
+  transaction: vi.fn(),
 }));
 
-vi.mock('@/lib/auth/server', () => ({ getAuth: mocks.getAuth }));
+vi.mock('@/lib/auth/request-auth', () => ({ authenticateRequest: mocks.authenticateRequest }));
 
 vi.mock('@/lib/db', () => ({
   prisma: {
+    user: { findUnique: mocks.userFindUnique },
     asset: {
       findFirst: mocks.findAsset,
       update: mocks.updateAsset,
@@ -20,6 +23,7 @@ vi.mock('@/lib/db', () => ({
     },
     assetTag: { deleteMany: vi.fn() },
     assetEmbedding: { deleteMany: vi.fn() },
+    $transaction: mocks.transaction,
   },
 }));
 
@@ -40,7 +44,18 @@ import { DELETE } from '@/app/api/assets/[id]/route';
 describe('DELETE /api/assets/[id] share-slug cache', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getAuth.mockResolvedValue({ userId: 'user-1' });
+    mocks.authenticateRequest.mockResolvedValue({
+      status: 'authenticated',
+      principal: {
+        userId: 'user-1',
+        provider: 'qa-local',
+        providerSubject: 'user-1',
+        source: 'qa-local',
+        credentialKind: 'qa-local',
+      },
+      syncStatus: 'success',
+    });
+    mocks.userFindUnique.mockResolvedValue({ id: 'user-1' });
     mocks.findAsset.mockResolvedValue({
       id: 'asset-1',
       shareSlug: 'shared-slug',
@@ -49,6 +64,16 @@ describe('DELETE /api/assets/[id] share-slug cache', () => {
       id: 'asset-1',
       deletedAt: new Date('2026-07-10T00:00:00Z'),
     });
+    mocks.transaction.mockImplementation(async (work: (tx: unknown) => Promise<unknown>) => work({
+      $executeRaw: vi.fn(),
+      user: { findUnique: mocks.userFindUnique },
+      asset: {
+        findFirst: mocks.findAsset,
+        update: mocks.updateAsset,
+      },
+      assetTag: { deleteMany: vi.fn() },
+      assetEmbedding: { deleteMany: vi.fn() },
+    }));
   });
 
   it('invalidates a warmed slug immediately after soft deletion', async () => {

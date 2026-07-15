@@ -3,6 +3,7 @@ import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import { withObservability } from '@/lib/with-observability';
 import { prisma } from '@/lib/db';
 import { mintUploadToken } from '@/lib/auth/upload-token';
+import { assertEnrolledUser, enrollmentUnavailableResponse, withEnrollmentIdentityWriter } from '@/lib/enrollment/enrollment-policy';
 
 /**
  * Personal upload token management. These routes are session-authenticated
@@ -16,9 +17,8 @@ const MAX_ACTIVE_TOKENS = 10;
 const MAX_NAME_LENGTH = 64;
 
 const getHandler = withAuthenticatedApi(async (_req: NextRequest, _context, { principal }) => {
-  if (!prisma) {
-    return NextResponse.json({ error: 'Database unavailable' }, { status: 503 });
-  }
+  await assertEnrolledUser(principal.userId, prisma);
+  if (!prisma) return enrollmentUnavailableResponse();
 
   const tokens = await prisma.uploadToken.findMany({
     where: { userId: principal.userId, revokedAt: null },
@@ -30,9 +30,8 @@ const getHandler = withAuthenticatedApi(async (_req: NextRequest, _context, { pr
 });
 
 const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { principal }) => {
-  if (!prisma) {
-    return NextResponse.json({ error: 'Database unavailable' }, { status: 503 });
-  }
+  await assertEnrolledUser(principal.userId, prisma);
+  if (!prisma) return enrollmentUnavailableResponse();
 
   let rawName: unknown;
   try {
@@ -53,26 +52,29 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     );
   }
 
-  const activeCount = await prisma.uploadToken.count({
-    where: { userId: principal.userId, revokedAt: null },
+  const minted = await mintUploadToken();
+  const created = await withEnrollmentIdentityWriter(prisma, principal.userId, async (tx) => {
+    const activeCount = await tx.uploadToken.count({
+      where: { userId: principal.userId, revokedAt: null },
+    });
+    if (activeCount >= MAX_ACTIVE_TOKENS) return null;
+    return tx.uploadToken.create({
+      data: {
+        userId: principal.userId,
+        name,
+        tokenHash: minted.tokenHash,
+        prefix: minted.prefix,
+      },
+      select: { id: true, name: true, prefix: true, createdAt: true },
+    });
   });
-  if (activeCount >= MAX_ACTIVE_TOKENS) {
+
+  if (!created) {
     return NextResponse.json(
       { error: `you can have at most ${MAX_ACTIVE_TOKENS} active tokens — revoke one first` },
       { status: 422 }
     );
   }
-
-  const minted = await mintUploadToken();
-  const created = await prisma.uploadToken.create({
-    data: {
-      userId: principal.userId,
-      name,
-      tokenHash: minted.tokenHash,
-      prefix: minted.prefix,
-    },
-    select: { id: true, name: true, prefix: true, createdAt: true },
-  });
 
   // The plaintext token is returned exactly once here and never stored or
   // returned again. Only its sha256 (minted.tokenHash) is persisted.

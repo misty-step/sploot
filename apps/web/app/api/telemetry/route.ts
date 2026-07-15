@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAnalyticsPropertyAllowlist } from '@/lib/analytics';
-import { getAuth } from '@/lib/auth/server';
-import { unauthorizedResponse } from '@/lib/auth/api';
 import { logger } from '@/lib/observability-logger';
 import { withObservability } from '@/lib/with-observability';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import {
   isPerformanceMetricName,
   isPerformanceMetricUnit,
@@ -33,12 +33,9 @@ const MAX_TELEMETRY_STRING_LENGTH = 2_000;
 const MAX_ERROR_IDENTIFIER_LENGTH = 120;
 const SAFE_ERROR_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
-async function postHandler(request: NextRequest): Promise<NextResponse> {
+async function postHandler(request: NextRequest, _context: unknown, { principal }: AuthenticatedApiContext): Promise<NextResponse> {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return unauthorizedResponse();
-    }
+    const userId = principal.userId;
 
     const body = await safeJson(request);
     if (!body) {
@@ -410,4 +407,4 @@ function isUsagePayload(value: unknown): value is UsagePayload {
   );
 }
 
-export const POST = withObservability(postHandler, { operation: 'telemetry:ingest' });
+export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'telemetry:ingest' });

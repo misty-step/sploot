@@ -8,7 +8,15 @@ import {
   StorageQuotaExceededError,
 } from '@/lib/quota/storage-quota-policy';
 import { logger } from '@/lib/logger';
+import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import {
+  assertEnrolledUser,
+  enrollmentDeniedResponse,
+  enrollmentUnavailableResponse,
+  isEnrollmentDeniedError,
+  isEnrollmentUnavailableError,
+} from '@/lib/enrollment/enrollment-policy';
 
 /**
  * URL import endpoint: POST { url } fetches a remote image server-side and
@@ -46,13 +54,17 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     return NextResponse.json({ success: false, error: validation.reason }, { status: 400 });
   }
 
-  const fetched = await fetchRemoteImage(validation.url);
-  if (!fetched.ok) {
-    logger.info('URL import fetch rejected', { userId, reason: fetched.reason });
-    return NextResponse.json({ success: false, error: fetched.reason }, { status: 422 });
-  }
-
   try {
+    // Reject non-enrolled callers before spending server/network work on the
+    // remote fetch. ingestImage repeats this boundary before Blob/embedding work.
+    await assertEnrolledUser(userId, prisma);
+
+    const fetched = await fetchRemoteImage(validation.url);
+    if (!fetched.ok) {
+      logger.info('URL import fetch rejected', { userId, reason: fetched.reason });
+      return NextResponse.json({ success: false, error: fetched.reason }, { status: 422 });
+    }
+
     const result = await ingestImage({ userId, file: fetched.file });
 
     if (result.kind === 'invalid') {
@@ -84,6 +96,9 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       { status: 201 }
     );
   } catch (error) {
+    if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
+    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
+
     if (error instanceof StorageQuotaExceededError) {
       return NextResponse.json(storageQuotaError(error.snapshot), { status: 403 });
     }

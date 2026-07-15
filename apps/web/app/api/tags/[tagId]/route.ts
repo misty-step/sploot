@@ -3,8 +3,10 @@ import { requireUserIdWithSync } from '@/lib/auth/server';
 import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import { enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
 import type { RouteContext } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
+import { enrollmentResponseForError, withEnrollmentIdentityWriter } from '@/lib/enrollment/enrollment-policy';
 
 /**
  * PATCH /api/tags/[tagId] - Update a tag
@@ -27,56 +29,28 @@ async function patchHandler(
     const { name, color } = await req.json();
 
     if ( !prisma) {
-      return NextResponse.json(
-        { error: 'Database unavailable' },
-        { status: 503 }
-      );
+      return enrollmentUnavailableResponse();
     }
 
-    // Verify tag ownership
-    const existingTag = await prisma.tag.findFirst({
-      where: {
-        id: tagId,
-        ownerUserId: userId,
-      },
-    });
-
-    if (!existingTag) {
-      return NextResponse.json(
-        { error: 'Tag not found' },
-        { status: 404 }
-      );
-    }
-
-    // Check if new name conflicts with existing tag
-    if (name && name !== existingTag.name) {
-      const conflictingTag = await prisma.tag.findFirst({
-        where: {
-          ownerUserId: userId,
-          name: name.trim().toLowerCase(),
-          NOT: {
-            id: tagId,
-          },
-        },
-      });
-
-      if (conflictingTag) {
-        return NextResponse.json(
-          { error: 'Tag with this name already exists' },
-          { status: 409 }
-        );
+    const result = await withEnrollmentIdentityWriter(prisma, userId, async (tx) => {
+      const existingTag = await tx.tag.findFirst({ where: { id: tagId, ownerUserId: userId } });
+      if (!existingTag) return { kind: 'missing' as const };
+      if (name && name !== existingTag.name) {
+        const conflictingTag = await tx.tag.findFirst({
+          where: { ownerUserId: userId, name: name.trim().toLowerCase(), NOT: { id: tagId } },
+        });
+        if (conflictingTag) return { kind: 'conflict' as const };
       }
-    }
-
-    const updatedTag = await prisma.tag.update({
-      where: {
-        id: tagId,
-      },
-      data: {
-        ...(name && { name: name.trim().toLowerCase() }),
-        ...(color !== undefined && { color }),
-      },
+      const updatedTag = await tx.tag.update({
+        where: { id: tagId },
+        data: { ...(name && { name: name.trim().toLowerCase() }), ...(color !== undefined && { color }) },
+      });
+      return { kind: 'updated' as const, updatedTag };
     });
+
+    if (result.kind === 'missing') return NextResponse.json({ error: 'Tag not found' }, { status: 404 });
+    if (result.kind === 'conflict') return NextResponse.json({ error: 'Tag with this name already exists' }, { status: 409 });
+    const updatedTag = result.updatedTag;
 
     return NextResponse.json({
       success: true,
@@ -88,6 +62,8 @@ async function patchHandler(
       },
     });
   } catch (error) {
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     if (isUnauthorizedAuthError(error)) {
       return unauthorizedResponse();
     }
@@ -120,39 +96,24 @@ async function deleteHandler(
     const userId = await requireUserIdWithSync();
 
     if ( !prisma) {
-      return NextResponse.json(
-        { error: 'Database unavailable' },
-        { status: 503 }
-      );
+      return enrollmentUnavailableResponse();
     }
 
-    // Verify tag ownership
-    const existingTag = await prisma.tag.findFirst({
-      where: {
-        id: tagId,
-        ownerUserId: userId,
-      },
+    const deleted = await withEnrollmentIdentityWriter(prisma, userId, async (tx) => {
+      const existingTag = await tx.tag.findFirst({ where: { id: tagId, ownerUserId: userId } });
+      if (!existingTag) return false;
+      await tx.tag.delete({ where: { id: tagId } });
+      return true;
     });
-
-    if (!existingTag) {
-      return NextResponse.json(
-        { error: 'Tag not found' },
-        { status: 404 }
-      );
-    }
-
-    // Delete tag (cascade will remove AssetTag associations)
-    await prisma.tag.delete({
-      where: {
-        id: tagId,
-      },
-    });
+    if (!deleted) return NextResponse.json({ error: 'Tag not found' }, { status: 404 });
 
     return NextResponse.json({
       success: true,
       message: 'Tag deleted successfully',
     });
   } catch (error) {
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     if (isUnauthorizedAuthError(error)) {
       return unauthorizedResponse();
     }

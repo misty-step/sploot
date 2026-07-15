@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   validateImportUrl: vi.fn(),
   fetchRemoteImage: vi.fn(),
   ingestImage: vi.fn(),
+  userFindUnique: vi.fn(),
   uploadGateEnabled: true,
 }));
 
@@ -20,6 +21,10 @@ vi.mock('@/lib/upload/url-import', () => ({
 
 vi.mock('@/lib/upload/ingest-image', () => ({
   ingestImage: mocks.ingestImage,
+}));
+
+vi.mock('@/lib/db', () => ({
+  prisma: { user: { findUnique: mocks.userFindUnique } },
 }));
 
 vi.mock('@/lib/runtime-gates', () => ({
@@ -61,6 +66,7 @@ function authed() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.uploadGateEnabled = true;
+  mocks.userFindUnique.mockResolvedValue({ id: 'qa-design-user' });
 });
 
 describe('POST /api/upload/url', () => {
@@ -93,6 +99,18 @@ describe('POST /api/upload/url', () => {
 
     expect(response.status).toBe(422);
     expect(mocks.ingestImage).not.toHaveBeenCalled();
+  });
+
+  it('returns the real enrollment denial before fetching remote bytes', async () => {
+    authed();
+    mocks.userFindUnique.mockResolvedValue(null);
+    mocks.validateImportUrl.mockReturnValue({ ok: true, url: new URL('https://x.com/a.png') });
+
+    const response = await POST(request({ url: 'https://x.com/a.png' }), {} as any);
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'enrollment_closed' });
+    expect(mocks.fetchRemoteImage).not.toHaveBeenCalled();
   });
 
   it('ingests the fetched image and returns 201 with the asset', async () => {

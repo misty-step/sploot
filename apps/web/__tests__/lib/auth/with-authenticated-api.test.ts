@@ -1,7 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { createQaLocalAuthToken, getQaLocalAuthHeader } from '@/lib/auth/qa-local';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+
+const mocks = vi.hoisted(() => ({
+  userFindUnique: vi.fn(),
+}));
+
+vi.mock('@/lib/db', () => ({
+  prisma: { user: { findUnique: mocks.userFindUnique } },
+}));
+
+beforeEach(() => {
+  mocks.userFindUnique.mockResolvedValue({ id: 'qa-user-1' });
+});
 
 describe('withAuthenticatedApi', () => {
   it('returns stable 401 JSON when no principal is available', async () => {
@@ -34,6 +46,7 @@ describe('withAuthenticatedApi', () => {
         allowQaLocal: true,
         env: {
           NODE_ENV: 'test',
+          SPLOOT_DEPLOYMENT_ENV: 'test',
           SPLOOT_QA_AUTH_MODE: 'enabled',
           SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
         },
@@ -52,5 +65,68 @@ describe('withAuthenticatedApi', () => {
       userId: 'qa-user-1',
       source: 'qa-local',
     });
+  });
+
+  it('denies an authenticated principal without a durable enrollment row', async () => {
+    mocks.userFindUnique.mockResolvedValue(null);
+    const handler = withAuthenticatedApi(
+      vi.fn(async () => NextResponse.json({ ok: true })),
+      {
+        allowClerk: false,
+        allowQaLocal: true,
+        env: {
+          NODE_ENV: 'test',
+          SPLOOT_DEPLOYMENT_ENV: 'test',
+          SPLOOT_QA_AUTH_MODE: 'enabled',
+          SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
+        },
+      }
+    );
+    const token = await createQaLocalAuthToken({
+      userId: 'qa-user-1',
+      secret: 'test-secret-with-enough-entropy',
+      expiresInSeconds: 60,
+    });
+
+    const response = await handler(
+      new NextRequest('http://localhost:3001/api/cache/stats', {
+        headers: { [getQaLocalAuthHeader()]: token },
+      }),
+      { params: Promise.resolve({}) }
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ code: 'enrollment_closed' });
+    expect(handler).toBeDefined();
+  });
+
+  it('fails closed when the enrollment lookup is unavailable', async () => {
+    mocks.userFindUnique.mockRejectedValue(new Error('database down'));
+    const token = await createQaLocalAuthToken({
+      userId: 'qa-user-1',
+      secret: 'test-secret-with-enough-entropy',
+      expiresInSeconds: 60,
+    });
+    const response = await withAuthenticatedApi(
+      async () => NextResponse.json({ ok: true }),
+      {
+        allowClerk: false,
+        allowQaLocal: true,
+        env: {
+          NODE_ENV: 'test',
+          SPLOOT_DEPLOYMENT_ENV: 'test',
+          SPLOOT_QA_AUTH_MODE: 'enabled',
+          SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
+        },
+      }
+    )(
+      new NextRequest('http://localhost:3001/api/cache/stats', {
+        headers: { [getQaLocalAuthHeader()]: token },
+      }),
+      { params: Promise.resolve({}) }
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ code: 'enrollment_unavailable' });
   });
 });

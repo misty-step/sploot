@@ -1,18 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NextRequest } from 'next/server';
+import { createQaLocalAuthToken, getQaLocalAuthHeader } from '@/lib/auth/qa-local';
 import { POST } from '@/app/api/assets/[id]/share/route';
 import { generateMetadata } from '@/app/m/[id]/page';
-
-// Mock @clerk/nextjs/server
-const mockAuth = vi.fn();
-vi.mock('@clerk/nextjs/server', () => ({
-  auth: () => mockAuth(),
-}));
 
 // Mock lib/db
 const mockPrisma = {
   asset: {
     findFirst: vi.fn(),
     update: vi.fn(),
+  },
+  user: {
+    findUnique: vi.fn(),
   },
 };
 
@@ -37,7 +36,7 @@ vi.mock('@/lib/slug-cache', () => ({
 }));
 
 describe('Share flow', () => {
-  const mockUserId = 'user_123';
+  const mockUserId = 'qa-user-123';
   const mockAssetId = 'asset_123';
   const mockSlug = 'aB3dF9Gh12';
   const mockBlobUrl = 'https://example.public.blob.vercel-storage.com/test.jpg';
@@ -46,13 +45,29 @@ describe('Share flow', () => {
     vi.clearAllMocks();
     mockDatabaseAvailable = true;
     process.env.NEXT_PUBLIC_BASE_URL = 'https://sploot.app';
+    process.env.NODE_ENV = 'test';
+    process.env.SPLOOT_QA_AUTH_MODE = 'enabled';
+    process.env.SPLOOT_QA_AUTH_SECRET = 'test-secret-with-enough-entropy';
+    process.env.SPLOOT_DEPLOYMENT_ENV = 'test';
+    process.env.CLERK_SECRET_KEY = '';
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = '';
+    mockPrisma.user.findUnique.mockResolvedValue({ id: mockUserId });
   });
+
+  async function authenticatedRequest(): Promise<NextRequest> {
+    const token = await createQaLocalAuthToken({
+      userId: mockUserId,
+      secret: 'test-secret-with-enough-entropy',
+      expiresInSeconds: 60,
+    });
+    return new NextRequest('http://localhost:3000/api/assets/asset_123/share', {
+      method: 'POST',
+      headers: { [getQaLocalAuthHeader()]: token },
+    });
+  }
 
   describe('POST /api/assets/[id]/share', () => {
     it('generates share link for asset owner', async () => {
-      // Mock auth
-      mockAuth.mockResolvedValue({ userId: mockUserId });
-
       // Mock asset lookup - owner matches
       mockPrisma.asset.findFirst.mockResolvedValue({
         id: mockAssetId,
@@ -64,7 +79,7 @@ describe('Share flow', () => {
       mockGetOrCreateShareSlug.mockResolvedValue(mockSlug);
 
       const response = await POST(
-        {} as any,
+        await authenticatedRequest(),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
 
@@ -75,7 +90,6 @@ describe('Share flow', () => {
     });
 
     it('returns same URL on repeated shares (idempotency)', async () => {
-      mockAuth.mockResolvedValue({ userId: mockUserId });
       mockPrisma.asset.findFirst.mockResolvedValue({
         id: mockAssetId,
         ownerUserId: mockUserId,
@@ -85,14 +99,14 @@ describe('Share flow', () => {
 
       // First share
       const response1 = await POST(
-        {} as any,
+        await authenticatedRequest(),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
       const data1 = await response1.json();
 
       // Second share
       const response2 = await POST(
-        {} as any,
+        await authenticatedRequest(),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
       const data2 = await response2.json();
@@ -102,13 +116,13 @@ describe('Share flow', () => {
     });
 
     it('rejects non-owner share attempts', async () => {
-      mockAuth.mockResolvedValue({ userId: 'different_user' });
+      mockPrisma.user.findUnique.mockResolvedValue({ id: 'different_user' });
 
       // Asset belongs to different user
       mockPrisma.asset.findFirst.mockResolvedValue(null);
 
       const response = await POST(
-        {} as any,
+        await authenticatedRequest(),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
 
@@ -119,10 +133,8 @@ describe('Share flow', () => {
     });
 
     it('rejects unauthenticated share attempts', async () => {
-      mockAuth.mockResolvedValue({ userId: null });
-
       const response = await POST(
-        {} as any,
+        new NextRequest('http://localhost:3000/api/assets/asset_123/share', { method: 'POST' }),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
 
@@ -132,13 +144,12 @@ describe('Share flow', () => {
     });
 
     it('rejects sharing soft-deleted assets', async () => {
-      mockAuth.mockResolvedValue({ userId: mockUserId });
 
       // Asset is soft-deleted
       mockPrisma.asset.findFirst.mockResolvedValue(null);
 
       const response = await POST(
-        {} as any,
+        await authenticatedRequest(),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
 
@@ -148,17 +159,16 @@ describe('Share flow', () => {
     });
 
     it('handles database unavailable gracefully', async () => {
-      mockAuth.mockResolvedValue({ userId: mockUserId });
       mockDatabaseAvailable = false;
 
       const response = await POST(
-        {} as any,
+        await authenticatedRequest(),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(503);
       const data = await response.json();
-      expect(data.error).toContain('Database');
+      expect(data.code).toBe('enrollment_unavailable');
     });
   });
 

@@ -9,6 +9,7 @@ import {
   type EmbeddingRateLimitLease,
   type EmbeddingRateLimitReason,
 } from './embedding-rate-limit';
+import { ENROLLMENT_UNAVAILABLE_CODE } from './enrollment/enrollment-policy';
 
 // Updated to working CLIP model (SigLIP model was deprecated)
 export const CLIP_MODEL =
@@ -53,6 +54,7 @@ export type EmbeddingAdmissionReason =
   | EmbeddingDailyBudgetReason;
 
 export class EmbeddingAdmissionError extends EmbeddingError {
+  readonly code: 'enrollment_unavailable' | undefined;
   constructor(
     public reason: EmbeddingAdmissionReason,
     public retryAfterSec?: number
@@ -65,6 +67,7 @@ export class EmbeddingAdmissionError extends EmbeddingError {
       unavailable ? 503 : 429,
       true
     );
+    this.code = unavailable ? ENROLLMENT_UNAVAILABLE_CODE : undefined;
     this.name = 'EmbeddingAdmissionError';
   }
 }

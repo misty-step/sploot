@@ -6,7 +6,6 @@ import {
   EmbeddingAdmissionError,
   EmbeddingError,
 } from '@/lib/embeddings';
-import { getAuth } from '@/lib/auth/server';
 import {
   acquireEmbeddingProcessing,
   markEmbeddingFailed,
@@ -14,9 +13,18 @@ import {
 } from '@/lib/embedding-guard';
 import { broadcastEmbeddingUpdate } from '@/lib/sse-broadcaster';
 import { withObservability } from '@/lib/with-observability';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import type { RouteContext } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
+import {
+  assertEnrolledUser,
+  enrollmentDeniedResponse,
+  enrollmentUnavailableResponse,
+  isEnrollmentDeniedError,
+  isEnrollmentUnavailableError,
+} from '@/lib/enrollment/enrollment-policy';
 
 // Request deduplication: Track in-flight requests
 const inFlightRequests = new Map<string, Promise<any>>();
@@ -56,15 +64,12 @@ interface EmbeddingResponse {
   headers?: HeadersInit;
 }
 
-async function postHandler(req: NextRequest, context: RouteContext) {
+async function postHandler(req: NextRequest, context: RouteContext, { principal }: AuthenticatedApiContext) {
   const startTime = Date.now();
   performanceMetrics.totalRequests++;
 
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const userId = principal.userId;
 
     const params = await context.params;
     const id = params?.id;
@@ -72,6 +77,11 @@ async function postHandler(req: NextRequest, context: RouteContext) {
     if (!id) {
       return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
     }
+
+    // Admission must precede circuit checks and in-flight deduplication so a
+    // denied caller can never observe or join another user's work.
+    await assertEnrolledUser(userId, prisma);
+    if (!prisma) return enrollmentUnavailableResponse();
 
     const embeddingGate = getRuntimeGate('embeddings');
     if (!embeddingGate.enabled) {
@@ -109,13 +119,6 @@ async function postHandler(req: NextRequest, context: RouteContext) {
         status: result.status,
         headers: result.headers,
       });
-    }
-
-    if (!prisma) {
-      return NextResponse.json(
-        { error: 'Database not configured' },
-        { status: 500 }
-      );
     }
 
     const asset = await prisma.asset.findFirst({
@@ -433,6 +436,9 @@ async function postHandler(req: NextRequest, context: RouteContext) {
     }
   } catch (error) {
     unstable_rethrow(error);
+
+    if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
+    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
     const processingTime = Date.now() - startTime;
     logger.logError('generate-embedding:failed', error as Error, {
       processingTimeMs: processingTime,
@@ -447,6 +453,7 @@ async function postHandler(req: NextRequest, context: RouteContext) {
           status: 'rate_limited',
           error: error.message,
           reason: error.reason,
+          ...(error.code ? { code: error.code } : {}),
           retryAfter: retryAfterSec,
         },
         {
@@ -483,6 +490,6 @@ async function postHandler(req: NextRequest, context: RouteContext) {
   }
 }
 
-export const POST = withObservability(postHandler, {
+export const POST = withObservability(withAuthenticatedApi(postHandler), {
   operation: 'assets:generate-embedding',
 });

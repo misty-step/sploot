@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
+import { enrollmentResponseForError, enrollmentUnavailableResponse, withEnrollmentIdentityWriter } from '@/lib/enrollment/enrollment-policy';
 
 /**
  * GET /api/assets/[id]/tags - Get tags for a specific asset
@@ -26,12 +27,7 @@ async function getHandler(
       );
     }
 
-    if ( !prisma) {
-      return NextResponse.json(
-        { error: 'Database unavailable' },
-        { status: 503 }
-      );
-    }
+    if (!prisma) return enrollmentUnavailableResponse();
 
     // Verify asset ownership
     const asset = await prisma.asset.findFirst({
@@ -65,6 +61,8 @@ async function getHandler(
       })),
     });
   } catch (error) {
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     if (isUnauthorizedAuthError(error)) {
       return unauthorizedResponse();
     }
@@ -98,36 +96,20 @@ async function postHandler(
     }
     const { tagIds, tagNames } = await req.json();
 
-    if ( !prisma) {
-      return NextResponse.json(
-        { error: 'Database unavailable' },
-        { status: 503 }
-      );
-    }
+    if (!prisma) return enrollmentUnavailableResponse();
 
-    // Verify asset ownership
-    const asset = await prisma.asset.findFirst({
-      where: {
-        id,
-        ownerUserId: userId,
-        deletedAt: null,
-      },
-    });
-
-    if (!asset) {
-      return NextResponse.json(
-        { error: 'Asset not found' },
-        { status: 404 }
-      );
-    }
-
-    const addedTags = [];
+    const addedTags = await withEnrollmentIdentityWriter(prisma, userId, async (tx) => {
+      const ownedAsset = await tx.asset.findFirst({
+        where: { id, ownerUserId: userId, deletedAt: null },
+      });
+      if (!ownedAsset) return null;
+      const added = [];
 
     // Handle tag IDs
     if (tagIds && Array.isArray(tagIds)) {
       for (const tagId of tagIds) {
         // Verify tag ownership
-        const tag = await prisma.tag.findFirst({
+        const tag = await tx.tag.findFirst({
           where: {
             id: tagId,
             ownerUserId: userId,
@@ -136,7 +118,7 @@ async function postHandler(
 
         if (tag) {
           // Check if association already exists
-          const existingAssociation = await prisma.assetTag.findUnique({
+          const existingAssociation = await tx.assetTag.findUnique({
             where: {
               assetId_tagId: {
                 assetId: id,
@@ -146,13 +128,13 @@ async function postHandler(
           });
 
           if (!existingAssociation) {
-            await prisma.assetTag.create({
+            await tx.assetTag.create({
               data: {
                 assetId: id,
                 tagId: tagId,
               },
             });
-            addedTags.push(tag);
+            added.push(tag);
           }
         }
       }
@@ -164,7 +146,7 @@ async function postHandler(
         const normalizedName = tagName.trim().toLowerCase();
 
         // Find or create tag
-        let tag = await prisma.tag.findFirst({
+        let tag = await tx.tag.findFirst({
           where: {
             ownerUserId: userId,
             name: normalizedName,
@@ -172,7 +154,7 @@ async function postHandler(
         });
 
         if (!tag) {
-          tag = await prisma.tag.create({
+          tag = await tx.tag.create({
             data: {
               ownerUserId: userId,
               name: normalizedName,
@@ -181,7 +163,7 @@ async function postHandler(
         }
 
         // Check if association already exists
-        const existingAssociation = await prisma.assetTag.findUnique({
+        const existingAssociation = await tx.assetTag.findUnique({
           where: {
             assetId_tagId: {
               assetId: id,
@@ -191,16 +173,21 @@ async function postHandler(
         });
 
         if (!existingAssociation) {
-          await prisma.assetTag.create({
+          await tx.assetTag.create({
             data: {
               assetId: id,
               tagId: tag.id,
             },
           });
-          addedTags.push(tag);
+          added.push(tag);
         }
       }
     }
+
+      return added;
+    });
+
+    if (!addedTags) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
 
     return NextResponse.json({
       success: true,
@@ -211,6 +198,8 @@ async function postHandler(
       })),
     });
   } catch (error) {
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     if (isUnauthorizedAuthError(error)) {
       return unauthorizedResponse();
     }
@@ -251,44 +240,23 @@ async function deleteHandler(
       );
     }
 
-    if ( !prisma) {
-      return NextResponse.json(
-        { error: 'Database unavailable' },
-        { status: 503 }
-      );
-    }
+    if (!prisma) return enrollmentUnavailableResponse();
 
-    // Verify asset ownership
-    const asset = await prisma.asset.findFirst({
-      where: {
-        id,
-        ownerUserId: userId,
-        deletedAt: null,
-      },
+    const removed = await withEnrollmentIdentityWriter(prisma, userId, async (tx) => {
+      const asset = await tx.asset.findFirst({ where: { id, ownerUserId: userId, deletedAt: null } });
+      if (!asset) return false;
+      await tx.assetTag.deleteMany({ where: { assetId: id, tagId: { in: tagIds } } });
+      return true;
     });
-
-    if (!asset) {
-      return NextResponse.json(
-        { error: 'Asset not found' },
-        { status: 404 }
-      );
-    }
-
-    // Remove tag associations
-    await prisma.assetTag.deleteMany({
-      where: {
-        assetId: id,
-        tagId: {
-          in: tagIds,
-        },
-      },
-    });
+    if (!removed) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
 
     return NextResponse.json({
       success: true,
       message: 'Tags removed from asset',
     });
   } catch (error) {
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
     if (isUnauthorizedAuthError(error)) {
       return unauthorizedResponse();
     }

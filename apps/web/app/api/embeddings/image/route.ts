@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
+import { createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
-import { getAuth } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
+import {
+  assertEnrolledUser,
+  enrollmentDeniedResponse,
+  enrollmentUnavailableResponse,
+  isEnrollmentDeniedError,
+  isEnrollmentUnavailableError,
+} from '@/lib/enrollment/enrollment-policy';
 
-async function postHandler(req: NextRequest) {
+async function postHandler(req: NextRequest, _context: unknown, { principal }: AuthenticatedApiContext) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
+
+    await assertEnrolledUser(userId, prisma);
 
     const body = await req.json();
     const { imageUrl, assetId } = body;
@@ -26,13 +30,6 @@ async function postHandler(req: NextRequest) {
     }
 
     if (assetId) {
-      if (!prisma) {
-        return NextResponse.json(
-          { error: 'Database not configured' },
-          { status: 500 }
-        );
-      }
-
       const asset = await prisma.asset.findFirst({
         where: {
           id: assetId,
@@ -90,11 +87,13 @@ async function postHandler(req: NextRequest) {
     });
 
   } catch (error) {
+    if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
+    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
     // Error generating image embedding
 
     if (error instanceof EmbeddingError) {
       return NextResponse.json(
-        { error: error.message },
+        { error: error.message, ...(error instanceof EmbeddingAdmissionError && error.code ? { code: error.code } : {}) },
         { status: error.statusCode || 500 }
       );
     }
@@ -106,4 +105,4 @@ async function postHandler(req: NextRequest) {
   }
 }
 
-export const POST = withObservability(postHandler, { operation: 'embeddings:image' });
+export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'embeddings:image' });

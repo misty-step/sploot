@@ -44,6 +44,9 @@ vi.mock('@/lib/cache', () => ({
 
 vi.mock('@/lib/db', () => ({
   prisma: {
+    user: {
+      findUnique: vi.fn().mockResolvedValue({ id: 'user-token-1' }),
+    },
     assetTag: {
       findMany: mocks.findManyAssetTags,
     },

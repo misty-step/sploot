@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyBearerOrThrow } from '@/lib/auth/verify-bearer';
 import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
+import type { RouteContext } from '@/lib/with-observability';
 import { prisma, assetExists } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
+import { enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
 
 /**
  * Upload Preflight Check Endpoint
@@ -57,10 +60,9 @@ import { logError } from '@/lib/observability-logger';
  *   await uploadFile(file);
  * }
  */
-async function postHandler(req: NextRequest) {
+async function postHandler(req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   try {
-    // Check authentication (supports both Bearer token and cookies)
-    const userId = await verifyBearerOrThrow(req);
+    const userId = principal.userId;
 
     // Parse request body
     const body = await req.json();
@@ -84,10 +86,7 @@ async function postHandler(req: NextRequest) {
 
     // Check if database is available
     if ( !prisma) {
-      return NextResponse.json(
-        { error: 'Database unavailable. Cannot perform preflight check.' },
-        { status: 503 }
-      );
+      return enrollmentUnavailableResponse();
     }
 
     // Check if asset exists with this checksum for the user
@@ -149,7 +148,7 @@ async function optionsHandler(req: NextRequest) {
   });
 }
 
-export const POST = withObservability(postHandler, { operation: 'upload:check' });
+export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'upload:check' });
 export const OPTIONS = withObservability(optionsHandler, {
   operation: 'upload:check-options',
   skipTiming: true,

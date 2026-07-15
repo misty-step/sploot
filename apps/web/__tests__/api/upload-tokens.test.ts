@@ -7,11 +7,15 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   updateMany: vi.fn(),
   mintUploadToken: vi.fn(),
+  userFindUnique: vi.fn(),
+  transaction: vi.fn(),
 }));
 
 vi.mock('@/lib/auth/request-auth', () => ({ authenticateRequest: mocks.authenticateRequest }));
 vi.mock('@/lib/db', () => ({
   prisma: {
+    $transaction: mocks.transaction,
+    user: { findUnique: mocks.userFindUnique },
     uploadToken: {
       findMany: mocks.findMany,
       count: mocks.count,
@@ -60,6 +64,16 @@ const ctx = (id: string) => ({ params: Promise.resolve({ id }) }) as any;
 
 beforeEach(() => {
   Object.values(mocks).forEach(m => m.mockReset());
+  mocks.userFindUnique.mockResolvedValue({ id: USER });
+  mocks.transaction.mockImplementation(async (callback: (tx: unknown) => unknown) => callback({
+    $executeRaw: vi.fn().mockResolvedValue(0),
+    user: { findUnique: mocks.userFindUnique },
+    uploadToken: {
+      count: mocks.count,
+      create: mocks.create,
+      updateMany: mocks.updateMany,
+    },
+  }));
 });
 
 describe('POST /api/upload-tokens (mint)', () => {

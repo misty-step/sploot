@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => {
   const prisma = {
+    user: { findUnique: vi.fn() },
     asset: {
       findFirst: vi.fn(),
       findMany: vi.fn(),
@@ -12,14 +13,12 @@ const mocks = vi.hoisted(() => {
 
   return {
     prisma,
-    getAuth: vi.fn(),
     vectorSearch: vi.fn(),
+    authenticateRequest: vi.fn(),
   };
 });
 
-vi.mock("@/lib/auth/server", () => ({
-  getAuth: mocks.getAuth,
-}));
+vi.mock("@/lib/auth/request-auth", () => ({ authenticateRequest: mocks.authenticateRequest }));
 
 vi.mock("@/lib/db", () => ({
   prisma: mocks.prisma,
@@ -58,12 +57,23 @@ function neighbor(id: string, distance: number) {
 describe("GET /api/assets/[id]/similar", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getAuth.mockResolvedValue({ userId: "user-123" });
+    mocks.authenticateRequest.mockResolvedValue({
+      status: 'authenticated',
+      principal: {
+        userId: 'user-123',
+        provider: 'qa-local',
+        providerSubject: 'user-123',
+        source: 'qa-local',
+        credentialKind: 'qa-local',
+      },
+      syncStatus: 'success',
+    });
+    mocks.prisma.user.findUnique.mockResolvedValue({ id: 'user-123' });
     mocks.prisma.asset.findMany.mockResolvedValue([]);
   });
 
   it("returns 401 when unauthenticated", async () => {
-    mocks.getAuth.mockResolvedValue({ userId: null });
+    mocks.authenticateRequest.mockResolvedValue({ status: 'unauthenticated', reason: 'test' });
     const { req, context } = request("asset-1");
     const res = await GET(req, context);
     expect(res.status).toBe(401);
