@@ -577,9 +577,11 @@ BEGIN
   IF EXISTS (
     SELECT 1
     FROM (VALUES
-      ('stripe_cancellation_events_append_only', 'create trigger stripe_cancellation_events_append_only before update or delete on stripe_cancellation_events for each row execute function sploot_stripe_ledger_append_only()', 'A', 'sploot_stripe_ledger_owner'),
-      ('stripe_cancellation_audit_append_only', 'create trigger stripe_cancellation_audit_append_only before update or delete on stripe_cancellation_audit for each row execute function sploot_stripe_ledger_append_only()', 'A', 'sploot_stripe_ledger_owner'),
-      ('stripe_cancellation_maintenance_append_only', 'create trigger stripe_cancellation_maintenance_append_only before update or delete on stripe_cancellation_maintenance for each row execute function sploot_stripe_ledger_append_only()', 'A', 'sploot_stripe_ledger_owner'),
+      -- pg_get_triggerdef emits multi-event triggers in catalog bit order,
+      -- independent of the order used by CREATE TRIGGER.
+      ('stripe_cancellation_events_append_only', 'create trigger stripe_cancellation_events_append_only before delete or update on stripe_cancellation_events for each row execute function sploot_stripe_ledger_append_only()', 'A', 'sploot_stripe_ledger_owner'),
+      ('stripe_cancellation_audit_append_only', 'create trigger stripe_cancellation_audit_append_only before delete or update on stripe_cancellation_audit for each row execute function sploot_stripe_ledger_append_only()', 'A', 'sploot_stripe_ledger_owner'),
+      ('stripe_cancellation_maintenance_append_only', 'create trigger stripe_cancellation_maintenance_append_only before delete or update on stripe_cancellation_maintenance for each row execute function sploot_stripe_ledger_append_only()', 'A', 'sploot_stripe_ledger_owner'),
       ('asset_embeddings_revival_budget', 'create trigger asset_embeddings_revival_budget before update on asset_embeddings for each row execute function enforce_asset_embedding_revival_budget()', 'O', 'sploot_stripe_schema_migrator')
     ) AS expected(trigger_name, definition, enabled, function_owner)
     WHERE NOT EXISTS (

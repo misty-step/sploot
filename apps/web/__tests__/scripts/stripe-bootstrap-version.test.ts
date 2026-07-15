@@ -104,6 +104,9 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(postSql).toContain('asset_embeddings_revival_budget');
     expect(postSql).toContain('final embedding column type/default/nullability contract is incomplete');
     expect(postSql).toContain("p.prosecdef OR p.proname = 'sploot_stripe_ledger_append_only'");
+    expect(postSql).toContain(
+      'create trigger stripe_cancellation_events_append_only before delete or update on stripe_cancellation_events',
+    );
   });
 
   it('creates managed Stripe roles before converging their privileges', () => {
