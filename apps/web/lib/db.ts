@@ -869,6 +869,18 @@ export interface VectorSearchContext {
   limit: number;
 }
 
+export type VectorSearchFilterVariant = 'unfiltered' | 'favorite' | 'tag' | 'favorite+tag';
+
+export function vectorSearchFilterVariant(input: {
+  favoriteOnly?: boolean;
+  tagId?: string | null;
+}): VectorSearchFilterVariant {
+  if (input.favoriteOnly && input.tagId) return 'favorite+tag';
+  if (input.favoriteOnly) return 'favorite';
+  if (input.tagId) return 'tag';
+  return 'unfiltered';
+}
+
 interface VectorSearchCursor {
   version: 2;
   order: 'relevance';
@@ -941,6 +953,36 @@ export function vectorSearchOrderClause(): Prisma.Sql {
   return Prisma.sql`ORDER BY ranked.distance DESC, ranked.id ASC`;
 }
 
+export function vectorSearchFilterClause(
+  variant: VectorSearchFilterVariant,
+  tagId: string | null,
+  thresholdClause: Prisma.Sql = Prisma.empty,
+): Prisma.Sql {
+  switch (variant) {
+    case 'unfiltered':
+      return Prisma.sql`${thresholdClause}`;
+    case 'favorite':
+      return Prisma.sql`AND a.favorite = true ${thresholdClause}`;
+    case 'tag':
+      return Prisma.sql`
+        AND EXISTS (
+          SELECT 1 FROM "asset_tags" at
+          WHERE at.asset_id = a.id AND at.tag_id = ${tagId}
+        )
+        ${thresholdClause}
+      `;
+    case 'favorite+tag':
+      return Prisma.sql`
+        AND a.favorite = true
+        AND EXISTS (
+          SELECT 1 FROM "asset_tags" at
+          WHERE at.asset_id = a.id AND at.tag_id = ${tagId}
+        )
+        ${thresholdClause}
+      `;
+  }
+}
+
 export async function vectorSearchPage(
   userId: string,
   queryEmbedding: number[],
@@ -988,20 +1030,22 @@ export async function vectorSearchPage(
   const thresholdClause = typeof threshold === 'number' && threshold > 0
     ? Prisma.sql`AND 1 - (ae.image_embedding <=> ${vectorSql}) >= ${threshold}`
     : Prisma.empty;
-  const favoriteClause = favoriteOnly
-    ? Prisma.sql`AND a.favorite = true`
-    : Prisma.empty;
-  const tagClause = tagId
-    ? Prisma.sql`
-        AND EXISTS (
-          SELECT 1 FROM "asset_tags" at
-          WHERE at.asset_id = a.id AND at.tag_id = ${tagId}
-        )
-      `
-    : Prisma.empty;
-  const orderClause = vectorSearchOrderClause();
-  const rankedCte = Prisma.sql`
-    WITH ranked AS (
+  const filterVariant = vectorSearchFilterVariant({ favoriteOnly, tagId });
+  const filterClause = vectorSearchFilterClause(filterVariant, tagId, thresholdClause);
+
+  try {
+    const cursorClause = cursor
+      ? Prisma.sql`
+          AND (
+            1 - (ae.image_embedding <=> ${vectorSql}) < ${cursor.distance}
+            OR (
+              1 - (ae.image_embedding <=> ${vectorSql}) = ${cursor.distance}
+              AND a.id > ${cursor.id}
+            )
+          )
+        `
+      : Prisma.empty;
+    const rows = await prisma.$queryRaw<VectorSearchRow[]>(Prisma.sql`
       SELECT
         a.id,
         a.blob_url,
@@ -1019,49 +1063,26 @@ export async function vectorSearchPage(
       WHERE
         a.owner_user_id = ${userId}
         AND a.deleted_at IS NULL
-        ${favoriteClause}
-        ${tagClause}
-        ${thresholdClause}
-    )
-  `;
-
-  try {
-    // The ranked CTE owns the complete result set, while page applies a
-    // bounded keyset/legacy page before rows cross into application memory.
-    // The scalar count remains truthful when a cursor has already advanced.
-    const cursorClause = cursor
-      ? Prisma.sql`
-          WHERE ranked.distance < ${cursor.distance}
-             OR (ranked.distance = ${cursor.distance} AND ranked.id > ${cursor.id})
-        `
-      : Prisma.empty;
-    const pageOrderClause = Prisma.sql`ORDER BY page.distance DESC, page.id ASC`;
-    const rows = await prisma.$queryRaw<Array<VectorSearchRow & { total_count: bigint | number }>>(Prisma.sql`
-      ${rankedCte}
-      , page AS (
-        SELECT ranked.*
-        FROM ranked
+        ${filterClause}
         ${cursorClause}
-        ${orderClause}
-        LIMIT ${limit + 1} OFFSET ${cursor ? 0 : offset}
-      )
-      SELECT page.*, (SELECT COUNT(*) FROM ranked) AS total_count
-      FROM page
-      ${pageOrderClause}
+      ORDER BY ae.image_embedding <=> ${vectorSql} ASC, a.id ASC
+      LIMIT ${limit + 1} OFFSET ${cursor ? 0 : offset}
     `);
 
-    let total = Number(rows[0]?.total_count ?? 0);
-    if (rows.length === 0) {
-      const countRows = await prisma.$queryRaw<Array<{ total_count: bigint | number }>>(Prisma.sql`
-        ${rankedCte}
-        SELECT COUNT(*) AS total_count FROM ranked
+    const countRows = await prisma.$queryRaw<Array<{ total_count: bigint | number }>>(Prisma.sql`
+      SELECT COUNT(*) AS total_count
+      FROM "assets" a
+      INNER JOIN "asset_embeddings" ae ON a.id = ae.asset_id
+      WHERE
+        a.owner_user_id = ${userId}
+        AND a.deleted_at IS NULL
+        ${filterClause}
       `);
-      total = Number(countRows[0]?.total_count ?? 0);
-    }
+    const total = Number(countRows[0]?.total_count ?? 0);
     const results = rows
       .filter((row) => row.id !== null && row.id !== undefined)
       .slice(0, limit)
-      .map(({ total_count: _totalCount, ...row }) => row);
+      .map((row) => row);
     // A cursor query starts at an arbitrary point in the ordered set, so its
     // page length cannot be compared with the global total. The +1 probe is
     // the authoritative continuation signal for keyset pages; legacy offset
@@ -1100,8 +1121,84 @@ export async function vectorSearch(
     cursorContext?: VectorSearchContext;
   }
 ) {
+  const {
+    limit = 30,
+    threshold,
+    favoriteOnly = false,
+    tagId = null,
+    offset = 0,
+    cursor,
+  } = options || {};
+  if (prisma && vectorSearchFilterVariant({ favoriteOnly, tagId }) === 'unfiltered' && !cursor && offset === 0) {
+    return vectorSearchLegacyUnfiltered(userId, queryEmbedding, limit, threshold);
+  }
   const page = await vectorSearchPage(userId, queryEmbedding, options);
   return page.results;
+}
+
+async function vectorSearchLegacyUnfiltered(
+  userId: string,
+  queryEmbedding: number[],
+  limit: number,
+  threshold?: number,
+): Promise<VectorSearchRow[]> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > SEARCH_MAX_LIMIT) {
+    throw new Error(`vector search page limit must be between 1 and ${SEARCH_MAX_LIMIT}`);
+  }
+  const fetchLimit = typeof threshold === 'number' && threshold > 0
+    ? Math.min(limit * 3, 120)
+    : limit;
+
+  try {
+    // Keep the golden eval and similar-assets path on the pre-pagination SQL
+    // shape: no CTE, count, or optional filter joins when no filters apply.
+    const results = await prisma!.$queryRaw<VectorSearchRow[]>(buildUnfilteredVectorSearchQuery(
+      userId,
+      queryEmbedding,
+      fetchLimit,
+    ));
+    return results
+      .filter((result) => typeof threshold !== 'number' || threshold <= 0 || result.distance >= threshold)
+      .slice(0, limit);
+  } catch (error) {
+    logger.error('Vector search query failed', {
+      userId,
+      limit,
+      threshold,
+      embeddingLength: queryEmbedding.length,
+      error: error instanceof Error ? error.message : error,
+    });
+    throw error;
+  }
+}
+
+export function buildUnfilteredVectorSearchQuery(
+  userId: string,
+  queryEmbedding: number[],
+  fetchLimit: number,
+): Prisma.Sql {
+  const vectorSql = embeddingVectorSql(queryEmbedding, 'search query embedding');
+  return Prisma.sql`
+      SELECT
+        a.id,
+        a.blob_url,
+        a.thumbnail_url,
+        a.pathname,
+        a.mime,
+        a.width,
+        a.height,
+        a.favorite,
+        a.size,
+        a."createdAt" AS created_at,
+        1 - (ae.image_embedding <=> ${vectorSql}) AS distance
+      FROM "assets" a
+      INNER JOIN "asset_embeddings" ae ON a.id = ae.asset_id
+      WHERE
+        a.owner_user_id = ${userId}
+        AND a.deleted_at IS NULL
+      ORDER BY ae.image_embedding <=> ${vectorSql}
+      LIMIT ${fetchLimit}
+    `;
 }
 
 export async function logSearch(
