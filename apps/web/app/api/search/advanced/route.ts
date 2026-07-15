@@ -338,7 +338,7 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     }
     if (isEnrollmentIdentityConflictError(error)) return enrollmentIdentityConflictResponse();
     if (error instanceof EmbeddingConfigurationError) {
-      reportEmbeddingConfigurationErrorOnce(error, 'advanced-search:configuration');
+      await reportEmbeddingConfigurationErrorOnce(error, 'advanced-search:configuration');
     }
     // Error performing advanced search
 

@@ -84,7 +84,7 @@ async function getHandler(req: NextRequest, _context: unknown, { principal }: { 
     }
 
     if (error instanceof EmbeddingConfigurationError) {
-      reportEmbeddingConfigurationErrorOnce(error, 'piles:embedding-configuration');
+      await reportEmbeddingConfigurationErrorOnce(error, 'piles:embedding-configuration');
       return NextResponse.json(
         { error: error.message, reason: error.reason, retryable: false },
         { status: error.statusCode ?? 503, headers: embeddingConfigurationHeaders(error) },

@@ -4,9 +4,9 @@ Generated deterministically from the versioned inputs in this directory. Rates w
 
 ## Recommendation
 
-- **Cardless Free:** 0.5 GB user-visible source-plus-trash allowance (rendition overhead is reserved separately), 100 new indexes and 100 novel text embeddings per month, 1 GB delivery, and at most 75 project-wide full-allowance equivalents before waitlist/paid admission. High-case variable cost is $0.31 per full account and $23.14 for the pool, below the $25.00 subsidy ceiling.
-- **Collector:** $13/month, 10 GB, 600 new indexes, 900 novel text embeddings, and 10 GB delivery. Modeled direct-variable COGS is $3.65; the fully loaded margin is unavailable until shared provider costs and a paid-customer mix are declared and read back.
-- **Archive:** $49/month, 100 GB, 2,000 new indexes, 2,000 novel text embeddings, and 40 GB delivery. Modeled direct-variable COGS is $14.67; the fully loaded margin is unavailable until shared provider costs and a paid-customer mix are declared and read back.
+- **Cardless Free:** 0.5 GB user-visible source-plus-trash allowance (rendition overhead is reserved separately), 100 new indexes and 100 novel text embeddings per month, 1 GB delivery, and at most 75 project-wide full-allowance equivalents before waitlist/paid admission. High-case variable cost is $0.19 per full account and $13.96 for the pool, below the $25.00 subsidy ceiling.
+- **Collector:** $13/month, 10 GB, 600 new indexes, 900 novel text embeddings, and 10 GB delivery. Modeled direct-variable COGS is $2.74; the fully loaded margin is unavailable until shared provider costs and a paid-customer mix are declared and read back.
+- **Archive:** $49/month, 100 GB, 2,000 new indexes, 2,000 novel text embeddings, and 40 GB delivery. Modeled direct-variable COGS is $12.22; the fully loaded margin is unavailable until shared provider costs and a paid-customer mix are declared and read back.
 - Existing content remains readable, exportable, and deletable after a cost boundary closes. No plan permits silent overage.
 
 These are target candidates for entitlement and billing cards, not live promises. Enrollment is CLOSED. The runtime currently enforces attempt counters, provider-rate ceilings, and claim/lease safety, not durable provider-dollar admission, storage-ledger attribution, or reconciliation. International/FX Stripe charges, provider-plan readbacks, shared DigitalOcean/Vercel allocation, and hard-cap receipts are unmet GA prerequisites; GA remains fail-closed.
@@ -21,10 +21,10 @@ Low/base/high vary physical rendition overhead (1.05×/1.10×/1.20×), Blob orig
 
 | Workload | Revenue | Low COGS | Base COGS | High COGS | High gross margin |
 |---|---:|---:|---:|---:|---:|
-| Cardless Free — full allowance | $0.00 | $0.26 | $0.28 | $0.31 | n/a |
-| Collector — 10 GB | $13.00 | $2.89 | $3.22 | $3.65 | 71.9% |
-| Archive — 100 GB | $49.00 | $11.52 | $12.89 | $14.67 | 70.1% |
-| Abusive novel-query and upload storm | $0.00 | $50.24 | $52.70 | $59.82 | n/a |
+| Cardless Free — full allowance | $0.00 | $0.16 | $0.17 | $0.19 | n/a |
+| Collector — 10 GB | $13.00 | $2.12 | $2.42 | $2.74 | 79.0% |
+| Archive — 100 GB | $49.00 | $9.48 | $10.75 | $12.22 | 75.1% |
+| Abusive novel-query and upload storm | $0.00 | $19.64 | $20.57 | $23.10 | n/a |
 | Viral public share / crawler month | $0.00 | $156.81 | $163.34 | $173.40 | n/a |
 
 The abusive and viral rows deliberately exceed their account/global budgets; they prove quotas must cover novel inference, bytes, and request delivery rather than storage alone.
@@ -33,11 +33,11 @@ The abusive and viral rows deliberately exceed their account/global budgets; the
 
 | Plan | Monthly infrastructure ceiling | Daily inference ceiling | Monthly inference ceiling |
 |---|---:|---:|---:|
-| free | $0.40 | $0.01 (12 attempts) | $0.18 (240 attempts) |
-| collector | $3.00 | $0.07 (90 attempts) | $1.31 (1800 attempts) |
-| archive | $13.00 | $0.22 (300 attempts) | $3.50 (4800 attempts) |
+| free | $0.40 | $0.01 (39 attempts) | $0.18 (796 attempts) |
+| collector | $3.00 | $0.07 (298 attempts) | $1.31 (5972 attempts) |
+| archive | $13.00 | $0.22 (995 attempts) | $3.50 (15927 attempts) |
 
-monthlyInfrastructureUsd is a target direct-variable ceiling in unrounded USD for each scenario's high-sensitivity full allowance; it is not a currently enforced provider-dollar cap. Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve. The pre-GA modeled target is capped at $0.75/day and $25.00/month; runtime enforcement is by attempt counters and provider-rate safety, not dollar admission or reconciliation. Replicate's modeled target is $0.50/day (684 attempts) and $15.00/month (20547 attempts); live billed dollars remain unknown. After a future cost-admission/storage-ledger implementation, the target monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; it is not a current runtime guarantee.
+monthlyInfrastructureUsd is a target direct-variable ceiling in unrounded USD for each scenario's high-sensitivity full allowance; it is not a currently enforced provider-dollar cap. Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve. The pre-GA modeled target is capped at $0.75/day and $25.00/month; runtime enforcement is by attempt counters and provider-rate safety, not dollar admission or reconciliation. Replicate's modeled target is $0.50/day (2272 attempts) and $15.00/month (68181 attempts); live billed dollars remain unknown. After a future cost-admission/storage-ledger implementation, the target monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; it is not a current runtime guarantee.
 
 ## Provider control targets and evidence status
 
@@ -79,7 +79,7 @@ monthlyInfrastructureUsd is a target direct-variable ceiling in unrounded USD fo
 | Vercel Blob | blob-egress | $0.050 / GB transferred | Hobby: first 10 GB | [official source](https://vercel.com/docs/vercel-blob/usage-and-pricing) | 2026-07-15 |
 | Vercel CDN | blob-egress | $2.00 / million edge requests | Hobby: first 1,000,000; Pro: first 10,000,000 | [official source](https://vercel.com/docs/manage-cdn-usage) | 2026-07-15 |
 | Vercel CDN | blob-egress | $0.060 / GB origin transfer | Hobby: first 10 GB; Pro: N/A | [official source](https://vercel.com/docs/manage-cdn-usage) | 2026-07-15 |
-| Replicate | image-inference, text-inference | $0.000730 / typical prediction | none | [official source](https://replicate.com/krthr/clip-embeddings) | 2026-07-15 |
+| Replicate | image-inference, text-inference | $0.000220 / typical prediction | none | [official source](https://replicate.com/krthr/clip-embeddings) | 2026-07-15 |
 | Neon | database-compute, vector-storage | $0.106 / CU-hour | Free: 100 CU-hours per project | [official source](https://neon.com/pricing) | 2026-07-15 |
 | Neon | vector-storage | $0.350 / GB-month | Free: 0.5 GB per project | [official source](https://neon.com/pricing) | 2026-07-15 |
 | Neon | vector-storage | $0.200 / GB-month of history/WAL | Plan-specific restore window | [official source](https://neon.com/pricing) | 2026-07-15 |

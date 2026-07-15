@@ -251,10 +251,16 @@ describe('withObservability', () => {
   });
 
   it('keeps deterministic configuration terminal, non-retryable, and route-owned', async () => {
+    process.env.CANARY_ENDPOINT = 'https://canary.example.test';
+    process.env.CANARY_API_KEY = 'test-canary-key';
+    process.env.CANARY_ENABLE_IN_TEST = '1';
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+
     const error = new EmbeddingConfigurationError('missing provider configuration');
     const unownedHeaders = new Headers(embeddingRetryHeaders(error));
     expect(unownedHeaders.get('X-Sploot-Canary-Owner')).toBeNull();
-    expect(reportEmbeddingConfigurationErrorOnce(error, 'test:configuration')).toBe(true);
+    await expect(reportEmbeddingConfigurationErrorOnce(error, 'test:configuration')).resolves.toBe(true);
     const headers = new Headers(embeddingConfigurationHeaders(error));
     expect(headers.get('Retry-After')).toBeNull();
     expect(headers.get('X-Sploot-Embedding-Outcome')).toBe('embedding_configuration');
@@ -272,6 +278,11 @@ describe('withObservability', () => {
       expect.objectContaining({ reason: 'embedding_configuration' }),
     );
     expect(record?.logger.logError).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    delete process.env.CANARY_ENDPOINT;
+    delete process.env.CANARY_API_KEY;
+    delete process.env.CANARY_ENABLE_IN_TEST;
   });
 
   it('honors a route-owned generic 500 marker without emitting a wrapper Canary report', async () => {

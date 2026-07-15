@@ -20,9 +20,50 @@ export function currentMigrationChecksums(root = migrationRoot) {
 
 export function parseMigrationRows(output) {
   return output.trim() === '' ? [] : output.trim().split('\n').map((line) => {
-    const [migrationName, checksum] = line.split('\t');
-    return { migrationName, checksum };
+    const [migrationName, checksum, finishedAt, rolledBackAt] = line.split('\t');
+    return {
+      migrationName,
+      checksum,
+      finishedAt: finishedAt || null,
+      rolledBackAt: rolledBackAt || null,
+    };
   });
+}
+
+function migrationPrefix(name) {
+  return name.split('_', 1)[0];
+}
+
+export function assertUniqueMigrationPrefixes(expected, compatibility = { prefixExceptions: [] }) {
+  const namesByPrefix = new Map();
+  for (const name of Object.keys(expected)) {
+    const prefix = migrationPrefix(name);
+    const names = namesByPrefix.get(prefix) ?? [];
+    names.push(name);
+    namesByPrefix.set(prefix, names);
+  }
+
+  for (const [prefix, names] of namesByPrefix) {
+    if (names.length < 2) continue;
+    const exception = compatibility.prefixExceptions?.find((candidate) => candidate.prefix === prefix);
+    if (!exception || typeof exception.authority !== 'string' || exception.authority.trim() === '') {
+      throw new Error(`[migration-history] duplicate migration prefix ${prefix}; explicit identity authority is required`);
+    }
+    if (!Array.isArray(exception.migrationNames)
+      || [...exception.migrationNames].sort().join('\n') !== [...names].sort().join('\n')) {
+      throw new Error(`[migration-history] prefix exception ${prefix} does not match repository migration identities`);
+    }
+  }
+
+  for (const exception of compatibility.prefixExceptions ?? []) {
+    if (!exception || typeof exception.prefix !== 'string' || !Array.isArray(exception.migrationNames)) {
+      throw new Error('[migration-history] malformed prefix exception; deployment is paused');
+    }
+    const actualNames = Object.keys(expected).filter((name) => migrationPrefix(name) === exception.prefix).sort();
+    if ([...exception.migrationNames].sort().join('\n') !== actualNames.join('\n')) {
+      throw new Error(`[migration-history] prefix exception ${exception.prefix} does not match repository migration identities`);
+    }
+  }
 }
 
 export function assertMigrationHistory(rows, expected, compatibility = { approved: {} }) {
@@ -32,11 +73,19 @@ export function assertMigrationHistory(rows, expected, compatibility = { approve
       if (current !== row.checksum) {
         throw new Error(`[migration-history] checksum mismatch for applied migration ${row.migrationName}; immutable history is paused`);
       }
+      if (!row.finishedAt || row.rolledBackAt !== null) {
+        throw new Error(`[migration-history] unfinished or rolled-back migration ${row.migrationName}; deployment is paused`);
+      }
       continue;
     }
 
     const approved = compatibility.approved?.[row.migrationName];
-    if (approved && approved.checksum === row.checksum && expected[approved.replacement]) continue;
+    if (approved && approved.checksum === row.checksum && expected[approved.replacement]) {
+      if (!row.finishedAt || row.rolledBackAt !== null) {
+        throw new Error(`[migration-history] unfinished or rolled-back compatibility migration ${row.migrationName}; deployment is paused`);
+      }
+      continue;
+    }
 
     throw new Error(`[migration-history] unknown applied migration ${row.migrationName}; deployment is paused for compatibility reconciliation`);
   }
@@ -63,10 +112,12 @@ export function checkDatabaseMigrationHistory(databaseUrl, env = process.env) {
 
   const rows = parseMigrationRows(execFileSync('psql', [
     '--no-psqlrc', '-At', '-F', '\t', '-v', 'ON_ERROR_STOP=1', '-c',
-    'SELECT migration_name, checksum FROM "_prisma_migrations" WHERE finished_at IS NOT NULL ORDER BY finished_at, migration_name',
+    'SELECT migration_name, checksum, finished_at, rolled_back_at FROM "_prisma_migrations" ORDER BY COALESCE(finished_at, started_at), migration_name',
   ], options));
   const compatibility = JSON.parse(readFileSync(compatibilityPath, 'utf8'));
-  assertMigrationHistory(rows, currentMigrationChecksums(), compatibility);
+  const expected = currentMigrationChecksums();
+  assertUniqueMigrationPrefixes(expected, compatibility);
+  assertMigrationHistory(rows, expected, compatibility);
   return { status: 'verified', checked: rows.length };
 }
 

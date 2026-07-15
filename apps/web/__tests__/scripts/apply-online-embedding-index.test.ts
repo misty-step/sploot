@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error — .mjs script without type declarations; the injected
 // client keeps this test independent of a live database.
-import { applyOnlineEmbeddingIndex } from '../../scripts/apply-online-embedding-index.mjs';
+import {
+  applyOnlineEmbeddingIndex,
+  ONLINE_INDEX_LOCK_TIMEOUT,
+  ONLINE_INDEX_STATEMENT_TIMEOUT,
+} from '../../scripts/apply-online-embedding-index.mjs';
 
 type QueryResult = { rows: Array<Record<string, boolean>> };
 
@@ -24,6 +28,26 @@ class FakeClient {
 }
 
 describe('apply-online-embedding-index', () => {
+  it('sets bounded timeouts on the connection that executes concurrent DDL', async () => {
+    const client = new FakeClient([
+      { rows: [{ indisvalid: true, indisready: true }] },
+      { rows: [{ indisvalid: true, indisready: true }] },
+    ]);
+    let config: Record<string, string> | undefined;
+
+    await applyOnlineEmbeddingIndex('postgresql://test/db', class {
+      constructor(value: Record<string, string>) {
+        config = value;
+        return client;
+      }
+    });
+
+    expect(config).toEqual({
+      connectionString: 'postgresql://test/db',
+      options: `-c lock_timeout=${ONLINE_INDEX_LOCK_TIMEOUT} -c statement_timeout=${ONLINE_INDEX_STATEMENT_TIMEOUT}`,
+    });
+  });
+
   it('drops an interrupted invalid artifact and proves the rebuilt index is valid and ready', async () => {
     const client = new FakeClient([
       { rows: [{ indisvalid: false, indisready: false }] },

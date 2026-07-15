@@ -1,3 +1,21 @@
 {
-  "approved": {}
+  "approved": {},
+  "prefixExceptions": [
+    {
+      "prefix": "20260518",
+      "migrationNames": [
+        "20260518_add_asset_shuffle_key",
+        "20260518_add_storage_quota"
+      ],
+      "authority": "Historical Prisma migration identities are distinct by their full directory names; the shared date prefix is retained for applied-history compatibility."
+    },
+    {
+      "prefix": "20260714000000",
+      "migrationNames": [
+        "20260714000000_add_enrollment_relation_fks",
+        "20260714000000_add_stripe_cancellation_ledger"
+      ],
+      "authority": "Historical Prisma migration identities are distinct by their full directory names; the shared timestamp prefix is retained for applied-history compatibility."
+    }
+  ]
 }

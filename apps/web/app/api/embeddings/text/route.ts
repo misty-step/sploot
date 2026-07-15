@@ -77,7 +77,7 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
       return enrollmentUnavailableResponse();
     }
     if (error instanceof EmbeddingConfigurationError) {
-      reportEmbeddingConfigurationErrorOnce(error, 'embeddings:text:configuration');
+      await reportEmbeddingConfigurationErrorOnce(error, 'embeddings:text:configuration');
     }
     // Error generating text embedding
 

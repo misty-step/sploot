@@ -8,9 +8,10 @@ use a pooled URL for the long-running web process and `DATABASE_URL_DIRECT` for
 migrations when available. `scripts/migrate-deploy.mjs` owns that selection.
 
 Postgres is authoritative for users, assets, vectors, share slugs, quotas,
-embedding caches, rate windows, in-flight embedding leases, and the daily spend
-ceiling. ADR-010 explains why the limiter shares this existing durability layer
-instead of adding Redis/KV.
+embedding caches, rate windows, in-flight embedding leases, and the daily/monthly
+embedding attempt ceilings. These are provider-rate safety controls, not a
+durable dollar ledger. ADR-010 explains why the limiter shares this existing
+durability layer instead of adding Redis/KV.
 
 health probes connectivity and the limiter schema in one query. stale Prisma
 connections get one disconnect/connect retry. missing limiter tables are a 503,

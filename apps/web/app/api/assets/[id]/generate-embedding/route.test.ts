@@ -163,7 +163,7 @@ describe('POST /api/assets/[id]/generate-embedding observability composition', (
     });
 
     expect(response.status).toBe(500);
-    expect(response.headers.get('X-Sploot-Canary-Owner')).toBe('route');
+    expect(response.headers.get('X-Sploot-Canary-Owner')).toBeNull();
     await vi.waitFor(() => expect(mocks.reportCanaryError).toHaveBeenCalledTimes(1));
     expect(routeLogger.logError).toHaveBeenCalledWith(
       'generate-embedding:failed',
@@ -175,7 +175,7 @@ describe('POST /api/assets/[id]/generate-embedding observability composition', (
       expect.anything(),
       expect.anything(),
     );
-    expect(mocks.wrapperLogError).not.toHaveBeenCalledWith(
+    expect(mocks.wrapperLogError).toHaveBeenCalledWith(
       'request:server-error-status',
       expect.anything(),
       expect.anything(),

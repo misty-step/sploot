@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 
 const ROOT = new URL('./', import.meta.url);
@@ -156,7 +157,56 @@ const EVIDENCE_KEYS = new Set([
   'reviewer',
   'reviewerRole',
   'runsPerUsd',
+  'evidenceDigest',
 ]);
+
+const RATE_EVIDENCE_CONTRACTS = Object.freeze({
+  'vercel-blob-storage': Object.freeze({ provider: 'Vercel Blob', value: 0.023, unit: 'GB-month', scope: 'GB-month', source: 'https://vercel.com/docs/vercel-blob/usage-and-pricing', digest: '098e8ad10fc91a8cc0a7bf48a93976ecd558bdf70dbb3601c4ab75bf3ebcbc42' }),
+  'vercel-blob-simple-ops': Object.freeze({ provider: 'Vercel Blob', value: 0.4, unit: 'million simple operations', scope: 'million simple operations', source: 'https://vercel.com/docs/vercel-blob/usage-and-pricing', digest: 'ff8058f2ae1b4003baffdd44f0e2cd1eda1bd44634f44940a629e9b1d16887ed' }),
+  'vercel-blob-advanced-ops': Object.freeze({ provider: 'Vercel Blob', value: 5, unit: 'million advanced operations', scope: 'million advanced operations', source: 'https://vercel.com/docs/vercel-blob/usage-and-pricing', digest: 'ed1cbb066fb3dd0bdc620954ed0119e3d9163fe1a7f9a90a54ad58b0a8abb2cc' }),
+  'vercel-blob-transfer': Object.freeze({ provider: 'Vercel Blob', value: 0.05, unit: 'GB transferred', scope: 'GB transferred', source: 'https://vercel.com/docs/vercel-blob/usage-and-pricing', digest: '6547d0bef59790f5068c633e045815228648567e56c363fb19177ff29ddb2822' }),
+  'vercel-edge-requests': Object.freeze({ provider: 'Vercel CDN', value: 2, unit: 'million edge requests', scope: 'million edge requests', source: 'https://vercel.com/docs/manage-cdn-usage', digest: 'f41cdd637e7d6507dfdb739a60e04949b64703299f1897c22c7333067471a4e4' }),
+  'vercel-fast-origin-transfer': Object.freeze({ provider: 'Vercel CDN', value: 0.06, unit: 'GB origin transfer', scope: 'GB origin transfer', source: 'https://vercel.com/docs/manage-cdn-usage', digest: '4c0ee36eee96a50f2cf44bdf13092df7b279fb4c3a2980f1090858d6ecdd51c9' }),
+  'replicate-clip-prediction': Object.freeze({ provider: 'Replicate', value: 0.00022, unit: 'typical prediction', scope: 'krthr/clip-embeddings typical prediction', source: 'https://replicate.com/krthr/clip-embeddings', control: 'model page price estimate', digest: '93b43f801bc24ee8d9a7894542bad3f46bbf8217b5550ed6e25d061068acce50', sourceEvidenceType: 'provider_model_page_estimate', runsPerUsd: 4545 }),
+  'neon-launch-compute': Object.freeze({ provider: 'Neon', value: 0.106, unit: 'CU-hour', scope: 'CU-hour', source: 'https://neon.com/pricing', digest: 'fdef7066ad62b64ce080cbd55a9aaf498f74d094e6938ac028f2b702d1903a48' }),
+  'neon-database-storage': Object.freeze({ provider: 'Neon', value: 0.35, unit: 'GB-month', scope: 'GB-month', source: 'https://neon.com/pricing', digest: '2c4812c7ecfe8107b46125006755e8790239358d0b50188cf7d26ff9ccf656b6' }),
+  'neon-history-storage': Object.freeze({ provider: 'Neon', value: 0.2, unit: 'GB-month of history/WAL', scope: 'GB-month of history/WAL', source: 'https://neon.com/pricing', digest: 'cf548ba03d4dd9ac13c9a5fa824707b7c1cbf7a041b7aeb60a2ae182dda632cf' }),
+  'neon-network-transfer': Object.freeze({ provider: 'Neon', value: 0.1, unit: 'GB public transfer', scope: 'GB public transfer', source: 'https://neon.com/docs/introduction/network-transfer', digest: 'edf747ffe6156c9e35f0b80318e48e5ed797cd9018aba30428ad6a9bde43dfe4' }),
+  'digitalocean-web-service': Object.freeze({ provider: 'DigitalOcean App Platform', value: 25, unit: 'month for apps-s-1vcpu-2gb', scope: 'month for apps-s-1vcpu-2gb', source: 'https://www.digitalocean.com/pricing/app-platform', digest: '736bfd10b162130354fc1d3ad78ade45e85072fe43633576840564312b745153' }),
+  'digitalocean-small-job-runtime': Object.freeze({ provider: 'DigitalOcean App Platform', value: 5, unit: 'full month for apps-s-1vcpu-0.5gb, prorated per second with one-minute minimum', scope: 'full month for apps-s-1vcpu-0.5gb, prorated per second with one-minute minimum', source: 'https://docs.digitalocean.com/products/app-platform/details/pricing/', digest: 'b674c51e6c54883d32deb3eac9345a8530918fb471b9f4cac9946882f400d4ae' }),
+  'digitalocean-egress': Object.freeze({ provider: 'DigitalOcean App Platform', value: 0.02, unit: 'GiB beyond pooled allowance', scope: 'GiB beyond pooled allowance', source: 'https://docs.digitalocean.com/products/app-platform/details/pricing/', digest: '0fae066d6692fbee35a4561a2c23ba256838ae4afafa8930c2821c8c669da06a' }),
+  'clerk-hobby-mru': Object.freeze({ provider: 'Clerk', value: 0, unit: 'MRU through 50,000 per app', scope: 'MRU through 50,000 per app', source: 'https://clerk.com/pricing', digest: '5360a62718659baa56dcddbc372abc30b84adb21de2677579b4e366253a2e77b' }),
+  'clerk-pro-mru-overage': Object.freeze({ provider: 'Clerk', value: 0.02, unit: 'MRU-month from 50,001 through 100,000', scope: 'MRU-month from 50,001 through 100,000', source: 'https://clerk.com/pricing', digest: '0fc206b9dff952763698f5f0210eae4e6b6c371da50bfaf3a9e568ddcfb61505' }),
+  'canary-shared-service': Object.freeze({ provider: 'Canary on DigitalOcean', value: 5, unit: 'month for shared apps-s-1vcpu-0.5gb service', scope: 'month for shared apps-s-1vcpu-0.5gb service', source: 'https://www.digitalocean.com/pricing/app-platform', digest: 'fba1b926a1f2c97fe737dfc4d930fc5ab172ba725efe963845c13ab99fcc7461' }),
+  'github-actions-public-standard': Object.freeze({ provider: 'GitHub Actions', value: 0, unit: 'standard hosted-runner minute for public repositories', scope: 'standard hosted-runner minute for public repositories', source: 'https://docs.github.com/en/billing/concepts/product-billing/github-actions', digest: '76bf834523b1e412c7ba9e8567934a07dbeb57dc4d1960979d6073b65b8e4d97' }),
+  'github-actions-cache-overage': Object.freeze({ provider: 'GitHub Actions', value: 0.07, unit: 'GB-month above cache allowance', scope: 'GB-month above cache allowance', source: 'https://docs.github.com/en/billing/concepts/product-billing/github-actions', digest: 'c1de3be9ea953b637024e7755c71e0e18f75423af535c032ab44c17f867eafd0' }),
+  'stripe-domestic-card': Object.freeze({ provider: 'Stripe', value: 0.029, unit: 'successful domestic online card charge plus fixed fee', scope: 'successful domestic online card charge plus fixed fee', source: 'https://stripe.com/pricing', digest: '54311948c5d822b62dfc5fa754a367e687223bd399f10a27da8db07e9340a928' }),
+});
+
+const POLICY_CAP_EXPECTATIONS = Object.freeze({
+  plans: Object.freeze({
+    free: Object.freeze({ monthlyInfrastructureUsd: 0.4, dailyInferenceUsd: 0.00858, monthlyInferenceUsd: 0.17512, dailyInferenceAttempts: 39, monthlyInferenceAttempts: 796 }),
+    collector: Object.freeze({ monthlyInfrastructureUsd: 3, dailyInferenceUsd: 0.06556, monthlyInferenceUsd: 1.31384, dailyInferenceAttempts: 298, monthlyInferenceAttempts: 5972 }),
+    archive: Object.freeze({ monthlyInfrastructureUsd: 13, dailyInferenceUsd: 0.2189, monthlyInferenceUsd: 3.50394, dailyInferenceAttempts: 995, monthlyInferenceAttempts: 15927 }),
+  }),
+  global: Object.freeze({
+    preGaDailyVariableUsd: 0.75,
+    preGaMonthlyVariableUsd: 25,
+    replicateDailyUsd: 0.49984,
+    replicateDailyAttempts: 2272,
+    replicateMonthlyUsd: 14.99982,
+    replicateMonthlyAttempts: 68181,
+  }),
+  providerAmounts: Object.freeze({
+    'Application admission': 25,
+    Replicate: 15,
+    'Vercel Blob/CDN': null,
+    Neon: null,
+    DigitalOcean: null,
+    Clerk: null,
+    Stripe: null,
+  }),
+});
 
 const PROVIDER_EVIDENCE_CONTRACTS = Object.freeze({
   'Application admission': Object.freeze({
@@ -167,7 +217,7 @@ const PROVIDER_EVIDENCE_CONTRACTS = Object.freeze({
     unit: 'USD per calendar month',
     currency: 'USD',
     sourceOrigins: Object.freeze([]),
-    receiptClasses: Object.freeze(['internal-control-record']),
+    receiptClasses: Object.freeze([]),
     reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
   }),
   Replicate: Object.freeze({
@@ -177,8 +227,11 @@ const PROVIDER_EVIDENCE_CONTRACTS = Object.freeze({
     value: 15,
     unit: 'USD per calendar month',
     currency: 'USD',
-    sourceOrigins: Object.freeze(['https://replicate.com']),
-    receiptClasses: Object.freeze(['provider-billing-export']),
+    // No billed-dollar source is currently authoritative for this account.
+    // An operator must add an exact allowed source or receipt class here when
+    // refreshing a real packet; public model pricing is not a spend receipt.
+    sourceOrigins: Object.freeze([]),
+    receiptClasses: Object.freeze([]),
     reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
   }),
   'Vercel Blob/CDN': Object.freeze({
@@ -188,8 +241,8 @@ const PROVIDER_EVIDENCE_CONTRACTS = Object.freeze({
     value: null,
     unit: 'USD per current billing cycle',
     currency: 'USD',
-    sourceOrigins: Object.freeze(['https://vercel.com']),
-    receiptClasses: Object.freeze(['provider-billing-export']),
+    sourceOrigins: Object.freeze([]),
+    receiptClasses: Object.freeze([]),
     reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
   }),
   Neon: Object.freeze({
@@ -199,8 +252,8 @@ const PROVIDER_EVIDENCE_CONTRACTS = Object.freeze({
     value: null,
     unit: 'USD per current billing cycle',
     currency: 'USD',
-    sourceOrigins: Object.freeze(['https://neon.com']),
-    receiptClasses: Object.freeze(['provider-billing-export']),
+    sourceOrigins: Object.freeze([]),
+    receiptClasses: Object.freeze([]),
     reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
   }),
   DigitalOcean: Object.freeze({
@@ -210,8 +263,8 @@ const PROVIDER_EVIDENCE_CONTRACTS = Object.freeze({
     value: null,
     unit: 'USD per current billing cycle',
     currency: 'USD',
-    sourceOrigins: Object.freeze(['https://www.digitalocean.com']),
-    receiptClasses: Object.freeze(['provider-billing-export']),
+    sourceOrigins: Object.freeze([]),
+    receiptClasses: Object.freeze([]),
     reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
   }),
   Clerk: Object.freeze({
@@ -221,8 +274,8 @@ const PROVIDER_EVIDENCE_CONTRACTS = Object.freeze({
     value: null,
     unit: 'USD per current billing cycle',
     currency: 'USD',
-    sourceOrigins: Object.freeze(['https://clerk.com']),
-    receiptClasses: Object.freeze(['provider-billing-export']),
+    sourceOrigins: Object.freeze([]),
+    receiptClasses: Object.freeze([]),
     reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
   }),
   Stripe: Object.freeze({
@@ -232,24 +285,10 @@ const PROVIDER_EVIDENCE_CONTRACTS = Object.freeze({
     value: null,
     unit: 'USD per current billing cycle',
     currency: 'USD',
-    sourceOrigins: Object.freeze(['https://stripe.com']),
-    receiptClasses: Object.freeze(['provider-billing-export']),
+    sourceOrigins: Object.freeze([]),
+    receiptClasses: Object.freeze([]),
     reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
   }),
-});
-
-const REPLICATE_RATE_EVIDENCE_CONTRACT = Object.freeze({
-  provider: 'Replicate',
-  account: null,
-  control: 'model page price estimate',
-  scope: 'krthr/clip-embeddings typical prediction',
-  value: 0.00073,
-  unit: 'typical prediction',
-  currency: 'USD',
-  exactSourceUrl: 'https://replicate.com/krthr/clip-embeddings',
-  sourceOrigins: Object.freeze(['https://replicate.com']),
-  receiptClasses: Object.freeze(['provider-model-page-estimate']),
-  reviewers: Object.freeze([{ identity: 'economics-review', role: 'economics reviewer' }]),
 });
 
 const ISO_UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
@@ -264,6 +303,20 @@ function parseEvidenceTimestamp(value, path, errors) {
   return timestamp;
 }
 
+function canonicalEvidencePayload(evidence) {
+  return Object.fromEntries(
+    Object.entries(evidence)
+      .filter(([key]) => key !== 'evidenceDigest')
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function canonicalEvidenceDigest(evidence) {
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalEvidencePayload(evidence)))
+    .digest('hex');
+}
+
 function validateEvidence(evidence, expected, path, errors, now, freshnessDays) {
   if (!isRecord(evidence)) {
     errors.push(`${path} must be a complete machine-readable object`);
@@ -272,7 +325,7 @@ function validateEvidence(evidence, expected, path, errors, now, freshnessDays) 
   for (const key of Object.keys(evidence)) {
     if (!EVIDENCE_KEYS.has(key)) errors.push(`${path}.${key} is not an allowed evidence field`);
   }
-  for (const key of ['provider', 'control', 'scope', 'unit', 'currency', 'reviewer', 'reviewerRole']) {
+  for (const key of ['provider', 'control', 'scope', 'unit', 'currency', 'reviewer', 'reviewerRole', 'evidenceDigest']) {
     if (typeof evidence[key] !== 'string' || evidence[key].trim().length === 0) {
       errors.push(`${path}.${key} must be a non-empty string`);
     }
@@ -327,6 +380,12 @@ function validateEvidence(evidence, expected, path, errors, now, freshnessDays) 
   if (expected.exactSourceUrl !== undefined && evidence.sourceUrl !== expected.exactSourceUrl) {
     errors.push(`${path}.sourceUrl must match the exact reviewed source URL`);
   }
+  if (expected.evidenceDigest !== undefined && evidence.evidenceDigest !== expected.evidenceDigest) {
+    errors.push(`${path}.evidenceDigest does not match the policy-owned authority`);
+  }
+  if (typeof evidence.evidenceDigest === 'string' && canonicalEvidenceDigest(evidence) !== evidence.evidenceDigest) {
+    errors.push(`${path}.evidenceDigest does not match the canonical evidence packet`);
+  }
   return observedAt;
 }
 
@@ -370,21 +429,40 @@ export function validateInputs(inputs, now = new Date()) {
     }
     if (!rate.sourceUrl || !rate.retrievedAt || !rate.unit || !rate.planAssumption
       || !Object.hasOwn(rate, 'includedAllowance')) errors.push(`authority missing: ${rate.id}`);
-    if (rate.id === 'replicate-clip-prediction') {
-      if (rate.sourceEvidenceType !== 'provider_model_page_estimate') {
-        errors.push('source evidence type missing: replicate-clip-prediction');
+    const contract = RATE_EVIDENCE_CONTRACTS[rate.id];
+    if (!contract) {
+      errors.push(`rate ${rate.id} has no immutable evidence authority contract`);
+    } else {
+      const expected = {
+        provider: contract.provider,
+        account: null,
+        control: contract.control ?? 'public provider price page',
+        scope: contract.scope,
+        value: contract.value,
+        unit: contract.unit,
+        currency: 'USD',
+        exactSourceUrl: contract.source,
+        sourceOrigins: [new URL(contract.source).origin],
+        receiptClasses: [],
+        reviewers: [{ identity: 'economics-review', role: 'economics reviewer' }],
+        evidenceDigest: contract.digest,
+      };
+      if (rate.provider !== expected.provider || rate.unit !== expected.unit || rate.sourceUrl !== expected.exactSourceUrl) {
+        errors.push(`rate ${rate.id} metadata must match the policy evidence contract`);
       }
-      const observedAt = validateEvidence(rate.sourceEvidence, REPLICATE_RATE_EVIDENCE_CONTRACT,
+      if (rate.value !== expected.value) errors.push(`rate ${rate.id}.value must match the policy evidence contract`);
+      if (rate.sourceEvidenceType !== (contract.sourceEvidenceType ?? 'provider_price_page')) {
+        errors.push(`rate ${rate.id}.sourceEvidenceType must match the policy evidence contract`);
+      }
+      const observedAt = validateEvidence(rate.sourceEvidence, expected,
         `rate ${rate.id}.sourceEvidence`, errors, now, inputs.policy.rateFreshnessDays);
-      if (rate.value !== REPLICATE_RATE_EVIDENCE_CONTRACT.value) {
-        errors.push(`rate ${rate.id}.value must match the policy evidence contract`);
-      }
       if (Number.isFinite(observedAt) && rate.retrievedAt !== new Date(observedAt).toISOString().slice(0, 10)) {
         errors.push(`rate ${rate.id}.sourceEvidence.observedAt must match retrievedAt`);
       }
-      if (rate.sourceEvidence?.runsPerUsd !== undefined
-        && (!Number.isFinite(rate.sourceEvidence.runsPerUsd)
-          || rate.sourceEvidence.runsPerUsd !== Math.floor(1 / REPLICATE_RATE_EVIDENCE_CONTRACT.value))) {
+      if (rate.retrievedAt !== '2026-07-15') errors.push(`rate ${rate.id}.retrievedAt must match the reviewed evidence date`);
+      if (rate.id === 'replicate-clip-prediction'
+        && (!Number.isFinite(rate.sourceEvidence?.runsPerUsd)
+          || rate.sourceEvidence.runsPerUsd !== Math.floor(1 / expected.value))) {
         errors.push(`rate ${rate.id}.sourceEvidence.runsPerUsd must equal floor(1 / reviewed value)`);
       }
     }
@@ -394,7 +472,7 @@ export function validateInputs(inputs, now = new Date()) {
     } else if (Number.isFinite(inputs.policy.rateFreshnessDays)) {
       const ageDays = (now.getTime() - retrievedAt) / 86_400_000;
       if (ageDays > inputs.policy.rateFreshnessDays) errors.push(`rate sheet expired: ${rate.id}`);
-      if (ageDays < -1) errors.push(`rate sheet is future-dated: ${rate.id}`);
+      if (ageDays < 0) errors.push(`rate sheet is future-dated: ${rate.id}`);
     }
   }
   for (const rateId of REQUIRED_RATE_IDS) {
@@ -489,6 +567,9 @@ export function validateInputs(inputs, now = new Date()) {
           errors.push(`policy.planBudgets.${planId}.${key} must be a finite nonnegative number`);
         }
       }
+      for (const [key, expected] of Object.entries(POLICY_CAP_EXPECTATIONS.plans[planId] ?? {})) {
+        if (budget[key] !== expected) errors.push(`policy.planBudgets.${planId}.${key} must match the evidence-bound policy formula`);
+      }
     }
   }
   if (!inputs.policy.global || typeof inputs.policy.global !== 'object'
@@ -499,6 +580,9 @@ export function validateInputs(inputs, now = new Date()) {
       if (!Number.isFinite(inputs.policy.global[key]) || inputs.policy.global[key] < 0) {
         errors.push(`policy.global.${key} must be a finite nonnegative number`);
       }
+    }
+    for (const [key, expected] of Object.entries(POLICY_CAP_EXPECTATIONS.global)) {
+      if (inputs.policy.global[key] !== expected) errors.push(`policy.global.${key} must match the evidence-bound policy formula`);
     }
     if (inputs.policy.global.preGaMonthlyVariableUsd > 25) {
       errors.push('policy.global.preGaMonthlyVariableUsd must not exceed $25 before dollar admission exists');
@@ -669,6 +753,10 @@ export function validateInputs(inputs, now = new Date()) {
       providers.add(cap.provider);
       if (cap.amountUsd !== null && (!Number.isFinite(cap.amountUsd) || cap.amountUsd < 0)) {
         errors.push(`policy.providerHardCaps[${index}].amountUsd must be null or a finite nonnegative number`);
+      }
+      if (Object.hasOwn(POLICY_CAP_EXPECTATIONS.providerAmounts, cap.provider)
+        && cap.amountUsd !== POLICY_CAP_EXPECTATIONS.providerAmounts[cap.provider]) {
+        errors.push(`policy.providerHardCaps[${index}].amountUsd must match the evidence-bound policy value`);
       }
       if (!Object.hasOwn(cap, 'evidence') || (cap.evidence !== null && !isRecord(cap.evidence))) {
         errors.push(`policy.providerHardCaps[${index}].evidence must be an object or null`);

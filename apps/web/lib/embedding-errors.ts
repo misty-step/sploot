@@ -141,6 +141,7 @@ export class EmbeddingConfigurationError extends EmbeddingError {
 }
 
 const configurationReports = new WeakSet<object>();
+const configurationReportPromises = new WeakMap<object, Promise<boolean>>();
 
 function isConfigurationErrorLike(error: unknown): error is {
   message: string;
@@ -157,11 +158,11 @@ function isConfigurationErrorLike(error: unknown): error is {
  * chain. Route-owned response headers are only valid after this returns (or
  * after a caller observes that the same chain was already reported).
  */
-export function reportEmbeddingConfigurationErrorOnce(
+export async function reportEmbeddingConfigurationErrorOnce(
   error: unknown,
   context: string,
   metadata: Record<string, unknown> = {},
-): boolean {
+): Promise<boolean> {
   if (!isConfigurationErrorLike(error)) return false;
   let current: unknown = error;
   let reportTarget: { message: string; name?: string; stack?: string } = error;
@@ -171,21 +172,28 @@ export function reportEmbeddingConfigurationErrorOnce(
     current = current.cause;
   }
 
-  configurationReports.add(reportTarget);
-  void reportCanaryError({
-    context,
-    error: {
-      name: reportTarget.name ?? 'EmbeddingConfigurationError',
-      message: reportTarget.message,
-      stack: reportTarget.stack,
-    },
-    metadata: {
-      ...metadata,
-      retryable: false,
-      providerAttempt: false,
-    },
-  });
-  return true;
+  const existing = configurationReportPromises.get(reportTarget);
+  if (existing) return existing;
+
+  const reportPromise = (async () => {
+    const emitted = await reportCanaryError({
+      context,
+      error: {
+        name: reportTarget.name ?? 'EmbeddingConfigurationError',
+        message: reportTarget.message,
+        stack: reportTarget.stack,
+      },
+      metadata: {
+        ...metadata,
+        retryable: false,
+        providerAttempt: false,
+      },
+    });
+    if (emitted) configurationReports.add(reportTarget);
+    return emitted;
+  })();
+  configurationReportPromises.set(reportTarget, reportPromise);
+  return reportPromise;
 }
 
 export function hasEmbeddingConfigurationReport(error: unknown): boolean {

@@ -576,7 +576,7 @@ export async function recordEmbeddingConfigurationFailure(
   nowMs: number = Date.now(),
 ): Promise<boolean> {
   const configurationError = normalizeEmbeddingConfigurationError(error);
-  reportEmbeddingConfigurationErrorOnce(
+  await reportEmbeddingConfigurationErrorOnce(
     configurationError,
     'embedding-provider.configuration-failed',
     { assetId },

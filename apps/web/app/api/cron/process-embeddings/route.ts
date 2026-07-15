@@ -38,7 +38,7 @@ import type { EmbeddingOutcome } from '@/lib/embedding-errors';
 import { resolveEmbeddingMediaSource } from '@/lib/embedding-media';
 
 // Hard per-run cap on embedding attempts — the provider-rate safety bound per
-// invocation. With the */5 * * * * schedule this ceilings throughput at
+// invocation. With the */5 * * * * schedule this caps provider attempts at
 // ~10/5min. The kill-switch for embedding attempts is the `embeddings` runtime
 // gate (checked below); flipping it off halts this cron. See ADR-008. Durable
 // dollar admission/reconciliation remains unimplemented.
@@ -312,7 +312,7 @@ async function getHandler(request: NextRequest) {
               break;
             }
             const configurationError = normalizeEmbeddingConfigurationError(error);
-            reportEmbeddingConfigurationErrorOnce(
+            await reportEmbeddingConfigurationErrorOnce(
               configurationError,
               'cron:process-embeddings:configuration',
               { assetId: asset.id },

@@ -463,7 +463,8 @@ export async function acquireEmbeddingAdmissionReservation(
       // Enrollment checks performed by the route can race with orphan
       // identity replacement. Fence the durable reservation itself so a
       // migration either moves this lease or completes before we recheck the
-      // user and fail closed; never write spend against a deleted identity.
+      // user and fail closed; never write an attempt reservation against a
+      // deleted identity.
       await acquireEnrollmentIdentityWriterLock(tx, userId);
       const enrolledUser = await tx.user.findUnique({
         where: { id: userId },

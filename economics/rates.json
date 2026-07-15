@@ -5,74 +5,182 @@
     {
       "id": "vercel-blob-storage",
       "provider": "Vercel Blob",
-      "capabilities": ["storage", "retained-trash", "renditions"],
+      "capabilities": [
+        "storage",
+        "retained-trash",
+        "renditions"
+      ],
       "value": 0.023,
       "unit": "GB-month",
       "includedAllowance": "Hobby: first 1 GB-month",
       "planAssumption": "Hobby today; charge every modeled GB at the on-demand rate so an included pool never props up paid-tier margin",
       "sourceUrl": "https://vercel.com/docs/vercel-blob/usage-and-pricing",
+      "sourceEvidence": {
+        "provider": "Vercel Blob",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "GB-month",
+        "value": 0.023,
+        "unit": "GB-month",
+        "currency": "USD",
+        "sourceUrl": "https://vercel.com/docs/vercel-blob/usage-and-pricing",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "098e8ad10fc91a8cc0a7bf48a93976ecd558bdf70dbb3601c4ab75bf3ebcbc42"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "vercel-blob-simple-ops",
       "provider": "Vercel Blob",
-      "capabilities": ["blob-operations"],
+      "capabilities": [
+        "blob-operations"
+      ],
       "value": 0.4,
       "unit": "million simple operations",
       "includedAllowance": "Hobby: first 10,000 simple operations",
       "planAssumption": "On-demand list rate",
       "sourceUrl": "https://vercel.com/docs/vercel-blob/usage-and-pricing",
+      "sourceEvidence": {
+        "provider": "Vercel Blob",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "million simple operations",
+        "value": 0.4,
+        "unit": "million simple operations",
+        "currency": "USD",
+        "sourceUrl": "https://vercel.com/docs/vercel-blob/usage-and-pricing",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+      "evidenceDigest": "ff8058f2ae1b4003baffdd44f0e2cd1eda1bd44634f44940a629e9b1d16887ed"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "vercel-blob-advanced-ops",
       "provider": "Vercel Blob",
-      "capabilities": ["blob-operations", "renditions"],
+      "capabilities": [
+        "blob-operations",
+        "renditions"
+      ],
       "value": 5,
       "unit": "million advanced operations",
       "includedAllowance": "Hobby: first 2,000 advanced operations",
       "planAssumption": "On-demand list rate; upload plus thumbnail work is modeled explicitly",
       "sourceUrl": "https://vercel.com/docs/vercel-blob/usage-and-pricing",
+      "sourceEvidence": {
+        "provider": "Vercel Blob",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "million advanced operations",
+        "value": 5,
+        "unit": "million advanced operations",
+        "currency": "USD",
+        "sourceUrl": "https://vercel.com/docs/vercel-blob/usage-and-pricing",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "ed1cbb066fb3dd0bdc620954ed0119e3d9163fe1a7f9a90a54ad58b0a8abb2cc"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "vercel-blob-transfer",
       "provider": "Vercel Blob",
-      "capabilities": ["blob-egress"],
+      "capabilities": [
+        "blob-egress"
+      ],
       "value": 0.05,
       "unit": "GB transferred",
       "includedAllowance": "Hobby: first 10 GB",
       "planAssumption": "Public Blob delivery; every modeled GB is charged",
       "sourceUrl": "https://vercel.com/docs/vercel-blob/usage-and-pricing",
+      "sourceEvidence": {
+        "provider": "Vercel Blob",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "GB transferred",
+        "value": 0.05,
+        "unit": "GB transferred",
+        "currency": "USD",
+        "sourceUrl": "https://vercel.com/docs/vercel-blob/usage-and-pricing",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "6547d0bef59790f5068c633e045815228648567e56c363fb19177ff29ddb2822"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "vercel-edge-requests",
       "provider": "Vercel CDN",
-      "capabilities": ["blob-egress"],
+      "capabilities": [
+        "blob-egress"
+      ],
       "value": 2,
       "unit": "million edge requests",
       "includedAllowance": "Hobby: first 1,000,000; Pro: first 10,000,000",
       "planAssumption": "North America on-demand rate; included requests are shared headroom",
       "sourceUrl": "https://vercel.com/docs/manage-cdn-usage",
+      "sourceEvidence": {
+        "provider": "Vercel CDN",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "million edge requests",
+        "value": 2,
+        "unit": "million edge requests",
+        "currency": "USD",
+        "sourceUrl": "https://vercel.com/docs/manage-cdn-usage",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "f41cdd637e7d6507dfdb739a60e04949b64703299f1897c22c7333067471a4e4"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "vercel-fast-origin-transfer",
       "provider": "Vercel CDN",
-      "capabilities": ["blob-egress"],
+      "capabilities": [
+        "blob-egress"
+      ],
       "value": 0.06,
       "unit": "GB origin transfer",
       "includedAllowance": "Hobby: first 10 GB; Pro: N/A",
       "planAssumption": "North America on-demand rate; policy sensitivity supplies the uncached-origin share",
       "sourceUrl": "https://vercel.com/docs/manage-cdn-usage",
+      "sourceEvidence": {
+        "provider": "Vercel CDN",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "GB origin transfer",
+        "value": 0.06,
+        "unit": "GB origin transfer",
+        "currency": "USD",
+        "sourceUrl": "https://vercel.com/docs/manage-cdn-usage",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "4c0ee36eee96a50f2cf44bdf13092df7b279fb4c3a2980f1090858d6ecdd51c9"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "replicate-clip-prediction",
       "provider": "Replicate",
-      "capabilities": ["image-inference", "text-inference"],
-      "value": 0.00073,
+      "capabilities": [
+        "image-inference",
+        "text-inference"
+      ],
+      "value": 0.00022,
       "unit": "typical prediction",
       "includedAllowance": null,
       "planAssumption": "Target model rate only; policy sensitivity supplies a potentially billed retry/cancel reserve, while live billed dollars remain unavailable",
@@ -82,14 +190,15 @@
         "account": null,
         "control": "model page price estimate",
         "scope": "krthr/clip-embeddings typical prediction",
-        "value": 0.00073,
+        "value": 0.00022,
         "unit": "typical prediction",
         "currency": "USD",
         "sourceUrl": "https://replicate.com/krthr/clip-embeddings",
         "observedAt": "2026-07-15T00:00:00Z",
         "reviewer": "economics-review",
         "reviewerRole": "economics reviewer",
-        "runsPerUsd": 1369
+        "runsPerUsd": 4545,
+        "evidenceDigest": "93b43f801bc24ee8d9a7894542bad3f46bbf8217b5550ed6e25d061068acce50"
       },
       "sourceEvidenceType": "provider_model_page_estimate",
       "retrievedAt": "2026-07-15"
@@ -97,145 +206,372 @@
     {
       "id": "neon-launch-compute",
       "provider": "Neon",
-      "capabilities": ["database-compute", "vector-storage"],
+      "capabilities": [
+        "database-compute",
+        "vector-storage"
+      ],
       "value": 0.106,
       "unit": "CU-hour",
       "includedAllowance": "Free: 100 CU-hours per project",
       "planAssumption": "Launch list rate for GA; production account plan is unavailable in current authority",
       "sourceUrl": "https://neon.com/pricing",
+      "sourceEvidence": {
+        "provider": "Neon",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "CU-hour",
+        "value": 0.106,
+        "unit": "CU-hour",
+        "currency": "USD",
+        "sourceUrl": "https://neon.com/pricing",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "fdef7066ad62b64ce080cbd55a9aaf498f74d094e6938ac028f2b702d1903a48"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "neon-database-storage",
       "provider": "Neon",
-      "capabilities": ["vector-storage"],
+      "capabilities": [
+        "vector-storage"
+      ],
       "value": 0.35,
       "unit": "GB-month",
       "includedAllowance": "Free: 0.5 GB per project",
       "planAssumption": "Launch list rate",
       "sourceUrl": "https://neon.com/pricing",
+      "sourceEvidence": {
+        "provider": "Neon",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "GB-month",
+        "value": 0.35,
+        "unit": "GB-month",
+        "currency": "USD",
+        "sourceUrl": "https://neon.com/pricing",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "2c4812c7ecfe8107b46125006755e8790239358d0b50188cf7d26ff9ccf656b6"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "neon-history-storage",
       "provider": "Neon",
-      "capabilities": ["vector-storage"],
+      "capabilities": [
+        "vector-storage"
+      ],
       "value": 0.2,
       "unit": "GB-month of history/WAL",
       "includedAllowance": "Plan-specific restore window",
       "planAssumption": "Launch list rate",
       "sourceUrl": "https://neon.com/pricing",
+      "sourceEvidence": {
+        "provider": "Neon",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "GB-month of history/WAL",
+        "value": 0.2,
+        "unit": "GB-month of history/WAL",
+        "currency": "USD",
+        "sourceUrl": "https://neon.com/pricing",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "cf548ba03d4dd9ac13c9a5fa824707b7c1cbf7a041b7aeb60a2ae182dda632cf"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "neon-network-transfer",
       "provider": "Neon",
-      "capabilities": ["database-compute"],
+      "capabilities": [
+        "database-compute"
+      ],
       "value": 0.1,
       "unit": "GB public transfer",
       "includedAllowance": "Free: 5 GB then suspend; Launch/Scale docs: 100 GB then overage",
       "planAssumption": "Current network-transfer docs control over a conflicting June 2026 promotional blog",
       "sourceUrl": "https://neon.com/docs/introduction/network-transfer",
+      "sourceEvidence": {
+        "provider": "Neon",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "GB public transfer",
+        "value": 0.1,
+        "unit": "GB public transfer",
+        "currency": "USD",
+        "sourceUrl": "https://neon.com/docs/introduction/network-transfer",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "edf747ffe6156c9e35f0b80318e48e5ed797cd9018aba30428ad6a9bde43dfe4"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "digitalocean-web-service",
       "provider": "DigitalOcean App Platform",
-      "capabilities": ["app-compute", "logs"],
+      "capabilities": [
+        "app-compute",
+        "logs"
+      ],
       "value": 25,
       "unit": "month for apps-s-1vcpu-2gb",
       "includedAllowance": "200 GiB outbound transfer",
       "planAssumption": "One production web instance; fixed hosting is separate from variable subsidy",
       "sourceUrl": "https://www.digitalocean.com/pricing/app-platform",
+      "sourceEvidence": {
+        "provider": "DigitalOcean App Platform",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "month for apps-s-1vcpu-2gb",
+        "value": 25,
+        "unit": "month for apps-s-1vcpu-2gb",
+        "currency": "USD",
+        "sourceUrl": "https://www.digitalocean.com/pricing/app-platform",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "736bfd10b162130354fc1d3ad78ade45e85072fe43633576840564312b745153"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "digitalocean-small-job-runtime",
       "provider": "DigitalOcean App Platform",
-      "capabilities": ["jobs", "app-compute", "logs"],
+      "capabilities": [
+        "jobs",
+        "app-compute",
+        "logs"
+      ],
       "value": 5,
       "unit": "full month for apps-s-1vcpu-0.5gb, prorated per second with one-minute minimum",
       "includedAllowance": "50 GiB outbound transfer",
       "planAssumption": "Scheduled jobs bill only while running",
       "sourceUrl": "https://docs.digitalocean.com/products/app-platform/details/pricing/",
+      "sourceEvidence": {
+        "provider": "DigitalOcean App Platform",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "full month for apps-s-1vcpu-0.5gb, prorated per second with one-minute minimum",
+        "value": 5,
+        "unit": "full month for apps-s-1vcpu-0.5gb, prorated per second with one-minute minimum",
+        "currency": "USD",
+        "sourceUrl": "https://docs.digitalocean.com/products/app-platform/details/pricing/",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "b674c51e6c54883d32deb3eac9345a8530918fb471b9f4cac9946882f400d4ae"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "digitalocean-egress",
       "provider": "DigitalOcean App Platform",
-      "capabilities": ["app-bandwidth"],
+      "capabilities": [
+        "app-bandwidth"
+      ],
       "value": 0.02,
       "unit": "GiB beyond pooled allowance",
       "includedAllowance": "Team-level allowance pooled across apps",
       "planAssumption": "Charge modeled API egress despite current pooled headroom",
       "sourceUrl": "https://docs.digitalocean.com/products/app-platform/details/pricing/",
+      "sourceEvidence": {
+        "provider": "DigitalOcean App Platform",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "GiB beyond pooled allowance",
+        "value": 0.02,
+        "unit": "GiB beyond pooled allowance",
+        "currency": "USD",
+        "sourceUrl": "https://docs.digitalocean.com/products/app-platform/details/pricing/",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "0fae066d6692fbee35a4561a2c23ba256838ae4afafa8930c2821c8c669da06a"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "clerk-hobby-mru",
       "provider": "Clerk",
-      "capabilities": ["auth"],
+      "capabilities": [
+        "auth"
+      ],
       "value": 0,
       "unit": "MRU through 50,000 per app",
       "includedAllowance": "50,000 monthly retained users per app",
       "planAssumption": "Hobby; current production has 10 database users but MRU/plan readback is unavailable",
       "sourceUrl": "https://clerk.com/pricing",
+      "sourceEvidence": {
+        "provider": "Clerk",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "MRU through 50,000 per app",
+        "value": 0,
+        "unit": "MRU through 50,000 per app",
+        "currency": "USD",
+        "sourceUrl": "https://clerk.com/pricing",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "5360a62718659baa56dcddbc372abc30b84adb21de2677579b4e366253a2e77b"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "clerk-pro-mru-overage",
       "provider": "Clerk",
-      "capabilities": ["auth"],
+      "capabilities": [
+        "auth"
+      ],
       "value": 0.02,
       "unit": "MRU-month from 50,001 through 100,000",
       "includedAllowance": "First 50,000 MRU; Pro base is $25 monthly",
       "planAssumption": "First published graduated band; Pro base is a shared fixed cost",
       "sourceUrl": "https://clerk.com/pricing",
+      "sourceEvidence": {
+        "provider": "Clerk",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "MRU-month from 50,001 through 100,000",
+        "value": 0.02,
+        "unit": "MRU-month from 50,001 through 100,000",
+        "currency": "USD",
+        "sourceUrl": "https://clerk.com/pricing",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "0fc206b9dff952763698f5f0210eae4e6b6c371da50bfaf3a9e568ddcfb61505"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "canary-shared-service",
       "provider": "Canary on DigitalOcean",
-      "capabilities": ["telemetry-canary", "logs"],
+      "capabilities": [
+        "telemetry-canary",
+        "logs"
+      ],
       "value": 5,
       "unit": "month for shared apps-s-1vcpu-0.5gb service",
       "includedAllowance": "Compute, runtime logs, and platform storage within the component plan",
       "planAssumption": "Self-hosted shared service; per-event marginal fee is zero inside capacity, with explicit fixed allocation per workload",
       "sourceUrl": "https://www.digitalocean.com/pricing/app-platform",
+      "sourceEvidence": {
+        "provider": "Canary on DigitalOcean",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "month for shared apps-s-1vcpu-0.5gb service",
+        "value": 5,
+        "unit": "month for shared apps-s-1vcpu-0.5gb service",
+        "currency": "USD",
+        "sourceUrl": "https://www.digitalocean.com/pricing/app-platform",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "fba1b926a1f2c97fe737dfc4d930fc5ab172ba725efe963845c13ab99fcc7461"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "github-actions-public-standard",
       "provider": "GitHub Actions",
-      "capabilities": ["jobs", "logs"],
+      "capabilities": [
+        "jobs",
+        "logs"
+      ],
       "value": 0,
       "unit": "standard hosted-runner minute for public repositories",
       "includedAllowance": "Public standard runners free; 10 GB cache per repository",
       "planAssumption": "misty-step/sploot is public; larger runners remain billable and are not used",
       "sourceUrl": "https://docs.github.com/en/billing/concepts/product-billing/github-actions",
+      "sourceEvidence": {
+        "provider": "GitHub Actions",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "standard hosted-runner minute for public repositories",
+        "value": 0,
+        "unit": "standard hosted-runner minute for public repositories",
+        "currency": "USD",
+        "sourceUrl": "https://docs.github.com/en/billing/concepts/product-billing/github-actions",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "76bf834523b1e412c7ba9e8567934a07dbeb57dc4d1960979d6073b65b8e4d97"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "github-actions-cache-overage",
       "provider": "GitHub Actions",
-      "capabilities": ["jobs"],
+      "capabilities": [
+        "jobs"
+      ],
       "value": 0.07,
       "unit": "GB-month above cache allowance",
       "includedAllowance": "10 GB cache per repository",
       "planAssumption": "Current active cache is 6.37 GiB",
       "sourceUrl": "https://docs.github.com/en/billing/concepts/product-billing/github-actions",
+      "sourceEvidence": {
+        "provider": "GitHub Actions",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "GB-month above cache allowance",
+        "value": 0.07,
+        "unit": "GB-month above cache allowance",
+        "currency": "USD",
+        "sourceUrl": "https://docs.github.com/en/billing/concepts/product-billing/github-actions",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "c1de3be9ea953b637024e7755c71e0e18f75423af535c032ab44c17f867eafd0"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     },
     {
       "id": "stripe-domestic-card",
       "provider": "Stripe",
-      "capabilities": ["payment-fees"],
+      "capabilities": [
+        "payment-fees"
+      ],
       "value": 0.029,
       "fixedValue": 0.3,
       "unit": "successful domestic online card charge plus fixed fee",
       "includedAllowance": null,
       "planAssumption": "US standard pricing, one monthly charge; international and FX require a separate geo policy",
       "sourceUrl": "https://stripe.com/pricing",
+      "sourceEvidence": {
+        "provider": "Stripe",
+        "account": null,
+        "control": "public provider price page",
+        "scope": "successful domestic online card charge plus fixed fee",
+        "value": 0.029,
+        "unit": "successful domestic online card charge plus fixed fee",
+        "currency": "USD",
+        "sourceUrl": "https://stripe.com/pricing",
+        "observedAt": "2026-07-15T00:00:00Z",
+        "reviewer": "economics-review",
+        "reviewerRole": "economics reviewer",
+        "evidenceDigest": "54311948c5d822b62dfc5fa754a367e687223bd399f10a27da8db07e9340a928"
+      },
+      "sourceEvidenceType": "provider_price_page",
       "retrievedAt": "2026-07-15"
     }
   ]

@@ -54,19 +54,37 @@ test('the rate registry names every cost-bearing capability and its authority', 
   );
 
   const replicate = inputs.rates.find((rate) => rate.id === 'replicate-clip-prediction');
-  assert.equal(replicate.value, 0.00073);
+  assert.equal(replicate.value, 0.00022);
   assert.equal(replicate.sourceUrl, 'https://replicate.com/krthr/clip-embeddings');
   assert.equal(replicate.sourceEvidence.provider, 'Replicate');
-  assert.equal(replicate.sourceEvidence.value, 0.00073);
+  assert.equal(replicate.sourceEvidence.value, 0.00022);
   assert.equal(replicate.sourceEvidence.currency, 'USD');
   assert.equal(replicate.sourceEvidence.sourceUrl, replicate.sourceUrl);
   assert.equal(replicate.sourceEvidence.reviewerRole, 'economics reviewer');
-  assert.equal(replicate.sourceEvidence.runsPerUsd, 1369);
+  assert.equal(replicate.sourceEvidence.runsPerUsd, 4545);
+  assert.match(replicate.sourceEvidence.evidenceDigest, /^[0-9a-f]{64}$/);
   assert.equal(replicate.sourceEvidenceType, 'provider_model_page_estimate');
   const vercelOrigin = inputs.rates.find((rate) => rate.id === 'vercel-fast-origin-transfer');
   assert.equal(vercelOrigin.value, 0.06);
   assert.equal(vercelOrigin.sourceUrl, 'https://vercel.com/docs/manage-cdn-usage');
   assert.match(vercelOrigin.includedAllowance, /Hobby: first 10 GB; Pro: N\/A/);
+
+  const genericRate = inputs.rates.find((rate) => rate.id === 'neon-launch-compute');
+  for (const [label, field, value] of [
+    ['provider', 'provider', 'Other provider'],
+    ['value', 'value', 0.107],
+    ['unit', 'unit', 'CU-minute'],
+    ['currency', 'currency', 'EUR'],
+    ['source', 'sourceUrl', 'https://neon.com/pricing/other'],
+    ['reviewer', 'reviewer', 'other-reviewer'],
+    ['digest', 'evidenceDigest', '0'.repeat(64)],
+  ]) {
+    const changed = structuredClone(inputs);
+    const rate = changed.rates.find((candidate) => candidate.id === genericRate.id);
+    rate.sourceEvidence[field] = value;
+    if (field === 'value') rate.value = value;
+    assert.notDeepEqual(validateInputs(changed), [], `generic rate ${label} mutation must fail`);
+  }
 });
 
 test('malformed or incomplete inputs fail closed instead of becoming zero or NaN', async () => {
@@ -173,16 +191,46 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
   validVerifiedProviderEvidence.policy.providerHardCaps[0].evidenceStatus = 'verified';
   validVerifiedProviderEvidence.policy.providerHardCaps[0].evidence = structuredClone(validEvidence);
   validVerifiedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15T10:00:00Z';
-  assert.deepEqual(validateInputs(validVerifiedProviderEvidence, evidenceNow), []);
+  assert.match(
+    validateInputs(validVerifiedProviderEvidence, evidenceNow).join('\n'),
+    /receiptClass is not authorized|evidenceDigest must be a non-empty string/,
+  );
+
+  const fabricatedReplicateReceipt = structuredClone(inputs);
+  const replicateCap = fabricatedReplicateReceipt.policy.providerHardCaps
+    .find((cap) => cap.provider === 'Replicate');
+  replicateCap.evidenceStatus = 'verified';
+  replicateCap.evidence = {
+    provider: 'Replicate',
+    account: 'replicate-production-redacted',
+    control: 'monthly provider spend control',
+    scope: 'calendar month',
+    value: 15,
+    unit: 'USD per calendar month',
+    currency: 'USD',
+    receiptIdentifier: 'replicate-billing-export:invented',
+    receiptClass: 'provider-billing-export',
+    observedAt: '2026-07-15T10:00:00Z',
+    reviewer: 'economics-review',
+    reviewerRole: 'economics reviewer',
+    evidenceDigest: '0'.repeat(64),
+  };
+  replicateCap.lastVerifiedAt = '2026-07-15T10:00:00Z';
+  assert.match(
+    validateInputs(fabricatedReplicateReceipt, evidenceNow).join('\n'),
+    /receiptClass is not authorized|evidenceDigest does not match/,
+    'an opaque or self-attested Replicate receipt cannot establish verified spend authority',
+  );
 
   const evidenceMutations = [
+    ['wrong provider', { provider: 'Replicate' }],
     ['wrong account', { account: 'wrong-account' }],
     ['wrong control', { control: 'monthly cap' }],
     ['wrong scope', { scope: 'billing period' }],
     ['wrong value', { value: 25.01 }],
     ['wrong unit', { unit: 'USD per upload' }],
     ['wrong currency', { currency: 'EUR' }],
-    ['alternate https source', { sourceUrl: 'https://example.com/receipt' }],
+    ['alternate valid https source', { sourceUrl: 'https://replicate.com/pricing' }],
     ['wrong reviewer', { reviewer: 'other-reviewer' }],
     ['empty evidence', {}],
     ['partial evidence', { reviewerRole: undefined }],
@@ -199,7 +247,7 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
       changed.policy.providerHardCaps[0].evidence = {};
     } else {
       const evidenceMutation = { ...mutation };
-      if (label === 'alternate https source') {
+      if (label === 'alternate valid https source') {
         delete changed.policy.providerHardCaps[0].evidence.receiptIdentifier;
         delete changed.policy.providerHardCaps[0].evidence.receiptClass;
       }
@@ -257,7 +305,7 @@ test('Replicate rate evidence is independent of recomputed policy caps', async (
     changed.policy.global[usdKey] = Number((changed.policy.global[attemptsKey] * newRate).toFixed(6));
   }
   for (const cap of changed.policy.providerHardCaps) {
-    if (cap.amountUsd !== null) cap.amountUsd = Number((cap.amountUsd * newRate / 0.00073).toFixed(6));
+    if (cap.amountUsd !== null) cap.amountUsd = Number((cap.amountUsd * newRate / 0.00022).toFixed(6));
   }
   const errors = validateInputs(changed).join('\n');
   assert.match(errors, /value must match the policy evidence contract|value does not match the evidence contract/);
@@ -266,8 +314,24 @@ test('Replicate rate evidence is independent of recomputed policy caps', async (
 test('Replicate runsPerUsd is derived from the reviewed rate', async () => {
   const inputs = await loadInputs();
   const changed = structuredClone(inputs);
-  changed.rates.find((rate) => rate.id === 'replicate-clip-prediction').sourceEvidence.runsPerUsd = 1370;
+  changed.rates.find((rate) => rate.id === 'replicate-clip-prediction').sourceEvidence.runsPerUsd = 4546;
   assert.match(validateInputs(changed).join('\n'), /runsPerUsd must equal floor\(1 \/ reviewed value\)/);
+});
+
+test('mutable caps and derived attempt ceilings fail without the policy-bound formula', async () => {
+  const inputs = await loadInputs();
+  const mutations = [
+    ['plan dollar cap', (changed) => { changed.policy.planBudgets.free.monthlyInferenceUsd += 0.00022; }],
+    ['plan attempt cap', (changed) => { changed.policy.planBudgets.free.monthlyInferenceAttempts += 1; }],
+    ['global dollar ceiling', (changed) => { changed.policy.global.replicateMonthlyUsd += 0.00022; }],
+    ['global attempt ceiling', (changed) => { changed.policy.global.replicateMonthlyAttempts += 1; }],
+    ['provider cap amount', (changed) => { changed.policy.providerHardCaps.find((cap) => cap.provider === 'Replicate').amountUsd = 14.99; }],
+  ];
+  for (const [label, mutate] of mutations) {
+    const changed = structuredClone(inputs);
+    mutate(changed);
+    assert.notDeepEqual(validateInputs(changed), [], `${label} mutation must fail`);
+  }
 });
 
 test('every required live usage field is validated table-first', async () => {
@@ -347,7 +411,7 @@ test('direct-variable price floors and target budgets use unrounded economics', 
   const inputs = await loadInputs();
   const collector = calculateScenario(inputs, 'collector', 'high');
   assert.ok(collector.grossMarginPct >= 0, `exact Collector direct margin was ${collector.grossMarginPct}`);
-  assert.equal(minimumPriceForMargin(inputs, 'collector'), 12.01);
+  assert.equal(minimumPriceForMargin(inputs, 'collector'), 8.27);
   assert.equal(inputs.scenarios.find((scenario) => scenario.id === 'collector').priceUsd, 13);
   assert.ok(inputs.policy.planBudgets.free.monthlyInfrastructureUsd >= 0.4);
   assert.ok(inputs.policy.planBudgets.collector.monthlyInfrastructureUsd >= 3);
@@ -413,20 +477,13 @@ test('the checked-in report is exactly reproducible', async () => {
 test('recommendations are derived from versioned rates and workloads', async () => {
   const inputs = await loadInputs();
   const changed = structuredClone(inputs);
-  changed.rates.forEach((rate) => {
-    rate.retrievedAt = '2026-07-16';
-    if (rate.sourceEvidence && typeof rate.sourceEvidence === 'object') {
-      rate.sourceEvidence.observedAt = '2026-07-16T00:00:00Z';
-    }
-  });
   const free = changed.scenarios.find((scenario) => scenario.id === 'free');
   const collector = changed.scenarios.find((scenario) => scenario.id === 'collector');
   free.sourceTrashStorageGb = 0.75;
   collector.priceUsd = 13;
-  changed.policy.planBudgets.free.monthlyInfrastructureUsd = 999;
 
-  const report = buildReport(changed, new Date('2026-07-16T12:00:00Z'));
-  assert.match(report, /Rates were refreshed on 2026-07-16/);
+  const report = buildReport(changed, new Date('2026-07-15T14:00:00Z'));
+  assert.match(report, /Rates were refreshed on 2026-07-15/);
   assert.match(report, /Cardless Free:\*\* 0\.75 GB/);
   assert.match(report, /Collector:\*\* \$13\/month/);
   assert.match(report, /fully loaded margin is unavailable/);
@@ -441,7 +498,6 @@ test('all sensitivity prose is derived from policy inputs', async () => {
   changed.policy.sensitivity.high.inferenceAttemptMultiplier = 1.35;
   changed.policy.sensitivity.low.databaseComputeMultiplier = 0.66;
   changed.policy.sensitivity.base.stripeVariableSurcharge = 0.017;
-  for (const budget of Object.values(changed.policy.planBudgets)) budget.monthlyInfrastructureUsd = 999;
   changed.scenarios.find((scenario) => scenario.id === 'collector').priceUsd = 100;
   changed.scenarios.find((scenario) => scenario.id === 'archive').priceUsd = 100;
 

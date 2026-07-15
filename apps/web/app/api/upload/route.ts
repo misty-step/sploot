@@ -134,7 +134,7 @@ async function postHandler(req: NextRequest, _context: RouteContext, { principal
     if (error instanceof EmbeddingError) {
       const isConfiguration = 'reason' in error && error.reason === 'embedding_configuration';
       if (isConfiguration) {
-        reportEmbeddingConfigurationErrorOnce(error, 'upload:embedding-configuration');
+        await reportEmbeddingConfigurationErrorOnce(error, 'upload:embedding-configuration');
       }
       return NextResponse.json(
         {

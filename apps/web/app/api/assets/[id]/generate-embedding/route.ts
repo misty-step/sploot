@@ -48,7 +48,6 @@ import { resolveEmbeddingMediaSource } from '@/lib/embedding-media';
 
 // Request deduplication: Track in-flight requests
 const inFlightRequests = new Map<string, Promise<any>>();
-const ROUTE_CANARY_OWNER_HEADERS = { 'X-Sploot-Canary-Owner': 'route' };
 
 // Performance metrics tracking
 const performanceMetrics: {
@@ -383,7 +382,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
         } catch (error) {
           if (error instanceof EmbeddingConfigurationError) {
             providerInitializationDeferred = true;
-            reportEmbeddingConfigurationErrorOnce(error, 'generate-embedding:configuration');
+            await reportEmbeddingConfigurationErrorOnce(error, 'generate-embedding:configuration');
             await recordEmbeddingConfigurationFailure(
               asset.id,
               error,
@@ -613,7 +612,6 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
         { error: error.message },
         {
           status: error.statusCode || 500,
-          headers: error.statusCode && error.statusCode >= 500 ? ROUTE_CANARY_OWNER_HEADERS : undefined,
         }
       );
     }
@@ -631,7 +629,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
 
     return NextResponse.json(
       { error: 'Failed to generate embedding' },
-      { status: 500, headers: ROUTE_CANARY_OWNER_HEADERS }
+      { status: 500 }
     );
   }
 }

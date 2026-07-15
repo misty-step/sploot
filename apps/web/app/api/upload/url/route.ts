@@ -116,7 +116,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     if (error instanceof EmbeddingError) {
       const isConfiguration = 'reason' in error && error.reason === 'embedding_configuration';
       if (isConfiguration) {
-        reportEmbeddingConfigurationErrorOnce(error, 'upload:url:embedding-configuration');
+        await reportEmbeddingConfigurationErrorOnce(error, 'upload:url:embedding-configuration');
       }
       return NextResponse.json(
         {

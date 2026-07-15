@@ -5,13 +5,26 @@ import { pathToFileURL } from 'node:url';
 
 const { Client } = pg;
 const INDEX_NAME = 'asset_embeddings_pending_next_attempt_idx';
+export const ONLINE_INDEX_LOCK_TIMEOUT = '5s';
+export const ONLINE_INDEX_STATEMENT_TIMEOUT = '30s';
+
+function boundedTimeout(value, fallback) {
+  return /^\d+(?:\.\d+)?s$/.test(value ?? '') ? value : fallback;
+}
 
 export async function applyOnlineEmbeddingIndex(databaseUrl = process.env.DATABASE_URL, ClientConstructor = Client) {
   if (!databaseUrl) {
     throw new Error('[online-migrations] DATABASE_URL is required');
   }
 
-  const client = new ClientConstructor({ connectionString: databaseUrl });
+  // This is a separate autocommit connection because CREATE INDEX CONCURRENTLY
+  // cannot run inside a transaction. Keep the safety bounds on the connection
+  // that actually executes the online DDL; PGOPTIONS on migrate-deploy's
+  // Prisma child cannot constrain this independently spawned client.
+  const client = new ClientConstructor({
+    connectionString: databaseUrl,
+    options: `-c lock_timeout=${boundedTimeout(process.env.EMBEDDING_INDEX_LOCK_TIMEOUT, ONLINE_INDEX_LOCK_TIMEOUT)} -c statement_timeout=${boundedTimeout(process.env.EMBEDDING_INDEX_STATEMENT_TIMEOUT, ONLINE_INDEX_STATEMENT_TIMEOUT)}`,
+  });
   await client.connect();
   try {
     const existing = await client.query(`

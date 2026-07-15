@@ -410,7 +410,7 @@ async function postHandler(req: NextRequest) {
       error instanceof EmbeddingScheduleError
       && error.reason === "embedding_configuration"
     ) {
-      reportEmbeddingConfigurationErrorOnce(
+      await reportEmbeddingConfigurationErrorOnce(
         error,
         "assets:embedding-configuration",
         { requestId },

@@ -200,7 +200,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     // Error performing search
 
     if (error instanceof EmbeddingConfigurationError) {
-      reportEmbeddingConfigurationErrorOnce(error, 'search:configuration');
+      await reportEmbeddingConfigurationErrorOnce(error, 'search:configuration');
     }
 
     if (error instanceof EmbeddingError) {

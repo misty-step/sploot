@@ -190,7 +190,7 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
         embeddingService = createEmbeddingService(userId);
       } catch (error) {
         if (error instanceof EmbeddingConfigurationError) {
-          reportEmbeddingConfigurationErrorOnce(error, 'embeddings:image:configuration');
+          await reportEmbeddingConfigurationErrorOnce(error, 'embeddings:image:configuration');
         }
         throw error;
       }
@@ -261,7 +261,7 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
         } catch (error) {
           if (error instanceof EmbeddingConfigurationError) {
             providerInitializationDeferred = true;
-            reportEmbeddingConfigurationErrorOnce(error, 'embeddings:image:configuration');
+            await reportEmbeddingConfigurationErrorOnce(error, 'embeddings:image:configuration');
             await recordEmbeddingConfigurationFailure(asset.id, error, processingClaimToken);
           }
           throw error;

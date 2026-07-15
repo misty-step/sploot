@@ -37,7 +37,7 @@ describe('canary reporter', () => {
 
     const { reportCanaryError } = await import('@/lib/canary-reporter');
 
-    await reportCanaryError({
+    await expect(reportCanaryError({
       context: 'request:error',
       traceId: 'trace-123',
       error: {
@@ -53,7 +53,7 @@ describe('canary reporter', () => {
           safe: 'value',
         },
       },
-    });
+    })).resolves.toBe(true);
 
     expect(fetchMock).toHaveBeenCalledWith(
       'https://canary.example.test/api/v1/errors',
@@ -98,6 +98,17 @@ describe('canary reporter', () => {
       reachable: null,
       status: 'not_configured',
     });
+  });
+
+  it('returns false when Canary rejects an error report', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { reportCanaryError } = await import('@/lib/canary-reporter');
+
+    await expect(reportCanaryError({
+      context: 'request:error',
+      error: { name: 'Error', message: 'rejected' },
+    })).resolves.toBe(false);
   });
 
   it('posts health check-ins to Canary ingest', async () => {
