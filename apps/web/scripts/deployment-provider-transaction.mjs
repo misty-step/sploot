@@ -28,6 +28,22 @@ const REQUIRED_WEB_KEYS = [
   'SPLOOT_DEPLOYMENT_COMMIT',
   'SPLOOT_DEPLOYMENT_CHANGE_ID',
 ];
+// The local QA/proof capture seam (qa-local auth, PWA screenshot capture) is
+// loopback-only by construction. A deployed spec must never carry any of its
+// switches or identity bindings — not even explicitly disabled ones.
+const FORBIDDEN_PROOF_BINDINGS = new Set([
+  'SPLOOT_QA_AUTH_MODE',
+  'SPLOOT_QA_AUTH_SECRET',
+  'SPLOOT_PWA_CAPTURE_MODE',
+  'NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE',
+  'NEXT_PUBLIC_SPLOOT_PWA_CAPTURE_MODE',
+  'SPLOOT_QA_DEPLOYMENT_ID',
+  'SPLOOT_QA_DEPLOYMENT_ENV',
+  'SPLOOT_QA_AUDIENCE',
+  'NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID',
+  'NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ENV',
+  'NEXT_PUBLIC_SPLOOT_QA_AUDIENCE',
+]);
 
 function object(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object`);
@@ -181,6 +197,11 @@ export function webEnvironment(spec) {
     if (webKeys.has(entry.key)) throw new Error(`duplicate applicable environment key across app and web: ${entry.key}`);
   }
   const effective = new Map([...appEntries, ...webEntries].map((entry) => [entry.key, entry.value]));
+  for (const entry of [...appEntries, ...webEntries]) {
+    if (FORBIDDEN_PROOF_BINDINGS.has(entry.key)) {
+      throw new Error(`deployment spec must never bind the QA/proof capture switch ${entry.key}`);
+    }
+  }
   for (const key of REQUIRED_WEB_KEYS) {
     if (!webKeys.has(key)) throw new Error(`services[name=web] is missing ${key}`);
   }

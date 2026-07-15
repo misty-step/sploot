@@ -51,8 +51,9 @@ const SOURCE_EXCLUDED_PREFIXES = ['apps/web/public/screenshots/', 'apps/web/publ
 const BUILD_CACHE_PREFIXES = ['apps/web/.next/cache/'];
 const BUILD_INVENTORY_EXCLUSIONS = ['apps/web/.next/cache/** — Next incremental cache; it is nondeterministic and is not required to run the production artifact'];
 const SPECS = [
-  { name: 'desktop-home.png', width: 1920, height: 1080 },
-  { name: 'mobile-home.png', width: 390, height: 844 },
+  { name: 'desktop-home.png', width: 1920, height: 1080, theme: 'light' },
+  { name: 'mobile-home.png', width: 390, height: 844, theme: 'light' },
+  { name: 'mobile-home-dark.png', width: 390, height: 844, theme: 'dark' },
 ] as const;
 const SEED = {
   captureVersion: 1,
@@ -104,6 +105,12 @@ interface TileProbeResult {
   naturalHeight: number;
   wasInitiallyRequested: boolean;
   settled: boolean;
+}
+
+interface ServiceWorkerProof {
+  scope: string;
+  activeScriptUrl: string;
+  updateAttempted: boolean;
 }
 
 function parseArgs(argv: string[]) {
@@ -489,11 +496,25 @@ async function waitForRenderedApp(page: Page): Promise<CaptureState> {
   return state;
 }
 
+async function probeServiceWorker(page: Page): Promise<ServiceWorkerProof> {
+  return page.evaluate(async () => {
+    if (!('serviceWorker' in navigator)) throw new Error('service workers are unavailable in the production browser flow');
+    const registration = await navigator.serviceWorker.ready;
+    if (!registration.active) throw new Error('production service worker never reached active state');
+    await registration.update();
+    return {
+      scope: registration.scope,
+      activeScriptUrl: registration.active.scriptURL,
+      updateAttempted: true,
+    };
+  });
+}
+
 async function captureViewport(browser: Browser, baseUrl: string, secret: string, spec: (typeof SPECS)[number]) {
   const context: BrowserContext = await browser.newContext({
     viewport: { width: spec.width, height: spec.height },
     deviceScaleFactor: 1,
-    colorScheme: 'light',
+    colorScheme: spec.theme,
     locale: 'en-US',
     // The real grid uses its entry animation to reveal tiles from the
     // intentional initial opacity: 0 state. Allow it to settle, then capture
@@ -504,13 +525,13 @@ async function captureViewport(browser: Browser, baseUrl: string, secret: string
   const qaToken = await createQaLocalAuthToken({ userId: SEED.userId, email: `${SEED.userId}@sploot.test`, secret });
   await context.setExtraHTTPHeaders({ [getQaLocalAuthHeader()]: qaToken });
   await context.addInitScript((seed) => {
-    localStorage.setItem('theme', 'light');
+    localStorage.setItem('theme', seed.theme);
     localStorage.setItem('sploot-sort-preferences', JSON.stringify({
       sortBy: 'shuffle',
       direction: 'desc',
       shuffleSeed: seed,
     }));
-  }, SEED.shuffleSeed);
+  }, { ...SEED, theme: spec.theme });
 
   const page = await context.newPage();
   const consoleErrors: string[] = [];
@@ -554,6 +575,7 @@ async function captureViewport(browser: Browser, baseUrl: string, secret: string
     const healthResponse = await healthResponsePromise;
     if (!healthResponse.ok()) throw new Error(`health probe returned HTTP ${healthResponse.status()}`);
     const state = await waitForRenderedApp(page);
+    const serviceWorker = await probeServiceWorker(page);
     const probeProof = await probeRepresentativeTiles(page);
     await page.waitForTimeout(500);
     if (navigation?.status() !== 200 || consoleErrors.length || pageErrors.length || failedRequests.length || abortedRequests.length || responseErrors.length || hmrRequests.length) {
@@ -580,6 +602,10 @@ async function captureViewport(browser: Browser, baseUrl: string, secret: string
     return {
       width: spec.width,
       height: spec.height,
+      theme: spec.theme,
+      serviceWorkerScope: serviceWorker.scope,
+      serviceWorkerActive: serviceWorker.activeScriptUrl.endsWith('/sw.js'),
+      serviceWorkerUpdateAttempted: serviceWorker.updateAttempted,
       viewportWidth: state.viewportWidth,
       viewportHeight: state.viewportHeight,
       initialImageRequestCount: probeProof.initial.count,
@@ -640,6 +666,9 @@ async function main() {
     SPLOOT_PWA_CAPTURE_MODE: 'enabled',
     NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: 'enabled',
     DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
+    // Explicit non-deployed marker under the containment taxonomy; the
+    // qa-local proof seam refuses to enable without it.
+    SPLOOT_DEPLOYMENT_ENV: 'test',
     SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
     SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
     SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
@@ -711,6 +740,12 @@ async function main() {
       screenshots,
     }, null, 2)}\n`);
     console.log(`Wrote ${CAPTURE_MANIFEST}`);
+
+    // Generation is only complete once the full live-provenance contract
+    // (HEAD/tree binding plus byte-exact source and build inventories)
+    // verifies against the evidence just written. Nonzero on any failure.
+    await run('node', ['scripts/validate-pwa-assets.mjs', '--provenance=live'], env);
+    console.log('Live provenance validation PASS');
   } finally {
     if (server?.pid) {
       server.kill('SIGTERM');

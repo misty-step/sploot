@@ -89,6 +89,12 @@
       "sizes": "390x844",
       "type": "image/png",
       "label": "Home screen on mobile"
+    },
+    {
+      "src": "/screenshots/mobile-home-dark.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "label": "Home screen on mobile in dark mode"
     }
   ],
   "share_target": {

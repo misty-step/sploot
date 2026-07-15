@@ -1,7 +1,7 @@
 const sharp = require('sharp');
 const fs = require('fs').promises;
 const path = require('path');
-const { BRAND_COLORS, PWA_ICONS, SUPPORTING_ICONS, SCREENSHOTS } = require('./pwa-assets.cjs');
+const { BRAND_COLORS, PWA_ICONS, SUPPORTING_ICONS } = require('./pwa-assets.cjs');
 
 const publicDir = path.join(__dirname, '..', 'public');
 const appDir = path.join(__dirname, '..', 'app');
@@ -65,46 +65,6 @@ function createWideTileSVG(width, height, markContents) {
   `;
 }
 
-function createScreenshotSVG(width, height, markContents) {
-  const scale = Math.min(width / 1920, height / 1080);
-  const cardX = width * 0.08;
-  const cardY = height * 0.1;
-  const cardWidth = width * 0.84;
-  const cardHeight = height * 0.8;
-  const tileY = cardY + cardHeight * 0.44;
-  const logoSize = Math.max(42, 170 * scale);
-  const logoX = cardX + width * 0.05;
-  const logoY = cardY + height * 0.08;
-  const gridColumns = width < 600 ? 2 : 4;
-  const gridRows = Math.ceil(4 / gridColumns);
-  const gridGap = Math.max(10, width * 0.02);
-  const gridWidth = cardWidth - width * 0.1;
-  const gridHeight = cardHeight * 0.44;
-  const tileWidth = (gridWidth - gridGap * (gridColumns - 1)) / gridColumns;
-  const tileHeight = Math.min(cardHeight * 0.27, (gridHeight - gridGap * (gridRows - 1)) / gridRows);
-  const tileColors = [BRAND_COLORS.cyan, BRAND_COLORS.magenta, BRAND_COLORS.purple, BRAND_COLORS.ink];
-  const tiles = tileColors.map((color, index) => {
-    const column = index % gridColumns;
-    const row = Math.floor(index / gridColumns);
-    const x = cardX + width * 0.05 + column * (tileWidth + gridGap);
-    const y = tileY + row * (tileHeight + gridGap);
-    return `<rect x="${x}" y="${y}" width="${tileWidth}" height="${tileHeight}" rx="${Math.max(10, 18 * scale)}" fill="${color}"/>`;
-  }).join('');
-
-  return `
-    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect width="${width}" height="${height}" fill="${BRAND_COLORS.paper}"/>
-      <rect x="${cardX}" y="${cardY}" width="${cardWidth}" height="${cardHeight}" rx="${Math.max(18, 32 * scale)}" fill="${BRAND_COLORS.panel}" stroke="${BRAND_COLORS.background}" stroke-width="${Math.max(3, 6 * scale)}"/>
-      <rect x="${cardX}" y="${cardY}" width="${cardWidth}" height="${height * 0.12}" rx="${Math.max(18, 32 * scale)}" fill="${BRAND_COLORS.background}"/>
-      <g transform="translate(${logoX} ${logoY}) scale(${logoSize / 32})">${markContents}</g>
-      <text x="${logoX + logoSize + width * 0.018}" y="${logoY + logoSize * 0.65}" font-family="Arial, sans-serif" font-size="${Math.max(24, 52 * scale)}" font-weight="700" fill="${BRAND_COLORS.ink}">sploot</text>
-      <text x="${cardX + width * 0.05}" y="${cardY + cardHeight * 0.3}" font-family="Arial, sans-serif" font-size="${Math.max(20, 42 * scale)}" font-weight="700" fill="${BRAND_COLORS.background}">your meme pile</text>
-      <text x="${cardX + width * 0.05}" y="${cardY + cardHeight * 0.37}" font-family="Arial, sans-serif" font-size="${Math.max(13, 24 * scale)}" fill="${BRAND_COLORS.background}">save it anywhere. find it with words.</text>
-      ${tiles}
-    </svg>
-  `;
-}
-
 async function writePng(svg, outputPath, width, height) {
   await sharp(Buffer.from(svg)).resize(width, height).png().toFile(outputPath);
 }
@@ -137,9 +97,7 @@ async function writeIco(outputPath, images) {
 
 async function generateIcons() {
   const iconsDir = path.join(publicDir, 'icons');
-  const screenshotsDir = path.join(publicDir, 'screenshots');
   await fs.mkdir(iconsDir, { recursive: true });
-  await fs.mkdir(screenshotsDir, { recursive: true });
   const markContents = await readBrandMark();
 
   console.log('🎨 Generating color PWA assets for Sploot...\n');
@@ -174,15 +132,9 @@ async function generateIcons() {
     console.log(`✅ Generated ${icon.name}`);
   }
 
-  for (const screenshot of SCREENSHOTS) {
-    await writePng(
-      createScreenshotSVG(screenshot.width, screenshot.height, markContents),
-      path.join(screenshotsDir, screenshot.name),
-      screenshot.width,
-      screenshot.height,
-    );
-    console.log(`✅ Generated screenshots/${screenshot.name}`);
-  }
+  // Screenshots are evidence from capture-pwa-screenshots.ts, not generated
+  // marketing placeholders. Keeping this generator away from that directory
+  // prevents a routine asset refresh from destroying live-flow proof.
 
   const safariSvg = `
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

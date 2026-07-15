@@ -35,8 +35,9 @@ const SUPPORTING_ICONS = [
 ];
 
 const SCREENSHOTS = [
-  { name: 'desktop-home.png', width: 1920, height: 1080 },
-  { name: 'mobile-home.png', width: 390, height: 844 },
+  { name: 'desktop-home.png', width: 1920, height: 1080, theme: 'light' },
+  { name: 'mobile-home.png', width: 390, height: 844, theme: 'light' },
+  { name: 'mobile-home-dark.png', width: 390, height: 844, theme: 'dark' },
 ];
 
 const SCREENSHOT_CAPTURE = {

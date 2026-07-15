@@ -417,6 +417,38 @@ describe('strict DigitalOcean response contracts', () => {
     }, { mode: 'ga' })).toThrow('public_shape_mismatch');
   });
 
+  it('rejects any deployment spec that binds a QA/proof capture switch', () => {
+    const required = [
+      { key: 'SPLOOT_ENROLLMENT_MODE', value: 'ga' },
+      { key: 'SPLOOT_DEPLOYMENT_ENV', value: 'production' },
+      { key: 'SPLOOT_DEPLOYMENT_APP_ID', value: '${APP_ID}' },
+      { key: 'SPLOOT_DEPLOYMENT_COMMIT', value: '${_self.COMMIT_HASH}' },
+      { key: 'SPLOOT_DEPLOYMENT_CHANGE_ID', value: 'change-test' },
+    ];
+    const binding = { mode: 'ga', marker: 'production', changeId: 'change-test' };
+    expect(assertSpecBindings({ services: [{ name: 'web', envs: required }] }, binding)).toBeTruthy();
+    for (const key of [
+      'SPLOOT_QA_AUTH_MODE',
+      'SPLOOT_PWA_CAPTURE_MODE',
+      'SPLOOT_QA_AUTH_SECRET',
+      'NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE',
+      'NEXT_PUBLIC_SPLOOT_PWA_CAPTURE_MODE',
+      'SPLOOT_QA_DEPLOYMENT_ID',
+      'SPLOOT_QA_DEPLOYMENT_ENV',
+      'SPLOOT_QA_AUDIENCE',
+    ]) {
+      // Web-scoped binding is rejected even when explicitly disabled.
+      expect(() => assertSpecBindings({ services: [
+        { name: 'web', envs: [...required, { key, value: 'disabled' }] },
+      ] }, binding)).toThrow(/QA\/proof/);
+      // App-root scoped binding is equally rejected.
+      expect(() => assertSpecBindings({
+        envs: [{ key, value: 'enabled' }],
+        services: [{ name: 'web', envs: required }],
+      }, binding)).toThrow(/QA\/proof/);
+    }
+  });
+
   it('resolves only the web component and rejects scope ambiguity', () => {
     const required = [
       { key: 'SPLOOT_ENROLLMENT_MODE', value: 'ga' },

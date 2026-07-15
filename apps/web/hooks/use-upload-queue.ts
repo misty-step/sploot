@@ -1,71 +1,87 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useOffline } from './use-offline';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { error as logError } from '@/lib/logger';
 import { track } from '@/lib/analytics';
+import { getUploadQueueManager } from '@/lib/upload-queue';
+import { getUploadNetworkClient } from '@/lib/upload/upload-network-client';
+import { useOffline } from './use-offline';
 
 export interface QueuedUpload {
   id: string;
+  persistedId: string;
   file: {
     name: string;
     size: number;
     type: string;
     lastModified: number;
   };
-  blobUrl?: string;
   status: 'queued' | 'uploading' | 'success' | 'error';
   error?: string;
   addedAt: number;
   retryCount: number;
 }
 
-const STORAGE_KEY = 'sploot-upload-queue';
-const MAX_RETRIES = 3;
+function toQueuedUpload(upload: {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  lastModified: number;
+  addedAt: number;
+  status: string;
+  error?: string;
+  retryCount: number;
+}): QueuedUpload {
+  return {
+    id: upload.id,
+    persistedId: upload.id,
+    file: {
+      name: upload.filename,
+      size: upload.size,
+      type: upload.mimeType,
+      lastModified: upload.lastModified,
+    },
+    status: upload.status === 'failed' ? 'error' : upload.status === 'uploading' ? 'uploading' : 'queued',
+    error: upload.error,
+    addedAt: upload.addedAt,
+    retryCount: upload.retryCount,
+  };
+}
 
 export function useUploadQueue() {
   const { isOffline } = useOffline();
   const [queue, setQueue] = useState<QueuedUpload[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const queueManager = useMemo(() => getUploadQueueManager(), []);
+  const uploadClient = useMemo(() => getUploadNetworkClient(), []);
 
-  // Load queue from localStorage on mount
-  useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        queueMicrotask(() => {
-          setQueue(parsed.filter((item: QueuedUpload) =>
-            item.status === 'queued' || item.status === 'error'
-          ));
-        });
-      } catch (error) {
-        logError('Error loading upload queue:', error);
-      }
+  const refreshQueue = useCallback(async () => {
+    try {
+      await queueManager.init();
+      const pending = await queueManager.getPendingUploads();
+      setQueue(pending.map(toQueuedUpload));
+    } catch (error) {
+      logError('Error loading upload queue:', error);
     }
-  }, []);
+  }, [queueManager]);
 
-  // Save queue to localStorage whenever it changes
   useEffect(() => {
-    if (queue.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }, [queue]);
+    queueMicrotask(() => {
+      void refreshQueue();
+    });
+  }, [refreshQueue]);
 
-  // Add file to queue
-  const addToQueue = useCallback((file: File) => {
+  const addToQueue = useCallback(async (file: File) => {
     track({
       name: 'upload_file_selected',
-      properties: {
-        count: 1,
-        totalSize: file.size,
-      },
+      properties: { count: 1, totalSize: file.size },
     });
 
+    const persistedId = await queueManager.addUpload(file);
     const queuedUpload: QueuedUpload = {
-      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: persistedId,
+      persistedId,
       file: {
         name: file.name,
         size: file.size,
@@ -76,123 +92,56 @@ export function useUploadQueue() {
       addedAt: Date.now(),
       retryCount: 0,
     };
-
-    setQueue((prev) => [...prev, queuedUpload]);
-
-    // Store file data as base64 if offline
-    if (isOffline) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const base64 = e.target?.result as string;
-        setQueue((prev) =>
-          prev.map((item) =>
-            item.id === queuedUpload.id
-              ? { ...item, blobUrl: base64 }
-              : item
-          )
-        );
-      };
-      reader.readAsDataURL(file);
-    }
-
+    setQueue((previous) => [...previous, queuedUpload]);
     return queuedUpload;
-  }, [isOffline]);
+  }, [queueManager]);
 
-  // Remove from queue
   const removeFromQueue = useCallback((id: string) => {
-    setQueue((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+    setQueue((previous) => previous.filter((item) => item.id !== id));
+    void queueManager.removeUpload(id).catch((error) => logError('Error removing upload queue item:', error));
+  }, [queueManager]);
 
-  // Update queue item
   const updateQueueItem = useCallback((id: string, updates: Partial<QueuedUpload>) => {
-    setQueue((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, ...updates } : item
-      )
-    );
-  }, []);
+    setQueue((previous) => previous.map((item) => item.id === id ? { ...item, ...updates } : item));
+    if (updates.status) {
+      const persistedStatus: 'pending' | 'uploading' | 'failed' = updates.status === 'error' ? 'failed' : updates.status === 'uploading' ? 'uploading' : 'pending';
+      void queueManager.updateUploadStatus(id, persistedStatus, updates.error).catch((error) => logError('Error updating upload queue item:', error));
+    }
+  }, [queueManager]);
 
-  // Process queue when online
   const processQueue = useCallback(async () => {
     if (isOffline || isProcessing) return;
-
-    const pendingItems = queue.filter(
-      (item) => item.status === 'queued' ||
-      (item.status === 'error' && item.retryCount < MAX_RETRIES)
-    );
-
-    if (pendingItems.length === 0) return;
-
     setIsProcessing(true);
-
-    for (const item of pendingItems) {
-      try {
-        updateQueueItem(item.id, { status: 'uploading' });
-        track({
-          name: 'upload_started',
-          properties: {
-            assetId: item.id,
-            size: item.file.size,
-          },
-        });
-
-        // Convert base64 back to File if needed
-        let file: File;
-        if (item.blobUrl && item.blobUrl.startsWith('data:')) {
-          const response = await fetch(item.blobUrl);
-          const blob = await response.blob();
-          file = new File([blob], item.file.name, { type: item.file.type });
-        } else {
-          // Try to reconstruct file from stored metadata
-          // This won't work for actual file content, but allows the upload flow to continue
-          file = new File([], item.file.name, { type: item.file.type });
+    try {
+      const pending = await queueManager.getPendingUploads();
+      for (const upload of pending) {
+        try {
+          await queueManager.updateUploadStatus(upload.id, 'uploading');
+          setQueue((previous) => previous.map((item) => item.id === upload.id ? { ...item, status: 'uploading' } : item));
+          const file = await queueManager.toFile(upload);
+          const result = await uploadClient.uploadFile(file);
+          if (!result.success) throw new Error(result.error || 'Upload failed');
+          await queueManager.removeUpload(upload.id);
+          setQueue((previous) => previous.filter((item) => item.id !== upload.id));
+          track({ name: 'upload_completed', properties: { assetId: upload.id, duration: 0, size: upload.size } });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Upload failed';
+          await queueManager.updateUploadStatus(upload.id, 'failed', message);
+          setQueue((previous) => previous.map((item) => item.id === upload.id ? {
+            ...item,
+            status: 'error',
+            error: message,
+            retryCount: item.retryCount + 1,
+          } : item));
+          track({ name: 'upload_failed', properties: { reason: message, size: upload.size } });
         }
-
-        // Here you would call your actual upload function
-        // For now, we'll simulate with a timeout
-        const uploadStart = performance.now();
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        const duration = performance.now() - uploadStart;
-
-        // Mark as successful and remove from queue
-        updateQueueItem(item.id, { status: 'success' });
-        track({
-          name: 'upload_completed',
-          properties: {
-            assetId: item.id,
-            duration: Math.round(duration),
-            size: item.file.size,
-          },
-        });
-        setTimeout(() => removeFromQueue(item.id), 2000);
-      } catch (error) {
-        const newRetryCount = item.retryCount + 1;
-        updateQueueItem(item.id, {
-          status: newRetryCount >= MAX_RETRIES ? 'error' : 'queued',
-          error: error instanceof Error ? error.message : 'Upload failed',
-          retryCount: newRetryCount,
-        });
-        track({
-          name: 'upload_failed',
-          properties: {
-            reason: error instanceof Error ? error.message : 'unknown',
-            size: item.file.size,
-          },
-        });
       }
+    } catch (error) {
+      logError('Error processing upload queue:', error);
+    } finally {
+      setIsProcessing(false);
     }
-
-    setIsProcessing(false);
-  }, [isOffline, isProcessing, queue, updateQueueItem, removeFromQueue]);
-
-  // Process queue when coming back online
-  useEffect(() => {
-    if (!isOffline && queue.length > 0) {
-      queueMicrotask(() => {
-        void processQueue();
-      });
-    }
-  }, [isOffline, queue.length, processQueue]);
+  }, [isOffline, isProcessing, queueManager, uploadClient]);
 
   return {
     queue,

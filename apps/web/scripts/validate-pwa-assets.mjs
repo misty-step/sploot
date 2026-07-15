@@ -35,6 +35,7 @@ const VALID_PNG = Buffer.from(
   'base64',
 );
 const CAPTURE_MANIFEST_FILE = process.env.PWA_CAPTURE_MANIFEST ?? join(publicDir, 'screenshots', 'capture-manifest.json');
+const SERVICE_WORKER_FILE = process.env.PWA_SERVICE_WORKER_FILE ?? join(publicDir, 'sw.js');
 const repoDir = resolve(publicDir, '../..', '..');
 const execFileAsync = promisify(execFile);
 const SOURCE_PATHS = ['apps/web', 'packages/common', 'scripts', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'turbo.json', '.npmrc'];
@@ -45,6 +46,56 @@ const BUILD_INVENTORY_EXCLUSIONS = ['apps/web/.next/cache/** — Next incrementa
 
 function fail(message) {
   throw new Error(message);
+}
+
+/**
+ * Provenance verification runs in one of two explicit tiers:
+ *
+ * - `live`: the full capture-state contract — the manifest's base commit/tree
+ *   must equal the repository HEAD, and every recorded source/build inventory
+ *   entry must byte-match the live worktree and `.next` production artifact.
+ *   This is the tier the capture rig itself enforces (nonzero on failure)
+ *   immediately after writing the manifest, before the evidence is committed.
+ * - `recorded`: the deterministic subset that must keep holding at any later
+ *   commit (CI has no production build and a different merge commit): manifest
+ *   structure, screenshot-hash binding, rendered-proof gates, inventory
+ *   shape/path safety, and recomputation of the provenance digest over the
+ *   recorded base commit/tree + contract + inventories. Any tampering with the
+ *   recorded evidence still fails; only live-file byte comparison is deferred
+ *   to the capture-time `live` run.
+ *
+ * `auto` resolves to `live` exactly when the repository is still in the
+ * capture state (production build present and HEAD equals the manifest's base
+ * commit) and prints the resolved tier — never a silent downgrade.
+ */
+async function resolveProvenanceMode(manifest) {
+  const flag = process.argv.find((arg) => arg.startsWith('--provenance='))?.slice('--provenance='.length) ?? 'auto';
+  if (!['auto', 'live', 'recorded'].includes(flag)) fail(`unknown --provenance mode: ${flag}`);
+  if (flag !== 'auto') {
+    console.log(`Provenance mode: ${flag} (explicit --provenance flag)`);
+    return flag;
+  }
+  const buildPresent = await lstat(resolve(repoDir, 'apps/web/.next/BUILD_ID')).then(() => true).catch(() => false);
+  const currentHead = await gitOutput(['rev-parse', 'HEAD']).catch(() => null);
+  const captureState = buildPresent && currentHead !== null && currentHead === manifest.gitCommit;
+  const mode = captureState ? 'live' : 'recorded';
+  const reason = captureState
+    ? 'repository is in the capture state (production build present, HEAD matches capture base commit)'
+    : `live source/build byte verification deferred to the capture-time run (${buildPresent ? '' : 'no production build; '}capture base ${String(manifest.gitCommit).slice(0, 12)} vs HEAD ${String(currentHead).slice(0, 12)})`;
+  console.log(`Provenance mode: ${mode} (${reason})`);
+  return mode;
+}
+
+function validateInventoryShape(entries, label) {
+  if (!Array.isArray(entries) || entries.length === 0) fail(`${label} inventory is empty`);
+  for (const entry of entries) {
+    if (!entry?.path || !/^(file|symlink)$/.test(entry.kind) || !Number.isInteger(entry.mode) || !/^[a-f0-9]{64}$/.test(entry.sha256 ?? '')) fail(`${label} inventory entry is malformed`);
+    if (entry.path.startsWith('/') || entry.path.includes('\\') || entry.path.split('/').some((segment) => segment === '..' || segment === '.')) fail(`${label} inventory path is unsafe: ${entry.path}`);
+    const file = resolve(repoDir, entry.path);
+    if (file !== repoDir && !file.startsWith(`${repoDir}/`)) fail(`${label} inventory path escapes repository root: ${entry.path}`);
+    if (entry.kind === 'file' && !Number.isInteger(entry.bytes)) fail(`${label} inventory byte count is malformed: ${entry.path}`);
+    if (entry.kind === 'symlink' && typeof entry.symlinkTarget !== 'string') fail(`${label} inventory symlink target is missing: ${entry.path}`);
+  }
 }
 
 function expectedSize(value) {
@@ -94,12 +145,9 @@ async function readAsset(file, label) {
 }
 
 async function validateInventory(entries, label) {
-  if (!Array.isArray(entries) || entries.length === 0) fail(`${label} inventory is empty`);
+  validateInventoryShape(entries, label);
   for (const entry of entries) {
-    if (!entry?.path || !/^(file|symlink)$/.test(entry.kind) || !Number.isInteger(entry.mode) || !/^[a-f0-9]{64}$/.test(entry.sha256 ?? '')) fail(`${label} inventory entry is malformed`);
-    if (entry.path.startsWith('/') || entry.path.includes('\\') || entry.path.split('/').some((segment) => segment === '..' || segment === '.')) fail(`${label} inventory path is unsafe: ${entry.path}`);
     const file = resolve(repoDir, entry.path);
-    if (file !== repoDir && !file.startsWith(`${repoDir}/`)) fail(`${label} inventory path escapes repository root: ${entry.path}`);
     const stat = await lstat(file).catch(() => fail(`${label} inventory file is missing: ${entry.path}`));
     if ((stat.isSymbolicLink() ? 'symlink' : 'file') !== entry.kind || (stat.mode & 0o7777) !== entry.mode) fail(`${label} inventory metadata changed: ${entry.path}`);
     if (stat.isSymbolicLink()) {
@@ -262,6 +310,17 @@ function assertManifest(manifest) {
   if (!fileParam.accept?.includes('image/png') || !fileParam.accept?.includes('image/jpeg')) fail('manifest share_target MIME contract is incomplete');
 }
 
+async function validateServiceWorker() {
+  const source = (await readAsset(SERVICE_WORKER_FILE, 'service worker')).toString('utf8');
+  if (!/skipWaiting\s*\(\)/.test(source) || !/clientsClaim\s*\(\)/.test(source)) {
+    fail('service worker install/update contract is missing skipWaiting or clientsClaim');
+  }
+  if (!/precacheAndRoute\s*\(/.test(source)) fail('service worker does not precache the production shell');
+  if (!source.includes('user-images') || !source.includes('api-search')) {
+    fail('service worker runtime cache contract is incomplete');
+  }
+}
+
 function localAssets() {
   const assets = [];
   for (const icon of PWA_ICONS) assets.push(imageAsset(join(publicDir, 'icons', icon.name), `/icons/${icon.name}`, icon.name, 'image/png', icon.size, icon.size, { background: BRAND_COLORS.background, margin: 0.1, requireColor: true }));
@@ -316,27 +375,32 @@ async function validateScreenshotCaptureManifest() {
   if (JSON.stringify(manifest.buildInventoryExclusions) !== JSON.stringify(BUILD_INVENTORY_EXCLUSIONS)) fail('screenshot capture build exclusions are missing or unjustified');
   const expectedContract = { captureVersion: SCREENSHOT_CAPTURE.captureVersion, seedId: SCREENSHOT_CAPTURE.seedId, route: SCREENSHOT_CAPTURE.route, userId: SCREENSHOT_CAPTURE.userId, assetCount: SCREENSHOT_CAPTURE.assetCount, shuffleSeed: SCREENSHOT_CAPTURE.shuffleSeed, viewportContract: SCREENSHOTS, serverMode: 'production-start', lifecycle: manifest.lifecycle, buildInventoryExclusions: BUILD_INVENTORY_EXCLUSIONS, deploymentIdentity: 'local-pwa-capture-v1', deploymentEnvironment: 'local-qa', audience: 'sploot-pwa-capture' };
   if (JSON.stringify(manifest.provenanceContract) !== JSON.stringify(expectedContract)) fail('screenshot capture provenance contract is not canonical');
-  const expectedSource = await inventoryPaths(await canonicalSourcePaths());
-  const expectedBuild = await inventoryPaths(await canonicalBuildPaths());
-  if (JSON.stringify(manifest.sourceInventory) !== JSON.stringify(expectedSource)) fail('manifest source inventory is not the canonical repository source set');
-  if (JSON.stringify(manifest.buildInventory) !== JSON.stringify(expectedBuild)) fail('manifest build inventory is not the complete canonical production artifact');
-  if (manifest.digestInputCount !== expectedSource.length + expectedBuild.length) fail('manifest digest input count is incomplete');
-  await validateInventory(expectedSource, 'source');
-  await validateInventory(expectedBuild, 'production build');
-  const currentHead = await gitOutput(['rev-parse', 'HEAD']);
-  const currentTree = await gitOutput(['rev-parse', 'HEAD^{tree}']);
-  if (manifest.gitCommit !== currentHead || manifest.gitTree !== currentTree) fail('capture base commit/tree no longer matches the repository');
-  const recomputedDigest = createHash('sha256').update(JSON.stringify({ baseCommit: currentHead, baseTree: currentTree, contract: manifest.provenanceContract, source: expectedSource, build: expectedBuild })).digest('hex');
-  if (recomputedDigest !== manifest.worktreeDigest) fail('screenshot capture provenance digest does not match its source/build inventory');
+  const mode = await resolveProvenanceMode(manifest);
+  validateInventoryShape(manifest.sourceInventory, 'source');
+  validateInventoryShape(manifest.buildInventory, 'production build');
+  if (manifest.digestInputCount !== manifest.sourceInventory.length + manifest.buildInventory.length) fail('manifest digest input count is incomplete');
+  const recomputedDigest = createHash('sha256').update(JSON.stringify({ baseCommit: manifest.gitCommit, baseTree: manifest.gitTree, contract: manifest.provenanceContract, source: manifest.sourceInventory, build: manifest.buildInventory })).digest('hex');
+  if (recomputedDigest !== manifest.worktreeDigest) fail('screenshot capture provenance digest does not match its recorded source/build inventory');
+  if (mode === 'live') {
+    const expectedSource = await inventoryPaths(await canonicalSourcePaths());
+    const expectedBuild = await inventoryPaths(await canonicalBuildPaths());
+    if (JSON.stringify(manifest.sourceInventory) !== JSON.stringify(expectedSource)) fail('manifest source inventory is not the canonical repository source set');
+    if (JSON.stringify(manifest.buildInventory) !== JSON.stringify(expectedBuild)) fail('manifest build inventory is not the complete canonical production artifact');
+    await validateInventory(expectedSource, 'source');
+    await validateInventory(expectedBuild, 'production build');
+    const currentHead = await gitOutput(['rev-parse', 'HEAD']);
+    const currentTree = await gitOutput(['rev-parse', 'HEAD^{tree}']);
+    if (manifest.gitCommit !== currentHead || manifest.gitTree !== currentTree) fail('capture base commit/tree no longer matches the repository');
+  }
   for (const screenshot of SCREENSHOTS) {
     const proof = manifest.screenshots?.[screenshot.name];
-    if (!proof || proof.width !== screenshot.width || proof.height !== screenshot.height || !/^[a-f0-9]{64}$/.test(proof.sha256 ?? '')) {
+    if (!proof || proof.width !== screenshot.width || proof.height !== screenshot.height || proof.theme !== screenshot.theme || !/^[a-f0-9]{64}$/.test(proof.sha256 ?? '')) {
       fail(`screenshot capture proof is missing/incorrect for ${screenshot.name}`);
     }
     const bytes = await readAsset(join(publicDir, 'screenshots', screenshot.name), screenshot.name);
     const digest = createHash('sha256').update(bytes).digest('hex');
     if (digest !== proof.sha256) fail(`${screenshot.name} does not match its rendered capture proof hash`);
-    if (proof.viewportWidth !== screenshot.width || proof.viewportHeight !== screenshot.height || proof.assetCount !== SCREENSHOT_CAPTURE.assetCount || proof.loadedImageCount < 1 || proof.fullyInsideImageCount < SCREENSHOT_CAPTURE.minFullyInsideImages || proof.incompleteVisibleImageCount !== 0 || proof.visibleTileCount < SCREENSHOT_CAPTURE.minVisibleTiles || proof.visibleTileOpacityMin < 0.5 || proof.initialImageRequestCount >= SCREENSHOT_CAPTURE.assetCount || proof.initialImageRequestBytes <= 0 || proof.postScrollImageRequestCount < proof.initialImageRequestCount || proof.postScrollImageRequestCount > SCREENSHOT_CAPTURE.assetCount || !(proof.postScrollLoadedImageCount > proof.initialLoadedImageCount || proof.postScrollQaImageCount > proof.initialQaImageCount || proof.postScrollImageRequestCount > proof.initialImageRequestCount) || !Array.isArray(proof.initialImageRequestUrls) || proof.initialImageRequestUrls.length !== proof.initialImageRequestCount || !Array.isArray(proof.postScrollImageRequestUrls) || proof.postScrollImageRequestUrls.length !== proof.postScrollImageRequestCount || proof.scrollProbeCount < SCREENSHOT_CAPTURE.minScrollProbeCount || !Array.isArray(proof.scrollProbeUrls) || proof.scrollProbeUrls.length !== proof.scrollProbeCount || !Array.isArray(proof.scrollProbes) || proof.scrollProbes.length !== proof.scrollProbeCount || proof.debugOverlayCount !== 0 || proof.hmrRequests !== 0 || proof.responseErrors !== 0 || proof.horizontalOverflowPx > 2 || proof.consoleErrors !== 0 || proof.pageErrors !== 0 || proof.failedRequests !== 0 || proof.abortedRequests !== 0 || !Array.isArray(proof.abortedRequestUrls) || proof.abortedRequestUrls.length !== 0 || proof.assertionWindowClosed !== true || proof.requestFailureAccounting !== 'assertion-window-only' || !Array.isArray(proof.teardownAbortUrls)) {
+    if (proof.viewportWidth !== screenshot.width || proof.viewportHeight !== screenshot.height || proof.assetCount !== SCREENSHOT_CAPTURE.assetCount || proof.loadedImageCount < 1 || proof.fullyInsideImageCount < SCREENSHOT_CAPTURE.minFullyInsideImages || proof.incompleteVisibleImageCount !== 0 || proof.visibleTileCount < SCREENSHOT_CAPTURE.minVisibleTiles || proof.visibleTileOpacityMin < 0.5 || proof.serviceWorkerScope !== new URL(manifest.url).origin + '/' || proof.serviceWorkerActive !== true || proof.serviceWorkerUpdateAttempted !== true || proof.initialImageRequestCount >= SCREENSHOT_CAPTURE.assetCount || proof.initialImageRequestBytes <= 0 || proof.postScrollImageRequestCount < proof.initialImageRequestCount || proof.postScrollImageRequestCount > SCREENSHOT_CAPTURE.assetCount || !(proof.postScrollLoadedImageCount > proof.initialLoadedImageCount || proof.postScrollQaImageCount > proof.initialQaImageCount || proof.postScrollImageRequestCount > proof.initialImageRequestCount) || !Array.isArray(proof.initialImageRequestUrls) || proof.initialImageRequestUrls.length !== proof.initialImageRequestCount || !Array.isArray(proof.postScrollImageRequestUrls) || proof.postScrollImageRequestUrls.length !== proof.postScrollImageRequestCount || proof.scrollProbeCount < SCREENSHOT_CAPTURE.minScrollProbeCount || !Array.isArray(proof.scrollProbeUrls) || proof.scrollProbeUrls.length !== proof.scrollProbeCount || !Array.isArray(proof.scrollProbes) || proof.scrollProbes.length !== proof.scrollProbeCount || proof.debugOverlayCount !== 0 || proof.hmrRequests !== 0 || proof.responseErrors !== 0 || proof.horizontalOverflowPx > 2 || proof.consoleErrors !== 0 || proof.pageErrors !== 0 || proof.failedRequests !== 0 || proof.abortedRequests !== 0 || !Array.isArray(proof.abortedRequestUrls) || proof.abortedRequestUrls.length !== 0 || proof.assertionWindowClosed !== true || proof.requestFailureAccounting !== 'assertion-window-only' || !Array.isArray(proof.teardownAbortUrls)) {
       fail(`${screenshot.name} capture proof reports incomplete/unstable rendered app state`);
     }
     for (const probe of proof.scrollProbes) {
@@ -350,6 +414,7 @@ async function validateScreenshotCaptureManifest() {
 async function validateLocal() {
   const manifest = JSON.parse((await readAsset(join(publicDir, 'manifest.json'), 'manifest.json')).toString('utf8'));
   assertManifest(manifest);
+  await validateServiceWorker();
   await validateBrowserConfig();
   await validateScreenshotCaptureManifest();
   const assets = localAssets();

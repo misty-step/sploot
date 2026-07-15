@@ -848,7 +848,7 @@ export function UploadZone({
 
           // If offline, queue the file instead of uploading
           if (isOffline && !error) {
-            const queueItem = addToQueue(uploadFile);
+            const queueItem = await addToQueue(uploadFile);
             const metadata: FileMetadata = {
               id: queueItem.id,
               name: uploadFile.name,
@@ -861,12 +861,6 @@ export function UploadZone({
             newFiles.push(metadata);
             fileObjects.current.set(queueItem.id, uploadFile);
 
-            // Also persist to IndexedDB for recovery
-            try {
-              await uploadQueueManager.addUpload(uploadFile);
-            } catch (err) {
-              console.error('[UploadZone] Failed to persist upload:', err);
-            }
           } else {
             const id = `${Date.now()}-${Math.random()}`;
             const metadata: FileMetadata = {
