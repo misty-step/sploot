@@ -10,7 +10,7 @@
       "canaryAllocationUsd": 0.02, "clerkMru": 1
     },
     {
-      "id": "collector", "label": "Collector — 10 GB", "priceUsd": 12,
+      "id": "collector", "label": "Collector — 10 GB", "priceUsd": 12.01,
       "sourceTrashStorageGb": 10, "uploads": 600, "uniqueTextQueries": 900,
       "blobDeliveryGb": 10, "edgeRequests": 50000, "blobSimpleOps": 30000, "blobAdvancedOps": 1500,
       "databaseStorageGb": 0.1, "neonHistoryGb": 0.1, "neonCuHours": 0.5,

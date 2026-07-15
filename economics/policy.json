@@ -1,16 +1,18 @@
 {
   "schemaVersion": 1,
   "rateFreshnessDays": 30,
+  "liveUsageFreshnessHours": 48,
   "freeFullAllowanceAccounts": 75,
+  "planBudgetSemantics": "monthlyInfrastructureUsd is an inclusive hard cap in unrounded USD for each scenario's high-sensitivity full allowance; the cap must cover exact modeled infrastructure cost.",
   "sensitivity": {
     "low": {"renditionMultiplier": 1.05, "originMissRatio": 0.05, "inferenceAttemptMultiplier": 1, "databaseComputeMultiplier": 0.75, "stripeVariableSurcharge": 0},
     "base": {"renditionMultiplier": 1.1, "originMissRatio": 0.15, "inferenceAttemptMultiplier": 1.05, "databaseComputeMultiplier": 1, "stripeVariableSurcharge": 0.015},
     "high": {"renditionMultiplier": 1.2, "originMissRatio": 0.3, "inferenceAttemptMultiplier": 1.2, "databaseComputeMultiplier": 1.5, "stripeVariableSurcharge": 0.025}
   },
   "planBudgets": {
-    "free": {"monthlyInfrastructureUsd": 0.28, "dailyInferenceUsd": 0.00876, "monthlyInferenceUsd": 0.1752, "dailyInferenceAttempts": 12, "monthlyInferenceAttempts": 240},
-    "collector": {"monthlyInfrastructureUsd": 2.75, "dailyInferenceUsd": 0.0657, "monthlyInferenceUsd": 1.314, "dailyInferenceAttempts": 90, "monthlyInferenceAttempts": 1800},
-    "archive": {"monthlyInfrastructureUsd": 12.5, "dailyInferenceUsd": 0.219, "monthlyInferenceUsd": 3.504, "dailyInferenceAttempts": 300, "monthlyInferenceAttempts": 4800}
+    "free": {"monthlyInfrastructureUsd": 0.3084958, "dailyInferenceUsd": 0.00876, "monthlyInferenceUsd": 0.1752, "dailyInferenceAttempts": 12, "monthlyInferenceAttempts": 240},
+    "collector": {"monthlyInfrastructureUsd": 2.6522, "dailyInferenceUsd": 0.0657, "monthlyInferenceUsd": 1.314, "dailyInferenceAttempts": 90, "monthlyInferenceAttempts": 1800},
+    "archive": {"monthlyInfrastructureUsd": 11.72595, "dailyInferenceUsd": 0.219, "monthlyInferenceUsd": 3.504, "dailyInferenceAttempts": 300, "monthlyInferenceAttempts": 4800}
   },
   "global": {
     "preGaDailyVariableUsd": 0.75,
@@ -18,12 +20,13 @@
     "replicateDailyUsd": 0.5,
     "replicateDailyAttempts": 684,
     "replicateMonthlyUsd": 15,
+    "replicateMonthlyAttempts": 20547,
     "paidMonthlyFormula": "25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions",
     "paidDailyFormula": "paidMonthlyBudget / 30"
   },
   "providerHardCaps": [
     {"provider": "Application admission", "enforcement": "Postgres transactional per-plan counters plus global dollar ledger; deny before Blob, Replicate, or public-delivery work"},
-    {"provider": "Replicate", "enforcement": "Repository daily/monthly dollar-derived attempt counters and embeddings kill switch; no provider cap is relied upon"},
+    {"provider": "Replicate", "enforcement": "Repository UTC-daily and UTC-calendar-month dollar-derived attempt counters plus embeddings kill switch; no provider cap is relied upon"},
     {"provider": "Vercel Blob/CDN", "enforcement": "Vercel Spend Management action plus application byte/request egress leases; verify provider action before GA"},
     {"provider": "Neon", "enforcement": "Autosuspend, CU ceiling, transfer alert, and application query/work admission; exact plan controls need provider authority"},
     {"provider": "DigitalOcean", "enforcement": "One fixed web instance, fixed component sizes/counts, scheduled-job runtime budgets, and team billing alerts"},

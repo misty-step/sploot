@@ -63,9 +63,9 @@
       "capabilities": ["blob-egress"],
       "value": 0.06,
       "unit": "GB origin transfer",
-      "includedAllowance": "Hobby: up to 10 GB; Pro: usage-based under the plan's shared monthly credit",
-      "planAssumption": "North America on-demand rate; sensitivity varies uncached-origin share from 5% to 30%",
-      "sourceUrl": "https://vercel.com/docs/limits",
+      "includedAllowance": "Hobby: first 10 GB; Pro: N/A",
+      "planAssumption": "North America on-demand rate; policy sensitivity supplies the uncached-origin share",
+      "sourceUrl": "https://vercel.com/docs/manage-cdn-usage",
       "retrievedAt": "2026-07-15"
     },
     {
@@ -75,8 +75,9 @@
       "value": 0.00073,
       "unit": "typical prediction",
       "includedAllowance": null,
-      "planAssumption": "krthr/clip-embeddings estimate; high sensitivity adds 20% potentially billed retry/cancel overhead",
+      "planAssumption": "krthr/clip-embeddings typical estimate; policy sensitivity supplies potentially billed retry/cancel overhead",
       "sourceUrl": "https://replicate.com/krthr/clip-embeddings",
+      "sourceEvidence": "Retrieved model page states approximately $0.00073 to run and 1369 runs per $1.",
       "retrievedAt": "2026-07-15"
     },
     {

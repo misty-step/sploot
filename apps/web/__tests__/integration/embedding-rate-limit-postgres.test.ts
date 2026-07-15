@@ -5,6 +5,7 @@ import {
   acquireEmbeddingRateLimit,
   releaseEmbeddingRateLimit,
   EMBEDDING_DAILY_BUDGET,
+  EMBEDDING_MONTHLY_BUDGET,
   EMBEDDING_GLOBAL_CONCURRENCY_LIMIT,
   EMBEDDING_GLOBAL_WINDOW_LIMIT,
   EMBEDDING_USER_WINDOW_LIMIT,
@@ -39,6 +40,7 @@ async function resetLimiterState(): Promise<void> {
         { key: `embedding:rate:global:${TEST_WINDOW_ID}` },
         { key: 'embedding:daily:2026-07-10' },
         { key: 'embedding:daily:2026-07-11' },
+        { key: 'embedding:monthly:2026-07' },
       ],
     },
   });
@@ -183,5 +185,32 @@ describeWithDatabase('Postgres embedding limiter', () => {
       'embedding:daily:2026-07-10',
       'embedding:daily:2026-07-11',
     ]);
+  });
+
+  it('enforces the versioned monthly global budget without an over-budget increment', async () => {
+    await prisma.$executeRaw`
+      INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
+      VALUES (
+        'embedding:monthly:2026-07',
+        ${EMBEDDING_MONTHLY_BUDGET},
+        NOW() + INTERVAL '32 days',
+        NOW()
+      )
+    `;
+
+    const denied = await acquireEmbeddingDailyBudget(TEST_DAY_ONE_MS);
+    expect(denied).toMatchObject({
+      allowed: false,
+      reason: 'monthly_budget',
+      count: EMBEDDING_MONTHLY_BUDGET,
+      limit: EMBEDDING_MONTHLY_BUDGET,
+    });
+
+    const rows = await prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT "count"
+      FROM "embedding_rate_buckets"
+      WHERE "key" = 'embedding:monthly:2026-07'
+    `;
+    expect(rows[0]?.count).toBe(EMBEDDING_MONTHLY_BUDGET);
   });
 });

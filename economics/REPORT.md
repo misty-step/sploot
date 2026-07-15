@@ -5,7 +5,7 @@ Generated deterministically from the versioned inputs in this directory. Rates w
 ## Recommendation
 
 - **Cardless Free:** 0.5 GB user-visible source-plus-trash allowance (rendition overhead is reserved separately), 100 new indexes and 100 novel text embeddings per month, 1 GB delivery, and at most 75 project-wide full-allowance equivalents before waitlist/paid admission. High-case variable cost is $0.31 per full account and $23.14 for the pool, below the $25.00 subsidy ceiling.
-- **Collector:** $12/month, 10 GB, 600 new indexes, 900 novel text embeddings, and 10 GB delivery. High-case COGS is $3.60 and gross margin is 70.0%. The computed 70%-margin price floor is $12.00.
+- **Collector:** $12.01/month, 10 GB, 600 new indexes, 900 novel text embeddings, and 10 GB delivery. High-case COGS is $3.60 and gross margin is 70.0%. The computed 70%-margin price floor is $12.01.
 - **Archive:** $49/month, 100 GB, 2,000 new indexes, 2,000 novel text embeddings, and 40 GB delivery. High-case COGS is $14.67 and gross margin is 70.1%. The computed 70%-margin price floor is $48.89.
 - Existing content remains readable, exportable, and deletable after a cost boundary closes. No plan permits silent overage.
 
@@ -13,12 +13,12 @@ These are candidates for entitlement and billing cards, not live promises. Inter
 
 ## Workload and sensitivity results
 
-Low/base/high vary physical rendition overhead (1.05×/1.10×/1.20×), Blob origin-miss share (5%/15%/30%), potentially billed inference attempts (1.00×/1.05×/1.20×), database compute (0.75×/1.00×/1.50×), and Stripe's variable surcharge (domestic / international / international plus FX). Storage includes retained trash.
+Low/base/high vary physical rendition overhead (1.05×/1.10×/1.20×), Blob origin-miss share (5%/15%/30%), potentially billed inference attempts (1.00×/1.05×/1.20×), database compute (0.75×/1.00×/1.50×), Stripe variable surcharge (0%/1.5%/2.5%). Storage includes retained trash.
 
 | Workload | Revenue | Low COGS | Base COGS | High COGS | High gross margin |
 |---|---:|---:|---:|---:|---:|
 | Cardless Free — full allowance | $0.00 | $0.26 | $0.28 | $0.31 | n/a |
-| Collector — 10 GB | $12.00 | $2.86 | $3.18 | $3.60 | 70.0% |
+| Collector — 10 GB | $12.01 | $2.86 | $3.18 | $3.60 | 70.0% |
 | Archive — 100 GB | $49.00 | $11.52 | $12.89 | $14.67 | 70.1% |
 | Abusive novel-query and upload storm | $0.00 | $48.19 | $50.66 | $57.77 | n/a |
 | Viral public share / crawler month | $0.00 | $156.81 | $163.34 | $173.40 | n/a |
@@ -29,16 +29,16 @@ The abusive and viral rows deliberately exceed their account/global budgets; the
 
 | Plan | Monthly infrastructure ceiling | Daily inference ceiling | Monthly inference ceiling |
 |---|---:|---:|---:|
-| free | $0.28 | $0.01 (12 attempts) | $0.18 (240 attempts) |
-| collector | $2.75 | $0.07 (90 attempts) | $1.31 (1800 attempts) |
-| archive | $12.50 | $0.22 (300 attempts) | $3.50 (4800 attempts) |
+| free | $0.31 | $0.01 (12 attempts) | $0.18 (240 attempts) |
+| collector | $2.65 | $0.07 (90 attempts) | $1.31 (1800 attempts) |
+| archive | $11.73 | $0.22 (300 attempts) | $3.50 (4800 attempts) |
 
-Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve, so full advertised use cannot exhaust its own budget merely because a provider attempt is retried. Pre-GA global variable spend is capped at $0.75/day and $25.00/month. Replicate is a sub-budget of $0.50/day (684 attempts) and $15.00/month. After paid admission, the monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; daily is `paidMonthlyBudget / 30`. Counters reserve worst-case dollars transactionally before work and reconcile provider usage afterward.
+monthlyInfrastructureUsd is an inclusive hard cap in unrounded USD for each scenario's high-sensitivity full allowance; the cap must cover exact modeled infrastructure cost. Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve, so full advertised use cannot exhaust its own budget merely because a provider attempt is retried. Pre-GA global variable spend is capped at $0.75/day and $25.00/month. Replicate is a sub-budget of $0.50/day (684 attempts) and $15.00/month (20547 attempts). After paid admission, the monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; daily is `paidMonthlyBudget / 30`. Counters reserve worst-case dollars transactionally before work and reconcile provider usage afterward.
 
 ## Provider hard-cap map
 
 - **Application admission:** Postgres transactional per-plan counters plus global dollar ledger; deny before Blob, Replicate, or public-delivery work.
-- **Replicate:** Repository daily/monthly dollar-derived attempt counters and embeddings kill switch; no provider cap is relied upon.
+- **Replicate:** Repository UTC-daily and UTC-calendar-month dollar-derived attempt counters plus embeddings kill switch; no provider cap is relied upon.
 - **Vercel Blob/CDN:** Vercel Spend Management action plus application byte/request egress leases; verify provider action before GA.
 - **Neon:** Autosuspend, CU ceiling, transfer alert, and application query/work admission; exact plan controls need provider authority.
 - **DigitalOcean:** One fixed web instance, fixed component sizes/counts, scheduled-job runtime budgets, and team billing alerts.
@@ -51,7 +51,7 @@ Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve, s
 - Neon/Postgres: 42.0 MB database, 10 users, 3,088 ready embeddings.
 - Replicate: latest 100 predictions were 95 failed, 1 canceled, and 4 succeeded. This is operational usage, not a bill. Public-model failed predictions are documented as unbilled, while canceled/time-based work may bill; exact Replicate dollars are unavailable to the API authority.
 - DigitalOcean: invoice preview $41.69 versus account month-to-date usage $43.76, a named $2.07 variance. Preview and balance endpoints update on different cadences and cover the entire account, which hosts multiple apps. DigitalOcean exposes no per-app accrued-transfer or invoice-preview allocation, so Sploot's exact July line item is not inferable from this authority.
-- Fixed baseline: the Sploot web service is $25.00/month. The current sleep-heavy embedding schedule is estimated at $3.33/month before other short jobs; Canary is a $5.00/month service shared across projects. These fixed costs are visible but excluded from the Vision's $25 variable free-subsidy ratchet and per-account margin.
+  - Fixed baseline: the Sploot web service is $25.00/month. The current sleep-heavy embedding schedule is estimated at $3.33/month before other short jobs; Canary is a $5.00/month service shared across projects. These fixed costs are visible but excluded from the Vision's $25.00 variable free-subsidy ratchet and per-account margin.
 - Modeled known-cost reconciliation: current web, embedding-job schedule, Blob bytes at the on-demand rate, and database bytes at the Launch storage rate produce a $28.36 monthly baseline. It deliberately excludes unknown history/WAL, operations, and transfer rather than treating them as zero. The $13.33 difference to the account-wide invoice preview is deliberately not attributed to Sploot: it contains unrelated apps, Canary allocation, other jobs, transfer/operations, and endpoint timing.
 - Canary: 5,917 Sploot errors in 30 days. Canary is a self-hosted shared DigitalOcean component. This is event usage, not a separate vendor bill; the model allocates fixed component cost instead of inventing a per-event price.
 - GitHub: public repository, 16 active caches / 6.37 GiB. 6.37 GiB is below the separate 10 GiB per-repository cache allowance; standard public-repository runners are free.
@@ -73,7 +73,7 @@ Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve, s
 | Vercel Blob | blob-operations, renditions | $5.00 / million advanced operations | Hobby: first 2,000 advanced operations | [official source](https://vercel.com/docs/vercel-blob/usage-and-pricing) | 2026-07-15 |
 | Vercel Blob | blob-egress | $0.050 / GB transferred | Hobby: first 10 GB | [official source](https://vercel.com/docs/vercel-blob/usage-and-pricing) | 2026-07-15 |
 | Vercel CDN | blob-egress | $2.00 / million edge requests | Hobby: first 1,000,000; Pro: first 10,000,000 | [official source](https://vercel.com/docs/manage-cdn-usage) | 2026-07-15 |
-| Vercel CDN | blob-egress | $0.060 / GB origin transfer | Hobby: up to 10 GB; Pro: usage-based under the plan's shared monthly credit | [official source](https://vercel.com/docs/limits) | 2026-07-15 |
+| Vercel CDN | blob-egress | $0.060 / GB origin transfer | Hobby: first 10 GB; Pro: N/A | [official source](https://vercel.com/docs/manage-cdn-usage) | 2026-07-15 |
 | Replicate | image-inference, text-inference | $0.000730 / typical prediction | none | [official source](https://replicate.com/krthr/clip-embeddings) | 2026-07-15 |
 | Neon | database-compute, vector-storage | $0.106 / CU-hour | Free: 100 CU-hours per project | [official source](https://neon.com/pricing) | 2026-07-15 |
 | Neon | vector-storage | $0.350 / GB-month | Free: 0.5 GB per project | [official source](https://neon.com/pricing) | 2026-07-15 |
