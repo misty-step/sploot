@@ -292,7 +292,7 @@ export function UploadZone({ onUploadComplete, isOnDashboard = false }: UploadZo
   }, []);
 
   // Every upload intent enters the durable queue; this is the only network coordinator.
-  const { assertCanEnqueue, addToQueue, addUrlToQueue, processQueue, retryUpload: retryQueuedUpload, removeFromQueue } = useUploadQueue({ onEvent: handleQueueEvent });
+  const { assertCanEnqueue, addToQueue, addUrlToQueue, processQueue, retryUpload: retryQueuedUpload, removeFromQueue, isReady: isUploadQueueReady } = useUploadQueue({ onEvent: handleQueueEvent });
 
   const enqueueUrl = useCallback(async (url: string) => {
     const queueItem = await addUrlToQueue(url);
@@ -609,6 +609,7 @@ export function UploadZone({ onUploadComplete, isOnDashboard = false }: UploadZo
         isPreparing={isPreparing}
         preparingFileCount={preparingFileCount}
         preparingTotalSize={preparingTotalSize}
+        isReady={isUploadQueueReady}
       />
 
       {/* File list */}

@@ -69,6 +69,7 @@ export function UploadFileList({
   return (
     <div
       ref={parentRef}
+      data-testid="upload-intent-list"
       className="h-[400px] overflow-y-auto space-y-2"
       style={{
         contain: 'strict',

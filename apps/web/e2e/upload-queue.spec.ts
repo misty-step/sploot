@@ -47,7 +47,50 @@ async function tokenFor(userId: string): Promise<string> {
 async function openApp(page: Page, userId: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [qaHeader]: await tokenFor(userId) });
   await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
-  await expect(page.getByRole('button', { name: 'Choose files to upload' })).toBeVisible();
+  await waitForUploadReady(page);
+}
+
+async function waitForUploadReady(page: Page): Promise<void> {
+  const uploadButton = page.getByRole('button', { name: 'Choose files to upload' });
+  await expect(uploadButton).toBeVisible();
+  await expect(uploadButton).toHaveAttribute('data-upload-ready', 'true');
+}
+
+async function establishOrigin(page: Page, userId: string): Promise<void> {
+  await page.setExtraHTTPHeaders({ [qaHeader]: await tokenFor(userId) });
+  await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
+}
+
+function intentList(page: Page) {
+  return page.getByTestId('upload-intent-list');
+}
+
+function durableQueue(page: Page) {
+  return page.getByTestId('durable-upload-queue');
+}
+
+async function waitForControllerTransition(page: Page, timeoutMs = 5_000): Promise<boolean> {
+  return page.evaluate(async (timeout) => {
+    if (!('serviceWorker' in navigator)) return false;
+    await navigator.serviceWorker.ready;
+    if (navigator.serviceWorker.controller) return true;
+
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout>;
+      const finish = (controlled: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+        resolve(controlled);
+      };
+      const onControllerChange = () => finish(Boolean(navigator.serviceWorker.controller));
+      timer = setTimeout(() => finish(Boolean(navigator.serviceWorker.controller)), timeout);
+      navigator.serviceWorker.addEventListener('controllerchange', onControllerChange, { once: true });
+      if (navigator.serviceWorker.controller) finish(true);
+    });
+  }, timeoutMs);
 }
 
 async function readRows(page: Page, requestedOwnerKey?: string): Promise<QueueRow[]> {
@@ -139,7 +182,7 @@ test('public upload surface durably enqueues metadata without materializing the 
     await openApp(page, 'qa-upload-queue-user');
     await context.setOffline(true);
     await page.locator('input[type="file"]').setInputFiles({ name: 'browser-queue.png', mimeType: 'image/png', buffer: Buffer.from('png') });
-    await expect(page.getByText('browser-queue.png')).toBeVisible();
+    await expect(intentList(page).getByText('browser-queue.png', { exact: true })).toBeVisible();
 
     const rows = await readRows(page, await ownerKey('qa-upload-queue-user'));
     expect(rows).toHaveLength(1);
@@ -166,9 +209,9 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     await context.setOffline(true);
 
     await accountATab.locator('input[type="file"]').setInputFiles({ name: 'account-a.png', mimeType: 'image/png', buffer: Buffer.from('png') });
-    await expect(accountATab.getByText('account-a.png')).toBeVisible();
+    await expect(intentList(accountATab).getByText('account-a.png', { exact: true })).toBeVisible();
     await pasteUrl(accountATab, url);
-    await expect(accountATab.getByText(url)).toBeVisible();
+    await expect(intentList(accountATab).getByText(url, { exact: true })).toBeVisible();
 
     const accountARows = await readRows(accountATab, accountAKey);
     expect(accountARows).toHaveLength(2);
@@ -178,8 +221,8 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     expect(fileRow).not.toHaveProperty('fileData');
     expect(await readPayloadIds(accountATab)).toContain(fileRow!.id);
 
-    await expect(accountBTab.getByText('account-a.png')).toHaveCount(0);
-    await expect(accountBTab.getByText(url)).toHaveCount(0);
+    await expect(intentList(accountBTab).getByText('account-a.png', { exact: true })).toHaveCount(0);
+    await expect(intentList(accountBTab).getByText(url, { exact: true })).toHaveCount(0);
     expect(await readRows(accountBTab, await ownerKey(accountB))).toEqual([]);
 
     const signedOut = await context.newPage();
@@ -237,9 +280,11 @@ test('live lease-expiry wakeup reclaims a durable URL claim without reload or ma
     }
   });
   try {
+    await establishOrigin(page, account);
     await seedUrlRow(page, row);
-    await openApp(page, account);
-    await expect(page.getByText(fixture.url)).toBeVisible();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await waitForUploadReady(page);
+    await expect(durableQueue(page).getByText(fixture.url, { exact: true })).toBeVisible();
     await expect.poll(() => requests.length, { timeout: 20_000 }).toBeGreaterThan(0);
     expect(requests[0].key).toBe(key);
     expect(requests[0].at).toBeGreaterThanOrEqual(row.claimExpiresAt! - 500);
@@ -265,12 +310,12 @@ test('permanent URL rejection is terminal and remount recovery does not issue a 
   try {
     await openApp(page, account);
     await pasteUrl(page, fixture.url);
-    await expect(page.getByText(fixture.url)).toBeVisible();
+    await expect(durableQueue(page).getByText(fixture.url, { exact: true })).toBeVisible();
     await expect.poll(async () => (await readRows(page, await ownerKey(account)))[0]?.status, { timeout: 20_000 }).toBe('terminal');
     expect(requestCount).toBe(1);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await expect(page.getByText(fixture.url)).toBeVisible();
+    await expect(durableQueue(page).getByText(fixture.url, { exact: true })).toBeVisible();
     await page.waitForTimeout(2_000);
     expect(requestCount).toBe(1);
     await expect.poll(async () => (await readRows(page, await ownerKey(account)))[0]?.status).toBe('terminal');
@@ -333,6 +378,12 @@ test('production service worker activates and ZIP expansion rejects oversized en
   const page = await context.newPage();
   try {
     await openApp(page, 'qa-upload-pwa-user');
+    let controlled = await waitForControllerTransition(page);
+    if (!controlled) {
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      controlled = await waitForControllerTransition(page);
+    }
+    await waitForUploadReady(page);
     const worker = await page.evaluate(async () => {
       if (!('serviceWorker' in navigator)) return { registered: false, controlled: false };
       const registration = await navigator.serviceWorker.ready;

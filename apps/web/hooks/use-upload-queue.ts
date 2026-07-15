@@ -426,6 +426,7 @@ export function useUploadQueue({
 
   return {
     queue,
+    isReady: Boolean(ownerKey),
     assertCanEnqueue,
     addToQueue,
     addUrlToQueue,

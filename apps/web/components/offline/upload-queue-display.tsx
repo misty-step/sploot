@@ -13,7 +13,7 @@ export function UploadQueueDisplay({ queue, onRemove, onRetry }: UploadQueueDisp
   if (queue.length === 0) return null;
 
   return (
-    <div className="fixed bottom-20 md:bottom-6 left-4 right-4 md:left-6 md:right-auto md:w-96 z-40">
+    <div data-testid="durable-upload-queue" className="fixed bottom-20 md:bottom-6 left-4 right-4 md:left-6 md:right-auto md:w-96 z-40">
       <div className="bg-card border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] sploot-shadow-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-foreground font-semibold">
@@ -29,6 +29,7 @@ export function UploadQueueDisplay({ queue, onRemove, onRetry }: UploadQueueDisp
           {queue.map((item) => (
             <div
               key={item.id}
+              data-testid="durable-upload-row"
               className="flex items-center gap-3 p-2 bg-muted rounded-[var(--sploot-radius-inner)]"
             >
               {/* File icon */}
