@@ -40,6 +40,9 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(postSql).toContain(":'bootstrap_version'");
     expect(preSql).toContain("d.deptype = 'e'");
     expect(preSql).toContain("'ALTER %s public.%I OWNER TO sploot_stripe_schema_migrator'");
+    expect(postSql).toContain('final embedding claim-token schema contract is incomplete');
+    expect(postSql).toContain('asset_embeddings_processing_claim_token_state');
+    expect(postSql).toContain('asset_embeddings_revival_budget');
   });
 
   it('is consumed by CI from the version file, never hardcoded', () => {

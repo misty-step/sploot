@@ -39,6 +39,11 @@ vi.mock('@prisma/client', () => ({
 const healthyDatabaseRow = [{
   limiter_buckets: 'embedding_rate_buckets',
   limiter_leases: 'embedding_rate_leases',
+  processing_claim_token: 'processing_claim_token',
+  revive_count: 'revive_count',
+  claim_token_constraint: true,
+  revive_constraint: true,
+  revival_trigger: true,
 }];
 const context = { params: Promise.resolve({}) };
 
@@ -74,6 +79,11 @@ describe('/api/health', () => {
     mockPrisma.$queryRaw.mockResolvedValue([{
       limiter_buckets: null,
       limiter_leases: null,
+      processing_claim_token: null,
+      revive_count: null,
+      claim_token_constraint: false,
+      revive_constraint: false,
+      revival_trigger: false,
     }]);
 
     const res = await GET(createMockRequest('GET', null), context);

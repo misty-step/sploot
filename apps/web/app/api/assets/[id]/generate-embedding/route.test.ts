@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { EmbeddingProviderUnavailableError } from '@/lib/embedding-errors';
+import { EmbeddingConfigurationError } from '@/lib/embedding-errors';
 
 const mocks = vi.hoisted(() => ({
   getAuth: vi.fn(),
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   acquireEmbeddingProcessing: vi.fn(),
   resolveEmbeddingGateState: vi.fn(),
   deferEmbeddingAdmission: vi.fn(),
-  deferEmbeddingProviderInitialization: vi.fn(),
+  recordEmbeddingConfigurationFailure: vi.fn(),
   recordEmbeddingAttemptFailure: vi.fn(),
   wrapperLogInfo: vi.fn(),
   wrapperLogTiming: vi.fn(),
@@ -70,7 +70,7 @@ vi.mock('@/lib/embedding-resilience', () => ({
   isEmbeddingAdmissionFailure: () => false,
   getEmbeddingAdmissionReason: () => undefined,
   deferEmbeddingAdmission: mocks.deferEmbeddingAdmission,
-  deferEmbeddingProviderInitialization: mocks.deferEmbeddingProviderInitialization,
+  recordEmbeddingConfigurationFailure: mocks.recordEmbeddingConfigurationFailure,
   recordEmbeddingAttemptFailure: mocks.recordEmbeddingAttemptFailure,
 }));
 
@@ -145,7 +145,7 @@ describe('POST /api/assets/[id]/generate-embedding observability composition', (
     mocks.createEmbeddingService.mockReturnValue({
       embedImage: vi.fn().mockRejectedValue(new Error('unexpected provider shape')),
     });
-    mocks.deferEmbeddingProviderInitialization.mockResolvedValue(true);
+    mocks.recordEmbeddingConfigurationFailure.mockResolvedValue(true);
     mocks.withTraceId.mockReturnValue({
       logInfo: mocks.wrapperLogInfo,
       logTiming: mocks.wrapperLogTiming,
@@ -182,43 +182,21 @@ describe('POST /api/assets/[id]/generate-embedding observability composition', (
     );
   });
 
-  it('defers missing provider configuration without consuming an attempt, then recovers', async () => {
-    let initializationCount = 0;
+  it('terminally blocks missing provider configuration without consuming an attempt', async () => {
     mocks.createEmbeddingService.mockImplementation(() => {
-      initializationCount += 1;
-      if (initializationCount === 1) {
-        throw new EmbeddingProviderUnavailableError('Replicate API token not configured');
-      }
-      return {
-        embedImage: vi.fn().mockResolvedValue({
-          model: 'test-model',
-          dimension: 768,
-          embedding: new Array(768).fill(0.1),
-          processingTime: 1,
-        }),
-      };
-    });
-    mocks.upsertAssetEmbedding.mockResolvedValue({
-      modelName: 'test-model', dim: 768, createdAt: new Date(),
+      throw new EmbeddingConfigurationError('Replicate API token not configured');
     });
 
     const first = await POST(request('asset-init-failure'), {
       params: Promise.resolve({ id: 'asset-init-failure' }),
     });
     expect(first.status).toBe(503);
-    expect(mocks.deferEmbeddingProviderInitialization).toHaveBeenCalledWith(
+    expect(first.headers.get('Retry-After')).toBeNull();
+    expect(mocks.recordEmbeddingConfigurationFailure).toHaveBeenCalledWith(
       'asset-1',
-      'Replicate API token not configured',
-      30,
+      expect.objectContaining({ reason: 'embedding_configuration', retryable: false }),
       'claim-1',
     );
-    expect(mocks.recordEmbeddingAttemptFailure).not.toHaveBeenCalled();
-
-    await new Promise((resolve) => setTimeout(resolve, 120));
-    const second = await POST(request('asset-init-recovery'), {
-      params: Promise.resolve({ id: 'asset-init-recovery' }),
-    });
-    expect(second.status).toBe(200);
     expect(mocks.recordEmbeddingAttemptFailure).not.toHaveBeenCalled();
   });
 });

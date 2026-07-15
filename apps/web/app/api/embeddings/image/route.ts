@@ -5,6 +5,7 @@ import {
   embeddingRetryHeaders,
   EmbeddingProviderCircuitOpenError,
   EmbeddingProviderUnavailableError,
+  EmbeddingConfigurationError,
 } from '@/lib/embedding-errors';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
@@ -19,7 +20,7 @@ import {
 } from '@/lib/embedding-guard';
 import {
   deferEmbeddingAdmission,
-  deferEmbeddingProviderInitialization,
+  recordEmbeddingConfigurationFailure,
   getEmbeddingAdmissionReason,
   getEmbeddingProviderCircuit,
   isEmbeddingAdmissionFailure,
@@ -155,7 +156,16 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     }
 
     if (media.sourceKind === 'unsupported') {
-      if (asset) await markEmbeddingTerminalSkipped(asset.id, 'Unsupported video without a poster thumbnail');
+      if (asset) {
+        const lock = await acquireEmbeddingProcessing(asset.id);
+        if (lock.acquired) {
+          await markEmbeddingTerminalSkipped(
+            asset.id,
+            'Unsupported video without a poster thumbnail',
+            lock.processingClaimToken,
+          );
+        }
+      }
       return NextResponse.json(
         {
           success: false,
@@ -239,9 +249,9 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
         try {
           embeddingService = createEmbeddingService(userId);
         } catch (error) {
-          if (error instanceof EmbeddingProviderUnavailableError && processingClaimToken) {
+          if (error instanceof EmbeddingConfigurationError && processingClaimToken) {
             providerInitializationDeferred = true;
-            await deferEmbeddingProviderInitialization(asset.id, error.message, error.retryAfterSec, processingClaimToken);
+            await recordEmbeddingConfigurationFailure(asset.id, error, processingClaimToken);
           }
           throw error;
         }
@@ -299,6 +309,7 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
       error instanceof EmbeddingError
       || error instanceof EmbeddingProviderCircuitOpenError
       || error instanceof EmbeddingProviderUnavailableError
+      || error instanceof EmbeddingConfigurationError
     ) {
       return NextResponse.json(
         { error: error.message, ...(error instanceof EmbeddingAdmissionError && error.code ? { code: error.code } : {}) },

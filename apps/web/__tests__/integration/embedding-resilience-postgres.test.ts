@@ -516,7 +516,7 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     expect((await getEmbeddingProviderCircuit(nowMs)).reason).toBe('provider_unavailable');
   }, 30_000);
 
-  it('keeps upload-scheduled initialization failure retryable for cron recovery', async () => {
+  it('terminally blocks upload-scheduled initialization failure without an attempt', async () => {
     const nowMs = Date.UTC(2026, 6, 14, 16, 0, 0);
     vi.useFakeTimers();
     vi.setSystemTime(nowMs);
@@ -525,8 +525,8 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
 
     await expect(scheduleChainAsset(7)).rejects.toMatchObject({
       statusCode: 503,
-      retryable: true,
-      cause: expect.objectContaining({ name: 'EmbeddingProviderUnavailableError' }),
+      retryable: false,
+      cause: expect.objectContaining({ name: 'EmbeddingConfigurationError' }),
     });
     await expect(
       prisma.assetEmbedding.findUnique({
@@ -535,24 +535,14 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       }),
     ).resolves.toMatchObject({
       attemptCount: 0,
-      status: 'pending',
-      nextAttemptAt: new Date(nowMs + 30_000),
-      terminalAt: null,
+      status: 'failed',
+      nextAttemptAt: null,
+      terminalAt: new Date(nowMs),
     });
-
-    vi.setSystemTime(nowMs + 60_000);
-    vi.stubEnv('REPLICATE_API_TOKEN', 'r8_isolated_test_token');
-    providerRun.mockResolvedValueOnce(Array(768).fill(0.1));
-    await scheduleChainAsset(7);
-    await expect(
-      prisma.assetEmbedding.findUnique({
-        where: { assetId: chainAssetIds[7] },
-        select: { attemptCount: true, status: true, terminalAt: true },
-      }),
-    ).resolves.toMatchObject({ attemptCount: 0, status: 'ready', terminalAt: null });
+    expect(providerRun).not.toHaveBeenCalled();
   }, 30_000);
 
-  it('recovers an upload-scheduled initialization failure through the real cron route', async () => {
+  it('keeps cron fail-closed after deterministic initialization failure', async () => {
     const nowMs = Date.UTC(2026, 6, 14, 18, 0, 0);
     vi.useFakeTimers();
     vi.setSystemTime(nowMs);
@@ -564,23 +554,24 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     vi.stubEnv('REPLICATE_API_TOKEN', '');
     await expect(scheduleChainAsset(7)).rejects.toMatchObject({
       statusCode: 503,
-      retryable: true,
+      retryable: false,
+      cause: expect.objectContaining({ name: 'EmbeddingConfigurationError' }),
     });
 
-    vi.setSystemTime(nowMs + 60_000);
     vi.stubEnv('REPLICATE_API_TOKEN', 'r8_isolated_test_token');
     vi.stubEnv('CRON_SECRET', 'embedding-resilience-cron-secret');
-    providerRun.mockResolvedValueOnce(Array(768).fill(0.1));
     const response = await processEmbeddings(
       new NextRequest('http://localhost/api/cron/process-embeddings'),
     );
     expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ outcome: 'no_work' });
     await expect(
       prisma.assetEmbedding.findUnique({
         where: { assetId: chainAssetIds[7] },
         select: { attemptCount: true, status: true, terminalAt: true },
       }),
-    ).resolves.toMatchObject({ attemptCount: 0, status: 'ready', terminalAt: null });
+    ).resolves.toMatchObject({ attemptCount: 0, status: 'failed' });
+    expect(providerRun).not.toHaveBeenCalled();
   }, 30_000);
 
   it('claims a null embedding before cron initialization without consuming poison budget', async () => {
@@ -728,17 +719,18 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     expect(providerRun).not.toHaveBeenCalled();
   }, 30_000);
 
-  it('keeps repeated scheduler initialization failures retryable without consuming poison budget', async () => {
+  it('keeps scheduler initialization failure terminal and attempt-free', async () => {
     const baseNowMs = Date.UTC(2026, 6, 14, 17, 0, 0);
     vi.useFakeTimers();
     vi.setSystemTime(baseNowMs);
     await seedChainAssets();
     vi.stubEnv('REPLICATE_API_TOKEN', '');
 
-    for (const offset of [0, 60_000, 180_000]) {
-      vi.setSystemTime(baseNowMs + offset);
-      await expect(scheduleChainAsset(8)).rejects.toMatchObject({ statusCode: 503 });
-    }
+    await expect(scheduleChainAsset(8)).rejects.toMatchObject({
+      statusCode: 503,
+      retryable: false,
+      cause: expect.objectContaining({ name: 'EmbeddingConfigurationError' }),
+    });
 
     await expect(
       prisma.assetEmbedding.findUnique({
@@ -747,9 +739,9 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       }),
     ).resolves.toMatchObject({
       attemptCount: 0,
-      status: 'pending',
-      nextAttemptAt: new Date(baseNowMs + 210_000),
-      terminalAt: null,
+      status: 'failed',
+      nextAttemptAt: null,
+      terminalAt: new Date(baseNowMs),
     });
   }, 30_000);
 
@@ -888,6 +880,95 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       nextAttemptAt: null,
       completedAt: null,
     });
+  }, 30_000);
+
+  it('rejects a late legacy writer after reclaim and preserves the newer token owner', async () => {
+    await prisma.user.create({
+      data: { id: userId, email: `${userId}@example.test` },
+    });
+    await prisma.asset.create({
+      data: {
+        id: assetId,
+        ownerUserId: userId,
+        blobUrl: 'https://embedding-resilience.public.blob.vercel-storage.com/late.jpg',
+        pathname: 'late.jpg',
+        mime: 'image/jpeg',
+        size: 1,
+        checksumSha256: 'late',
+      },
+    });
+    await prisma.assetEmbedding.create({
+      data: {
+        assetId,
+        modelName: 'pending',
+        modelVersion: 'pending',
+        dim: 0,
+        status: 'pending',
+      },
+    });
+
+    const oldStarted = Promise.resolve();
+    let releaseOld!: () => void;
+    const oldBlocked = new Promise<void>((resolve) => { releaseOld = resolve; });
+    const nowMs = Date.UTC(2026, 6, 15, 10, 0, 0);
+    const oldClaim = await acquireEmbeddingProcessing(assetId, nowMs);
+    expect(oldClaim.acquired).toBe(true);
+    const oldWorker = (async () => {
+      await oldStarted;
+      await oldBlocked;
+      // This is the origin/master-era writer: it has no generation token.
+      return upsertAssetEmbedding({
+        assetId,
+        modelName: 'old-worker',
+        modelVersion: 'old-worker',
+        dim: 768,
+        embedding: Array(768).fill(0.1),
+      });
+    })();
+
+    const newerClaim = await acquireEmbeddingProcessing(
+      assetId,
+      nowMs + EMBEDDING_PROCESSING_TTL_MS + 1,
+    );
+    expect(newerClaim.acquired).toBe(true);
+    expect(newerClaim.processingClaimToken).not.toBe(oldClaim.processingClaimToken);
+    releaseOld();
+    await expect(oldWorker).resolves.toBeNull();
+
+    await expect(
+      prisma.assetEmbedding.findUnique({
+        where: { assetId },
+        select: { status: true, dim: true, processingClaimToken: true },
+      }),
+    ).resolves.toEqual({
+      status: 'processing',
+      dim: 0,
+      processingClaimToken: newerClaim.processingClaimToken,
+    });
+
+    await expect(
+      prisma.$executeRaw(Prisma.sql`
+        UPDATE "asset_embeddings"
+        SET "status" = 'ready', "dim" = 768
+        WHERE "asset_id" = ${assetId}
+      `),
+    ).rejects.toThrow(/asset_embeddings_processing_claim_token_state/);
+
+    await expect(
+      upsertAssetEmbedding({
+        assetId,
+        modelName: 'newer-worker',
+        modelVersion: 'newer-worker',
+        dim: 768,
+        embedding: Array(768).fill(0.2),
+      }, newerClaim.processingClaimToken),
+    ).resolves.toMatchObject({ modelName: 'newer-worker' });
+    await expect(
+      prisma.assetEmbedding.findUnique({
+        where: { assetId },
+        select: { status: true, modelName: true, processingClaimToken: true },
+      }),
+    ).resolves.toEqual({ status: 'ready', modelName: 'newer-worker', processingClaimToken: null });
   }, 30_000);
 
   it('refuses unclaimed writes against ready and actively claimed rows', async () => {

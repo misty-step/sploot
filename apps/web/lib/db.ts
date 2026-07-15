@@ -740,6 +740,11 @@ export async function upsertAssetEmbedding(
       return rows[0] ?? null;
     }
 
+    // An un-tokened writer cannot prove which processing generation it owns.
+    // It may seed a brand-new row, but must never update an existing row: an
+    // old worker can finish after its claim was reclaimed by a newer worker.
+    // Token-aware current writers take the update path above and clear only
+    // their matching token atomically.
     const rows = await prisma.$queryRaw<Array<AssetEmbeddingRecord>>(Prisma.sql`
       INSERT INTO "asset_embeddings" (
         "asset_id",
@@ -764,26 +769,7 @@ export async function upsertAssetEmbedding(
         NOW(),
         NOW()
       )
-      ON CONFLICT ("asset_id") DO UPDATE SET
-        "model_name" = EXCLUDED."model_name",
-        "model_version" = EXCLUDED."model_version",
-        "dim" = EXCLUDED."dim",
-        "image_embedding" = EXCLUDED."image_embedding",
-        "status" = 'ready',
-        "error" = NULL,
-        "attempt_count" = 0,
-        "next_attempt_at" = NULL,
-        "terminal_at" = NULL,
-        "processing_claim_token" = NULL,
-        "completedAt" = NOW(),
-        "updatedAt" = NOW()
-      WHERE "asset_embeddings"."image_embedding" IS NULL
-        AND ("asset_embeddings"."dim" IS NULL OR "asset_embeddings"."dim" = 0)
-        AND NOT (
-          "asset_embeddings"."status" = 'processing'
-          AND "asset_embeddings"."processing_claim_token" IS NOT NULL
-        )
-        AND "asset_embeddings"."terminal_at" IS NULL
+      ON CONFLICT ("asset_id") DO NOTHING
       RETURNING
         "asset_id" AS "assetId",
         "model_name" AS "modelName",

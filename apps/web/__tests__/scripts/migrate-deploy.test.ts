@@ -70,8 +70,11 @@ describe('online migration transaction contract', () => {
       '20260715010000_add_embedding_circuit_generation',
       '20260715020000_add_embedding_probe_lease_token',
       '20260715030000_enforce_embedding_attempt_ceiling',
+      '20260715035000_validate_embedding_attempt_ceiling',
       '20260715040000_add_embedding_processing_claim_token',
+      '20260715045000_validate_embedding_processing_claim_token_state',
       '20260715050000_cap_embedding_terminal_revivals',
+      '20260715055000_validate_embedding_revival_budget',
     ]);
     for (const name of names) {
       const sql = readFileSync(join(migrationRoot, name, 'migration.sql'), 'utf8');
@@ -83,6 +86,46 @@ describe('online migration transaction contract', () => {
     expect(helper).toContain('CREATE INDEX CONCURRENTLY');
     expect(helper).toContain('indisvalid');
     expect(helper).toContain('indisready');
+  });
+
+  it('keeps additive DDL replay-safe and validation in separate transactions', () => {
+    const migrationRoot = join(process.cwd(), 'prisma/migrations');
+    const additive = [
+      '20260715030000_enforce_embedding_attempt_ceiling',
+      '20260715040000_add_embedding_processing_claim_token',
+      '20260715050000_cap_embedding_terminal_revivals',
+    ];
+    for (const name of additive) {
+      const sql = readFileSync(join(migrationRoot, name, 'migration.sql'), 'utf8');
+      expect(sql).toContain("SET LOCAL lock_timeout = '5s'");
+      expect(sql).toContain('IF NOT EXISTS');
+      expect(sql).toContain('pg_constraint');
+      expect(sql).not.toMatch(/ADD CONSTRAINT[\s\S]*VALIDATE CONSTRAINT/);
+    }
+    for (const name of [
+      '20260715035000_validate_embedding_attempt_ceiling',
+      '20260715045000_validate_embedding_processing_claim_token_state',
+      '20260715055000_validate_embedding_revival_budget',
+    ]) {
+      const sql = readFileSync(join(migrationRoot, name, 'migration.sql'), 'utf8');
+      expect(sql).toContain('VALIDATE CONSTRAINT');
+      expect(sql).toContain("SET LOCAL lock_timeout = '5s'");
+      expect(sql).not.toContain('ADD CONSTRAINT');
+    }
+  });
+
+  it('asserts the final embedding schema in the deployment bootstrap contract', () => {
+    const post = readFileSync(join(process.cwd(), 'prisma/stripe-ledger-bootstrap-post.sql'), 'utf8');
+    for (const name of [
+      'processing_claim_token',
+      'revive_count',
+      'asset_embeddings_processing_claim_token_state',
+      'asset_embeddings_revive_count_bounded',
+      'asset_embeddings_revival_budget',
+    ]) {
+      expect(post).toContain(name);
+    }
+    expect(post).toContain('final embedding claim-token schema contract is incomplete');
   });
 
   it('keeps the terminal fence in the cap migration for rollback compatibility', () => {

@@ -28,7 +28,7 @@ const mockAcquireEmbeddingProcessing = vi.fn();
 const mockGetEmbeddingProviderCircuit = vi.fn();
 const mockRecordEmbeddingAdmissionFailure = vi.fn();
 const mockDeferEmbeddingAdmission = vi.fn();
-const mockDeferEmbeddingProviderInitialization = vi.fn();
+const mockRecordEmbeddingConfigurationFailure = vi.fn();
 const mockRecordEmbeddingAttemptFailure = vi.fn();
 const mockResetEmbeddingProviderCircuit = vi.fn();
 const mockMarkEmbeddingTerminalSkipped = vi.fn();
@@ -64,8 +64,15 @@ vi.mock('@/lib/embedding-resilience', () => ({
     mockRecordEmbeddingAdmissionFailure(...args),
   deferEmbeddingAdmission: (...args: unknown[]) =>
     mockDeferEmbeddingAdmission(...args),
-  deferEmbeddingProviderInitialization: (...args: unknown[]) =>
-    mockDeferEmbeddingProviderInitialization(...args),
+  normalizeEmbeddingConfigurationError: (error: unknown) => ({
+    name: 'EmbeddingConfigurationError',
+    message: error instanceof Error ? error.message : 'Embedding service initialization failed',
+    reason: 'embedding_configuration',
+    statusCode: 503,
+    retryable: false,
+  }),
+  recordEmbeddingConfigurationFailure: (...args: unknown[]) =>
+    mockRecordEmbeddingConfigurationFailure(...args),
   recordEmbeddingAttemptFailure: (...args: unknown[]) =>
     mockRecordEmbeddingAttemptFailure(...args),
   resetEmbeddingProviderCircuit: () => mockResetEmbeddingProviderCircuit(),
@@ -367,7 +374,8 @@ describe('/api/cron/process-embeddings', () => {
       expect(mockEmbedImage).not.toHaveBeenCalled();
       expect(mockMarkEmbeddingTerminalSkipped).toHaveBeenCalledWith(
         'video-skip',
-        'Unsupported video without a poster thumbnail'
+        'Unsupported video without a poster thumbnail',
+        PROCESSING_CLAIM_TOKEN,
       );
     });
 
@@ -762,22 +770,20 @@ describe('/api/cron/process-embeddings', () => {
       const data = await response.json();
 
       expect(response.status).toBe(503);
-      expect(data.outcome).toBe('backoff');
-      expect(data.status).toBe('provider_backoff');
+      expect(data.outcome).toBe('configuration_error');
+      expect(data.status).toBe('configuration_error');
       expect(data.stats.errors[0]).toMatchObject({
         assetId: 'asset-1',
-        taxonomy: 'provider_unavailable',
+        taxonomy: 'embedding_configuration',
         statusCode: 503,
-        retryAfterSec: 30,
       });
-      expect(response.headers.get('Retry-After')).toBe('30');
+      expect(response.headers.get('Retry-After')).toBeNull();
       expect(response.headers.get('X-Sploot-Embedding-Outcome')).toBe(
-        'provider_unavailable',
+        'embedding_configuration',
       );
-      expect(mockDeferEmbeddingProviderInitialization).toHaveBeenCalledWith(
+      expect(mockRecordEmbeddingConfigurationFailure).toHaveBeenCalledWith(
         'asset-1',
-        'Embedding service initialization failed',
-        30,
+        expect.objectContaining({ reason: 'embedding_configuration', retryable: false }),
         PROCESSING_CLAIM_TOKEN,
       );
       expect(mockRecordEmbeddingAttemptFailure).not.toHaveBeenCalled();

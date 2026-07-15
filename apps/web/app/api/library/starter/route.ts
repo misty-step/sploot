@@ -26,7 +26,7 @@ import {
  * (blob + record + tags), with their precomputed CLIP embeddings written
  * directly so semantic search works immediately — no embedding provider on
  * the path. Idempotent: the pipeline's checksum dedupe makes re-seeding a
- * no-op, and the embedding upsert repairs any half-seeded state.
+ * no-op, and the embedding insert fills a newly created half-seeded state.
  *
  * Opt-in only (the first-run empty state offers it); every asset is tagged
  * `starter-pile` so the whole pile is one tag-filter + delete away.
@@ -87,8 +87,10 @@ async function postHandler(
           continue;
         }
 
-        // Write the precomputed vector. For duplicates this is the repair
-        // path if a previous seed died between record and embedding.
+        // Write the precomputed vector only when the embedding row is new.
+        // Unfenced legacy writers must never overwrite an existing row after
+        // a worker claim has been acquired; a later owner retry handles a
+        // duplicate whose previous seed stopped between record and vector.
         await upsertAssetEmbedding({
           assetId: result.asset.id,
           modelName: CLIP_MODEL,

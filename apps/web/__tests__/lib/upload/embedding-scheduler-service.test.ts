@@ -275,7 +275,7 @@ describe('EmbeddingSchedulerService', () => {
           EmbeddingScheduleError
         );
         await expect(service.scheduleEmbedding(baseParams)).rejects.toThrow(
-          'Embedding generation deferred: Embedding service initialization failed'
+          'Embedding generation blocked: Embedding service initialization failed'
         );
 
         expect(mockPrisma.$executeRaw).toHaveBeenCalled();

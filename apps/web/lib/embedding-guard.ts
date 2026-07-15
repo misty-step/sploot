@@ -239,6 +239,9 @@ export async function markEmbeddingFailed(
     return;
   }
 
+  // A writer without a claim token is legacy/unfenced. It may create the
+  // compatibility row, but it must never settle an existing row whose newer
+  // processing generation it cannot identify.
   await prisma.$executeRaw(Prisma.sql`
     INSERT INTO "asset_embeddings" (
       "asset_id", "model_name", "model_version", "dim", "status", "error",
@@ -246,18 +249,7 @@ export async function markEmbeddingFailed(
     ) VALUES (
       ${assetId}, 'unknown', 'unknown', 0, 'failed', ${errorMessage}, NOW(), NOW()
     )
-    ON CONFLICT ("asset_id") DO UPDATE SET
-      "status" = 'failed',
-      "error" = EXCLUDED."error",
-      "processing_claim_token" = NULL,
-      "updatedAt" = NOW()
-    WHERE "asset_embeddings"."image_embedding" IS NULL
-      AND ("asset_embeddings"."dim" IS NULL OR "asset_embeddings"."dim" = 0)
-      AND NOT (
-        "asset_embeddings"."status" = 'processing'
-        AND "asset_embeddings"."processing_claim_token" IS NOT NULL
-      )
-      AND "asset_embeddings"."terminal_at" IS NULL
+    ON CONFLICT ("asset_id") DO NOTHING
   `);
 }
 
@@ -300,22 +292,6 @@ export async function markEmbeddingTerminalSkipped(
       ${assetId}, 'unsupported-media', 'unsupported-media', 0, 'failed',
       ${errorMessage}, NOW(), NOW(), NOW()
     )
-    ON CONFLICT ("asset_id") DO UPDATE SET
-      "model_name" = 'unsupported-media',
-      "model_version" = 'unsupported-media',
-      "dim" = 0,
-      "status" = 'failed',
-      "error" = EXCLUDED."error",
-      "next_attempt_at" = NULL,
-      "terminal_at" = NOW(),
-      "processing_claim_token" = NULL,
-      "updatedAt" = NOW()
-    WHERE "asset_embeddings"."image_embedding" IS NULL
-      AND ("asset_embeddings"."dim" IS NULL OR "asset_embeddings"."dim" = 0)
-      AND NOT (
-        "asset_embeddings"."status" = 'processing'
-        AND "asset_embeddings"."processing_claim_token" IS NOT NULL
-      )
-      AND "asset_embeddings"."terminal_at" IS NULL
+    ON CONFLICT ("asset_id") DO NOTHING
   `);
 }

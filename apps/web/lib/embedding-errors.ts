@@ -24,6 +24,7 @@ export const EMBEDDING_OUTCOMES = [
   'global_concurrency',
   'daily_budget',
   'limiter_unavailable',
+  'embedding_configuration',
 ] as const;
 
 export type EmbeddingOutcome = (typeof EMBEDDING_OUTCOMES)[number];
@@ -119,6 +120,21 @@ export class EmbeddingProviderUnavailableError extends EmbeddingError {
   ) {
     super(message, 503, true, normalizeEmbeddingRetryAfter(retryAfterSec));
     this.name = 'EmbeddingProviderUnavailableError';
+  }
+}
+
+/**
+ * Deterministic provider setup failure. This is operator-remediable, not a
+ * transient provider outcome: callers must not spend an attempt or advertise
+ * an automatic retry.
+ */
+export class EmbeddingConfigurationError extends EmbeddingError {
+  readonly reason = 'embedding_configuration' as const;
+
+  constructor(message = 'Embedding provider configuration is unavailable', cause?: unknown) {
+    super(message, 503, false);
+    this.name = 'EmbeddingConfigurationError';
+    if (cause !== undefined) this.cause = cause;
   }
 }
 

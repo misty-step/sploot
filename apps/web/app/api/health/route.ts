@@ -40,6 +40,11 @@ interface DatabaseHealth {
 interface LimiterSchemaRow {
   limiter_buckets: string | null;
   limiter_leases: string | null;
+  processing_claim_token: string | null;
+  revive_count: string | null;
+  claim_token_constraint: boolean;
+  revive_constraint: boolean;
+  revival_trigger: boolean;
 }
 
 const TIMEOUT_MS = 5_000;
@@ -48,12 +53,55 @@ async function queryRuntimeSchema(): Promise<LimiterSchemaRow[]> {
   return prisma.$queryRaw<LimiterSchemaRow[]>`
     SELECT
       to_regclass('public.embedding_rate_buckets')::text AS limiter_buckets,
-      to_regclass('public.embedding_rate_leases')::text AS limiter_leases
+      to_regclass('public.embedding_rate_leases')::text AS limiter_leases,
+      (
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
+          AND column_name = 'processing_claim_token'
+      ) AS processing_claim_token,
+      (
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
+          AND column_name = 'revive_count'
+      ) AS revive_count,
+      EXISTS (
+        SELECT 1 FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE c.conname = 'asset_embeddings_processing_claim_token_state'
+          AND t.relname = 'asset_embeddings' AND n.nspname = 'public'
+          AND c.convalidated
+      ) AS claim_token_constraint,
+      EXISTS (
+        SELECT 1 FROM pg_constraint c
+        JOIN pg_class t ON t.oid = c.conrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE c.conname = 'asset_embeddings_revive_count_bounded'
+          AND t.relname = 'asset_embeddings' AND n.nspname = 'public'
+          AND c.convalidated
+      ) AS revive_constraint,
+      EXISTS (
+        SELECT 1 FROM pg_trigger tr
+        JOIN pg_class t ON t.oid = tr.tgrelid
+        JOIN pg_namespace n ON n.oid = t.relnamespace
+        WHERE tr.tgname = 'asset_embeddings_revival_budget'
+          AND t.relname = 'asset_embeddings' AND n.nspname = 'public'
+          AND NOT tr.tgisinternal
+      ) AS revival_trigger
   `;
 }
 
 function schemaIsReady(rows: LimiterSchemaRow[]): boolean {
-  return Boolean(rows[0]?.limiter_buckets && rows[0]?.limiter_leases);
+  const row = rows[0];
+  return Boolean(
+    row?.limiter_buckets &&
+    row.limiter_leases &&
+    row.processing_claim_token &&
+    row.revive_count &&
+    row.claim_token_constraint &&
+    row.revive_constraint &&
+    row.revival_trigger,
+  );
 }
 
 async function checkDatabase(): Promise<DatabaseHealth> {

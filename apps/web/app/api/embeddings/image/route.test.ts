@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import type { AuthenticatedApiHandler } from '@/lib/auth/with-authenticated-api';
 import type { RouteHandler } from '@/lib/with-observability';
-import { EmbeddingProviderUnavailableError } from '@/lib/embedding-errors';
+import { EmbeddingConfigurationError, EmbeddingProviderUnavailableError } from '@/lib/embedding-errors';
 
 const testPrincipal = {
   userId: 'user-1',
@@ -31,7 +31,7 @@ const mocks = vi.hoisted(() => ({
   reviveTerminalEmbedding: vi.fn(),
   getEmbeddingProviderCircuit: vi.fn(),
   deferEmbeddingAdmission: vi.fn(),
-  deferEmbeddingProviderInitialization: vi.fn(),
+  recordEmbeddingConfigurationFailure: vi.fn(),
   recordEmbeddingAttemptFailure: vi.fn(),
 }));
 
@@ -72,7 +72,7 @@ vi.mock('@/lib/embedding-guard', () => ({
 
 vi.mock('@/lib/embedding-resilience', () => ({
   deferEmbeddingAdmission: mocks.deferEmbeddingAdmission,
-  deferEmbeddingProviderInitialization: mocks.deferEmbeddingProviderInitialization,
+  recordEmbeddingConfigurationFailure: mocks.recordEmbeddingConfigurationFailure,
   getEmbeddingAdmissionReason: () => undefined,
   getEmbeddingProviderCircuit: mocks.getEmbeddingProviderCircuit,
   isEmbeddingAdmissionFailure: () => false,
@@ -98,6 +98,12 @@ vi.mock('@/lib/embedding-errors', () => ({
     retryAfterSec?: number;
     statusCode = 503;
     constructor(message: string) { super(message); this.retryAfterSec = 30; }
+  },
+  EmbeddingConfigurationError: class EmbeddingConfigurationError extends Error {
+    statusCode = 503;
+    retryable = false;
+    reason = 'embedding_configuration';
+    constructor(message: string) { super(message); }
   },
 }));
 
@@ -238,19 +244,19 @@ describe('POST /api/embeddings/image asset media selection', () => {
     expect(mocks.recordEmbeddingAttemptFailure).toHaveBeenCalledWith('asset-failed', 'provider failed', 'claim-1');
   });
 
-  it('defers factory initialization without poisoning, but counts a provider-call unavailable error', async () => {
+  it('terminally blocks factory initialization without poisoning or retry headers', async () => {
     mocks.findFirst.mockResolvedValue({
       id: 'asset-init', blobUrl: 'https://blob.example/image.jpg', thumbnailUrl: null,
       mime: 'image/jpeg', checksumSha256: 'init-checksum', embedding: null,
     });
     mocks.createEmbeddingService.mockImplementationOnce(() => {
-      throw new EmbeddingProviderUnavailableError('missing provider token');
+      throw new EmbeddingConfigurationError('missing provider token');
     });
 
     const initResponse = await POST(request({ assetId: 'asset-init', imageUrl: 'https://blob.example/image.jpg' }));
     expect(initResponse.status).toBe(503);
-    expect(mocks.deferEmbeddingProviderInitialization).toHaveBeenCalledWith(
-      'asset-init', 'missing provider token', 30, 'claim-1',
+    expect(mocks.recordEmbeddingConfigurationFailure).toHaveBeenCalledWith(
+      'asset-init', expect.objectContaining({ reason: 'embedding_configuration', retryable: false }), 'claim-1',
     );
     expect(mocks.recordEmbeddingAttemptFailure).not.toHaveBeenCalled();
 

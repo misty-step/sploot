@@ -5,6 +5,9 @@ import { randomUUID } from 'node:crypto';
 import { prisma } from '@/lib/db';
 import { logger } from '@/lib/observability-logger';
 import {
+  EmbeddingConfigurationError,
+} from './embedding-errors';
+import {
   EmbeddingAdmissionError,
   type EmbeddingAdmissionReason,
 } from './embedding-admission';
@@ -554,47 +557,46 @@ export async function deferEmbeddingAdmission(
   }
 }
 
+export function normalizeEmbeddingConfigurationError(error: unknown): EmbeddingConfigurationError {
+  return error instanceof EmbeddingConfigurationError
+    ? error
+    : new EmbeddingConfigurationError('Embedding service initialization failed', error);
+}
+
 /**
- * Defer work that failed before a paid provider attempt existed. This path is
- * claim-fenced but deliberately does not increment the poison counter: a
- * missing token or malformed provider client is an operational deferral, not
- * an asset attempt.
+ * Shared deterministic-initialization policy. Configuration failures are
+ * terminal without incrementing the paid-attempt counter. The claim is
+ * cleared atomically, and observability logging forwards the Canary signal.
  */
-export async function deferEmbeddingProviderInitialization(
+export async function recordEmbeddingConfigurationFailure(
   assetId: string,
-  errorMessage: string,
-  retryAfterSec: number | undefined,
-  expectedProcessingClaimToken: string | undefined,
+  error: unknown,
+  expectedProcessingClaimToken?: string,
   nowMs: number = Date.now(),
 ): Promise<boolean> {
+  const configurationError = normalizeEmbeddingConfigurationError(error);
+  logger.logError('embedding-provider.configuration-failed', configurationError, {
+    assetId,
+    retryable: false,
+    providerAttempt: false,
+  });
+
   if (!prisma || !expectedProcessingClaimToken) return false;
 
-  const now = new Date(nowMs);
-  const nextAttemptAt = new Date(
-    nowMs + admissionBackoffSeconds('provider_unavailable', retryAfterSec, nowMs) * 1000,
-  );
-  try {
-    const updated = await prisma.$executeRaw(Prisma.sql`
-      UPDATE "asset_embeddings"
-      SET "status" = 'pending',
-          "error" = ${errorMessage},
-          "next_attempt_at" = ${nextAttemptAt},
-          "terminal_at" = NULL,
-          "processing_claim_token" = NULL,
-          "updatedAt" = ${now}
-      WHERE "asset_id" = ${assetId}
-        AND "status" = 'processing'
-        AND "processing_claim_token" = ${expectedProcessingClaimToken}
-        AND "terminal_at" IS NULL
-    `);
-    return updated === 1;
-  } catch (error) {
-    logger.logError('embedding-provider.initialization-deferral-failed', error, {
-      assetId,
-      retryAfterSec,
-    });
-    return false;
-  }
+  const updated = await prisma.$executeRaw(Prisma.sql`
+    UPDATE "asset_embeddings"
+    SET "status" = 'failed',
+        "error" = ${configurationError.message},
+        "next_attempt_at" = NULL,
+        "terminal_at" = ${new Date(nowMs)},
+        "processing_claim_token" = NULL,
+        "updatedAt" = ${new Date(nowMs)}
+    WHERE "asset_id" = ${assetId}
+      AND "status" = 'processing'
+      AND "processing_claim_token" = ${expectedProcessingClaimToken}
+      AND "terminal_at" IS NULL
+  `);
+  return updated === 1;
 }
 
 export async function recordEmbeddingAttemptFailure(

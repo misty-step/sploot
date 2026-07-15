@@ -73,8 +73,11 @@ Because former runtimes do not maintain the monthly counter, operators must set
 `SPLOOT_EMBEDDINGS_ENABLED=false` and verify the disabled route response before
 a deliberate or extended rollback; it stays disabled until the current
 admission runtime and its DB proof are restored. The additive attempt-count
-constraint is installed `NOT VALID` and validated separately, so the old
-runtime remains fail-closed without a blocking constraint-creation scan.
+constraint is installed `NOT VALID` and validated in the following migration,
+with a five-second transaction-local `lock_timeout`, so the old runtime
+remains fail-closed without retaining an ACCESS EXCLUSIVE lock through the
+validation scan. A lock timeout is a failed deployment phase, not permission
+to skip validation.
 Share-slug
 resolution still falls through to Postgres. Forward recovery is preferred.
 

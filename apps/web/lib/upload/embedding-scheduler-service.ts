@@ -8,7 +8,6 @@ import {
 } from '@/lib/embeddings';
 import {
   EmbeddingProviderCircuitOpenError,
-  EmbeddingProviderUnavailableError,
 } from '@/lib/embedding-errors';
 import {
   acquireEmbeddingProcessing,
@@ -21,7 +20,8 @@ import {
 } from '@/lib/embedding-media';
 import {
   deferEmbeddingAdmission,
-  deferEmbeddingProviderInitialization,
+  normalizeEmbeddingConfigurationError,
+  recordEmbeddingConfigurationFailure,
   type EmbeddingAttemptFailure,
   type EmbeddingAdmissionReason,
   getEmbeddingAdmissionReason,
@@ -130,10 +130,14 @@ export class EmbeddingSchedulerService {
     }
 
     if (media.sourceKind === 'unsupported') {
-      await markEmbeddingTerminalSkipped(
-        assetId,
-        'Unsupported video without a poster thumbnail'
-      );
+      const lock = await acquireEmbeddingProcessing(assetId);
+      if (lock.acquired) {
+        await markEmbeddingTerminalSkipped(
+          assetId,
+          'Unsupported video without a poster thumbnail',
+          lock.processingClaimToken,
+        );
+      }
       logger.warn('Embedding generation terminal-skipped', {
         assetId,
         reason: media.skipReason,
@@ -291,15 +295,10 @@ export class EmbeddingSchedulerService {
         error: error instanceof Error ? error.message : String(error),
       });
 
-      const providerError = error instanceof EmbeddingProviderUnavailableError
-        ? error
-        : new EmbeddingProviderUnavailableError(
-            'Embedding service initialization failed',
-          );
-      const deferred = await deferEmbeddingProviderInitialization(
+      const configurationError = normalizeEmbeddingConfigurationError(error);
+      const deferred = await recordEmbeddingConfigurationFailure(
         assetId,
-        providerError.message,
-        providerError.retryAfterSec,
+        configurationError,
         lock.processingClaimToken,
       );
       if (!deferred) {
@@ -308,9 +307,9 @@ export class EmbeddingSchedulerService {
         });
       }
       throw new EmbeddingScheduleError(
-        `Embedding generation deferred: ${providerError.message}`,
-        true,
-        providerError,
+        `Embedding generation blocked: ${configurationError.message}`,
+        false,
+        configurationError,
       );
     }
 
@@ -529,17 +528,8 @@ export class EmbeddingSchedulerService {
             AND "terminal_at" IS NULL
         `);
       } else {
-        await prisma.$executeRaw(Prisma.sql`
-          UPDATE "asset_embeddings"
-          SET "status" = 'pending',
-              "error" = ${errorMessage},
-              "processing_claim_token" = NULL
-          WHERE "asset_id" = ${assetId}
-            AND "image_embedding" IS NULL
-            AND ("dim" IS NULL OR "dim" = 0)
-            AND "terminal_at" IS NULL
-            AND NOT ("status" = 'processing' AND "processing_claim_token" IS NOT NULL)
-        `);
+        logger.warn('Refusing unfenced embedding deferral', { assetId, errorMessage });
+        return;
       }
 
       logger.debug('Deferred embedding for retry', { assetId });
@@ -585,17 +575,8 @@ export class EmbeddingSchedulerService {
             AND "terminal_at" IS NULL
         `);
       } else {
-        await prisma.$executeRaw(Prisma.sql`
-          UPDATE "asset_embeddings"
-          SET "status" = 'failed',
-              "error" = ${errorMessage},
-              "processing_claim_token" = NULL
-          WHERE "asset_id" = ${assetId}
-            AND "image_embedding" IS NULL
-            AND ("dim" IS NULL OR "dim" = 0)
-            AND "terminal_at" IS NULL
-            AND NOT ("status" = 'processing' AND "processing_claim_token" IS NOT NULL)
-        `);
+        logger.warn('Refusing unfenced embedding failure write', { assetId, errorMessage });
+        return;
       }
 
       logger.debug('Marked embedding as failed', { assetId });

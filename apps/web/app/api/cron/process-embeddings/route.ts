@@ -11,6 +11,7 @@ import {
   EmbeddingProviderCircuitOpenError,
   EmbeddingProviderRateLimitError,
   EmbeddingProviderUnavailableError,
+  EmbeddingConfigurationError,
 } from '@/lib/embedding-errors';
 import { headers } from 'next/headers';
 import { withObservability } from '@/lib/with-observability';
@@ -23,7 +24,8 @@ import {
 } from '@/lib/embedding-guard';
 import {
   deferEmbeddingAdmission,
-  deferEmbeddingProviderInitialization,
+  normalizeEmbeddingConfigurationError,
+  recordEmbeddingConfigurationFailure,
   getEmbeddingAdmissionReason,
   getEmbeddingProviderCircuit,
   isGlobalEmbeddingAdmissionReason,
@@ -56,7 +58,7 @@ interface ProcessingStats {
   }>;
 }
 
-type BatchOutcome = 'success' | 'no_work' | 'partial' | 'backoff';
+type BatchOutcome = 'success' | 'no_work' | 'partial' | 'backoff' | 'configuration_error';
 
 /**
  * GET /api/cron/process-embeddings
@@ -229,10 +231,14 @@ async function getHandler(request: NextRequest) {
           thumbnailUrl: asset.thumbnailUrl,
         });
         if (media.sourceKind === 'unsupported') {
-          await markEmbeddingTerminalSkipped(
-            asset.id,
-            'Unsupported video without a poster thumbnail'
-          );
+          const lock = await acquireEmbeddingProcessing(asset.id);
+          if (lock.acquired) {
+            await markEmbeddingTerminalSkipped(
+              asset.id,
+              'Unsupported video without a poster thumbnail',
+              lock.processingClaimToken,
+            );
+          }
           stats.skippedCount++;
           logger.logInfo('cron.process-embeddings.asset-skipped', {
             assetId: asset.id,
@@ -262,8 +268,10 @@ async function getHandler(request: NextRequest) {
           try {
             embeddingService = createEmbeddingService(asset.ownerUserId);
           } catch (error) {
-            // Initialization happens before any paid provider attempt. Defer
-            // the exact claim without consuming the asset's poison budget.
+            // Initialization happens before any paid provider attempt. A
+            // deterministic configuration failure is terminal without an
+            // attempt; transient circuit/provider errors retain their own
+            // retry policy below.
             const providerError =
               error instanceof EmbeddingProviderCircuitOpenError ||
               error instanceof EmbeddingProviderRateLimitError ||
@@ -272,9 +280,9 @@ async function getHandler(request: NextRequest) {
                 : new EmbeddingProviderUnavailableError(
                     'Embedding service initialization failed',
                   );
-            const retryAfterSec = providerError.retryAfterSec ?? 30;
             const errorMessage = providerError.message;
             if (providerError instanceof EmbeddingProviderCircuitOpenError) {
+              const retryAfterSec = providerError.retryAfterSec ?? 30;
               await deferEmbeddingAdmission(
                 asset.id,
                 errorMessage,
@@ -300,37 +308,28 @@ async function getHandler(request: NextRequest) {
               });
               break;
             }
-            const deferred = await deferEmbeddingProviderInitialization(
+            const configurationError = normalizeEmbeddingConfigurationError(error);
+            const deferred = await recordEmbeddingConfigurationFailure(
               asset.id,
-              errorMessage,
-              retryAfterSec,
+              configurationError,
               processingClaimToken,
             );
             stats.failureCount++;
-            stats.deferredCount++;
             stats.errors.push({
               assetId: asset.id,
               error: errorMessage,
-              taxonomy: providerError.reason,
-              statusCode: providerError.statusCode,
-              retryAfterSec,
+              taxonomy: configurationError.reason,
+              statusCode: configurationError.statusCode,
             });
-            batchOutcomeReason = providerError.reason;
+            batchOutcomeReason = configurationError.reason;
             logger.logInfo('cron.process-embeddings.initialization-deferred', {
               assetId: asset.id,
               deferred,
               attemptCount: 0,
-              reason: providerError.reason,
+              retryable: false,
+              reason: configurationError.reason,
             });
-            batchOutcome = 'backoff';
-            batchRetryAfterSec = retryAfterSec;
-            if (!(error instanceof EmbeddingError)) {
-              logger.logError(
-                'cron:process-embeddings:service-init-failed',
-                error as Error,
-                { assetId: asset.id }
-              );
-            }
+            batchOutcome = 'configuration_error';
             break;
           }
           embeddingServices.set(asset.ownerUserId, embeddingService);
@@ -367,7 +366,9 @@ async function getHandler(request: NextRequest) {
         const errorMessage =
           error instanceof Error ? error.message : 'Unknown error';
         const taxonomy =
-          error instanceof EmbeddingProviderCircuitOpenError
+          error instanceof EmbeddingConfigurationError
+            ? error.reason
+            : error instanceof EmbeddingProviderCircuitOpenError
             ? error.reason
             : error instanceof EmbeddingProviderRateLimitError ||
                 error instanceof EmbeddingProviderUnavailableError
@@ -502,16 +503,22 @@ async function getHandler(request: NextRequest) {
     const outcome: BatchOutcome =
       batchOutcome === 'backoff'
         ? 'backoff'
+        : batchOutcome === 'configuration_error'
+          ? 'configuration_error'
         : stats.deferredCount > 0 || stats.failureCount > 0 || stats.skippedCount > 0
           ? 'partial'
           : 'success';
-    const responseStatus = outcome === 'backoff' ? 503 : outcome === 'partial' ? 207 : 200;
+    const responseStatus = outcome === 'backoff' || outcome === 'configuration_error'
+      ? 503
+      : outcome === 'partial' ? 207 : 200;
 
     return NextResponse.json({
       outcome,
       status:
         outcome === 'backoff'
           ? 'provider_backoff'
+          : outcome === 'configuration_error'
+            ? 'configuration_error'
           : outcome === 'partial'
             ? 'partial'
             : 'completed',
@@ -519,6 +526,8 @@ async function getHandler(request: NextRequest) {
       message:
         outcome === 'backoff'
           ? 'Embedding batch deferred by provider admission'
+          : outcome === 'configuration_error'
+            ? 'Embedding batch blocked by deterministic provider configuration'
           : outcome === 'partial'
           ? 'Embedding batch completed with deferred or failed assets'
           : `Processed ${stats.totalProcessed} assets`,
@@ -535,6 +544,8 @@ async function getHandler(request: NextRequest) {
             batchOutcomeReason ?? 'provider_unavailable',
             batchRetryAfterSec,
           )
+        : batchOutcomeReason
+          ? { 'X-Sploot-Embedding-Outcome': batchOutcomeReason }
         : undefined,
     });
   } catch (error) {

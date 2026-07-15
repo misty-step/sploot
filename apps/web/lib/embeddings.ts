@@ -19,6 +19,7 @@ import {
   EmbeddingProviderCircuitOpenError,
   EmbeddingProviderRateLimitError,
   EmbeddingProviderUnavailableError,
+  EmbeddingConfigurationError,
 } from './embedding-errors';
 import {
   acquireEmbeddingProviderAdmission,
@@ -528,13 +529,13 @@ class ReplicateEmbeddingService implements EmbeddingService {
 export function createEmbeddingService(userId: string): EmbeddingService {
   const embeddingGate = getRuntimeGate('embeddings');
   if (!embeddingGate.enabled) {
-    throw new EmbeddingProviderUnavailableError(embeddingGate.message);
+    throw new EmbeddingConfigurationError(embeddingGate.message);
   }
 
   const apiToken = process.env.REPLICATE_API_TOKEN;
 
   if (!apiToken || apiToken === 'your_replicate_token_here') {
-    throw new EmbeddingProviderUnavailableError('Replicate API token not configured');
+    throw new EmbeddingConfigurationError('Replicate API token not configured');
   }
 
   if (!userId) {

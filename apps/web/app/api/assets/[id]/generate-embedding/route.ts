@@ -12,6 +12,7 @@ import {
   EmbeddingProviderCircuitOpenError,
   EmbeddingProviderRateLimitError,
   EmbeddingProviderUnavailableError,
+  EmbeddingConfigurationError,
 } from '@/lib/embedding-errors';
 import {
   acquireEmbeddingProcessing,
@@ -20,7 +21,7 @@ import {
 } from '@/lib/embedding-guard';
 import {
   deferEmbeddingAdmission,
-  deferEmbeddingProviderInitialization,
+  recordEmbeddingConfigurationFailure,
   getEmbeddingAdmissionReason,
   getEmbeddingProviderCircuit,
   isEmbeddingAdmissionFailure,
@@ -378,12 +379,11 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
         try {
           embeddingService = createEmbeddingService(userId);
         } catch (error) {
-          if (error instanceof EmbeddingProviderUnavailableError && processingClaimToken) {
+          if (error instanceof EmbeddingConfigurationError && processingClaimToken) {
             providerInitializationDeferred = true;
-            await deferEmbeddingProviderInitialization(
+            await recordEmbeddingConfigurationFailure(
               asset.id,
-              error.message,
-              error.retryAfterSec,
+              error,
               processingClaimToken,
             );
           }
@@ -562,6 +562,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
       error instanceof EmbeddingProviderCircuitOpenError ||
       error instanceof EmbeddingProviderRateLimitError ||
       error instanceof EmbeddingProviderUnavailableError
+      || error instanceof EmbeddingConfigurationError
     ) {
       const retryAfterSec = error.retryAfterSec;
       return NextResponse.json(

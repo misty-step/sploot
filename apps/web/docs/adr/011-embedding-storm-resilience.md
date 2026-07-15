@@ -18,9 +18,11 @@ frees. Actual provider 429, timeout, and 5xx outcomes are typed provider
 failures: each requires the exact admitted generation/probe/token lease and
 opens the same circuit only when that lease still owns the row; stale late
 failures are no-ops. They are also counted against the asset attempt budget.
-Failures before a paid provider attempt, including provider-client
-initialization, only persist a claim-fenced `pending` deferral and never
-consume `attempt_count` or revival budget.
+Failures before a paid provider attempt, including deterministic provider-client
+initialization, persist a claim-fenced terminal configuration failure and never
+consume `attempt_count` or revival budget. This is non-retryable until an
+operator fixes configuration and an owner explicitly uses the terminal-revive
+path.
 Per-user rate and
 per-user concurrency decisions
 only defer that user's asset and never halt unrelated users. Cron reads the
@@ -61,8 +63,8 @@ receive at most one revival over its lifetime. Three further failures re-poison
 the row; after its new quarantine expires, owner requests return `422` with
 `reason: "revival_exhausted"`. The `revive_count` column, bounded check, and
 transition trigger enforce that policy even if an older runtime is rolled back;
-the follow-up legacy-write trigger also rejects old claim and vector-write SQL
-while `terminal_at` remains set. A permanently bad asset cannot enter an
+the claim-token state check rejects old terminal/vector-write SQL that leaves
+a token attached. A permanently bad asset cannot enter an
 unbounded paid retry loop. Cron never revives; every revive emits a structured
 `embedding.terminal-revived` log with
 the prior attempt count, revival count, and terminal timestamp. All retry,
@@ -72,9 +74,12 @@ exponential (60s, 120s, then terminal). Admission denials do not consume an
 asset attempt; provider 429s and retryable provider timeouts do.
 
 Every embedding mutation is claim-fenced. Provider success writes require the
-exact processing token; unclaimed compatibility writes atomically refuse ready,
-vector-bearing, terminal, or actively claimed rows. A lost claim returns a
-no-op rather than reporting a persisted embedding. Circuit reads happen only
+exact processing token; unclaimed compatibility writes can only insert a new
+row and never update an existing row. The database
+`asset_embeddings_processing_claim_token_state` check rejects every
+non-processing state that retains a token, while current writers clear their
+matching token in the same UPDATE. A lost claim returns a no-op rather than
+reporting a persisted embedding. Circuit reads happen only
 after no-work states (ready, processing, cooldown, and unsupported media) are
 resolved. Batch `Retry-After` is selected together with its matching outcome
 reason.
@@ -113,6 +118,24 @@ ORDER BY updatedAt DESC;
 SELECT indexname
 FROM pg_indexes
 WHERE indexname = 'asset_embeddings_pending_next_attempt_idx';
+
+SELECT column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'asset_embeddings'
+  AND column_name IN ('processing_claim_token', 'revive_count');
+
+SELECT conname, convalidated
+FROM pg_constraint
+WHERE conname IN (
+  'asset_embeddings_processing_claim_token_state',
+  'asset_embeddings_revive_count_bounded'
+);
+
+SELECT tgname
+FROM pg_trigger
+WHERE tgname = 'asset_embeddings_revival_budget'
+  AND NOT tgisinternal;
 ```
 
 The first cron invocation should return `stats.successCount`,
@@ -141,5 +164,8 @@ the previous application ignores them and existing ready vectors remain valid.
 The follow-up generation/probe migration is also additive and uses
 `IF NOT EXISTS`, so a partially applied deploy can be retried safely. Do not
 delete terminal rows or vectors as part of rollback. The attempt-count ceiling
-is added `NOT VALID` and validated separately, preserving online writes during
-constraint creation; the database ceiling remains in force for old runtimes.
+is added `NOT VALID` and validated in a separate bounded-lock migration,
+preserving online writes during constraint creation; the database attempt
+ceiling remains in force for old runtimes, but is not a durable dollar
+guarantee. If a migration hits its lock timeout, resolve the blocker and retry
+the failed phase; do not bypass validation or drop the invariant.

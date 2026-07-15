@@ -186,7 +186,8 @@ pnpm --filter web probe:enrollment -- \
   --expect-accepting false
 ```
 
-the health contract requires database `up`, embedding limiter `up`, and
+the health contract requires database `up`, the embedding limiter `up`, the
+final claim-token columns/validated constraints/revival trigger `up`, and the
 share-slug cache `local`. a green process without that end-to-end response is
 not a verified deployment.
 
@@ -208,3 +209,12 @@ the current configured attempt ceiling. It is derived from the provider-rate
 model and does not enforce durable provider dollars. Older code does not
 maintain the monthly bucket, which is why the kill switch is mandatory for any
 deliberate or extended rollback. Forward recovery is preferred.
+
+The embedding migrations that add `NOT VALID` constraints and their
+`VALIDATE CONSTRAINT` scans are separate Prisma migrations. Each sets a
+five-second transaction-local `lock_timeout`; a timeout aborts that migration
+and leaves the previous committed phase intact. Do not combine an ADD and
+VALIDATE step or manually remove the claim-token/revival constraints during
+rollback. The deploy runner and CI post-bootstrap read back both columns,
+both validated constraints, and `asset_embeddings_revival_budget` before
+declaring the bootstrap ready.

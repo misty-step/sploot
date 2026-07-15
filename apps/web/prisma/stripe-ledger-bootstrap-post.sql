@@ -465,6 +465,56 @@ GRANT EXECUTE ON FUNCTION public.sploot_issue_stripe_maintenance_token(TEXT,INTE
 GRANT EXECUTE ON FUNCTION public.sploot_purge_stripe_audit(TEXT,INTEGER,TEXT,TEXT,TEXT,TEXT,TIMESTAMP(3),TIMESTAMP(3),TIMESTAMP(3)) TO sploot_stripe_ledger_maintenance;
 GRANT EXECUTE ON FUNCTION public.sploot_purge_stripe_raw_provenance(TEXT,INTEGER,TEXT,TEXT,TEXT,TEXT,TIMESTAMP(3),TIMESTAMP(3),TIMESTAMP(3)) TO sploot_stripe_ledger_maintenance;
 
+-- The bootstrap contract is not ready unless the final embedding resilience
+-- schema is present. This closes the old false-green path that checked only
+-- the early limiter tables/circuit breaker.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'asset_embeddings'
+      AND column_name = 'processing_claim_token'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'asset_embeddings'
+      AND column_name = 'revive_count'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE c.conname = 'asset_embeddings_processing_claim_token_state'
+      AND t.relname = 'asset_embeddings'
+      AND n.nspname = 'public'
+      AND c.convalidated
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE c.conname = 'asset_embeddings_revive_count_bounded'
+      AND t.relname = 'asset_embeddings'
+      AND n.nspname = 'public'
+      AND c.convalidated
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger tr
+    JOIN pg_class t ON t.oid = tr.tgrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE tr.tgname = 'asset_embeddings_revival_budget'
+      AND t.relname = 'asset_embeddings'
+      AND n.nspname = 'public'
+      AND NOT tr.tgisinternal
+  ) THEN
+    RAISE EXCEPTION 'final embedding claim-token schema contract is incomplete';
+  END IF;
+END;
+$$;
+
 UPDATE sploot_bootstrap.stripe_ledger_bootstrap_state
 SET phase = 'ready', version = current_setting('sploot.bootstrap_version'), updated_at = CURRENT_TIMESTAMP,
     ready_digest = encode(public.digest('stripe-ledger-bootstrap|ready|' || current_setting('sploot.bootstrap_version'), 'sha256'), 'hex')

@@ -336,6 +336,45 @@ jobs:
           leftover_state="$(psql "$admin_url" -Atc "SELECT count(*) FROM pg_tables WHERE tablename='stripe_ledger_bootstrap_state'")"
           test "$leftover_state" = '0'
 
+          # 1b) Truly fresh restricted-role path. This database has no
+          # Prisma ledger and receives every migration through Prisma as the
+          # restricted migrator, including the claim-token migrations.
+          fresh_db='sploot_fresh'
+          psql "$admin_url" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${fresh_db}"
+          fresh_url="postgresql://test:test@localhost:5432/${fresh_db}?sslmode=disable"
+          psql "$fresh_url" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-pre.sql
+          fresh_migrator_password="$(openssl rand -hex 32)"
+          fresh_app_password="$(openssl rand -hex 32)"
+          fresh_issuer_password="$(openssl rand -hex 32)"
+          fresh_consumer_password="$(openssl rand -hex 32)"
+          psql "$admin_url" -v ON_ERROR_STOP=1 -v app_password="$fresh_app_password" -v migrator_password="$fresh_migrator_password" -v issuer_password="$fresh_issuer_password" -v consumer_password="$fresh_consumer_password" <<'SQL'
+          ALTER ROLE sploot_stripe_app LOGIN PASSWORD :'app_password';
+          ALTER ROLE sploot_stripe_schema_migrator LOGIN PASSWORD :'migrator_password';
+          ALTER ROLE sploot_stripe_ledger_issuer LOGIN PASSWORD :'issuer_password';
+          ALTER ROLE sploot_stripe_ledger_consumer LOGIN PASSWORD :'consumer_password';
+          SQL
+          fresh_migrator_url="postgresql://sploot_stripe_schema_migrator:${fresh_migrator_password}@localhost:5432/${fresh_db}?sslmode=disable"
+          DATABASE_URL="$fresh_migrator_url" pnpm --filter web exec prisma migrate deploy
+
+          # Replay the additive/validation SQL twice after Prisma's ledger
+          # commit. This is the real commit-before-ledger uncertainty oracle.
+          for migration in \
+            20260715030000_enforce_embedding_attempt_ceiling \
+            20260715035000_validate_embedding_attempt_ceiling \
+            20260715040000_add_embedding_processing_claim_token \
+            20260715045000_validate_embedding_processing_claim_token_state \
+            20260715050000_cap_embedding_terminal_revivals \
+            20260715055000_validate_embedding_revival_budget; do
+            for replay in 1 2; do
+              PGPASSWORD="$fresh_migrator_password" psql "$fresh_migrator_url" -v ON_ERROR_STOP=1 -f "apps/web/prisma/migrations/${migration}/migration.sql"
+            done
+          done
+          psql "$fresh_url" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-post.sql
+          fresh_marker="$(psql "$fresh_url" -Atc "SELECT phase || ':' || version FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
+          test "$fresh_marker" = "ready:${bootstrap_version}"
+          fresh_schema="$(psql "$fresh_url" -Atc "SELECT (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='asset_embeddings' AND column_name='processing_claim_token')) AND (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='asset_embeddings' AND column_name='revive_count')) AND (EXISTS (SELECT 1 FROM pg_constraint WHERE conname='asset_embeddings_processing_claim_token_state' AND convalidated)) AND (EXISTS (SELECT 1 FROM pg_constraint WHERE conname='asset_embeddings_revive_count_bounded' AND convalidated)) AND (EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='asset_embeddings_revival_budget' AND NOT tgisinternal))")"
+          test "$fresh_schema" = 't'
+
           # 2) Real upgrade flow: install every pre-Stripe migration as the
           #    legacy owner, record it in Prisma's ledger, then prove the
           #    restricted migrator can evolve that existing schema.
@@ -390,6 +429,8 @@ jobs:
           psql "$admin_url" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-post.sql
           marker="$(psql "$admin_url" -Atc "SELECT phase || ':' || version FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
           test "$marker" = "ready:${bootstrap_version}"
+          final_schema="$(psql "$admin_url" -Atc "SELECT (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='asset_embeddings' AND column_name='processing_claim_token')) AND (EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='asset_embeddings' AND column_name='revive_count')) AND (EXISTS (SELECT 1 FROM pg_constraint WHERE conname='asset_embeddings_processing_claim_token_state' AND convalidated)) AND (EXISTS (SELECT 1 FROM pg_constraint WHERE conname='asset_embeddings_revive_count_bounded' AND convalidated)) AND (EXISTS (SELECT 1 FROM pg_trigger WHERE tgname='asset_embeddings_revival_budget' AND NOT tgisinternal))")"
+          test "$final_schema" = 't'
           public_exec="$(psql "$admin_url" -Atc "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.prosecdef AND EXISTS (SELECT 1 FROM aclexplode(COALESCE(p.proacl, acldefault('f',p.proowner))) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')")"
           test "$public_exec" = '0'
           app_ledger_dml="$(PGPASSWORD="$app_password" psql "postgresql://sploot_stripe_app:${app_password}@localhost:5432/sploot_upgrade?sslmode=disable" -Atc "SELECT has_table_privilege(current_user, 'public.stripe_cancellation_deliveries', 'INSERT') OR has_table_privilege(current_user, 'public.stripe_cancellation_deliveries', 'UPDATE') OR has_table_privilege(current_user, 'public.stripe_cancellation_deliveries', 'DELETE')")"
