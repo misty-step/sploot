@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-15T06:51:35Z",
+  "storage": {
+    "blobObjects": 6461,
+    "blobBytes": 532395408,
+    "databaseSourceBytesLive": 499266304,
+    "databaseSourceBytesDeleted": 18827,
+    "liveAssets": 3232,
+    "deletedAssets": 1,
+    "liveThumbnails": 3113,
+    "reconciliation": "Blob is 33,110,277 bytes above source bytes recorded in Postgres. The named 6.63% gap contains thumbnails plus any unreferenced objects; physical attribution remains the storage-ledger card's job."
+  },
+  "database": {
+    "databaseBytes": 42016768,
+    "users": 10,
+    "readyEmbeddings": 3088,
+    "failedEmbeddings": 130,
+    "processingEmbeddings": 14,
+    "pendingEmbeddings": 1,
+    "searches30d": 9,
+    "textCacheRows": 12
+  },
+  "inference": {
+    "latestPredictionSample": {
+      "size": 100,
+      "from": "2026-07-15T05:21:10Z",
+      "to": "2026-07-15T06:46:24Z",
+      "failed": 95,
+      "canceled": 1,
+      "succeeded": 4,
+      "model": "krthr/clip-embeddings",
+      "modelVersion": "1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4"
+    },
+    "reconciliation": "This is operational usage, not a bill. Public-model failed predictions are documented as unbilled, while canceled/time-based work may bill; exact Replicate dollars are unavailable to the API authority."
+  },
+  "digitalOcean": {
+    "webInstance": "apps-s-1vcpu-2gb",
+    "webInstances": 1,
+    "scheduledSmallJobs": 4,
+    "embeddingJobSchedule": "three calls over about ten minutes every fifteen minutes",
+    "embeddingJobEstimatedMonthlyUsd": 3.33,
+    "invoicePreviewUsd": 41.69,
+    "monthToDateUsageUsd": 43.76,
+    "namedVarianceUsd": 2.07,
+    "varianceExplanation": "Preview and balance endpoints update on different cadences and cover the entire account, which hosts multiple apps. DigitalOcean exposes no per-app accrued-transfer or invoice-preview allocation, so Sploot's exact July line item is not inferable from this authority."
+  },
+  "telemetry": {
+    "errors30d": 5917,
+    "errorGroupsReturned": 50,
+    "reconciliation": "Canary is a self-hosted shared DigitalOcean component. This is event usage, not a separate vendor bill; the model allocates fixed component cost instead of inventing a per-event price."
+  },
+  "github": {
+    "repositoryVisibility": "public",
+    "activeCacheCount": 16,
+    "activeCacheBytes": 6835929239,
+    "reconciliation": "6.37 GiB is below the separate 10 GiB per-repository cache allowance; standard public-repository runners are free."
+  },
+  "unknowns": [
+    {
+      "name": "Vercel billed operations and transfer for the current cycle",
+      "value": null,
+      "impact": "Object bytes are exact, but invoice reconciliation cannot distinguish reads, writes, edge requests, and origin misses without Vercel usage authority."
+    },
+    {
+      "name": "Neon production plan, CU-hours, history bytes, and transfer",
+      "value": null,
+      "impact": "Database bytes are exact; the model prices GA on Launch rates and varies CU-hours rather than assuming the Free allowance."
+    },
+    {
+      "name": "Replicate billed dollars",
+      "value": null,
+      "impact": "Prediction status and runtime are readable, but the API does not expose invoice charges. Model-page typical cost and retry sensitivity are used."
+    },
+    {
+      "name": "Clerk dashboard plan and MRU",
+      "value": null,
+      "impact": "Postgres has 10 users, which is not the same billing measure as MRU. Hobby is the explicit current assumption."
+    },
+    {
+      "name": "Sploot-only DigitalOcean invoice allocation",
+      "value": null,
+      "impact": "The account-level invoice preview includes unrelated apps; the app spec still proves Sploot's $25 service and prorated jobs."
+    }
+  ]
+}

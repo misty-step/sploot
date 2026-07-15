@@ -35,6 +35,8 @@
     "lint:design": "node scripts/check-design-system.mjs",
     "type-check": "turbo run type-check",
     "test": "turbo run test",
+    "economics": "node economics/cost-model.mjs",
+    "test:economics": "node --test economics/cost-model.test.mjs",
     "secrets:check": "node scripts/check-secrets.mjs",
     "secrets:gitleaks": "gitleaks dir --redact=100 --config .gitleaks.toml .",
     "secrets:test": "node --test scripts/check-secrets.test.mjs",
