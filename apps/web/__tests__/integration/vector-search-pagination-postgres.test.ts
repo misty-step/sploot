@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 
-import { createVectorSearchContext, prisma, upsertAssetEmbedding, vectorSearchPage } from '@/lib/db';
+import { createVectorSearchContext, prisma, upsertAssetEmbedding, vectorSearch, vectorSearchPage } from '@/lib/db';
 
 const describeWithDatabase = process.env.DATABASE_URL && prisma
   ? describe.sequential
@@ -38,12 +38,14 @@ describeWithDatabase('Postgres seeded vector-search pagination', () => {
     await prisma.assetTag.create({
       data: { assetId: assetIds[22], tagId: tag.id },
     });
-    await Promise.all(assetIds.map((assetId) => upsertAssetEmbedding({
+    await Promise.all(assetIds.map((assetId, index) => upsertAssetEmbedding({
       assetId,
       modelName: 'pagination-test',
       modelVersion: 'v1',
       dim: EMBEDDING_DIMENSION,
-      embedding: Array(EMBEDDING_DIMENSION).fill(0.1),
+      embedding: index === assetIds.length - 1
+        ? [1, ...Array(EMBEDDING_DIMENSION - 1).fill(0)]
+        : Array(EMBEDDING_DIMENSION).fill(0.1),
     })));
   }, 30_000);
 
@@ -110,5 +112,68 @@ describeWithDatabase('Postgres seeded vector-search pagination', () => {
     expect(favoritePage.results.map(({ id }) => id)).toEqual([assetIds[19]]);
     expect(tagPage.total).toBe(1);
     expect(tagPage.results.map(({ id }) => id)).toEqual([assetIds[22]]);
+  });
+
+  it('traverses tied relevance scores with a cursor and preserves the terminal empty page', async () => {
+    const query = Array(EMBEDDING_DIMENSION).fill(0.1);
+    const context = createVectorSearchContext({ query: 'tied assets', threshold: 0, limit: 7 });
+    const pages = [];
+    let cursor: string | undefined;
+
+    for (let pageNumber = 0; pageNumber < 5; pageNumber += 1) {
+      const page = await vectorSearchPage(userId, query, {
+        limit: 7,
+        cursor,
+        cursorContext: context,
+      });
+      pages.push(page);
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
+
+    expect(pages).toHaveLength(5);
+    expect(pages.slice(0, 3).map((page) => page.results.length)).toEqual([7, 7, 7]);
+    expect(pages[3].results).toHaveLength(4);
+    expect(pages[4].results).toEqual([]);
+    expect(pages[4].hasMore).toBe(false);
+    expect(new Set(pages.flatMap((page) => page.results.map(({ id }) => id))).size).toBe(assetIds.length);
+  });
+
+  it('applies threshold variance before paging and reports empty later pages honestly', async () => {
+    const query = Array(EMBEDDING_DIMENSION).fill(0.1);
+    const highThreshold = 0.99;
+    const context = createVectorSearchContext({ query: 'threshold variance', threshold: highThreshold, limit: 10 });
+    const first = await vectorSearchPage(userId, query, {
+      limit: 10,
+      threshold: highThreshold,
+      offset: 0,
+      cursorContext: context,
+    });
+    const later = await vectorSearchPage(userId, query, {
+      limit: 10,
+      threshold: highThreshold,
+      offset: assetIds.length,
+      cursorContext: context,
+    });
+    const all = await vectorSearchPage(userId, query, {
+      limit: 100,
+      threshold: 0,
+      cursorContext: createVectorSearchContext({ query: 'all assets', threshold: 0, limit: 100 }),
+    });
+
+    expect(first.total).toBe(assetIds.length - 1);
+    expect(first.results).toHaveLength(10);
+    expect(first.results.map(({ id }) => id)).not.toContain(assetIds.at(-1));
+    expect(later.results).toEqual([]);
+    expect(later.hasMore).toBe(false);
+    expect(all.total).toBe(assetIds.length);
+  });
+
+  it('keeps the direct pgvector threshold path complete without a capped post-filter', async () => {
+    const query = Array(EMBEDDING_DIMENSION).fill(0.1);
+    const results = await vectorSearch(userId, query, { limit: 5, threshold: 0.99 });
+
+    expect(results).toHaveLength(5);
+    expect(results.every(({ distance }) => distance >= 0.99)).toBe(true);
   });
 });

@@ -1,24 +1,23 @@
+import { createHash } from 'node:crypto';
 import { ICacheBackend, CacheStats, SearchFilters } from './types';
 import { MemoryBackend } from './MemoryBackend';
 import { PostgresTextEmbeddingStore } from './PostgresTextEmbeddingStore';
 import { normalizeSearchQuery } from '../search-config';
 
 /**
- * Generate a hash string from input for cache key generation.
- * Uses fast non-cryptographic hash for performance.
- * Copied from multi-layer-cache.ts (lines 362-372)
+ * Cache-key versioning deliberately invalidates the old 32-bit identities.
+ * Old entries are allowed to expire naturally; reading them would reintroduce
+ * cross-query contamination during a rolling deployment.
  */
-function hashString(str: string): string {
-  let hash = 0;
-  if (str.length === 0) return hash.toString(36);
+const CACHE_KEY_VERSION = 'v2';
 
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-
-  return Math.abs(hash).toString(36);
+/**
+ * Generate a deterministic, collision-resistant identity for cache keys.
+ * The full SHA-256 digest is cheap compared with embedding/database work and
+ * avoids lossy 32-bit truncation for persistent and in-memory namespaces.
+ */
+function stableIdentity(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
 /**
@@ -35,12 +34,12 @@ function serializeSearchFilters(filters: SearchFilters): string {
 
 const CACHE_KEYS = {
   TEXT_EMBEDDING: (text: string, model: string) =>
-    `txt:${hashString(model)}:${hashString(normalizeSearchQuery(text))}`,
+    `txt:${CACHE_KEY_VERSION}:${stableIdentity(model)}:${stableIdentity(normalizeSearchQuery(text))}`,
   IMAGE_EMBEDDING: (checksum: string) => `img:${checksum}`,
   SEARCH_RESULTS: (userId: string, query: string, filters: string) =>
-    `search:${userId}:${hashString(normalizeSearchQuery(query))}:${hashString(filters)}`,
+    `search:${CACHE_KEY_VERSION}:${userId}:${stableIdentity(normalizeSearchQuery(query))}:${stableIdentity(filters)}`,
   ASSET_LIST: (userId: string, params: string) =>
-    `assets:${userId}:${hashString(params)}`,
+    `assets:${CACHE_KEY_VERSION}:${userId}:${stableIdentity(params)}`,
 } as const;
 
 /**

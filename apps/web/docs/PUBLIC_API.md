@@ -145,7 +145,7 @@ web app itself calls.
 **Request:**
 
 ```json
-{ "query": "distracted boyfriend", "limit": 30, "threshold": 0.2, "favoriteOnly": false, "tagId": null }
+{ "query": "distracted boyfriend", "limit": 30, "threshold": 0.12, "favoriteOnly": false, "tagId": null }
 ```
 
 - `query` (string, required, max 500 chars)
@@ -155,7 +155,8 @@ web app itself calls.
   beyond the legacy offset window.
 - `offset` (number, optional, default 0, max 500) — retained for backwards
   compatibility on the first 500 results; do not combine it with `cursor`.
-- `threshold` (number, optional, 0–1, default 0.2) — results below this
+- `threshold` (number, optional, 0–1, default 0.12; see
+  `apps/web/lib/search-config.ts`) — results below this
   similarity are not returned; a real miss is an empty `results` array, never
   low-similarity padding.
 - `favoriteOnly` (boolean, optional, default `false`) — restrict results to
@@ -188,7 +189,7 @@ cross-context replay returns `400 {"error":"Search cursor does not match search 
   "total": 1,
   "hasMore": false,
   "limit": 30,
-  "threshold": 0.2,
+  "threshold": 0.12,
   "processingTime": 245
 }
 ```

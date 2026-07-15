@@ -1145,9 +1145,11 @@ async function vectorSearchLegacyUnfiltered(
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > SEARCH_MAX_LIMIT) {
     throw new Error(`vector search page limit must be between 1 and ${SEARCH_MAX_LIMIT}`);
   }
-  const fetchLimit = typeof threshold === 'number' && threshold > 0
-    ? Math.min(limit * 3, 120)
-    : limit;
+  // Thresholding belongs in SQL. Fetching a capped unfiltered prefix and
+  // filtering it in JavaScript silently drops qualifying rows that follow
+  // low-scoring neighbors, while a direct pgvector query with a predicate
+  // keeps the proven low-latency plan shape.
+  const fetchLimit = limit;
 
   try {
     // Keep the golden eval and similar-assets path on the pre-pagination SQL
@@ -1156,6 +1158,7 @@ async function vectorSearchLegacyUnfiltered(
       userId,
       queryEmbedding,
       fetchLimit,
+      threshold,
     ));
     return results
       .filter((result) => typeof threshold !== 'number' || threshold <= 0 || result.distance >= threshold)
@@ -1176,8 +1179,12 @@ export function buildUnfilteredVectorSearchQuery(
   userId: string,
   queryEmbedding: number[],
   fetchLimit: number,
+  threshold?: number,
 ): Prisma.Sql {
   const vectorSql = embeddingVectorSql(queryEmbedding, 'search query embedding');
+  const thresholdClause = typeof threshold === 'number' && threshold > 0
+    ? Prisma.sql`AND 1 - (ae.image_embedding <=> ${vectorSql}) >= ${threshold}`
+    : Prisma.empty;
   return Prisma.sql`
       SELECT
         a.id,
@@ -1196,6 +1203,7 @@ export function buildUnfilteredVectorSearchQuery(
       WHERE
         a.owner_user_id = ${userId}
         AND a.deleted_at IS NULL
+        ${thresholdClause}
       ORDER BY ae.image_embedding <=> ${vectorSql}
       LIMIT ${fetchLimit}
     `;

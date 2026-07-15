@@ -1140,7 +1140,7 @@ Perform semantic search using text queries.
 {
   "query": "distracted boyfriend",
   "limit": 30,
-  "threshold": 0.2,
+  "threshold": 0.12,
   "favoriteOnly": false,
   "tagId": null
 }
@@ -1155,7 +1155,8 @@ Perform semantic search using text queries.
   deterministic keyset traversal beyond the legacy offset window.
 - `offset` (number, optional): retained for backwards compatibility (default:
   0, max: 500); do not combine it with `cursor`.
-- `threshold` (number, optional): Minimum similarity score (0-1, default: 0.2)
+- `threshold` (number, optional): Minimum similarity score (0-1, default: 0.12;
+  the runtime source of truth is `lib/search-config.ts`)
   Results below this score are not returned; a real miss returns an empty
   `results` array rather than low-similarity padding.
 - `favoriteOnly` (boolean, optional): Restrict results to favorited assets.
@@ -1200,8 +1201,8 @@ or database work.
   "hasMore": false,
   "limit": 30,
   "requestedLimit": 30,
-  "threshold": 0.2,
-  "requestedThreshold": 0.2,
+  "threshold": 0.12,
+  "requestedThreshold": 0.12,
   "processingTime": 245,
   "embeddingModel": "krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4",
   "cached": false,
@@ -1295,7 +1296,8 @@ returned before cache, embedding, metadata, or vector work.
 - `sortBy` (string, optional): Sort order (`relevance`, `date`, or `favorite`)
 - `limit` (number, optional): Results per page (default: 30)
 - `offset` (number, optional): Pagination offset (default: 0)
-- `threshold` (number, optional): Minimum similarity (0-1, default: 0.5)
+- `threshold` (number, optional): Minimum similarity (0-1, default: 0.12;
+  `0.5` above is an explicit request override)
 
 **Success Response (200):**
 
