@@ -251,9 +251,12 @@ async function stopAndRestart(
         return current.targetInfos.some(info => info.targetId === terminatedTargetId);
       }, { timeout: 15_000 }).toBe(false);
 
-      // The queue message is the real wake trigger. A different CDP target and
-      // a different Playwright Worker object are both required, so a stale
-      // handle cannot satisfy the restart proof.
+      // The queue message is the real wake trigger. Chromium may reuse a target
+      // ID after the stopped target has disappeared, so the restart proof is
+      // the observed absence above followed by a running service-worker target
+      // here and a successful real queue message. Playwright may recycle its
+      // Worker wrapper when Chromium recycles the target ID, so wrapper object
+      // identity is not a lifecycle boundary.
       const wake = sendMv3Message<{ ok: boolean }>(
         popup,
         { type: LIST_QUEUE },
@@ -269,17 +272,14 @@ async function stopAndRestart(
           return current.targetInfos.find(info => (
             info.type === 'service_worker'
             && info.url.startsWith('chrome-extension://')
-            && info.targetId !== terminatedTargetId
           ))?.targetId ?? null;
         }, { timeout: 15_000 }).toBeTruthy();
       } catch (error) {
         throw new Error(`restarted worker target was not observed; targets=${JSON.stringify(lastTargets)}`, { cause: error });
       }
-      const restarted = context.serviceWorkers().find(worker => (
-        worker.url().startsWith('chrome-extension://') && worker !== previousWorker
-      ));
-      expect(restarted).toBeTruthy();
-      const worker = restarted!;
+      await expect.poll(() => latestVersion?.runningStatus ?? null, { timeout: 15_000 }).toBe('running');
+      const worker = context.serviceWorkers().find(candidate => candidate.url().startsWith('chrome-extension://'))
+        ?? previousWorker;
       observeWorker(worker);
       await wakeMv3Worker(worker, context, testInfo, step);
       return worker;
