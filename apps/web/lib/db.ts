@@ -390,6 +390,9 @@ export interface ExistingAssetMetadata {
   checksumSha256: string;
   favorite: boolean;
   createdAt: Date;
+  storageProvider?: string;
+  storageKey?: string | null;
+  thumbnailStorageKey?: string | null;
   hasEmbedding?: boolean;
 }
 
@@ -442,6 +445,9 @@ export async function assetExists(
         checksumSha256: true,
         favorite: true,
         createdAt: true,
+        storageProvider: true,
+        storageKey: true,
+        thumbnailStorageKey: true,
         // Include embedding check if requested
         ...(options?.includeEmbedding && {
           embedding: {
@@ -470,6 +476,9 @@ export async function assetExists(
       checksumSha256: asset.checksumSha256,
       favorite: asset.favorite,
       createdAt: asset.createdAt,
+      storageProvider: asset.storageProvider,
+      storageKey: asset.storageKey,
+      thumbnailStorageKey: asset.thumbnailStorageKey,
     };
 
     // Add embedding status if requested
@@ -505,6 +514,9 @@ export async function findOrCreateAsset(
     width?: number | null;
     height?: number | null;
     size: number;
+    storageProvider?: string;
+    storageKey?: string | null;
+    thumbnailStorageKey?: string | null;
   }
 ): Promise<ExistingAssetMetadata> {
   if (!prisma) {
@@ -537,6 +549,9 @@ export async function findOrCreateAsset(
           height: assetData.height,
           size: assetData.size,
           checksumSha256: assetData.checksumSha256,
+          ...(assetData.storageProvider ? { storageProvider: assetData.storageProvider } : {}),
+          ...(assetData.storageKey !== undefined ? { storageKey: assetData.storageKey } : {}),
+          ...(assetData.thumbnailStorageKey !== undefined ? { thumbnailStorageKey: assetData.thumbnailStorageKey } : {}),
           favorite: false,
         },
         select: {
@@ -551,6 +566,9 @@ export async function findOrCreateAsset(
           checksumSha256: true,
           favorite: true,
           createdAt: true,
+          storageProvider: true,
+          storageKey: true,
+          thumbnailStorageKey: true,
         },
       });
 
@@ -566,6 +584,9 @@ export async function findOrCreateAsset(
         checksumSha256: newAsset.checksumSha256,
         favorite: newAsset.favorite,
         createdAt: newAsset.createdAt,
+        storageProvider: newAsset.storageProvider,
+        storageKey: newAsset.storageKey,
+        thumbnailStorageKey: newAsset.thumbnailStorageKey,
       };
     } catch (error) {
       // Handle unique constraint violation (another request created it)
