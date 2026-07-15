@@ -5,39 +5,18 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useOffline } from '@/hooks/use-offline';
-import { useUploadQueue } from '@/hooks/use-upload-queue';
+import { useUploadQueue, type UploadQueueEvent } from '@/hooks/use-upload-queue';
 import { useFileValidation } from '@/hooks/use-file-validation';
-import {
-  extractImageUrls,
-  extractZipImages,
-  isTextBundleFile,
-  isZipFile,
-} from '@/lib/upload/bulk-import';
+import { extractImageUrls, extractZipImages, isTextBundleFile, isZipFile } from '@/lib/upload/bulk-import';
 import { UploadErrorDisplay } from '@/components/upload/upload-error-display';
-import {
-  getStructuredUploadErrorDetails,
-  getUploadStatusCodeFromMessage,
-  UploadErrorDetails,
-} from '@/lib/upload-errors';
+import { getStructuredUploadErrorDetails, getUploadStatusCodeFromMessage, UploadErrorDetails } from '@/lib/upload-errors';
 import { EmbeddingStatusIndicator } from '@/components/upload/embedding-status-indicator';
 import { UploadBatchProgressCard } from '@/components/upload/upload-batch-progress-card';
 import { UploadDropZone } from '@/components/upload/upload-drop-zone';
 import { UploadFileList } from '@/components/upload/upload-file-list';
 import { useUploadCompletion } from '@/components/upload/use-upload-completion';
-import {
-  getUploadNetworkClient,
-  UploadError,
-  type UploadErrorAction,
-} from '@/lib/upload/upload-network-client';
-import {
-  shouldEmitUploadProgressUpdate,
-  UPLOAD_PROGRESS_UI_CAP,
-} from '@/lib/upload/upload-progress-throttle';
-import { createUploadId, getUploadQueueManager } from '@/lib/upload-queue';
 import { showToast } from '@/components/ui/toast';
 import type { ProgressStats } from './upload-progress-header';
-import { FileStreamProcessor } from '@/lib/file-stream-processor';
 import { logger } from '@/lib/logger';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -49,13 +28,7 @@ interface FileMetadata {
   id: string;
   name: string; // max 255 bytes
   size: number; // 8 bytes
-  status:
-    | 'pending'
-    | 'uploading'
-    | 'success'
-    | 'error'
-    | 'queued'
-    | 'duplicate'; // 1 byte enum
+  status: 'pending' | 'uploading' | 'success' | 'error' | 'queued' | 'duplicate'; // 1 byte enum
   progress: number; // 4 bytes
   error?: string;
   errorDetails?: UploadErrorDetails;
@@ -72,6 +45,7 @@ interface FileMetadata {
   embeddingStatus?: 'pending' | 'processing' | 'ready' | 'failed';
   embeddingError?: string;
   retryCount?: number;
+  persistedId?: string;
   addedAt: number; // timestamp for sorting
 }
 
@@ -84,11 +58,7 @@ interface UploadZoneProps {
   /**
    * Callback when uploads complete successfully
    */
-  onUploadComplete?: (stats: {
-    uploaded: number;
-    duplicates: number;
-    failed: number;
-  }) => void;
+  onUploadComplete?: (stats: { uploaded: number; duplicates: number; failed: number }) => void;
 
   /**
    * Whether the upload zone is being used on the dashboard
@@ -98,38 +68,21 @@ interface UploadZoneProps {
   isOnDashboard?: boolean;
 }
 
-export function UploadZone({
-  onUploadComplete,
-  isOnDashboard = false,
-}: UploadZoneProps) {
+export function UploadZone({ onUploadComplete, isOnDashboard = false }: UploadZoneProps) {
   // Use Map for O(1) lookups and minimal memory footprint (~300 bytes per file vs 5MB)
-  const [fileMetadata, setFileMetadata] = useState(
-    () => new Map<string, FileMetadata>(),
-  );
+  const [fileMetadata, setFileMetadata] = useState(() => new Map<string, FileMetadata>());
   // Keep ref in sync with state to avoid closure issues in async functions
   const fileMetadataRef = useRef(fileMetadata);
-  // Store File objects temporarily only during active upload
-  const fileObjects = useRef(new Map<string, File>());
   const [isCancelling, setIsCancelling] = useState(false);
   const [uploadStats, setUploadStats] = useState<ProgressStats | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
   const [preparingFileCount, setPreparingFileCount] = useState(0);
   const [preparingTotalSize, setPreparingTotalSize] = useState(0);
-  const activeUploadsRef = useRef<Set<string>>(new Set());
-  const uploadStatsRef = useRef({ successful: 0, failed: 0 });
-  const [currentConcurrency, setCurrentConcurrency] = useState(6);
-  const { isOffline } = useOffline();
   const router = useRouter();
-  const uploadQueueManager = getUploadQueueManager();
-  const uploadNetworkClient = useMemo(() => getUploadNetworkClient(), []);
   const { validateFile, allowedFileTypes } = useFileValidation();
   const hasExternalUploadCompletion = Boolean(onUploadComplete);
 
-  const getMultipartSizeError = useCallback(
-    (file: File) =>
-      `too chunky for upload: ${file.name}. tried shrinking it, still over ${(UPLOAD.multipartSafeSize / 1024 / 1024).toFixed(0)}mb.`,
-    [],
-  );
+  const getMultipartSizeError = useCallback((file: File) => `too chunky for upload: ${file.name}. tried shrinking it, still over ${(UPLOAD.multipartSafeSize / 1024 / 1024).toFixed(0)}mb.`, []);
 
   const prepareFile = useCallback(
     async (file: File): Promise<{ file: File; error: string | null }> => {
@@ -158,38 +111,15 @@ export function UploadZone({
         const validationError = validateFile(file);
         return {
           file,
-          error:
-            validationError ||
-            (file.size > UPLOAD.multipartSafeSize
-              ? getMultipartSizeError(file)
-              : null),
+          error: validationError || (file.size > UPLOAD.multipartSafeSize ? getMultipartSizeError(file) : null),
         };
       }
     },
     [getMultipartSizeError, validateFile],
   );
 
-  // Progress throttling to reduce re-renders
-  const progressThrottleMap = useRef<
-    Map<string, { lastUpdate: number; lastPercent: number }>
-  >(new Map());
-
   // Convert fileMetadata Map to array for easier iteration
-  const filesArray = useMemo(
-    () =>
-      Array.from(fileMetadata.values()).sort((a, b) => a.addedAt - b.addedAt),
-    [fileMetadata],
-  );
-
-  // Initialize IndexedDB on mount
-  useEffect(() => {
-    uploadQueueManager.init().catch((error) => {
-      console.error(
-        '[UploadZone] Failed to initialize upload queue manager:',
-        error,
-      );
-    });
-  }, [uploadQueueManager]);
+  const filesArray = useMemo(() => Array.from(fileMetadata.values()).sort((a, b) => a.addedAt - b.addedAt), [fileMetadata]);
 
   useUploadCompletion(filesArray, onUploadComplete);
 
@@ -207,28 +137,17 @@ export function UploadZone({
     }
 
     const uploading = filesArray.filter((f) => f.status === 'uploading').length;
-    const successful = filesArray.filter(
-      (f) => f.status === 'success' || f.status === 'duplicate',
-    ).length;
+    const successful = filesArray.filter((f) => f.status === 'success' || f.status === 'duplicate').length;
     const failed = filesArray.filter((f) => f.status === 'error').length;
-    const pending = filesArray.filter(
-      (f) => f.status === 'pending' || f.status === 'queued',
-    ).length;
+    const pending = filesArray.filter((f) => f.status === 'pending' || f.status === 'queued').length;
 
     // Files that are uploaded but still processing embeddings
     const processingEmbeddings = filesArray.filter(
-      (f) =>
-        (f.status === 'success' || f.status === 'duplicate') &&
-        f.needsEmbedding &&
-        (f.embeddingStatus === 'pending' || f.embeddingStatus === 'processing'),
+      (f) => (f.status === 'success' || f.status === 'duplicate') && f.needsEmbedding && (f.embeddingStatus === 'pending' || f.embeddingStatus === 'processing'),
     ).length;
 
     // Files that are completely ready (uploaded + embeddings done or not needed)
-    const ready = filesArray.filter(
-      (f) =>
-        (f.status === 'success' || f.status === 'duplicate') &&
-        (!f.needsEmbedding || f.embeddingStatus === 'ready'),
-    ).length;
+    const ready = filesArray.filter((f) => (f.status === 'success' || f.status === 'duplicate') && (!f.needsEmbedding || f.embeddingStatus === 'ready')).length;
 
     const allReady = ready + failed === filesArray.length;
 
@@ -238,8 +157,7 @@ export function UploadZone({
       processingEmbeddings,
       ready,
       failed,
-      estimatedTimeRemaining:
-        pending > 0 || uploading > 0 ? (pending + uploading) * 2000 : 0, // Rough estimate
+      estimatedTimeRemaining: pending > 0 || uploading > 0 ? (pending + uploading) * 2000 : 0, // Rough estimate
     };
 
     queueMicrotask(() => setUploadStats(nextUploadStats));
@@ -249,31 +167,20 @@ export function UploadZone({
       const clearTimer = setTimeout(() => {
         // Only clear if still all complete (no new files added)
         const currentFiles = Array.from(fileMetadata.values());
-        const stillAllReady = currentFiles.every(
-          (f) =>
-            f.status === 'error' ||
-            ((f.status === 'success' || f.status === 'duplicate') &&
-              (!f.needsEmbedding || f.embeddingStatus === 'ready')),
-        );
+        const stillAllReady = currentFiles.every((f) => f.status === 'error' || ((f.status === 'success' || f.status === 'duplicate') && (!f.needsEmbedding || f.embeddingStatus === 'ready')));
 
         if (stillAllReady && currentFiles.length === filesArray.length) {
           // Clear the upload stats
           setUploadStats(null);
 
           // Show success notification
-          const successCount = currentFiles.filter(
-            (f) => f.status === 'success' || f.status === 'duplicate',
-          ).length;
+          const successCount = currentFiles.filter((f) => f.status === 'success' || f.status === 'duplicate').length;
           if (successCount > 0 && !hasExternalUploadCompletion) {
-            showToast(
-              `✓ ${successCount} ${successCount === 1 ? 'file' : 'files'} uploaded successfully`,
-              'success',
-            );
+            showToast(`✓ ${successCount} ${successCount === 1 ? 'file' : 'files'} uploaded successfully`, 'success');
           }
 
           // Clear the file list to reset upload zone
           setFileMetadata(new Map());
-          fileObjects.current.clear();
         }
       }, 3000); // Clear after 3 seconds
 
@@ -283,9 +190,7 @@ export function UploadZone({
 
   // Auto-remove failed uploads after 3 seconds with fade-out animation and toast
   useEffect(() => {
-    const failedFiles = Array.from(fileMetadata.entries()).filter(
-      ([_, file]) => file.status === 'error',
-    );
+    const failedFiles = Array.from(fileMetadata.entries()).filter(([_, file]) => file.status === 'error');
 
     if (failedFiles.length === 0) return;
 
@@ -295,11 +200,7 @@ export function UploadZone({
       // Wait 3 seconds, then remove the failed file
       const timer = setTimeout(() => {
         // Show toast notification
-        const errorMsg = file.error?.includes('timeout')
-          ? 'Upload timed out'
-          : file.error?.includes('too large')
-            ? 'File too large'
-            : 'Upload failed';
+        const errorMsg = file.error?.includes('timeout') ? 'Upload timed out' : file.error?.includes('too large') ? 'File too large' : 'Upload failed';
 
         showToast(`${file.name}: ${errorMsg}`, 'error');
 
@@ -309,9 +210,6 @@ export function UploadZone({
           newMap.delete(fileId);
           return newMap;
         });
-
-        // Clean up File object reference
-        fileObjects.current.delete(fileId);
       }, 3000);
 
       timers.push(timer);
@@ -322,792 +220,301 @@ export function UploadZone({
     };
   }, [fileMetadata]);
 
-  // Regular upload queue (localStorage-based)
-  const { addToQueue } = useUploadQueue();
-
-  const uploadFileToServer = useCallback(
-    async (fileId: string) => {
-      const uploadStartTime = Date.now();
-
-      // Get file metadata and File object (use ref to avoid stale closure)
-      const metadata = fileMetadataRef.current.get(fileId);
-      const file = fileObjects.current.get(fileId);
-
-      if (!metadata || !file) {
-        throw new Error(`File ${fileId} not found`);
-      }
-
-      // Record upload start in metrics
-
-      setFileMetadata((prev) => {
-        const newMap = new Map(prev);
-        const meta = newMap.get(fileId);
-        if (meta) {
-          newMap.set(fileId, { ...meta, status: 'uploading', progress: 10 });
-        }
-        return newMap;
-      });
-
-      const apiStartTime = performance.now(); // Define here so it's accessible in catch block
-
-      try {
-        const result = await uploadNetworkClient.uploadFile(file, {
-          timeout: 10000,
-          onProgress: (event) => {
-            const percentComplete = event.percentage;
-            const throttleInfo = progressThrottleMap.current.get(fileId) || {
-              lastUpdate: 0,
-              lastPercent: 0,
-            };
-            const now = Date.now();
-
-            if (
-              !shouldEmitUploadProgressUpdate({
-                now,
-                progressPercent: percentComplete,
-                lastUpdateAt: throttleInfo.lastUpdate,
-                lastProgressPercent: throttleInfo.lastPercent,
-              })
-            ) {
-              return;
-            }
-
-            setFileMetadata((prev) => {
-              const newMap = new Map(prev);
-              const meta = newMap.get(fileId);
-              if (meta) {
-                newMap.set(fileId, {
-                  ...meta,
-                  progress: Math.min(UPLOAD_PROGRESS_UI_CAP, percentComplete),
-                });
-              }
-              return newMap;
-            });
-
-            progressThrottleMap.current.set(fileId, {
-              lastUpdate: now,
-              lastPercent: percentComplete,
-            });
-          },
-        });
-
-        const apiDuration = performance.now() - apiStartTime;
-
-        // Record API call metrics
-
-        if (!result.success) {
-          const failedResult = result as typeof result & {
-            code?: string;
-            action?: UploadErrorAction;
-            quota?: unknown;
-            retryable?: boolean;
-            statusCode?: number;
-          };
-          throw new UploadError(
-            result.error || 'Upload failed',
-            failedResult.statusCode,
-            failedResult.retryable ?? false,
-            failedResult.code,
-            failedResult.action,
-            failedResult.quota,
-          );
-        }
-
-        // Track client upload time
-
-        // Record successful upload completion in metrics
-
-        // End the initial upload start timer if this is the first successful upload
-
-        // Handle duplicate detection as a special success case
-        const isDuplicate = result.isDuplicate === true;
-        const needsEmbedding = result.asset?.needsEmbedding === true;
-
-        // Track time to searchable if embedding is not needed
-        if (!needsEmbedding && result.asset?.id) {
-        }
-
-        setFileMetadata((prev) => {
-          const newMap = new Map(prev);
-          const meta = newMap.get(fileId);
-          if (meta) {
-            newMap.set(fileId, {
-              ...meta,
-              status: (isDuplicate ? 'duplicate' : 'success') as
-                | 'duplicate'
-                | 'success',
-              progress: 100,
-              assetId: result.asset?.id,
-              blobUrl: result.asset?.blobUrl,
-              isDuplicate,
-              nearDuplicate: result.asset?.nearDuplicate
-                ? {
-                    id: result.asset.nearDuplicate.id,
-                    distance: result.asset.nearDuplicate.distance,
-                    blobUrl: result.asset.nearDuplicate.blobUrl,
-                    thumbnailUrl: result.asset.nearDuplicate.thumbnailUrl ?? null,
-                  }
-                : null,
-              needsEmbedding,
-              embeddingStatus: (needsEmbedding ? 'pending' : 'ready') as
-                | 'pending'
-                | 'ready',
-            });
-          }
-          return newMap;
-        });
-
-        // Clear the File object reference to free memory after successful upload
-        fileObjects.current.delete(fileId);
-
-        // Track success for adaptive concurrency
-        uploadStatsRef.current.successful++;
-
-        // Clean up progress throttle map entry
-        progressThrottleMap.current.delete(fileId);
-
-        // Log memory cleanup for monitoring during development
-        logger.debug(
-          `[UploadZone] Cleared file blob for ${metadata.name}, kept metadata only`,
-        );
-
-        // Remove from persisted queue on success
-        if ((metadata as any).persistedId) {
-          try {
-            await uploadQueueManager.removeUpload(
-              (metadata as any).persistedId,
-            );
-          } catch (err) {
-            console.error(
-              '[UploadZone] Failed to remove persisted upload:',
-              err,
-            );
-          }
-        }
-
-        // Stats will be automatically updated by the effect that watches fileMetadata changes
-        // No need to manually update uploadStats here
-
-        // Trigger a refresh of the asset list if there's a callback
-        if (window.location.pathname === '/app') {
-          // Dispatch a custom event that the library page can listen to
-          window.dispatchEvent(
-            new CustomEvent('assetUploaded', { detail: result.asset }),
-          );
-        }
-      } catch (error) {
-        console.error('Upload error:', error);
-
-        // Record upload failure in metrics
-
-        const normalizedError =
-          error instanceof Error ? error : new Error('Upload failed');
-        const uploadError = error instanceof UploadError ? error : undefined;
-        const statusCode =
-          uploadError?.statusCode ??
-          getUploadStatusCodeFromMessage(normalizedError.message);
-
-        // Record API error if we have a status code
-        if (statusCode) {
-          const apiDuration = performance.now() - apiStartTime;
-        }
-
-        const errorDetails = getStructuredUploadErrorDetails({
-          error: normalizedError,
-          statusCode,
-          errorCode: uploadError?.code,
-          action: uploadError?.action,
-          quota: uploadError?.quota,
-        });
-
-        setFileMetadata((prev) => {
-          const newMap = new Map(prev);
-          const meta = newMap.get(fileId);
-          if (meta) {
-            newMap.set(fileId, {
-              ...meta,
-              status: 'error' as const,
-              progress: 0,
-              error: normalizedError.message,
-              errorDetails,
-            });
-          }
-          return newMap;
-        });
-
-        // Track failure for adaptive concurrency
-        uploadStatsRef.current.failed++;
-
-        // Clean up progress throttle map entry on error
-        progressThrottleMap.current.delete(fileId);
-
-        // Stats will be automatically updated by the effect that watches fileMetadata changes
-
-        // NOTE: We don't clear file reference on failure as it may be needed for retries
-
-        // Update persisted status to failed
-        if ((metadata as any).persistedId) {
-          try {
-            await uploadQueueManager.updateUploadStatus(
-              (metadata as any).persistedId,
-              'failed',
-              normalizedError.message,
-            );
-          } catch (err) {
-            console.error(
-              '[UploadZone] Failed to update persisted status:',
-              err,
-            );
-          }
-        }
-      } finally {
-        // Remove from active uploads
-        activeUploadsRef.current.delete(fileId);
-      }
-    },
-    [uploadNetworkClient, uploadQueueManager, setFileMetadata],
-  );
-
-  const processRetryQueue = useCallback(
-    async (retryFileIds: string[]) => {
-      const backoffDelays = [1000, 3000, 9000]; // 1s, 3s, 9s
-
-      for (const fileId of retryFileIds) {
-        let retryCount = fileMetadataRef.current.get(fileId)?.retryCount || 1;
-
-        while (retryCount <= 3) {
-          // Use ref to get current metadata, avoiding stale closures
-          const metadata = fileMetadataRef.current.get(fileId);
-
-          // Guard: Skip if metadata is missing (file was removed or reference lost)
-          if (!metadata) {
-            logger.warn(
-              `[Upload] Skipping retry for ${fileId} - metadata not found`,
-            );
-            break;
-          }
-
-          const delay = backoffDelays[retryCount - 1] || 9000;
-
-          logger.debug(
-            `[Upload] Retrying ${metadata.name} after ${delay}ms delay (attempt ${retryCount}/3)`,
-          );
-
-          // Wait for backoff delay
-          await new Promise((resolve) => setTimeout(resolve, delay));
-
-          // Update file status to indicate retry
-          setFileMetadata((prev) => {
-            const newMap = new Map(prev);
-            const meta = newMap.get(fileId);
-            if (meta) {
-              newMap.set(fileId, {
-                ...meta,
-                status: 'pending',
-                error: `Retrying (attempt ${retryCount}/3)...`,
-              });
-            }
-            return newMap;
-          });
-
-          try {
-            await uploadFileToServer(fileId);
-            logger.debug(`[Upload] Retry successful for ${metadata.name}`);
-            break;
-          } catch (error) {
-            // Re-check metadata exists before retry logic (may have been removed)
-            const currentMeta = fileMetadataRef.current.get(fileId);
-            if (!currentMeta) {
-              logger.warn(
-                `[Upload] File ${fileId} metadata lost during retry, marking as failed`,
-              );
-              uploadStatsRef.current.failed++;
-              break;
-            }
-
-            if (retryCount < 3) {
-              retryCount += 1;
-              // Still have retries left, update retry count and keep looping
-              setFileMetadata((prev) => {
-                const newMap = new Map(prev);
-                const meta = newMap.get(fileId);
-                if (meta) {
-                  newMap.set(fileId, { ...meta, retryCount });
-                }
-                return newMap;
-              });
-            } else {
-              // Max retries reached
-              uploadStatsRef.current.failed++;
-              console.error(
-                `[Upload] File ${metadata.name} failed permanently after 3 retries:`,
-                error,
-              );
-              // Clean up file object to prevent memory leak
-              fileObjects.current.delete(fileId);
-              progressThrottleMap.current.delete(fileId);
-              break;
-            }
-          }
-        }
-      }
-    },
-    [uploadFileToServer, setFileMetadata],
-  );
-
-  // Batch upload files with adaptive concurrency control
-  const BASE_CONCURRENT_UPLOADS = 6;
-  const MIN_CONCURRENT_UPLOADS = 2;
-  const MAX_CONCURRENT_UPLOADS = 8;
-
-  const uploadBatch = useCallback(
-    async (fileIds: string[]) => {
-      // Reset stats for this batch
-      uploadStatsRef.current = { successful: 0, failed: 0 };
-
-      logger.debug(
-        `[Upload] Starting batch upload of ${fileIds.length} files with concurrency: ${currentConcurrency}`,
-      );
-
-      // Create chunks for parallel processing with concurrency limit
-      const uploadQueue = [...fileIds];
-      const activeUploads = new Set<Promise<void>>();
-      const retryQueue: string[] = [];
-
-      while (uploadQueue.length > 0 || activeUploads.size > 0) {
-        // Adaptive concurrency: adjust based on failure rate
-        const { successful, failed } = uploadStatsRef.current;
-        const total = successful + failed;
-        if (total > 0 && total % 10 === 0) {
-          // Check every 10 uploads
-          const failureRate = failed / total;
-          if (
-            failureRate > 0.2 &&
-            currentConcurrency > MIN_CONCURRENT_UPLOADS
-          ) {
-            // Too many failures, reduce concurrency
-            const newConcurrency = Math.max(
-              MIN_CONCURRENT_UPLOADS,
-              currentConcurrency - 1,
-            );
-            setCurrentConcurrency(newConcurrency);
-            logger.debug(
-              `[Upload] High failure rate ${(failureRate * 100).toFixed(0)}%, reducing concurrency to ${newConcurrency}`,
-            );
-          } else if (
-            failureRate < 0.05 &&
-            currentConcurrency < MAX_CONCURRENT_UPLOADS
-          ) {
-            // Very few failures, increase concurrency
-            const newConcurrency = Math.min(
-              MAX_CONCURRENT_UPLOADS,
-              currentConcurrency + 1,
-            );
-            setCurrentConcurrency(newConcurrency);
-            logger.debug(
-              `[Upload] Low failure rate ${(failureRate * 100).toFixed(0)}%, increasing concurrency to ${newConcurrency}`,
-            );
-          }
-        }
-
-        // Start new uploads up to current concurrency limit
-        while (
-          uploadQueue.length > 0 &&
-          activeUploads.size < currentConcurrency
-        ) {
-          const fileId = uploadQueue.shift()!;
-          const uploadPromise = uploadFileToServer(fileId)
-            .then(() => {
-              activeUploads.delete(uploadPromise);
-            })
-            .catch((error) => {
-              // Track retry count (use ref to avoid stale closure)
-              const metadata = fileMetadataRef.current.get(fileId);
-              const retryCount = metadata?.retryCount || 0;
-
-              if (retryCount < 3) {
-                // Add to retry queue if under max retries
-                setFileMetadata((prev) => {
-                  const newMap = new Map(prev);
-                  const meta = newMap.get(fileId);
-                  if (meta) {
-                    newMap.set(fileId, { ...meta, retryCount: retryCount + 1 });
-                  }
-                  return newMap;
-                });
-                retryQueue.push(fileId);
-                logger.debug(
-                  `[Upload] File ${metadata?.name} added to retry queue (attempt ${retryCount + 1}/3)`,
-                );
-              } else {
-                // Max retries reached, mark as permanently failed
-                uploadStatsRef.current.failed++;
-                console.error(
-                  `[Upload] File ${metadata?.name} failed after 3 retries:`,
-                  error,
-                );
-              }
-              activeUploads.delete(uploadPromise);
-            });
-          activeUploads.add(uploadPromise);
-        }
-
-        // Wait for at least one upload to complete before continuing
-        if (activeUploads.size > 0) {
-          await Promise.race(activeUploads);
-        }
-      }
-
-      // Process retry queue with exponential backoff
-      if (retryQueue.length > 0) {
-        logger.debug(
-          `[Upload] Processing retry queue with ${retryQueue.length} files`,
-        );
-        await processRetryQueue(retryQueue);
-      }
-    },
-    [
-      currentConcurrency,
-      setCurrentConcurrency,
-      uploadFileToServer,
-      processRetryQueue,
-      setFileMetadata,
-    ],
-  );
-
-  // Process files for upload with streaming generator pattern
-  const processFilesWithQueue = useCallback(
-    async (fileList: FileList | File[]) => {
-      // Show preparing state immediately
-      const fileCount =
-        fileList instanceof FileList ? fileList.length : fileList.length;
-      setIsPreparing(true);
-      setPreparingFileCount(fileCount);
-
-      // Estimate total size without converting to array
-      let totalSize = 0;
-      for (let i = 0; i < fileCount; i++) {
-        const file = fileList instanceof FileList ? fileList[i] : fileList[i];
-        totalSize += file.size;
-      }
-      setPreparingTotalSize(totalSize);
-
-      const newFiles: FileMetadata[] = [];
-      const uploadQueueManager = getUploadQueueManager();
-
-      // Create FileStreamProcessor for memory-efficient processing
-      const processor = new FileStreamProcessor({
-        chunkSize: 5 * 1024 * 1024, // 5MB chunks
-        maxMemory: 100 * 1024 * 1024, // 100MB max
-        computeChecksum: false, // Skip checksum for now, just process metadata
-        onProgress: (fileName, progress) => {
-          // Update progress for individual file if needed
-          logger.debug(`Processing ${fileName}: ${Math.round(progress)}%`);
-        },
-        onError: (fileName, error) => {
-          console.error(`Error processing ${fileName}:`, error);
-        },
-      });
-
-      // Convert File[] to FileList-like structure if needed
-      let fileListToProcess: FileList;
-      if (fileList instanceof FileList) {
-        fileListToProcess = fileList;
-      } else {
-        // Create a FileList-like object from array
-        const dataTransfer = new DataTransfer();
-        for (const file of fileList) {
-          dataTransfer.items.add(file);
-        }
-        fileListToProcess = dataTransfer.files;
-      }
-
-      // Process files one at a time using async generator
-      let processedCount = 0;
-      try {
-        for await (const processed of processor.processFiles(
-          fileListToProcess,
-        )) {
-          processedCount++;
-
-          // Recreate file from processed chunks if needed
-          const file = FileStreamProcessor.createBlobFromChunks(
-            processed.chunks,
-            'application/octet-stream',
-          ) as File;
-
-          // Get the original file for metadata
-          const originalFile = fileListToProcess[processedCount - 1];
-          const prepared = await prepareFile(originalFile);
-          const uploadFile = prepared.file;
-          const error = prepared.error;
-
-          // If offline, queue the file instead of uploading
-          if (isOffline && !error) {
-            const queueItem = await addToQueue(uploadFile);
-            const metadata: FileMetadata = {
-              id: queueItem.id,
-              name: uploadFile.name,
-              size: uploadFile.size,
-              status: 'queued',
-              progress: 0,
-              error: undefined,
-              addedAt: Date.now(),
-            };
-            newFiles.push(metadata);
-            fileObjects.current.set(queueItem.id, uploadFile);
-
-          } else {
-            const id = createUploadId();
-            const metadata: FileMetadata = {
-              id,
-              name: uploadFile.name,
-              size: uploadFile.size,
-              status: error ? 'error' : 'pending',
-              progress: 0,
-              error: error || undefined,
-              addedAt: Date.now(),
-            };
-            newFiles.push(metadata);
-            fileObjects.current.set(id, uploadFile);
-
-            // Persist pending uploads to IndexedDB
-            if (!error && metadata.status === 'pending') {
-              try {
-                const persistedId =
-                  await uploadQueueManager.addUpload(uploadFile);
-                // Store the persisted ID for later removal
-                (metadata as any).persistedId = persistedId;
-              } catch (err) {
-                console.error('[UploadZone] Failed to persist upload:', err);
-              }
-            }
-          }
-
-          // Release memory for processed chunks
-          processor.releaseMemory(processed.size);
-
-          // Update fileMetadata state in batches to avoid too many re-renders
-          if (processedCount % 10 === 0 || processedCount === fileCount) {
-            setFileMetadata((prev) => {
-              const newMap = new Map(prev);
-              newFiles.forEach((metadata) => {
-                if (!newMap.has(metadata.id)) {
-                  newMap.set(metadata.id, metadata);
-                }
-              });
-              return newMap;
-            });
-
-            // Allow UI to breathe
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          }
-        }
-      } catch (error) {
-        console.error('[UploadZone] Error processing files:', error);
-
-        // Show error to user
-        showToast('Failed to process files. Please try again.', 'error');
-
-        // Ensure we clear the preparing state on error
-        setIsPreparing(false);
-        setPreparingFileCount(0);
-        setPreparingTotalSize(0);
-
-        // Still try to process any files we did manage to handle
-        if (newFiles.length > 0) {
-          setFileMetadata((prev) => {
-            const newMap = new Map(prev);
-            newFiles.forEach((metadata) => {
-              newMap.set(metadata.id, metadata);
-            });
-            return newMap;
-          });
-        }
-
-        return; // Exit early on error
-      }
-
-      // Final update with any remaining files
-      if (newFiles.length > 0) {
-        setFileMetadata((prev) => {
-          const newMap = new Map(prev);
-          newFiles.forEach((metadata) => {
-            if (!newMap.has(metadata.id)) {
-              newMap.set(metadata.id, metadata);
-            }
-          });
-          return newMap;
-        });
-
-        fileMetadataRef.current = new Map(fileMetadataRef.current);
-        newFiles.forEach((metadata) => {
-          if (!fileMetadataRef.current.has(metadata.id)) {
-            fileMetadataRef.current.set(metadata.id, metadata);
-          }
-        });
-
-        // Stats will be automatically updated by the effect that watches fileMetadata changes
-      }
-
-      // End file selection tracking and start upload tracking
-
-      // Clear preparing state before starting uploads
-      setIsPreparing(false);
-      setPreparingFileCount(0);
-      setPreparingTotalSize(0);
-
-      // Get final processor stats for debugging
-      const stats = processor.getStats();
-      logger.debug('[FileStreamProcessor] Stats:', {
-        filesProcessed: stats.filesProcessed,
-        bytesProcessed: stats.bytesProcessed,
-        peakMemoryUsage: Math.round(stats.peakMemoryUsage / 1024 / 1024) + 'MB',
-        errors: stats.errors,
-      });
-
-      // Start uploading valid files if online with parallel batching
-      if (!isOffline) {
-        const filesToUpload = newFiles
-          .filter((f) => f.status === 'pending')
-          .map((f) => f.id);
-        if (filesToUpload.length > 0) {
-          uploadBatch(filesToUpload);
-        }
-      }
-    },
-    [isOffline, addToQueue, prepareFile, uploadBatch],
-  );
-
-  // Batch URL import for bundle files (bookmark exports etc.): small
-  // worker pool against /api/upload/url, one summary toast at the end.
-  const importUrls = useCallback(async (urls: string[]) => {
-    if (urls.length === 0) return;
-    showToast(`importing ${urls.length} url${urls.length === 1 ? '' : 's'}...`, 'info');
-    let saved = 0;
-    let duplicates = 0;
-    let failed = 0;
-    const queue = [...urls];
-    const workers = Array.from({ length: 3 }, async () => {
-      for (let url = queue.shift(); url !== undefined; url = queue.shift()) {
-        try {
-          const response = await fetch('/api/upload/url', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ url }),
-          });
-          if (response.status === 201) saved++;
-          else if (response.status === 409) duplicates++;
-          else failed++;
-        } catch {
-          failed++;
-        }
-      }
-    });
-    await Promise.all(workers);
-    showToast(
-      `url import: ${saved} saved · ${duplicates} already in library · ${failed} failed`,
-      failed > 0 ? 'error' : 'success',
-      5000
-    );
-    if (saved + duplicates > 0) {
-      onUploadComplete?.({ uploaded: saved, duplicates, failed });
-    }
-  }, [onUploadComplete]);
-
-  // Expand bundles (zips, bookmark exports) before the normal pipeline:
-  // zip entries become regular Files; text bundles become URL imports.
-  const processFiles = useCallback(async (incoming: File[]) => {
-    const direct: File[] = [];
-    for (const file of incoming) {
-      if (isZipFile(file)) {
-        try {
-          const images = await extractZipImages(file);
-          showToast(
-            `unpacked ${images.length} image${images.length === 1 ? '' : 's'} from ${file.name}`,
-            images.length > 0 ? 'info' : 'error'
-          );
-          direct.push(...images);
-        } catch {
-          showToast(`couldn't unpack ${file.name}`, 'error');
-        }
-      } else if (isTextBundleFile(file)) {
-        const urls = extractImageUrls(await file.text());
-        if (urls.length === 0) {
-          showToast(`no image urls found in ${file.name}`, 'info');
-        } else {
-          void importUrls(urls);
-        }
-      } else {
-        direct.push(file);
-      }
-    }
-    if (direct.length > 0) {
-      await processFilesWithQueue(direct);
-    }
-  }, [processFilesWithQueue, importUrls]);
-
-  // Pasted URLs import server-side through /api/upload/url (shared ingest
-  // pipeline), then reuse the normal completion callback to refresh the grid.
-  const importFromUrl = useCallback(async (url: string) => {
-    showToast('importing from url...', 'info');
-    try {
-      const response = await fetch('/api/upload/url', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ url }),
-      });
-      const data = await response.json().catch(() => ({}));
-
-      if (response.status === 201) {
-        onUploadComplete?.({ uploaded: 1, duplicates: 0, failed: 0 });
-      } else if (response.status === 409) {
-        showToast('already in your library', 'info');
-        onUploadComplete?.({ uploaded: 0, duplicates: 1, failed: 0 });
-      } else {
-        showToast(typeof data?.error === 'string' ? data.error : 'url import failed', 'error');
-      }
-    } catch {
-      showToast('url import failed', 'error');
-    }
-  }, [onUploadComplete]);
-
-  // Remove file from list
-  const removeFile = (id: string) => {
-    setFileMetadata((prev) => {
-      const newMap = new Map(prev);
-      newMap.delete(id);
-      return newMap;
-    });
-    fileObjects.current.delete(id);
-    progressThrottleMap.current.delete(id);
-  };
-
-  // Retry failed upload
-  const retryUpload = (metadata: FileMetadata) => {
-    // Find the original File object from the fileObjects Map
-    const originalFile = fileObjects.current.get(metadata.id);
-    if (!originalFile) {
-      console.error('Cannot retry upload: original file not found');
-      return;
-    }
-
-    setFileMetadata((prev) => {
-      const newMap = new Map(prev);
-      const meta = newMap.get(metadata.id);
-      if (meta) {
-        newMap.set(metadata.id, {
-          ...meta,
-          status: 'pending' as const,
+  const handleQueueEvent = useCallback((event: UploadQueueEvent) => {
+    setFileMetadata((previous) => {
+      const metadata = previous.get(event.id);
+      if (!metadata) return previous;
+      const next = new Map(previous);
+      if (event.status === 'queued') {
+        next.set(event.id, {
+          ...metadata,
+          status: 'queued',
           progress: 0,
           error: undefined,
           errorDetails: undefined,
           retryCount: 0,
         });
+      } else if (event.status === 'uploading') {
+        next.set(event.id, {
+          ...metadata,
+          status: 'uploading',
+          progress: event.progress ?? metadata.progress,
+        });
+      } else if (event.status === 'success') {
+        const isDuplicate = event.result.isDuplicate === true;
+        const needsEmbedding = event.result.asset?.needsEmbedding === true;
+        next.set(event.id, {
+          ...metadata,
+          status: isDuplicate ? 'duplicate' : 'success',
+          progress: 100,
+          assetId: event.result.asset?.id,
+          blobUrl: event.result.asset?.blobUrl,
+          isDuplicate,
+          nearDuplicate: event.result.asset?.nearDuplicate
+            ? {
+                id: event.result.asset.nearDuplicate.id,
+                distance: event.result.asset.nearDuplicate.distance,
+                blobUrl: event.result.asset.nearDuplicate.blobUrl,
+                thumbnailUrl: event.result.asset.nearDuplicate.thumbnailUrl ?? null,
+              }
+            : null,
+          needsEmbedding,
+          embeddingStatus: needsEmbedding ? 'pending' : 'ready',
+        });
+        if (window.location.pathname === '/app') {
+          window.dispatchEvent(new CustomEvent('assetUploaded', { detail: event.result.asset }));
+        }
+      } else {
+        const error = event.error;
+        next.set(event.id, {
+          ...metadata,
+          status: 'error',
+          progress: 0,
+          error,
+          errorDetails: getStructuredUploadErrorDetails({
+            error: new Error(error),
+            statusCode: getUploadStatusCodeFromMessage(error),
+          }),
+        });
       }
-      return newMap;
+      return next;
     });
-    uploadFileToServer(metadata.id);
+  }, []);
+
+  // Every upload intent enters the durable queue; this is the only network coordinator.
+  const { assertCanEnqueue, addToQueue, processQueue, retryUpload: retryQueuedUpload, removeFromQueue } = useUploadQueue({ onEvent: handleQueueEvent });
+
+  // Queue processing owns network execution, retries, receipt idempotency, and completion fencing.
+  // Prepare metadata, durably enqueue, then ask the single coordinator to process it.
+  const processFilesWithQueue = useCallback(
+    async (fileList: FileList | File[]) => {
+      const files = Array.from(fileList);
+      setIsPreparing(true);
+      setPreparingFileCount(files.length);
+      setPreparingTotalSize(files.reduce((total, file) => total + file.size, 0));
+      const newFiles: FileMetadata[] = [];
+
+      for (const [index, originalFile] of files.entries()) {
+        const earlyValidationError = validateFile(originalFile);
+        if (earlyValidationError) {
+          const rejected: FileMetadata = {
+            id: `rejected-${Date.now()}-${index}`,
+            name: originalFile.name,
+            size: originalFile.size,
+            status: 'error',
+            progress: 0,
+            error: earlyValidationError,
+            addedAt: Date.now(),
+          };
+          newFiles.push(rejected);
+          setFileMetadata((previous) => new Map(previous).set(rejected.id, rejected));
+          fileMetadataRef.current.set(rejected.id, rejected);
+          continue;
+        }
+
+        try {
+          await assertCanEnqueue(originalFile);
+        } catch (enqueueError) {
+          const message = enqueueError instanceof Error ? enqueueError.message : 'Durable upload enqueue failed.';
+          const rejected: FileMetadata = {
+            id: `enqueue-failed-${Date.now()}-${index}`,
+            name: originalFile.name,
+            size: originalFile.size,
+            status: 'error',
+            progress: 0,
+            error: message,
+            addedAt: Date.now(),
+          };
+          newFiles.push(rejected);
+          setFileMetadata((previous) => new Map(previous).set(rejected.id, rejected));
+          fileMetadataRef.current.set(rejected.id, rejected);
+          showToast(`${originalFile.name}: ${message}`, 'error');
+          continue;
+        }
+
+        const prepared = await prepareFile(originalFile);
+        if (prepared.error) {
+          const rejected: FileMetadata = {
+            id: `rejected-${Date.now()}-${index}`,
+            name: prepared.file.name,
+            size: prepared.file.size,
+            status: 'error',
+            progress: 0,
+            error: prepared.error,
+            addedAt: Date.now(),
+          };
+          newFiles.push(rejected);
+          setFileMetadata((previous) => new Map(previous).set(rejected.id, rejected));
+          fileMetadataRef.current.set(rejected.id, rejected);
+          continue;
+        }
+
+        try {
+          const queueItem = await addToQueue(prepared.file);
+          const metadata: FileMetadata = {
+            id: queueItem.id,
+            persistedId: queueItem.id,
+            name: prepared.file.name,
+            size: prepared.file.size,
+            status: 'queued',
+            progress: 0,
+            addedAt: Date.now(),
+          };
+          newFiles.push(metadata);
+          setFileMetadata((previous) => new Map(previous).set(metadata.id, metadata));
+          fileMetadataRef.current.set(metadata.id, metadata);
+        } catch (enqueueError) {
+          const message = enqueueError instanceof Error ? enqueueError.message : 'Durable upload enqueue failed.';
+          const rejected: FileMetadata = {
+            id: `enqueue-failed-${Date.now()}-${index}`,
+            name: prepared.file.name,
+            size: prepared.file.size,
+            status: 'error',
+            progress: 0,
+            error: message,
+            addedAt: Date.now(),
+          };
+          newFiles.push(rejected);
+          setFileMetadata((previous) => new Map(previous).set(rejected.id, rejected));
+          fileMetadataRef.current.set(rejected.id, rejected);
+          showToast(`${prepared.file.name}: ${message}`, 'error');
+        }
+      }
+
+      setIsPreparing(false);
+      setPreparingFileCount(0);
+      setPreparingTotalSize(0);
+      if (newFiles.some((file) => file.persistedId)) void processQueue();
+    },
+    [addToQueue, assertCanEnqueue, prepareFile, processQueue, validateFile],
+  );
+
+  // Batch URL import for bundle files (bookmark exports etc.): small
+  // worker pool against /api/upload/url, one summary toast at the end.
+  const importUrls = useCallback(
+    async (urls: string[]) => {
+      if (urls.length === 0) return;
+      showToast(`importing ${urls.length} url${urls.length === 1 ? '' : 's'}...`, 'info');
+      let saved = 0;
+      let duplicates = 0;
+      let failed = 0;
+      const queue = [...urls];
+      const workers = Array.from({ length: 3 }, async () => {
+        for (let url = queue.shift(); url !== undefined; url = queue.shift()) {
+          try {
+            const response = await fetch('/api/upload/url', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ url }),
+            });
+            if (response.status === 201) saved++;
+            else if (response.status === 409) duplicates++;
+            else failed++;
+          } catch {
+            failed++;
+          }
+        }
+      });
+      await Promise.all(workers);
+      showToast(`url import: ${saved} saved · ${duplicates} already in library · ${failed} failed`, failed > 0 ? 'error' : 'success', 5000);
+      if (saved + duplicates > 0) {
+        onUploadComplete?.({ uploaded: saved, duplicates, failed });
+      }
+    },
+    [onUploadComplete],
+  );
+
+  // Expand bundles (zips, bookmark exports) before the normal pipeline:
+  // zip entries become regular Files; text bundles become URL imports.
+  const processFiles = useCallback(
+    async (incoming: File[]) => {
+      const direct: File[] = [];
+      for (const file of incoming) {
+        if (isZipFile(file)) {
+          try {
+            const images = await extractZipImages(file);
+            showToast(`unpacked ${images.length} image${images.length === 1 ? '' : 's'} from ${file.name}`, images.length > 0 ? 'info' : 'error');
+            direct.push(...images);
+          } catch {
+            showToast(`couldn't unpack ${file.name}`, 'error');
+          }
+        } else if (isTextBundleFile(file)) {
+          const urls = extractImageUrls(await file.text());
+          if (urls.length === 0) {
+            showToast(`no image urls found in ${file.name}`, 'info');
+          } else {
+            void importUrls(urls);
+          }
+        } else {
+          direct.push(file);
+        }
+      }
+      if (direct.length > 0) {
+        await processFilesWithQueue(direct);
+      }
+    },
+    [processFilesWithQueue, importUrls],
+  );
+
+  // Pasted URLs import server-side through /api/upload/url (shared ingest
+  // pipeline), then reuse the normal completion callback to refresh the grid.
+  const importFromUrl = useCallback(
+    async (url: string) => {
+      showToast('importing from url...', 'info');
+      try {
+        const response = await fetch('/api/upload/url', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (response.status === 201) {
+          onUploadComplete?.({ uploaded: 1, duplicates: 0, failed: 0 });
+        } else if (response.status === 409) {
+          showToast('already in your library', 'info');
+          onUploadComplete?.({ uploaded: 0, duplicates: 1, failed: 0 });
+        } else {
+          showToast(typeof data?.error === 'string' ? data.error : 'url import failed', 'error');
+        }
+      } catch {
+        showToast('url import failed', 'error');
+      }
+    },
+    [onUploadComplete],
+  );
+
+  // Remove file from list
+  const removeFile = (id: string) => {
+    const metadata = fileMetadataRef.current.get(id);
+    if (!metadata?.persistedId) {
+      setFileMetadata((prev) => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+      return;
+    }
+    void removeFromQueue(metadata.persistedId).then((removed) => {
+      if (!removed) return;
+      setFileMetadata((prev) => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+    });
+  };
+
+  // Retry failed upload
+  const retryUpload = (metadata: FileMetadata) => {
+    if (!metadata.persistedId) {
+      showToast(`${metadata.name}: select the file again to retry`, 'error');
+      return;
+    }
+
+    void retryQueuedUpload(metadata.persistedId).catch((error) => {
+      showToast(error instanceof Error ? error.message : 'upload retry failed', 'error');
+    });
   };
 
   // Retry all failed uploads
@@ -1117,30 +524,14 @@ export function UploadZone({
 
     logger.debug(`[Upload] Retrying all ${failedFiles.length} failed files`);
 
-    // Reset all failed files to pending status
-    const failedFileIds = failedFiles.map((f) => f.id);
-
-    // Update state to reset failed files
-    setFileMetadata((prev) => {
-      const newMap = new Map(prev);
-      failedFileIds.forEach((id) => {
-        const meta = newMap.get(id);
-        if (meta) {
-          newMap.set(id, {
-            ...meta,
-            status: 'pending' as const,
-            progress: 0,
-            error: undefined,
-            errorDetails: undefined,
-            retryCount: 0,
-          });
-        }
+    // Re-queue all durable failed files through the same coordinator.
+    failedFiles
+      .filter((file): file is FileMetadata & { persistedId: string } => Boolean(file.persistedId))
+      .forEach((file) => {
+        void retryQueuedUpload(file.persistedId).catch((error) => {
+          showToast(error instanceof Error ? error.message : 'upload retry failed', 'error');
+        });
       });
-      return newMap;
-    });
-
-    // Re-queue all failed files for upload
-    uploadBatch(failedFileIds);
   };
 
   const formatFileSize = (bytes: number) => {
@@ -1153,46 +544,41 @@ export function UploadZone({
   const cancelRemainingUploads = () => {
     setIsCancelling(true);
 
-    // Remove pending files
-    setFileMetadata((prev) => {
-      const newMap = new Map(prev);
-      Array.from(newMap.entries()).forEach(([id, meta]) => {
-        if (meta.status === 'pending' || meta.status === 'queued') {
-          newMap.delete(id);
-          fileObjects.current.delete(id);
-        }
+    const pending = Array.from(fileMetadataRef.current.values()).filter((file) => file.status === 'pending' || file.status === 'queued');
+    pending.forEach((file) => {
+      if (!file.persistedId) {
+        setFileMetadata((previous) => {
+          const next = new Map(previous);
+          next.delete(file.id);
+          return next;
+        });
+        return;
+      }
+      void removeFromQueue(file.persistedId).then((removed) => {
+        if (!removed) return;
+        setFileMetadata((previous) => {
+          const next = new Map(previous);
+          next.delete(file.id);
+          return next;
+        });
       });
-      return newMap;
     });
-
-    // Clear active uploads tracking
-    activeUploadsRef.current.clear();
 
     setTimeout(() => setIsCancelling(false), 500);
   };
 
-  const successfulUploads = filesArray.filter(
-    (file) => file.status === 'success' || file.status === 'duplicate',
-  );
+  const successfulUploads = filesArray.filter((file) => file.status === 'success' || file.status === 'duplicate');
   const hasSuccessfulUploads = successfulUploads.length > 0;
-  const hasActiveUploads = filesArray.some(
-    (file) =>
-      file.status === 'uploading' ||
-      file.status === 'pending' ||
-      file.status === 'queued',
-  );
+  const hasActiveUploads = filesArray.some((file) => file.status === 'uploading' || file.status === 'pending' || file.status === 'queued');
 
   const handleViewLibrary = () => {
     setFileMetadata(new Map());
-    fileObjects.current.clear();
     setUploadStats(null);
     router.push('/app');
   };
 
   // "the queue" state summary — mono, right-aligned, only the nonzero buckets.
-  const queuedCount = uploadStats
-    ? Math.max(0, uploadStats.totalFiles - uploadStats.uploaded - uploadStats.failed)
-    : 0;
+  const queuedCount = uploadStats ? Math.max(0, uploadStats.totalFiles - uploadStats.uploaded - uploadStats.failed) : 0;
   const queueSummary = uploadStats
     ? [
         uploadStats.ready > 0 ? `${uploadStats.ready} in the pile` : null,
@@ -1228,9 +614,7 @@ export function UploadZone({
         <div className="space-y-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="font-display text-2xl tracking-wide text-foreground">the queue</h2>
-            {queueSummary && (
-              <span className="font-mono text-xs lowercase text-muted-foreground">{queueSummary}</span>
-            )}
+            {queueSummary && <span className="font-mono text-xs lowercase text-muted-foreground">{queueSummary}</span>}
           </div>
 
           {/* Batch Upload Progress Header */}
@@ -1270,12 +654,8 @@ export function UploadZone({
                     </div>
                     <div>
                       {(() => {
-                        const newImages = successfulUploads.filter(
-                          (f) => !f.isDuplicate,
-                        ).length;
-                        const duplicates = successfulUploads.filter(
-                          (f) => f.isDuplicate,
-                        ).length;
+                        const newImages = successfulUploads.filter((f) => !f.isDuplicate).length;
+                        const duplicates = successfulUploads.filter((f) => f.isDuplicate).length;
 
                         let message = '';
                         if (newImages > 0 && duplicates > 0) {
@@ -1290,18 +670,11 @@ export function UploadZone({
                           <>
                             <p className="text-sm font-medium">{message}</p>
                             {hasActiveUploads ? (
-                              <p className="text-xs text-muted-foreground">
-                                Finishing remaining uploads...
-                              </p>
+                              <p className="text-xs text-muted-foreground">Finishing remaining uploads...</p>
                             ) : isOnDashboard ? (
-                              <p className="text-xs text-muted-foreground">
-                                Your library will refresh automatically.
-                              </p>
+                              <p className="text-xs text-muted-foreground">Your library will refresh automatically.</p>
                             ) : (
-                              <p className="text-xs text-muted-foreground">
-                                Jump back to browse everything in your
-                                collection.
-                              </p>
+                              <p className="text-xs text-muted-foreground">Jump back to browse everything in your collection.</p>
                             )}
                           </>
                         );
@@ -1310,10 +683,7 @@ export function UploadZone({
                   </div>
 
                   {!isOnDashboard && (
-                    <Button
-                      onClick={handleViewLibrary}
-                      disabled={hasActiveUploads}
-                    >
+                    <Button onClick={handleViewLibrary} disabled={hasActiveUploads}>
                       View in Library
                     </Button>
                   )}

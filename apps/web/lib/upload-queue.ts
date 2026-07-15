@@ -1,4 +1,5 @@
 import { logger } from '@/lib/observability-logger';
+import { UPLOAD, isValidMimeType } from '@sploot/common';
 
 /**
  * Upload Queue Persistence Manager
@@ -55,6 +56,27 @@ export class UploadQueueStorageLimitError extends Error {
   }
 }
 
+export class UploadQueueStorageUnavailableError extends Error {
+  constructor(message = 'Durable upload storage is unavailable. Keep this upload open and try again.') {
+    super(message);
+    this.name = 'UploadQueueStorageUnavailableError';
+  }
+}
+
+export class UploadQueueFileValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UploadQueueFileValidationError';
+  }
+}
+
+export class UploadQueueClaimActiveError extends Error {
+  constructor() {
+    super('Upload is currently owned by another live attempt.');
+    this.name = 'UploadQueueClaimActiveError';
+  }
+}
+
 /**
  * Manages upload persistence using IndexedDB
  */
@@ -86,9 +108,8 @@ export class UploadQueueManager {
     if (this.db) return;
 
     // Check if IndexedDB is available
-    if (!('indexedDB' in window)) {
-      console.warn('[UploadQueue] IndexedDB not available, upload recovery disabled');
-      return;
+    if (typeof indexedDB === 'undefined') {
+      throw new UploadQueueStorageUnavailableError();
     }
 
     return new Promise((resolve, reject) => {
@@ -96,7 +117,7 @@ export class UploadQueueManager {
 
       request.onerror = () => {
         console.error('[UploadQueue] Failed to open IndexedDB:', request.error);
-        reject(request.error);
+        reject(new UploadQueueStorageUnavailableError('Durable upload storage failed to open.'));
       };
 
       request.onsuccess = () => {
@@ -110,28 +131,55 @@ export class UploadQueueManager {
 
         // Create object store if it doesn't exist
         if (!db.objectStoreNames.contains(this.STORE_NAME)) {
-          const store = db.createObjectStore(this.STORE_NAME, { keyPath: 'id' });
+          const store = db.createObjectStore(this.STORE_NAME, {
+            keyPath: 'id',
+          });
           store.createIndex('addedAt', 'addedAt', { unique: false });
           store.createIndex('status', 'status', { unique: false });
-          store.createIndex('claimExpiresAt', 'claimExpiresAt', { unique: false });
+          store.createIndex('claimExpiresAt', 'claimExpiresAt', {
+            unique: false,
+          });
         } else {
           const store = (event.target as IDBOpenDBRequest).transaction?.objectStore(this.STORE_NAME);
           if (store && !store.indexNames.contains('claimExpiresAt')) {
-            store.createIndex('claimExpiresAt', 'claimExpiresAt', { unique: false });
+            store.createIndex('claimExpiresAt', 'claimExpiresAt', {
+              unique: false,
+            });
           }
         }
       };
     });
   }
 
+  /** Validate metadata and capacity without reading file bytes. */
+  async assertCanEnqueue(file: File): Promise<void> {
+    if (!this.db) {
+      await this.init();
+    }
+    if (!this.db) {
+      throw new UploadQueueStorageUnavailableError();
+    }
+    this.validateFileMetadata(file);
+    const usage = await this.getStorageUsage();
+    if (usage.count >= UPLOAD_QUEUE_MAX_ENTRIES || usage.totalBytes + file.size > UPLOAD_QUEUE_MAX_BYTES) {
+      throw new UploadQueueStorageLimitError();
+    }
+  }
+
+  private validateFileMetadata(file: File): void {
+    if (!isValidMimeType(file.type)) {
+      throw new UploadQueueFileValidationError(`Unsupported upload file type: ${file.type || 'unknown'}`);
+    }
+    if (file.size <= 0 || file.size > UPLOAD.maxSize || file.size > UPLOAD_QUEUE_MAX_BYTES) {
+      throw new UploadQueueStorageLimitError();
+    }
+  }
+
   /**
    * Add a file to the persisted upload queue
    */
   async addUpload(file: File, collisionAttempt = 0): Promise<string> {
-    if (!this.db) {
-      await this.init();
-      if (!this.db) return file.name; // Fallback if DB not available
-    }
+    await this.assertCanEnqueue(file);
 
     const id = createUploadId();
     const addedAt = Date.now();
@@ -157,13 +205,15 @@ export class UploadQueueManager {
       const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
       const store = transaction.objectStore(this.STORE_NAME);
       const existingRequest = store.getAll();
+      let failure: Error | DOMException | null = null;
+      let committed = false;
 
       existingRequest.onsuccess = () => {
         const existing = existingRequest.result as PersistedUpload[];
         const totalBytes = existing.reduce((total, item) => total + item.size, 0);
         if (existing.length >= UPLOAD_QUEUE_MAX_ENTRIES || totalBytes + upload.size > UPLOAD_QUEUE_MAX_BYTES) {
+          failure = new UploadQueueStorageLimitError();
           transaction.abort();
-          reject(new UploadQueueStorageLimitError());
           return;
         }
 
@@ -174,33 +224,68 @@ export class UploadQueueManager {
             filename: file.name,
             size: file.size,
           });
-          resolve(id);
         };
 
         request.onerror = () => {
           console.error('[UploadQueue] Failed to persist upload:', request.error);
+          failure = request.error;
           if (request.error?.name === 'ConstraintError' && collisionAttempt < 3) {
             transaction.abort();
-            void this.addUpload(file, collisionAttempt + 1).then(resolve, reject);
             return;
           }
-          reject(request.error);
         };
       };
 
-      existingRequest.onerror = () => reject(existingRequest.error);
+      existingRequest.onerror = () => {
+        failure = existingRequest.error;
+        transaction.abort();
+      };
+      transaction.oncomplete = () => {
+        committed = true;
+        resolve(id);
+      };
+      transaction.onerror = () => {
+        if (!failure) failure = transaction.error;
+      };
+      transaction.onabort = () => {
+        if (committed) return;
+        if (failure?.name === 'ConstraintError' && collisionAttempt < 3) {
+          void this.addUpload(file, collisionAttempt + 1).then(resolve, reject);
+          return;
+        }
+        reject(failure ?? transaction.error ?? new Error('Upload queue transaction aborted before commit.'));
+      };
+    });
+  }
+
+  private async getStorageUsage(): Promise<{
+    count: number;
+    totalBytes: number;
+  }> {
+    if (!this.db) throw new UploadQueueStorageUnavailableError();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([this.STORE_NAME], 'readonly');
+      const request = transaction.objectStore(this.STORE_NAME).getAll();
+      let usage = { count: 0, totalBytes: 0 };
+      request.onsuccess = () => {
+        const uploads = request.result as PersistedUpload[];
+        usage = {
+          count: uploads.length,
+          totalBytes: uploads.reduce((total, upload) => total + upload.size, 0),
+        };
+      };
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve(usage);
       transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error ?? new Error('Upload queue usage read aborted.'));
     });
   }
 
   /**
    * Update upload status
    */
-  async updateUploadStatus(
-    id: string,
-    status: PersistedUpload['status'],
-    error?: string
-  ): Promise<void> {
+  async updateUploadStatus(id: string, status: PersistedUpload['status'], error?: string): Promise<void> {
     if (!this.db) return;
 
     return new Promise((resolve, reject) => {
@@ -256,9 +341,7 @@ export class UploadQueueManager {
         if (upload.status === 'uploading' && (upload.claimExpiresAt ?? 0) > now) return;
         if (upload.retryCount >= UPLOAD_QUEUE_MAX_RETRIES || isUploadExpired(upload, now)) {
           upload.status = 'terminal';
-          upload.error = upload.retryCount >= UPLOAD_QUEUE_MAX_RETRIES
-            ? 'Automatic retries exhausted. Retry or remove this upload.'
-            : 'Upload is older than 24 hours. Retry or remove this upload.';
+          upload.error = upload.retryCount >= UPLOAD_QUEUE_MAX_RETRIES ? 'Automatic retries exhausted. Retry or remove this upload.' : 'Upload is older than 24 hours. Retry or remove this upload.';
           delete upload.claimOwner;
           delete upload.claimToken;
           delete upload.claimExpiresAt;
@@ -271,7 +354,9 @@ export class UploadQueueManager {
         upload.claimToken = createUploadId();
         upload.claimExpiresAt = now + leaseMs;
         const updateRequest = store.put(upload);
-        updateRequest.onsuccess = () => { claimed = upload; };
+        updateRequest.onsuccess = () => {
+          claimed = upload;
+        };
       };
       request.onerror = () => reject(request.error);
       transaction.oncomplete = () => resolve(claimed);
@@ -306,7 +391,9 @@ export class UploadQueueManager {
           upload.error = 'Upload is older than 24 hours. Retry or remove this upload.';
         }
         const updateRequest = store.put(upload);
-        updateRequest.onsuccess = () => { released = upload; };
+        updateRequest.onsuccess = () => {
+          released = upload;
+        };
       };
       request.onerror = () => reject(request.error);
       transaction.oncomplete = () => resolve(released);
@@ -345,11 +432,18 @@ export class UploadQueueManager {
       const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
       const store = transaction.objectStore(this.STORE_NAME);
       const getRequest = store.get(id);
+      let failure: Error | null = null;
 
       getRequest.onsuccess = () => {
         const upload = getRequest.result as PersistedUpload | undefined;
         if (!upload) {
           resolve();
+          return;
+        }
+
+        if (upload.status === 'uploading' && (upload.claimExpiresAt ?? 0) > Date.now()) {
+          failure = new UploadQueueClaimActiveError();
+          transaction.abort();
           return;
         }
 
@@ -367,7 +461,7 @@ export class UploadQueueManager {
       getRequest.onerror = () => reject(getRequest.error);
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error ?? new Error('upload retry reset transaction aborted'));
+      transaction.onabort = () => reject(failure ?? transaction.error ?? new Error('upload retry reset transaction aborted'));
     });
   }
 
@@ -380,17 +474,36 @@ export class UploadQueueManager {
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([this.STORE_NAME], 'readwrite');
       const store = transaction.objectStore(this.STORE_NAME);
-      const request = store.delete(id);
+      const getRequest = store.get(id);
+      let failure: Error | null = null;
 
-      request.onsuccess = () => {
+      getRequest.onsuccess = () => {
+        const upload = getRequest.result as PersistedUpload | undefined;
+        if (!upload) return;
+        if (upload.status === 'uploading' && (upload.claimExpiresAt ?? 0) > Date.now()) {
+          failure = new UploadQueueClaimActiveError();
+          transaction.abort();
+          return;
+        }
+        const deleteRequest = store.delete(id);
+        deleteRequest.onerror = () => {
+          failure = deleteRequest.error;
+          transaction.abort();
+        };
+      };
+
+      getRequest.onerror = () => {
+        failure = getRequest.error;
+        transaction.abort();
+      };
+      transaction.oncomplete = () => {
         logger.logInfo('upload-queue.removed', { id });
         resolve();
       };
-
-      request.onerror = () => {
-        console.error('[UploadQueue] Failed to remove upload:', request.error);
-        reject(request.error);
+      transaction.onerror = () => {
+        if (!failure) failure = transaction.error;
       };
+      transaction.onabort = () => reject(failure ?? transaction.error ?? new Error('upload removal transaction aborted'));
     });
   }
 
@@ -422,9 +535,7 @@ export class UploadQueueManager {
           }
           if (normalized.status !== 'terminal' && (expired || normalized.retryCount >= UPLOAD_QUEUE_MAX_RETRIES)) {
             normalized.status = 'terminal';
-            normalized.error = expired
-              ? 'Upload is older than 24 hours. Retry or remove this upload.'
-              : 'Automatic retries exhausted. Retry or remove this upload.';
+            normalized.error = expired ? 'Upload is older than 24 hours. Retry or remove this upload.' : 'Automatic retries exhausted. Retry or remove this upload.';
             delete normalized.claimOwner;
             delete normalized.claimToken;
             delete normalized.claimExpiresAt;
@@ -452,7 +563,6 @@ export class UploadQueueManager {
       lastModified: upload.lastModified,
     });
   }
-
 
   /**
    * Clear all persisted uploads
@@ -489,9 +599,9 @@ export class UploadQueueManager {
     const uploads = await this.getPendingUploads();
 
     return {
-      pending: uploads.filter(u => u.status === 'pending').length,
-      uploading: uploads.filter(u => u.status === 'uploading').length,
-      failed: uploads.filter(u => u.status === 'failed').length,
+      pending: uploads.filter((u) => u.status === 'pending').length,
+      uploading: uploads.filter((u) => u.status === 'uploading').length,
+      failed: uploads.filter((u) => u.status === 'failed').length,
       total: uploads.length,
     };
   }

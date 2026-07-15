@@ -4,9 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   UPLOAD_QUEUE_MAX_AGE_MS,
   UPLOAD_QUEUE_CLAIM_LEASE_MS,
+  UPLOAD_QUEUE_MAX_BYTES,
   UPLOAD_QUEUE_MAX_ENTRIES,
   UploadQueueManager,
   UploadQueueStorageLimitError,
+  UploadQueueStorageUnavailableError,
 } from '@/lib/upload-queue';
 
 /**
@@ -32,10 +34,7 @@ describe('UploadQueueManager durable boundaries', () => {
       expect(UPLOAD_QUEUE_CLAIM_LEASE_MS).toBeGreaterThan(10_000);
       const vendorCostingUpload = { tabA: vi.fn(), tabB: vi.fn() };
 
-      const claims = await Promise.all([
-        firstTab.claimUpload(id, 'tab-a', 1_000),
-        secondTab.claimUpload(id, 'tab-b', 1_000),
-      ]);
+      const claims = await Promise.all([firstTab.claimUpload(id, 'tab-a', 1_000), secondTab.claimUpload(id, 'tab-b', 1_000)]);
       expect(claims.filter(Boolean)).toHaveLength(1);
       if (claims[0]) vendorCostingUpload.tabA();
       if (claims[1]) vendorCostingUpload.tabB();
@@ -90,6 +89,35 @@ describe('UploadQueueManager durable boundaries', () => {
     }
   });
 
+  it('rejects stale user retry and remove while a newer generation is live', async () => {
+    const firstTab = UploadQueueManager.create();
+    const secondTab = UploadQueueManager.create();
+    await Promise.all([firstTab.init(), secondTab.init()]);
+    await firstTab.clearAll();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-07-15T00:00:00.000Z'));
+      const id = await firstTab.addUpload(new File(['data'], 'user-race.png', { type: 'image/png' }));
+      await expect(firstTab.claimUpload(id, 'same-owner', 1_000)).resolves.toMatchObject({ id });
+
+      vi.setSystemTime(new Date('2026-07-15T00:00:01.001Z'));
+      const currentClaim = await secondTab.claimUpload(id, 'same-owner', 1_000);
+      expect(currentClaim?.claimToken).toEqual(expect.any(String));
+
+      await expect(firstTab.resetUploadForRetry(id)).rejects.toThrow('Upload is currently owned by another live attempt.');
+      await expect(firstTab.removeUpload(id)).rejects.toThrow('Upload is currently owned by another live attempt.');
+      await expect(secondTab.getPendingUploads()).resolves.toEqual([
+        expect.objectContaining({
+          id,
+          status: 'uploading',
+          claimToken: currentClaim!.claimToken,
+        }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('retains exhausted uploads as visible terminal records instead of deleting payloads', async () => {
     const manager = UploadQueueManager.create();
     await manager.init();
@@ -122,7 +150,11 @@ describe('UploadQueueManager durable boundaries', () => {
       expect(await manager.toFile(uploads[0])).toHaveProperty('name', 'expired.png');
       await manager.resetUploadForRetry(id);
       const retried = await manager.getPendingUploads();
-      expect(retried[0]).toMatchObject({ id, status: 'pending', retryCount: 0 });
+      expect(retried[0]).toMatchObject({
+        id,
+        status: 'pending',
+        retryCount: 0,
+      });
       await expect(manager.claimUpload(id, 'manual-retry')).resolves.toMatchObject({ id, status: 'uploading' });
     } finally {
       vi.useRealTimers();
@@ -132,6 +164,62 @@ describe('UploadQueueManager durable boundaries', () => {
     for (let index = 0; index < UPLOAD_QUEUE_MAX_ENTRIES; index += 1) {
       await manager.addUpload(new File(['x'], `bounded-${index}.png`, { type: 'image/png' }));
     }
-    await expect(manager.addUpload(new File(['x'], 'overflow.png', { type: 'image/png' }))).rejects.toBeInstanceOf(UploadQueueStorageLimitError);
+    const overflow = new File(['x'], 'overflow.png', { type: 'image/png' });
+    const overflowBuffer = vi.spyOn(overflow, 'arrayBuffer');
+    await expect(manager.addUpload(overflow)).rejects.toBeInstanceOf(UploadQueueStorageLimitError);
+    expect(overflowBuffer).not.toHaveBeenCalled();
+  });
+
+  it('rejects unavailable storage and validates metadata before buffering file bytes', async () => {
+    const unavailable = UploadQueueManager.create();
+    const indexedDb = window.indexedDB;
+    Object.defineProperty(window, 'indexedDB', {
+      configurable: true,
+      value: undefined,
+    });
+    try {
+      await expect(unavailable.addUpload(new File(['data'], 'unavailable.png', { type: 'image/png' }))).rejects.toBeInstanceOf(UploadQueueStorageUnavailableError);
+    } finally {
+      Object.defineProperty(window, 'indexedDB', {
+        configurable: true,
+        value: indexedDb,
+      });
+    }
+
+    const manager = UploadQueueManager.create();
+    await manager.init();
+    await manager.clearAll();
+    const invalidType = new File(['data'], 'not-an-image.pdf', {
+      type: 'application/pdf',
+    });
+    const invalidTypeBuffer = vi.spyOn(invalidType, 'arrayBuffer');
+    await expect(manager.addUpload(invalidType)).rejects.toThrow('Unsupported upload file type');
+    expect(invalidTypeBuffer).not.toHaveBeenCalled();
+
+    const tooLarge = new File(['data'], 'too-large.png', { type: 'image/png' });
+    Object.defineProperty(tooLarge, 'size', {
+      configurable: true,
+      value: UPLOAD_QUEUE_MAX_BYTES + 1,
+    });
+    const tooLargeBuffer = vi.spyOn(tooLarge, 'arrayBuffer');
+    await expect(manager.addUpload(tooLarge)).rejects.toBeInstanceOf(UploadQueueStorageLimitError);
+    expect(tooLargeBuffer).not.toHaveBeenCalled();
+  });
+
+  it('rejects an aborted commit instead of acknowledging a collision as durable', async () => {
+    const manager = UploadQueueManager.create();
+    await manager.init();
+    await manager.clearAll();
+    const randomUuid = globalThis.crypto.randomUUID;
+    if (!randomUuid) return;
+    const uuid = vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue('collision-id');
+    try {
+      const file = new File(['data'], 'collision.png', { type: 'image/png' });
+      await expect(manager.addUpload(file)).resolves.toBe('collision-id');
+      await expect(manager.addUpload(file)).rejects.toThrow();
+      await expect(manager.getPendingUploads()).resolves.toHaveLength(1);
+    } finally {
+      uuid.mockRestore();
+    }
   });
 });

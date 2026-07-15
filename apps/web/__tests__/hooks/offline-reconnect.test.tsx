@@ -18,12 +18,22 @@ const mocks = vi.hoisted(() => {
   };
   const manager = {
     init: vi.fn().mockResolvedValue(undefined),
-    getPendingUploads: vi.fn(async () => removed ? [] : [upload]),
+    getPendingUploads: vi.fn(async () => (removed ? [] : [upload])),
     addUpload: vi.fn().mockResolvedValue('queued-2'),
-    removeUpload: vi.fn(async () => { removed = true; }),
+    removeUpload: vi.fn(async () => {
+      removed = true;
+    }),
     claimUpload: vi.fn(async () => upload),
-    completeUpload: vi.fn(async () => { removed = true; return true; }),
-    releaseUploadClaim: vi.fn(async (_id: string, _owner: string, _claimToken: string, error?: string) => ({ ...upload, status: 'failed', error, retryCount: upload.retryCount + 1 })),
+    completeUpload: vi.fn(async () => {
+      removed = true;
+      return true;
+    }),
+    releaseUploadClaim: vi.fn(async (_id: string, _owner: string, _claimToken: string, error?: string) => ({
+      ...upload,
+      status: 'failed',
+      error,
+      retryCount: upload.retryCount + 1,
+    })),
     updateUploadStatus: vi.fn().mockResolvedValue(undefined),
     resetUploadForRetry: vi.fn().mockResolvedValue(undefined),
     toFile: vi.fn(async () => new File(['data'], upload.filename, { type: upload.mimeType })),
@@ -32,9 +42,16 @@ const mocks = vi.hoisted(() => {
     uploadFile: vi.fn().mockResolvedValue({ success: true, asset: { id: 'asset-1' } }),
   };
   return {
-    get offline() { return offline; },
-    set offline(value: boolean) { offline = value; },
-    reset() { offline = true; removed = false; },
+    get offline() {
+      return offline;
+    },
+    set offline(value: boolean) {
+      offline = value;
+    },
+    reset() {
+      offline = true;
+      removed = false;
+    },
     manager,
     client,
   };
@@ -59,7 +76,10 @@ describe('offline recovery', () => {
   beforeEach(() => {
     mocks.reset();
     vi.clearAllMocks();
-    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    Object.defineProperty(navigator, 'onLine', {
+      configurable: true,
+      value: true,
+    });
   });
 
   it('automatically resumes a persisted upload when connectivity returns', async () => {
@@ -74,7 +94,7 @@ describe('offline recovery', () => {
 
     await waitFor(() => expect(mocks.client.uploadFile).toHaveBeenCalledTimes(1));
     expect(mocks.manager.completeUpload).toHaveBeenCalledWith('queued-1', expect.any(String), 'attempt-1');
-    expect(mocks.client.uploadFile).toHaveBeenCalledWith(expect.any(File), { idempotencyKey: 'queued-1' });
+    expect(mocks.client.uploadFile).toHaveBeenCalledWith(expect.any(File), expect.objectContaining({ idempotencyKey: 'queued-1' }));
     hook.unmount();
   });
 
@@ -93,9 +113,7 @@ describe('offline recovery', () => {
       await first.result.current.retryUpload('queued-1');
     });
     expect(mocks.manager.resetUploadForRetry).toHaveBeenCalledWith('queued-1');
-    expect(mocks.manager.resetUploadForRetry.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.manager.getPendingUploads.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY,
-    );
+    expect(mocks.manager.resetUploadForRetry.mock.invocationCallOrder[0]).toBeLessThan(mocks.manager.getPendingUploads.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY);
     first.unmount();
     second.unmount();
   });
@@ -109,6 +127,24 @@ describe('offline recovery', () => {
     await waitFor(() => expect(hook.result.current.queue.some((item) => item.id === 'queued-1')).toBe(true));
     expect(mocks.manager.removeUpload).not.toHaveBeenCalled();
     expect(hook.result.current.queue.find((item) => item.id === 'queued-1')?.status).not.toBe('success');
+    hook.unmount();
+  });
+
+  it('does not start network work after durable enqueue fails', async () => {
+    mocks.offline = false;
+    mocks.manager.getPendingUploads.mockResolvedValue([]);
+    mocks.manager.addUpload.mockRejectedValueOnce(new Error('durable storage unavailable'));
+    const hook = renderHook(() => useUploadQueue({ autoProcess: true }));
+
+    await expect(
+      act(async () => {
+        await hook.result.current.addToQueue(new File(['data'], 'not-enqueued.png', { type: 'image/png' }));
+      }),
+    ).rejects.toThrow('durable storage unavailable');
+    await act(async () => {
+      await hook.result.current.processQueue();
+    });
+    expect(mocks.client.uploadFile).not.toHaveBeenCalled();
     hook.unmount();
   });
 });
