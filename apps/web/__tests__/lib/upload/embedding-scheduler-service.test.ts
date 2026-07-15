@@ -12,7 +12,7 @@ import { EmbeddingProviderCircuitOpenError } from '@/lib/embedding-errors';
 import * as nextServer from 'next/server';
 import { acquireEmbeddingProcessing } from '@/lib/embedding-guard';
 
-const PROCESSING_CLAIM_UPDATED_AT = new Date('2026-07-10T00:00:00Z');
+const PROCESSING_CLAIM_TOKEN = 'scheduler-processing-claim';
 
 // Mock dependencies
 vi.mock('next/server');
@@ -72,7 +72,7 @@ describe('EmbeddingSchedulerService', () => {
     vi.mocked(acquireEmbeddingProcessing).mockResolvedValue({
       acquired: true,
       state: 'processing',
-      updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+      processingClaimToken: PROCESSING_CLAIM_TOKEN,
     });
   });
 
@@ -128,7 +128,7 @@ describe('EmbeddingSchedulerService', () => {
             dim: EMBEDDING_DIMENSION,
             embedding: expect.any(Array),
           },
-          PROCESSING_CLAIM_UPDATED_AT,
+          PROCESSING_CLAIM_TOKEN,
         );
         expect(mockAfter).not.toHaveBeenCalled();
       });
@@ -281,7 +281,7 @@ describe('EmbeddingSchedulerService', () => {
           where: {
             assetId: 'asset-123',
             status: 'processing',
-            updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+            processingClaimToken: PROCESSING_CLAIM_TOKEN,
           },
           data: expect.objectContaining({
             status: 'pending',
@@ -319,7 +319,7 @@ describe('EmbeddingSchedulerService', () => {
           where: {
             assetId: 'asset-123',
             status: 'processing',
-            updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+            processingClaimToken: PROCESSING_CLAIM_TOKEN,
           },
           data: expect.objectContaining({
             status: 'pending',
@@ -392,7 +392,7 @@ describe('EmbeddingSchedulerService', () => {
             where: expect.objectContaining({
               assetId: 'asset-123',
               status: 'processing',
-              updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+              processingClaimToken: PROCESSING_CLAIM_TOKEN,
             }),
             data: expect.objectContaining({ status: 'pending' }),
           }),
@@ -506,7 +506,7 @@ describe('EmbeddingSchedulerService', () => {
           where: {
             assetId: 'asset-123',
             status: 'processing',
-            updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+            processingClaimToken: PROCESSING_CLAIM_TOKEN,
           },
           data: expect.objectContaining({
             status: 'pending',
@@ -563,7 +563,7 @@ describe('EmbeddingSchedulerService', () => {
           where: {
             assetId: 'asset-123',
             status: 'processing',
-            updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+            processingClaimToken: PROCESSING_CLAIM_TOKEN,
           },
           data: expect.objectContaining({
             status: 'failed',
@@ -657,7 +657,7 @@ describe('EmbeddingSchedulerService', () => {
             dim: EMBEDDING_DIMENSION,
             embedding: mockEmbedding,
           },
-          PROCESSING_CLAIM_UPDATED_AT,
+          PROCESSING_CLAIM_TOKEN,
         );
       });
 

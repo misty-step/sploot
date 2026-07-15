@@ -504,7 +504,7 @@ export async function deferEmbeddingAdmission(
   errorMessage: string,
   reason: EmbeddingAdmissionReason | 'provider_circuit_open',
   retryAfterSec?: number,
-  expectedProcessingUpdatedAt?: Date,
+  expectedProcessingClaimToken?: string,
   nowMs: number = Date.now()
 ): Promise<boolean> {
   if (!prisma) return false;
@@ -520,11 +520,12 @@ export async function deferEmbeddingAdmission(
           "error" = ${errorMessage},
           "next_attempt_at" = ${nextAttemptAt},
           "terminal_at" = NULL,
+          "processing_claim_token" = NULL,
           "updatedAt" = ${now}
       WHERE "asset_id" = ${assetId}
         AND "terminal_at" IS NULL
-        ${expectedProcessingUpdatedAt
-          ? Prisma.sql`AND "status" = 'processing' AND "updatedAt" = ${expectedProcessingUpdatedAt}`
+        ${expectedProcessingClaimToken
+          ? Prisma.sql`AND "status" = 'processing' AND "processing_claim_token" = ${expectedProcessingClaimToken}`
           : Prisma.empty}
     `);
     return updated === 1;
@@ -540,7 +541,7 @@ export async function deferEmbeddingAdmission(
     const fallback = await recordEmbeddingAttemptFailure(
       assetId,
       `Admission deferral persistence failed: ${errorMessage}`,
-      expectedProcessingUpdatedAt,
+      expectedProcessingClaimToken,
       nowMs,
     );
     return fallback !== null;
@@ -550,7 +551,7 @@ export async function deferEmbeddingAdmission(
 export async function recordEmbeddingAttemptFailure(
   assetId: string,
   errorMessage: string,
-  expectedProcessingUpdatedAt?: Date,
+  expectedProcessingClaimToken?: string,
   nowMs: number = Date.now()
 ): Promise<EmbeddingAttemptFailure | null> {
   if (!prisma) return null;
@@ -574,11 +575,12 @@ export async function recordEmbeddingAttemptFailure(
         WHEN "attempt_count" + 1 >= ${EMBEDDING_MAX_ATTEMPTS} THEN ${now}
         ELSE NULL
       END,
+      "processing_claim_token" = NULL,
       "updatedAt" = ${now}
     WHERE "asset_id" = ${assetId}
       AND "terminal_at" IS NULL
-      ${expectedProcessingUpdatedAt
-        ? Prisma.sql`AND "status" = 'processing' AND "updatedAt" = ${expectedProcessingUpdatedAt}`
+      ${expectedProcessingClaimToken
+        ? Prisma.sql`AND "status" = 'processing' AND "processing_claim_token" = ${expectedProcessingClaimToken}`
         : Prisma.empty}
     RETURNING
       "attempt_count" AS "attemptCount",

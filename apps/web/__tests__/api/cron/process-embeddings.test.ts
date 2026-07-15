@@ -31,7 +31,7 @@ const mockDeferEmbeddingAdmission = vi.fn();
 const mockRecordEmbeddingAttemptFailure = vi.fn();
 const mockResetEmbeddingProviderCircuit = vi.fn();
 const mockMarkEmbeddingTerminalSkipped = vi.fn();
-const PROCESSING_CLAIM_UPDATED_AT = new Date('2026-07-10T00:00:00Z');
+const PROCESSING_CLAIM_TOKEN = 'cron-processing-claim';
 let mockDatabaseAvailable = true;
 
 vi.mock('@/lib/db', () => ({
@@ -106,7 +106,7 @@ describe('/api/cron/process-embeddings', () => {
     mockAcquireEmbeddingProcessing.mockResolvedValue({
       acquired: true,
       state: 'processing',
-      updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+      processingClaimToken: PROCESSING_CLAIM_TOKEN,
     });
     mockRecordEmbeddingAdmissionFailure.mockResolvedValue({
       available: true,
@@ -522,7 +522,7 @@ describe('/api/cron/process-embeddings', () => {
         'Embedding provider temporarily unavailable',
         'provider_circuit_open',
         42,
-        PROCESSING_CLAIM_UPDATED_AT,
+        PROCESSING_CLAIM_TOKEN,
       );
       expect(mockRecordEmbeddingAttemptFailure).not.toHaveBeenCalled();
       expect(mockEmbedImage).not.toHaveBeenCalled();
@@ -569,7 +569,7 @@ describe('/api/cron/process-embeddings', () => {
         admissionError.message,
         'global_rate',
         30,
-        PROCESSING_CLAIM_UPDATED_AT,
+        PROCESSING_CLAIM_TOKEN,
       );
     });
 
@@ -623,7 +623,7 @@ describe('/api/cron/process-embeddings', () => {
         admissionError.message,
         'user_rate',
         60,
-        PROCESSING_CLAIM_UPDATED_AT,
+        PROCESSING_CLAIM_TOKEN,
       );
       expect(mockEmbedImage).toHaveBeenCalledTimes(2);
     });
@@ -649,7 +649,7 @@ describe('/api/cron/process-embeddings', () => {
       expect(mockRecordEmbeddingAttemptFailure).toHaveBeenCalledWith(
         'asset-provider-429',
         'Embedding provider rate limited',
-        PROCESSING_CLAIM_UPDATED_AT,
+        PROCESSING_CLAIM_TOKEN,
       );
       expect(data.stats.errors[0]).toMatchObject({
         assetId: 'asset-provider-429',
@@ -699,7 +699,7 @@ describe('/api/cron/process-embeddings', () => {
       expect(mockRecordEmbeddingAttemptFailure).toHaveBeenCalledWith(
         'asset-poison',
         'Unable to identify image file',
-        PROCESSING_CLAIM_UPDATED_AT,
+        PROCESSING_CLAIM_TOKEN,
       );
       expect(mockEmbedImage).toHaveBeenCalledTimes(2);
       expect(mockUpsertAssetEmbedding).toHaveBeenCalledTimes(1);
@@ -774,7 +774,7 @@ describe('/api/cron/process-embeddings', () => {
       expect(mockRecordEmbeddingAttemptFailure).toHaveBeenCalledWith(
         'asset-1',
         'Embedding service initialization failed',
-        PROCESSING_CLAIM_UPDATED_AT,
+        PROCESSING_CLAIM_TOKEN,
       );
 
       // Assets should have been found first

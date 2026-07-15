@@ -39,6 +39,11 @@ swallow retry state. Cron, manual asset retry, search, semantic piles, and the
 embedding API routes all use the same service.
 
 Image/provider attempts are counted in `asset_embeddings.attempt_count`.
+Each acquired worker generation also receives a unique
+`processing_claim_token`. Success, deferral, and failure transitions compare
+that token and clear it atomically; the timestamp remains a TTL clock only.
+This prevents a reclaimed worker from settling a newer claim even when the
+legacy `updatedAt` trigger assigns both claims the same millisecond.
 Failures return to `pending` with `next_attempt_at` until three attempts have
 been used; the third failure sets `terminal_at` while retaining the user-visible
 `failed` status. Terminal rows are excluded by both cron discovery and the
@@ -93,9 +98,10 @@ Daily-budget backoff honors the limiter's retry time through the next UTC reset;
 it is not capped at the ordinary one-hour provider retry ceiling.
 
 Every embedding `429` carries a finite `Retry-After`. Missing or malformed
-provider metadata uses a 30-second default; all normalized values are capped at
-86,400 seconds, with daily-budget denial allowed to point to the next UTC
-reset. Typed embedding responses carry `X-Sploot-Embedding-Outcome`, allowing
+provider metadata uses a 30-second default; a valid provider value is preserved
+as a lower bound rather than shortened by local circuit policy, while budget
+denials point to their UTC reset. Typed embedding responses carry
+`X-Sploot-Embedding-Outcome`, allowing
 `withObservability` to record the classification without emitting a second
 generic 5xx Canary event.
 

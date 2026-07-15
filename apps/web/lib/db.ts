@@ -686,7 +686,7 @@ export interface AssetEmbeddingRecord {
  */
 export async function upsertAssetEmbedding(
   data: AssetEmbeddingWriteArgs,
-  expectedProcessingUpdatedAt?: Date,
+  expectedProcessingClaimToken?: string,
 ): Promise<AssetEmbeddingRecord | null> {
   const { assetId, modelName, modelVersion, dim, embedding } = data;
   const vectorSql = embeddingVectorSql(embedding, 'asset embedding');
@@ -706,9 +706,9 @@ export async function upsertAssetEmbedding(
   try {
     // A paid worker must only settle the exact processing claim it acquired.
     // Once a crashed claim is reclaimed, its stale worker can still finish at
-    // the provider; fencing by the claim's updatedAt generation prevents that
+    // the provider; fencing by a unique claim token prevents that
     // late result from overwriting the newer owner's state.
-    if (expectedProcessingUpdatedAt) {
+    if (expectedProcessingClaimToken) {
       const rows = await prisma.$queryRaw<Array<AssetEmbeddingRecord>>(Prisma.sql`
         UPDATE "asset_embeddings"
         SET "model_name" = ${modelName},
@@ -720,11 +720,12 @@ export async function upsertAssetEmbedding(
             "attempt_count" = 0,
             "next_attempt_at" = NULL,
             "terminal_at" = NULL,
+            "processing_claim_token" = NULL,
             "completedAt" = NOW(),
             "updatedAt" = NOW()
         WHERE "asset_id" = ${assetId}
           AND "status" = 'processing'
-          AND "updatedAt" = ${expectedProcessingUpdatedAt}
+          AND "processing_claim_token" = ${expectedProcessingClaimToken}
         RETURNING
           "asset_id" AS "assetId",
           "model_name" AS "modelName",
@@ -770,6 +771,7 @@ export async function upsertAssetEmbedding(
         "attempt_count" = 0,
         "next_attempt_at" = NULL,
         "terminal_at" = NULL,
+        "processing_claim_token" = NULL,
         "completedAt" = NOW(),
         "updatedAt" = NOW()
       RETURNING

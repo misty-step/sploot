@@ -833,7 +833,8 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       + 1_000;
     const secondClaim = await acquireEmbeddingProcessing(assetId, secondNowMs);
     expect(secondClaim.acquired).toBe(true);
-    expect(secondClaim.updatedAt).not.toEqual(firstClaim.updatedAt);
+    expect(secondClaim.processingClaimToken).toEqual(expect.any(String));
+    expect(secondClaim.processingClaimToken).not.toBe(firstClaim.processingClaimToken);
 
     await expect(
       deferEmbeddingAdmission(
@@ -841,7 +842,7 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
         'stale throttle',
         'provider_circuit_open',
         60,
-        firstClaim.updatedAt ?? undefined,
+        firstClaim.processingClaimToken,
         secondNowMs,
       ),
     ).resolves.toBe(false);
@@ -849,7 +850,7 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       recordEmbeddingAttemptFailure(
         assetId,
         'stale failure',
-        firstClaim.updatedAt ?? undefined,
+        firstClaim.processingClaimToken,
         secondNowMs,
       ),
     ).resolves.toBeNull();
@@ -862,7 +863,7 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
           dim: 768,
           embedding: Array(768).fill(0.1),
         },
-        firstClaim.updatedAt ?? undefined,
+        firstClaim.processingClaimToken,
       ),
     ).resolves.toBeNull();
 

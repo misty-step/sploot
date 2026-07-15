@@ -7,10 +7,11 @@ export interface AdmittedEmbeddingProviderLease {
 }
 
 export const EMBEDDING_DEFAULT_RETRY_AFTER_SECONDS = 30;
-// One UTC day keeps Retry-After finite while preserving truthful daily-budget
-// rollover guidance; ordinary provider backoff remains bounded lower in the
-// circuit policy.
-export const EMBEDDING_MAX_RETRY_AFTER_SECONDS = 24 * 60 * 60;
+// The largest practical finite delay that remains representable by a JS Date
+// after conversion to milliseconds. Provider Retry-After is a lower bound;
+// ordinary application policy must never shorten it.
+export const EMBEDDING_MAX_RETRY_AFTER_SECONDS = 8_000_000_000_000;
+export const EMBEDDING_MAX_MONTHLY_RETRY_AFTER_SECONDS = 32 * 24 * 60 * 60;
 
 /** The only response marker understood by the request observability boundary. */
 export const EMBEDDING_OUTCOMES = [

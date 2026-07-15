@@ -298,7 +298,7 @@ export class EmbeddingSchedulerService {
         assetId,
         providerError.message,
         true,
-        lock.updatedAt ?? undefined,
+        lock.processingClaimToken,
       );
       const terminal = failure?.terminal ?? false;
       throw new EmbeddingScheduleError(
@@ -320,7 +320,7 @@ export class EmbeddingSchedulerService {
         modelVersion: result.model,
         dim: result.dimension,
         embedding: result.embedding,
-      }, lock.updatedAt ?? undefined);
+      }, lock.processingClaimToken);
 
       logger.info('Embedding stored successfully', {
         assetId,
@@ -338,7 +338,7 @@ export class EmbeddingSchedulerService {
           errorMessage,
           'provider_circuit_open',
           error.retryAfterSec,
-          lock.updatedAt ?? undefined,
+          lock.processingClaimToken,
         );
         throw new EmbeddingScheduleError(
           `Embedding generation deferred: ${errorMessage}`,
@@ -358,7 +358,7 @@ export class EmbeddingSchedulerService {
           errorMessage,
           reason,
           retryAfterSec,
-          lock.updatedAt ?? undefined,
+          lock.processingClaimToken,
         );
         throw new EmbeddingScheduleError(
           `Embedding generation deferred: ${errorMessage}`,
@@ -383,7 +383,7 @@ export class EmbeddingSchedulerService {
           assetId,
           errorMessage,
           true,
-          lock.updatedAt ?? undefined,
+          lock.processingClaimToken,
         );
         throw new EmbeddingScheduleError(
           `Embedding generation deferred: ${errorMessage}`,
@@ -412,7 +412,7 @@ export class EmbeddingSchedulerService {
         assetId,
         errorMessage,
         false,
-        lock.updatedAt ?? undefined,
+        lock.processingClaimToken,
       );
 
       // Re-throw for sync mode error handling
@@ -428,13 +428,13 @@ export class EmbeddingSchedulerService {
     assetId: string,
     errorMessage: string,
     pendingFallback: boolean,
-    expectedProcessingUpdatedAt?: Date,
+    expectedProcessingClaimToken?: string,
   ): Promise<EmbeddingAttemptFailure | null> {
     if (prisma && typeof prisma.$queryRaw === 'function') {
       return recordEmbeddingAttemptFailure(
         assetId,
         errorMessage,
-        expectedProcessingUpdatedAt,
+        expectedProcessingClaimToken,
       );
     }
 
@@ -442,13 +442,13 @@ export class EmbeddingSchedulerService {
       await this.markEmbeddingPending(
         assetId,
         errorMessage,
-        expectedProcessingUpdatedAt,
+        expectedProcessingClaimToken,
       );
     } else {
       await this.markEmbeddingFailed(
         assetId,
         errorMessage,
-        expectedProcessingUpdatedAt,
+        expectedProcessingClaimToken,
       );
     }
     return null;
@@ -459,7 +459,7 @@ export class EmbeddingSchedulerService {
     errorMessage: string,
     reason: EmbeddingAdmissionReason | 'provider_circuit_open',
     retryAfterSec?: number,
-    expectedProcessingUpdatedAt?: Date,
+    expectedProcessingClaimToken?: string,
   ): Promise<void> {
     try {
       await deferEmbeddingAdmission(
@@ -467,7 +467,7 @@ export class EmbeddingSchedulerService {
         errorMessage,
         reason,
         retryAfterSec,
-        expectedProcessingUpdatedAt,
+        expectedProcessingClaimToken,
       );
       return;
     } catch (deferError) {
@@ -484,7 +484,7 @@ export class EmbeddingSchedulerService {
     await this.markEmbeddingPending(
       assetId,
       errorMessage,
-      expectedProcessingUpdatedAt,
+      expectedProcessingClaimToken,
     );
   }
 
@@ -492,7 +492,7 @@ export class EmbeddingSchedulerService {
   private async markEmbeddingPending(
     assetId: string,
     errorMessage: string,
-    expectedProcessingUpdatedAt?: Date,
+    expectedProcessingClaimToken?: string,
   ): Promise<void> {
     try {
       if (!prisma) {
@@ -502,14 +502,18 @@ export class EmbeddingSchedulerService {
         return;
       }
 
-      if (expectedProcessingUpdatedAt) {
+      if (expectedProcessingClaimToken) {
         await prisma.assetEmbedding.updateMany({
           where: {
             assetId,
             status: 'processing',
-            updatedAt: expectedProcessingUpdatedAt,
+            processingClaimToken: expectedProcessingClaimToken,
           },
-          data: { status: 'pending', error: errorMessage },
+          data: {
+            status: 'pending',
+            error: errorMessage,
+            processingClaimToken: null,
+          },
         });
       } else {
         await prisma.assetEmbedding.upsert({
@@ -545,7 +549,7 @@ export class EmbeddingSchedulerService {
   private async markEmbeddingFailed(
     assetId: string,
     errorMessage: string,
-    expectedProcessingUpdatedAt?: Date,
+    expectedProcessingClaimToken?: string,
   ): Promise<void> {
     try {
       if (!prisma) {
@@ -555,14 +559,18 @@ export class EmbeddingSchedulerService {
         return;
       }
 
-      if (expectedProcessingUpdatedAt) {
+      if (expectedProcessingClaimToken) {
         await prisma.assetEmbedding.updateMany({
           where: {
             assetId,
             status: 'processing',
-            updatedAt: expectedProcessingUpdatedAt,
+            processingClaimToken: expectedProcessingClaimToken,
           },
-          data: { status: 'failed', error: errorMessage },
+          data: {
+            status: 'failed',
+            error: errorMessage,
+            processingClaimToken: null,
+          },
         });
       } else {
         await prisma.assetEmbedding.upsert({

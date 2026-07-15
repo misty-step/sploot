@@ -141,6 +141,7 @@ model AssetEmbedding {
   // Must match packages/common/src/embeddings.ts EMBEDDING_DIMENSION.
   imageEmbedding  Unsupported("vector(768)")? @map("image_embedding")
   status          String?                @default("pending") // pending, processing, ready, failed
+  processingClaimToken String?           @map("processing_claim_token")
   error           String? // Error message if failed
   attemptCount    Int                    @default(0) @map("attempt_count")
   nextAttemptAt   DateTime?              @map("next_attempt_at")

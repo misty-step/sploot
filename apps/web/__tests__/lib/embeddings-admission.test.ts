@@ -384,14 +384,14 @@ describe('central Replicate admission boundary', () => {
     },
   );
 
-  it('caps provider Retry-After metadata at the documented finite maximum', async () => {
+  it('preserves a long finite provider Retry-After lower bound', async () => {
     mocks.replicateRun.mockRejectedValue({ status: 429, retryAfterSec: 999_999 });
     const service = createEmbeddingService('user-1');
 
     await expect(service.embedText('provider cap')).rejects.toMatchObject({
       name: 'EmbeddingProviderRateLimitError',
       statusCode: 429,
-      retryAfterSec: 86_400,
+      retryAfterSec: 999_999,
     });
   });
 

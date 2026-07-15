@@ -87,7 +87,7 @@ vi.mock('@/lib/with-observability', () => ({
 import { POST } from '@/app/api/assets/[id]/generate-embedding/route';
 import { EmbeddingAdmissionError } from '@/lib/embeddings';
 
-const PROCESSING_CLAIM_UPDATED_AT = new Date('2026-07-10T00:00:00Z');
+const PROCESSING_CLAIM_TOKEN = 'generate-route-processing-claim';
 
 function request(assetId: string): NextRequest {
   return new NextRequest(
@@ -123,7 +123,7 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
     mocks.acquireEmbeddingProcessing.mockResolvedValue({
       acquired: true,
       state: 'processing',
-      updatedAt: PROCESSING_CLAIM_UPDATED_AT,
+      processingClaimToken: PROCESSING_CLAIM_TOKEN,
     });
     mocks.resolveEmbeddingGateState.mockReturnValue({ state: 'available' });
     mocks.createEmbeddingService.mockReturnValue({
@@ -157,7 +157,7 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
       'Embedding generation is rate limited',
       'daily_budget',
       3600,
-      PROCESSING_CLAIM_UPDATED_AT,
+      PROCESSING_CLAIM_TOKEN,
     );
     expect(mocks.markEmbeddingFailed).not.toHaveBeenCalled();
   });
@@ -212,7 +212,7 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
     ['missing', undefined, '30'],
     ['malformed', Number.NaN, '30'],
     ['negative', -20, '1'],
-    ['excessive', 999999000, '86400'],
+    ['long', 999999000, '999999'],
   ])('normalizes %s manual cooldown Retry-After metadata', async (_label, retryAfterMs, expected) => {
     mocks.resolveEmbeddingGateState.mockReturnValue({
       state: 'cooldown',

@@ -213,7 +213,7 @@ async function getHandler(request: NextRequest) {
     // Process each asset
     for (const asset of assetsNeedingEmbeddings) {
       const assetStartTime = Date.now();
-      let processingClaimUpdatedAt: Date | undefined;
+      let processingClaimToken: string | undefined;
       stats.totalProcessed++;
 
       try {
@@ -254,7 +254,7 @@ async function getHandler(request: NextRequest) {
           });
           continue;
         }
-        processingClaimUpdatedAt = lock.updatedAt ?? undefined;
+        processingClaimToken = lock.processingClaimToken;
 
         let embeddingService = embeddingServices.get(asset.ownerUserId);
         if (!embeddingService) {
@@ -281,7 +281,7 @@ async function getHandler(request: NextRequest) {
                 errorMessage,
                 'provider_circuit_open',
                 retryAfterSec,
-                processingClaimUpdatedAt,
+                processingClaimToken,
               );
               stats.deferredCount++;
               stats.errors.push({
@@ -304,7 +304,7 @@ async function getHandler(request: NextRequest) {
             const failure = await recordEmbeddingAttemptFailure(
               asset.id,
               errorMessage,
-              processingClaimUpdatedAt,
+              processingClaimToken,
             );
             stats.failureCount++;
             stats.deferredCount++;
@@ -349,7 +349,7 @@ async function getHandler(request: NextRequest) {
           modelVersion: result.model,
           dim: result.dimension,
           embedding: result.embedding,
-        }, processingClaimUpdatedAt);
+        }, processingClaimToken);
 
         if (embedding) {
           stats.successCount++;
@@ -397,7 +397,7 @@ async function getHandler(request: NextRequest) {
             errorMessage,
             'provider_circuit_open',
             error.retryAfterSec,
-            processingClaimUpdatedAt,
+            processingClaimToken,
           );
           stats.deferredCount++;
           batchOutcome = 'backoff';
@@ -418,7 +418,7 @@ async function getHandler(request: NextRequest) {
             errorMessage,
             reason,
             retryAfterSec,
-            processingClaimUpdatedAt,
+            processingClaimToken,
           );
           stats.deferredCount++;
           logger.logInfo('cron.process-embeddings.admission-deferred', {
@@ -445,7 +445,7 @@ async function getHandler(request: NextRequest) {
         const failure = await recordEmbeddingAttemptFailure(
           asset.id,
           errorMessage,
-          processingClaimUpdatedAt,
+          processingClaimToken,
         );
         const typedProviderFailure =
           error instanceof EmbeddingProviderRateLimitError ||

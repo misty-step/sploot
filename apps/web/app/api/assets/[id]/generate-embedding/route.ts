@@ -281,7 +281,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
 
     // Create a new promise for this embedding generation
     const embeddingPromise = (async (): Promise<EmbeddingResponse> => {
-      let processingClaimUpdatedAt: Date | undefined;
+      let processingClaimToken: string | undefined;
       try {
         const lock = await acquireEmbeddingProcessing(asset.id);
         if (!lock.acquired) {
@@ -355,7 +355,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
             },
           };
         }
-        processingClaimUpdatedAt = lock.updatedAt ?? undefined;
+        processingClaimToken = lock.processingClaimToken;
 
         logger.logInfo('generate-embedding.lock-acquired', { assetId: id });
 
@@ -381,7 +381,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
           modelVersion: result.model,
           dim: result.dimension,
           embedding: result.embedding,
-        }, processingClaimUpdatedAt);
+        }, processingClaimToken);
         const dbTime = Date.now() - dbStartTime;
         logger.logInfo('generate-embedding.db-duration', {
           assetId: id,
@@ -450,7 +450,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
             errorMessage,
             'provider_circuit_open',
             error.retryAfterSec,
-            processingClaimUpdatedAt,
+            processingClaimToken,
           );
         } else if (isEmbeddingAdmissionFailure(error)) {
           await deferEmbeddingAdmission(
@@ -458,13 +458,13 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
             errorMessage,
             getEmbeddingAdmissionReason(error) ?? 'limiter_unavailable',
             error.retryAfterSec,
-            processingClaimUpdatedAt,
+            processingClaimToken,
           );
         } else if (prisma && typeof prisma.$queryRaw === 'function') {
           await recordEmbeddingAttemptFailure(
             asset.id,
             errorMessage,
-            processingClaimUpdatedAt,
+            processingClaimToken,
           );
         }
 

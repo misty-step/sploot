@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { prisma } from '@/lib/db';
 
 export const EMBEDDING_PROCESSING_TTL_MS = 10 * 60 * 1000;
@@ -24,6 +25,7 @@ export interface EmbeddingGateResult {
 
 export interface EmbeddingLockResult extends EmbeddingGateResult {
   acquired: boolean;
+  processingClaimToken?: string;
 }
 
 export interface EmbeddingStateRow {
@@ -126,16 +128,18 @@ export async function acquireEmbeddingProcessing(
   }
 
   const now = new Date(nowMs);
+  const processingClaimToken = randomUUID();
   const processingStaleBefore = new Date(now.getTime() - EMBEDDING_PROCESSING_TTL_MS);
   const failedCooldownBefore = new Date(now.getTime() - EMBEDDING_FAILED_COOLDOWN_MS);
 
   const updated = await prisma.$queryRaw<
-    Array<{ status: string | null; updatedAt: Date; completedAt: Date | null }>
+    Array<{ status: string | null; updatedAt: Date; completedAt: Date | null; processingClaimToken: string }>
   >(Prisma.sql`
     UPDATE "asset_embeddings"
     SET
       "status" = 'processing',
       "error" = NULL,
+      "processing_claim_token" = ${processingClaimToken},
       "updatedAt" = ${now}
     WHERE "asset_id" = ${assetId}
       AND "image_embedding" IS NULL
@@ -149,7 +153,8 @@ export async function acquireEmbeddingProcessing(
         OR ("status" = 'processing' AND "updatedAt" < ${processingStaleBefore})
         OR ("status" = 'ready' AND "completedAt" IS NULL)
       )
-    RETURNING "status", "updatedAt", "completedAt";
+    RETURNING "status", "updatedAt", "completedAt",
+      "processing_claim_token" AS "processingClaimToken";
   `);
 
   if (updated.length > 0) {
@@ -159,11 +164,12 @@ export async function acquireEmbeddingProcessing(
       status: updated[0].status,
       updatedAt: updated[0].updatedAt,
       completedAt: updated[0].completedAt,
+      processingClaimToken: updated[0].processingClaimToken,
     };
   }
 
   const inserted = await prisma.$queryRaw<
-    Array<{ status: string | null; updatedAt: Date; completedAt: Date | null }>
+    Array<{ status: string | null; updatedAt: Date; completedAt: Date | null; processingClaimToken: string }>
   >(Prisma.sql`
     INSERT INTO "asset_embeddings" (
       "asset_id",
@@ -171,6 +177,7 @@ export async function acquireEmbeddingProcessing(
       "model_version",
       "dim",
       "status",
+      "processing_claim_token",
       "createdAt",
       "updatedAt"
     ) VALUES (
@@ -179,11 +186,13 @@ export async function acquireEmbeddingProcessing(
       'pending',
       0,
       'processing',
+      ${processingClaimToken},
       ${now},
       ${now}
     )
     ON CONFLICT ("asset_id") DO NOTHING
-    RETURNING "status", "updatedAt", "completedAt";
+    RETURNING "status", "updatedAt", "completedAt",
+      "processing_claim_token" AS "processingClaimToken";
   `);
 
   if (inserted.length > 0) {
@@ -193,6 +202,7 @@ export async function acquireEmbeddingProcessing(
       status: inserted[0].status,
       updatedAt: inserted[0].updatedAt,
       completedAt: inserted[0].completedAt,
+      processingClaimToken: inserted[0].processingClaimToken,
     };
   }
 
@@ -224,6 +234,7 @@ export async function markEmbeddingFailed(
     update: {
       status: 'failed',
       error: errorMessage,
+      processingClaimToken: null,
     },
   });
 }
@@ -256,6 +267,7 @@ export async function markEmbeddingTerminalSkipped(
       error: errorMessage,
       nextAttemptAt: null,
       terminalAt: now,
+      processingClaimToken: null,
     },
   });
 }
