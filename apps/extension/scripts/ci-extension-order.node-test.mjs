@@ -42,4 +42,9 @@ test('production extension transport precedes the real MV3 E2E artifact boundary
     /expect\.poll\([\s\S]{0,120}\(\) => uploadBodies\.some\(body => body\.includes\('after-hung\.png'\)\)/,
     'the live post-hung upload oracle must wait for asynchronous queue convergence',
   );
+  assert.match(
+    lifecycleTest,
+    /imageUrl: `\$\{API_ORIGIN\}\/after-hung\.png`, filename: 'after-hung\.png'/,
+    'the live liveness oracle must use a source URL whose production filename is unique',
+  );
 });

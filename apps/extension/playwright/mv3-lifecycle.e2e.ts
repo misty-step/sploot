@@ -457,7 +457,7 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     const hungResults = await Promise.allSettled([
       send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/hung-1.png`, filename: 'hung-1.png' }, 'hung source 1 save message', 45_000),
       send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/hung-2.png`, filename: 'hung-2.png' }, 'hung source 2 save message', 45_000),
-      send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'after-hung.png' }, 'post-hung save message'),
+      send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/after-hung.png`, filename: 'after-hung.png' }, 'post-hung save message'),
     ]);
     expect(hungResults).toHaveLength(3);
     await expect.poll(
