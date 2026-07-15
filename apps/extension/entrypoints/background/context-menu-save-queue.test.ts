@@ -12,14 +12,18 @@ vi.mock('./notifications', () => ({ showErrorNotification: mocks.showErrorNotifi
 
 import {
   CONTEXT_MENU_QUEUE_KEY,
+  CONTEXT_MENU_SAVE_ALARM_NAME,
   MAX_CONTEXT_MENU_SAVE_ATTEMPTS,
   MAX_CONTEXT_MENU_SAVE_AGE_MS,
   MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE,
   PROCESSING_STALE_TIMEOUT_MS,
   discardContextMenuSave,
   enqueueContextMenuSave,
+  listContextMenuSaves,
   recoverPendingContextMenuSaves,
   retryContextMenuSave,
+  scheduleContextMenuSaveQueueWakeup,
+  setupContextMenuSaveQueue,
 } from './context-menu-save-queue';
 
 interface StoredJob {
@@ -31,16 +35,23 @@ interface StoredJob {
   attempts?: number;
   nextAttemptAt?: number;
   processingStartedAt?: number;
+  processingToken?: string;
   lastError?: string;
 }
 
 let storedQueue: StoredJob[];
+let alarmListener: ((alarm: { name: string }) => void) | undefined;
+let alarmCreate: ReturnType<typeof vi.fn>;
+let alarmClear: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(1_000_000);
   vi.clearAllMocks();
   storedQueue = [];
+  alarmListener = undefined;
+  alarmCreate = vi.fn(async () => undefined);
+  alarmClear = vi.fn(async () => true);
   vi.stubGlobal('chrome', {
     storage: {
       local: {
@@ -52,7 +63,17 @@ beforeEach(() => {
         }),
       },
     },
+    alarms: {
+      create: alarmCreate,
+      clear: alarmClear,
+      onAlarm: {
+        addListener: vi.fn((listener: (alarm: { name: string }) => void) => {
+          alarmListener = listener;
+        }),
+      },
+    },
   });
+  setupContextMenuSaveQueue();
   mocks.fetchImage.mockResolvedValue(new Blob(['image'], { type: 'image/png' }));
   mocks.saveToSploot.mockResolvedValue({ ok: true, filename: 'cat.png', isDuplicate: false });
 });
@@ -61,8 +82,8 @@ describe('durable context-menu save queue', () => {
   it('removes a job only after the save pipeline reports success', async () => {
     await enqueueContextMenuSave('https://x.test/cat.png', 'cat.png');
 
-    expect(mocks.saveToSploot).toHaveBeenCalledOnce();
-    expect(storedQueue).toEqual([]);
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(storedQueue).toEqual([]));
   });
 
   it('keeps failed payloads and schedules the next attempt with bounded backoff', async () => {
@@ -71,13 +92,13 @@ describe('durable context-menu save queue', () => {
     await enqueueContextMenuSave('https://x.test/cat.png', 'cat.png');
 
     expect(storedQueue).toHaveLength(1);
-    expect(storedQueue[0]).toMatchObject({
+    await vi.waitFor(() => expect(storedQueue[0]).toMatchObject({
       imageUrl: 'https://x.test/cat.png',
       filename: 'cat.png',
       state: 'pending',
       attempts: 1,
       lastError: 'network down',
-    });
+    }));
     expect(storedQueue[0].nextAttemptAt).toBeGreaterThan(Date.now());
 
     await recoverPendingContextMenuSaves();
@@ -222,6 +243,8 @@ describe('durable context-menu save queue', () => {
     }];
 
     await retryContextMenuSave('failed');
+    expect(mocks.saveToSploot).not.toHaveBeenCalled();
+    await recoverPendingContextMenuSaves();
     expect(mocks.saveToSploot).toHaveBeenCalledOnce();
     expect(storedQueue).toEqual([]);
 
@@ -236,5 +259,151 @@ describe('durable context-menu save queue', () => {
     }];
     await expect(discardContextMenuSave('discard-me')).resolves.toBe(true);
     expect(storedQueue).toEqual([]);
+  });
+
+  it('resets the age window and gives a manual retry one real attempt', async () => {
+    storedQueue = [{
+      id: 'aged',
+      imageUrl: 'https://x.test/aged.png',
+      filename: 'aged.png',
+      state: 'failed',
+      createdAt: Date.now() - MAX_CONTEXT_MENU_SAVE_AGE_MS - 1,
+      attempts: MAX_CONTEXT_MENU_SAVE_ATTEMPTS,
+      nextAttemptAt: 0,
+      lastError: 'expired',
+    }];
+
+    await retryContextMenuSave('aged');
+
+    expect(storedQueue[0]).toMatchObject({
+      state: 'pending',
+      createdAt: Date.now(),
+      attempts: 0,
+    });
+    expect(mocks.saveToSploot).not.toHaveBeenCalled();
+
+    await recoverPendingContextMenuSaves();
+    expect(mocks.saveToSploot).toHaveBeenCalledOnce();
+    expect(storedQueue).toEqual([]);
+  });
+
+  it('acknowledges enqueue after durable persistence, before network completion', async () => {
+    let resolveSave!: (outcome: { ok: true; filename: string; isDuplicate: boolean }) => void;
+    mocks.saveToSploot.mockReturnValue(new Promise(resolve => { resolveSave = resolve; }));
+
+    const enqueue = enqueueContextMenuSave('https://x.test/queued.png', 'queued.png');
+    await enqueue;
+
+    await vi.waitFor(() => expect(storedQueue[0]).toMatchObject({ state: 'processing', filename: 'queued.png' }));
+    expect(mocks.saveToSploot).toHaveBeenCalledOnce();
+
+    resolveSave({ ok: true, filename: 'queued.png', isDuplicate: false });
+    await vi.waitFor(() => expect(storedQueue).toEqual([]));
+  });
+
+  it('schedules the earliest pending or stale-processing wakeup and clears an empty alarm', async () => {
+    storedQueue = [{
+      id: 'later',
+      imageUrl: 'https://x.test/later.png',
+      filename: 'later.png',
+      state: 'pending',
+      createdAt: Date.now(),
+      attempts: 1,
+      nextAttemptAt: Date.now() + 90_000,
+    }, {
+      id: 'earlier',
+      imageUrl: 'https://x.test/earlier.png',
+      filename: 'earlier.png',
+      state: 'pending',
+      createdAt: Date.now(),
+      attempts: 1,
+      nextAttemptAt: Date.now() + 30_000,
+    }];
+
+    await scheduleContextMenuSaveQueueWakeup();
+    expect(alarmCreate).toHaveBeenLastCalledWith(CONTEXT_MENU_SAVE_ALARM_NAME, {
+      when: Date.now() + 30_000,
+    });
+
+    storedQueue = [];
+    await scheduleContextMenuSaveQueueWakeup();
+    expect(alarmClear).toHaveBeenCalledWith(CONTEXT_MENU_SAVE_ALARM_NAME);
+  });
+
+  it('wakes retrying work at the durable due time and removes only after success', async () => {
+    storedQueue = [{
+      id: 'retrying',
+      imageUrl: 'https://x.test/retrying.png',
+      filename: 'retrying.png',
+      state: 'pending',
+      createdAt: Date.now(),
+      attempts: 1,
+      nextAttemptAt: Date.now(),
+    }];
+    mocks.saveToSploot.mockResolvedValueOnce({ ok: false, error: new Error('offline') });
+
+    alarmListener!({ name: CONTEXT_MENU_SAVE_ALARM_NAME });
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(storedQueue[0].nextAttemptAt).toBeGreaterThan(Date.now()));
+    expect(storedQueue[0].state).toBe('pending');
+
+    vi.setSystemTime(storedQueue[0].nextAttemptAt!);
+    mocks.saveToSploot.mockResolvedValueOnce({ ok: true, filename: 'retrying.png', isDuplicate: false });
+    alarmListener!({ name: CONTEXT_MENU_SAVE_ALARM_NAME });
+    await vi.waitFor(() => expect(storedQueue).toEqual([]));
+    expect(alarmClear).toHaveBeenCalledWith(CONTEXT_MENU_SAVE_ALARM_NAME);
+  });
+
+  it('keeps pending, processing, and failed jobs queryable from the background store', async () => {
+    storedQueue = [{
+      id: 'pending',
+      imageUrl: 'https://x.test/pending.png',
+      filename: 'pending.png',
+      state: 'pending',
+      createdAt: Date.now(),
+      attempts: 1,
+      nextAttemptAt: Date.now() + 30_000,
+    }, {
+      id: 'failed',
+      imageUrl: 'https://x.test/failed.png',
+      filename: 'failed.png',
+      state: 'failed',
+      createdAt: Date.now(),
+      attempts: 5,
+      nextAttemptAt: 0,
+      lastError: 'permanent',
+    }];
+
+    await expect(listContextMenuSaves()).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'pending', state: 'pending', nextAttemptAt: expect.any(Number) }),
+      expect.objectContaining({ id: 'failed', state: 'failed', lastError: 'permanent' }),
+    ]));
+  });
+
+  it('fences a stale completion from removing a newer generation', async () => {
+    storedQueue = [{
+      id: 'generation',
+      imageUrl: 'https://x.test/generation.png',
+      filename: 'generation.png',
+      state: 'pending',
+      createdAt: Date.now(),
+      attempts: 0,
+      nextAttemptAt: Date.now(),
+    }];
+    let resolveSave!: (outcome: { ok: true; filename: string; isDuplicate: boolean }) => void;
+    mocks.saveToSploot.mockReturnValue(new Promise(resolve => { resolveSave = resolve; }));
+
+    const processing = recoverPendingContextMenuSaves();
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledOnce());
+    storedQueue = [{
+      ...storedQueue[0],
+      state: 'failed',
+      processingToken: 'new-generation',
+      lastError: 'manual transition',
+    }];
+    resolveSave({ ok: true, filename: 'generation.png', isDuplicate: false });
+    await processing;
+
+    expect(storedQueue[0]).toMatchObject({ state: 'failed', lastError: 'manual transition' });
   });
 });

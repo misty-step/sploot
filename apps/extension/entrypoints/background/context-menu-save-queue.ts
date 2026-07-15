@@ -1,8 +1,10 @@
+import { setSaveStatus } from '../../shared/save-status';
 import { fetchImage } from './image-fetcher';
 import { showErrorNotification } from './notifications';
 import { saveToSploot } from './save-flow';
 
 export const CONTEXT_MENU_QUEUE_KEY = 'sploot:context-menu-queue';
+export const CONTEXT_MENU_SAVE_ALARM_NAME = 'sploot:context-menu-save-wakeup';
 export const MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE = 50;
 export const MAX_CONTEXT_MENU_SAVE_ATTEMPTS = 5;
 export const MAX_CONTEXT_MENU_SAVE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -21,6 +23,7 @@ export interface ContextMenuSaveJob {
   attempts: number;
   nextAttemptAt: number;
   processingStartedAt?: number;
+  processingToken?: string;
   lastError?: string;
   failedAt?: number;
 }
@@ -64,19 +67,21 @@ function normalizeJob(job: unknown): ContextMenuSaveJob | null {
     return null;
   }
 
-  const attempts = Math.max(0, Math.floor(finiteNumber(candidate.attempts, 0)));
   const normalized: ContextMenuSaveJob = {
     id: candidate.id,
     imageUrl: candidate.imageUrl,
     filename: candidate.filename,
     state: candidate.state,
     createdAt: candidate.createdAt,
-    attempts,
+    attempts: Math.max(0, Math.floor(finiteNumber(candidate.attempts, 0))),
     nextAttemptAt: finiteNumber(candidate.nextAttemptAt, candidate.createdAt),
   };
 
   if (typeof candidate.processingStartedAt === 'number' && Number.isFinite(candidate.processingStartedAt)) {
     normalized.processingStartedAt = candidate.processingStartedAt;
+  }
+  if (typeof candidate.processingToken === 'string') {
+    normalized.processingToken = candidate.processingToken;
   }
   if (typeof candidate.lastError === 'string') {
     normalized.lastError = candidate.lastError;
@@ -101,8 +106,8 @@ async function readJobs(): Promise<ContextMenuSaveJob[]> {
   });
 }
 
-async function writeJobs(jobs: ContextMenuSaveJob[]): Promise<void> {
-  await chrome.storage.local.set({ [CONTEXT_MENU_QUEUE_KEY]: jobs });
+function queueError(error: unknown): Error {
+  return error instanceof Error ? error : new Error('Queue storage is unavailable.');
 }
 
 function retryDelayMs(attempts: number): number {
@@ -114,25 +119,58 @@ function isTooOld(job: ContextMenuSaveJob, now: number): boolean {
   return now - job.createdAt >= MAX_CONTEXT_MENU_SAVE_AGE_MS;
 }
 
-function terminalFailure(
-  job: ContextMenuSaveJob,
-  now: number,
-  error: string,
-): ContextMenuSaveJob {
+function terminalFailure(job: ContextMenuSaveJob, now: number, error: string): ContextMenuSaveJob {
   return {
     ...job,
     state: 'failed',
     nextAttemptAt: 0,
     processingStartedAt: undefined,
+    processingToken: undefined,
     lastError: error,
     failedAt: now,
   };
 }
 
 function notifyTerminalFailure(job: ContextMenuSaveJob): void {
-  showErrorNotification({
-    message: `${job.lastError ?? 'Could not save this image.'} Save is retained. Open the extension popup to Retry or discard it.`,
-  });
+  try {
+    showErrorNotification({
+      message: `${job.lastError ?? 'Could not save this image.'} Save is retained. Open the extension popup to Retry or discard it.`,
+    });
+  } catch (error) {
+    console.error('[Background][ContextMenu] Terminal failure feedback failed', error);
+  }
+}
+
+export async function scheduleContextMenuSaveQueueWakeup(): Promise<void> {
+  const jobs = await readJobs();
+  const now = Date.now();
+  const dueAt = jobs.reduce<number | undefined>((earliest, job) => {
+    const candidate = job.state === 'pending'
+      ? job.nextAttemptAt
+      : job.state === 'processing'
+        ? (job.processingStartedAt ?? job.createdAt) + PROCESSING_STALE_TIMEOUT_MS
+        : undefined;
+    if (candidate === undefined) {
+      return earliest;
+    }
+    return earliest === undefined ? candidate : Math.min(earliest, candidate);
+  }, undefined);
+
+  if (dueAt === undefined) {
+    await chrome.alarms.clear(CONTEXT_MENU_SAVE_ALARM_NAME);
+    return;
+  }
+
+  await chrome.alarms.create(CONTEXT_MENU_SAVE_ALARM_NAME, { when: Math.max(now, dueAt) });
+}
+
+async function writeJobs(jobs: ContextMenuSaveJob[]): Promise<void> {
+  await chrome.storage.local.set({ [CONTEXT_MENU_QUEUE_KEY]: jobs });
+  await scheduleContextMenuSaveQueueWakeup();
+}
+
+function setQueuedStatus(filename: string): void {
+  setSaveStatus({ state: 'queued', label: `Queued ${filename} for saving…`, at: Date.now() });
 }
 
 async function terminalizeIfNeeded(
@@ -155,6 +193,7 @@ async function terminalizeIfNeeded(
   );
   const nextJobs = jobs.map(candidate => candidate.id === job.id ? terminal : candidate);
   await writeJobs(nextJobs);
+  notifyTerminalFailure(terminal);
   return { jobs: nextJobs, job: terminal, terminalized: true };
 }
 
@@ -168,7 +207,6 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
   const now = Date.now();
   const terminalized = await terminalizeIfNeeded(jobs, current, now);
   if (terminalized.terminalized) {
-    notifyTerminalFailure(terminalized.job);
     return;
   }
 
@@ -177,6 +215,7 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
     state: 'processing',
     attempts: current.attempts + 1,
     processingStartedAt: now,
+    processingToken: crypto.randomUUID(),
   };
   await writeJobs(jobs.map(candidate => candidate.id === current.id ? processing : candidate));
 
@@ -190,72 +229,89 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
       'image',
     );
   } catch (error) {
-    outcome = {
-      ok: false,
-      error: error instanceof Error ? error : new Error('Could not save this image.'),
-    };
+    outcome = { ok: false, error: queueError(error) };
   }
 
   const remaining = await readJobs();
+  const active = remaining.find(candidate => (
+    candidate.id === current.id
+    && candidate.state === 'processing'
+    && candidate.processingToken === processing.processingToken
+  ));
+  if (!active) {
+    return;
+  }
+
   if (outcome.ok) {
-    // The API's checksum uniqueness turns a post-upload worker crash into a
-    // harmless duplicate response when this durable job is replayed.
+    // The API checksum makes a post-upload worker crash safe to replay.
     await writeJobs(remaining.filter(candidate => candidate.id !== current.id));
     return;
   }
 
-  const failed = remaining.find(candidate => candidate.id === current.id);
-  if (!failed) {
-    return;
-  }
-
-  const failure = {
-    ...failed,
-    state: 'pending' as const,
+  const failure: ContextMenuSaveJob = {
+    ...active,
+    state: 'pending',
     processingStartedAt: undefined,
+    processingToken: undefined,
     lastError: outcome.error.message,
     nextAttemptAt: Date.now() + retryDelayMs(processing.attempts),
   };
   const afterFailure = remaining.map(candidate => candidate.id === current.id ? failure : candidate);
   const terminal = await terminalizeIfNeeded(afterFailure, failure, Date.now());
   if (terminal.terminalized) {
-    notifyTerminalFailure(terminal.job);
     return;
   }
   await writeJobs(afterFailure);
+  setSaveStatus({
+    state: 'retrying',
+    label: `Retry scheduled for ${failure.filename}.`,
+    nextAttemptAt: failure.nextAttemptAt,
+    at: Date.now(),
+  });
 }
 
 async function recoverPendingSavesLocked(): Promise<void> {
   const jobs = await readJobs();
   const now = Date.now();
-  let changed = false;
   const recovered = jobs.map(job => {
     if (
       job.state === 'processing'
       && now - (job.processingStartedAt ?? job.createdAt) >= PROCESSING_STALE_TIMEOUT_MS
     ) {
-      changed = true;
       return {
         ...job,
         state: 'pending' as const,
         processingStartedAt: undefined,
+        processingToken: undefined,
         nextAttemptAt: Math.max(job.nextAttemptAt, now),
       };
     }
     return job;
   });
 
-  if (changed || JSON.stringify(recovered) !== JSON.stringify(jobs)) {
+  if (JSON.stringify(recovered) !== JSON.stringify(jobs)) {
     await writeJobs(recovered);
   }
 
   for (const job of recovered) {
     await processJob(job);
   }
+  await scheduleContextMenuSaveQueueWakeup();
+}
+
+export function setupContextMenuSaveQueue(): void {
+  chrome.alarms.onAlarm.addListener(alarm => {
+    if (alarm.name !== CONTEXT_MENU_SAVE_ALARM_NAME) {
+      return;
+    }
+    return recoverPendingContextMenuSaves().catch(error => {
+      console.error('[Background][ContextMenu] Alarm recovery failed', error);
+    });
+  });
 }
 
 export function enqueueContextMenuSave(imageUrl: string, filename: string): Promise<void> {
-  return exclusively(async () => {
+  const persisted = exclusively(async () => {
     const jobs = await readJobs();
     if (jobs.length >= MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE) {
       throw new ContextMenuSaveQueueError(
@@ -275,16 +331,33 @@ export function enqueueContextMenuSave(imageUrl: string, filename: string): Prom
       nextAttemptAt: now,
     };
     await writeJobs([...jobs, job]);
-    await processJob(job);
+    setQueuedStatus(filename);
   });
+
+  void persisted.then(() => {
+    void recoverPendingContextMenuSaves().catch(error => {
+      console.error('[Background][ContextMenu] Enqueued save failed', error);
+    });
+  }).catch(error => {
+    // The caller owns the user-visible rejection (e.g. a full queue). Keep the
+    // fire-and-forget dispatcher from creating an unhandled rejection.
+    if (!(error instanceof ContextMenuSaveQueueError)) {
+      console.error('[Background][ContextMenu] Enqueue persistence failed', error);
+    }
+  });
+  return persisted;
 }
 
 export function recoverPendingContextMenuSaves(): Promise<void> {
   return exclusively(recoverPendingSavesLocked);
 }
 
+export function listContextMenuSaves(): Promise<ContextMenuSaveJob[]> {
+  return readJobs();
+}
+
 export function listFailedContextMenuSaves(): Promise<ContextMenuSaveJob[]> {
-  return exclusively(async () => (await readJobs()).filter(job => job.state === 'failed'));
+  return readJobs().then(jobs => jobs.filter(job => job.state === 'failed'));
 }
 
 export function retryContextMenuSave(jobId: string): Promise<boolean> {
@@ -303,11 +376,12 @@ export function retryContextMenuSave(jobId: string): Promise<boolean> {
       attempts: 0,
       nextAttemptAt: now,
       processingStartedAt: undefined,
+      processingToken: undefined,
       failedAt: undefined,
       lastError: undefined,
     };
     await writeJobs(jobs.map(job => job.id === jobId ? retryable : job));
-    await processJob(retryable);
+    setQueuedStatus(retryable.filename);
     return true;
   });
 }

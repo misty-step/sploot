@@ -73,7 +73,7 @@ export default defineConfig({
         48: 'icon-48.png',
         128: 'icon-128.png',
       },
-      permissions: ['storage', 'tabs', 'activeTab', 'contextMenus', 'notifications', 'cookies'],
+      permissions: ['storage', 'tabs', 'activeTab', 'contextMenus', 'notifications', 'cookies', 'alarms'],
       host_permissions: Array.from(
         new Set([
           // Keep capture access scoped to web pages. captureVisibleTab accepts

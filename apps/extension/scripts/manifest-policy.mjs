@@ -5,6 +5,7 @@ export const REQUIRED_PERMISSIONS = [
   'contextMenus',
   'notifications',
   'cookies',
+  'alarms',
 ];
 
 export const REQUIRED_PRODUCTION_HOSTS = [

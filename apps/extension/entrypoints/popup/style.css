@@ -399,6 +399,24 @@ button.debug:hover {
   flex-wrap: wrap;
 }
 
+.save-strip.queued {
+  border-color: var(--sploot-blue);
+}
+
+.save-strip.queued .save-dot {
+  background: var(--sploot-yellow);
+  border-color: var(--sploot-blue);
+}
+
+.save-strip.retrying .save-dot {
+  background: var(--sploot-yellow);
+  border-color: var(--sploot-orange);
+}
+
+.save-strip.queue-error {
+  margin-top: auto;
+}
+
 .queue-failure .queue-actions {
   display: flex;
   flex: 1 0 100%;

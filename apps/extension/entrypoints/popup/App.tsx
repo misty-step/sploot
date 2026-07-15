@@ -12,10 +12,11 @@ import {
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
 import { IS_DEV_BUILD } from '../../shared/build-mode'
 import { requestVisibleTabCapture } from '../../shared/capture-messages'
-import { CONTEXT_MENU_SAVE_MESSAGES, type FailedContextMenuSave, type FailedContextMenuSavesResponse } from '../../shared/context-menu-save-messages'
+import { CONTEXT_MENU_SAVE_MESSAGES, type ContextMenuSaveJobSummary } from '../../shared/context-menu-save-messages'
 import { getSaveStatus, onSaveStatusChanged, type SaveStatus } from '../../shared/save-status'
 import { EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
 import { getSplootAppUrl, getSplootSignInUrl } from '../../shared/app-url'
+import { performContextMenuSaveAction, requestContextMenuSaveQueue } from './queue-recovery'
 import './style.css'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
@@ -177,15 +178,18 @@ function SignedInPanel() {
  */
 function LastSaveStrip() {
   const [status, setStatus] = useState<SaveStatus | null>(null)
-  const [failedJobs, setFailedJobs] = useState<FailedContextMenuSave[]>([])
+  const [queueJobs, setQueueJobs] = useState<ContextMenuSaveJobSummary[]>([])
+  const [queueError, setQueueError] = useState<string | null>(null)
+  const [activeAction, setActiveAction] = useState<{ jobId: string; type: typeof CONTEXT_MENU_SAVE_MESSAGES.RETRY | typeof CONTEXT_MENU_SAVE_MESSAGES.DISCARD } | null>(null)
 
-  const refreshFailedJobs = () => {
-    void chrome.runtime.sendMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED })
-      .then(response => {
-        const result = response as FailedContextMenuSavesResponse | undefined
-        setFailedJobs(Array.isArray(result?.jobs) ? result.jobs : [])
-      })
-      .catch(error => console.error('[Popup] Failed to read queued saves', error))
+  const refreshQueue = async () => {
+    const result = await requestContextMenuSaveQueue()
+    if (result.ok) {
+      setQueueJobs(result.jobs)
+      setQueueError(null)
+    } else {
+      setQueueError(result.error)
+    }
   }
 
   useEffect(() => {
@@ -195,10 +199,10 @@ function LastSaveStrip() {
         setStatus(current => current ?? stored)
       }
     })
-    refreshFailedJobs()
+    void refreshQueue()
     const unsubscribe = onSaveStatusChanged(nextStatus => {
       setStatus(nextStatus)
-      refreshFailedJobs()
+      void refreshQueue()
     })
     return () => {
       cancelled = true
@@ -206,29 +210,72 @@ function LastSaveStrip() {
     }
   }, [])
 
-  const handleQueueAction = (jobId: string, type: typeof CONTEXT_MENU_SAVE_MESSAGES.RETRY | typeof CONTEXT_MENU_SAVE_MESSAGES.DISCARD) => {
-    void chrome.runtime.sendMessage({ type, jobId })
-      .then(() => refreshFailedJobs())
-      .catch(error => console.error('[Popup] Failed to update queued save', error))
+  const handleQueueAction = async (
+    jobId: string,
+    type: typeof CONTEXT_MENU_SAVE_MESSAGES.RETRY | typeof CONTEXT_MENU_SAVE_MESSAGES.DISCARD,
+  ) => {
+    setActiveAction({ jobId, type })
+    setQueueError(null)
+    const result = await performContextMenuSaveAction(jobId, type)
+    if (!result.ok) {
+      setActiveAction(null)
+      setQueueError(result.error)
+      return
+    }
+    await refreshQueue()
+    setActiveAction(null)
   }
 
   return (
     <>
-      {failedJobs.map(job => (
-        <div className="save-strip error queue-failure" role="alert" key={job.id}>
+      {queueError && (
+        <div className="save-strip error queue-error" role="alert" aria-live="assertive">
+          <span className="save-dot" aria-hidden="true" />
+          <span className="save-copy"><strong>Queue action failed.</strong> {queueError}</span>
+        </div>
+      )}
+      {queueJobs.map(job => (
+        <div className={`save-strip queue-failure ${job.state === 'failed' ? 'error' : 'queued'}`} role={job.state === 'failed' ? 'alert' : 'status'} aria-live="polite" key={job.id}>
           <span className="save-dot" aria-hidden="true" />
           <span className="save-copy">
-            <strong>Save needs attention.</strong> {job.filename}: {job.lastError ?? 'retry limit reached'}
+            <strong>{queueStateTitle(job)}</strong> {job.filename}. {queueStateCopy(job)}
           </span>
-          <div className="queue-actions">
-            <button onClick={() => handleQueueAction(job.id, CONTEXT_MENU_SAVE_MESSAGES.RETRY)}>Retry</button>
-            <button className="secondary" onClick={() => handleQueueAction(job.id, CONTEXT_MENU_SAVE_MESSAGES.DISCARD)}>Discard</button>
-          </div>
+          {job.state === 'failed' && (
+            <div className="queue-actions">
+              <button
+                disabled={activeAction !== null}
+                onClick={() => void handleQueueAction(job.id, CONTEXT_MENU_SAVE_MESSAGES.RETRY)}
+              >
+                {activeAction?.jobId === job.id && activeAction.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY ? 'Retrying…' : 'Retry'}
+              </button>
+              <button
+                className="secondary"
+                disabled={activeAction !== null}
+                onClick={() => void handleQueueAction(job.id, CONTEXT_MENU_SAVE_MESSAGES.DISCARD)}
+              >
+                {activeAction?.jobId === job.id && activeAction.type === CONTEXT_MENU_SAVE_MESSAGES.DISCARD ? 'Discarding…' : 'Discard'}
+              </button>
+            </div>
+          )}
         </div>
       ))}
       {status && <SaveStatusStrip status={status} />}
     </>
   )
+}
+
+function queueStateTitle(job: ContextMenuSaveJobSummary): string {
+  if (job.state === 'failed') return 'Save needs attention.'
+  if (job.state === 'processing') return 'Saving.'
+  return job.nextAttemptAt > Date.now() ? 'Retry scheduled.' : 'Queued for retry.'
+}
+
+function queueStateCopy(job: ContextMenuSaveJobSummary): string {
+  if (job.state === 'failed') return job.lastError ?? 'Retry limit reached; choose Retry or Discard.'
+  if (job.state === 'processing') return 'The background worker is uploading it.'
+  return job.nextAttemptAt > Date.now()
+    ? `Next attempt ${new Date(job.nextAttemptAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`
+    : 'The background worker will try it now.'
 }
 
 function SaveStatusStrip({ status }: { status: SaveStatus }) {
@@ -237,7 +284,14 @@ function SaveStatusStrip({ status }: { status: SaveStatus }) {
   return (
     <div className={`save-strip ${status.state}`} role="status" aria-live="polite">
       <span className="save-dot" aria-hidden="true" />
+      {status.state === 'queued' && <span className="save-copy">{status.label}</span>}
       {status.state === 'saving' && <span className="save-copy">{status.label}</span>}
+      {status.state === 'retrying' && (
+        <>
+          <span className="save-copy">{status.label}</span>
+          <span className="save-time">{new Date(status.nextAttemptAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+        </>
+      )}
       {status.state === 'success' && (
         <>
           <span className="save-copy">

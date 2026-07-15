@@ -5,7 +5,7 @@ import { validateManifest } from './manifest-policy.mjs';
 const baseManifest = {
   manifest_version: 3,
   version: '1.0.0',
-  permissions: ['storage', 'tabs', 'activeTab', 'contextMenus', 'notifications', 'cookies'],
+  permissions: ['storage', 'tabs', 'activeTab', 'contextMenus', 'notifications', 'cookies', 'alarms'],
   host_permissions: [
     '*://*/*',
     'https://www.sploot.app/*',

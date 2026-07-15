@@ -6,14 +6,21 @@
  */
 
 import { IS_DEV_BUILD } from '../../shared/build-mode';
-import { CONTEXT_MENU_SAVE_MESSAGES } from '../../shared/context-menu-save-messages';
+import {
+  CONTEXT_MENU_SAVE_MESSAGES,
+  type QueueActionResponse,
+  type QueueErrorCode,
+  type QueueListResponse,
+} from '../../shared/context-menu-save-messages';
 import { runAuthDiagnostics } from './auth-manager';
 import {
   discardContextMenuSave,
   enqueueContextMenuSave,
+  listContextMenuSaves,
   listFailedContextMenuSaves,
   recoverPendingContextMenuSaves,
   retryContextMenuSave,
+  setupContextMenuSaveQueue,
 } from './context-menu-save-queue';
 import { showErrorNotification } from './notifications';
 
@@ -53,6 +60,8 @@ export function ensureContextMenus() {
  * Initialize context menu
  */
 export function setupContextMenu() {
+  setupContextMenuSaveQueue();
+
   // Recover jobs that were left in-flight when the MV3 worker was terminated.
   void recoverPendingContextMenuSaves().catch(error => {
     console.error('[Background][ContextMenu] Recovery failed', error);
@@ -61,6 +70,9 @@ export function setupContextMenu() {
   // Create context menu on extension install/update
   chrome.runtime.onInstalled.addListener(() => {
     ensureContextMenus();
+    void recoverPendingContextMenuSaves().catch(error => {
+      console.error('[Background][ContextMenu] Install recovery failed', error);
+    });
   });
 
   chrome.runtime.onStartup.addListener(() => {
@@ -70,32 +82,42 @@ export function setupContextMenu() {
   });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED) {
-      void listFailedContextMenuSaves().then(jobs => {
-        sendResponse({
-          jobs: jobs.map(({ id, filename, createdAt, attempts, lastError }) => ({
-            id,
-            filename,
-            createdAt,
-            attempts,
-            lastError,
-          })),
-        });
+    const listType = message?.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_QUEUE
+      || message?.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED;
+    if (listType) {
+      const list = message.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED
+        ? listFailedContextMenuSaves()
+        : listContextMenuSaves();
+      void list.then(jobs => {
+        sendResponse({ ok: true, jobs: jobs.map(toQueueSummary) } satisfies QueueListResponse);
+      }).catch(error => {
+        sendResponse(queueErrorResponse(error));
       });
       return true;
     }
 
-    if (
-      (message?.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY
-        || message?.type === CONTEXT_MENU_SAVE_MESSAGES.DISCARD)
-      && typeof message.jobId === 'string'
-    ) {
+    const actionType = message?.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY
+      || message?.type === CONTEXT_MENU_SAVE_MESSAGES.DISCARD;
+    if (actionType) {
+      if (typeof message.jobId !== 'string') {
+        sendResponse({ ok: false, code: 'invalid-request', error: 'Queue job id is required.' } satisfies QueueActionResponse);
+        return true;
+      }
+
       const action = message.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY
         ? retryContextMenuSave(message.jobId)
         : discardContextMenuSave(message.jobId);
-      void action.then(ok => sendResponse({ ok })).catch(error => {
-        console.error('[Background][ContextMenu] Queue action failed', error);
-        sendResponse({ ok: false });
+      void action.then(ok => {
+        if (!ok) {
+          sendResponse({ ok: false, code: 'not-found', error: 'Queue job not found.' } satisfies QueueActionResponse);
+          return;
+        }
+        sendResponse({
+          ok: true,
+          action: message.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY ? 'retry-queued' : 'discarded',
+        } satisfies QueueActionResponse);
+      }).catch(error => {
+        sendResponse(queueErrorResponse(error));
       });
       return true;
     }
@@ -114,6 +136,26 @@ export function setupContextMenu() {
       await handleDiagnostics();
     }
   });
+}
+
+function toQueueSummary(job: Awaited<ReturnType<typeof listContextMenuSaves>>[number]) {
+  return {
+    id: job.id,
+    filename: job.filename,
+    createdAt: job.createdAt,
+    attempts: job.attempts,
+    state: job.state,
+    nextAttemptAt: job.nextAttemptAt,
+    ...(job.lastError ? { lastError: job.lastError } : {}),
+  };
+}
+
+function queueErrorResponse(error: unknown): QueueListResponse | QueueActionResponse {
+  const message = error instanceof Error ? error.message : 'Queue operation failed.';
+  const code: QueueErrorCode = error instanceof Error && 'code' in error && error.code === 'queue-full'
+    ? 'queue-error'
+    : 'storage-unavailable';
+  return { ok: false, code, error: message };
 }
 
 /**

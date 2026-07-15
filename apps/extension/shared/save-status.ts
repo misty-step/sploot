@@ -11,7 +11,9 @@
  */
 
 export type SaveStatus =
+  | { state: 'queued'; label: string; at: number }
   | { state: 'saving'; label: string; at: number }
+  | { state: 'retrying'; label: string; nextAttemptAt: number; at: number }
   | { state: 'success'; filename: string; isDuplicate: boolean; at: number }
   | { state: 'error'; message: string; at: number };
 

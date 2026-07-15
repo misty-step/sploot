@@ -65,6 +65,11 @@ beforeEach(() => {
       onStartup: { addListener: vi.fn((fn: () => Promise<void>) => { onStartup = fn; }) },
       onMessage: { addListener: vi.fn((fn: MessageHandler) => { onMessage = fn; }) },
     },
+    alarms: {
+      create: vi.fn(async () => undefined),
+      clear: vi.fn(async () => true),
+      onAlarm: { addListener: vi.fn() },
+    },
     storage: {
       local: {
         get: vi.fn().mockImplementation(async () => ({ 'sploot:context-menu-queue': storedQueue })),
@@ -92,9 +97,9 @@ describe('context menu save', () => {
   it('fetches and uploads the right-clicked image, then reports success', async () => {
     await onClicked({ menuItemId: 'save-to-sploot', srcUrl: 'https://x.test/cat.png' }, { title: 'Cat' });
 
-    expect(mocks.fetchImage).toHaveBeenCalledWith('https://x.test/cat.png');
-    expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'cat.png');
-    expect(mocks.showSuccessNotification).toHaveBeenCalled();
+    await vi.waitFor(() => expect(mocks.fetchImage).toHaveBeenCalledWith('https://x.test/cat.png'));
+    await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'cat.png'));
+    await vi.waitFor(() => expect(mocks.showSuccessNotification).toHaveBeenCalled());
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
   });
 
@@ -113,10 +118,10 @@ describe('context menu save', () => {
       'sploot:context-menu-queue': [expect.objectContaining({
         imageUrl: 'https://x.test/cat.png',
         filename: 'cat.png',
-        state: 'processing',
+        state: 'pending',
       })],
     });
-    expect(storedQueue).toEqual([]);
+    await vi.waitFor(() => expect(storedQueue).toEqual([]));
   });
 
   it('replays an in-flight save after a worker restart', async () => {
@@ -135,7 +140,7 @@ describe('context menu save', () => {
 
     expect(mocks.fetchImage).toHaveBeenCalledWith('https://x.test/cat.png');
     expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'cat.png');
-    expect(storedQueue).toEqual([]);
+    await vi.waitFor(() => expect(storedQueue).toEqual([]));
   });
 
   it('does not replay the same persisted job twice when startup recovery races', async () => {
@@ -169,21 +174,45 @@ describe('context menu save', () => {
     }];
 
     const listResponse = vi.fn();
-    expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED }, {}, listResponse)).toBe(true);
-    await vi.waitFor(() => expect(listResponse).toHaveBeenCalledWith({
-      jobs: [{
+    expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.LIST_QUEUE }, {}, listResponse)).toBe(true);
+    await vi.waitFor(() => expect(listResponse).toHaveBeenCalledWith({ ok: true, jobs: [{
         id: 'failed-1',
         filename: 'cat.png',
         createdAt: expect.any(Number),
         attempts: 5,
+        state: 'failed',
+        nextAttemptAt: 0,
         lastError: 'needs attention',
-      }],
-    }));
+      }] }));
 
     const discardResponse = vi.fn();
     expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.DISCARD, jobId: 'failed-1' }, {}, discardResponse)).toBe(true);
-    await vi.waitFor(() => expect(discardResponse).toHaveBeenCalledWith({ ok: true }));
+    await vi.waitFor(() => expect(discardResponse).toHaveBeenCalledWith({ ok: true, action: 'discarded' }));
     expect(storedQueue).toEqual([]);
+  });
+
+  it('returns a stable error when LIST_FAILED storage access rejects', async () => {
+    const get = chrome.storage.local.get as unknown as ReturnType<typeof vi.fn>;
+    get.mockRejectedValueOnce(new Error('storage offline'));
+
+    const response = vi.fn();
+    expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED }, {}, response)).toBe(true);
+    await vi.waitFor(() => expect(response).toHaveBeenCalledWith({
+      ok: false,
+      code: 'storage-unavailable',
+      error: 'storage offline',
+    }));
+  });
+
+  it('rejects malformed recognized actions without leaving the message port hanging', () => {
+    const response = vi.fn();
+
+    expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.RETRY }, {}, response)).toBe(true);
+    expect(response).toHaveBeenCalledWith({
+      ok: false,
+      code: 'invalid-request',
+      error: 'Queue job id is required.',
+    });
   });
 });
 
