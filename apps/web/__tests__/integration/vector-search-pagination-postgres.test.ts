@@ -138,6 +138,7 @@ describeWithDatabase('Postgres seeded vector-search pagination', () => {
     if (lastPage && !lastPage.nextCursor && lastPage.results.length > 0) {
       const last = lastPage.results.at(-1)!;
       cursor = encodeVectorSearchCursor({
+        userId,
         order: 'relevance',
         id: last.id,
         distance: last.distance,

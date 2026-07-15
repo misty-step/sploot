@@ -1164,11 +1164,13 @@ Perform semantic search using text queries.
 
 Semantic search is always ordered by descending vector relevance, with asset id
 as the deterministic tie-breaker. The gallery's seeded shuffle is a library
-view concern and is not applied to semantic search. Cursors are opaque and
-bound to the normalized query, threshold, relevance order, favorite/tag
-filters, and page size; replaying one with a different context returns `400`
-with `{"error":"Search cursor does not match search context"}` before vector
-or database work.
+view concern and is not applied to semantic search. Cursors are opaque,
+cryptographically signed by the server, and bound to the authenticated owner,
+embedding-model revision, normalized query, threshold, relevance order,
+favorite/tag filters, and page size; tampering or replaying one with a
+different user/context returns `400` with
+`{"error":"Search cursor does not match search context"}` before vector or
+database work.
 
 **Success Response (200):**
 

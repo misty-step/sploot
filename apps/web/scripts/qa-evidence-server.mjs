@@ -75,7 +75,13 @@ const server = http.createServer((request, response) => {
   const headers = { ...request.headers };
   delete headers['x-sploot-qa-remote-address'];
   delete headers['x-sploot-qa-proxy-proof'];
-  headers.host = request.headers.host;
+  // The standalone app must build redirects and request URLs against the
+  // public loopback front door. Node otherwise derives Host from the internal
+  // upstream socket, producing localhost:QA_NEXT_PORT redirects that bypass
+  // the signed proof boundary and loop forever in the browser.
+  const publicHost = host === '::1' ? `[::1]:${publicPort}` : `${host}:${publicPort}`;
+  headers.host = publicHost;
+  headers['x-forwarded-host'] = publicHost;
   const proof = proxyProof(host, remoteAddress.replace(/^::ffff:/, ''));
   if (proof) headers['x-sploot-qa-proxy-proof'] = proof;
 
@@ -86,7 +92,14 @@ const server = http.createServer((request, response) => {
     path: request.url,
     headers,
   }, (upstreamResponse) => {
-    response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+    const responseHeaders = { ...upstreamResponse.headers };
+    const location = responseHeaders.location;
+    if (typeof location === 'string') {
+      responseHeaders.location = location
+        .replaceAll(`http://${appHost}:${appPort}`, `http://${publicHost}`)
+        .replaceAll(`http://localhost:${appPort}`, `http://${publicHost}`);
+    }
+    response.writeHead(upstreamResponse.statusCode ?? 502, responseHeaders);
     upstreamResponse.pipe(response);
   });
   upstream.on('error', () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 import {
+  buildVectorSearchPageQuery,
   buildUnfilteredVectorSearchQuery,
   createVectorSearchContext,
   decodeVectorSearchCursor,
@@ -13,6 +14,8 @@ import {
 } from '@/lib/db';
 
 describe('seeded vector-search pagination', () => {
+  const userId = 'similar-assets-user';
+
   it('keeps semantic search ordered by vector relevance', () => {
     const clause = vectorSearchOrderClause();
 
@@ -71,19 +74,42 @@ describe('seeded vector-search pagination', () => {
     expect(sql).not.toContain('AND a.favorite');
   });
 
-  it('pushes direct-path thresholds into pgvector SQL before the result limit', () => {
+  it('keeps thresholded direct searches on the proven no-CTE pgvector plan shape', () => {
     const query = buildUnfilteredVectorSearchQuery(
       'similar-assets-user',
       Array(EMBEDDING_DIMENSION).fill(0.1),
       12,
-      0.8,
     );
     const sql = query.strings.join(' ');
 
-    expect(sql).toContain('1 - (ae.image_embedding <=>');
-    expect(sql).toContain('>=');
+    expect(sql).toContain('ORDER BY ae.image_embedding <=>');
+    expect(sql).toContain('a.id ASC');
+    expect(sql).toContain("ae.status = 'ready'");
     expect(sql).not.toContain('WITH ranked');
     expect(sql).not.toContain('COUNT');
+  });
+
+  it('asserts the paged SQL owner, ready-state, threshold, and tie contracts directly', () => {
+    const query = buildVectorSearchPageQuery(
+      'paged-user',
+      Array(EMBEDDING_DIMENSION).fill(0.1),
+      {
+        limit: 7,
+        threshold: 0.2,
+        favoriteOnly: false,
+        tagId: null,
+        offset: 0,
+        cursor: null,
+      },
+    );
+    const sql = query.strings.join(' ');
+
+    expect(sql).toContain('a.owner_user_id =');
+    expect(sql).toContain("ae.status = 'ready'");
+    expect(sql).toContain('1 - (ae.image_embedding <=>');
+    expect(sql).toContain('>=');
+    expect(sql).toContain('ORDER BY ae.image_embedding <=>');
+    expect(sql).toContain('a.id ASC');
   });
 
   it('encodes a canonical search-context-bound cursor without exposing pagination offsets', () => {
@@ -95,6 +121,7 @@ describe('seeded vector-search pagination', () => {
       limit: 10,
     });
     const cursor = encodeVectorSearchCursor({
+      userId,
       order: 'relevance',
       id: 'asset-42',
       distance: 0.91,
@@ -102,13 +129,16 @@ describe('seeded vector-search pagination', () => {
     });
 
     expect(decodeVectorSearchCursor(cursor)).toEqual({
-      version: 2,
+      version: 3,
+      userId,
       order: 'relevance',
       id: 'asset-42',
       distance: 0.91,
       context,
     });
     expect(decodeVectorSearchCursor('not-a-cursor')).toBeNull();
+    expect(decodeVectorSearchCursor(cursor, 'another-user')).toBeNull();
+    expect(decodeVectorSearchCursor(`${cursor.slice(0, -1)}${cursor.endsWith('a') ? 'b' : 'a'}`)).toBeNull();
   });
 
   it('normalizes query and tag context before binding a cursor', () => {
@@ -132,6 +162,7 @@ describe('seeded vector-search pagination', () => {
       limit: 10,
     });
     const cursor = encodeVectorSearchCursor({
+      userId,
       order: 'relevance',
       id: 'asset-42',
       distance: 0.91,
@@ -139,7 +170,7 @@ describe('seeded vector-search pagination', () => {
     });
 
     expect(cursor.length).toBeGreaterThan(512);
-    expect(decodeVectorSearchCursor(cursor)).toEqual({ version: 2, order: 'relevance', id: 'asset-42', distance: 0.91, context });
+    expect(decodeVectorSearchCursor(cursor)).toEqual({ version: 3, userId, order: 'relevance', id: 'asset-42', distance: 0.91, context });
   });
 
   it.each([
@@ -153,16 +184,27 @@ describe('seeded vector-search pagination', () => {
     const changed = createVectorSearchContext({ ...original, ...change });
 
     expect(vectorSearchCursorMatchesContext({
-      version: 2,
+      version: 3,
+      userId,
       order: 'relevance',
       id: 'asset-1',
       distance: 0.9,
       context: original,
-    }, changed)).toBe(false);
+    }, changed, userId)).toBe(false);
+
+    expect(vectorSearchCursorMatchesContext({
+      version: 3,
+      userId,
+      order: 'relevance',
+      id: 'asset-1',
+      distance: 0.9,
+      context: original,
+    }, original, 'another-user')).toBe(false);
   });
 
   it('rejects a cursor when the canonical query context changes before database execution', async () => {
     const cursor = encodeVectorSearchCursor({
+      userId: 'user-1',
       order: 'relevance',
       id: 'asset-1',
       distance: 0.9,

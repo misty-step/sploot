@@ -86,10 +86,10 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       );
     }
 
-    const searchContext = createVectorSearchContext({ query, threshold, favoriteOnly, tagId, limit });
+    const searchContext = createVectorSearchContext({ query, embeddingModel: CLIP_MODEL, threshold, favoriteOnly, tagId, limit });
 
     const decodedCursor = typeof cursor === 'string' && cursor.length <= SEARCH_MAX_CURSOR_LENGTH
-      ? decodeVectorSearchCursor(cursor)
+      ? decodeVectorSearchCursor(cursor, userId)
       : null;
     if (cursor !== undefined && (typeof cursor !== 'string' || cursor.length > SEARCH_MAX_CURSOR_LENGTH || !decodedCursor)) {
       return NextResponse.json({ error: 'Invalid search cursor' }, { status: 400 });
@@ -97,7 +97,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     if (cursor && offset > 0) {
       return NextResponse.json({ error: 'Search cursor cannot be combined with offset' }, { status: 400 });
     }
-    if (decodedCursor && !vectorSearchCursorMatchesContext(decodedCursor, searchContext)) {
+    if (decodedCursor && !vectorSearchCursorMatchesContext(decodedCursor, searchContext, userId)) {
       return NextResponse.json({ error: VECTOR_SEARCH_CURSOR_CONTEXT_ERROR }, { status: 400 });
     }
 
@@ -122,7 +122,8 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     const cachedPage = await cache.getSearchResultPage(
       userId,
       query,
-      searchFilters
+      searchFilters,
+      CLIP_MODEL,
     );
 
     if (cachedPage) {
@@ -253,6 +254,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
         searchPage.total,
         searchPage.hasMore,
         searchPage.nextCursor,
+        CLIP_MODEL,
       );
     }
 

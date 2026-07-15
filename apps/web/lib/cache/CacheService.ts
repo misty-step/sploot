@@ -37,8 +37,8 @@ const CACHE_KEYS = {
     `txt:${CACHE_KEY_VERSION}:${stableIdentity(model)}:${stableIdentity(normalizeSearchQuery(text))}`,
   IMAGE_EMBEDDING: (checksum: string, model: string) =>
     `img:${CACHE_KEY_VERSION}:${stableIdentity(model)}:${stableIdentity(checksum)}`,
-  SEARCH_RESULTS: (userId: string, query: string, filters: string) =>
-    `search:${CACHE_KEY_VERSION}:${userId}:${stableIdentity(normalizeSearchQuery(query))}:${stableIdentity(filters)}`,
+  SEARCH_RESULTS: (userId: string, query: string, filters: string, model: string) =>
+    `search:${CACHE_KEY_VERSION}:${userId}:${stableIdentity(model)}:${stableIdentity(normalizeSearchQuery(query))}:${stableIdentity(filters)}`,
   ASSET_LIST: (userId: string, params: string) =>
     `assets:${CACHE_KEY_VERSION}:${userId}:${stableIdentity(params)}`,
 } as const;
@@ -153,11 +153,12 @@ export class CacheService {
   async getSearchResults(
     userId: string,
     query: string,
-    filters: SearchFilters = {}
+    filters: SearchFilters = {},
+    model = '',
   ): Promise<any[] | null> {
     try {
       const filterKey = serializeSearchFilters(filters);
-      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
+      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey, model);
       const results = await this.backend.get<any[]>(key);
       if (results) {
         this.incrementHit();
@@ -181,10 +182,11 @@ export class CacheService {
     userId: string,
     query: string,
     filters: SearchFilters = {},
+    model = '',
   ): Promise<{ results: any[]; total: number; hasMore?: boolean; nextCursor?: string } | null> {
     try {
       const filterKey = serializeSearchFilters({ ...filters, __pageEnvelope: true });
-      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
+      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey, model);
       const value = await this.backend.get<any>(key);
       if (!value) {
         this.incrementMiss();
@@ -220,11 +222,12 @@ export class CacheService {
     userId: string,
     query: string,
     filters: SearchFilters,
-    results: any[]
+    results: any[],
+    model = '',
   ): Promise<void> {
     try {
       const filterKey = serializeSearchFilters(filters);
-      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
+      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey, model);
       await this.backend.set(key, results);
     } catch (error) {
       console.error('[CacheService] setSearchResults failed:', {
@@ -244,10 +247,11 @@ export class CacheService {
     total: number,
     hasMore: boolean,
     nextCursor?: string,
+    model = '',
   ): Promise<void> {
     try {
       const filterKey = serializeSearchFilters({ ...filters, __pageEnvelope: true });
-      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
+      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey, model);
       await this.backend.set(key, { results, total, hasMore, ...(nextCursor ? { nextCursor } : {}) });
     } catch (error) {
       console.error('[CacheService] setSearchResultPage failed:', {

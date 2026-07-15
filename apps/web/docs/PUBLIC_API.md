@@ -165,9 +165,10 @@ web app itself calls.
 
 Semantic results are always ordered by descending vector relevance, with asset
 id as the deterministic tie-breaker. The gallery shuffle seed is not part of
-this endpoint. Each opaque cursor is structurally bound to the normalized
-query, threshold, relevance order, favorite/tag filters, and page size; a
-cross-context replay returns `400 {"error":"Search cursor does not match search context"}` before vector or database work.
+this endpoint. Each opaque cursor is cryptographically signed by the server
+ and binds the authenticated token owner, embedding-model revision, normalized
+ query, threshold, relevance order, favorite/tag filters, and page size; a
+tampered, cross-user, or cross-context replay returns `400 {"error":"Search cursor does not match search context"}` before vector or database work.
 
 **`200`:**
 

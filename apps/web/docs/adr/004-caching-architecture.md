@@ -45,9 +45,15 @@ We will implement a **multi-layer caching architecture** with different strategi
 
 **Cache Strategies by Content Type:**
 - **Text embeddings:** Short-term cache (5-15 min) with LRU eviction
-- **Image embeddings:** Long-term cache by SHA-256 checksum (indefinite)
-- **Search results:** Medium-term cache (1-5 min) with query normalization
+- **Image embeddings:** Long-term cache by SHA-256 checksum plus exact model revision (indefinite)
+- **Search results:** Medium-term cache (1-5 min) with query normalization, user, filters, page identity, and exact embedding model revision
 - **Static assets:** Long-term cache with versioning for PWA functionality
+
+The application cache namespaces are versioned (`v2`) and use full SHA-256
+identities. Text and image embedding keys include the exact model string.
+Search-result page methods receive the model string explicitly; a cache hit is
+therefore never valid merely because the user and query match after a CLIP
+revision. Old lossy keys are ignored during rollout and expire naturally.
 
 ## Consequences
 
@@ -259,8 +265,8 @@ const searchQuery = `
 `
 
 // Query result caching with Redis
-async function cachedSearch(embedding: number[], userId: string, limit: number) {
-  const cacheKey = `search:${userId}:${hashEmbedding(embedding)}:${limit}`
+async function cachedSearch(embedding: number[], userId: string, limit: number, model: string) {
+  const cacheKey = `search:v2:${userId}:${sha256(model)}:${sha256(embedding)}:${limit}`
 
   const cached = await redis.get(cacheKey)
   if (cached) return JSON.parse(cached)
@@ -288,8 +294,8 @@ async function cachedSearch(embedding: number[], userId: string, limit: number) 
 
 ### Search Result Cache
 - **Strategy:** Short-term caching with user-based invalidation
-- **Rationale:** Results change when user adds/removes/modifies assets
-- **Implementation:** 1-5 minute TTL + manual invalidation on user mutations
+- **Rationale:** Results change when user adds/removes/modifies assets and are semantic-model-specific
+- **Implementation:** 1-5 minute TTL + manual invalidation on user mutations; keys include normalized query, all page/filter dimensions, and the exact embedding model revision
 
 ### Static Asset Cache
 - **Strategy:** Version-based caching with long expiration
