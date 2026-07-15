@@ -857,12 +857,12 @@ function AppPageClient() {
               event.preventDefault();
               detailReturnFocusRef.current?.focus();
             }}
-            className="max-h-[calc(100vh-2rem)] max-w-6xl overflow-auto bg-sploot-panel p-0 sm:rounded-[var(--sploot-radius)]"
+            className="relative max-h-[calc(100vh-2rem)] max-w-6xl overflow-auto bg-sploot-panel p-0 sm:rounded-[var(--sploot-radius)]"
           >
             <DialogTitle className="sr-only">{selectedAsset.filename}</DialogTitle>
             <DialogDescription className="sr-only">Meme detail and actions</DialogDescription>
             <div className="flex w-full min-w-0 flex-col">
-              <div className="flex items-center justify-between gap-3 border-b-[3px] border-sploot-ink px-4 py-3">
+              <div className="flex items-center justify-between gap-3 border-b-[3px] border-sploot-ink px-4 py-3 pr-16">
                 <div className="min-w-0">
                   <p className="truncate font-display text-lg font-normal lowercase">{selectedAsset.filename}</p>
                   <p className="font-mono text-[0.65rem] lowercase text-muted-foreground">detail · esc closes</p>
@@ -917,14 +917,6 @@ function AppPageClient() {
                   >
                     <Trash2 className="h-5 w-5" />
                   </Button>
-                  <IconButton
-                    label="Close preview"
-                    size="dock"
-                    className="min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)]"
-                    onClick={() => setSelectedAsset(null)}
-                  >
-                    <X className="h-5 w-5" />
-                  </IconButton>
                 </div>
               </div>
               <div className="grid w-full min-w-0 gap-4 p-4 md:grid-cols-[minmax(0,1fr)_16rem]">
@@ -959,6 +951,17 @@ function AppPageClient() {
                   <div className="flex justify-between gap-3 py-2"><dt>mime</dt><dd>{selectedAsset.mime}</dd></div>
                 </dl>
               </div>
+              {/* Keep the visible close control last in DOM order so the dialog's
+                  native media controls remain keyboard reachable without stealing
+                  the reverse-tab boundary from the primary dismissal action. */}
+              <IconButton
+                label="Close preview"
+                size="dock"
+                className="absolute right-4 top-3 z-10 min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)]"
+                onClick={() => setSelectedAsset(null)}
+              >
+                <X className="h-5 w-5" />
+              </IconButton>
             </div>
           </DialogContent>
         )}
