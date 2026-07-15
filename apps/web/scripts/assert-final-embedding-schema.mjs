@@ -267,6 +267,7 @@ export async function assertFinalEmbeddingSchema(databaseUrl = process.env.DATAB
              has_function_privilege('sploot_stripe_ledger_issuer', p.oid, 'EXECUTE') AS issuer_execute,
              has_function_privilege('sploot_stripe_ledger_consumer', p.oid, 'EXECUTE') AS consumer_execute,
              has_function_privilege('sploot_stripe_ledger_maintenance', p.oid, 'EXECUTE') AS maintenance_execute,
+             has_function_privilege('sploot_stripe_schema_migrator', p.oid, 'EXECUTE') AS migrator_execute,
              has_function_privilege('sploot_stripe_app', p.oid, 'EXECUTE') AS app_execute,
              EXISTS (
                SELECT 1
@@ -284,12 +285,13 @@ export async function assertFinalEmbeddingSchema(databaseUrl = process.env.DATAB
       sploot_stripe_ledger_issuer: 'issuer_execute',
       sploot_stripe_ledger_consumer: 'consumer_execute',
       sploot_stripe_ledger_maintenance: 'maintenance_execute',
+      sploot_stripe_schema_migrator: 'migrator_execute',
       sploot_stripe_app: 'app_execute',
       public: 'public_execute',
     };
     for (const row of exactFunctions.rows) {
       const contract = row.proname === 'enforce_asset_embedding_revival_budget'
-        ? ['enforce_asset_embedding_revival_budget', '', false, []]
+        ? ['enforce_asset_embedding_revival_budget', '', false, ['sploot_stripe_schema_migrator']]
         : functionContracts.find(([name]) => name === row.proname);
       if (!contract || row.owner !== (row.proname === 'enforce_asset_embedding_revival_budget'
         ? 'sploot_stripe_schema_migrator'

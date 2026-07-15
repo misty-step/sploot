@@ -106,6 +106,9 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(postSql).toContain("'sploot_stripe_ledger_append_only',");
     expect(postSql).toContain("'enforce_asset_embedding_revival_budget'");
     expect(postSql).toContain(
+      'GRANT EXECUTE ON FUNCTION public.enforce_asset_embedding_revival_budget() TO sploot_stripe_schema_migrator',
+    );
+    expect(postSql).toContain(
       'create trigger stripe_cancellation_events_append_only before delete or update on stripe_cancellation_events',
     );
     expect(postSql).toContain(
@@ -171,6 +174,7 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(verifier).toContain('p_event_id text,p_event_type text');
     expect(verifier).toContain('pg_get_triggerdef(tr.oid)');
     expect(verifier).toContain('has_function_privilege');
+    expect(verifier).toContain("has_function_privilege('sploot_stripe_schema_migrator'");
     expect(verifier).toContain('pg_auth_members');
     expect(verifier).toContain('rolsuper');
     expect(verifier).toContain('version = $1');

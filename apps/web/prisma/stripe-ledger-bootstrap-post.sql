@@ -444,8 +444,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
 TO sploot_stripe_app;
 
 -- Strip PUBLIC EXECUTE from every SECURITY DEFINER function and from trigger
--- functions that have no direct-call contract, then re-grant only the exact
--- role contract.
+-- functions, then re-grant only the exact runtime or migration-authority
+-- contract.
 DO $$
 DECLARE fn RECORD;
 BEGIN
@@ -463,6 +463,10 @@ BEGIN
   END LOOP;
 END
 $$;
+
+-- The schema migrator must be able to recreate its own trigger during an
+-- idempotent migration replay. Runtime roles and PUBLIC retain no direct call.
+GRANT EXECUTE ON FUNCTION public.enforce_asset_embedding_revival_budget() TO sploot_stripe_schema_migrator;
 
 GRANT EXECUTE ON FUNCTION public.sploot_append_stripe_event(TEXT,TEXT,INTEGER,BOOLEAN,TEXT,TEXT,TEXT,INTEGER,JSONB,TEXT,TEXT,BYTEA,BYTEA,TEXT,TEXT) TO sploot_stripe_ledger_issuer;
 GRANT EXECUTE ON FUNCTION public.sploot_record_stripe_cancellation(TEXT,TEXT,INTEGER,BOOLEAN,TEXT,TEXT,TEXT,INTEGER,JSONB,TEXT,TEXT,BYTEA,BYTEA,TEXT,TEXT,TEXT,INTEGER,INTEGER,INTEGER) TO sploot_stripe_ledger_issuer;
