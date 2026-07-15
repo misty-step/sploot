@@ -5,6 +5,19 @@ import { prisma, assetExists } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
 
+type UploadCheckAsset = {
+  id: string;
+  blobUrl: string;
+  thumbnailUrl: string | null;
+  mime: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  favorite: boolean;
+  createdAt: string;
+  embeddingStatus?: 'pending' | 'processing' | 'ready' | 'failed' | 'unavailable';
+};
+
 /**
  * Upload Preflight Check Endpoint
  *
@@ -26,12 +39,13 @@ import { logError } from '@/lib/observability-logger';
  *     id: string - Asset ID
  *     blobUrl: string - URL to access the existing asset
  *     thumbnailUrl?: string - URL to the thumbnail if available
- *     pathname: string - Path in blob storage
  *     mime: string - MIME type
  *     size: number - File size in bytes
- *     checksumSha256: string - SHA256 checksum
- *     hasEmbedding: boolean - Whether embeddings have been generated
- *     createdAt: Date - When the asset was first uploaded
+ *     width: number | null
+ *     height: number | null
+ *     favorite: boolean
+ *     createdAt: string - When the asset was first uploaded
+ *     embeddingStatus?: 'pending' | 'processing' | 'ready' | 'failed' | 'unavailable'
  *   }
  * }
  *
@@ -97,21 +111,21 @@ async function postHandler(req: NextRequest) {
 
     if (existingAsset) {
       // Asset already exists - return metadata
+      const asset: UploadCheckAsset = {
+        id: existingAsset.id,
+        blobUrl: existingAsset.blobUrl,
+        thumbnailUrl: existingAsset.thumbnailUrl,
+        mime: existingAsset.mime,
+        size: existingAsset.size,
+        width: existingAsset.width,
+        height: existingAsset.height,
+        favorite: existingAsset.favorite,
+        createdAt: existingAsset.createdAt.toISOString(),
+        ...(existingAsset.hasEmbedding ? { embeddingStatus: 'ready' as const } : {}),
+      };
       return NextResponse.json({
         exists: true,
-        asset: {
-          id: existingAsset.id,
-          blobUrl: existingAsset.blobUrl,
-          thumbnailUrl: existingAsset.thumbnailUrl,
-          pathname: existingAsset.pathname,
-          mime: existingAsset.mime,
-          size: existingAsset.size,
-          width: existingAsset.width,
-          height: existingAsset.height,
-          checksumSha256: existingAsset.checksumSha256,
-          hasEmbedding: existingAsset.hasEmbedding,
-          createdAt: existingAsset.createdAt.toISOString(),
-        },
+        asset,
         message: 'Asset already exists in your library',
       });
     }

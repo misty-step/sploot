@@ -10,9 +10,18 @@ export type SplootApiErrorCode =
   | 'quota_exceeded'
   | 'uploads_disabled'
   | 'embeddings_disabled'
+  | 'invalid_embedding'
+  | 'invalid_search_parameter'
   | 'invalid_upload'
   | 'rate_limited'
   | 'server_error';
+
+export type SplootApiEmbeddingReadiness =
+  | 'pending'
+  | 'processing'
+  | 'ready'
+  | 'failed'
+  | 'unavailable';
 
 export type SplootApiErrorActionType =
   | 'manage_storage'
@@ -35,43 +44,65 @@ export interface StorageQuotaSnapshot {
   incomingBytes?: number;
 }
 
+/** Minimal published asset fields shared by token-scoped clients. */
+export interface SplootApiPublicAssetDto {
+  id: string;
+  blobUrl: string;
+  thumbnailUrl: string | null;
+}
+
+/** Minimal published search result fields emitted by the token-scoped search endpoint and cache. */
+export interface SplootApiSearchResultDto extends SplootApiPublicAssetDto {
+  similarity: number;
+  relevance: number;
+  belowThreshold?: boolean;
+}
+
+export interface SplootApiSearchResponse {
+  results: SplootApiSearchResultDto[];
+  query: string;
+  total: number;
+  limit: number;
+  requestedLimit: number;
+  threshold: number;
+  requestedThreshold: number;
+  processingTime: number;
+  cached?: boolean;
+  thresholdFallback?: boolean;
+}
+
+/** Minimal published upload asset fields. */
+export interface SplootApiUploadAsset {
+  id: string;
+  blobUrl: string;
+  thumbnailUrl: string | null;
+}
+
+export interface SplootApiUploadSuccessResponse {
+  success: true;
+  asset: SplootApiUploadAsset;
+  message: string;
+  isDuplicate: boolean;
+}
+
+export interface SplootApiUploadErrorResponse {
+  success?: false;
+  error: string;
+  code?: SplootApiErrorCode;
+  retryable?: boolean;
+  action?: SplootApiErrorAction;
+  quota?: StorageQuotaSnapshot;
+  details?: string;
+}
+
 /**
  * Response from POST /api/upload
  *
  * This is the public API contract that clients depend on.
  */
-export interface SplootApiUploadResponse {
-  success: boolean;
-  asset?: {
-    id: string;
-    blobUrl: string;
-    pathname: string;
-    filename: string;
-    mimeType: string;
-    size: number;
-    checksum: string;
-    phash?: string | null;
-    nearDuplicate?: {
-      id: string;
-      blobUrl: string;
-      thumbnailUrl?: string | null;
-      pathname: string;
-      mime: string;
-      phash: string;
-      distance: number;
-      createdAt: string;
-    } | null;
-    createdAt: string;
-    needsEmbedding?: boolean;
-  };
-  message?: string;
-  error?: string;
-  code?: SplootApiErrorCode;
-  retryable?: boolean;
-  action?: SplootApiErrorAction;
-  quota?: StorageQuotaSnapshot;
-  isDuplicate?: boolean;
-}
+export type SplootApiUploadResponse =
+  | SplootApiUploadSuccessResponse
+  | SplootApiUploadErrorResponse;
 
 /**
  * Standard error response from Sploot API

@@ -8,14 +8,14 @@ export interface UploadResult {
 }
 
 export function toUploadResult(response: SplootApiUploadResponse): UploadResult {
-  if (!response.success || !response.asset) {
+  if (!('asset' in response) || response.success !== true) {
     throw new Error(response.error || 'Upload failed');
   }
 
   return {
     assetId: response.asset.id,
     blobUrl: response.asset.blobUrl,
-    thumbnailUrl: response.asset.blobUrl,
+    thumbnailUrl: response.asset.thumbnailUrl ?? response.asset.blobUrl,
     isDuplicate: response.isDuplicate ?? false,
   };
 }

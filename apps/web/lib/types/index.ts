@@ -9,54 +9,60 @@ export type {
   SplootApiUploadResponse,
   SplootApiError,
 } from '@sploot/common';
+export type {
+  ApiErrorResponse,
+  AdvancedSearchCacheResponse,
+  AdvancedSearchEmptyResponse,
+  AdvancedSearchErrorResponse,
+  AdvancedSearchFilters,
+  AdvancedSearchMetadataFallbackResponse,
+  AdvancedSearchPagination,
+  AdvancedSearchResponse,
+  AdvancedSearchRouteResponse,
+  AdvancedSearchSuccessResponse,
+  AssetDetailResponse,
+  AssetDetailPatchResponse,
+  AssetEmbedding,
+  AssetEmbeddingFull,
+  AssetEmbeddingReference,
+  AssetEmbeddingSummary,
+  AssetGridBaseDto,
+  AssetGridCamelSource,
+  AssetGridClientDto,
+  AssetGridDtoExtensions,
+  AssetGridEmbeddingSource,
+  AssetGridFullDto,
+  AssetGridReferenceDto,
+  AssetGridSimilarityExtension,
+  AssetGridSnakeSource,
+  AssetGridSummaryDto,
+  AssetGridTagsExtension,
+  AssetGridTasteScoreExtension,
+  AssetListResponse,
+  AssetTag,
+  AssetUploadClientDto,
+  AssetUploadCreatedResponse,
+  AssetUploadDuplicateResponse,
+  AssetUploadDtoExtension,
+  AssetUploadResponse,
+  PublicAssetDto,
+  PublicAssetListDto,
+  PublicEmbeddingStatus,
+  PublicSearchResultDto,
+  IngestedAssetSource,
+  IngestedNearDuplicateSource,
+  EmbeddingStatus,
+  SearchResponse,
+  SimilarAssetsResponse,
+} from './asset-grid';
 
-export type EmbeddingStatus = 'pending' | 'processing' | 'ready' | 'failed';
+import type { AssetGridClientDto, EmbeddingStatus, AssetTag } from './asset-grid';
 
-export interface AssetEmbedding {
-  assetId: string;
-  modelName: string;
-  modelVersion?: string;
-  // pending | processing | ready | failed — the API returns the full row,
-  // so a present embedding is NOT necessarily a ready one.
-  status?: string | null;
-  createdAt: Date | string;
-}
-
-export interface AssetTag {
-  id: string;
-  name: string;
-}
-
-export interface Asset {
-  id: string;
-  blobUrl: string;
-  thumbnailUrl?: string | null;
-  pathname: string;
-  filename: string;
-  mime: string;
-  size: number;
-  width?: number | null;
-  height?: number | null;
-  favorite: boolean;
-  createdAt: Date | string;
-  updatedAt?: Date | string;
-  tags?: AssetTag[];
-
-  // Embedding fields
-  embedding?: AssetEmbedding | null;
-  embeddingStatus?: EmbeddingStatus;
-  embeddingError?: string;
+export type Asset = AssetGridClientDto & {
+  embeddingError?: string | null;
   embeddingRetryCount?: number;
   embeddingLastAttempt?: Date | string;
-
-  // Search-related fields (from similarity search results)
-  similarity?: number;
-  relevance?: number;
-  belowThreshold?: boolean;
-
-  // Taste-related fields (from taste-ranked library results)
-  tasteScore?: number;
-}
+};
 
 export interface TasteMetadata {
   status: 'ready' | 'insufficient_bangers';
@@ -122,23 +128,4 @@ export interface UseAssetsOptions {
   autoLoad?: boolean;
   tagId?: string;
   shuffleSeed?: number;
-}
-
-export interface UploadResponse {
-  success: boolean;
-  asset?: {
-    id: string;
-    blobUrl: string;
-    pathname: string;
-    filename: string;
-    mimeType: string;
-    size: number;
-    checksum: string;
-    createdAt: string;
-    needsEmbedding?: boolean;
-  };
-  message?: string;
-  error?: string;
-  isDuplicate?: boolean;
-  mock?: boolean;
 }

@@ -1,6 +1,14 @@
-import { ICacheBackend, CacheStats, SearchFilters } from './types';
+import {
+  ICacheBackend,
+  CacheStats,
+  SEARCH_RESULTS_CACHE_VERSION,
+  SearchFilters,
+  SearchResultsCachePayload,
+} from './types';
 import { MemoryBackend } from './MemoryBackend';
 import { PostgresTextEmbeddingStore } from './PostgresTextEmbeddingStore';
+import { normalizeCachedGridResults, normalizeCachedSearchPage } from '@/lib/asset-grid-dto';
+import type { SplootApiSearchResultDto } from '@sploot/common';
 
 /**
  * Generate a hash string from input for cache key generation.
@@ -32,15 +40,61 @@ function normalizeQueryText(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function canonicalSearchFilters(filters: SearchFilters): string {
+  return JSON.stringify({
+    dateFrom: filters.dateFrom ?? null,
+    dateTo: filters.dateTo ?? null,
+    favorites: filters.favorites ?? null,
+    limit: filters.limit ?? null,
+    minHeight: filters.minHeight ?? null,
+    minWidth: filters.minWidth ?? null,
+    mimeTypes: [...(filters.mimeTypes ?? [])].sort(),
+    offset: filters.offset ?? null,
+    seed: filters.seed ?? null,
+    shuffleSeed: filters.shuffleSeed ?? null,
+    sortBy: filters.sortBy ?? null,
+    tags: [...(filters.tags ?? [])].sort(),
+    threshold: filters.threshold ?? null,
+  });
+}
+
+function encodeCachePart(value: string): string {
+  return encodeURIComponent(value);
+}
+
 const CACHE_KEYS = {
   TEXT_EMBEDDING: (text: string, model: string) =>
     `txt:${hashString(model)}:${hashString(normalizeQueryText(text))}`,
   IMAGE_EMBEDDING: (checksum: string) => `img:${checksum}`,
   SEARCH_RESULTS: (userId: string, query: string, filters: string) =>
-    `search:${userId}:${hashString(query)}:${hashString(filters)}`,
+    `search:${encodeCachePart(userId)}:${encodeCachePart(normalizeQueryText(query))}:${encodeCachePart(filters)}`,
   ASSET_LIST: (userId: string, params: string) =>
     `assets:${userId}:${hashString(params)}`,
 } as const;
+
+function isSearchResultsCachePayload(value: unknown): value is SearchResultsCachePayload {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  const candidate = value as Record<string, unknown>;
+  const seed = candidate?.seed;
+  return (
+    typeof candidate === 'object' &&
+    candidate !== null &&
+    Object.keys(candidate).every((key) => ['version', 'results', 'total', 'seed'].includes(key)) &&
+    Object.prototype.hasOwnProperty.call(candidate, 'version') &&
+    Object.prototype.hasOwnProperty.call(candidate, 'results') &&
+    Object.prototype.hasOwnProperty.call(candidate, 'total') &&
+    Object.prototype.hasOwnProperty.call(candidate, 'seed') &&
+    candidate.version === SEARCH_RESULTS_CACHE_VERSION &&
+    Array.isArray(candidate.results) &&
+    typeof candidate.total === 'number' &&
+    Number.isSafeInteger(candidate.total) &&
+    candidate.total >= 0 &&
+    (seed === null ||
+      (typeof seed === 'number' && Number.isSafeInteger(seed) && seed >= 0 && seed <= 1_000_000))
+  );
+}
 
 /**
  * Unified cache service providing domain-specific interface
@@ -153,12 +207,15 @@ export class CacheService {
     userId: string,
     query: string,
     filters: SearchFilters = {}
-  ): Promise<any[] | null> {
+  ): Promise<SplootApiSearchResultDto[] | null> {
     try {
-      const filterKey = JSON.stringify(filters);
+      const filterKey = canonicalSearchFilters(filters);
       const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
-      const results = await this.backend.get<any[]>(key);
-      if (results) {
+      const payload = await this.backend.get<unknown>(key);
+      const results = isSearchResultsCachePayload(payload)
+        ? normalizeCachedGridResults(payload.results)
+        : null;
+      if (results !== null) {
         this.incrementHit();
         return results;
       }
@@ -176,16 +233,59 @@ export class CacheService {
     }
   }
 
+  async getSearchResultsPage(
+    userId: string,
+    query: string,
+    filters: SearchFilters = {},
+  ): Promise<{ results: SplootApiSearchResultDto[]; total: number; seed: number | null } | null> {
+    try {
+      const filterKey = canonicalSearchFilters(filters);
+      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
+      const payload = await this.backend.get<unknown>(key);
+      if (!isSearchResultsCachePayload(payload)) {
+        this.incrementMiss();
+        return null;
+      }
+      const page = normalizeCachedSearchPage({
+        results: payload.results,
+        total: payload.total,
+        seed: payload.seed,
+      });
+      if (page === null) {
+        this.incrementMiss();
+        return null;
+      }
+      this.incrementHit();
+      return page;
+    } catch (error) {
+      this.incrementMiss();
+      return null;
+    }
+  }
+
   async setSearchResults(
     userId: string,
     query: string,
     filters: SearchFilters,
-    results: any[]
+    results: SplootApiSearchResultDto[],
+    metadata: { total?: number; seed?: number | null } = {},
   ): Promise<void> {
     try {
-      const filterKey = JSON.stringify(filters);
+      const filterKey = canonicalSearchFilters(filters);
       const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
-      await this.backend.set(key, results);
+      const normalized = normalizeCachedGridResults(results);
+      if (normalized === null) return;
+      if (metadata.total !== undefined &&
+          (!Number.isSafeInteger(metadata.total) || metadata.total < 0)) return;
+      if (metadata.seed !== undefined && metadata.seed !== null &&
+          (!Number.isSafeInteger(metadata.seed) || metadata.seed < 0 || metadata.seed > 1_000_000)) return;
+      const payload: SearchResultsCachePayload = {
+        version: SEARCH_RESULTS_CACHE_VERSION,
+        results: normalized,
+        total: metadata.total ?? normalized.length,
+        seed: metadata.seed ?? null,
+      };
+      await this.backend.set(key, payload);
     } catch (error) {
       console.error('[CacheService] setSearchResults failed:', {
         userId,

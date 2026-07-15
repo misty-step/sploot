@@ -295,7 +295,7 @@ function ImageTileComponent({
     const shouldDelete = deleteConfirmation.openConfirmation({
       id: asset.id,
       imageUrl: asset.thumbnailUrl || asset.blobUrl,
-      imageName: asset.filename || asset.pathname?.split('/').pop() || 'Unnamed image',
+      imageName: asset.filename || asset.pathname?.split('/').pop() || asset.id || 'Unnamed image',
     });
 
     if (shouldDelete) {
@@ -329,7 +329,7 @@ function ImageTileComponent({
   // Extract similarity score from search results
   const similarityScore = useMemo(() => {
     if (!showSimilarityScore) return null;
-    const score = (asset as any).similarity;
+    const score = asset.similarity;
     if (typeof score !== 'number') return null;
     return score.toFixed(2);
   }, [showSimilarityScore, asset]);
@@ -338,7 +338,7 @@ function ImageTileComponent({
   // hit. The card keeps its ink shell + drop otherwise. Tokens only.
   const scoreCardClass = useMemo(() => {
     if (!showSimilarityScore) return null;
-    const score = (asset as any).similarity;
+    const score = asset.similarity;
     if (typeof score !== 'number') return null;
 
     if (score >= SIMILARITY_MATCH_BOUNDARY) {
@@ -409,7 +409,7 @@ function ImageTileComponent({
       <div
         role="button"
         tabIndex={0}
-        aria-label={`open ${asset.filename || asset.pathname?.split('/').pop() || 'meme'}`}
+        aria-label={`open ${asset.filename || asset.pathname?.split('/').pop() || asset.id || 'meme'}`}
         onClick={onClick || (() => onSelect?.(asset))}
         onKeyDown={(e) => {
           if (e.target !== e.currentTarget) return;
@@ -465,7 +465,7 @@ function ImageTileComponent({
               {isVideo ? (
                 <video
                   key={asset.blobUrl}
-                  aria-label={`play ${asset.filename || asset.pathname?.split('/').pop() || 'meme'}`}
+                  aria-label={`play ${asset.filename || asset.pathname?.split('/').pop() || asset.id || 'meme'}`}
                   className={cn(
                     'h-full w-full',
                     preserveAspectRatio ? 'object-contain' : 'object-cover'
@@ -489,7 +489,7 @@ function ImageTileComponent({
                 <Image
                   key={imageSrc}
                   src={imageSrc}
-                  alt={asset.filename || asset.pathname?.split('/').pop() || 'Uploaded image'}
+                  alt={asset.filename || asset.pathname?.split('/').pop() || asset.id || 'Uploaded image'}
                   fill
                   sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
                   className={cn(

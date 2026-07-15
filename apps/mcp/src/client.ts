@@ -1,4 +1,14 @@
 import type { SplootConfig } from './config.js';
+import type {
+  SplootApiSearchResponse,
+  SplootApiSearchResultDto,
+  SplootApiUploadAsset,
+  SplootApiUploadSuccessResponse,
+} from '@sploot/common/api-types';
+import {
+  parseSplootApiSearchResponse,
+  parseSplootApiUploadResponse,
+} from '@sploot/common/api-types';
 
 /**
  * Thin HTTP client over Sploot's published, token-scoped public contract
@@ -12,43 +22,10 @@ export interface AssetTag {
   name: string;
 }
 
-export interface UploadedAsset {
-  id: string;
-  blobUrl: string;
-  filename: string;
-  mimeType: string;
-  size: number;
-  checksum?: string;
-  createdAt: string;
-  needsEmbedding: boolean;
-}
-
-export interface SaveResponse {
-  success: boolean;
-  isDuplicate: boolean;
-  asset: UploadedAsset;
-  message: string;
-}
-
-export interface SearchResultItem {
-  id: string;
-  blobUrl: string;
-  filename: string;
-  mime: string;
-  favorite: boolean;
-  similarity: number;
-  relevance: number;
-  tags: AssetTag[];
-}
-
-export interface SearchResponse {
-  results: SearchResultItem[];
-  query: string;
-  total: number;
-  limit: number;
-  threshold: number;
-  processingTime: number;
-}
+export type UploadedAsset = SplootApiUploadAsset;
+export type SaveResponse = SplootApiUploadSuccessResponse;
+export type SearchResultItem = SplootApiSearchResultDto;
+export type SearchResponse = SplootApiSearchResponse;
 
 export class SplootApiError extends Error {
   constructor(
@@ -63,6 +40,11 @@ export class SplootApiError extends Error {
 
 type FetchLike = typeof fetch;
 
+function parseSaveResponse(value: unknown): SaveResponse | null {
+  const parsed = parseSplootApiUploadResponse(value);
+  return parsed?.success === true ? parsed : null;
+}
+
 export class SplootClient {
   constructor(
     private readonly config: SplootConfig,
@@ -73,11 +55,11 @@ export class SplootClient {
     query: string,
     options: { limit?: number; threshold?: number } = {}
   ): Promise<SearchResponse> {
-    return this.postJson<SearchResponse>('/search', { query, ...options });
+    return this.postJson('/search', { query, ...options }, parseSplootApiSearchResponse, 'search');
   }
 
   async saveUrl(url: string): Promise<SaveResponse> {
-    return this.postJson<SaveResponse>('/upload/url', { url });
+    return this.postJson('/upload/url', { url }, parseSaveResponse, 'upload');
   }
 
   async saveBytes(
@@ -91,10 +73,10 @@ export class SplootClient {
     if (tags && tags.length > 0) {
       form.append('tags', JSON.stringify(tags));
     }
-    return this.postForm<SaveResponse>('/upload', form);
+    return this.postForm('/upload', form, parseSaveResponse, 'upload');
   }
 
-  private async postJson<T>(path: string, body: unknown): Promise<T> {
+  private async postJson<T>(path: string, body: unknown, validate: (value: unknown) => T | null, label: string): Promise<T> {
     const res = await this.fetchImpl(`${this.config.baseUrl}${path}`, {
       method: 'POST',
       headers: {
@@ -103,10 +85,10 @@ export class SplootClient {
       },
       body: JSON.stringify(body),
     });
-    return this.parse<T>(res);
+    return this.parse(res, validate, label);
   }
 
-  private async postForm<T>(path: string, form: FormData): Promise<T> {
+  private async postForm<T>(path: string, form: FormData, validate: (value: unknown) => T | null, label: string): Promise<T> {
     const res = await this.fetchImpl(`${this.config.baseUrl}${path}`, {
       method: 'POST',
       headers: {
@@ -114,10 +96,10 @@ export class SplootClient {
       },
       body: form,
     });
-    return this.parse<T>(res);
+    return this.parse(res, validate, label);
   }
 
-  private async parse<T>(res: Response): Promise<T> {
+  private async parse<T>(res: Response, validate: (value: unknown) => T | null, label: string): Promise<T> {
     const body: unknown = await res.json().catch(() => undefined);
 
     // 409 is a documented "duplicate" success shape (success: true), not an
@@ -130,6 +112,10 @@ export class SplootClient {
       throw new SplootApiError(message, res.status, body);
     }
 
-    return body as T;
+    const parsed = validate(body);
+    if (parsed === null) {
+      throw new SplootApiError(`Invalid ${label} response`, res.status, body);
+    }
+    return parsed;
   }
 }

@@ -33,6 +33,7 @@
     "build": "turbo run build",
     "lint": "pnpm provider:check && pnpm provider:test && turbo run lint",
     "lint:design": "node scripts/check-design-system.mjs",
+    "lint:asset-grid-dto": "pnpm --filter web check:asset-grid-dto",
     "type-check": "turbo run type-check",
     "test": "turbo run test",
     "secrets:check": "node scripts/check-secrets.mjs",

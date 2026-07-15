@@ -4,8 +4,16 @@ import { SEARCH_DEFAULT_LIMIT, SEARCH_SIMILARITY_FLOOR } from '@/lib/search-conf
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { error as logError } from '@/lib/logger';
 import { track } from '@/lib/analytics';
+import type { AnalyticsEvent } from '@/lib/analytics';
 import { logger } from '@/lib/observability-logger';
-import type { Asset, TasteMetadata, UseAssetsOptions } from '@/lib/types';
+import type {
+  ApiErrorResponse,
+  Asset,
+  AssetListResponse,
+  SearchResponse,
+  TasteMetadata,
+  UseAssetsOptions,
+} from '@/lib/types';
 import { isAssetSortBy } from '@sploot/common';
 
 const MAX_SHUFFLE_SEED = 1000000;
@@ -125,7 +133,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
           let errorDetails = null;
 
           try {
-            const errorData = await response.json();
+            const errorData: ApiErrorResponse = await response.json();
             errorMessage = errorData.error || errorMessage;
             errorDetails = errorData;
           } catch {
@@ -161,14 +169,14 @@ export function useAssets(options: UseAssetsOptions = {}) {
           throw new Error(specificMessage);
         }
 
-        const data = await response.json();
+        const data: AssetListResponse = await response.json();
 
         // Debug logging in development
         if (process.env.NODE_ENV === 'development') {
           logger.logInfo('use-assets.api-response', {
-            assetCount: data.assets?.length || 0,
-            total: data.pagination?.total,
-            hasMore: data.pagination?.hasMore,
+            assetCount: data.assets.length,
+            total: data.pagination.total,
+            hasMore: data.pagination.hasMore,
             reset,
           });
         }
@@ -177,16 +185,16 @@ export function useAssets(options: UseAssetsOptions = {}) {
         if (controller.signal.aborted) return;
 
         if (reset) {
-          setAssets(data.assets || []);
+          setAssets(data.assets);
           setOffset(initialLimit);
         } else {
-          setAssets((prev) => [...prev, ...(data.assets || [])]);
+          setAssets((prev) => [...prev, ...data.assets]);
           setOffset((prev) => prev + initialLimit);
         }
 
-        setTotal(data.pagination?.total || 0);
-        setHasMore(data.pagination?.hasMore || false);
-        setTasteMetadata(data.taste || null);
+        setTotal(data.pagination.total);
+        setHasMore(data.pagination.hasMore);
+        setTasteMetadata(data.taste ?? null);
 
         // Reset auth retry count on successful load
         authRetryCountRef.current = 0;
@@ -255,7 +263,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
   const updateAsset = useCallback((id: string, updates: Partial<Asset>) => {
     // Collect analytics events to emit after state update completes
-    const events: Array<{ name: string; properties: Record<string, any> }> = [];
+    const events: AnalyticsEvent[] = [];
 
     setAssets((prev) =>
       prev.map((asset) => {
@@ -333,12 +341,12 @@ export function useAssets(options: UseAssetsOptions = {}) {
     );
 
     // Emit collected analytics events after state update completes
-    events.forEach((event) => track(event as any));
+    events.forEach((event) => track(event));
   }, []);
 
   const deleteAsset = useCallback((id: string) => {
     // Collect analytics event before state update
-    let eventToTrack: { name: string; properties: Record<string, any> } | null = null;
+    let eventToTrack: AnalyticsEvent | null = null;
 
     setAssets((prev) => {
       const assetToRemove = prev.find((asset) => asset.id === id);
@@ -359,7 +367,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
     // Emit collected analytics event after state update completes
     if (eventToTrack) {
-      track(eventToTrack as any);
+      track(eventToTrack);
     }
   }, []);
 
@@ -508,7 +516,7 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
         signal: controller.signal,
       });
 
-      const data = await response.json();
+      const data: SearchResponse | ApiErrorResponse = await response.json();
       const endTime = performance.now();
       const latencyMs = Math.round(endTime - startTime);
 
@@ -516,7 +524,7 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
         // Only update state if this request wasn't aborted
         if (!controller.signal.aborted) {
           // Check if the error is related to embeddings/search service
-          const errorMessage = data.error || 'Search failed';
+          const errorMessage = 'error' in data ? data.error : 'Search failed';
           if (errorMessage.includes('embedding') || errorMessage.includes('Replicate')) {
             setError('Search is temporarily unavailable. Images may still be processing.');
           } else {
@@ -529,11 +537,15 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
         return;
       }
 
+      if (!('results' in data)) {
+        throw new Error('Search response was missing results');
+      }
+
       // Only update state if this request wasn't aborted
       if (!controller.signal.aborted) {
         // Handle successful response
-        const results = data.results || [];
-        const total = data.total || 0;
+        const results = data.results;
+        const total = data.total;
         const searchMetadata = {
           limit: data.limit ?? limit,
           requestedLimit: data.requestedLimit ?? limit,
@@ -553,9 +565,9 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
         // Clear any previous errors on success
         setError(null);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Ignore abort errors
-      if (err.name === 'AbortError') {
+      if (err instanceof Error && err.name === 'AbortError') {
         return;
       }
 

@@ -34,10 +34,10 @@ export class ImageTileErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     sendClientErrorTelemetry('image-tile-error-boundary', error, {
       errorInfo,
-      metadata: {
-        assetId: this.props.asset.id,
-        filename: this.props.asset.filename ?? this.props.asset.pathname,
-      },
+        metadata: {
+          assetId: this.props.asset.id,
+          filename: this.props.asset.filename ?? this.props.asset.pathname ?? this.props.asset.id,
+        },
     });
 
     // Log to console in development
@@ -98,7 +98,7 @@ export class ImageTileErrorBoundary extends Component<Props, State> {
 
           {/* Filename for context */}
           <p className="max-w-full truncate px-2 text-center font-mono text-[10px] text-muted-foreground">
-            {asset.filename || asset.pathname?.split('/').pop() || 'Unnamed image'}
+            {asset.filename || asset.pathname?.split('/').pop() || asset.id || 'Unnamed image'}
           </p>
         </div>
       );

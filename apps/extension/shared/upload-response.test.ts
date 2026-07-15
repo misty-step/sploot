@@ -28,20 +28,15 @@ describe('toUploadResult', () => {
       asset: {
         id: 'asset_123',
         blobUrl: 'https://blob.vercel-storage.com/u/asset.jpg',
-        pathname: 'u/asset.jpg',
-        filename: 'asset.jpg',
-        mimeType: 'image/jpeg',
-        size: 2048,
-        checksum: 'sha256:abc123',
-        createdAt: '2026-05-14T12:00:00.000Z',
-        needsEmbedding: true,
+        thumbnailUrl: 'https://blob.vercel-storage.com/u/asset-thumb.jpg',
       },
+      message: 'Upload successful',
     };
 
     expect(toUploadResult(response)).toEqual({
       assetId: 'asset_123',
       blobUrl: 'https://blob.vercel-storage.com/u/asset.jpg',
-      thumbnailUrl: 'https://blob.vercel-storage.com/u/asset.jpg',
+      thumbnailUrl: 'https://blob.vercel-storage.com/u/asset-thumb.jpg',
       isDuplicate: false,
     });
   });
@@ -57,14 +52,9 @@ describe('uploadImage', () => {
         asset: {
           id: 'asset_123',
           blobUrl: 'https://blob.vercel-storage.com/u/asset.jpg',
-          pathname: 'u/asset.jpg',
-          filename: 'asset.jpg',
-          mimeType: 'image/jpeg',
-          size: 2048,
-          checksum: 'sha256:abc123',
-          createdAt: '2026-05-14T12:00:00.000Z',
-          needsEmbedding: true,
+          thumbnailUrl: 'https://blob.vercel-storage.com/u/asset-thumb.jpg',
         },
+        message: 'Upload successful',
       } satisfies SplootApiUploadResponse), { status: 201 }))
     );
 
@@ -75,7 +65,7 @@ describe('uploadImage', () => {
     ).resolves.toEqual({
       assetId: 'asset_123',
       blobUrl: 'https://blob.vercel-storage.com/u/asset.jpg',
-      thumbnailUrl: 'https://blob.vercel-storage.com/u/asset.jpg',
+      thumbnailUrl: 'https://blob.vercel-storage.com/u/asset-thumb.jpg',
       isDuplicate: false,
     });
 
@@ -99,13 +89,7 @@ describe('uploadImage', () => {
         asset: {
           id: 'asset_existing',
           blobUrl: 'https://blob.vercel-storage.com/u/existing.jpg',
-          pathname: 'u/existing.jpg',
-          filename: 'asset.jpg',
-          mimeType: 'image/jpeg',
-          size: 2048,
-          checksum: 'sha256:abc123',
-          createdAt: '2026-05-14T12:00:00.000Z',
-          needsEmbedding: false,
+          thumbnailUrl: 'https://blob.vercel-storage.com/u/existing-thumb.jpg',
         },
         message: 'This image already exists in your library',
       } satisfies SplootApiUploadResponse), { status: 409 }))
@@ -118,7 +102,7 @@ describe('uploadImage', () => {
     ).resolves.toEqual({
       assetId: 'asset_existing',
       blobUrl: 'https://blob.vercel-storage.com/u/existing.jpg',
-      thumbnailUrl: 'https://blob.vercel-storage.com/u/existing.jpg',
+      thumbnailUrl: 'https://blob.vercel-storage.com/u/existing-thumb.jpg',
       isDuplicate: true,
     });
   });

@@ -7,9 +7,10 @@
 
 import {
   UPLOAD,
+  parseSplootApiUploadResponse,
   type SplootApiError,
   type SplootApiErrorCode,
-  type SplootApiUploadResponse,
+  type SplootApiUploadErrorResponse,
 } from '@sploot/common';
 import { getAuthToken } from '../entrypoints/background/auth-manager';
 import { assertExtensionConfig, CLERK_ENVIRONMENT, SPLOOT_API_BASE_URL } from './env';
@@ -60,12 +61,13 @@ export function createSplootApiClient(authTokenProvider?: AuthTokenProvider): Sp
 
 async function parseErrorResponse(
   response: Response,
-  parsedErrorData?: Partial<SplootApiError> | null
+  parsedErrorData?: SplootApiUploadErrorResponse | null
 ): Promise<SplootApiClientError> {
   let errorData: Partial<SplootApiError> | null = parsedErrorData ?? null;
   if (parsedErrorData === undefined) {
     try {
-      errorData = (await response.json()) as SplootApiError;
+      const parsed = parseSplootApiUploadResponse(await response.json());
+      errorData = parsed && parsed.success !== true ? parsed : null;
     } catch {
       errorData = null;
     }
@@ -176,7 +178,12 @@ async function uploadImageWithTokenProvider(
 
     clearTimeout(timeoutId);
 
-    const data = (await response.json()) as SplootApiUploadResponse;
+    const data = parseSplootApiUploadResponse(await response.json());
+
+    if (!data) {
+      if (!response.ok) throw await parseErrorResponse(response, null);
+      throw new SplootApiClientError('Invalid upload response', response.status);
+    }
 
     if (response.status === 409 && data.success && data.asset && data.isDuplicate) {
       const uploadResult = toUploadResult(data);
@@ -188,6 +195,9 @@ async function uploadImageWithTokenProvider(
     }
 
     if (!response.ok) {
+      if (data.success === true) {
+        throw new SplootApiClientError('Invalid upload response', response.status);
+      }
       throw await parseErrorResponse(response, data);
     }
 

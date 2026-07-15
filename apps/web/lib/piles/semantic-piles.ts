@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { getRuntimeGate } from '@/lib/runtime-gates';
 import { DEFAULT_NEAR_DUPLICATE_DISTANCE, hammingDistanceHex } from '@/lib/upload/perceptual-hash-service';
 import logger from '@/lib/logger';
+import { normalizeAssetToGridDto } from '@/lib/asset-grid-dto';
 
 export const DEFAULT_MINIMUM_PILE_ASSETS = 50;
 export const DEFAULT_MAX_PILES = 6;
@@ -408,13 +409,15 @@ function compareAssetsForPile(a: EmbeddedPileAsset, b: EmbeddedPileAsset): numbe
 }
 
 function toThumbnailAsset(asset: EmbeddedPileAsset): SemanticPileThumbnailAsset {
+  const normalized = normalizeAssetToGridDto({ ...asset, embedding: null });
+
   return {
-    id: asset.id,
-    blobUrl: asset.blobUrl,
-    thumbnailUrl: asset.thumbnailUrl,
-    pathname: asset.pathname,
-    filename: asset.pathname.split('/').pop() ?? asset.pathname,
-    mime: asset.mime,
-    favorite: asset.favorite,
+    id: normalized.id,
+    blobUrl: normalized.blobUrl,
+    thumbnailUrl: normalized.thumbnailUrl ?? null,
+    pathname: normalized.pathname,
+    filename: normalized.filename,
+    mime: normalized.mime,
+    favorite: normalized.favorite,
   };
 }

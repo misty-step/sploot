@@ -171,10 +171,14 @@ describe('CacheService', () => {
     const userId = 'user-123';
     const query = 'funny cats';
     const filters = { limit: 50, threshold: 0.3 };
-    const results = [
-      { id: 'asset-1', score: 0.95 },
-      { id: 'asset-2', score: 0.87 },
-    ];
+    const cachedAsset = (id: string) => ({
+      id,
+      blobUrl: `https://blob.test/${id}.png`,
+      thumbnailUrl: null,
+      similarity: 0.8,
+      relevance: 80,
+    });
+    const results = [cachedAsset('asset-1'), cachedAsset('asset-2')];
 
     it('should return null on cache miss', async () => {
       const result = await cacheService.getSearchResults(userId, query, filters);
@@ -189,8 +193,8 @@ describe('CacheService', () => {
     });
 
     it('should create different cache entries for different users', async () => {
-      const results1 = [{ id: 'asset-1' }];
-      const results2 = [{ id: 'asset-2' }];
+      const results1 = [cachedAsset('asset-1')];
+      const results2 = [cachedAsset('asset-2')];
 
       await cacheService.setSearchResults('user-1', query, filters, results1);
       await cacheService.setSearchResults('user-2', query, filters, results2);
@@ -203,8 +207,8 @@ describe('CacheService', () => {
     });
 
     it('should create different cache entries for different queries', async () => {
-      const results1 = [{ id: 'asset-1' }];
-      const results2 = [{ id: 'asset-2' }];
+      const results1 = [cachedAsset('asset-1')];
+      const results2 = [cachedAsset('asset-2')];
 
       await cacheService.setSearchResults(userId, 'query one', filters, results1);
       await cacheService.setSearchResults(userId, 'query two', filters, results2);
@@ -217,8 +221,8 @@ describe('CacheService', () => {
     });
 
     it('should create different cache entries for different filters', async () => {
-      const results1 = [{ id: 'asset-1' }];
-      const results2 = [{ id: 'asset-2' }];
+      const results1 = [cachedAsset('asset-1')];
+      const results2 = [cachedAsset('asset-2')];
       const filters1 = { limit: 50, threshold: 0.3 };
       const filters2 = { limit: 100, threshold: 0.5 };
 
@@ -232,6 +236,22 @@ describe('CacheService', () => {
       expect(cached2).toEqual(results2);
     });
 
+    it('canonicalizes filter ordering while keeping pages distinct', async () => {
+      await cacheService.setSearchResults(userId, query, {
+        tags: ['reaction', 'funny'], limit: 10, offset: 0, threshold: 0.3,
+      }, [cachedAsset('page-1')], { total: 20, seed: 7 });
+      await cacheService.setSearchResults(userId, query, {
+        threshold: 0.3, offset: 10, limit: 10, tags: ['funny', 'reaction'],
+      }, [cachedAsset('page-2')], { total: 20, seed: 7 });
+
+      await expect(cacheService.getSearchResultsPage(userId, query, {
+        limit: 10, offset: 0, tags: ['funny', 'reaction'], threshold: 0.3,
+      })).resolves.toMatchObject({ results: [cachedAsset('page-1')], total: 20, seed: 7 });
+      await expect(cacheService.getSearchResultsPage(userId, query, {
+        tags: ['reaction', 'funny'], threshold: 0.3, limit: 10, offset: 10,
+      })).resolves.toMatchObject({ results: [cachedAsset('page-2')], total: 20, seed: 7 });
+    });
+
     it('should use search: prefix for search result keys', async () => {
       await cacheService.setSearchResults(userId, query, filters, results);
 
@@ -239,6 +259,57 @@ describe('CacheService', () => {
       const keys = Array.from(store.keys());
 
       expect(keys.some(key => key.startsWith('search:'))).toBe(true);
+    });
+
+    it('rejects unversioned or malformed cache payloads', async () => {
+      await cacheService.setSearchResults(userId, query, filters, results);
+      const key = Array.from(mockBackend.getStore().keys()).find((entry) => entry.startsWith('search:'));
+      expect(key).toBeDefined();
+      await mockBackend.set(key!, { version: 99, results: [{ id: 'forged' }] });
+
+      await expect(cacheService.getSearchResults(userId, query, filters)).resolves.toBeNull();
+    });
+
+    it('rejects unknown top-level cache keys before a hit is accepted', async () => {
+      await cacheService.setSearchResults(userId, query, filters, results);
+      const key = Array.from(mockBackend.getStore().keys()).find((entry) => entry.startsWith('search:'));
+      expect(key).toBeDefined();
+      await mockBackend.set(key!, {
+        version: 2,
+        results,
+        total: results.length,
+        seed: null,
+        page: 1,
+      });
+
+      await expect(cacheService.getSearchResultsPage(userId, query, filters)).resolves.toBeNull();
+    });
+
+    it.each([
+      { total: Number.NaN, seed: null },
+      { total: 2.5, seed: null },
+      { total: 2, seed: Number.NaN },
+      { total: 2, seed: 1_000_001 },
+    ])('rejects poisoned page metadata and forces a miss: %o', async (metadata) => {
+      await cacheService.setSearchResults(userId, query, filters, results);
+      const key = Array.from(mockBackend.getStore().keys()).find((entry) => entry.startsWith('search:'));
+      const payload = mockBackend.getStore().get(key!);
+      payload.total = metadata.total;
+      payload.seed = metadata.seed;
+      await expect(cacheService.getSearchResultsPage(userId, query, filters)).resolves.toBeNull();
+    });
+
+    it('rejects malformed row payloads before cache hits are returned', async () => {
+      await cacheService.setSearchResults(userId, query, filters, results);
+      const key = Array.from(mockBackend.getStore().keys()).find((entry) => entry.startsWith('search:'));
+      const payload = mockBackend.getStore().get(key!) as Record<string, unknown>;
+      payload.results = [{
+        ...results[0],
+        extra: 'leak',
+        tags: [{ id: 'tag-1', name: 'funny', color: 'purple' }],
+      }];
+
+      await expect(cacheService.getSearchResults(userId, query, filters)).resolves.toBeNull();
     });
   });
 
@@ -367,7 +438,14 @@ describe('CacheService', () => {
       // Add various types of cached data
       await cacheService.setTextEmbedding('query1', [0.1, 0.2]);
       await cacheService.setImageEmbedding('img1', [0.3, 0.4]);
-      await cacheService.setSearchResults('user1', 'cats', { limit: 10 }, [{ id: '1' }]);
+      const cachedAsset = {
+        id: '1',
+        blobUrl: 'https://blob.test/1.png',
+        thumbnailUrl: null,
+        similarity: 0.8,
+        relevance: 80,
+      };
+      await cacheService.setSearchResults('user1', 'cats', { limit: 10 }, [cachedAsset]);
 
       // Retrieve them
       const text = await cacheService.getTextEmbedding('query1');
@@ -376,7 +454,7 @@ describe('CacheService', () => {
 
       expect(text).toEqual([0.1, 0.2]);
       expect(image).toEqual([0.3, 0.4]);
-      expect(search).toEqual([{ id: '1' }]);
+      expect(search).toEqual([cachedAsset]);
 
       // Stats should track all operations
       const stats = cacheService.getStats();

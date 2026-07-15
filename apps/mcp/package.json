@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@sploot/common": "workspace:*",
     "zod": "^4.2.0"
   },
   "devDependencies": {

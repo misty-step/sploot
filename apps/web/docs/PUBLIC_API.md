@@ -60,6 +60,9 @@ Accepted media types: JPEG, PNG, WebP, GIF, MP4, WebM.
 - `file` (required) — the image/video bytes.
 - `tags` (optional) — JSON array of tag name strings.
 
+The upload asset is the canonical public asset DTO: `id`, `blobUrl`, and
+`thumbnailUrl`. URL imports return the identical asset shape.
+
 **`201` (created):**
 
 ```json
@@ -69,19 +72,13 @@ Accepted media types: JPEG, PNG, WebP, GIF, MP4, WebM.
   "asset": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
-    "filename": "funny-meme.jpg",
-    "mimeType": "image/jpeg",
-    "size": 2048576,
-    "checksum": "sha256:abc123...",
-    "createdAt": "2026-07-07T12:00:00.000Z",
-    "needsEmbedding": true
+    "thumbnailUrl": null
   },
   "message": "Upload successful"
 }
 ```
 
-**`409` (duplicate):** same shape with `isDuplicate: true` and
-`needsEmbedding: false`.
+**`409` (duplicate):** same shape with `isDuplicate: true`.
 
 **Errors:** `400` missing/invalid file · `401` bad or missing token ·
 `403 {"code":"quota_exceeded"}` storage quota exceeded · `413` file too large ·
@@ -130,12 +127,12 @@ web app itself calls.
 **Request:**
 
 ```json
-{ "query": "distracted boyfriend", "limit": 30, "threshold": 0.2 }
+{ "query": "distracted boyfriend", "limit": 30, "threshold": 0.12 }
 ```
 
 - `query` (string, required, max 500 chars)
-- `limit` (number, optional, default 30)
-- `threshold` (number, optional, 0–1, default 0.2) — results below this
+- `limit` (integer, optional, 1–100, default 30)
+- `threshold` (finite number, optional, 0–1 inclusive, default 0.12) — results below this
   similarity are not returned; a real miss is an empty `results` array, never
   low-similarity padding.
 
@@ -147,23 +144,23 @@ web app itself calls.
     {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
-      "filename": "funny-meme.jpg",
-      "mime": "image/jpeg",
-      "favorite": false,
+      "thumbnailUrl": "https://blob.vercel-storage.com/abc123/funny-meme-thumb.jpg",
       "similarity": 0.95,
-      "relevance": 95,
-      "tags": []
+      "relevance": 95
     }
   ],
   "query": "distracted boyfriend",
   "total": 1,
   "limit": 30,
-  "threshold": 0.2,
+  "requestedLimit": 30,
+  "threshold": 0.12,
+  "requestedThreshold": 0.12,
   "processingTime": 245
 }
 ```
 
-**Errors:** `400` missing/invalid/too-long query · `401` bad or missing token
+**Errors:** `400` missing/invalid/too-long query or malformed/out-of-range
+`limit`/`threshold` (`code: "invalid_search_parameter"`) · `401` bad or missing token
 · `503` embedding service unavailable (Replicate not configured or paused).
 
 ```bash

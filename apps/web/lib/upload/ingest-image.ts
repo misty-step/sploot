@@ -5,11 +5,12 @@ import { DeduplicationService } from '@/lib/upload/deduplication-service';
 import { BlobUploaderService } from '@/lib/upload/blob-uploader-service';
 import { AssetRecorderService } from '@/lib/upload/asset-recorder-service';
 import { EmbeddingSchedulerService } from '@/lib/upload/embedding-scheduler-service';
-import { PerceptualHashService, type NearDuplicateAsset } from '@/lib/upload/perceptual-hash-service';
+import { PerceptualHashService } from '@/lib/upload/perceptual-hash-service';
 import {
   releaseStorageQuotaReservation,
   reserveUploadBytes,
 } from '@/lib/quota/storage-quota-policy';
+import type { IngestedAssetSource } from '@/lib/types';
 
 /**
  * Shared server-side image ingestion pipeline.
@@ -23,19 +24,7 @@ import {
  * map them to their own response shape. All other failures throw.
  */
 
-export interface IngestedAsset {
-  id: string;
-  blobUrl: string;
-  pathname: string;
-  filename: string;
-  mimeType: string;
-  size: number;
-  checksum: string;
-  phash?: string | null;
-  nearDuplicate?: NearDuplicateAsset | null;
-  createdAt: Date | string;
-  needsEmbedding: boolean;
-}
+export type IngestedAsset = IngestedAssetSource;
 
 export type IngestImageResult =
   | { kind: 'invalid'; error: { userMessage: string; statusCode: number } }
@@ -126,10 +115,15 @@ export async function ingestImage({
       asset: {
         id: deduplicationResult.existingAsset.id,
         blobUrl: deduplicationResult.existingAsset.blobUrl,
+        thumbnailUrl: deduplicationResult.existingAsset.thumbnailUrl,
         pathname: deduplicationResult.existingAsset.pathname,
         filename: file.name,
+        mime: deduplicationResult.existingAsset.mime,
         mimeType: deduplicationResult.existingAsset.mime,
         size: deduplicationResult.existingAsset.size,
+        width: deduplicationResult.existingAsset.width,
+        height: deduplicationResult.existingAsset.height,
+        favorite: deduplicationResult.existingAsset.favorite,
         checksum: deduplicationResult.checksum,
         phash: null,
         nearDuplicate: null,
@@ -214,10 +208,15 @@ export async function ingestImage({
         asset: {
           id: recordResult.asset.id,
           blobUrl: uploadResult.mainUrl,
+          thumbnailUrl: uploadResult.thumbnailUrl,
           pathname: uploadResult.mainPathname,
           filename: file.name,
+          mime: file.type,
           mimeType: file.type,
           size: file.size,
+          width: recordResult.asset.width,
+          height: recordResult.asset.height,
+          favorite: recordResult.asset.favorite,
           checksum: deduplicationResult.checksum,
           phash: perceptualResult.phash,
           nearDuplicate: perceptualResult.nearDuplicate,
@@ -258,10 +257,15 @@ export async function ingestImage({
             asset: {
               id: existingAsset.id,
               blobUrl: existingAsset.blobUrl,
+              thumbnailUrl: existingAsset.thumbnailUrl,
               pathname: existingAsset.pathname,
               filename: file.name,
+              mime: existingAsset.mime,
               mimeType: existingAsset.mime,
               size: existingAsset.size,
+              width: existingAsset.width,
+              height: existingAsset.height,
+              favorite: existingAsset.favorite,
               checksum: existingAsset.checksumSha256,
               phash: null,
               nearDuplicate: null,

@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import type { StorageQuotaSnapshot } from '@sploot/common';
+import type { SplootApiUploadErrorResponse, StorageQuotaSnapshot } from '@sploot/common';
 import { prisma } from '@/lib/db';
 
 export const DEFAULT_STORAGE_QUOTA_BYTES = 1024 * 1024 * 1024;
@@ -25,7 +25,7 @@ export class StorageQuotaExceededError extends Error {
   }
 }
 
-export function storageQuotaError(snapshot: StorageQuotaSnapshot) {
+export function storageQuotaError(snapshot: StorageQuotaSnapshot): SplootApiUploadErrorResponse {
   return {
     success: false,
     error: 'Storage quota exceeded',

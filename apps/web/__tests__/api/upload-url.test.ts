@@ -51,6 +51,26 @@ function request(body: unknown): NextRequest {
   });
 }
 
+async function boundaryBody(response: Response): Promise<Record<string, unknown>> {
+  return JSON.parse(JSON.stringify(await response.json())) as Record<string, unknown>;
+}
+
+function ingestedAsset() {
+  return {
+    id: 'a1',
+    blobUrl: 'https://blob.test/a.png',
+    thumbnailUrl: 'https://blob.test/a-thumb.png',
+  };
+}
+
+function expectedAsset() {
+  return {
+    id: 'a1',
+    blobUrl: 'https://blob.test/a.png',
+    thumbnailUrl: 'https://blob.test/a-thumb.png',
+  };
+}
+
 function authed() {
   mocks.authenticateRequest.mockResolvedValue({
     status: 'authenticated',
@@ -80,7 +100,7 @@ describe('POST /api/upload/url', () => {
     const response = await POST(request({ url: 'http://localhost/x.png' }), {} as any);
 
     expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ success: false });
+    expect(await boundaryBody(response)).toEqual({ success: false, error: 'private host' });
     expect(mocks.fetchRemoteImage).not.toHaveBeenCalled();
   });
 
@@ -92,6 +112,7 @@ describe('POST /api/upload/url', () => {
     const response = await POST(request({ url: 'https://x.com/a.png' }), {} as any);
 
     expect(response.status).toBe(422);
+    expect(await boundaryBody(response)).toEqual({ success: false, error: 'not an image' });
     expect(mocks.ingestImage).not.toHaveBeenCalled();
   });
 
@@ -100,7 +121,7 @@ describe('POST /api/upload/url', () => {
     const file = new File([new Uint8Array([1])], 'a.png', { type: 'image/png' });
     mocks.validateImportUrl.mockReturnValue({ ok: true, url: new URL('https://x.com/a.png') });
     mocks.fetchRemoteImage.mockResolvedValue({ ok: true, file });
-    mocks.ingestImage.mockResolvedValue({ kind: 'created', asset: { id: 'a1' } });
+    mocks.ingestImage.mockResolvedValue({ kind: 'created', asset: ingestedAsset() });
 
     const response = await POST(request({ url: 'https://x.com/a.png' }), {} as any);
 
@@ -108,7 +129,14 @@ describe('POST /api/upload/url', () => {
       expect.objectContaining({ userId: 'qa-design-user', file })
     );
     expect(response.status).toBe(201);
-    expect(await response.json()).toMatchObject({ success: true, isDuplicate: false });
+    const body = await boundaryBody(response);
+    expect(Object.keys(body).sort()).toEqual(['asset', 'isDuplicate', 'message', 'success']);
+    expect(body).toEqual({
+      success: true,
+      isDuplicate: false,
+      asset: expectedAsset(),
+      message: 'Upload successful',
+    });
   });
 
   it('returns 409 for duplicates', async () => {
@@ -118,12 +146,19 @@ describe('POST /api/upload/url', () => {
       ok: true,
       file: new File([new Uint8Array([1])], 'a.png', { type: 'image/png' }),
     });
-    mocks.ingestImage.mockResolvedValue({ kind: 'duplicate', asset: { id: 'a1' } });
+    mocks.ingestImage.mockResolvedValue({ kind: 'duplicate', asset: ingestedAsset() });
 
     const response = await POST(request({ url: 'https://x.com/a.png' }), {} as any);
 
     expect(response.status).toBe(409);
-    expect(await response.json()).toMatchObject({ success: true, isDuplicate: true });
+    const body = await boundaryBody(response);
+    expect(Object.keys(body).sort()).toEqual(['asset', 'isDuplicate', 'message', 'success']);
+    expect(body).toEqual({
+      success: true,
+      isDuplicate: true,
+      asset: expectedAsset(),
+      message: 'This image already exists in your library',
+    });
   });
 
   it('returns 400 when the body has no url', async () => {
@@ -132,6 +167,7 @@ describe('POST /api/upload/url', () => {
     const response = await POST(request({}), {} as any);
 
     expect(response.status).toBe(400);
+    expect(await boundaryBody(response)).toEqual({ success: false, error: 'paste an image url to import' });
   });
 
   it('returns 503 when uploads are gated off', async () => {

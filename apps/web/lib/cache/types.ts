@@ -71,8 +71,19 @@ export interface SearchFilters {
   /** Similarity threshold for search results (0-1) */
   threshold?: number;
 
+  /** Page offset, when the cache entry represents a paged search. */
+  offset?: number;
+
+  /** Stable seeded ordering controls. */
+  seed?: number | null;
+  shuffleSeed?: number;
+  sortBy?: 'relevance' | 'date' | 'favorite';
+
   /** Filter by MIME types (e.g., ['image/jpeg', 'image/png']) */
   mimeTypes?: string[];
+
+  /** Filter by tag names. */
+  tags?: string[];
 
   /** Filter by creation date from (ISO 8601 string) */
   dateFrom?: string;
@@ -89,6 +100,13 @@ export interface SearchFilters {
   /** Filter by minimum image height in pixels */
   minHeight?: number;
 
-  /** Extensibility: allow additional filter properties */
-  [key: string]: unknown;
+}
+
+export const SEARCH_RESULTS_CACHE_VERSION = 2 as const;
+
+export interface SearchResultsCachePayload {
+  version: typeof SEARCH_RESULTS_CACHE_VERSION;
+  results: import('@sploot/common').SplootApiSearchResultDto[];
+  total: number;
+  seed: number | null;
 }

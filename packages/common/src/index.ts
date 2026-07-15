@@ -40,6 +40,20 @@ export type {
   SplootApiErrorAction,
   SplootApiErrorActionType,
   SplootApiErrorCode,
+  SplootApiEmbeddingReadiness,
+  SplootApiPublicAssetDto,
+  SplootApiSearchResponse,
+  SplootApiSearchResultDto,
+  SplootApiUploadErrorResponse,
+  SplootApiUploadAsset,
   SplootApiUploadResponse,
+  SplootApiUploadSuccessResponse,
   StorageQuotaSnapshot,
 } from './types';
+
+export {
+  createSplootApiSearchResult,
+  parseSplootApiSearchResponse,
+  parseSplootApiUploadErrorResponse,
+  parseSplootApiUploadResponse,
+} from './api-types';

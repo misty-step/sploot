@@ -43,7 +43,6 @@ async function getHandler(req: NextRequest) {
         color: tag.color,
         assetCount: tag._count.assets,
         createdAt: tag.createdAt,
-        updatedAt: tag.updatedAt,
       })),
     });
   } catch (error) {
@@ -111,7 +110,6 @@ async function postHandler(req: NextRequest) {
         name: tag.name,
         color: tag.color,
         createdAt: tag.createdAt,
-        updatedAt: tag.updatedAt,
       },
     });
   } catch (error) {

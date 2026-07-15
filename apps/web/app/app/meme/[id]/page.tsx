@@ -10,10 +10,12 @@ import { ImageGrid } from '@/components/library/image-grid';
 import { StateSurface } from '@/components/sploot/state-surface';
 import { IconButton, StatBlock, StickerTab } from '@/components/sploot';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
-import type { Asset } from '@/lib/types';
+import type { PublicAssetDto, PublicSearchResultDto, AssetDetailResponse, SimilarAssetsResponse } from '@/lib/types';
+import type { PublicEmbeddingStatus } from '@/lib/types';
 import { error as logError } from '@/lib/logger';
 import { isAnimatedImageMimeType, isVideoMimeType } from '@sploot/common';
 import { resolveQaSeedSrc } from '@/lib/qa/qa-image-loader';
+import { embeddingReadinessLabel } from '@/lib/embedding-readiness';
 
 // The sidebar keeps the read tight: a handful of scored neighbors beside the
 // media, with the rest (if any) flowing into a full grid below the split.
@@ -26,8 +28,8 @@ interface MemeDetailPageProps {
 export default function MemeDetailPage({ params }: MemeDetailPageProps) {
   const router = useRouter();
   const [assetId, setAssetId] = useState<string | null>(null);
-  const [asset, setAsset] = useState<Asset | null>(null);
-  const [similarAssets, setSimilarAssets] = useState<Asset[]>([]);
+  const [asset, setAsset] = useState<PublicAssetDto | null>(null);
+  const [similarAssets, setSimilarAssets] = useState<PublicSearchResultDto[]>([]);
   const [similarReason, setSimilarReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [similarLoading, setSimilarLoading] = useState(true);
@@ -51,7 +53,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
           setLoading(false);
           return;
         }
-        const data = await res.json();
+        const data: AssetDetailResponse = await res.json();
         setAsset(data.asset);
       } catch (err) {
         logError('Failed to fetch asset:', err);
@@ -77,9 +79,9 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
           setSimilarLoading(false);
           return;
         }
-        const data = await res.json();
-        setSimilarAssets(data.results || []);
-        setSimilarReason(data.reason ?? null);
+        const data: SimilarAssetsResponse = await res.json();
+        setSimilarAssets(data.results);
+        setSimilarReason(data.reason);
       } catch (err) {
         logError('Failed to fetch similar assets:', err);
       } finally {
@@ -99,7 +101,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
         body: JSON.stringify({ favorite: !asset.favorite }),
       });
       if (res.ok) {
-        setAsset((prev: Asset | null) => prev ? { ...prev, favorite: !prev.favorite } : prev);
+        setAsset((prev: PublicAssetDto | null) => prev ? { ...prev, favorite: !prev.favorite } : prev);
       }
     } catch (err) {
       logError('Failed to toggle favorite:', err);
@@ -127,7 +129,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
   }, [asset]);
 
   const handleSimilarAssetSelect = useCallback(
-    (selected: Asset) => {
+    (selected: { id: string }) => {
       router.push(`/app/meme/${selected.id}`);
     },
     [router]
@@ -232,12 +234,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
 
   const sidebarSimilar = similarAssets.slice(0, SIMILAR_SIDEBAR_LIMIT);
   const overflowSimilar = similarAssets.slice(SIMILAR_SIDEBAR_LIMIT);
-  const vectorId = asset.embedding?.assetId ?? asset.id;
-  // An embedding row exists from the moment processing starts — only call it
-  // "embedded" once its status is ready (legacy rows have no status column).
-  const embeddingReady =
-    !!asset.embedding && (asset.embedding.status == null || asset.embedding.status === 'ready');
-  const modelName = embeddingReady ? asset.embedding?.modelName : undefined;
+  const embeddingLabel = embeddingReadinessLabel(asset.embeddingStatus as PublicEmbeddingStatus | undefined);
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-4rem)]">
@@ -323,7 +320,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
           <div className="grid grid-cols-2 gap-2.5">
             <StatBlock
               label="vector id"
-              value={<span className="text-lg sm:text-xl">#{vectorId.slice(0, 8)}</span>}
+              value={<span className="text-lg sm:text-xl">#{asset.id.slice(0, 8)}</span>}
             />
             <StatBlock
               label="dims · size"
@@ -339,8 +336,7 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
           </div>
 
           <p className="min-w-0 break-words font-mono text-xs lowercase text-muted-foreground">
-            saved {formatDate(asset.createdAt)} · {asset.mime}
-            {modelName ? ` · embedded with ${modelName}` : ' · embedding pending'}
+            saved {formatDate(asset.createdAt)} · {asset.mime} · {embeddingLabel}
           </p>
 
           {asset.tags && asset.tags.length > 0 && (

@@ -65,6 +65,7 @@ vi.mock('@/lib/with-observability', () => ({
 }));
 
 import { POST as search } from '@/app/api/search/route';
+import { EmbeddingError } from '@/lib/embeddings';
 
 function searchRequest(body: unknown): NextRequest {
   return new NextRequest('http://localhost:3001/api/search', {
@@ -72,6 +73,10 @@ function searchRequest(body: unknown): NextRequest {
     body: JSON.stringify(body),
     headers: { 'content-type': 'application/json' },
   });
+}
+
+async function boundaryBody(response: Response): Promise<Record<string, unknown>> {
+  return JSON.parse(JSON.stringify(await response.json())) as Record<string, unknown>;
 }
 
 describe('/api/search with a cached query embedding', () => {
@@ -82,6 +87,64 @@ describe('/api/search with a cached query embedding', () => {
     mocks.setSearchResults.mockResolvedValue(undefined);
     mocks.findManyAssetTags.mockResolvedValue([]);
     mocks.logSearch.mockResolvedValue(undefined);
+  });
+
+  it.each([
+    { query: 'cat', extra: true },
+    { query: 'cat', limit: '10' },
+    { query: 'cat', shuffleSeed: 1_000_001 },
+  ])('rejects unknown and coercible search inputs: %o', async (body) => {
+    const response = await search(searchRequest(body));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'invalid_search_parameter' });
+  });
+
+  it.each([
+    [{ query: 'bad', limit: '10' }, 'limit'],
+    [{ query: 'bad', limit: 0 }, 'limit'],
+    [{ query: 'bad', limit: 101 }, 'limit'],
+    [{ query: 'bad', limit: Number.NaN }, 'limit'],
+    [{ query: 'bad', threshold: -0.01 }, 'threshold'],
+    [{ query: 'bad', threshold: 1.01 }, 'threshold'],
+    [{ query: 'bad', threshold: '0.5' }, 'threshold'],
+    [{ query: 'bad', threshold: Number.NaN }, 'threshold'],
+  ])('rejects malformed %s with a typed 400', async (body, field) => {
+    const response = await search(searchRequest(body));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      code: 'invalid_search_parameter',
+      details: { field },
+    });
+  });
+
+  it('normalizes a cached result at the JSON boundary without querying embeddings', async () => {
+    mocks.getSearchResults.mockResolvedValue([{
+      id: 'cached-asset',
+      blobUrl: 'https://sploot-qa-seed.public.blob.vercel-storage.com/cached.png',
+      thumbnailUrl: 'https://sploot-qa-seed.public.blob.vercel-storage.com/cached-thumb.png',
+      similarity: 0.88,
+      relevance: 88,
+      belowThreshold: false,
+    }]);
+
+    const res = await search(searchRequest({ query: 'cached result' }));
+    const body = await boundaryBody(res);
+
+    expect(res.status).toBe(200);
+    expect(Object.keys(body).sort()).toEqual([
+      'cached', 'limit', 'processingTime', 'query', 'requestedLimit', 'requestedThreshold',
+      'results', 'threshold', 'thresholdFallback', 'total',
+    ]);
+    expect(body.results).toEqual([{
+      id: 'cached-asset',
+      blobUrl: 'https://sploot-qa-seed.public.blob.vercel-storage.com/cached.png',
+      thumbnailUrl: 'https://sploot-qa-seed.public.blob.vercel-storage.com/cached-thumb.png',
+      similarity: 0.88,
+      relevance: 88,
+      belowThreshold: false,
+    }]);
+    expect(mocks.getTextEmbedding).not.toHaveBeenCalled();
+    expect(mocks.vectorSearch).not.toHaveBeenCalled();
   });
 
   it('serves results from the cached embedding without the Replicate service', async () => {
@@ -107,17 +170,61 @@ describe('/api/search with a cached query embedding', () => {
     ]);
 
     const res = await search(searchRequest({ query: 'reaction face meme' }));
-    const body = await res.json();
+    const body = await boundaryBody(res);
 
     expect(res.status).toBe(200);
-    expect(body.results).toHaveLength(1);
-    expect(body.results[0].id).toBe('asset-1');
+    expect(Object.keys(body).sort()).toEqual([
+      'cached', 'limit', 'processingTime', 'query', 'requestedLimit',
+      'requestedThreshold', 'results', 'threshold', 'thresholdFallback', 'total',
+    ]);
+    expect(body).toEqual({
+      cached: false,
+      limit: 30,
+      processingTime: expect.any(Number),
+      query: 'reaction face meme',
+      requestedLimit: 30,
+      requestedThreshold: 0.12,
+      results: [{
+        id: 'asset-1',
+        blobUrl: 'https://sploot-qa-seed.public.blob.vercel-storage.com/a.png',
+        thumbnailUrl: null,
+        similarity: 0.91,
+        relevance: 91,
+      }],
+      threshold: 0.12,
+      thresholdFallback: false,
+      total: 1,
+    });
     expect(mocks.vectorSearch).toHaveBeenCalledWith(
       'qa-design-user',
       cachedEmbedding,
       expect.objectContaining({ limit: 30 })
     );
     expect(mocks.createEmbeddingService).not.toHaveBeenCalled();
+  });
+
+  it('rejects an incomplete cached DTO and rehydrates the public result', async () => {
+    mocks.getSearchResults.mockResolvedValue(null);
+    mocks.getTextEmbedding.mockResolvedValue([1, 0, 0]);
+    mocks.vectorSearch.mockResolvedValue([{
+      id: 'rehydrated',
+      blob_url: 'https://blob.test/rehydrated.png',
+      thumbnail_url: null,
+      pathname: 'qa/rehydrated.png',
+      mime: 'image/png',
+      width: 1,
+      height: 1,
+      favorite: false,
+      size: 1,
+      created_at: new Date('2026-07-14T12:00:00.000Z'),
+      distance: 0.7,
+    }]);
+
+    const response = await search(searchRequest({ query: 'stale cache' }));
+    const body = await boundaryBody(response);
+    expect(response.status).toBe(200);
+    expect(body.results).toEqual([expect.objectContaining({ id: 'rehydrated', thumbnailUrl: null })]);
+    expect(mocks.vectorSearch).toHaveBeenCalled();
   });
 
   it('still reports 503 for uncached queries when the service is unconfigured', async () => {
@@ -129,5 +236,18 @@ describe('/api/search with a cached query embedding', () => {
     const res = await search(searchRequest({ query: 'query nobody cached' }));
     expect(res.status).toBe(503);
     expect(mocks.vectorSearch).not.toHaveBeenCalled();
+  });
+
+  it('maps provider errors without returning provider error.message', async () => {
+    mocks.getTextEmbedding.mockResolvedValue(null);
+    mocks.createEmbeddingService.mockReturnValue({
+      embedText: vi.fn().mockRejectedValue(new EmbeddingError('provider secret', 500)),
+    });
+
+    const res = await search(searchRequest({ query: 'provider poison' }));
+    const body = await boundaryBody(res);
+    expect(res.status).toBe(500);
+    expect(body).toMatchObject({ code: 'server_error', error: 'Search is temporarily unavailable.' });
+    expect(body.error).not.toContain('provider secret');
   });
 });

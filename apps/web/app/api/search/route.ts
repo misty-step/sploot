@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { prisma, vectorSearch, logSearch, type VectorSearchRow } from '@/lib/db';
+import { prisma, vectorSearch, logSearch } from '@/lib/db';
 import { CLIP_MODEL, createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
 import { getAuthWithUser } from '@/lib/auth/server';
@@ -8,6 +8,44 @@ import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import { withObservability } from '@/lib/with-observability';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 import { SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
+import { normalizeCachedGridResults } from '@/lib/asset-grid-dto';
+import { mapPublicEmbeddingError } from '@/lib/search/public-search-errors';
+import {
+  createSplootApiSearchResult,
+  parseSplootApiSearchResponse,
+  type SplootApiSearchResponse,
+} from '@sploot/common';
+import type { VectorSearchRow } from '@/lib/db';
+
+const SEARCH_LIMIT_MIN = 1;
+const SEARCH_LIMIT_MAX = 100;
+
+function invalidSearchParameter(field: string, expected: string) {
+  return NextResponse.json(
+    {
+      error: `Invalid ${field} parameter`,
+      code: 'invalid_search_parameter',
+      details: { field, expected },
+    },
+    { status: 400 },
+  );
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function hasOnlySearchBodyKeys(value: Record<string, unknown>): boolean {
+  return Object.keys(value).every((key) => ['query', 'limit', 'threshold', 'shuffleSeed'].includes(key));
+}
+
+function publicSearchJson(body: SplootApiSearchResponse): Response {
+  const parsed = parseSplootApiSearchResponse(body);
+  if (!parsed) throw new Error('Internal public search DTO validation failed');
+  return NextResponse.json(parsed);
+}
 
 // POST opts into upload-token auth (allowUploadToken: true) so a personal API
 // token can drive search — the read half of the token-scoped external
@@ -22,8 +60,35 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
   try {
     const userId = principal.userId;
 
-    const body = await req.json();
-    ({ query, limit = 30, threshold = SEARCH_SIMILARITY_FLOOR, shuffleSeed } = body);
+    const body: unknown = await req.json();
+    if (!isPlainRecord(body) || !hasOnlySearchBodyKeys(body)) {
+      return invalidSearchParameter('request body', 'an object with only documented search fields');
+    }
+    query = body.query as string;
+    if (body.limit !== undefined) limit = body.limit as number;
+    if (body.threshold !== undefined) threshold = body.threshold as number;
+    if (body.shuffleSeed !== undefined) shuffleSeed = body.shuffleSeed as number;
+
+    if (
+      typeof limit !== 'number' ||
+      !Number.isSafeInteger(limit) ||
+      limit < SEARCH_LIMIT_MIN ||
+      limit > SEARCH_LIMIT_MAX
+    ) {
+      return invalidSearchParameter('limit', 'an integer from 1 through 100');
+    }
+    if (
+      typeof threshold !== 'number' ||
+      !Number.isFinite(threshold) ||
+      threshold < 0 ||
+      threshold > 1
+    ) {
+      return invalidSearchParameter('threshold', 'a finite number from 0 through 1');
+    }
+    if (shuffleSeed !== undefined &&
+        (!Number.isSafeInteger(shuffleSeed) || shuffleSeed < 0 || shuffleSeed > 1_000_000)) {
+      return invalidSearchParameter('shuffleSeed', 'an integer from 0 through 1000000');
+    }
 
     if (!query || typeof query !== 'string') {
       return NextResponse.json(
@@ -57,13 +122,14 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       { limit: effectiveLimit, threshold, shuffleSeed }
     );
 
-    if (cachedResults) {
-      const cachedFallbackUsed = cachedResults.some((result: any) => Boolean(result?.belowThreshold));
+    const normalizedCachedResults = normalizeCachedGridResults(cachedResults);
+    if (normalizedCachedResults) {
+      const cachedFallbackUsed = normalizedCachedResults.some((result) => Boolean(result.belowThreshold));
       // Cache hit for search
-      return NextResponse.json({
-        results: cachedResults,
+      const responseBody: SplootApiSearchResponse = {
+        results: normalizedCachedResults,
         query,
-        total: cachedResults.length,
+        total: normalizedCachedResults.length,
         limit: effectiveLimit,
         requestedLimit: limit,
         threshold,
@@ -71,7 +137,8 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
         thresholdFallback: cachedFallbackUsed,
         processingTime: Date.now() - startTime,
         cached: true,
-      });
+      };
+      return publicSearchJson(responseBody);
     }
 
     // Cache-first query embedding: the Postgres text-embedding store outlives
@@ -96,7 +163,9 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
         // renders as "no matches" in the client).
         return NextResponse.json(
           {
-            error: 'Search is temporarily unavailable: embedding service is not configured.',
+            error: 'Search is temporarily unavailable.',
+            code: 'embeddings_disabled',
+            retryable: true,
             query,
             processingTime: Date.now() - startTime,
           },
@@ -122,39 +191,12 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     searchResults = searchResults.slice(0, effectiveLimit);
 
     // Format results with additional metadata
-    const formattedResults = await Promise.all(
-      searchResults.map(async (result: VectorSearchRow) => {
-        // Get tags for each asset
-        const assetTags = await prisma!.assetTag.findMany({
-          where: { assetId: result.id },
-          include: { tag: true },
-        });
-
-        return {
-          id: result.id,
-          blobUrl: result.blob_url,
-          thumbnailUrl: result.thumbnail_url ?? null,
-          pathname: result.pathname,
-          filename: result.pathname.split('/').pop() || result.pathname,
-          mime: result.mime,
-          width: result.width,
-          height: result.height,
-          favorite: result.favorite,
-          size: result.size,
-          createdAt: result.created_at,
-          // Indicate embeddings exist (search results always have embeddings)
-          embedding: { assetId: result.id },
-          embeddingStatus: 'ready' as const,
-          similarity: result.distance, // 0-1 score, higher is better
-          relevance: Math.round(result.distance * 100), // Percentage for UI
-          belowThreshold: false,
-          tags: assetTags.map((at: any) => ({
-            id: at.tag.id,
-            name: at.tag.name,
-          })),
-        };
-      })
-    );
+    const formattedResults = searchResults.map((result: VectorSearchRow) => createSplootApiSearchResult({
+      id: result.id,
+      blobUrl: result.blob_url,
+      thumbnailUrl: result.thumbnail_url ?? null,
+      similarity: result.distance,
+    }));
 
     const queryTime = Date.now() - startTime;
 
@@ -173,7 +215,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       // Failed to log search
     });
 
-    return NextResponse.json({
+    const responseBody: SplootApiSearchResponse = {
       results: formattedResults,
       query,
       total: formattedResults.length,
@@ -182,30 +224,34 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       threshold,
       requestedThreshold: threshold,
       processingTime: queryTime,
-      embeddingModel,
       cached: false,
       thresholdFallback: false,
-    });
+    };
+    return publicSearchJson(responseBody);
 
   } catch (error) {
     unstable_rethrow(error);
     // Error performing search
 
     if (error instanceof EmbeddingError) {
+      const failure = mapPublicEmbeddingError(error);
       return NextResponse.json(
         {
-          error: error.message,
+          error: failure.message,
+          code: failure.code,
+          retryable: failure.retryable,
           results: [],
           query: query || '',
           total: 0,
         },
-        { status: error.statusCode || 500 }
+        { status: failure.status }
       );
     }
 
     return NextResponse.json(
       {
         error: 'Failed to perform search',
+        code: 'server_error',
         results: [],
         query: query || '',
         total: 0,
@@ -247,7 +293,7 @@ export async function GET(req: NextRequest) {
       });
 
       return NextResponse.json({
-        searches: recentSearches.map((log: any) => ({
+        searches: recentSearches.map((log) => ({
           query: log.query,
           resultCount: log.resultCount,
           timestamp: log.createdAt,
@@ -270,7 +316,7 @@ export async function GET(req: NextRequest) {
       });
 
       return NextResponse.json({
-        searches: popularSearches.map((item: any) => ({
+        searches: popularSearches.map((item) => ({
           query: item.query,
           count: item._count.query,
         })),

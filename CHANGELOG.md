@@ -10,6 +10,8 @@ publishes them; GitHub Releases remain the authoritative changelog.
 
 The fleet moved to pre-stable 0.x semantics (Powder landmark-016/017): versions below 1.0.0 use Cargo-style bumps (breaking→minor, feat/fix→patch) and never cross 1.0.0 automatically; promotion to 1.0.0 is a deliberate manual tag. v0.23.2 is the same commit as v1.23.2. Earlier 1.x/2.x entries below record real history under the old numbering; their tags and GitHub releases were retired.
 
+- Public DTO boundary cut: token-scoped save/search contracts now omit storage path, filename, checksum, phash, near-duplicate internals, and provider/database embedding fields; `/api/upload/check` now returns the minimal same-tenant existence/readiness payload.
+
 # 1.0.0 (2026-01-24)
 
 

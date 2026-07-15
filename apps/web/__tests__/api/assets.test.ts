@@ -51,7 +51,27 @@ vi.mock("@/lib/embeddings", () => ({
   EmbeddingError: class EmbeddingError extends Error {},
 }));
 
-import { GET } from "@/app/api/assets/route";
+vi.mock("@/lib/runtime-gates", () => ({
+  getRuntimeGate: vi.fn((name: string) => ({
+    enabled: name === "uploads",
+    message: `${name} disabled in contract test`,
+  })),
+  runtimeGateResponse: vi.fn(() =>
+    new Response(JSON.stringify({ error: "runtime gate disabled" }), {
+      status: 503,
+      headers: { "content-type": "application/json" },
+    }),
+  ),
+}));
+
+vi.mock("@/lib/quota/storage-quota-policy", () => ({
+  reserveUploadBytes: vi.fn().mockResolvedValue({ id: "reservation-1" }),
+  releaseStorageQuotaReservation: vi.fn().mockResolvedValue(undefined),
+  storageQuotaError: vi.fn(),
+  StorageQuotaExceededError: class StorageQuotaExceededError extends Error {},
+}));
+
+import { GET, POST } from "@/app/api/assets/route";
 
 function request(searchParams: Record<string, string> = {}) {
   const url = new URL("http://localhost:3000/api/assets");
@@ -60,6 +80,27 @@ function request(searchParams: Record<string, string> = {}) {
   }
 
   return new NextRequest(url);
+}
+
+function uploadRequest() {
+  return new NextRequest("http://localhost:3000/api/assets", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      blobUrl: "https://blob.test/upload.png",
+      pathname: "memes/upload.png",
+      filename: "upload.png",
+      mimeType: "image/png",
+      size: 4096,
+      checksum: "checksum-upload",
+      width: 800,
+      height: 600,
+    }),
+  });
+}
+
+async function boundaryBody(response: Response): Promise<Record<string, unknown>> {
+  return JSON.parse(JSON.stringify(await response.json())) as Record<string, unknown>;
 }
 
 describe("GET /api/assets", () => {
@@ -126,20 +167,46 @@ describe("GET /api/assets", () => {
       }),
       { params: Promise.resolve({}) },
     );
-    const body = await response.json();
+    const body = await boundaryBody(response);
 
     expect(response.status).toBe(200);
-    expect(body.assets.map((asset: any) => asset.id)).toEqual([
-      "asset-b",
-      "asset-a",
-    ]);
-    // 048: the shuffle mapping must carry the stored thumbnail through to the grid.
-    expect(body.assets[0].thumbnailUrl).toBe("https://blob.test/thumb-b.png");
-    expect(body.pagination).toEqual({
-      total: 2,
-      limit: 2,
-      offset: 0,
-      hasMore: false,
+    expect(body).toEqual({
+      assets: [
+        {
+          id: "asset-b",
+          blobUrl: "https://blob.test/b.png",
+          thumbnailUrl: "https://blob.test/thumb-b.png",
+          pathname: "memes/b.png",
+          filename: "memes/b.png",
+          mime: "image/png",
+          size: 2048,
+          width: 640,
+          height: 480,
+          favorite: false,
+          createdAt: "2026-05-15T12:00:00.000Z",
+          tags: [],
+        },
+        {
+          id: "asset-a",
+          blobUrl: "https://blob.test/a.png",
+          pathname: "memes/a.png",
+          filename: "memes/a.png",
+          mime: "image/png",
+          size: 1024,
+          width: 320,
+          height: 240,
+          favorite: true,
+          createdAt: "2026-05-14T12:00:00.000Z",
+          thumbnailUrl: null,
+          tags: [],
+        },
+      ],
+      pagination: {
+        total: 2,
+        limit: 2,
+        offset: 0,
+        hasMore: false,
+      },
     });
     expect(mocks.prisma.$queryRaw).toHaveBeenCalledTimes(2);
 
@@ -162,11 +229,68 @@ describe("GET /api/assets", () => {
     expect(mocks.prisma.asset.findMany).not.toHaveBeenCalled();
   });
 
+  it("returns the normal list with the browser asset fields", async () => {
+    mocks.prisma.asset.findMany.mockResolvedValueOnce([
+      {
+        id: "asset-normal",
+        blobUrl: "https://blob.test/normal.png",
+        thumbnailUrl: null,
+        pathname: "memes/normal.png",
+        mime: "image/png",
+        size: 512,
+        width: 128,
+        height: 96,
+        favorite: false,
+        createdAt: new Date("2026-05-18T12:00:00.000Z"),
+        updatedAt: new Date("2026-05-18T12:00:00.000Z"),
+        embedding: {
+          assetId: "asset-normal",
+          modelName: "private-provider",
+          modelVersion: "private-version",
+          dim: 768,
+          status: "ready",
+          error: "provider poison",
+          createdAt: new Date("2026-05-18T12:01:00.000Z"),
+          updatedAt: new Date("2026-05-18T12:02:00.000Z"),
+        },
+        tags: [],
+      },
+    ]);
+
+    const response = await GET(request({ sortBy: "createdAt" }), {
+      params: Promise.resolve({}),
+    });
+    const body = await boundaryBody(response);
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      assets: [{
+        id: "asset-normal",
+        blobUrl: "https://blob.test/normal.png",
+        thumbnailUrl: null,
+        pathname: "memes/normal.png",
+        filename: "memes/normal.png",
+        mime: "image/png",
+        size: 512,
+        width: 128,
+        height: 96,
+        favorite: false,
+        createdAt: "2026-05-18T12:00:00.000Z",
+        tags: [],
+      }],
+      pagination: { total: 2, limit: 50, offset: 0, hasMore: false },
+    });
+    expect(body.assets[0]).not.toHaveProperty("embedding");
+    expect(body.assets[0]).not.toHaveProperty("embeddingError");
+    expect(body.assets[0]).not.toHaveProperty("modelName");
+    expect(body.assets[0]).not.toHaveProperty("updatedAt");
+  });
+
   it("requires shuffleSeed when sortBy is shuffle", async () => {
     const response = await GET(request({ sortBy: "shuffle" }), {
       params: Promise.resolve({}),
     });
-    const body = await response.json();
+    const body = await boundaryBody(response);
 
     expect(response.status).toBe(400);
     expect(body.error).toBe("shuffleSeed is required when sortBy=shuffle.");
@@ -361,5 +485,103 @@ describe("GET /api/assets", () => {
     expect(response.status).toBe(400);
     expect(body.error).toBe("Invalid limit parameter. Must be integer 1-100.");
     expect(mocks.prisma.asset.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns the duplicate upload through the upload response contract", async () => {
+    mocks.requireUserIdWithSync.mockResolvedValue("user-123");
+    mocks.prisma.asset.findFirst.mockResolvedValue({
+      id: "existing-asset",
+      blobUrl: "https://blob.test/existing.png",
+      pathname: "memes/existing.png",
+      mime: "image/png",
+      size: 1024,
+      width: 320,
+      height: 240,
+      favorite: true,
+      createdAt: new Date("2026-05-10T12:00:00.000Z"),
+      embedding: {
+        status: "unavailable",
+        dim: 768,
+        modelName: "provider-secret",
+        modelVersion: "billing-version",
+        error: "raw-provider-error",
+        retryCount: 9,
+      },
+      tags: [],
+    });
+
+    const response = await POST(uploadRequest(), { params: Promise.resolve({}) });
+    const body = await boundaryBody(response);
+
+    expect(response.status).toBe(200);
+    expect(Object.keys(body).sort()).toEqual(['asset', 'duplicate', 'message']);
+    expect(body).toEqual({
+      asset: {
+        id: "existing-asset",
+        blobUrl: "https://blob.test/existing.png",
+        pathname: "memes/existing.png",
+        filename: "existing.png",
+        mime: "image/png",
+        size: 1024,
+        width: 320,
+        height: 240,
+      favorite: true,
+      createdAt: "2026-05-10T12:00:00.000Z",
+      thumbnailUrl: null,
+    },
+      message: "Asset already exists",
+      duplicate: true,
+    });
+  });
+
+  it("returns the created upload through the upload response contract", async () => {
+    mocks.requireUserIdWithSync.mockResolvedValue("user-123");
+    mocks.prisma.asset.findFirst.mockResolvedValue(null);
+    mocks.prisma.asset.create.mockResolvedValue({
+      id: "created-asset",
+      blobUrl: "https://blob.test/upload.png",
+      pathname: "memes/upload.png",
+      mime: "image/png",
+      size: 4096,
+      width: 800,
+      height: 600,
+      favorite: false,
+      createdAt: new Date("2026-05-16T12:00:00.000Z"),
+      embedding: {
+        status: "unavailable",
+        dim: 768,
+        modelName: "provider-secret",
+        modelVersion: "billing-version",
+        error: "raw-provider-error",
+        retryCount: 9,
+      },
+      tags: [{ tag: { id: "tag-1", name: "reaction" } }],
+    });
+
+    const response = await POST(uploadRequest(), { params: Promise.resolve({}) });
+    const body = await boundaryBody(response);
+
+    expect(response.status).toBe(201);
+    expect(Object.keys(body).sort()).toEqual(['asset', 'message']);
+    expect(body).toEqual({
+      asset: {
+        id: "created-asset",
+        blobUrl: "https://blob.test/upload.png",
+        pathname: "memes/upload.png",
+        filename: "memes/upload.png",
+        mime: "image/png",
+        size: 4096,
+        width: 800,
+        height: 600,
+        favorite: false,
+        createdAt: "2026-05-16T12:00:00.000Z",
+        embeddingStatus: "unavailable",
+        tags: [{ id: "tag-1", name: "reaction" }],
+        thumbnailUrl: null,
+      },
+      message: "Asset created successfully",
+    });
+    expect(body.asset).not.toHaveProperty("embeddingError");
+    expect(body.asset).not.toHaveProperty("embedding");
   });
 });

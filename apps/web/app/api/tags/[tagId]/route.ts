@@ -84,7 +84,6 @@ async function patchHandler(
         id: updatedTag.id,
         name: updatedTag.name,
         color: updatedTag.color,
-        updatedAt: updatedTag.updatedAt,
       },
     });
   } catch (error) {

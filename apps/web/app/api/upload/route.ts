@@ -12,6 +12,19 @@ import {
   StorageQuotaExceededError,
 } from '@/lib/quota/storage-quota-policy';
 import { withObservability } from '@/lib/with-observability';
+import type { SplootApiUploadResponse, SplootApiUploadSuccessResponse } from '@sploot/common';
+
+function toPublicUploadAsset(asset: {
+  id: string;
+  blobUrl: string;
+  thumbnailUrl: string | null;
+}): SplootApiUploadSuccessResponse['asset'] {
+  return {
+    id: asset.id,
+    blobUrl: asset.blobUrl,
+    thumbnailUrl: asset.thumbnailUrl,
+  };
+}
 
 /**
  * Configure route segment options
@@ -57,7 +70,8 @@ async function postHandler(req: NextRequest) {
 
     if (!file) {
       logger.info('Upload failed - no file provided', { userId, duration: Date.now() - startTime });
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      const responseBody = { success: false, error: 'No file provided' } satisfies SplootApiUploadResponse;
+      return NextResponse.json(responseBody, { status: 400 });
     }
 
     // Parse tags
@@ -75,31 +89,45 @@ async function postHandler(req: NextRequest) {
     const result = await ingestImage({ userId, file, tags, syncEmbeddings });
 
     if (result.kind === 'invalid') {
+      const responseBody = {
+        success: false,
+        error: result.error.userMessage,
+      } satisfies SplootApiUploadResponse;
       return NextResponse.json(
-        { success: false, error: result.error.userMessage },
+        responseBody,
         { status: result.error.statusCode }
       );
     }
 
     if (result.kind === 'duplicate') {
+      const responseBody = {
+        success: true,
+        isDuplicate: true,
+        asset: toPublicUploadAsset({
+          id: result.asset.id,
+          blobUrl: result.asset.blobUrl,
+          thumbnailUrl: result.asset.thumbnailUrl,
+        }),
+        message: 'This image already exists in your library',
+      } satisfies SplootApiUploadResponse;
       return NextResponse.json(
-        {
-          success: true,
-          isDuplicate: true,
-          asset: result.asset,
-          message: 'This image already exists in your library',
-        },
+        responseBody,
         { status: 409 }
       );
     }
 
+    const responseBody = {
+      success: true,
+      isDuplicate: false,
+      asset: toPublicUploadAsset({
+        id: result.asset.id,
+        blobUrl: result.asset.blobUrl,
+        thumbnailUrl: result.asset.thumbnailUrl,
+      }),
+      message: 'Upload successful',
+    } satisfies SplootApiUploadResponse;
     return NextResponse.json(
-      {
-        success: true,
-        isDuplicate: false,
-        asset: result.asset,
-        message: 'Upload successful',
-      },
+      responseBody,
       { status: 201 }
     );
   } catch (error) {
@@ -110,7 +138,8 @@ async function postHandler(req: NextRequest) {
     }
 
     if (error instanceof StorageQuotaExceededError) {
-      return NextResponse.json(storageQuotaError(error.snapshot), { status: 403 });
+      const responseBody = storageQuotaError(error.snapshot) satisfies SplootApiUploadResponse;
+      return NextResponse.json(responseBody, { status: 403 });
     }
 
     logger.error('Upload endpoint error', {
@@ -120,16 +149,15 @@ async function postHandler(req: NextRequest) {
     });
 
     // Return generic error to client, full details logged server-side only
-    return NextResponse.json(
-      {
-        error: 'Upload failed',
-        // Only include error details in development for debugging
-        details: process.env.NODE_ENV === 'development'
-          ? (error instanceof Error ? error.message : String(error))
-          : undefined,
-      },
-      { status: 500 }
-    );
+    const responseBody = {
+      success: false,
+      error: 'Upload failed',
+      // Only include error details in development for debugging
+      details: process.env.NODE_ENV === 'development'
+        ? (error instanceof Error ? error.message : String(error))
+        : undefined,
+    } satisfies SplootApiUploadResponse;
+    return NextResponse.json(responseBody, { status: 500 });
   }
 }
 

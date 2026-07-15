@@ -55,6 +55,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm provider:check
       - run: pnpm provider:test
+      - run: pnpm lint:asset-grid-dto
+      - run: pnpm --filter web check:api-docs
       - run: pnpm turbo run lint
 
   type-check:

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
+import { normalizeAssetToGridDto } from '@/lib/asset-grid-dto';
 
 export const MIN_TASTE_BANGER_EMBEDDINGS = 2;
 
@@ -16,13 +17,7 @@ export interface TasteAssetRow {
   favorite: boolean;
   size: number;
   createdAt: Date;
-  updatedAt: Date;
   tasteScore: number;
-  embeddingId: string | null;
-  embeddingModelName: string | null;
-  embeddingModelVersion: string | null;
-  embeddingStatus: string | null;
-  embeddingCreatedAt: Date | null;
 }
 
 export interface TasteAssetQueryOptions {
@@ -132,14 +127,27 @@ export async function getTasteProfile(userId: string): Promise<TasteProfile> {
     embeddedBangerCount,
     label: 'near your bangers',
     summary: `sploot is comparing ${embeddedBangerCount} embedded bangers against the rest of your library.`,
-    representativeAssets: assets.map((asset) => ({
-      id: asset.id,
-      blobUrl: asset.blobUrl,
-      pathname: asset.pathname,
-      mime: asset.mime,
-      favorite: asset.favorite,
-      tasteScore: Number(asset.tasteScore.toFixed(3)),
-    })),
+    representativeAssets: assets.map((asset) => {
+      const normalized = normalizeAssetToGridDto(asset, {
+        includeThumbnailUrl: false,
+        tasteScore: {
+          tasteScore: Number(asset.tasteScore.toFixed(3)),
+        },
+      });
+      const tasteScore = normalized.tasteScore;
+      if (tasteScore === undefined) {
+        throw new Error(`Taste normalization omitted score for asset ${asset.id}`);
+      }
+
+      return {
+        id: normalized.id,
+        blobUrl: normalized.blobUrl,
+        pathname: normalized.pathname,
+        mime: normalized.mime,
+        favorite: normalized.favorite,
+        tasteScore,
+      };
+    }),
   };
 }
 
@@ -221,13 +229,7 @@ async function fetchTasteAssets(options: TasteAssetQueryOptions): Promise<TasteA
       a.favorite,
       a.size,
       a."createdAt",
-      a."updatedAt",
-      1 - (ae.image_embedding <=> tc.centroid) AS "tasteScore",
-      ae.asset_id AS "embeddingId",
-      ae.model_name AS "embeddingModelName",
-      ae.model_version AS "embeddingModelVersion",
-      ae.status AS "embeddingStatus",
-      ae."createdAt" AS "embeddingCreatedAt"
+      1 - (ae.image_embedding <=> tc.centroid) AS "tasteScore"
     FROM "assets" a
     INNER JOIN "asset_embeddings" ae ON ae.asset_id = a.id
     CROSS JOIN taste_centroid tc

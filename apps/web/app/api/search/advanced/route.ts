@@ -1,34 +1,88 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import { SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
 import { unstable_rethrow } from 'next/navigation';
-import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
 import { getAuth } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
-import { embeddingVectorSql as createEmbeddingVectorSql } from '@/lib/embedding-vector-sql';
 import { logError } from '@/lib/observability-logger';
+import { EmbeddingVectorValidationError } from '@/lib/embedding-vector-sql';
+import {
+  executeAdvancedSearchQuery,
+  type AdvancedSearchSortBy,
+} from '@/lib/search/advanced-search-query';
+import { normalizeCachedSearchPage } from '@/lib/asset-grid-dto';
+import { mapPublicEmbeddingError } from '@/lib/search/public-search-errors';
+import type {
+  AdvancedSearchErrorResponse,
+  AdvancedSearchFilters,
+  AdvancedSearchResponse,
+} from '@/lib/types';
+import type { SplootApiSearchResultDto } from '@sploot/common';
+import { createSplootApiSearchResult } from '@sploot/common';
 
-interface SearchFilters {
-  favorites?: boolean;
-  mimeTypes?: string[];
-  tags?: string[];
-  dateFrom?: string;
-  dateTo?: string;
-  minWidth?: number;
-  minHeight?: number;
+const ADVANCED_BODY_KEYS = ['query', 'filters', 'limit', 'offset', 'threshold', 'sortBy', 'seed'] as const;
+const ADVANCED_FILTER_KEYS = ['favorites', 'mimeTypes', 'tags', 'dateFrom', 'dateTo', 'minWidth', 'minHeight'] as const;
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+function parseAdvancedFilters(value: unknown): AdvancedSearchFilters | null {
+  if (value === undefined) return {};
+  if (!isPlainRecord(value) || !hasOnlyKeys(value, ADVANCED_FILTER_KEYS)) return null;
+  const filters: AdvancedSearchFilters = {};
+  if (value.favorites !== undefined) {
+    if (typeof value.favorites !== 'boolean') return null;
+    filters.favorites = value.favorites;
+  }
+  for (const key of ['mimeTypes', 'tags'] as const) {
+    if (value[key] !== undefined) {
+      if (!Array.isArray(value[key]) || value[key].length > 50 ||
+          !value[key].every((item): item is string => typeof item === 'string' && item.length > 0 && item.length < 100)) return null;
+      filters[key] = [...value[key]];
+    }
+  }
+  for (const key of ['dateFrom', 'dateTo'] as const) {
+    if (value[key] !== undefined) {
+      if (typeof value[key] !== 'string' || !isValidISODate(value[key])) return null;
+      filters[key] = value[key];
+    }
+  }
+  for (const key of ['minWidth', 'minHeight'] as const) {
+    if (value[key] !== undefined) {
+      if (!Number.isSafeInteger(value[key]) || (value[key] as number) < 0) return null;
+      filters[key] = value[key] as number;
+    }
+  }
+  return filters;
+}
+
+function invalidAdvancedParameter(field: string) {
+  return NextResponse.json(
+    { error: `Invalid ${field} parameter`, code: 'invalid_search_parameter' },
+    { status: 400 },
+  );
 }
 
 async function postHandler(req: NextRequest) {
   const startTime = Date.now();
   let query: string = '';
-  let filters: SearchFilters = {};
+  let filters: AdvancedSearchFilters = {};
   let limit: number = 30;
   let offset: number = 0;
   let threshold: number = SEARCH_SIMILARITY_FLOOR;
   let sortBy: string = 'relevance';
+  let seed: number | null = null;
 
   try {
     const { userId } = await getAuth();
@@ -39,27 +93,41 @@ async function postHandler(req: NextRequest) {
       );
     }
 
-    const body = await req.json();
-    ({
-      query,
-      filters = {} as SearchFilters,
-      limit = 30,
-      offset = 0,
-      threshold = SEARCH_SIMILARITY_FLOOR,
-      sortBy = 'relevance', // 'relevance', 'date', 'favorite'
-    } = body);
+    const body: unknown = await req.json();
+    if (!isPlainRecord(body) || !hasOnlyKeys(body, ADVANCED_BODY_KEYS)) {
+      return invalidAdvancedParameter('request body');
+    }
+    if (typeof body.query !== 'string' || body.query.length === 0 || body.query.length > 500) {
+      return invalidAdvancedParameter('query');
+    }
+    query = body.query;
+    const parsedFilters = parseAdvancedFilters(body.filters);
+    if (parsedFilters === null) return invalidAdvancedParameter('filters');
+    filters = parsedFilters;
+    if (body.limit !== undefined) limit = body.limit as number;
+    if (body.offset !== undefined) offset = body.offset as number;
+    if (body.threshold !== undefined) threshold = body.threshold as number;
+    if (body.sortBy !== undefined) sortBy = body.sortBy as string;
+    if (body.seed !== undefined) seed = body.seed as number | null;
 
     // Validate pagination bounds to prevent DoS
     const MAX_LIMIT = 100;
     const MAX_OFFSET = 10000;
-    limit = Math.min(Math.max(1, Math.floor(Number(limit) || 30)), MAX_LIMIT);
-    offset = Math.min(Math.max(0, Math.floor(Number(offset) || 0)), MAX_OFFSET);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_LIMIT) {
+      return invalidAdvancedParameter('limit');
+    }
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > MAX_OFFSET) {
+      return invalidAdvancedParameter('offset');
+    }
+    if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+      return invalidAdvancedParameter('threshold');
+    }
+    if (seed !== null && (!Number.isSafeInteger(seed) || seed < 0 || seed > 1000000)) {
+      return invalidAdvancedParameter('seed');
+    }
 
-    if (!query || typeof query !== 'string') {
-      return NextResponse.json(
-        { error: 'Missing or invalid query parameter' },
-        { status: 400 }
-      );
+    if (typeof sortBy !== 'string' || !['relevance', 'date', 'favorite'].includes(sortBy)) {
+      return invalidAdvancedParameter('sortBy');
     }
 
     if (!prisma) {
@@ -72,28 +140,38 @@ async function postHandler(req: NextRequest) {
     // Get cache service
     const cache = getCacheService();
 
-    // Check cache for advanced search results
+    const validSortOptions = ['relevance', 'date', 'favorite'] as const;
+    const validatedSortBy: AdvancedSearchSortBy = validSortOptions.find((option) => option === sortBy)!;
+
+    // Check cache for advanced search results. The cache stores the authoritative
+    // total and seed alongside the exact public result DTOs.
     const cacheKey = {
       filters,
       limit,
       offset,
       threshold,
-      sortBy,
+      sortBy: validatedSortBy,
+      seed,
     };
-    const cachedResults = await cache.getSearchResults(userId, query, cacheKey);
+    const cachedPage = typeof cache.getSearchResultsPage === 'function'
+      ? await cache.getSearchResultsPage(userId, query, cacheKey)
+      : null;
 
-    if (cachedResults) {
-      // Cache hit for advanced search
-      return NextResponse.json({
-        results: cachedResults,
+    const normalizedCachedPage = cachedPage ? normalizeCachedSearchPage(cachedPage) : null;
+    if (normalizedCachedPage) {
+      const responseBody: AdvancedSearchResponse = {
+        results: normalizedCachedPage.results,
         query,
-        total: cachedResults.length,
-        limit,
-        offset,
+        filters,
+        sortBy: validatedSortBy,
+        pagination: { total: normalizedCachedPage.total, page: Math.floor(offset / limit) + 1, limit, offset, hasMore: offset + limit < normalizedCachedPage.total },
+        seed: normalizedCachedPage.seed,
         processingTime: Date.now() - startTime,
-        searchType: 'vector',
+        searchType: 'semantic',
         cached: true,
-      });
+        error: null,
+      };
+      return NextResponse.json(responseBody);
     }
 
     const embeddingGate = getRuntimeGate('embeddings');
@@ -109,183 +187,67 @@ async function postHandler(req: NextRequest) {
       // Failed to initialize embedding service
 
       // Fallback to metadata-only search when embeddings unavailable
-      const assets = await performMetadataSearch(userId, query, filters, limit, offset);
+      const assets = await performMetadataSearch(userId, query, filters, limit, offset, validatedSortBy, seed);
 
-      return NextResponse.json({
-        results: assets,
+      const responseBody: AdvancedSearchResponse = {
+        results: assets.results,
         query,
-        total: assets.length,
-        limit,
-        offset,
+        filters,
+        sortBy: validatedSortBy,
+        pagination: { total: assets.total, page: Math.floor(offset / limit) + 1, limit, offset, hasMore: offset + limit < assets.total },
+        seed,
         processingTime: Date.now() - startTime,
         searchType: 'metadata',
+        cached: false,
         error: 'Semantic search unavailable. Showing filename matches.',
-      });
+      };
+      return NextResponse.json(responseBody);
     }
 
     // Generate text embedding
     const embeddingResult = await embeddingService.embedText(query);
 
-    let embeddingVectorSql: Prisma.Sql;
+    let queryResult: Awaited<ReturnType<typeof executeAdvancedSearchQuery>>;
     try {
-      embeddingVectorSql = createEmbeddingVectorSql(
-        embeddingResult.embedding,
-        'advanced search query embedding'
-      );
+      queryResult = await executeAdvancedSearchQuery(prisma, {
+        userId,
+        embedding: embeddingResult.embedding,
+        filters,
+        threshold,
+        limit,
+        offset,
+        sortBy: validatedSortBy,
+        seed,
+      });
     } catch (error) {
-      logError('advanced-search:invalid-query-embedding', error, {
+      logError('advanced-search:query-failed', error, {
         embeddingLength: Array.isArray(embeddingResult.embedding)
           ? embeddingResult.embedding.length
           : 'invalid',
       });
-      return NextResponse.json(
-        { error: 'Invalid embedding format from service' },
-        { status: 500 }
-      );
+      const responseBody: AdvancedSearchErrorResponse = {
+        error: error instanceof EmbeddingVectorValidationError
+          ? 'Invalid embedding format from service'
+          : 'Failed to perform advanced search',
+        code: error instanceof EmbeddingVectorValidationError ? 'invalid_embedding' : 'server_error',
+        results: [],
+        query,
+        pagination: { total: 0, page: Math.floor(offset / limit) + 1, limit, offset, hasMore: false },
+      };
+      return NextResponse.json(responseBody, { status: 500 });
     }
 
-    // Build parameterized query using Prisma.sql to prevent SQL injection
-    // All user inputs are properly parameterized
-
-    // Validate and sanitize filter inputs
-    const validatedMimeTypes = filters.mimeTypes?.filter(
-      (m): m is string => typeof m === 'string' && m.length > 0 && m.length < 100
-    ) || [];
-
-    const validatedDateFrom = filters.dateFrom && isValidISODate(filters.dateFrom)
-      ? new Date(filters.dateFrom)
-      : null;
-
-    const validatedDateTo = filters.dateTo && isValidISODate(filters.dateTo)
-      ? new Date(filters.dateTo)
-      : null;
-
-    const validatedMinWidth = typeof filters.minWidth === 'number' && filters.minWidth > 0
-      ? Math.floor(filters.minWidth)
-      : null;
-
-    const validatedMinHeight = typeof filters.minHeight === 'number' && filters.minHeight > 0
-      ? Math.floor(filters.minHeight)
-      : null;
-
-    // Validate sortBy to prevent SQL injection in ORDER BY
-    const validSortOptions = ['relevance', 'date', 'favorite'] as const;
-    const validatedSortBy = validSortOptions.includes(sortBy as any) ? sortBy : 'relevance';
-
-    const orderByClauses: Record<string, Prisma.Sql> = {
-      date: Prisma.sql`a.created_at DESC`,
-      favorite: Prisma.sql`a.favorite DESC, ae.image_embedding <=> ${embeddingVectorSql}`,
-      relevance: Prisma.sql`ae.image_embedding <=> ${embeddingVectorSql}`,
-    };
-    const orderByClause = orderByClauses[validatedSortBy];
-
-    // Execute parameterized search query
-    // Using Prisma.sql template literal for safe parameterization
-    const results = await prisma!.$queryRaw<Array<{
-      id: string;
-      blob_url: string;
-      pathname: string;
-      filename: string;
-      mime: string;
-      size: number;
-      width: number | null;
-      height: number | null;
-      favorite: boolean;
-      created_at: Date;
-      updated_at: Date;
-      similarity: number;
-      total_count: bigint;
-    }>>(Prisma.sql`
-      SELECT
-        a.id,
-        a.blob_url,
-        a.pathname,
-        a.filename,
-        a.mime,
-        a.size,
-        a.width,
-        a.height,
-        a.favorite,
-        a.created_at,
-        a.updated_at,
-        1 - (ae.image_embedding <=> ${embeddingVectorSql}) as similarity,
-        COUNT(*) OVER() as total_count
-      FROM assets a
-      INNER JOIN asset_embeddings ae ON a.id = ae.asset_id
-      WHERE a.owner_user_id = ${userId}
-        AND a.deleted_at IS NULL
-        AND 1 - (ae.image_embedding <=> ${embeddingVectorSql}) > ${threshold}
-        ${filters.favorites === true ? Prisma.sql`AND a.favorite = true` : Prisma.empty}
-        ${validatedMimeTypes.length > 0 ? Prisma.sql`AND a.mime = ANY(${validatedMimeTypes})` : Prisma.empty}
-        ${validatedDateFrom ? Prisma.sql`AND a.created_at >= ${validatedDateFrom}` : Prisma.empty}
-        ${validatedDateTo ? Prisma.sql`AND a.created_at <= ${validatedDateTo}` : Prisma.empty}
-        ${validatedMinWidth ? Prisma.sql`AND a.width >= ${validatedMinWidth}` : Prisma.empty}
-        ${validatedMinHeight ? Prisma.sql`AND a.height >= ${validatedMinHeight}` : Prisma.empty}
-      ORDER BY ${orderByClause}
-      LIMIT ${limit}
-      OFFSET ${offset}
-    `);
-
-    // Handle tag filtering if specified
-    let filteredResults = results;
-    if (filters.tags && filters.tags.length > 0) {
-      const assetIds = results.map(r => r.id);
-      const assetsWithTags = await prisma!.asset.findMany({
-        where: {
-          id: { in: assetIds },
-          tags: {
-            some: {
-              tag: {
-                name: { in: filters.tags },
-              },
-            },
-          },
-        },
-        select: { id: true },
-      });
-
-      const taggedAssetIds = new Set(assetsWithTags.map((a: any) => a.id));
-      filteredResults = results.filter((r: any) => taggedAssetIds.has(r.id));
-    }
-
-    // Get tags for all results
-    const resultIds = filteredResults.map((r: any) => r.id);
-    const allTags = await prisma!.assetTag.findMany({
-      where: { assetId: { in: resultIds } },
-      include: { tag: true },
-    });
-
-    // Group tags by asset
-    const tagsByAsset = allTags.reduce((acc: any, at: any) => {
-      if (!acc[at.assetId]) acc[at.assetId] = [];
-      acc[at.assetId].push({
-        id: at.tag.id,
-        name: at.tag.name,
-      });
-      return acc;
-    }, {} as Record<string, Array<{ id: string; name: string }>>);
+    const { rows: results, totalCount } = queryResult;
 
     // Format results
-    const formattedResults = filteredResults.map((result: any) => ({
+    const formattedResults = results.map((result) => createSplootApiSearchResult({
       id: result.id,
       blobUrl: result.blob_url,
-      pathname: result.pathname,
-      filename: result.filename,
-      mime: result.mime,
-      size: result.size,
-      width: result.width,
-      height: result.height,
-      favorite: result.favorite,
-      createdAt: result.created_at,
-      updatedAt: result.updated_at,
+      thumbnailUrl: result.thumbnail_url ?? null,
       similarity: result.similarity,
-      relevance: Math.round(result.similarity * 100),
-      tags: tagsByAsset[result.id] || [],
     }));
 
     const queryTime = Date.now() - startTime;
-    const totalCount = results.length > 0 ? Number(results[0].total_count) : 0;
-
     // Cache the search results
     if (formattedResults.length > 0) {
       const cacheKey = {
@@ -293,9 +255,10 @@ async function postHandler(req: NextRequest) {
         limit,
         offset,
         threshold,
-        sortBy,
+        sortBy: validatedSortBy,
+        seed,
       };
-      await cache.setSearchResults(userId, query, cacheKey, formattedResults);
+      await cache.setSearchResults(userId, query, cacheKey, formattedResults, { total: totalCount, seed });
     }
 
     // Log search
@@ -308,48 +271,45 @@ async function postHandler(req: NextRequest) {
       },
     }).catch(() => {});
 
-    return NextResponse.json({
+    const responseBody: AdvancedSearchResponse = {
       results: formattedResults,
       query,
       filters,
-      sortBy,
-      pagination: {
-        total: totalCount,
-        limit,
-        offset,
-        hasMore: offset + limit < totalCount,
-      },
+      sortBy: validatedSortBy,
+      pagination: { total: totalCount, page: Math.floor(offset / limit) + 1, limit, offset, hasMore: offset + limit < totalCount },
+      seed,
       processingTime: queryTime,
-      embeddingModel: embeddingResult.model,
       searchType: 'semantic',
       cached: false,
-    });
+      error: null,
+    };
+    return NextResponse.json(responseBody);
 
   } catch (error) {
     unstable_rethrow(error);
     // Error performing advanced search
 
     if (error instanceof EmbeddingError) {
-      return NextResponse.json(
-        {
-          error: error.message,
-          results: [],
-          query: query || '',
-          pagination: { total: 0, limit: limit || 30, offset: offset || 0, hasMore: false },
-        },
-        { status: error.statusCode || 500 }
-      );
-    }
-
-    return NextResponse.json(
-      {
-        error: 'Failed to perform advanced search',
+      const failure = mapPublicEmbeddingError(error);
+      const responseBody: AdvancedSearchErrorResponse = {
+        error: failure.message,
+        code: failure.code,
+        retryable: failure.retryable,
         results: [],
         query: query || '',
-        pagination: { total: 0, limit: limit || 30, offset: offset || 0, hasMore: false },
-      },
-      { status: 500 }
-    );
+        pagination: { total: 0, page: Math.floor((offset || 0) / (limit || 30)) + 1, limit: limit || 30, offset: offset || 0, hasMore: false },
+      };
+      return NextResponse.json(responseBody, { status: failure.status });
+    }
+
+    const responseBody: AdvancedSearchErrorResponse = {
+      error: 'Failed to perform advanced search',
+      code: 'server_error',
+      results: [],
+      query: query || '',
+      pagination: { total: 0, page: Math.floor((offset || 0) / (limit || 30)) + 1, limit: limit || 30, offset: offset || 0, hasMore: false },
+    };
+    return NextResponse.json(responseBody, { status: 500 });
   }
 }
 
@@ -359,14 +319,16 @@ export const POST = withObservability(postHandler, { operation: 'search:advanced
 async function performMetadataSearch(
   userId: string,
   query: string,
-  filters: SearchFilters,
+  filters: AdvancedSearchFilters,
   limit: number,
-  offset: number
-) {
-  const where: any = {
+  offset: number,
+  sortBy: AdvancedSearchSortBy,
+  seed: number | null,
+): Promise<{ results: SplootApiSearchResultDto[]; total: number }> {
+  const where: Prisma.AssetWhereInput = {
     ownerUserId: userId,
     deletedAt: null,
-    filename: {
+    pathname: {
       contains: query,
       mode: 'insensitive',
     },
@@ -398,11 +360,26 @@ async function performMetadataSearch(
     where.height = { gte: filters.minHeight };
   }
 
-  const assets = await prisma!.asset.findMany({
+  const tagFilters = (filters.tags ?? []).filter(
+    (tag): tag is string => typeof tag === 'string' && tag.length > 0 && tag.length < 100,
+  );
+  if (tagFilters.length > 0) {
+    where.tags = {
+      some: {
+        tag: { ownerUserId: userId, name: { in: tagFilters } },
+      },
+    };
+  }
+
+  const orderBy = sortBy === 'favorite'
+    ? [{ favorite: 'desc' as const }, { createdAt: 'desc' as const }]
+    : [{ createdAt: 'desc' as const }];
+
+  const [assets, total] = await Promise.all([
+    prisma!.asset.findMany({
     where,
-    take: limit,
-    skip: offset,
-    orderBy: { createdAt: 'desc' },
+    ...(seed === null ? { take: limit, skip: offset } : {}),
+    orderBy,
     include: {
       tags: {
         include: {
@@ -410,27 +387,33 @@ async function performMetadataSearch(
         },
       },
     },
-  });
+    }),
+    prisma!.asset.count({ where }),
+  ]);
 
-  return assets.map((asset: any) => ({
-    id: asset.id,
-    blobUrl: asset.blobUrl,
-    pathname: asset.pathname,
-    filename: asset.filename,
-    mime: asset.mime,
-    size: asset.size,
-    width: asset.width,
-    height: asset.height,
-    favorite: asset.favorite,
-    createdAt: asset.createdAt,
-    updatedAt: asset.updatedAt,
-    similarity: 0,
-    relevance: 0,
-    tags: asset.tags.map((at: any) => ({
-      id: at.tag.id,
-      name: at.tag.name,
+  const orderedAssets = seed === null ? assets : [...assets].sort((a, b) => {
+    if (sortBy === 'favorite' && a.favorite !== b.favorite) return a.favorite ? -1 : 1;
+    if (sortBy === 'date') {
+      const dateOrder = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (dateOrder !== 0) return dateOrder;
+    }
+    const hash = (id: string) => {
+      let value = 2166136261 ^ seed;
+      for (const char of id) value = Math.imul(value ^ char.charCodeAt(0), 16777619);
+      return value >>> 0;
+    };
+    return hash(a.id) - hash(b.id) || a.id.localeCompare(b.id);
+  }).slice(offset, offset + limit);
+
+  return {
+    results: orderedAssets.map((asset) => createSplootApiSearchResult({
+      id: asset.id,
+      blobUrl: asset.blobUrl,
+      thumbnailUrl: asset.thumbnailUrl ?? null,
+      similarity: 0,
     })),
-  }));
+    total,
+  };
 }
 
 // Helper to validate ISO 8601 date strings
@@ -441,55 +424,4 @@ function isValidISODate(dateStr: string): boolean {
   if (!isoPattern.test(dateStr)) return false;
   const date = new Date(dateStr);
   return !isNaN(date.getTime());
-}
-
-function applyMockFilters(results: any[], filters: SearchFilters, sortBy: string) {
-  let filtered = [...results];
-
-  if (filters.favorites === true) {
-    filtered = filtered.filter(item => item.favorite);
-  }
-
-  if (filters.mimeTypes && filters.mimeTypes.length > 0) {
-    filtered = filtered.filter(item => filters.mimeTypes!.includes(item.mime));
-  }
-
-  if (filters.tags && filters.tags.length > 0) {
-    filtered = filtered.filter(item =>
-      item.tags?.some((tag: any) => filters.tags!.includes(tag.name))
-    );
-  }
-
-  if (filters.dateFrom) {
-    const from = new Date(filters.dateFrom);
-    filtered = filtered.filter(item => new Date(item.createdAt) >= from);
-  }
-
-  if (filters.dateTo) {
-    const to = new Date(filters.dateTo);
-    filtered = filtered.filter(item => new Date(item.createdAt) <= to);
-  }
-
-  if (filters.minWidth) {
-    filtered = filtered.filter(item => (item.width ?? 0) >= filters.minWidth!);
-  }
-
-  if (filters.minHeight) {
-    filtered = filtered.filter(item => (item.height ?? 0) >= filters.minHeight!);
-  }
-
-  switch (sortBy) {
-    case 'date':
-      filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      break;
-    case 'favorite':
-      filtered.sort((a, b) => Number(b.favorite) - Number(a.favorite));
-      break;
-    case 'relevance':
-    default:
-      filtered.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
-      break;
-  }
-
-  return filtered;
 }

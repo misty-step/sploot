@@ -29,6 +29,16 @@ import {
   getTasteWeightedAssets,
   MIN_TASTE_BANGER_EMBEDDINGS,
 } from "@/lib/taste/taste-engine";
+import {
+  normalizeAssetToGridDto,
+} from "@/lib/asset-grid-dto";
+import type {
+  AssetGridCamelSource,
+  AssetListResponse,
+  AssetGridTasteScoreExtension,
+  AssetUploadCreatedResponse,
+  AssetUploadDuplicateResponse,
+} from "@/lib/types";
 
 // Shuffle seed range: 0-1000000 for user-friendly integer values
 // Asset shuffle keys are stable signed BIGINT values.
@@ -63,24 +73,7 @@ function shuffleSeedToPivot(seed: number): bigint {
   return (BigInt(seed) * MAX_SHUFFLE_KEY) / BigInt(MAX_SHUFFLE_SEED);
 }
 
-type AssetListRow = {
-  id: string;
-  blobUrl: string;
-  thumbnailUrl: string | null;
-  pathname: string;
-  mime: string;
-  width: number | null;
-  height: number | null;
-  favorite: boolean;
-  size: number;
-  createdAt: Date;
-  updatedAt: Date;
-  embeddingId: string | null;
-  embeddingModelName: string | null;
-  embeddingModelVersion: string | null;
-  embeddingStatus: string | null;
-  embeddingCreatedAt: Date | null;
-};
+type AssetListRow = AssetGridCamelSource & Partial<AssetGridTasteScoreExtension>;
 
 type ShuffleQueryOptions = {
   userId: string;
@@ -145,7 +138,6 @@ async function fetchShuffleSegment(
         a.favorite,
         a.size,
         a."createdAt",
-        a."updatedAt",
         a.shuffle_key
       FROM "assets" a
       WHERE
@@ -169,15 +161,8 @@ async function fetchShuffleSegment(
       a.height,
       a.favorite,
       a.size,
-      a."createdAt",
-      a."updatedAt",
-      ae.asset_id as "embeddingId",
-      ae.model_name as "embeddingModelName",
-      ae.model_version as "embeddingModelVersion",
-      ae.status as "embeddingStatus",
-      ae."createdAt" as "embeddingCreatedAt"
+      a."createdAt"
     FROM picked_assets a
-    LEFT JOIN "asset_embeddings" ae ON ae.asset_id = a.id
     ORDER BY a.shuffle_key ASC, a.id ASC
   `;
 }
@@ -286,23 +271,12 @@ async function postHandler(req: NextRequest) {
     });
 
     if (existingAsset) {
-      return NextResponse.json({
-        asset: {
-          id: existingAsset.id,
-          blobUrl: existingAsset.blobUrl,
-          pathname: existingAsset.pathname,
-          filename:
-            existingAsset.pathname.split("/").pop() || existingAsset.pathname,
-          mime: existingAsset.mime,
-          size: existingAsset.size,
-          width: existingAsset.width,
-          height: existingAsset.height,
-          favorite: existingAsset.favorite,
-          createdAt: existingAsset.createdAt,
-        },
+      const responseBody: AssetUploadDuplicateResponse = {
+        asset: normalizeAssetToGridDto(existingAsset),
         message: "Asset already exists",
         duplicate: true,
-      });
+      };
+      return NextResponse.json(responseBody, { status: 200 });
     }
 
     const quotaReservation = await reserveUploadBytes(userId, size);
@@ -322,7 +296,7 @@ async function postHandler(req: NextRequest) {
         shuffleKey: createAssetShuffleKey(),
       },
       include: {
-        embedding: true,
+        embedding: { select: { status: true } },
         tags: {
           include: {
             tag: true,
@@ -335,12 +309,10 @@ async function postHandler(req: NextRequest) {
 
     // Generate embedding asynchronously (non-blocking)
     let embeddingStatus = "pending";
-    let embeddingError = null;
 
     const embeddingGate = getRuntimeGate("embeddings");
     if (!embeddingGate.enabled) {
       embeddingStatus = "unavailable";
-      embeddingError = embeddingGate.message;
     } else {
       try {
         const embeddingService = createEmbeddingService(userId);
@@ -360,10 +332,6 @@ async function postHandler(req: NextRequest) {
         // Embedding service not configured - continue without embeddings
         // Embedding service not available
         embeddingStatus = "unavailable";
-        embeddingError =
-          error instanceof EmbeddingError
-            ? error.message
-            : "Embedding service not configured";
       }
     }
 
@@ -373,28 +341,17 @@ async function postHandler(req: NextRequest) {
     await cache.clear("assets");
     await cache.clear("search");
 
-    return NextResponse.json({
-      asset: {
-        id: asset.id,
-        blobUrl: asset.blobUrl,
-        pathname: asset.pathname,
-        filename: asset.pathname,
-        mime: asset.mime,
-        size: asset.size,
-        width: asset.width,
-        height: asset.height,
-        favorite: asset.favorite,
-        createdAt: asset.createdAt,
-        embedding: asset.embedding,
-        embeddingStatus,
-        embeddingError,
-        tags: asset.tags.map((at: any) => ({
-          id: at.tag.id,
-          name: at.tag.name,
-        })),
-      },
+    const responseBody: AssetUploadCreatedResponse = {
+      asset: normalizeAssetToGridDto(asset as any, {
+        filename: asset.pathname ?? undefined,
+        embeddingStatus: embeddingStatus ?? undefined,
+        tags: {
+          tags: asset.tags.map((at) => ({ id: at.tag.id, name: at.tag.name })),
+        },
+      }),
       message: "Asset created successfully",
-    });
+    };
+    return NextResponse.json(responseBody, { status: 201 });
   } catch (error) {
     await releaseStorageQuotaReservation(quotaReservationId);
 
@@ -578,53 +535,46 @@ async function getHandler(req: NextRequest) {
         })
       : null;
 
-    const [assets, total] = tasteResult
-      ? [tasteResult.assets, tasteResult.total]
-      : await Promise.all([
-          shuffleSeed !== undefined
-            ? fetchSeededShuffleAssets({
-                userId,
-                favorite,
-                tagId,
-                pivot: shufflePivot!,
-                limit,
-                offset,
-              })
-            : // Normal query with Prisma ORM
-              prisma.asset.findMany({
-                where,
-                take: limit,
-                skip: offset,
-                orderBy: { [sortBy]: sortOrder },
-                select: {
-                  id: true,
-                  blobUrl: true,
-                  thumbnailUrl: true,
-                  pathname: true,
-                  mime: true,
-                  width: true,
-                  height: true,
-                  favorite: true,
-                  size: true,
-                  createdAt: true,
-                  embedding: {
-                    select: {
-                      status: true,
-                      modelName: true,
-                      modelVersion: true,
-                      createdAt: true,
-                      updatedAt: true,
-                    },
-                  },
-                },
-              }),
-          prisma.asset.count({ where }),
-        ]);
+    const assetsPromise: Promise<AssetListRow[]> = tasteResult
+      ? Promise.resolve(tasteResult.assets)
+      : shuffleSeed !== undefined
+        ? fetchSeededShuffleAssets({
+            userId,
+            favorite,
+            tagId,
+            pivot: shufflePivot!,
+            limit,
+            offset,
+          })
+        : // Normal query with Prisma ORM
+          prisma.asset.findMany({
+            where,
+            take: limit,
+            skip: offset,
+            orderBy: { [sortBy]: sortOrder },
+            select: {
+              id: true,
+              blobUrl: true,
+              thumbnailUrl: true,
+              pathname: true,
+              mime: true,
+              width: true,
+              height: true,
+              favorite: true,
+              size: true,
+              createdAt: true,
+            },
+          });
+
+    const [assets, total] = await Promise.all([
+      assetsPromise,
+      tasteResult ? Promise.resolve(tasteResult.total) : prisma.asset.count({ where }),
+    ]);
 
     let tagsByAssetId: Record<string, Array<{ id: string; name: string }>> = {};
 
     if (includeTags && assets.length > 0) {
-      const assetIds = assets.map((asset: any) => asset.id);
+      const assetIds = assets.map((asset) => asset.id);
       const tagRows = await prisma!.assetTag.findMany({
         where: { assetId: { in: assetIds } },
         select: {
@@ -643,39 +593,20 @@ async function getHandler(req: NextRequest) {
       );
     }
 
-    const formattedAssets = assets.map((asset: any) => ({
-      id: asset.id,
-      blobUrl: asset.blobUrl,
-      thumbnailUrl: asset.thumbnailUrl ?? null,
-      pathname: asset.pathname,
-      filename: asset.pathname,
-      mime: asset.mime,
-      size: asset.size,
-      width: asset.width,
-      height: asset.height,
-      favorite: asset.favorite,
-      createdAt: asset.createdAt,
-      // Format embedding data for both shuffle and normal queries without vector payload
-      embedding:
-        asset.embedding ||
-        (asset.embeddingId
-          ? {
-              assetId: asset.embeddingId,
-              modelName: asset.embeddingModelName,
-              modelVersion: asset.embeddingModelVersion,
-              createdAt: asset.embeddingCreatedAt,
-            }
-          : undefined),
-      embeddingStatus: asset.embeddingStatus || asset.embedding?.status,
-      ...(typeof asset.tasteScore === "number"
-        ? { tasteScore: Number(asset.tasteScore.toFixed(3)) }
-        : {}),
-      ...(includeTags
-        ? {
-            tags: tagsByAssetId[asset.id] || [],
-          }
-        : {}),
-    }));
+    const formattedAssets = assets.map((asset) =>
+      normalizeAssetToGridDto(asset as any, {
+        filename: asset.pathname ?? undefined,
+        tags: {
+          tags: includeTags ? tagsByAssetId[asset.id] || [] : [],
+        },
+        embeddingStatus: asset.embeddingStatus ?? undefined,
+      }),
+    ).map((asset, index) => {
+      const source = assets[index];
+      return typeof source.tasteScore === "number"
+        ? { ...asset, tasteScore: Number(source.tasteScore.toFixed(3)) }
+        : asset;
+    });
 
     // Drift detector: zero assets for known user hints at wrong DB branch
     if (total === 0 && !isTaste) {
@@ -696,8 +627,7 @@ async function getHandler(req: NextRequest) {
       }
     }
 
-    const res = NextResponse.json(
-      {
+    const responseBody: AssetListResponse = {
         assets: formattedAssets,
         pagination: {
           total,
@@ -714,7 +644,9 @@ async function getHandler(req: NextRequest) {
               },
             }
           : {}),
-      },
+    };
+    const res = NextResponse.json(
+      responseBody,
       {
         headers: {
           "x-env-fingerprint": `${fp.host || "unknown"}@${fp.hash}`,

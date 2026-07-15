@@ -3,6 +3,7 @@ import { EMBEDDING_DIMENSION } from '@sploot/common';
 import { databaseConfigured } from './env';
 import logger from './logger';
 import { shuffleWithSeed } from './seeded-random';
+import type { AssetGridSnakeSource } from './types';
 import { getPerformanceMonitor } from './performance-monitor';
 import { logger as observabilityLogger } from './observability-logger';
 import { embeddingVectorSql } from './embedding-vector-sql';
@@ -684,19 +685,7 @@ export async function upsertAssetEmbedding(
  * Helper function to execute vector similarity search
  * Note: This uses raw SQL since Prisma doesn't natively support pgvector operations
  */
-export interface VectorSearchRow {
-  id: string;
-  blob_url: string;
-  thumbnail_url: string | null;
-  pathname: string;
-  mime: string;
-  width: number | null;
-  height: number | null;
-  favorite: boolean;
-  size: number;
-  created_at: Date;
-  distance: number;
-}
+export type VectorSearchRow = AssetGridSnakeSource & { distance: number };
 
 export async function vectorSearch(
   userId: string,

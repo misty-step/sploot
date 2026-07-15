@@ -1,3 +1,6 @@
+import { parseSplootApiUploadResponse } from '@sploot/common';
+import type { SplootApiUploadResponse } from '@sploot/common';
+
 /**
  * Upload Network Client Service
  *
@@ -17,26 +20,7 @@ export interface UploadProgressEvent {
   percentage: number;
 }
 
-export interface UploadResult {
-  success: boolean;
-  asset?: {
-    id: string;
-    blobUrl: string;
-    needsEmbedding: boolean;
-    nearDuplicate?: {
-      id: string;
-      blobUrl: string;
-      thumbnailUrl?: string | null;
-      pathname: string;
-      mime: string;
-      phash: string;
-      distance: number;
-      createdAt: string;
-    } | null;
-  };
-  isDuplicate?: boolean;
-  error?: string;
-}
+export type UploadResult = SplootApiUploadResponse;
 
 export interface UploadErrorAction {
   type: string;
@@ -121,10 +105,11 @@ export class UploadNetworkClient {
       });
 
       xhr.addEventListener('load', () => {
-        let response: UploadResult | undefined;
+        let response: UploadResult | null;
 
         try {
-          response = JSON.parse(xhr.responseText) as UploadResult;
+          response = parseSplootApiUploadResponse(JSON.parse(xhr.responseText));
+          if (!response) throw new Error('invalid upload DTO');
         } catch {
           if (xhr.status >= 200 && xhr.status < 300) {
             reject(
@@ -148,29 +133,29 @@ export class UploadNetworkClient {
           return;
         }
 
-        if (xhr.status >= 200 && xhr.status < 300) {
+        if (xhr.status >= 200 && xhr.status < 300 && response.success === true) {
           resolve(response);
           return;
         }
 
-        if (xhr.status === 409 && response.success && response.isDuplicate) {
+        if (xhr.status === 409 && response.success === true && response.isDuplicate) {
           resolve(response);
+          return;
+        }
+
+        if (response.success === true) {
+          reject(new UploadError('Invalid response from server', xhr.status));
           return;
         }
 
         // HTTP error status
-        const errorResponse = response as UploadResult & {
-          code?: string;
-          retryable?: boolean;
-          action?: UploadErrorAction;
-          quota?: unknown;
-        };
+        const errorResponse = response;
         const errorMessage =
-          errorResponse.error || `Upload failed with status ${xhr.status}`;
-        const errorCode = errorResponse.code;
-        const retryable = errorResponse.retryable;
-        const action = errorResponse.action;
-        const quota = errorResponse.quota;
+          ('error' in errorResponse && errorResponse.error) || `Upload failed with status ${xhr.status}`;
+        const errorCode = 'code' in errorResponse ? errorResponse.code : undefined;
+        const retryable = 'retryable' in errorResponse ? errorResponse.retryable : undefined;
+        const action = 'action' in errorResponse ? errorResponse.action : undefined;
+        const quota = 'quota' in errorResponse ? errorResponse.quota : undefined;
 
         // Determine if error is retryable (5xx server errors are retryable)
         const isRetryable =

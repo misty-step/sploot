@@ -6,6 +6,8 @@ import { prisma } from '@/lib/db';
 import { invalidateSlugCache } from '@/lib/slug-cache';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
+import { normalizeAssetToGridDto } from '@/lib/asset-grid-dto';
+import type { AssetDetailPatchResponse, AssetDetailResponse } from '@/lib/types';
 
 async function getHandler(
   req: NextRequest,
@@ -43,13 +45,11 @@ async function getHandler(
         ownerUserId: userId,
         deletedAt: null,
       },
-      include: {
-        embedding: true,
-        tags: {
-          include: {
-            tag: true,
-          },
-        },
+      select: {
+        id: true, blobUrl: true, thumbnailUrl: true, pathname: true, mime: true,
+        size: true, width: true, height: true, favorite: true, createdAt: true,
+        embedding: { select: { status: true } },
+        tags: { select: { tag: { select: { id: true, name: true } } } },
       },
     });
 
@@ -60,26 +60,19 @@ async function getHandler(
       );
     }
 
-    return NextResponse.json({
-      asset: {
-        id: asset.id,
-        blobUrl: asset.blobUrl,
-        pathname: asset.pathname,
-        filename: asset.pathname,
-        mime: asset.mime,
-        size: asset.size,
-        width: asset.width,
-        height: asset.height,
-        favorite: asset.favorite,
-        createdAt: asset.createdAt,
-        updatedAt: asset.updatedAt,
-        embedding: asset.embedding,
-        tags: asset.tags.map((at: any) => ({
-          id: at.tag.id,
-          name: at.tag.name,
-        })),
-      },
-    });
+    const responseBody: AssetDetailResponse = {
+      asset: normalizeAssetToGridDto(asset as any, {
+        filename: asset.pathname ?? undefined,
+        embeddingStatus: asset.embedding?.status ?? undefined,
+        tags: {
+          tags: asset.tags.map((at) => ({
+            id: at.tag.id,
+            name: at.tag.name,
+          })),
+        },
+      }),
+    };
+    return NextResponse.json(responseBody);
   } catch (error) {
     unstable_rethrow(error);
     // Error fetching asset
@@ -137,22 +130,14 @@ async function patchHandler(
       );
     }
 
-    const updateData: any = {};
+    const updateData: { favorite?: boolean } = {};
     if (favorite !== undefined) {
       updateData.favorite = favorite;
     }
 
-    const asset = await prisma.asset.update({
+    await prisma.asset.update({
       where: { id },
       data: updateData,
-      include: {
-        embedding: true,
-        tags: {
-          include: {
-            tag: true,
-          },
-        },
-      },
     });
 
     if (tags && Array.isArray(tags)) {
@@ -186,15 +171,20 @@ async function patchHandler(
 
     const updatedAsset = await prisma.asset.findUnique({
       where: { id },
-      include: {
-        embedding: true,
-        tags: {
-          include: {
-            tag: true,
-          },
-        },
+      select: {
+        id: true, blobUrl: true, thumbnailUrl: true, pathname: true, mime: true,
+        size: true, width: true, height: true, favorite: true, createdAt: true,
+        embedding: { select: { status: true } },
+        tags: { select: { tag: { select: { id: true, name: true } } } },
       },
     });
+
+    if (!updatedAsset) {
+      return NextResponse.json(
+        { error: 'Asset not found' },
+        { status: 404 },
+      );
+    }
 
     // Invalidate cache after update (favorites affect search results)
     // Clear only asset and search caches (preserve embeddings)
@@ -204,27 +194,20 @@ async function patchHandler(
       await cache.clear('search');
     }
 
-    return NextResponse.json({
-      asset: {
-        id: updatedAsset!.id,
-        blobUrl: updatedAsset!.blobUrl,
-        pathname: updatedAsset!.pathname,
-        filename: updatedAsset!.pathname,
-        mime: updatedAsset!.mime,
-        size: updatedAsset!.size,
-        width: updatedAsset!.width,
-        height: updatedAsset!.height,
-        favorite: updatedAsset!.favorite,
-        createdAt: updatedAsset!.createdAt,
-        updatedAt: updatedAsset!.updatedAt,
-        embedding: updatedAsset!.embedding,
-        tags: updatedAsset!.tags.map((at: any) => ({
-          id: at.tag.id,
-          name: at.tag.name,
-        })),
-      },
+    const responseBody: AssetDetailPatchResponse = {
+      asset: normalizeAssetToGridDto(updatedAsset as any, {
+        filename: updatedAsset.pathname ?? undefined,
+        embeddingStatus: updatedAsset.embedding?.status ?? undefined,
+        tags: {
+          tags: updatedAsset.tags.map((at) => ({
+            id: at.tag.id,
+            name: at.tag.name,
+          })),
+        },
+      }),
       message: 'Asset updated successfully',
-    });
+    };
+    return NextResponse.json(responseBody);
   } catch (error) {
     unstable_rethrow(error);
     // Error updating asset

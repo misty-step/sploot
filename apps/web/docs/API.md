@@ -119,6 +119,10 @@ Uploads are guarded by the same runtime and quota policy:
 - Quota denials return `403` with `code: "quota_exceeded"`, a `quota` snapshot, and an action pointing to `/app/settings`.
 - `POST /api/upload` is the supported upload contract for web, extension, and future queued replay clients. Direct client-upload URL generation is not a supported product API.
 
+The `asset` payload is the minimal public upload DTO: `id`, `blobUrl`, and
+`thumbnailUrl`. Both `/api/upload` and `/api/upload/url` return this same
+shape.
+
 Quota error example:
 
 ```json
@@ -166,13 +170,7 @@ thumbnail for previews and embedding.
   "asset": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
-    "pathname": "user123/funny-meme.jpg",
-    "filename": "funny-meme.jpg",
-    "mimeType": "video/mp4",
-    "size": 2048576,
-    "checksum": "sha256:abc123...",
-    "createdAt": "2026-05-14T12:00:00.000Z",
-    "needsEmbedding": true
+    "thumbnailUrl": null
   },
   "message": "Upload successful"
 }
@@ -187,13 +185,7 @@ thumbnail for previews and embedding.
   "asset": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
-    "pathname": "user123/funny-meme.jpg",
-    "filename": "funny-meme.jpg",
-    "mimeType": "video/mp4",
-    "size": 2048576,
-    "checksum": "sha256:abc123...",
-    "createdAt": "2026-05-14T12:00:00.000Z",
-    "needsEmbedding": false
+    "thumbnailUrl": null
   },
   "message": "This image already exists in your library"
 }
@@ -344,6 +336,57 @@ token; every other route returns `401` for one. Dedupe, quota, and the
 
 ---
 
+### Upload Contract
+
+#### POST /api/upload
+
+Minimal public upload response. The `asset` payload only includes `id`,
+`blobUrl`, and `thumbnailUrl`.
+
+**Success Response (201):**
+
+```json
+{
+  "success": true,
+  "isDuplicate": false,
+  "asset": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+    "thumbnailUrl": null
+  },
+  "message": "Upload successful"
+}
+```
+
+#### POST /api/upload/url
+
+Same minimal public upload response as `POST /api/upload`.
+
+#### POST /api/upload/check
+
+Same-tenant existence probe. Returns `exists` plus the same minimal
+asset/display/readiness fields when a checksum already belongs to the user.
+
+**Success Response (200):**
+
+```json
+{
+  "exists": true,
+  "asset": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+    "thumbnailUrl": null,
+    "mime": "image/jpeg",
+    "size": 2048576,
+    "width": 1920,
+    "height": 1080,
+    "favorite": false,
+    "createdAt": "2026-05-14T12:00:00.000Z",
+    "embeddingStatus": "ready"
+  }
+}
+```
+
 ### Asset Management
 
 #### POST /api/assets
@@ -391,6 +434,7 @@ embedding generation when Replicate is configured.
     "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
     "pathname": "user123/funny-meme.jpg",
     "filename": "user123/funny-meme.jpg",
+    "thumbnailUrl": null,
     "mime": "image/jpeg",
     "size": 2048576,
     "width": 1920,
@@ -403,6 +447,10 @@ embedding generation when Replicate is configured.
   "message": "Asset created successfully"
 }
 ```
+
+A new asset returns `201`. If the checksum already belongs to the user, the
+same safe asset shape is returned with `200`, `duplicate: true`, and message
+`"Asset already exists"`.
 
 **Error Responses:**
 
@@ -445,14 +493,19 @@ empty asset list and typed `taste.status: "insufficient_bangers"` metadata.
 
 **Success Response (200):**
 
+The example below requests `includeTags=true`, so each asset includes its tag
+objects.
+
 ```json
 {
   "assets": [
     {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
-      "filename": "funny-meme.jpg",
-      "mimeType": "image/jpeg",
+      "thumbnailUrl": null,
+      "pathname": "user123/funny-meme.jpg",
+      "filename": "user123/funny-meme.jpg",
+      "mime": "image/jpeg",
       "size": 2048576,
       "width": 1920,
       "height": 1080,
@@ -549,15 +602,17 @@ Get details for a specific asset.
   "asset": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
-    "filename": "funny-meme.jpg",
-    "mimeType": "image/jpeg",
+    "thumbnailUrl": null,
+    "pathname": "user123/funny-meme.jpg",
+    "filename": "user123/funny-meme.jpg",
+    "mime": "image/jpeg",
     "size": 2048576,
     "width": 1920,
     "height": 1080,
     "favorite": false,
     "tags": [],
     "createdAt": "2025-09-16T12:00:00Z",
-    "hasEmbedding": true
+    "embeddingStatus": "ready"
   }
 }
 ```
@@ -598,12 +653,63 @@ Update asset metadata (favorite status, tags).
 {
   "asset": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
+    "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+    "thumbnailUrl": null,
+    "pathname": "user123/funny-meme.jpg",
+    "filename": "user123/funny-meme.jpg",
+    "mime": "image/jpeg",
+    "size": 2048576,
+    "width": 1920,
+    "height": 1080,
     "favorite": true,
-    "tags": ["reaction", "drake"],
-    "updatedAt": "2025-09-16T12:00:00Z"
-  }
+    "createdAt": "2025-09-16T12:00:00Z",
+    "tags": [{ "id": "tag-reaction", "name": "reaction" }, { "id": "tag-drake", "name": "drake" }]
+  },
+  "message": "Asset updated successfully"
 }
 ```
+
+#### GET /api/assets/{id}/similar
+
+Return the nearest assets for an owned asset. Similarity results use the same
+public asset fields as semantic search; the response never includes vectors or
+embedding provider metadata.
+
+**Authentication:** Required
+
+**Query Parameters:**
+
+- `limit` (integer, optional): 1–30, default 12
+
+**Success Response (200):**
+
+```json
+{
+  "results": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "blobUrl": "https://blob.vercel-storage.com/abc123/near.jpg",
+      "thumbnailUrl": "https://blob.vercel-storage.com/abc123/near-thumb.jpg",
+      "pathname": "user123/near.jpg",
+      "filename": "near.jpg",
+      "mime": "image/jpeg",
+      "size": 1024,
+      "width": 640,
+      "height": 480,
+      "favorite": false,
+      "createdAt": "2025-09-16T12:00:00Z",
+      "embeddingStatus": "ready",
+      "similarity": 0.92,
+      "relevance": 92,
+      "tags": []
+    }
+  ],
+  "reason": null
+}
+```
+
+When the source has no ready embedding, `reason` is `source-unembedded`; when
+it is embedded but has no eligible neighbors, `reason` is `no-neighbors`.
 
 #### DELETE /api/assets/{id}
 
@@ -943,7 +1049,7 @@ Perform semantic search using text queries.
 {
   "query": "distracted boyfriend",
   "limit": 30,
-  "threshold": 0.2,
+  "threshold": 0.12,
   "shuffleSeed": 424242
 }
 ```
@@ -951,8 +1057,8 @@ Perform semantic search using text queries.
 **Parameters:**
 
 - `query` (string, required): Search text (max 500 characters)
-- `limit` (number, optional): requested result count (default: 30).
-- `threshold` (number, optional): Minimum similarity score (0-1, default: 0.2)
+- `limit` (integer, optional): requested result count from 1 through 100 (default: 30).
+- `threshold` (finite number, optional): Minimum similarity score from 0 through 1 (default: 0.12)
   Results below this score are not returned; a real miss returns an empty
   `results` array rather than low-similarity padding.
 - `shuffleSeed` (number, optional): Seed used by vector search when supported
@@ -965,32 +1071,18 @@ Perform semantic search using text queries.
     {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
-      "pathname": "user123/funny-meme.jpg",
-      "filename": "funny-meme.jpg",
-      "mime": "image/jpeg",
-      "width": 1920,
-      "height": 1080,
-      "favorite": false,
-      "size": 2048576,
-      "createdAt": "2025-09-16T12:00:00Z",
-      "embedding": {
-        "assetId": "550e8400-e29b-41d4-a716-446655440000"
-      },
-      "embeddingStatus": "ready",
+      "thumbnailUrl": null,
       "similarity": 0.95,
-      "relevance": 95,
-      "belowThreshold": false,
-      "tags": []
+      "relevance": 95
     }
   ],
   "query": "distracted boyfriend",
   "total": 1,
   "limit": 30,
   "requestedLimit": 30,
-  "threshold": 0.2,
-  "requestedThreshold": 0.2,
+  "threshold": 0.12,
+  "requestedThreshold": 0.12,
   "processingTime": 245,
-  "embeddingModel": "krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4",
   "cached": false,
   "thresholdFallback": false
 }
@@ -1048,9 +1140,14 @@ Advanced search with multiple filters and sorting options.
   "sortBy": "relevance",
   "limit": 30,
   "offset": 0,
-  "threshold": 0.5
+  "threshold": 0.12,
+  "seed": 424242
 }
 ```
+
+Malformed `limit` or `threshold` values—including strings, `NaN`, infinity,
+and values outside the documented ranges—return HTTP `400` with
+`{"code":"invalid_search_parameter","details":{"field":"..."}}`.
 
 **Parameters:**
 
@@ -1064,9 +1161,10 @@ Advanced search with multiple filters and sorting options.
   - `minWidth` (number): Minimum width
   - `minHeight` (number): Minimum height
 - `sortBy` (string, optional): Sort order (`relevance`, `date`, or `favorite`)
-- `limit` (number, optional): Results per page (default: 30)
+- `limit` (integer, optional): Results per page from 1 through 100 (default: 30)
 - `offset` (number, optional): Pagination offset (default: 0)
-- `threshold` (number, optional): Minimum similarity (0-1, default: 0.5)
+- `threshold` (finite number, optional): Minimum similarity from 0 through 1 (default: 0.12)
+- `seed` (integer 0–1000000, optional): Deterministic result seed; `null` when omitted
 
 **Success Response (200):**
 
@@ -1076,18 +1174,9 @@ Advanced search with multiple filters and sorting options.
     {
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
-      "pathname": "user123/funny-meme.jpg",
-      "filename": "funny-meme.jpg",
-      "mime": "image/jpeg",
-      "size": 2048576,
-      "width": 1920,
-      "height": 1080,
-      "favorite": false,
-      "createdAt": "2025-09-16T12:00:00Z",
-      "updatedAt": "2025-09-16T12:00:00Z",
+      "thumbnailUrl": null,
       "similarity": 0.89,
-      "relevance": 89,
-      "tags": []
+      "relevance": 89
     }
   ],
   "query": "reaction",
@@ -1095,16 +1184,24 @@ Advanced search with multiple filters and sorting options.
   "sortBy": "relevance",
   "pagination": {
     "total": 145,
+    "page": 1,
     "limit": 30,
     "offset": 0,
     "hasMore": true
   },
   "processingTime": 320,
-  "embeddingModel": "krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4",
   "searchType": "semantic",
-  "cached": false
+  "cached": false,
+  "seed": 424242,
+  "error": null
 }
 ```
+
+Cached, metadata-fallback, and semantic success responses use this same
+envelope. `pagination.total`, `page`, `limit`, `offset`, and `hasMore` are
+authoritative; `seed` is the requested deterministic seed or `null`.
+Provider and database failures use stable public `code` values (`server_error`,
+`embeddings_disabled`, or `rate_limited`) and never expose provider error text.
 
 ---
 

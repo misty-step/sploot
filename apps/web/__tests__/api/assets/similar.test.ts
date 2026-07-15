@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => {
       findFirst: vi.fn(),
       findMany: vi.fn(),
     },
+    assetTag: {
+      findMany: vi.fn(),
+    },
     $queryRaw: vi.fn(),
   };
 
@@ -55,11 +58,16 @@ function neighbor(id: string, distance: number) {
   };
 }
 
+async function boundaryBody(response: Response): Promise<Record<string, unknown>> {
+  return JSON.parse(JSON.stringify(await response.json())) as Record<string, unknown>;
+}
+
 describe("GET /api/assets/[id]/similar", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getAuth.mockResolvedValue({ userId: "user-123" });
     mocks.prisma.asset.findMany.mockResolvedValue([]);
+    mocks.prisma.assetTag.findMany.mockResolvedValue([]);
   });
 
   it("returns 401 when unauthenticated", async () => {
@@ -82,11 +90,10 @@ describe("GET /api/assets/[id]/similar", () => {
 
     const { req, context } = request("asset-1");
     const res = await GET(req, context);
-    const body = await res.json();
+    const body = await boundaryBody(res);
 
     expect(res.status).toBe(200);
-    expect(body.results).toEqual([]);
-    expect(body.reason).toBe("source-unembedded");
+    expect(body).toEqual({ results: [], reason: "source-unembedded" });
     expect(mocks.vectorSearch).not.toHaveBeenCalled();
   });
 
@@ -98,11 +105,10 @@ describe("GET /api/assets/[id]/similar", () => {
 
     const { req, context } = request("asset-1");
     const res = await GET(req, context);
-    const body = await res.json();
+    const body = await boundaryBody(res);
 
     expect(res.status).toBe(200);
-    expect(body.results).toEqual([]);
-    expect(body.reason).toBe("no-neighbors");
+    expect(body).toEqual({ results: [], reason: "no-neighbors" });
   });
 
   it("always returns the top-N neighbors with no minimum-similarity floor", async () => {
@@ -116,16 +122,48 @@ describe("GET /api/assets/[id]/similar", () => {
 
     const { req, context } = request("asset-1", { limit: "12" });
     const res = await GET(req, context);
-    const body = await res.json();
+    const body = await boundaryBody(res);
 
     expect(res.status).toBe(200);
-    expect(body.reason).toBeNull();
-    const ids = body.results.map((r: { id: string }) => r.id);
-    expect(ids).toEqual(["near", "distant"]);
-
-    const distant = body.results.find((r: { id: string }) => r.id === "distant");
-    expect(distant.similarity).toBeCloseTo(0.01);
-    expect(distant.relevance).toBe(1);
+    expect(body).toEqual({
+      results: [
+        {
+          id: "near",
+          blobUrl: "https://blob/near.png",
+          thumbnailUrl: null,
+          pathname: "pile/near.png",
+          filename: "near.png",
+          mime: "image/png",
+          size: 1234,
+          width: 100,
+          height: 100,
+          favorite: false,
+          createdAt: "2026-07-01T00:00:00.000Z",
+          embeddingStatus: "ready",
+          similarity: 0.92,
+          relevance: 92,
+          tags: [],
+        },
+        {
+          id: "distant",
+          blobUrl: "https://blob/distant.png",
+          thumbnailUrl: null,
+          pathname: "pile/distant.png",
+          filename: "distant.png",
+          mime: "image/png",
+          size: 1234,
+          width: 100,
+          height: 100,
+          favorite: false,
+          createdAt: "2026-07-01T00:00:00.000Z",
+          embeddingStatus: "ready",
+          similarity: 0.01,
+          relevance: 1,
+          tags: [],
+        },
+      ],
+      reason: null,
+    });
 
     // vectorSearch must be called without a positive threshold.
     const [, , options] = mocks.vectorSearch.mock.calls[0];

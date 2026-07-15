@@ -28,7 +28,6 @@ import { useUploadCompletion } from '@/components/upload/use-upload-completion';
 import {
   getUploadNetworkClient,
   UploadError,
-  type UploadErrorAction,
 } from '@/lib/upload/upload-network-client';
 import {
   shouldEmitUploadProgressUpdate,
@@ -43,7 +42,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { StickerTab } from '@/components/sploot';
-import { UPLOAD, prepareImageForUpload } from '@sploot/common';
+import {
+  UPLOAD,
+  prepareImageForUpload,
+  parseSplootApiUploadResponse,
+  type SplootApiUploadResponse,
+} from '@sploot/common';
 
 // Lightweight metadata for display - only ~300 bytes per file vs 5MB for File object
 interface FileMetadata {
@@ -399,17 +403,11 @@ export function UploadZone({
 
         // Record API call metrics
 
-        if (!result.success) {
-          const failedResult = result as typeof result & {
-            code?: string;
-            action?: UploadErrorAction;
-            quota?: unknown;
-            retryable?: boolean;
-            statusCode?: number;
-          };
+        if (!('asset' in result) || result.success !== true) {
+          const failedResult = result;
           throw new UploadError(
             result.error || 'Upload failed',
-            failedResult.statusCode,
+            undefined,
             failedResult.retryable ?? false,
             failedResult.code,
             failedResult.action,
@@ -425,7 +423,7 @@ export function UploadZone({
 
         // Handle duplicate detection as a special success case
         const isDuplicate = result.isDuplicate === true;
-        const needsEmbedding = result.asset?.needsEmbedding === true;
+        const needsEmbedding = false;
 
         // Track time to searchable if embedding is not needed
         if (!needsEmbedding && result.asset?.id) {
@@ -444,14 +442,7 @@ export function UploadZone({
               assetId: result.asset?.id,
               blobUrl: result.asset?.blobUrl,
               isDuplicate,
-              nearDuplicate: result.asset?.nearDuplicate
-                ? {
-                    id: result.asset.nearDuplicate.id,
-                    distance: result.asset.nearDuplicate.distance,
-                    blobUrl: result.asset.nearDuplicate.blobUrl,
-                    thumbnailUrl: result.asset.nearDuplicate.thumbnailUrl ?? null,
-                  }
-                : null,
+              nearDuplicate: null,
               needsEmbedding,
               embeddingStatus: (needsEmbedding ? 'pending' : 'ready') as
                 | 'pending'
@@ -496,7 +487,7 @@ export function UploadZone({
         if (window.location.pathname === '/app') {
           // Dispatch a custom event that the library page can listen to
           window.dispatchEvent(
-            new CustomEvent('assetUploaded', { detail: result.asset }),
+          new CustomEvent('assetUploaded', { detail: result.asset }),
           );
         }
       } catch (error) {
@@ -1067,7 +1058,9 @@ export function UploadZone({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ url }),
       });
-      const data = await response.json().catch(() => ({}));
+      const data: SplootApiUploadResponse = parseSplootApiUploadResponse(
+        await response.json().catch(() => undefined),
+      ) ?? { success: false, error: 'url import failed' };
 
       if (response.status === 201) {
         onUploadComplete?.({ uploaded: 1, duplicates: 0, failed: 0 });
@@ -1075,7 +1068,10 @@ export function UploadZone({
         showToast('already in your library', 'info');
         onUploadComplete?.({ uploaded: 0, duplicates: 1, failed: 0 });
       } else {
-        showToast(typeof data?.error === 'string' ? data.error : 'url import failed', 'error');
+        showToast(
+          'error' in data && typeof data.error === 'string' ? data.error : 'url import failed',
+          'error',
+        );
       }
     } catch {
       showToast('url import failed', 'error');

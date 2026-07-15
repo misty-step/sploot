@@ -54,7 +54,25 @@ describe('/api/upload opts into upload-token auth', () => {
       principal: { userId: 'u1' },
       syncStatus: 'skipped',
     });
-    mocks.ingestImage.mockResolvedValue({ kind: 'created', asset: { id: 'a1' } });
+    mocks.ingestImage.mockResolvedValue({
+      kind: 'created',
+      asset: {
+        id: 'a1',
+        blobUrl: 'https://blob.test/a1.png',
+        thumbnailUrl: null,
+        pathname: 'memes/a1.png',
+        filename: 'meme.png',
+        mime: 'image/png',
+        mimeType: 'image/png',
+        size: 3,
+        width: 1,
+        height: 1,
+        favorite: false,
+        checksum: 'checksum-a1',
+        createdAt: new Date('2026-07-14T12:00:00.000Z'),
+        needsEmbedding: true,
+      },
+    });
 
     const res = await POST(multipartReq(), {} as any);
 

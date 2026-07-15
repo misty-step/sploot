@@ -11,6 +11,17 @@ describe('UploadNetworkClient', () => {
   let mockXHR: any;
   let xhrInstances: any[];
 
+  const validResponse = (id = 'asset-123', isDuplicate = false): UploadResult => ({
+    success: true,
+    isDuplicate,
+    asset: {
+      id,
+      blobUrl: `https://example.com/${id}.jpg`,
+      thumbnailUrl: null,
+    },
+    message: isDuplicate ? 'This image already exists in your library' : 'Upload successful',
+  });
+
   beforeEach(() => {
     client = new UploadNetworkClient();
     xhrInstances = [];
@@ -38,14 +49,7 @@ describe('UploadNetworkClient', () => {
   describe('uploadFile', () => {
     it('should upload file successfully', async () => {
       const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
-      const mockResponse: UploadResult = {
-        success: true,
-        asset: {
-          id: 'asset-123',
-          blobUrl: 'https://example.com/blob.jpg',
-          needsEmbedding: false,
-        },
-      };
+      const mockResponse = validResponse();
 
       const uploadPromise = client.uploadFile(file);
 
@@ -68,7 +72,7 @@ describe('UploadNetworkClient', () => {
     it('should track upload progress', async () => {
       const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
       const onProgress = vi.fn();
-      const mockResponse: UploadResult = { success: true };
+      const mockResponse = validResponse();
 
       const uploadPromise = client.uploadFile(file, { onProgress });
 
@@ -292,7 +296,7 @@ describe('UploadNetworkClient', () => {
 
     it('should use custom endpoint', async () => {
       const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
-      const mockResponse: UploadResult = { success: true };
+      const mockResponse = validResponse();
 
       const uploadPromise = client.uploadFile(file, {
         endpoint: '/api/custom-upload',
@@ -332,15 +336,7 @@ describe('UploadNetworkClient', () => {
 
     it('should handle duplicate detection', async () => {
       const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
-      const mockResponse: UploadResult = {
-        success: true,
-        isDuplicate: true,
-        asset: {
-          id: 'asset-123',
-          blobUrl: 'https://example.com/blob.jpg',
-          needsEmbedding: false,
-        },
-      };
+      const mockResponse = validResponse('asset-123', true);
 
       const uploadPromise = client.uploadFile(file);
 
@@ -359,15 +355,7 @@ describe('UploadNetworkClient', () => {
 
     it('should resolve duplicate detection returned as 409 success', async () => {
       const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
-      const mockResponse: UploadResult = {
-        success: true,
-        isDuplicate: true,
-        asset: {
-          id: 'asset-123',
-          blobUrl: 'https://example.com/blob.jpg',
-          needsEmbedding: false,
-        },
-      };
+      const mockResponse = validResponse('asset-123', true);
 
       const uploadPromise = client.uploadFile(file);
 
@@ -393,7 +381,7 @@ describe('UploadNetworkClient', () => {
   describe('uploadWithRetry', () => {
     it('should succeed on first attempt', async () => {
       const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
-      const mockResponse: UploadResult = { success: true };
+      const mockResponse = validResponse();
 
       const uploadPromise = client.uploadWithRetry(file);
 
@@ -414,7 +402,7 @@ describe('UploadNetworkClient', () => {
     it('should retry on retryable error and succeed', async () => {
       vi.useFakeTimers();
       const file = new File(['content'], 'test.jpg', { type: 'image/jpeg' });
-      const mockResponse: UploadResult = { success: true };
+      const mockResponse = validResponse();
 
       const uploadPromise = client.uploadWithRetry(file, undefined, 2);
 
@@ -510,10 +498,7 @@ describe('UploadNetworkClient', () => {
       for (let i = 0; i < 3; i++) {
         const xhr = xhrInstances[i];
         xhr.status = 200;
-        xhr.responseText = JSON.stringify({
-          success: true,
-          asset: { id: `asset-${i}` },
-        });
+        xhr.responseText = JSON.stringify(validResponse(`asset-${i}`));
         const loadHandler = xhr.addEventListener.mock.calls.find(
           (call: any[]) => call[0] === 'load',
         )[1];
@@ -541,7 +526,7 @@ describe('UploadNetworkClient', () => {
       // First succeeds
       let xhr = xhrInstances[0];
       xhr.status = 200;
-      xhr.responseText = JSON.stringify({ success: true });
+      xhr.responseText = JSON.stringify(validResponse('asset-0'));
       let loadHandler = xhr.addEventListener.mock.calls.find(
         (call: any[]) => call[0] === 'load',
       )[1];

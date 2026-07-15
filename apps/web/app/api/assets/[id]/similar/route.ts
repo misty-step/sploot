@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { prisma, vectorSearch, type VectorSearchRow } from '@/lib/db';
+import { prisma, vectorSearch } from '@/lib/db';
 import { getAuth } from '@/lib/auth/server';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
 import { DEFAULT_NEAR_DUPLICATE_DISTANCE, hammingDistanceHex } from '@/lib/upload/perceptual-hash-service';
+import { normalizeAssetToGridDto } from '@/lib/asset-grid-dto';
+import type { SimilarAssetsResponse } from '@/lib/types';
 
 async function getHandler(
   req: NextRequest,
@@ -60,7 +62,14 @@ async function getHandler(
       .map(Number);
 
     const { searchParams } = new URL(req.url);
-    const limit = Math.min(parseInt(searchParams.get('limit') || '12', 10), 30);
+    const rawLimit = searchParams.get('limit');
+    const limit = rawLimit === null ? 12 : Number(rawLimit);
+    if (!/^\d+$/.test(rawLimit ?? '12') || !Number.isSafeInteger(limit) || limit < 1 || limit > 30) {
+      return NextResponse.json(
+        { error: 'Invalid limit parameter', code: 'invalid_search_parameter' },
+        { status: 400 },
+      );
+    }
 
     // Search for similar assets
     const results = await vectorSearch(userId, vector, { limit: limit + 1 });
@@ -81,29 +90,36 @@ async function getHandler(
       })
       .slice(0, limit);
 
-    const formattedResults = filtered.map((result: VectorSearchRow) => ({
-      id: result.id,
-      blobUrl: result.blob_url,
-      thumbnailUrl: result.thumbnail_url,
-      pathname: result.pathname,
-      filename: result.pathname.split('/').pop() || result.pathname,
-      mime: result.mime,
-      width: result.width,
-      height: result.height,
-      favorite: result.favorite,
-      size: result.size,
-      createdAt: result.created_at,
-      embedding: { assetId: result.id },
-      embeddingStatus: 'ready' as const,
-      similarity: result.distance,
-      relevance: Math.round(result.distance * 100),
-    }));
+    const resultTags = await prisma.assetTag.findMany({
+      where: { assetId: { in: filtered.map((result) => result.id) } },
+      include: { tag: true },
+    });
+    const tagsByAsset = new Map<string, Array<{ id: string; name: string }>>();
+    for (const row of resultTags) {
+      const tags = tagsByAsset.get(row.assetId) ?? [];
+      tags.push({ id: row.tag.id, name: row.tag.name });
+      tagsByAsset.set(row.assetId, tags);
+    }
+
+    const formattedResults = filtered.map((result) =>
+      normalizeAssetToGridDto(result, {
+        embeddingStatus: 'ready',
+        tags: {
+          tags: tagsByAsset.get(result.id) ?? [],
+        },
+        similarity: {
+          similarity: result.distance,
+          relevance: Math.round(result.distance * 100),
+        },
+      }),
+    );
 
     // Source is embedded but the library has nothing else near it. Distinct
     // from source-unembedded so the client can explain why the grid is empty.
     const reason = formattedResults.length === 0 ? 'no-neighbors' : null;
 
-    return NextResponse.json({ results: formattedResults, reason });
+    const responseBody: SimilarAssetsResponse = { results: formattedResults, reason };
+    return NextResponse.json(responseBody);
   } catch (error) {
     unstable_rethrow(error);
     return NextResponse.json(

@@ -21,6 +21,8 @@
     "dev:local:down": "tsx scripts/dev-local.ts --down",
     "qa:evidence": "tsx scripts/qa-evidence.ts",
     "auth:guard": "node scripts/check-auth-boundary.mjs",
+    "check:asset-grid-dto": "node scripts/check-asset-grid-dto.mjs",
+    "check:api-docs": "node scripts/check-api-docs.mjs",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",

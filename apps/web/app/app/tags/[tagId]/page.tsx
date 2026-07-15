@@ -3,33 +3,13 @@
 import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { ImageGrid } from '@/components/library/image-grid';
+import type { Asset, AssetListResponse } from '@/lib/types';
 
 interface Tag {
   id: string;
   name: string;
   color: string | null;
   assetCount: number;
-}
-
-interface Asset {
-  id: string;
-  blobUrl: string;
-  thumbnailUrl?: string | null;
-  pathname: string;
-  filename: string;
-  mime: string;
-  size: number;
-  width?: number | null;
-  height?: number | null;
-  favorite: boolean;
-  createdAt: Date | string;
-  tags?: Array<{ id: string; name: string }>;
-  embedding?: {
-    assetId: string;
-    modelName: string;
-    modelVersion: string;
-    createdAt: Date | string;
-  } | null;
 }
 
 type TagPageParams = { tagId: string };
@@ -51,8 +31,8 @@ export default function TagPage({
       // Fetch tag details
       const tagResponse = await fetch('/api/tags');
       if (tagResponse.ok) {
-        const tagData = await tagResponse.json();
-        const currentTag = tagData.tags?.find((t: Tag) => t.id === resolvedParams.tagId);
+        const tagData: { tags: Tag[] } = await tagResponse.json();
+        const currentTag = tagData.tags.find((t) => t.id === resolvedParams.tagId);
 
         if (!currentTag) {
           router.push('/app');
@@ -68,8 +48,8 @@ export default function TagPage({
       // Fetch assets with this tag
       const assetsResponse = await fetch(`/api/assets?tagId=${resolvedParams.tagId}`);
       if (assetsResponse.ok) {
-        const assetsData = await assetsResponse.json();
-        setAssets(assetsData.assets || []);
+        const assetsData: AssetListResponse = await assetsResponse.json();
+        setAssets(assetsData.assets);
       }
     } catch (error) {
       console.error('Failed to fetch tag data:', error);
