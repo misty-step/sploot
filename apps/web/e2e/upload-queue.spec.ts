@@ -61,23 +61,32 @@ async function establishOrigin(page: Page, userId: string): Promise<void> {
   await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
 }
 
-async function openSignedOutApp(page: Page): Promise<void> {
-  await page.goto('/manifest.json', { waitUntil: 'commit', timeout: 10_000 });
-  const health = await page.evaluate(async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5_000);
+async function waitForBrowserHealth(page: Page, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastFailure: unknown;
+
+  while (Date.now() < deadline) {
+    const remainingMs = Math.max(1, deadline - Date.now());
     try {
-      const response = await fetch('/api/health', { cache: 'no-store', signal: controller.signal });
-      return {
-        ok: response.ok,
-        status: response.status,
-        body: await response.json() as { status?: string },
-      };
-    } finally {
-      clearTimeout(timeout);
+      const response = await page.goto('/api/health', {
+        waitUntil: 'commit',
+        timeout: Math.min(1_000, remainingMs),
+      });
+      const body = await response?.json() as { status?: string } | undefined;
+      expect(response?.ok()).toBe(true);
+      expect(response?.status()).toBe(200);
+      expect(body).toMatchObject({ status: 'ok' });
+      return;
+    } catch (error) {
+      lastFailure = error;
     }
-  });
-  expect(health).toMatchObject({ ok: true, status: 200, body: { status: 'ok' } });
+  }
+
+  throw new Error('browser could not establish the production origin through /api/health', { cause: lastFailure });
+}
+
+async function openSignedOutApp(page: Page): Promise<void> {
+  await waitForBrowserHealth(page);
   await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
 }
 
