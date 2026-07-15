@@ -28,11 +28,7 @@ describe('embedding limiter fail-closed behavior', () => {
     const result = await acquireEmbeddingRateLimit('user-1');
 
     expect(result).toMatchObject({ allowed: false, reason: 'limiter_unavailable' });
-    expect(mockLogError).toHaveBeenCalledWith(
-      'embedding-rate-limit.store-unavailable',
-      expect.any(Error),
-      expect.objectContaining({ userId: 'user-1' })
-    );
+    expect(mockLogError).not.toHaveBeenCalled();
   });
 
   it('denies daily spend acquisition when its Postgres store is unavailable', async () => {
@@ -44,11 +40,7 @@ describe('embedding limiter fail-closed behavior', () => {
       count: 0,
       limit: EMBEDDING_DAILY_BUDGET,
     });
-    expect(mockLogError).toHaveBeenCalledWith(
-      'embedding-rate-limit.daily-budget-store-unavailable',
-      expect.any(Error),
-      expect.any(Object)
-    );
+    expect(mockLogError).not.toHaveBeenCalled();
   });
 
   it('treats releasing a missing lease as a no-op', async () => {

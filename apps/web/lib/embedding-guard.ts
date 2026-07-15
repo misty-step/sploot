@@ -8,6 +8,7 @@ export type EmbeddingGateState =
   | 'ready'
   | 'processing'
   | 'cooldown'
+  | 'terminal'
   | 'available'
   | 'unavailable';
 
@@ -17,6 +18,8 @@ export interface EmbeddingGateResult {
   retryAfterMs?: number;
   updatedAt?: Date | null;
   completedAt?: Date | null;
+  nextAttemptAt?: Date | null;
+  terminalAt?: Date | null;
 }
 
 export interface EmbeddingLockResult extends EmbeddingGateResult {
@@ -28,6 +31,8 @@ export interface EmbeddingStateRow {
   updatedAt?: Date | null;
   completedAt?: Date | null;
   dim?: number | null;
+  nextAttemptAt?: Date | null;
+  terminalAt?: Date | null;
 }
 
 export function resolveEmbeddingGateState(
@@ -42,9 +47,15 @@ export function resolveEmbeddingGateState(
   const updatedAt = row.updatedAt ?? null;
   const completedAt = row.completedAt ?? null;
   const dim = row.dim ?? null;
+  const nextAttemptAt = row.nextAttemptAt ?? null;
+  const terminalAt = row.terminalAt ?? null;
 
   if ((status === 'ready' && completedAt) || (dim && dim > 0)) {
     return { state: 'ready', status, updatedAt, completedAt };
+  }
+
+  if (terminalAt) {
+    return { state: 'terminal', status, updatedAt, completedAt, terminalAt };
   }
 
   if (status === 'processing' && updatedAt) {
@@ -71,6 +82,16 @@ export function resolveEmbeddingGateState(
     }
   }
 
+  if (nextAttemptAt && nextAttemptAt > now) {
+    return {
+      state: 'cooldown',
+      status,
+      updatedAt,
+      retryAfterMs: nextAttemptAt.getTime() - now.getTime(),
+      nextAttemptAt,
+    };
+  }
+
   return { state: 'available', status, updatedAt, completedAt };
 }
 
@@ -88,6 +109,8 @@ export async function getEmbeddingGateState(
       updatedAt: true,
       completedAt: true,
       dim: true,
+      nextAttemptAt: true,
+      terminalAt: true,
     },
   });
 
@@ -95,13 +118,14 @@ export async function getEmbeddingGateState(
 }
 
 export async function acquireEmbeddingProcessing(
-  assetId: string
+  assetId: string,
+  nowMs: number = Date.now()
 ): Promise<EmbeddingLockResult> {
   if (!prisma) {
     return { state: 'unavailable', acquired: false };
   }
 
-  const now = new Date();
+  const now = new Date(nowMs);
   const processingStaleBefore = new Date(now.getTime() - EMBEDDING_PROCESSING_TTL_MS);
   const failedCooldownBefore = new Date(now.getTime() - EMBEDDING_FAILED_COOLDOWN_MS);
 
@@ -112,10 +136,12 @@ export async function acquireEmbeddingProcessing(
     SET
       "status" = 'processing',
       "error" = NULL,
-      "updatedAt" = NOW()
+      "updatedAt" = ${now}
     WHERE "asset_id" = ${assetId}
       AND "image_embedding" IS NULL
       AND ("dim" IS NULL OR "dim" = 0)
+      AND "terminal_at" IS NULL
+      AND ("next_attempt_at" IS NULL OR "next_attempt_at" <= ${now})
       AND (
         "status" IS NULL
         OR "status" = 'pending'
@@ -153,8 +179,8 @@ export async function acquireEmbeddingProcessing(
       'pending',
       0,
       'processing',
-      NOW(),
-      NOW()
+      ${now},
+      ${now}
     )
     ON CONFLICT ("asset_id") DO NOTHING
     RETURNING "status", "updatedAt", "completedAt";

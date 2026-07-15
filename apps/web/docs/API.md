@@ -386,8 +386,10 @@ token; every other route returns `401` for one. Dedupe, quota, and the
 
 #### POST /api/assets
 
-Create a new asset record after successful blob upload. Automatically starts
-embedding generation when Replicate is configured.
+Create a new asset record after successful blob upload. Schedules embedding
+generation through the shared durable admission boundary when embeddings are
+enabled; the response may report `processing` while the scheduler persists
+retryable, user-local, and terminal outcomes for cron recovery.
 
 **Authentication:** Required
 
@@ -876,7 +878,9 @@ Check embedding generation status for up to 50 assets.
 
 Manually trigger embedding generation for an asset.
 
-Embedding generation is guarded by `SPLOOT_EMBEDDINGS_ENABLED=false`; when disabled this route returns `503` with `code: "embeddings_disabled"` before calling Replicate. The cron embedding processor uses the same gate.
+Embedding generation is guarded by `SPLOOT_EMBEDDINGS_ENABLED=false`; when disabled this route returns `503` with `code: "embeddings_disabled"` before calling Replicate. A durable provider circuit returns `503` with `status: "provider_backoff"` and `Retry-After`; an actual provider `429` returns `429` with `status: "provider_rate_limited"` and is counted as an asset attempt. Provider timeout and 5xx outcomes return typed `503` with `Retry-After` and are counted as asset attempts. User/global rate and daily-budget denials return typed `429` responses with `Retry-After`; an unavailable limiter returns typed `503`. An asset-local cooldown returns `429` with `status: "cooldown"`. Every embedding `429` has a finite `Retry-After`: missing or malformed provider metadata defaults to 30 seconds and all values are capped at 86,400 seconds; daily-budget responses may truthfully use the next UTC reset. The cron embedding processor uses the same gate and circuit and includes per-item failure taxonomy in partial responses.
+
+This route is also the only recovery path for a terminal asset (one that has exhausted its three-attempt budget; cron never rediscovers terminal rows). Within fifteen minutes of the terminal failure the route returns `429` with `status: "terminal_quarantine"` and a truthful `Retry-After`. After the quarantine, an owner request atomically revives the row — resetting the attempt budget and passing through the full circuit/rate/daily admission boundary — and a successful revive-and-generate response includes `"revived": true`. Each revive grants exactly one fresh bounded attempt cycle before the row re-poisons into a new quarantine.
 
 **Authentication:** Required
 
@@ -900,8 +904,13 @@ Embedding generation is guarded by `SPLOOT_EMBEDDINGS_ENABLED=false`; when disab
 
 ```json
 {
-  "message": "Embedding generation started",
-  "assetId": "550e8400-e29b-41d4-a716-446655440000"
+  "success": true,
+  "message": "Embedding generated successfully",
+  "embedding": {
+    "modelName": "…",
+    "dimension": 768,
+    "processingTime": 123
+  }
 }
 ```
 

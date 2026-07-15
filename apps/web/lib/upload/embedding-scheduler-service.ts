@@ -6,23 +6,44 @@ import {
   EmbeddingError,
 } from '@/lib/embeddings';
 import {
+  EmbeddingProviderCircuitOpenError,
+  EmbeddingProviderUnavailableError,
+} from '@/lib/embedding-errors';
+import {
   acquireEmbeddingProcessing,
   resolveEmbeddingGateState,
 } from '@/lib/embedding-guard';
 import { getRuntimeGate } from '@/lib/runtime-gates';
 import { logger } from '@/lib/logger';
+import {
+  deferEmbeddingAdmission,
+  type EmbeddingAttemptFailure,
+  getEmbeddingAdmissionReason,
+  isEmbeddingAdmissionFailure,
+  recordEmbeddingAttemptFailure,
+} from '@/lib/embedding-resilience';
 
 /**
  * Embedding scheduling error
  */
-export class EmbeddingScheduleError extends Error {
+export class EmbeddingScheduleError extends EmbeddingError {
+  readonly reason?: string;
+
   constructor(
     message: string,
     public retryable: boolean = false,
-    public cause?: Error
+    public cause?: Error,
+    statusCode?: number,
+    retryAfterSec?: number,
   ) {
-    super(message);
+    super(
+      message,
+      statusCode ?? (cause instanceof EmbeddingError ? cause.statusCode : 500),
+      retryable,
+      retryAfterSec ?? (cause instanceof EmbeddingError ? cause.retryAfterSec : undefined),
+    );
     this.name = 'EmbeddingScheduleError';
+    this.reason = (cause as { reason?: string } | undefined)?.reason;
   }
 }
 
@@ -207,15 +228,21 @@ export class EmbeddingSchedulerService {
         error: error instanceof Error ? error.message : String(error),
       });
 
-      // Mark as failed in database
-      await this.markEmbeddingFailed(
+      const providerError = error instanceof EmbeddingProviderUnavailableError
+        ? error
+        : new EmbeddingProviderUnavailableError(
+            'Embedding service initialization failed',
+          );
+      const failure = await this.recordAttemptFailureOrFallback(
         assetId,
-        'Failed to initialize embedding service'
+        providerError.message,
+        true,
       );
+      const terminal = failure?.terminal ?? false;
       throw new EmbeddingScheduleError(
-        'Failed to initialize embedding service',
-        false,
-        error instanceof Error ? error : undefined
+        `Embedding generation deferred: ${providerError.message}`,
+        !terminal,
+        providerError,
       );
     }
 
@@ -242,6 +269,54 @@ export class EmbeddingSchedulerService {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
 
+      if (error instanceof EmbeddingProviderCircuitOpenError) {
+        await deferEmbeddingAdmission(
+          assetId,
+          errorMessage,
+          'provider_circuit_open',
+          error.retryAfterSec
+        );
+        await this.markEmbeddingPending(assetId, errorMessage);
+        throw new EmbeddingScheduleError(
+          `Embedding generation deferred: ${errorMessage}`,
+          true,
+          error
+        );
+      }
+
+      if (isEmbeddingAdmissionFailure(error)) {
+        const retryAfterSec =
+          error instanceof EmbeddingAdmissionError
+            ? error.retryAfterSec
+            : undefined;
+        const reason = getEmbeddingAdmissionReason(error) ?? 'limiter_unavailable';
+        try {
+          await deferEmbeddingAdmission(
+            assetId,
+            errorMessage,
+            reason,
+            retryAfterSec
+          );
+        } catch (deferError) {
+          logger.error('Failed to defer admission-denied embedding', {
+            assetId,
+            error:
+              deferError instanceof Error
+                ? deferError.message
+                : String(deferError),
+          });
+        }
+        // Keep the existing pending-row write as a compatibility fallback for
+        // callers whose Prisma client predates the resilience migration. The
+        // new columns remain untouched when the durable defer succeeds.
+        await this.markEmbeddingPending(assetId, errorMessage);
+        throw new EmbeddingScheduleError(
+          `Embedding generation deferred: ${errorMessage}`,
+          true,
+          error instanceof Error ? error : undefined
+        );
+      }
+
       if (error instanceof EmbeddingError && error.retryable) {
         logger.warn('Embedding generation deferred for retry', {
           assetId,
@@ -254,7 +329,7 @@ export class EmbeddingSchedulerService {
               ? error.retryAfterSec
               : undefined,
         });
-        await this.markEmbeddingPending(assetId, errorMessage);
+        await this.recordAttemptFailureOrFallback(assetId, errorMessage, true);
         throw new EmbeddingScheduleError(
           `Embedding generation deferred: ${errorMessage}`,
           true,
@@ -275,8 +350,10 @@ export class EmbeddingSchedulerService {
         });
       }
 
-      // Mark as failed in database
-      await this.markEmbeddingFailed(assetId, errorMessage);
+      // Keep non-retryable assets bounded too. The durable attempt counter is
+      // the poison oracle; the legacy failed write is only a compatibility
+      // fallback for clients that predate the resilience migration.
+      await this.recordAttemptFailureOrFallback(assetId, errorMessage, false);
 
       // Re-throw for sync mode error handling
       throw new EmbeddingScheduleError(
@@ -285,6 +362,23 @@ export class EmbeddingSchedulerService {
         error instanceof Error ? error : undefined
       );
     }
+  }
+
+  private async recordAttemptFailureOrFallback(
+    assetId: string,
+    errorMessage: string,
+    pendingFallback: boolean
+  ): Promise<EmbeddingAttemptFailure | null> {
+    if (prisma && typeof prisma.$queryRaw === 'function') {
+      return recordEmbeddingAttemptFailure(assetId, errorMessage);
+    }
+
+    if (pendingFallback) {
+      await this.markEmbeddingPending(assetId, errorMessage);
+    } else {
+      await this.markEmbeddingFailed(assetId, errorMessage);
+    }
+    return null;
   }
 
   /** Keep an acquired placeholder eligible for cron or explicit retry. */

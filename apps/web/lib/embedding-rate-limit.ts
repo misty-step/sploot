@@ -28,17 +28,41 @@ export type EmbeddingRateLimitReason =
 
 export type EmbeddingDailyBudgetReason = 'daily_budget' | 'limiter_unavailable';
 
+export interface EmbeddingDailyBudgetReservation {
+  dateKey: string;
+}
+
 export interface EmbeddingDailyBudgetResult {
   allowed: boolean;
   reason?: EmbeddingDailyBudgetReason;
   count: number;
   limit: number;
   retryAfterSec?: number;
+  reservation?: EmbeddingDailyBudgetReservation;
+}
+
+export interface EmbeddingAdmissionReservation {
+  lease: EmbeddingRateLimitLease;
+  dailyReservation: EmbeddingDailyBudgetReservation;
+  counts: {
+    userWindow: number;
+    globalWindow: number;
+    dailyBudget: number;
+  };
+}
+
+export interface EmbeddingAdmissionReservationResult {
+  allowed: boolean;
+  reason?: EmbeddingRateLimitReason | EmbeddingDailyBudgetReason;
+  retryAfterSec?: number;
+  reservation?: EmbeddingAdmissionReservation;
 }
 
 export interface EmbeddingRateLimitLease {
   id: string;
   userId: string;
+  /** The exact minute bucket reserved by this lease, for an atomic refund. */
+  windowId?: number;
 }
 
 export interface EmbeddingRateLimitResult {
@@ -167,11 +191,6 @@ export async function acquireEmbeddingRateLimit(
       }
 
       if (globalInflight >= EMBEDDING_GLOBAL_CONCURRENCY_LIMIT) {
-        logger.logError(
-          'embedding-rate-limit.global-concurrency-breach',
-          new Error('Embedding global concurrency limit exceeded'),
-          { globalInflight, limit: EMBEDDING_GLOBAL_CONCURRENCY_LIMIT }
-        );
         return {
           allowed: false,
           reason: 'global_concurrency',
@@ -190,11 +209,6 @@ export async function acquireEmbeddingRateLimit(
       }
 
       if (globalWindow >= EMBEDDING_GLOBAL_WINDOW_LIMIT) {
-        logger.logError(
-          'embedding-rate-limit.global-rate-breach',
-          new Error('Embedding global rate limit exceeded'),
-          { globalWindow, limit: EMBEDDING_GLOBAL_WINDOW_LIMIT }
-        );
         return {
           allowed: false,
           reason: 'global_rate',
@@ -207,6 +221,7 @@ export async function acquireEmbeddingRateLimit(
       const lease = {
         id: randomUUID(),
         userId,
+        windowId,
       };
 
       const [persistedUserWindow, persistedGlobalWindow] = await Promise.all([
@@ -214,7 +229,8 @@ export async function acquireEmbeddingRateLimit(
         incrementBucket(tx, globalWindowKey, expiresAt),
         tx.embeddingRateLease.create({
           data: {
-            ...lease,
+            id: lease.id,
+            userId: lease.userId,
             expiresAt: new Date(nowMs + EMBEDDING_INFLIGHT_TTL_SECONDS * 1000),
           },
         }),
@@ -232,7 +248,6 @@ export async function acquireEmbeddingRateLimit(
       };
     });
   } catch (error) {
-    logger.logError('embedding-rate-limit.store-unavailable', error, { userId });
     return {
       allowed: false,
       reason: 'limiter_unavailable',
@@ -259,6 +274,52 @@ export async function releaseEmbeddingRateLimit(
   }
 }
 
+/** Refund minute and daily reservations when the circuit wins a race. */
+export async function refundEmbeddingAdmissionCapacity(
+  lease: EmbeddingRateLimitLease,
+  dailyReservation: EmbeddingDailyBudgetReservation | undefined,
+): Promise<void> {
+  if (!prisma) return;
+
+  try {
+    await withLimiterLock(async (tx) => {
+      const deleted = await tx.embeddingRateLease.deleteMany({
+        where: { id: lease.id },
+      });
+      if (deleted.count === 0) return;
+
+      const windowId = lease.windowId ?? getWindowId(Date.now());
+      await tx.embeddingRateBucket.updateMany({
+        where: {
+          key: {
+            in: [
+              `embedding:rate:user:${lease.userId}:${windowId}`,
+              `${GLOBAL_WINDOW_KEY_PREFIX}:${windowId}`,
+            ],
+          },
+          count: { gt: 0 },
+        },
+        data: { count: { decrement: 1 } },
+      });
+
+      if (dailyReservation) {
+        await tx.embeddingRateBucket.updateMany({
+          where: {
+            key: `embedding:daily:${dailyReservation.dateKey}`,
+            count: { gt: 0 },
+          },
+          data: { count: { decrement: 1 } },
+        });
+      }
+    });
+  } catch (error) {
+    logger.logError('embedding-rate-limit.refund-failed', error, {
+      leaseId: lease.id,
+      userId: lease.userId,
+    });
+  }
+}
+
 export async function acquireEmbeddingDailyBudget(
   nowMs: number = Date.now()
 ): Promise<EmbeddingDailyBudgetResult> {
@@ -273,11 +334,6 @@ export async function acquireEmbeddingDailyBudget(
       const count = bucket?.count ?? 0;
 
       if (count >= EMBEDDING_DAILY_BUDGET) {
-        logger.logError(
-          'embedding-rate-limit.daily-budget-breach',
-          new Error('Embedding daily budget exceeded'),
-          { dateKey, count, limit: EMBEDDING_DAILY_BUDGET }
-        );
         return {
           allowed: false,
           reason: 'daily_budget',
@@ -296,15 +352,129 @@ export async function acquireEmbeddingDailyBudget(
         allowed: true,
         count: persistedCount,
         limit: EMBEDDING_DAILY_BUDGET,
+        reservation: { dateKey },
       };
     });
   } catch (error) {
-    logger.logError('embedding-rate-limit.daily-budget-store-unavailable', error, { dateKey });
     return {
       allowed: false,
       reason: 'limiter_unavailable',
       count: 0,
       limit: EMBEDDING_DAILY_BUDGET,
+      retryAfterSec: 30,
+    };
+  }
+}
+
+export async function acquireEmbeddingAdmissionReservation(
+  userId: string,
+  nowMs: number = Date.now()
+): Promise<EmbeddingAdmissionReservationResult> {
+  const now = new Date(nowMs);
+  const windowId = getWindowId(nowMs);
+  const retryAfterSec = getWindowRetryAfterSec(nowMs);
+  const userWindowKey = `embedding:rate:user:${userId}:${windowId}`;
+  const globalWindowKey = `${GLOBAL_WINDOW_KEY_PREFIX}:${windowId}`;
+  const dailyDateKey = getUtcDateKey(nowMs);
+  const dailyKey = `embedding:daily:${dailyDateKey}`;
+
+  try {
+    return await withLimiterLock(async (tx) => {
+      await pruneExpiredLimiterState(tx, now);
+
+      const [userInflight, globalInflight, userBucket, globalBucket, dailyBucket] = await Promise.all([
+        tx.embeddingRateLease.count({ where: { userId, expiresAt: { gt: now } } }),
+        tx.embeddingRateLease.count({ where: { expiresAt: { gt: now } } }),
+        tx.embeddingRateBucket.findUnique({ where: { key: userWindowKey } }),
+        tx.embeddingRateBucket.findUnique({ where: { key: globalWindowKey } }),
+        tx.embeddingRateBucket.findUnique({ where: { key: dailyKey } }),
+      ]);
+
+      const userWindow = userBucket?.count ?? 0;
+      const globalWindow = globalBucket?.count ?? 0;
+      const dailyCount = dailyBucket?.count ?? 0;
+
+      if (userInflight >= EMBEDDING_USER_CONCURRENCY_LIMIT) {
+        return {
+          allowed: false,
+          reason: 'user_concurrency',
+          retryAfterSec: EMBEDDING_INFLIGHT_TTL_SECONDS,
+        };
+      }
+
+      if (globalInflight >= EMBEDDING_GLOBAL_CONCURRENCY_LIMIT) {
+        return {
+          allowed: false,
+          reason: 'global_concurrency',
+          retryAfterSec: EMBEDDING_INFLIGHT_TTL_SECONDS,
+        };
+      }
+
+      if (userWindow >= EMBEDDING_USER_WINDOW_LIMIT) {
+        return {
+          allowed: false,
+          reason: 'user_rate',
+          retryAfterSec,
+        };
+      }
+
+      if (globalWindow >= EMBEDDING_GLOBAL_WINDOW_LIMIT) {
+        return {
+          allowed: false,
+          reason: 'global_rate',
+          retryAfterSec,
+        };
+      }
+
+      if (dailyCount >= EMBEDDING_DAILY_BUDGET) {
+        return {
+          allowed: false,
+          reason: 'daily_budget',
+          retryAfterSec: secondsUntilNextUtcDay(nowMs),
+        };
+      }
+
+      const expiresAt = getWindowExpiry(windowId);
+      const lease = {
+        id: randomUUID(),
+        userId,
+        windowId,
+      };
+      const leaseRecord = tx.embeddingRateLease.create({
+        data: {
+          id: lease.id,
+          userId: lease.userId,
+          expiresAt: new Date(nowMs + EMBEDDING_INFLIGHT_TTL_SECONDS * 1000),
+        },
+      });
+      const [persistedUserWindow, persistedGlobalWindow, persistedDailyBudget] = await Promise.all([
+        incrementBucket(tx, userWindowKey, expiresAt),
+        incrementBucket(tx, globalWindowKey, expiresAt),
+        incrementBucket(
+          tx,
+          dailyKey,
+          new Date(nowMs + EMBEDDING_DAILY_BUDGET_TTL_SECONDS * 1000)
+        ),
+        leaseRecord,
+      ]);
+
+      return {
+        allowed: true,
+        reservation: {
+          lease,
+          dailyReservation: { dateKey: dailyDateKey },
+          counts: {
+            userWindow: persistedUserWindow,
+            globalWindow: persistedGlobalWindow,
+            dailyBudget: persistedDailyBudget,
+          },
+        },
+      };
+    });
+  } catch {
+    return {
+      allowed: false,
+      reason: 'limiter_unavailable',
       retryAfterSec: 30,
     };
   }

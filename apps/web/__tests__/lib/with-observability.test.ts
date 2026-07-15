@@ -206,6 +206,71 @@ describe('withObservability', () => {
     );
   });
 
+  it('classifies typed embedding 503 responses without a duplicate Canary error', async () => {
+    const handler = vi.fn(async () => ({
+      status: 503,
+      headers: new Headers({
+        'Retry-After': '30',
+        'X-Sploot-Embedding-Outcome': 'provider_circuit_open',
+      }),
+    }) as unknown as NextResponse);
+
+    const wrapped = withObservability(handler);
+    await wrapped(createRequest('https://sploot.dev/api/embedding'), defaultContext);
+
+    const record = loggerRecords[0];
+    expect(record?.logger.logInfo).toHaveBeenCalledWith(
+      'request:typed-embedding-outcome',
+      expect.objectContaining({
+        statusCode: 503,
+        reason: 'provider_circuit_open',
+      }),
+    );
+    expect(record?.logger.logError).not.toHaveBeenCalled();
+  });
+
+  it('honors a route-owned generic 500 marker without emitting a wrapper Canary report', async () => {
+    const handler = vi.fn(async () => ({
+      status: 500,
+      headers: new Headers({
+        'X-Sploot-Canary-Owner': 'route',
+      }),
+    }) as unknown as NextResponse);
+
+    const wrapped = withObservability(handler);
+    await wrapped(createRequest('https://sploot.dev/api/owned-error'), defaultContext);
+
+    const record = loggerRecords[0];
+    expect(record?.logger.logError).not.toHaveBeenCalledWith(
+      'request:server-error-status',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it.each(['provider_rate_limit', 'provider_unavailable', 'global_rate'])(
+    'classifies typed %s outcomes without generic 5xx logging',
+    async (outcome) => {
+      const handler = vi.fn(async () => ({
+        status: 503,
+        headers: new Headers({
+          'Retry-After': '30',
+          'X-Sploot-Embedding-Outcome': outcome,
+        }),
+      }) as unknown as NextResponse);
+
+      const wrapped = withObservability(handler);
+      await wrapped(createRequest('https://sploot.dev/api/embedding'), defaultContext);
+
+      const record = loggerRecords[0];
+      expect(record?.logger.logInfo).toHaveBeenCalledWith(
+        'request:typed-embedding-outcome',
+        expect.objectContaining({ reason: outcome, statusCode: 503 }),
+      );
+      expect(record?.logger.logError).not.toHaveBeenCalled();
+    },
+  );
+
   it('logs errors, invokes unstable_rethrow, and rethrows', async () => {
     const boom = new Error('sploot meltdown');
     const handler = vi.fn(async () => {

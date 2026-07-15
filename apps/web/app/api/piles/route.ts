@@ -18,6 +18,7 @@ import {
   isEnrollmentDeniedError,
   isEnrollmentUnavailableError,
 } from '@/lib/enrollment/enrollment-policy';
+import { EmbeddingError, embeddingRetryHeaders } from '@/lib/embedding-errors';
 
 const MIN_LIMIT = 1;
 const MAX_LIMIT = 12;
@@ -70,16 +71,25 @@ async function getHandler(req: NextRequest, _context: unknown, { principal }: { 
     unstable_rethrow(error);
 
     if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
-    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
+    // Typed embedding outcomes keep their Retry-After contract below; only
+    // genuine enrollment failures take the duck-typed enrollment path.
+    if (isEnrollmentUnavailableError(error) && !(error instanceof EmbeddingError)) {
+      return enrollmentUnavailableResponse();
+    }
 
     if (error instanceof PileEmbeddingUnavailableError) {
       return NextResponse.json(
         {
           error: 'Automatic piles are temporarily unavailable: anchor embeddings are not ready.',
           code: error.code,
+          reason: error.reason,
+          retryAfterSec: error.retryAfterSec,
           retryable: true,
         },
-        { status: 503 }
+        {
+          status: error.statusCode ?? 503,
+          headers: embeddingRetryHeaders(error),
+        }
       );
     }
 

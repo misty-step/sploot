@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
+import { embeddingRetryHeaders } from '@/lib/embedding-errors';
 import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
@@ -45,12 +46,9 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     try {
       embeddingService = createEmbeddingService(userId);
     } catch (error) {
-      // Failed to initialize embedding service
+      if (error instanceof EmbeddingError) throw error;
       return NextResponse.json(
-        {
-          error: 'Embedding service not configured',
-          details: 'Replicate API token not set. Please configure REPLICATE_API_TOKEN in your environment variables.'
-        },
+        { error: 'Embedding service not configured' },
         { status: 503 }
       );
     }
@@ -67,13 +65,21 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
 
   } catch (error) {
     if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
-    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
+    // EmbeddingAdmissionError(limiter_unavailable) carries the shared
+    // enrollment_unavailable code but keeps its typed Retry-After contract
+    // below; only genuine enrollment failures take this path.
+    if (isEnrollmentUnavailableError(error) && !(error instanceof EmbeddingAdmissionError)) {
+      return enrollmentUnavailableResponse();
+    }
     // Error generating text embedding
 
     if (error instanceof EmbeddingError) {
       return NextResponse.json(
         { error: error.message, ...(error instanceof EmbeddingAdmissionError && error.code ? { code: error.code } : {}) },
-        { status: error.statusCode || 500 }
+        {
+          status: error.statusCode || 500,
+          headers: embeddingRetryHeaders(error),
+        }
       );
     }
 
