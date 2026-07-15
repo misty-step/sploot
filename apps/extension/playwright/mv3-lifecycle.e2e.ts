@@ -1,5 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { chromium, expect, test, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import {
@@ -19,7 +20,7 @@ const LIST_QUEUE = 'sploot:context-menu-save:list-queue';
 const DISCARD = 'sploot:context-menu-save:discard';
 const RETRY = 'sploot:context-menu-save:retry';
 const CAPTURE = 'CAPTURE_VISIBLE_TAB';
-const ACTION_SHORTCUT = 'Control+Shift+Y';
+const ACTION_SHORTCUT = process.platform === 'darwin' ? 'Meta+Shift+Y' : 'Control+Shift+Y';
 
 let server: Server;
 let uploadMode: 'success' | 'failure' | 'duplicate' = 'success';
@@ -35,6 +36,23 @@ function json(response: import('node:http').ServerResponse, status: number, body
     'access-control-allow-origin': '*',
   });
   response.end(JSON.stringify(body));
+}
+
+async function invokeBrowserActionShortcut(page: Page) {
+  if (process.platform === 'linux') {
+    // Playwright key events target the renderer and do not cross Chrome's UI
+    // accelerator boundary. Xvfb gives CI a real browser window, so xdotool
+    // invokes the installed extension's reserved _execute_action command and
+    // earns the same transient activeTab grant as an operator shortcut.
+    execFileSync('xdotool', [
+      'getactivewindow',
+      'key',
+      '--clearmodifiers',
+      'ctrl+shift+y',
+    ], { stdio: 'pipe' });
+    return;
+  }
+  await page.keyboard.press(ACTION_SHORTCUT);
 }
 
 test.beforeAll(async () => {
@@ -376,7 +394,7 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
       // This is a real Chrome command invocation on the active HTTP tab. It
       // grants activeTab transiently; the following capture remains the normal
       // production background message, never a test-only capture substitute.
-      await fixture.keyboard.press(ACTION_SHORTCUT);
+      await invokeBrowserActionShortcut(fixture);
       await expect.poll(async () => worker.evaluate(async () => {
         const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
         return tab?.url ?? null;
