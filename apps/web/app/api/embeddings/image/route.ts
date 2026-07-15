@@ -6,6 +6,7 @@ import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
+import { resolveEmbeddingMediaSource } from '@/lib/embedding-media';
 import {
   assertEnrolledUser,
   enrollmentDeniedResponse,
@@ -30,12 +31,24 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
       );
     }
 
+    let asset: {
+      blobUrl: string;
+      thumbnailUrl: string | null;
+      mime: string;
+      checksumSha256: string;
+    } | null = null;
     if (assetId) {
-      const asset = await prisma.asset.findFirst({
+      asset = await prisma.asset.findFirst({
         where: {
           id: assetId,
           ownerUserId: userId,
           deletedAt: null,
+        },
+        select: {
+          blobUrl: true,
+          thumbnailUrl: true,
+          mime: true,
+          checksumSha256: true,
         },
       });
 
@@ -45,6 +58,26 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
           { status: 404 }
         );
       }
+    }
+
+    const media = asset
+      ? resolveEmbeddingMediaSource({
+          mime: asset.mime,
+          blobUrl: asset.blobUrl,
+          thumbnailUrl: asset.thumbnailUrl,
+        })
+      : { sourceUrl: imageUrl, sourceKind: 'blob' as const };
+
+    if (media.sourceKind === 'unsupported') {
+      return NextResponse.json(
+        {
+          success: false,
+          status: 'terminal_skip',
+          error: 'Unsupported video without a poster thumbnail',
+          reason: media.skipReason,
+        },
+        { status: 422 },
+      );
     }
 
     const embeddingGate = getRuntimeGate('embeddings');
@@ -63,7 +96,10 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
       );
     }
 
-    const result = await embeddingService.embedImage(imageUrl);
+    const result = await embeddingService.embedImage(
+      media.sourceUrl,
+      asset?.checksumSha256,
+    );
 
     if (assetId && prisma) {
       await upsertAssetEmbedding({

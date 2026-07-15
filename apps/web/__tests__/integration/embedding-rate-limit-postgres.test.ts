@@ -21,6 +21,10 @@ const limiterUserIds = [
   'crashed-user',
   'window-user',
   'global-window-overflow',
+  // The limiter now proves enrollment (an existing users row) inside the
+  // admission transaction, so every synthetic caller must be enrolled.
+  'atomic-user-a',
+  'atomic-user-b',
   ...Array.from({ length: EMBEDDING_GLOBAL_CONCURRENCY_LIMIT + 5 }, (_, index) => `concurrent-user-${index}`),
   ...Array.from({ length: EMBEDDING_GLOBAL_WINDOW_LIMIT }, (_, index) => `global-window-${index}`),
 ];

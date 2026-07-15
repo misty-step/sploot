@@ -243,6 +243,7 @@ async function postHandler(req: NextRequest) {
       pathname,
       filename,
       mimeType,
+      thumbnailUrl,
       size,
       checksum,
       width,
@@ -293,6 +294,7 @@ async function postHandler(req: NextRequest) {
         asset: {
           id: existingAsset.id,
           blobUrl: existingAsset.blobUrl,
+          thumbnailUrl: existingAsset.thumbnailUrl,
           pathname: existingAsset.pathname,
           filename:
             existingAsset.pathname.split("/").pop() || existingAsset.pathname,
@@ -317,6 +319,7 @@ async function postHandler(req: NextRequest) {
         blobUrl,
         pathname,
         mime: mimeType,
+        thumbnailUrl: typeof thumbnailUrl === "string" ? thumbnailUrl : null,
         size,
         checksumSha256,
         width: width || null,
@@ -341,6 +344,8 @@ async function postHandler(req: NextRequest) {
       const scheduled = await new EmbeddingSchedulerService().scheduleEmbedding({
         assetId: asset.id,
         blobUrl,
+        mime: mimeType,
+        thumbnailUrl: asset.thumbnailUrl,
         checksum: checksumSha256,
         mode: "async",
         ownerUserId: userId,
@@ -359,6 +364,7 @@ async function postHandler(req: NextRequest) {
       asset: {
         id: asset.id,
         blobUrl: asset.blobUrl,
+        thumbnailUrl: asset.thumbnailUrl,
         pathname: asset.pathname,
         filename: asset.pathname,
         mime: asset.mime,

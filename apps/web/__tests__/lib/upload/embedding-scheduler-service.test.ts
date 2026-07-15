@@ -79,6 +79,8 @@ describe('EmbeddingSchedulerService', () => {
     const baseParams: EmbeddingScheduleParams = {
       assetId: 'asset-123',
       blobUrl: 'https://example.com/image.jpg',
+      mime: 'image/jpeg',
+      thumbnailUrl: null,
       checksum: 'abc123',
       mode: 'sync',
       ownerUserId: 'user-123',
@@ -179,6 +181,72 @@ describe('EmbeddingSchedulerService', () => {
         await service.scheduleEmbedding(baseParams);
 
         expect(mockCreateEmbeddingService).toHaveBeenCalledWith('user-123');
+      });
+
+      it('uses a video poster and terminal-skips video without one before admission', async () => {
+        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
+        mockPrisma.assetEmbedding.upsert.mockResolvedValue({});
+        const videoService = {
+          embedImage: vi.fn().mockResolvedValue({
+            embedding: new Array(EMBEDDING_DIMENSION).fill(0.1),
+            model: 'test-model',
+            dimension: EMBEDDING_DIMENSION,
+          }),
+        };
+        mockCreateEmbeddingService.mockReturnValue(videoService);
+
+        const posterResult = await service.scheduleEmbedding({
+          ...baseParams,
+          assetId: 'video-asset',
+          blobUrl: 'https://example.com/raw.mp4',
+          mime: 'video/mp4',
+          thumbnailUrl: 'https://example.com/poster.jpg',
+        });
+
+        expect(posterResult).toEqual({
+          scheduled: true,
+          mode: 'sync',
+          assetId: 'video-asset',
+        });
+        expect(videoService.embedImage).toHaveBeenCalledWith(
+          'https://example.com/poster.jpg',
+          'abc123'
+        );
+
+        vi.clearAllMocks();
+        mockPrisma.assetEmbedding.findUnique.mockResolvedValue(null);
+        mockPrisma.assetEmbedding.upsert.mockResolvedValue({});
+
+        const skippedResult = await service.scheduleEmbedding({
+          ...baseParams,
+          assetId: 'video-terminal-skip',
+          blobUrl: 'https://example.com/raw.webm',
+          mime: 'video/webm',
+          thumbnailUrl: null,
+        });
+
+        expect(skippedResult).toEqual({
+          scheduled: false,
+          mode: 'sync',
+          assetId: 'video-terminal-skip',
+          reason: 'video_without_poster',
+        });
+        expect(mockCreateEmbeddingService).not.toHaveBeenCalled();
+        expect(mockPrisma.assetEmbedding.upsert).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { assetId: 'video-terminal-skip' },
+            create: expect.objectContaining({
+              assetId: 'video-terminal-skip',
+              status: 'failed',
+              terminalAt: expect.any(Date),
+            }),
+            update: expect.objectContaining({
+              status: 'failed',
+              terminalAt: expect.any(Date),
+              nextAttemptAt: null,
+            }),
+          })
+        );
       });
 
       it('should throw EmbeddingScheduleError on embedding service init failure', async () => {
@@ -286,8 +354,8 @@ describe('EmbeddingSchedulerService', () => {
         const result = await service.scheduleEmbedding(baseParams);
 
         // Verify: succeeds but skips generation
-        expect(result).toEqual({
-          scheduled: true,
+        expect(result).toMatchObject({
+          scheduled: false,
           mode: 'sync',
           assetId: 'asset-123',
         });

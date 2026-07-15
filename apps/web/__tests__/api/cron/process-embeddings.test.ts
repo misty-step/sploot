@@ -15,6 +15,9 @@ const mockPrisma = {
   asset: {
     findMany: vi.fn(),
   },
+  assetEmbedding: {
+    upsert: vi.fn(),
+  },
 };
 
 const mockUpsertAssetEmbedding = vi.fn();
@@ -24,6 +27,7 @@ const mockRecordEmbeddingAdmissionFailure = vi.fn();
 const mockDeferEmbeddingAdmission = vi.fn();
 const mockRecordEmbeddingAttemptFailure = vi.fn();
 const mockResetEmbeddingProviderCircuit = vi.fn();
+const mockMarkEmbeddingTerminalSkipped = vi.fn();
 let mockDatabaseAvailable = true;
 
 vi.mock('@/lib/db', () => ({
@@ -39,6 +43,8 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/embedding-guard', () => ({
   EMBEDDING_PROCESSING_TTL_MS: 10 * 60 * 1000,
   acquireEmbeddingProcessing: () => mockAcquireEmbeddingProcessing(),
+  markEmbeddingTerminalSkipped: (...args: unknown[]) =>
+    mockMarkEmbeddingTerminalSkipped(...args),
 }));
 
 vi.mock('@/lib/embedding-resilience', () => ({
@@ -309,6 +315,52 @@ describe('/api/cron/process-embeddings', () => {
 
       // Verify embeddings were stored
       expect(mockUpsertAssetEmbedding).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses the poster thumbnail for video assets and terminal-skips video without one', async () => {
+      const posterAsset = {
+        id: 'video-asset',
+        blobUrl: 'https://blob.vercel-storage.com/raw.mp4',
+        thumbnailUrl: 'https://blob.vercel-storage.com/poster.jpg',
+        mime: 'video/mp4',
+        checksumSha256: 'checksum-video',
+        ownerUserId: 'user-1',
+        createdAt: hoursAgo(2),
+      };
+
+      mockPrisma.asset.findMany.mockResolvedValue([posterAsset]);
+
+      const response = await GET({} as NextRequest);
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.stats.successCount).toBe(1);
+      expect(mockEmbedImage).toHaveBeenCalledWith(
+        'https://blob.vercel-storage.com/poster.jpg',
+        'checksum-video'
+      );
+
+      mockEmbedImage.mockReset();
+      mockPrisma.asset.findMany.mockResolvedValue([
+        {
+          ...posterAsset,
+          id: 'video-skip',
+          thumbnailUrl: null,
+          checksumSha256: 'checksum-skip',
+        },
+      ]);
+      mockPrisma.assetEmbedding.upsert.mockResolvedValue({});
+
+      const skipResponse = await GET({} as NextRequest);
+      const skipData = await skipResponse.json();
+
+      expect(skipResponse.status).toBe(207);
+      expect(skipData.stats.skippedCount).toBe(1);
+      expect(mockEmbedImage).not.toHaveBeenCalled();
+      expect(mockMarkEmbeddingTerminalSkipped).toHaveBeenCalledWith(
+        'video-skip',
+        'Unsupported video without a poster thumbnail'
+      );
     });
 
     it('should call upsertAssetEmbedding with correct parameters', async () => {

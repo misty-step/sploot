@@ -15,6 +15,7 @@ import {
 } from '@/lib/embedding-errors';
 import {
   acquireEmbeddingProcessing,
+  markEmbeddingTerminalSkipped,
   resolveEmbeddingGateState,
 } from '@/lib/embedding-guard';
 import {
@@ -39,6 +40,7 @@ import {
   isEnrollmentDeniedError,
   isEnrollmentUnavailableError,
 } from '@/lib/enrollment/enrollment-policy';
+import { resolveEmbeddingMediaSource } from '@/lib/embedding-media';
 
 // Request deduplication: Track in-flight requests
 const inFlightRequests = new Map<string, Promise<any>>();
@@ -119,7 +121,12 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
         ownerUserId: userId,
         deletedAt: null,
       },
-      include: {
+      select: {
+        id: true,
+        blobUrl: true,
+        checksumSha256: true,
+        mime: true,
+        thumbnailUrl: true,
         embedding: {
           select: {
             modelName: true,
@@ -203,6 +210,33 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
         {
           status: 429,
           headers: embeddingRetryAfterHeader(retryAfterSec),
+        }
+      );
+    }
+
+    const media = resolveEmbeddingMediaSource({
+      mime: asset.mime,
+      blobUrl: asset.blobUrl,
+      thumbnailUrl: asset.thumbnailUrl,
+    });
+    if (media.sourceKind === 'unsupported') {
+      await markEmbeddingTerminalSkipped(
+        asset.id,
+        'Unsupported video without a poster thumbnail'
+      );
+      logger.logInfo('generate-embedding.terminal-skip', {
+        assetId: id,
+        reason: media.skipReason,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          status: 'terminal_skip',
+          error: 'Unsupported video without a poster thumbnail',
+          reason: media.skipReason,
+        },
+        {
+          status: 422,
         }
       );
     }
@@ -328,7 +362,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
 
         const apiStartTime = Date.now();
         const result = await embeddingService.embedImage(
-          asset.blobUrl,
+          media.sourceUrl,
           asset.checksumSha256
         );
         const apiTime = Date.now() - apiStartTime;

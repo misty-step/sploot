@@ -32,6 +32,11 @@ BEGIN
      OR to_regclass('public.stripe_cancellation_maintenance_tokens') IS NULL THEN
     RAISE EXCEPTION 'Stripe ledger migrations are incomplete';
   END IF;
+  -- The embedding resilience migrations must precede this authority contract:
+  -- the runtime app role is granted DML on the provider circuit below.
+  IF to_regclass('public.embedding_provider_circuits') IS NULL THEN
+    RAISE EXCEPTION 'Embedding resilience migrations are incomplete';
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'stripe_cancellation_maintenance_tokens' AND column_name = 'legal_minimum_since')
      OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'stripe_cancellation_maintenance_tokens' AND column_name = 'subject_kind')
      OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'stripe_cancellation_maintenance_tokens' AND column_name = 'subject_id')
@@ -435,7 +440,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.user_storage_quotas, public.storage_quota_reservations,
   public.assets, public.asset_embeddings, public.tags, public.asset_tags,
   public.search_logs, public.text_embedding_cache, public.embedding_rate_buckets,
-  public.embedding_rate_leases
+  public.embedding_rate_leases, public.embedding_provider_circuits
 TO sploot_stripe_app;
 
 -- Strip PUBLIC EXECUTE from every SECURITY DEFINER function, then re-grant

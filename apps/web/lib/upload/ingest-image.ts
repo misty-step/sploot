@@ -121,6 +121,8 @@ export async function ingestImage({
       await scheduler.scheduleEmbedding({
         assetId: deduplicationResult.existingAsset.id,
         blobUrl: deduplicationResult.existingAsset.blobUrl,
+        mime: deduplicationResult.existingAsset.mime,
+        thumbnailUrl: deduplicationResult.existingAsset.thumbnailUrl ?? null,
         checksum: deduplicationResult.checksum,
         mode: syncEmbeddings ? 'sync' : 'async',
         ownerUserId: userId,
@@ -209,6 +211,8 @@ export async function ingestImage({
         await scheduler.scheduleEmbedding({
           assetId: recordResult.asset.id,
           blobUrl: uploadResult.thumbnailUrl ?? uploadResult.mainUrl,
+          mime: file.type,
+          thumbnailUrl: uploadResult.thumbnailUrl,
           checksum: deduplicationResult.checksum,
           mode: syncEmbeddings ? 'sync' : 'async',
           ownerUserId: userId,

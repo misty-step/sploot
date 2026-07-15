@@ -227,3 +227,35 @@ export async function markEmbeddingFailed(
     },
   });
 }
+
+export async function markEmbeddingTerminalSkipped(
+  assetId: string,
+  errorMessage: string
+): Promise<void> {
+  if (!prisma) {
+    return;
+  }
+
+  const now = new Date();
+  await prisma.assetEmbedding.upsert({
+    where: { assetId },
+    create: {
+      assetId,
+      modelName: 'unsupported-media',
+      modelVersion: 'unsupported-media',
+      dim: 0,
+      status: 'failed',
+      error: errorMessage,
+      terminalAt: now,
+    },
+    update: {
+      modelName: 'unsupported-media',
+      modelVersion: 'unsupported-media',
+      dim: 0,
+      status: 'failed',
+      error: errorMessage,
+      nextAttemptAt: null,
+      terminalAt: now,
+    },
+  });
+}
