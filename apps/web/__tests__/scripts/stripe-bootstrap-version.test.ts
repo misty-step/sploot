@@ -164,6 +164,9 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(ci).toContain(
       'INSERT INTO public.assets (id, owner_user_id, blob_url, pathname, mime, size, checksum_sha256, "createdAt", "updatedAt")',
     );
+    expect(ci).toContain(
+      'INSERT INTO public.asset_embeddings (asset_id, model_name, model_version, dim, status, "createdAt", "updatedAt")',
+    );
     expect(ci).toContain('CREATE ROLE sploot_stripe_app SUPERUSER INHERIT');
     expect(ci).toContain("test \"$role_converged\" = 't'");
   });
