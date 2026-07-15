@@ -1,22 +1,22 @@
 {
   "schemaVersion": 1,
   "rateFreshnessDays": 30,
-  "freeFullAllowanceAccounts": 80,
+  "freeFullAllowanceAccounts": 75,
   "sensitivity": {
     "low": {"renditionMultiplier": 1.05, "originMissRatio": 0.05, "inferenceAttemptMultiplier": 1, "databaseComputeMultiplier": 0.75, "stripeVariableSurcharge": 0},
     "base": {"renditionMultiplier": 1.1, "originMissRatio": 0.15, "inferenceAttemptMultiplier": 1.05, "databaseComputeMultiplier": 1, "stripeVariableSurcharge": 0.015},
     "high": {"renditionMultiplier": 1.2, "originMissRatio": 0.3, "inferenceAttemptMultiplier": 1.2, "databaseComputeMultiplier": 1.5, "stripeVariableSurcharge": 0.025}
   },
   "planBudgets": {
-    "free": {"monthlyInfrastructureUsd": 0.28, "dailyInferenceUsd": 0.00648, "monthlyInferenceUsd": 0.1296, "dailyInferenceAttempts": 12, "monthlyInferenceAttempts": 240},
-    "collector": {"monthlyInfrastructureUsd": 2.75, "dailyInferenceUsd": 0.0486, "monthlyInferenceUsd": 0.972, "dailyInferenceAttempts": 90, "monthlyInferenceAttempts": 1800},
-    "archive": {"monthlyInfrastructureUsd": 12.5, "dailyInferenceUsd": 0.162, "monthlyInferenceUsd": 3.24, "dailyInferenceAttempts": 300, "monthlyInferenceAttempts": 6000}
+    "free": {"monthlyInfrastructureUsd": 0.28, "dailyInferenceUsd": 0.00876, "monthlyInferenceUsd": 0.1752, "dailyInferenceAttempts": 12, "monthlyInferenceAttempts": 240},
+    "collector": {"monthlyInfrastructureUsd": 2.75, "dailyInferenceUsd": 0.0657, "monthlyInferenceUsd": 1.314, "dailyInferenceAttempts": 90, "monthlyInferenceAttempts": 1800},
+    "archive": {"monthlyInfrastructureUsd": 12.5, "dailyInferenceUsd": 0.219, "monthlyInferenceUsd": 3.504, "dailyInferenceAttempts": 300, "monthlyInferenceAttempts": 4800}
   },
   "global": {
     "preGaDailyVariableUsd": 0.75,
     "preGaMonthlyVariableUsd": 25,
     "replicateDailyUsd": 0.5,
-    "replicateDailyAttempts": 925,
+    "replicateDailyAttempts": 684,
     "replicateMonthlyUsd": 15,
     "paidMonthlyFormula": "25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions",
     "paidDailyFormula": "paidMonthlyBudget / 30"

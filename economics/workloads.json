@@ -19,7 +19,7 @@
     },
     {
       "id": "archive", "label": "Archive — 100 GB", "priceUsd": 49,
-      "sourceTrashStorageGb": 100, "uploads": 2500, "uniqueTextQueries": 2500,
+      "sourceTrashStorageGb": 100, "uploads": 2000, "uniqueTextQueries": 2000,
       "blobDeliveryGb": 40, "edgeRequests": 250000, "blobSimpleOps": 100000, "blobAdvancedOps": 6000,
       "databaseStorageGb": 1, "neonHistoryGb": 1, "neonCuHours": 5,
       "neonTransferGb": 3, "appEgressGib": 1, "jobSeconds": 3600,
