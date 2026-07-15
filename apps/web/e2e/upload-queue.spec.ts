@@ -204,6 +204,7 @@ test('public upload surface durably enqueues metadata without materializing the 
     expect(await readPayloadIds(page)).toEqual([rows[0].id]);
   } finally {
     await context.setOffline(false);
+    await waitForBrowserHealth(page);
     await context.close();
   }
 });
