@@ -65,7 +65,7 @@
       "unit": "GB origin transfer",
       "includedAllowance": "Hobby: up to 10 GB; Pro: usage-based under the plan's shared monthly credit",
       "planAssumption": "North America on-demand rate; sensitivity varies uncached-origin share from 5% to 30%",
-      "sourceUrl": "https://vercel.com/docs/manage-cdn-usage",
+      "sourceUrl": "https://vercel.com/docs/limits",
       "retrievedAt": "2026-07-15"
     },
     {
