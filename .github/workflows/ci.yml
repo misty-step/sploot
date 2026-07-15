@@ -207,6 +207,17 @@ jobs:
           SPLOOT_DEPLOYMENT_ENV: development
           SPLOOT_ENROLLMENT_MODE: ga
         run: pnpm --filter web e2e:auth -- e2e/portable-telemetry.spec.ts
+      - name: Report production-start Playwright failures
+        if: ${{ failure() }}
+        working-directory: apps/web
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+          for report in test-results/**/error-context.md; do
+            message="$(tr '\n' ' ' < "$report")"
+            echo "::error title=Playwright failure::$message"
+          done
 
   extension:
     name: Extension
