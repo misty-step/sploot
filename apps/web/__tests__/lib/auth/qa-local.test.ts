@@ -158,7 +158,11 @@ describe('qa-local auth tokens', () => {
   it('treats an invalid QA credential as terminal and never falls through to Clerk', async () => {
     clerkMock.verifyBearerOrThrow.mockResolvedValue('clerk-user');
     const result = await authenticateRequest(new Request('http://localhost:3000/api/cache/stats', {
-      headers: { [getQaLocalAuthHeader()]: 'not-a-valid-token' },
+      headers: {
+        host: 'localhost:3000',
+        [getQaLocalAuthHeader()]: 'not-a-valid-token',
+        [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+      },
     }) as never, { allowClerk: true, allowQaLocal: true, env: QA_ENV });
     expect(result).toMatchObject({ status: 'unauthenticated', reason: 'qa-local-invalid' });
     expect(clerkMock.verifyBearerOrThrow).not.toHaveBeenCalled();

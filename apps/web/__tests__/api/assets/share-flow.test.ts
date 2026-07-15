@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
-import { createQaLocalAuthToken, getQaLocalAuthHeader } from '@/lib/auth/qa-local';
+import { createQaLocalAuthToken, getQaLocalAuthHeader, getQaLocalRemoteAddressHeader } from '@/lib/auth/qa-local';
 import { POST } from '@/app/api/assets/[id]/share/route';
 import { generateMetadata } from '@/app/m/[id]/page';
 
@@ -47,8 +47,12 @@ describe('Share flow', () => {
     process.env.NEXT_PUBLIC_BASE_URL = 'https://sploot.app';
     process.env.NODE_ENV = 'test';
     process.env.SPLOOT_QA_AUTH_MODE = 'enabled';
+    process.env.SPLOOT_QA_EVIDENCE_MODE = 'enabled';
+    process.env.SPLOOT_QA_DEPLOYMENT_ID = 'sploot-gallery-qa-local';
+    process.env.SPLOOT_QA_DEPLOYMENT_AUDIENCE = 'sploot-gallery-evidence';
     process.env.SPLOOT_QA_AUTH_SECRET = 'test-secret-with-enough-entropy';
     process.env.SPLOOT_DEPLOYMENT_ENV = 'test';
+    process.env.DEPLOYMENT_ENV = 'qa-local';
     process.env.CLERK_SECRET_KEY = '';
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = '';
     mockPrisma.user.findUnique.mockResolvedValue({ id: mockUserId });
@@ -62,7 +66,10 @@ describe('Share flow', () => {
     });
     return new NextRequest('http://localhost:3000/api/assets/asset_123/share', {
       method: 'POST',
-      headers: { [getQaLocalAuthHeader()]: token },
+      headers: {
+        [getQaLocalAuthHeader()]: token,
+        [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+      },
     });
   }
 

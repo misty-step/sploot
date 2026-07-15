@@ -20,7 +20,15 @@ if (process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && !qaLocalDeployment) {
 const qaLocalAuthBuild = process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && qaLocalDeployment;
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // The evidence gate needs a self-contained artifact while the deployed production contract stays source-based.
+  ...(process.env.SPLOOT_QA_AUTH_MODE === 'enabled' &&
+    process.env.SPLOOT_QA_EVIDENCE_MODE === 'enabled' &&
+    process.env.SPLOOT_QA_DEPLOYMENT_ID === 'sploot-gallery-qa-local' &&
+    process.env.SPLOOT_QA_DEPLOYMENT_AUDIENCE === 'sploot-gallery-evidence' &&
+    process.env.DEPLOYMENT_ENV === 'qa-local' &&
+    !process.env.CLERK_SECRET_KEY && !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+    ? { output: 'standalone' }
+    : {}),
   env: {
     NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E: publicTruthE2EBuild ? 'true' : 'false',
     NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: qaLocalAuthBuild ? 'true' : 'false',
