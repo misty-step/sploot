@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { Prisma } from '@prisma/client';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 
 import { createVectorSearchContext, encodeVectorSearchCursor, prisma, upsertAssetEmbedding, vectorSearch, vectorSearchPage } from '@/lib/db';
@@ -8,6 +9,7 @@ const describeWithDatabase = process.env.DATABASE_URL && prisma
   : describe.skip;
 
 const userId = 'vector-search-pagination-user';
+const foreignUserId = 'vector-search-pagination-foreign-user';
 const assetIds = Array.from({ length: 25 }, (_, index) =>
   `vector-search-pagination-${index.toString().padStart(2, '0')}`
 );
@@ -18,6 +20,9 @@ describeWithDatabase('Postgres seeded vector-search pagination', () => {
     await prisma.user.deleteMany({ where: { id: userId } });
     await prisma.user.create({
       data: { id: userId, email: `${userId}@example.test` },
+    });
+    await prisma.user.create({
+      data: { id: foreignUserId, email: `${foreignUserId}@example.test` },
     });
     await prisma.asset.createMany({
       data: assetIds.map((id, index) => ({
@@ -31,6 +36,29 @@ describeWithDatabase('Postgres seeded vector-search pagination', () => {
         favorite: index === 19,
       })),
     });
+    await prisma.asset.createMany({
+      data: Array.from({ length: 3000 }, (_, index) => ({
+        id: `${foreignUserId}-${index.toString().padStart(4, '0')}`,
+        ownerUserId: foreignUserId,
+        blobUrl: `https://vector-search-pagination.public.blob.vercel-storage.com/foreign-${index}.png`,
+        pathname: `foreign-${index}.png`,
+        mime: 'image/png',
+        size: index + 1,
+        checksumSha256: `${foreignUserId}-${index}-checksum`,
+      })),
+    });
+    await prisma.$executeRaw(Prisma.sql`
+      INSERT INTO "asset_embeddings" (
+        "asset_id", "model_name", "model_version", "dim", "image_embedding",
+        "status", "createdAt", "updatedAt"
+      )
+      SELECT
+        ${foreignUserId} || '-' || lpad(n::text, 4, '0'),
+        'pagination-foreign', 'v1', ${EMBEDDING_DIMENSION},
+        ('[' || repeat('0.1,', 767) || '0.1]')::vector(768),
+        'ready', NOW(), NOW()
+      FROM generate_series(0, 2999) AS series(n)
+    `);
     const tag = await prisma.tag.create({
       data: { ownerUserId: userId, name: 'later-match' },
     });
@@ -45,12 +73,56 @@ describeWithDatabase('Postgres seeded vector-search pagination', () => {
       dim: EMBEDDING_DIMENSION,
       embedding: index === assetIds.length - 1
         ? [1, ...Array(EMBEDDING_DIMENSION - 1).fill(0)]
-        : Array(EMBEDDING_DIMENSION).fill(0.1),
+        : [0.2, ...Array(EMBEDDING_DIMENSION - 1).fill(0.1)],
     })));
   }, 30_000);
 
   afterAll(async () => {
     await prisma.user.deleteMany({ where: { id: userId } });
+    await prisma.user.deleteMany({ where: { id: foreignUserId } });
+  });
+
+  it('keeps a tenant-complete bounded page when thousands of foreign vectors are closer', async () => {
+    const query = Array(EMBEDDING_DIMENSION).fill(0.1);
+    const first = await vectorSearch(userId, query, { limit: 7 });
+    const repeat = await vectorSearch(userId, query, { limit: 7 });
+    const context = createVectorSearchContext({ query: 'foreign adversary', threshold: 0, limit: 7 });
+    const pages = [];
+    let cursor: string | undefined;
+    for (let pageNumber = 0; pageNumber < 4; pageNumber += 1) {
+      const page = await vectorSearchPage(userId, query, {
+        limit: 7,
+        cursor,
+        cursorContext: context,
+      });
+      pages.push(page);
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
+    const terminal = pages.at(-1);
+    if (terminal && !terminal.nextCursor && terminal.results.length > 0) {
+      const last = terminal.results.at(-1)!;
+      cursor = encodeVectorSearchCursor({
+        userId,
+        order: 'relevance',
+        id: last.id,
+        distance: last.distance,
+        context,
+      });
+      pages.push(await vectorSearchPage(userId, query, {
+        limit: 7,
+        cursor,
+        cursorContext: context,
+      }));
+    }
+
+    expect(first).toHaveLength(7);
+    expect(first.map(({ id }) => id)).toEqual(repeat.map(({ id }) => id));
+    expect(first.every(({ id }) => id.startsWith(`${userId}-`))).toBe(true);
+    expect(first.some(({ id }) => id.startsWith(`${foreignUserId}-`))).toBe(false);
+    expect(pages.map((page) => page.results.length)).toEqual([7, 7, 7, 4, 0]);
+    expect(new Set(pages.flatMap((page) => page.results.map(({ id }) => id)))).toEqual(new Set(assetIds));
+    expect(pages.some((page) => page.results.some(({ id }) => id.startsWith(`${foreignUserId}-`)))).toBe(false);
   });
 
   it('returns deterministic, complete, non-overlapping relevance pages', async () => {

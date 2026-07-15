@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
 import { unstable_rethrow } from 'next/navigation';
 import { Prisma } from '@prisma/client';
-import { prisma, logSearch } from '@/lib/db';
-import { createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
+import { buildRankedEmbeddingCte, prisma, logSearch, queryHnswRanked } from '@/lib/db';
+import { CLIP_MODEL, createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
 import {
   EmbeddingConfigurationError,
   embeddingConfigurationHeaders,
@@ -182,15 +182,27 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     const validatedSortBy = validSortOptions.includes(sortBy as any) ? sortBy : 'relevance';
 
     const orderByClauses: Record<string, Prisma.Sql> = {
-      date: Prisma.sql`a.created_at DESC`,
-      favorite: Prisma.sql`a.favorite DESC, ae.image_embedding <=> ${embeddingVectorSql}`,
-      relevance: Prisma.sql`ae.image_embedding <=> ${embeddingVectorSql}`,
+      date: Prisma.sql`a.created_at DESC, a.id ASC`,
+      favorite: Prisma.sql`a.favorite DESC, ae.image_embedding <=> ${embeddingVectorSql} ASC, a.id ASC`,
+      relevance: Prisma.sql`ranked.distance ASC, a.id ASC`,
     };
     const orderByClause = orderByClauses[validatedSortBy];
+    const usesRankedVectorCte = validatedSortBy === 'relevance';
+    let candidateLimit = Math.max(offset + limit + 1, limit + 1);
+    const rankedFrom = usesRankedVectorCte
+      ? Prisma.sql`FROM ranked INNER JOIN assets a ON a.id = ranked.id`
+      : Prisma.sql`FROM assets a INNER JOIN asset_embeddings ae ON a.id = ae.asset_id`;
+    const rankedDistance = usesRankedVectorCte
+      ? Prisma.sql`ranked.distance`
+      : Prisma.sql`ae.image_embedding <=> ${embeddingVectorSql}`;
+    const rankedReadyClause = usesRankedVectorCte ? Prisma.empty : Prisma.sql`AND ae.status = 'ready'`;
+    const rankedThreshold = usesRankedVectorCte
+      ? Prisma.sql`AND 1 - ranked.distance >= ${threshold}`
+      : Prisma.sql`AND 1 - (ae.image_embedding <=> ${embeddingVectorSql}) >= ${threshold}`;
 
     // Execute parameterized search query
     // Using Prisma.sql template literal for safe parameterization
-    const results = await prisma!.$queryRaw<Array<{
+    type AdvancedSearchRow = {
       id: string;
       blob_url: string;
       pathname: string;
@@ -204,7 +216,10 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
       updated_at: Date;
       similarity: number;
       total_count: bigint;
-    }>>(Prisma.sql`
+    };
+    const runResultsQuery = (candidateLimitForQuery: number) => {
+      const query = Prisma.sql`
+      ${usesRankedVectorCte ? buildRankedEmbeddingCte(embeddingVectorSql, candidateLimitForQuery, userId) : Prisma.empty}
       SELECT
         a.id,
         a.blob_url,
@@ -217,13 +232,13 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
         a.favorite,
         a.created_at,
         a.updated_at,
-        1 - (ae.image_embedding <=> ${embeddingVectorSql}) as similarity,
+        1 - ${rankedDistance} as similarity,
         COUNT(*) OVER() as total_count
-      FROM assets a
-      INNER JOIN asset_embeddings ae ON a.id = ae.asset_id
+      ${rankedFrom}
       WHERE a.owner_user_id = ${userId}
         AND a.deleted_at IS NULL
-        AND 1 - (ae.image_embedding <=> ${embeddingVectorSql}) > ${threshold}
+        ${rankedReadyClause}
+        ${rankedThreshold}
         ${filters.favorites === true ? Prisma.sql`AND a.favorite = true` : Prisma.empty}
         ${validatedMimeTypes.length > 0 ? Prisma.sql`AND a.mime = ANY(${validatedMimeTypes})` : Prisma.empty}
         ${validatedDateFrom ? Prisma.sql`AND a.created_at >= ${validatedDateFrom}` : Prisma.empty}
@@ -233,7 +248,51 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
       ORDER BY ${orderByClause}
       LIMIT ${limit}
       OFFSET ${offset}
-    `);
+      `;
+      return usesRankedVectorCte
+        ? queryHnswRanked<AdvancedSearchRow>(query)
+        : prisma!.$queryRaw<AdvancedSearchRow[]>(query);
+    };
+    let results = await runResultsQuery(candidateLimit);
+
+    if (usesRankedVectorCte) {
+      const readyCountRows = await prisma!.$queryRaw<Array<{ ready_count: bigint }>>(Prisma.sql`
+        SELECT COUNT(*) AS ready_count
+        FROM asset_embeddings
+        WHERE owner_user_id = ${userId}
+          AND asset_deleted_at IS NULL
+          AND status = 'ready'
+      `);
+      const readyCount = Number(readyCountRows[0]?.ready_count ?? 0);
+      while (results.length < limit && candidateLimit < readyCount) {
+        candidateLimit = Math.min(
+          readyCount,
+          Math.max(candidateLimit * 2, candidateLimit + limit),
+        );
+        results = await runResultsQuery(candidateLimit);
+      }
+    }
+
+    // The ranked CTE deliberately bounds only the vector scan. Keep the
+    // published total exact with the same owner/visibility/threshold filters;
+    // the page itself remains HNSW-orderable at the CTE boundary.
+    const exactTotal = usesRankedVectorCte
+      ? await prisma!.$queryRaw<Array<{ total_count: bigint }>>(Prisma.sql`
+          SELECT COUNT(*) AS total_count
+          FROM assets a
+          INNER JOIN asset_embeddings ae ON a.id = ae.asset_id
+          WHERE a.owner_user_id = ${userId}
+            AND a.deleted_at IS NULL
+            AND ae.status = 'ready'
+            AND 1 - (ae.image_embedding <=> ${embeddingVectorSql}) >= ${threshold}
+            ${filters.favorites === true ? Prisma.sql`AND a.favorite = true` : Prisma.empty}
+            ${validatedMimeTypes.length > 0 ? Prisma.sql`AND a.mime = ANY(${validatedMimeTypes})` : Prisma.empty}
+            ${validatedDateFrom ? Prisma.sql`AND a.created_at >= ${validatedDateFrom}` : Prisma.empty}
+            ${validatedDateTo ? Prisma.sql`AND a.created_at <= ${validatedDateTo}` : Prisma.empty}
+            ${validatedMinWidth ? Prisma.sql`AND a.width >= ${validatedMinWidth}` : Prisma.empty}
+            ${validatedMinHeight ? Prisma.sql`AND a.height >= ${validatedMinHeight}` : Prisma.empty}
+        `)
+      : null;
 
     // Handle tag filtering if specified
     let filteredResults = results;
@@ -293,7 +352,9 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     }));
 
     const queryTime = Date.now() - startTime;
-    const totalCount = results.length > 0 ? Number(results[0].total_count) : 0;
+    const totalCount = exactTotal
+      ? Number(exactTotal[0]?.total_count ?? 0)
+      : results.length > 0 ? Number(results[0].total_count) : 0;
 
     // Cache the search results
     if (formattedResults.length > 0) {

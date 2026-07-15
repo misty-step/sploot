@@ -57,7 +57,7 @@ describe('seeded vector-search pagination', () => {
     expect(combinedSql).toContain('asset_tags');
   });
 
-  it('keeps the unfiltered eval query on the direct pgvector plan shape', () => {
+  it('keeps the unfiltered eval query HNSW-orderable at the ranked scan boundary', () => {
     const query = buildUnfilteredVectorSearchQuery(
       'eval-user',
       Array(EMBEDDING_DIMENSION).fill(0.1),
@@ -65,16 +65,19 @@ describe('seeded vector-search pagination', () => {
     );
     const sql = query.strings.join(' ');
 
-    expect(sql).toContain('FROM "assets" a');
+    expect(sql).toContain('WITH ranked AS MATERIALIZED');
+    expect(sql).toContain('FROM "asset_embeddings" ae');
     expect(sql).toContain('ORDER BY ae.image_embedding <=>');
+    expect(sql).toContain('ae.asset_id ASC');
+    expect(sql).toContain('1 - ranked.distance AS distance');
+    expect(sql).toContain('FROM ranked');
     expect(sql).toContain('LIMIT');
-    expect(sql).not.toContain('WITH ranked');
     expect(sql).not.toContain('COUNT');
     expect(sql).not.toContain('asset_tags');
     expect(sql).not.toContain('AND a.favorite');
   });
 
-  it('keeps thresholded direct searches on the proven no-CTE pgvector plan shape', () => {
+  it('keeps thresholded direct searches complete outside the HNSW-ranked CTE', () => {
     const query = buildUnfilteredVectorSearchQuery(
       'similar-assets-user',
       Array(EMBEDDING_DIMENSION).fill(0.1),
@@ -83,9 +86,10 @@ describe('seeded vector-search pagination', () => {
     const sql = query.strings.join(' ');
 
     expect(sql).toContain('ORDER BY ae.image_embedding <=>');
+    expect(sql).toContain('ae.asset_id ASC');
     expect(sql).toContain('a.id ASC');
     expect(sql).toContain("ae.status = 'ready'");
-    expect(sql).not.toContain('WITH ranked');
+    expect(sql).toContain('1 - ranked.distance AS distance');
     expect(sql).not.toContain('COUNT');
   });
 
@@ -106,10 +110,37 @@ describe('seeded vector-search pagination', () => {
 
     expect(sql).toContain('a.owner_user_id =');
     expect(sql).toContain("ae.status = 'ready'");
-    expect(sql).toContain('1 - (ae.image_embedding <=>');
+    expect(sql).toContain('1 - ranked.distance >=');
     expect(sql).toContain('>=');
-    expect(sql).toContain('ORDER BY ae.image_embedding <=>');
+    expect(sql).toContain('ORDER BY ranked.distance ASC');
     expect(sql).toContain('a.id ASC');
+  });
+
+  it('binds a cursor to the raw-distance boundary while retaining deterministic asset ties', () => {
+    const context = createVectorSearchContext({ query: 'cursor', threshold: 0, limit: 7 });
+    const cursor = encodeVectorSearchCursor({
+      userId,
+      order: 'relevance',
+      id: 'asset-7',
+      distance: 0.9,
+      context,
+    });
+    const decoded = decodeVectorSearchCursor(cursor, userId);
+    expect(decoded).not.toBeNull();
+
+    const query = buildVectorSearchPageQuery(userId, Array(EMBEDDING_DIMENSION).fill(0.1), {
+      limit: 7,
+      favoriteOnly: false,
+      tagId: null,
+      offset: 0,
+      cursor: decoded,
+      candidateLimit: 8,
+    });
+    const sql = query.strings.join(' ');
+    expect(sql).toContain('ae.image_embedding <=>');
+    expect(sql).toContain('ae.asset_id >');
+    expect(sql).toContain('ORDER BY ae.image_embedding <=>');
+    expect(sql).toContain('ORDER BY ranked.distance ASC, a.id ASC');
   });
 
   it('encodes a canonical search-context-bound cursor without exposing pagination offsets', () => {

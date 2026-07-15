@@ -135,6 +135,11 @@ model Asset {
 // AssetEmbedding model - stores vector embeddings for semantic search
 model AssetEmbedding {
   assetId         String                 @id @map("asset_id")
+  // Database triggers copy these visibility fields from assets. They are
+  // nullable here only because Prisma's status upserts are trigger-owned;
+  // the migration makes owner_user_id NOT NULL and rejects drift.
+  ownerUserId     String?                @map("owner_user_id")
+  assetDeletedAt  DateTime?              @map("asset_deleted_at")
   modelName       String                 @map("model_name")
   modelVersion    String                 @map("model_version")
   dim             Int // Embedding dimensions

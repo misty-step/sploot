@@ -366,18 +366,179 @@ jobs:
         shell: bash
         run: bash scripts/db-authority-rehearsal.sh "${{ matrix.pg }}"
 
+          assert_hnsw_contract() {
+            local database_url="$1"
+            local iterative_scan_supported
+            iterative_scan_supported="$(psql "$database_url" -Atc "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector' AND (split_part(extversion, '.', 1)::int > 0 OR (split_part(extversion, '.', 1)::int = 0 AND split_part(extversion, '.', 2)::int >= 8)))")"
+            test "$iterative_scan_supported" = 't'
+            local visibility_contract
+            visibility_contract="$(psql "$database_url" -Atc "SELECT (SELECT attnotnull::text FROM pg_attribute WHERE attrelid = 'asset_embeddings'::regclass AND attname = 'owner_user_id') || '|' || (SELECT attnotnull::text FROM pg_attribute WHERE attrelid = 'asset_embeddings'::regclass AND attname = 'asset_deleted_at')")"
+            test "$visibility_contract" = 't|f'
+            local visibility_triggers
+            visibility_triggers="$(psql "$database_url" -Atc "SELECT count(*) FROM pg_trigger WHERE tgrelid IN ('asset_embeddings'::regclass, 'assets'::regclass) AND tgname IN ('asset_embeddings_sync_visibility', 'assets_propagate_embedding_visibility') AND NOT tgisinternal")"
+            test "$visibility_triggers" = '2'
+            local visibility_remaining
+            visibility_remaining="$(psql "$database_url" -Atc "SELECT \"sploot_asset_embedding_visibility_backfill_remaining\"()")"
+            test "$visibility_remaining" = '0'
+            local index_contract
+            index_contract="$(psql "$database_url" -Atc "SELECT c.relname || '|' || t.relname || '|' || am.amname || '|' || a.attname || '|' || opc.opcname || '|' || COALESCE(string_agg(option_name, ',' ORDER BY option_name), '') FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid JOIN pg_class t ON t.oid = i.indrelid JOIN pg_am am ON am.oid = c.relam JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0] JOIN pg_opclass opc ON opc.oid = i.indclass[0] LEFT JOIN LATERAL unnest(COALESCE(c.reloptions, ARRAY[]::text[])) AS options(option_name) ON true WHERE c.relname = 'asset_embeddings_hnsw_idx' AND t.relname = 'asset_embeddings' GROUP BY c.oid, c.relname, t.relname, am.amname, a.attname, opc.opcname")"
+            test "$index_contract" = 'asset_embeddings_hnsw_idx|asset_embeddings|hnsw|image_embedding|vector_cosine_ops|ef_construction=128,m=24'
+            local index_definition_ok
+            index_definition_ok="$(psql "$database_url" -Atc "SELECT (pg_get_indexdef(c.oid) ~ 'USING hnsw \\(image_embedding vector_cosine_ops\\) WITH \\(m=''?24''?, ?ef_construction=''?128''?\\)') FROM pg_class c WHERE c.relname = 'asset_embeddings_hnsw_idx'")"
+            test "$index_definition_ok" = 't'
+          }
+
+          seed_and_explain_hnsw() {
+            local database_url="$1"
+            psql "$database_url" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO users (id, email, "createdAt", "updatedAt")
+          VALUES
+            ('index-plan-probe-user', 'index-plan-probe-user@example.test', NOW(), NOW()),
+            ('index-plan-probe-foreign', 'index-plan-probe-foreign@example.test', NOW(), NOW());
+          INSERT INTO assets (id, owner_user_id, blob_url, pathname, mime, size, checksum_sha256, "createdAt", "updatedAt")
+          SELECT
+            'index-plan-probe-' || n,
+            'index-plan-probe-user',
+            'https://index-plan-probe.public.blob.vercel-storage.com/' || n || '.png',
+            n || '.png',
+            'image/png',
+            1,
+            'index-plan-probe-checksum-' || n,
+            NOW(),
+            NOW()
+          FROM generate_series(1, 1000) AS series(n)
+          UNION ALL
+          SELECT
+            'index-plan-probe-foreign-' || n,
+            'index-plan-probe-foreign',
+            'https://index-plan-probe.public.blob.vercel-storage.com/foreign-' || n || '.png',
+            'foreign-' || n || '.png',
+            'image/png',
+            1,
+            'index-plan-probe-foreign-checksum-' || n,
+            NOW(),
+            NOW()
+          FROM generate_series(1, 5000) AS series(n);
+          INSERT INTO asset_embeddings (asset_id, model_name, model_version, dim, image_embedding, status, "createdAt", "updatedAt")
+          SELECT
+            'index-plan-probe-' || n,
+            'index-plan-probe-model',
+            'v1',
+            768,
+            ('[' || (0.1 + n / 100000.0)::text || ',' || repeat('0.1,', 766) || '0.1]')::vector(768),
+            'ready',
+            NOW(),
+            NOW()
+          FROM generate_series(1, 1000) AS series(n)
+          UNION ALL
+          SELECT
+            'index-plan-probe-foreign-' || n,
+            'index-plan-probe-model',
+            'v1',
+            768,
+            ('[' || repeat('0.1,', 767) || '0.1]')::vector(768),
+            'ready',
+            NOW(),
+            NOW()
+          FROM generate_series(1, 5000) AS series(n);
+          SQL
+            psql "$database_url" -v ON_ERROR_STOP=1 -c 'ANALYZE assets; ANALYZE asset_embeddings'
+            local query="WITH ranked AS MATERIALIZED (SELECT ae.asset_id AS id, ae.image_embedding <=> ('[' || repeat('0.1,', 767) || '0.1]')::vector(768) AS distance FROM asset_embeddings ae WHERE ae.owner_user_id = 'index-plan-probe-user' AND ae.asset_deleted_at IS NULL AND ae.status = 'ready' ORDER BY ae.image_embedding <=> ('[' || repeat('0.1,', 767) || '0.1]')::vector(768) ASC, ae.asset_id ASC LIMIT 20) SELECT a.id, 1 - ranked.distance AS similarity FROM ranked INNER JOIN assets a ON a.id = ranked.id WHERE a.owner_user_id = 'index-plan-probe-user' AND a.deleted_at IS NULL AND 1 - ranked.distance >= 0.5 ORDER BY ranked.distance ASC, a.id ASC LIMIT 20"
+            local default_plan
+            default_plan="$(psql "$database_url" -Atc "BEGIN; SET LOCAL hnsw.iterative_scan = strict_order; SET LOCAL hnsw.max_scan_tuples = 20000; EXPLAIN (COSTS OFF) $query; ROLLBACK;")"
+            echo 'default planner plan (production-shaped ranked vector query):'
+            echo "$default_plan"
+            test -n "$default_plan"
+            echo "$default_plan" | grep -F 'owner_user_id'
+            echo "$default_plan" | grep -F 'asset_deleted_at'
+            echo "$default_plan" | grep -F 'status = '\''ready'\'''
+            echo "$default_plan" | grep -F 'Sort Key:'
+
+            # The capability oracle is the same production-shaped SQL under
+            # the default planner. The ranked CTE boundary makes raw vector
+            # distance ordering + LIMIT visible to pgvector without disabling
+            # competing scan families or faking an index-only query.
+            local capability_plan
+            capability_plan="$(psql "$database_url" -Atc "BEGIN; SET LOCAL hnsw.iterative_scan = strict_order; SET LOCAL hnsw.max_scan_tuples = 20000; EXPLAIN (COSTS OFF) $query; ROLLBACK;")"
+            echo 'default-planner HNSW capability plan:'
+            echo "$capability_plan"
+            test "$capability_plan" = "$default_plan"
+            echo "$capability_plan" | grep -F 'Index Scan using asset_embeddings_hnsw_idx'
+            local result_rows
+            result_rows="$(psql "$database_url" -Atc "BEGIN; SET LOCAL hnsw.iterative_scan = strict_order; SET LOCAL hnsw.max_scan_tuples = 20000; $query; ROLLBACK;" | sed -n '/^index-plan-probe-/p')"
+            test "$(printf '%s\n' "$result_rows" | wc -l)" -eq 20
+            if printf '%s\n' "$result_rows" | grep -q 'index-plan-probe-foreign'; then
+              echo 'owner-scoped HNSW query leaked a foreign asset'
+              return 1
+            fi
+          }
+
+          assert_hnsw_contract "$admin_url"
+          seed_and_explain_hnsw "$admin_url"
+
+          fresh_url='postgresql://test:test@localhost:5432/sploot_fresh?sslmode=disable'
+          psql 'postgresql://test:test@localhost:5432/postgres?sslmode=disable' -v ON_ERROR_STOP=1 -c 'CREATE DATABASE sploot_fresh'
+          DATABASE_URL="$fresh_url" pnpm --filter web db:migrate
+          assert_hnsw_contract "$fresh_url"
+          seed_and_explain_hnsw "$fresh_url"
+
+  gallery-browser:
+    name: Gallery browser
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: sploot_gallery_qa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      QA_GALLERY_DB_URL: postgresql://test:test@127.0.0.1:5432/sploot_gallery_qa?sslmode=disable
+      SPLOOT_QA_AUTH_SECRET: ci-gallery-deterministic-secret-v1
+      SPLOOT_QA_GALLERY_SEED: '296'
+      CI: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Run deterministic authenticated gallery matrix
+        run: pnpm --filter web qa:gallery
+      - name: Upload gallery evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gallery-browser-evidence
+          path: |
+            apps/web/test-results/
+            apps/web/.next/qa-provenance.json
+          if-no-files-found: ignore
+          retention-days: 7
+
   merge-gate:
     name: merge-gate
     if: always()
-    needs: [secrets, lint, type-check, web-build, design, economics, test, extension, verify-extension-dist, public-truth, public-truth-production-guard, db-authority]
+    needs: [secrets, lint, type-check, web-build, design, economics, test, extension, verify-extension-dist, public-truth, public-truth-production-guard, db-authority, gallery-browser]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.economics.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.verify-extension-dist.result }}" "${{ needs.public-truth.result }}" "${{ needs.public-truth-production-guard.result }}" "${{ needs.db-authority.result }}")
+          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.economics.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.verify-extension-dist.result }}" "${{ needs.public-truth.result }}" "${{ needs.public-truth-production-guard.result }}" "${{ needs.db-authority.result }}" "${{ needs.gallery-browser.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" ]]; then
-              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} economics=${{ needs.economics.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }} verify-extension-dist=${{ needs.verify-extension-dist.result }} public-truth=${{ needs.public-truth.result }} public-truth-production-guard=${{ needs.public-truth-production-guard.result }} db-authority=${{ needs.db-authority.result }}"
+              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} economics=${{ needs.economics.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }} verify-extension-dist=${{ needs.verify-extension-dist.result }} public-truth=${{ needs.public-truth.result }} public-truth-production-guard=${{ needs.public-truth-production-guard.result }} db-authority=${{ needs.db-authority.result }} gallery-browser=${{ needs.gallery-browser.result }}"
               exit 1
             fi
           done
