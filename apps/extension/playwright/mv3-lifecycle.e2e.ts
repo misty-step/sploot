@@ -98,7 +98,7 @@ test.afterAll(async () => {
 async function openExtension(testInfo: import('@playwright/test').TestInfo, step: Mv3Step): Promise<{ context: BrowserContext; popup: Page; worker: Worker; extensionId: string }> {
   const extensionPath = path.resolve('dist/chrome-mv3');
   const context = await runMv3Step(undefined, testInfo, step, 'launch persistent unpacked MV3 Chrome', () => chromium.launchPersistentContext('', {
-    channel: 'chrome',
+    channel: 'chromium',
     headless: false,
     ignoreDefaultArgs: ['--disable-extensions'],
     args: [

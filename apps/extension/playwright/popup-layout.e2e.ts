@@ -21,7 +21,7 @@ test('real popup and worker isolate durable queue metadata by auth owner', async
   const step: Mv3Step = (title, body) => test.step(title, body);
   try {
     context = await runMv3Step(undefined, testInfo, step, 'launch persistent unpacked MV3 Chrome', () => chromium.launchPersistentContext('', {
-      channel: 'chrome',
+      channel: 'chromium',
       headless: false,
       ignoreDefaultArgs: ['--disable-extensions'],
       args: [`--disable-extensions-except=${extensionPath}`, `--load-extension=${extensionPath}`],

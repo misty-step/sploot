@@ -230,6 +230,8 @@ jobs:
           VITE_API_BASE_URL: http://127.0.0.1:3345
           VITE_CLERK_SYNC_HOST: http://127.0.0.1:3345
         run: pnpm --filter extension build:e2e
+      - name: Install real Chromium for MV3 acceptance
+        run: pnpm --filter extension exec playwright install chromium
       - name: Exercise real popup owner isolation in Chromium
         run: xvfb-run -a pnpm --filter extension test:layout
       - name: Exercise real unpacked MV3 lifecycle in Chromium
