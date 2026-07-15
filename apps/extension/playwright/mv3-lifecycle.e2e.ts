@@ -1,4 +1,5 @@
 import { createServer, type Server } from 'node:http';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { chromium, expect, test, type BrowserContext, type Page, type Worker } from '@playwright/test';
 import {
@@ -23,6 +24,7 @@ let server: Server;
 let uploadMode: 'success' | 'failure' | 'duplicate' = 'success';
 let imageBytes = 'original-image';
 const uploadBodies: string[] = [];
+const uploadPayloads: Buffer[] = [];
 const requestLog: string[] = [];
 
 function json(response: import('node:http').ServerResponse, status: number, body: unknown) {
@@ -64,6 +66,7 @@ test.beforeAll(async () => {
       request.on('data', chunk => chunks.push(Buffer.from(chunk)));
       request.on('end', () => {
         uploadBodies.push(Buffer.concat(chunks).toString('utf8'));
+        uploadPayloads.push(Buffer.concat(chunks));
         if (uploadMode === 'failure') {
           json(response, 503, { success: false, error: 'test failure', code: 'temporary' });
           return;
@@ -95,6 +98,7 @@ test.beforeAll(async () => {
 
 test.beforeEach(() => {
   uploadBodies.length = 0;
+  uploadPayloads.length = 0;
   requestLog.length = 0;
   uploadMode = 'success';
   imageBytes = 'original-image';
@@ -280,12 +284,20 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     await fixture.goto(`${API_ORIGIN}/fixture`);
     await fixture.bringToFront();
     uploadMode = 'failure';
-    await send({ type: CAPTURE }, 'screenshot capture message');
+    const captureResult = await send<{ completed: boolean }>({ type: CAPTURE }, 'screenshot capture message');
+    expect(captureResult).toEqual({ completed: true });
     await waitForQueue(worker, context, testInfo, step, 'screenshot bytes persisted', jobs => jobs.some(job => (
-      job.filename.startsWith('screenshot-') && job.sourceBytes
+      job.filename.startsWith('screenshot-')
+      && job.sourceBytes
+      && /^[a-f0-9]{64}$/.test(job.sourceSha256)
+      && job.owner?.userId === 'user-a'
     )));
     const screenshotJob = (await queue(worker)).find((job: any) => job.filename.startsWith('screenshot-'));
     expect(screenshotJob.imageUrl).toContain('captured://');
+    expect(screenshotJob.filename).toMatch(/^screenshot-127\.0\.0\.1-\d+\.png$/);
+    const screenshotBytes = Buffer.from(screenshotJob.sourceBytes, 'base64');
+    expect(screenshotBytes.length).toBeGreaterThan(0);
+    expect(createHash('sha256').update(screenshotBytes).digest('hex')).toBe(screenshotJob.sourceSha256);
     uploadMode = 'duplicate';
     await worker.evaluate(async () => {
       const stored = await chrome.storage.local.get('sploot:context-menu-queue');
@@ -298,6 +310,7 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     });
     worker = await stopAndRestart(context, popup, testInfo, step);
     await waitForQueue(worker, context, testInfo, step, 'screenshot retry converged', jobs => !jobs.some(job => job.id === screenshotJob.id));
+    expect(uploadPayloads.some(payload => payload.includes(screenshotBytes))).toBe(true);
     await fixture.close();
 
     uploadMode = 'success';

@@ -97,7 +97,7 @@ beforeEach(() => {
   mocks.saveToSploot.mockResolvedValue({ ok: true, filename: 'cat.png', isDuplicate: false });
 });
 
-describe('durable context-menu save queue', () => {
+describe.sequential('durable context-menu save queue', () => {
   it('removes a job only after the save pipeline reports success', async () => {
     await enqueueContextMenuSave('https://x.test/cat.png', 'cat.png');
 
@@ -610,7 +610,11 @@ describe('durable context-menu save queue', () => {
     mocks.saveToSploot.mockResolvedValueOnce({ ok: false, error: new Error('offline') });
     await enqueueCapturedSave(new Blob(['captured-original'], { type: 'image/png' }), 'shot.png');
 
-    expect(storedQueue[0]).toMatchObject({ state: 'pending', sourceType: 'image/png' });
+    expect(storedQueue[0]).toMatchObject({
+      state: 'pending',
+      sourceType: 'image/png',
+      sourceSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
     const original = storedQueue[0].sourceBytes;
     await vi.waitFor(() => expect(storedQueue[0].nextAttemptAt).toBeGreaterThan(Date.now()));
     vi.setSystemTime(storedQueue[0].nextAttemptAt!);
@@ -663,6 +667,7 @@ describe('durable context-menu save queue', () => {
     await vi.waitFor(() => expect(resolvers).toHaveLength(1));
     resolvers.shift()?.();
     await Promise.all(enqueues);
+    await recoverPendingContextMenuSaves();
     expect(maximum).toBe(2);
   });
 

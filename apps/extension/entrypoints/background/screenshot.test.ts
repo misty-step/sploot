@@ -58,6 +58,7 @@ describe('captureAndSaveVisibleTab', () => {
     expect(filename).toMatch(/^screenshot-twitter\.com-\d+\.png$/);
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
     expect(mocks.enqueueCapturedSave.mock.calls[0][0]).toBeInstanceOf(Blob);
+    expect(await mocks.enqueueCapturedSave.mock.calls[0][0].text()).toBe('\0\0\0');
   });
 
   it('maps a restricted-page capture failure to user-facing copy', async () => {
@@ -88,6 +89,13 @@ describe('captureAndSaveVisibleTab', () => {
     expect(order).toEqual(['capture']);
   });
 
+  it('decodes the Chrome data URL without a data fetch', async () => {
+    await captureAndSaveVisibleTab();
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(await mocks.enqueueCapturedSave.mock.calls[0][0].text()).toBe('\0\0\0');
+  });
+
   it.each([
     'chrome://version',
     'chrome-extension://extension-id/popup.html',
@@ -109,9 +117,11 @@ describe('captureAndSaveVisibleTab', () => {
 
   it('rejects a captured PNG above the shared multipart budget', async () => {
     const oversized = new Uint8Array(UPLOAD.multipartSafeSize + 1);
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      blob: async () => new Blob([oversized], { type: 'image/png' }),
-    }));
+    let binary = '';
+    for (const byte of oversized) binary += String.fromCharCode(byte);
+    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
+      `data:image/png;base64,${btoa(binary)}`,
+    );
 
     await captureAndSaveVisibleTab();
 

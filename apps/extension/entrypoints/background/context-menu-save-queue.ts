@@ -40,6 +40,8 @@ export interface ContextMenuSaveJob {
   /** Original bytes are persisted before the job is authoritative. */
   sourceBytes?: string;
   sourceType?: string;
+  /** SHA-256 of the exact persisted source bytes, used to fence replay drift. */
+  sourceSha256?: string;
 }
 
 export class ContextMenuSaveQueueError extends Error {
@@ -88,6 +90,21 @@ function mutateJobs(operation: () => Promise<void>): Promise<void> {
   const next = jobMutations.then(operation, operation);
   jobMutations = next.then(() => undefined, () => undefined);
   return next;
+}
+
+function startRecovery(trigger: RecoveryTrigger = 'alarm', onlyJobId?: string): {
+  started: Promise<void>;
+  completed: Promise<void>;
+} {
+  let markStarted!: () => void;
+  const started = new Promise<void>(resolve => {
+    markStarted = resolve;
+  });
+  const completed = exclusively(async () => {
+    markStarted();
+    await recoverPendingSavesLocked(trigger, onlyJobId);
+  });
+  return { started, completed };
 }
 
 function finiteNumber(value: unknown, fallback: number): number {
@@ -155,6 +172,9 @@ function normalizeJob(job: unknown): ContextMenuSaveJob | null {
     normalized.sourceBytes = candidate.sourceBytes;
     normalized.sourceType = candidate.sourceType;
   }
+  if (typeof candidate.sourceSha256 === 'string' && /^[a-f0-9]{64}$/.test(candidate.sourceSha256)) {
+    normalized.sourceSha256 = candidate.sourceSha256;
+  }
 
   return normalized;
 }
@@ -180,7 +200,7 @@ function retainedSourceBytes(jobs: ContextMenuSaveJob[]): number {
   return jobs.reduce((total, job) => total + (job.sourceBytes?.length ?? 0), 0);
 }
 
-async function blobToStoredSource(blob: Blob): Promise<Pick<ContextMenuSaveJob, 'sourceBytes' | 'sourceType'>> {
+async function blobToStoredSource(blob: Blob): Promise<Pick<ContextMenuSaveJob, 'sourceBytes' | 'sourceType' | 'sourceSha256'>> {
   if (blob.size <= 0 || blob.size > UPLOAD.multipartSafeSize) {
     throw new Error('Original image cannot be retained within the bounded retry storage budget.');
   }
@@ -194,16 +214,25 @@ async function blobToStoredSource(blob: Blob): Promise<Pick<ContextMenuSaveJob, 
   return {
     sourceBytes: btoa(binary),
     sourceType: blob.type || 'application/octet-stream',
+    sourceSha256: await sha256Hex(bytes),
   };
 }
 
-function storedSourceToBlob(job: ContextMenuSaveJob): Blob {
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', bytes.buffer as ArrayBuffer);
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function storedSourceToBlob(job: ContextMenuSaveJob): Promise<Blob> {
   if (!job.sourceBytes || !job.sourceType) {
     throw new Error('Durable image bytes are unavailable; this save must be discarded.');
   }
 
   const binary = atob(job.sourceBytes);
   const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+  if (job.sourceSha256 && await sha256Hex(bytes) !== job.sourceSha256) {
+    throw new Error('Durable image bytes failed integrity verification; this save must be discarded.');
+  }
   return new Blob([bytes], { type: job.sourceType });
 }
 
@@ -448,7 +477,7 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
   }
 
   const controller = new AbortController();
-  const sourceBlob = storedSourceToBlob(processing);
+  const sourceBlob = await storedSourceToBlob(processing);
   const operationPromise = Promise.resolve().then(() => saveToSploot(
     async () => ({ blob: sourceBlob, filename: processing.filename }),
     'image',
@@ -560,7 +589,10 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
 
 type RecoveryTrigger = 'startup' | 'alarm' | 'enqueue';
 
-async function recoverPendingSavesLocked(trigger: RecoveryTrigger = 'alarm'): Promise<void> {
+async function recoverPendingSavesLocked(
+  trigger: RecoveryTrigger = 'alarm',
+  onlyJobId?: string,
+): Promise<void> {
   const jobs = await readJobs();
   const now = Date.now();
   const recovered = jobs.map(job => {
@@ -588,7 +620,9 @@ async function recoverPendingSavesLocked(trigger: RecoveryTrigger = 'alarm'): Pr
   // eligible job is still in backoff.
   await scheduleContextMenuSaveQueueWakeup();
 
-  const eligible = recovered.filter(job => job.state === 'pending');
+  const eligible = recovered.filter(job => (
+    job.state === 'pending' && (!onlyJobId || job.id === onlyJobId)
+  ));
   let nextIndex = 0;
   const worker = async () => {
     while (nextIndex < eligible.length) {
@@ -649,14 +683,17 @@ export function enqueueCapturedSave(blob: Blob, filename: string, imageUrl = 'ca
       };
       await writeJobs([...jobs, job]);
       setQueuedStatus(filename);
+      return job.id;
     }))
-    .then(() => {
-      // A durable enqueue is the caller's acknowledgement boundary. Recovery
-      // is deliberately detached so a slow upload cannot hold the context-menu
-      // event or popup message open.
-      void recoverPendingContextMenuSaves('enqueue').catch(error => {
+    .then(async jobId => {
+      // Start recovery before acknowledging the durable write. The attempt
+      // remains detached and bounded, but is scoped to this exact durable job;
+      // a late event cannot process a later job after a worker boundary.
+      const recovery = startRecovery('enqueue', jobId);
+      void recovery.completed.catch(error => {
         console.error('[Background][ContextMenu] Enqueued save recovery failed', error);
       });
+      await recovery.started;
     });
 }
 
@@ -668,8 +705,8 @@ export function enqueueContextMenuSave(imageUrl: string, filename: string): Prom
   )).then(blob => enqueueCapturedSave(blob, filename, imageUrl));
 }
 
-export function recoverPendingContextMenuSaves(trigger: RecoveryTrigger = 'alarm'): Promise<void> {
-  return exclusively(() => recoverPendingSavesLocked(trigger));
+export function recoverPendingContextMenuSaves(trigger: RecoveryTrigger = 'alarm', onlyJobId?: string): Promise<void> {
+  return startRecovery(trigger, onlyJobId).completed;
 }
 
 export function listContextMenuSaves(): Promise<ContextMenuSaveJob[]> {

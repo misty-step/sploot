@@ -67,7 +67,11 @@ async function captureVisibleTabImage(): Promise<{ blob: Blob; filename: string 
     throw new Error(CAPTURE_ERROR);
   }
 
-  const capturedBlob = await withDeadline((async () => (await fetch(dataUrl)).blob())());
+  // captureVisibleTab returns a data URL.  Decode that value in memory instead
+  // of refetching it: data: fetches are not a reliable extension-worker seam
+  // under MV3 CSP, and a failed refetch would drop the capture before the
+  // durable queue can own its bytes.
+  const capturedBlob = await withDeadline(Promise.resolve().then(() => dataUrlToBlob(dataUrl)));
   const filename = screenshotFilename(tabUrl);
   const preparedImage = await withDeadline(prepareImageForUpload(new File([capturedBlob], filename, {
     type: capturedBlob.type || 'image/png',
@@ -79,6 +83,21 @@ async function captureVisibleTabImage(): Promise<{ blob: Blob; filename: string 
   }
 
   return { blob: preparedImage.file, filename: preparedImage.file.name };
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
+  if (!match) {
+    throw new Error('Chrome returned an invalid screenshot. Try again.');
+  }
+
+  const mimeType = match[1] || 'application/octet-stream';
+  const encoded = match[3];
+  const binary = match[2]
+    ? atob(encoded.replace(/\s/g, ''))
+    : decodeURIComponent(encoded);
+  const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+  return new Blob([bytes], { type: mimeType });
 }
 
 function withDeadline<T>(promise: Promise<T>, timeoutMs = UPLOAD.timeout): Promise<T> {
