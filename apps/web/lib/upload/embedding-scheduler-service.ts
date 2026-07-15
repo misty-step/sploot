@@ -290,7 +290,9 @@ export class EmbeddingSchedulerService {
     try {
       embeddingService = createEmbeddingService(ownerUserId);
     } catch (error) {
-      logger.error('Failed to initialize embedding service', {
+      // Configuration failures are reported by the shared typed policy below;
+      // this local diagnostic must not become a second Canary owner.
+      logger.info('Failed to initialize embedding service', {
         assetId,
         error: error instanceof Error ? error.message : String(error),
       });

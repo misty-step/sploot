@@ -8,7 +8,6 @@ import {
   EmbeddingError,
   hasEmbeddingConfigurationReport,
   embeddingOutcomeHeaders,
-  reportEmbeddingConfigurationErrorOnce,
   embeddingRetryHeaders,
   EmbeddingProviderCircuitOpenError,
   EmbeddingProviderRateLimitError,
@@ -312,17 +311,12 @@ async function getHandler(request: NextRequest) {
               break;
             }
             const configurationError = normalizeEmbeddingConfigurationError(error);
-            await reportEmbeddingConfigurationErrorOnce(
-              configurationError,
-              'cron:process-embeddings:configuration',
-              { assetId: asset.id },
-            );
-            configurationCanaryOwned = hasEmbeddingConfigurationReport(configurationError);
             const deferred = await recordEmbeddingConfigurationFailure(
               asset.id,
               configurationError,
               processingClaimToken,
             );
+            configurationCanaryOwned = hasEmbeddingConfigurationReport(configurationError);
             stats.failureCount++;
             stats.errors.push({
               assetId: asset.id,

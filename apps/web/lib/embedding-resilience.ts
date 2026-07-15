@@ -584,20 +584,32 @@ export async function recordEmbeddingConfigurationFailure(
 
   if (!prisma || !expectedProcessingClaimToken) return false;
 
-  const updated = await prisma.$executeRaw(Prisma.sql`
-    UPDATE "asset_embeddings"
-    SET "status" = 'failed',
-        "error" = ${configurationError.message},
-        "next_attempt_at" = NULL,
-        "terminal_at" = ${new Date(nowMs)},
-        "processing_claim_token" = NULL,
-        "updatedAt" = ${new Date(nowMs)}
-    WHERE "asset_id" = ${assetId}
-      AND "status" = 'processing'
-      AND "processing_claim_token" = ${expectedProcessingClaimToken}
-      AND "terminal_at" IS NULL
-  `);
-  return updated === 1;
+  try {
+    const updated = await prisma.$executeRaw(Prisma.sql`
+      UPDATE "asset_embeddings"
+      SET "status" = 'failed',
+          "error" = ${configurationError.message},
+          "next_attempt_at" = NULL,
+          "terminal_at" = ${new Date(nowMs)},
+          "processing_claim_token" = NULL,
+          "updatedAt" = ${new Date(nowMs)}
+      WHERE "asset_id" = ${assetId}
+        AND "status" = 'processing'
+        AND "processing_claim_token" = ${expectedProcessingClaimToken}
+        AND "terminal_at" IS NULL
+    `);
+    return updated === 1;
+  } catch (persistenceError) {
+    // The deterministic configuration report is the sole Canary owner. A
+    // claim-clear failure must not replace the typed public outcome with a
+    // generic exception, which would cause observability to emit a second
+    // alert. The stale claim remains fenced by the database TTL/reclaim path.
+    logger.logInfo('embedding.configuration-persist-failed', {
+      assetId,
+      error: persistenceError instanceof Error ? persistenceError.message : String(persistenceError),
+    });
+    return false;
+  }
 }
 
 export async function recordEmbeddingAttemptFailure(

@@ -911,31 +911,36 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     const nowMs = Date.now();
     const oldClaim = await acquireEmbeddingProcessing(assetId, nowMs);
     expect(oldClaim.acquired).toBe(true);
-    const oldWorker = (async () => {
+    // Keep the old worker in a real open database transaction while the
+    // reclaiming worker runs. The old transaction deliberately does not lock
+    // the row; it only represents a worker that started before reclaim and is
+    // blocked at its late-write barrier.
+    const oldWorker = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_backend_pid()`;
       signalOldStarted();
       await oldBlocked;
       // Exact origin/master-era SQL: no generation token and an unconditional
       // ON CONFLICT DO UPDATE. The durable state constraint must reject it.
       const legacyVector = embeddingVectorSql(Array(768).fill(0.1), 'legacy late writer');
-      return prisma.$queryRaw(Prisma.sql`
-        INSERT INTO "asset_embeddings" (
-          "asset_id", "model_name", "model_version", "dim", "image_embedding",
-          "status", "error", "completedAt", "createdAt", "updatedAt"
-        ) VALUES (
-          ${assetId}, 'old-worker', 'old-worker', 768, ${legacyVector},
-          'ready', NULL, NOW(), NOW(), NOW()
-        )
-        ON CONFLICT ("asset_id") DO UPDATE SET
-          "model_name" = EXCLUDED."model_name",
-          "model_version" = EXCLUDED."model_version",
-          "dim" = EXCLUDED."dim",
-          "image_embedding" = EXCLUDED."image_embedding",
-          "status" = 'ready',
-          "error" = NULL,
-          "completedAt" = NOW(),
-          "updatedAt" = NOW()
-      `);
-    })();
+      return tx.$queryRaw(Prisma.sql`
+          INSERT INTO "asset_embeddings" (
+            "asset_id", "model_name", "model_version", "dim", "image_embedding",
+            "status", "error", "completedAt", "createdAt", "updatedAt"
+          ) VALUES (
+            ${assetId}, 'old-worker', 'old-worker', 768, ${legacyVector},
+            'ready', NULL, NOW(), NOW(), NOW()
+          )
+          ON CONFLICT ("asset_id") DO UPDATE SET
+            "model_name" = EXCLUDED."model_name",
+            "model_version" = EXCLUDED."model_version",
+            "dim" = EXCLUDED."dim",
+            "image_embedding" = EXCLUDED."image_embedding",
+            "status" = 'ready',
+            "error" = NULL,
+            "completedAt" = NOW(),
+            "updatedAt" = NOW()
+        `);
+    }, { timeout: 30_000 });
     await oldStarted;
 
     // The database trigger owns updatedAt. Use the timestamp that the old
@@ -1284,6 +1289,19 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       reason: 'revival_exhausted',
     });
     expect(providerRun).toHaveBeenCalledTimes(3);
+
+    // A legacy writer must not turn terminal quarantine into a plain failed
+    // row. That bypass would clear terminal_at without consuming the bounded
+    // revival budget, allowing the next claim to spend provider capacity.
+    await expect(
+      prisma.$executeRaw`
+        UPDATE "asset_embeddings"
+        SET "status" = 'failed',
+            "terminal_at" = NULL,
+            "updatedAt" = NOW()
+        WHERE "asset_id" = ${chainAssetIds[3]}
+      `,
+    ).rejects.toThrow(/terminal embedding may exit only through bounded revival transition/);
 
     // The database also rejects the transition an older rolled-back runtime
     // would issue without the revive_count predicate.

@@ -94,9 +94,13 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(postSql).toContain(":'bootstrap_version'");
     expect(preSql).toContain("d.deptype = 'e'");
     expect(preSql).toContain("'ALTER %s public.%I OWNER TO sploot_stripe_schema_migrator'");
+    expect(preSql).toContain('NOBYPASSRLS NOINHERIT NOLOGIN');
+    expect(preSql).toContain('FROM pg_auth_members');
+    expect(preSql).toContain('REVOKE %I FROM %I');
     expect(postSql).toContain('final embedding claim-token schema contract is incomplete');
     expect(postSql).toContain('asset_embeddings_processing_claim_token_state');
     expect(postSql).toContain('asset_embeddings_revival_budget');
+    expect(postSql).toContain('final embedding column type/default/nullability contract is incomplete');
   });
 
   it('keeps the final embedding contract syntactically balanced before isolated DB execution', () => {
@@ -127,9 +131,29 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(ci).toContain('ON_ERROR_STOP=1');
     expect(ci).toContain("EMBEDDING_INDEX_STATEMENT_TIMEOUT=5s");
     expect(ci).toContain('DROP INDEX CONCURRENTLY');
+    expect(ci).toContain('20260715000000_add_embedding_resilience/migration.sql');
+    expect(ci).toContain('20260715020000_add_embedding_probe_lease_token/migration.sql');
     expect(ci).toContain("PGOPTIONS='-c lock_timeout=5s -c statement_timeout=30s'");
     expect(ci).toContain('migration_name" == 20260715*');
     expect(ci).toContain('legacy-upgrade-event');
+    expect(ci).toContain('CREATE ROLE sploot_stripe_app SUPERUSER INHERIT');
+    expect(ci).toContain("test \"$role_drift\" = 'f:f:0'");
+  });
+
+  it('uses normalized exact catalog definitions and converged security state', () => {
+    const verifier = readFileSync(resolve(webRoot, 'scripts/assert-final-embedding-schema.mjs'), 'utf8');
+    expect(verifier).toContain('pg_get_indexdef(i.indexrelid)');
+    expect(verifier).toContain('pg_get_constraintdef(oid)');
+    expect(verifier).toContain('pg_get_functiondef(p.oid)');
+    expect(verifier).toContain('pg_get_function_identity_arguments(p.oid)');
+    expect(verifier).toContain('pg_get_triggerdef(tr.oid)');
+    expect(verifier).toContain('has_function_privilege');
+    expect(verifier).toContain('pg_auth_members');
+    expect(verifier).toContain('rolsuper');
+    expect(verifier).toContain('version = $3');
+    const finalContract = readFileSync(resolve(webRoot, 'prisma/stripe-ledger-bootstrap-post.sql'), 'utf8')
+      .slice(readFileSync(resolve(webRoot, 'prisma/stripe-ledger-bootstrap-post.sql'), 'utf8').indexOf('-- The bootstrap contract is not ready'));
+    expect(finalContract).not.toMatch(/pg_get_(?:indexdef|constraintdef)\([^\n]+\)\s+LIKE/i);
   });
 
   it('is consumed by CI from the version file, never hardcoded', () => {

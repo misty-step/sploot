@@ -30,6 +30,26 @@ test('migration history fails closed on modified, unknown, and safe compatibilit
   ), /rolled-back.*deployment is paused/);
 });
 
+test('migration history rejects duplicate and reordered finished rows', () => {
+  const expected = { first: 'one', second: 'two', third: 'three' };
+  const finished = { finishedAt: 'done', rolledBackAt: null };
+  assert.throws(() => assertMigrationHistory([
+    { migrationName: 'first', checksum: 'one', ...finished },
+    { migrationName: 'first', checksum: 'one', ...finished },
+  ], expected), /duplicate applied migration/);
+  assert.throws(() => assertMigrationHistory([
+    { migrationName: 'second', checksum: 'two', ...finished },
+    { migrationName: 'first', checksum: 'one', ...finished },
+  ], expected), /reordered applied migration/);
+  assert.throws(() => assertMigrationHistory([
+    { migrationName: 'first', checksum: 'one', ...finished },
+    { migrationName: 'renamed-second', checksum: 'two', ...finished },
+    { migrationName: 'second', checksum: 'two', ...finished },
+  ], expected, {
+    approved: { 'renamed-second': { replacement: 'second', checksum: 'two' } },
+  }), /duplicate applied migration identity/);
+});
+
 test('duplicate prefixes require explicit identities and authority', () => {
   const expected = {
     '20260518_add_asset_shuffle_key': 'one',

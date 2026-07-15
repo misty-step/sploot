@@ -64,7 +64,7 @@ interface LimiterSchemaRow {
 const TIMEOUT_MS = 5_000;
 // The bootstrap file is the version authority. This value must advance with
 // that file so a pre-final-schema database cannot report healthy by accident.
-const FINAL_BOOTSTRAP_VERSION = '20260715065000';
+const FINAL_BOOTSTRAP_VERSION = '20260715070000';
 
 async function queryRuntimeSchema(): Promise<LimiterSchemaRow[]> {
   return prisma.$queryRaw<LimiterSchemaRow[]>`

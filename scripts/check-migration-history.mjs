@@ -12,6 +12,7 @@ const compatibilityPath = resolve(repoRoot, 'apps/web/prisma/migration-history-c
 export function currentMigrationChecksums(root = migrationRoot) {
   return Object.fromEntries(readdirSync(root, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
+    .sort((left, right) => left.name.localeCompare(right.name))
     .map((entry) => {
       const sql = readFileSync(join(root, entry.name, 'migration.sql'));
       return [entry.name, createHash('sha256').update(sql).digest('hex')];
@@ -67,9 +68,25 @@ export function assertUniqueMigrationPrefixes(expected, compatibility = { prefix
 }
 
 export function assertMigrationHistory(rows, expected, compatibility = { approved: {} }) {
+  const expectedOrder = Object.keys(expected).sort();
+  const expectedIndex = new Map(expectedOrder.map((name, index) => [name, index]));
+  const seenNames = new Set();
+  const seenIdentities = new Set();
+  let previousIndex = -1;
+
   for (const row of rows) {
     const current = expected[row.migrationName];
     if (current) {
+      if (seenNames.has(row.migrationName) || seenIdentities.has(row.migrationName)) {
+        throw new Error(`[migration-history] duplicate applied migration identity ${row.migrationName}; deployment is paused`);
+      }
+      const index = expectedIndex.get(row.migrationName);
+      if (index === undefined || index < previousIndex) {
+        throw new Error(`[migration-history] reordered applied migration ${row.migrationName}; deployment is paused`);
+      }
+      previousIndex = index;
+      seenNames.add(row.migrationName);
+      seenIdentities.add(row.migrationName);
       if (current !== row.checksum) {
         throw new Error(`[migration-history] checksum mismatch for applied migration ${row.migrationName}; immutable history is paused`);
       }
@@ -81,6 +98,16 @@ export function assertMigrationHistory(rows, expected, compatibility = { approve
 
     const approved = compatibility.approved?.[row.migrationName];
     if (approved && approved.checksum === row.checksum && expected[approved.replacement]) {
+      if (seenNames.has(row.migrationName) || seenIdentities.has(approved.replacement)) {
+        throw new Error(`[migration-history] duplicate applied migration identity ${row.migrationName}; deployment is paused`);
+      }
+      const index = expectedIndex.get(approved.replacement);
+      if (index === undefined || index < previousIndex) {
+        throw new Error(`[migration-history] reordered applied migration ${row.migrationName}; deployment is paused`);
+      }
+      previousIndex = index;
+      seenNames.add(row.migrationName);
+      seenIdentities.add(approved.replacement);
       if (!row.finishedAt || row.rolledBackAt !== null) {
         throw new Error(`[migration-history] unfinished or rolled-back compatibility migration ${row.migrationName}; deployment is paused`);
       }

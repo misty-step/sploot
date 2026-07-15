@@ -344,7 +344,16 @@ jobs:
           fresh_db='sploot_fresh'
           psql "$admin_url" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${fresh_db}"
           fresh_url="postgresql://test:test@localhost:5432/${fresh_db}?sslmode=disable"
+          # Existing-role drift falsifier: the privileged pre-bootstrap must
+          # converge, rather than trust, a pre-existing SUPERUSER/INHERIT role
+          # and remove its membership before granting the runtime contract.
+          psql "$admin_url" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE sploot_stripe_app SUPERUSER INHERIT;
+          GRANT sploot_stripe_app TO test;
+          SQL
           psql "$fresh_url" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-pre.sql
+          role_drift="$(psql "$admin_url" -Atc "SELECT rolsuper || ':' || rolinherit || ':' || (SELECT count(*) FROM pg_auth_members m JOIN pg_roles r ON r.oid=m.roleid WHERE r.rolname='sploot_stripe_app') FROM pg_roles WHERE rolname='sploot_stripe_app'")"
+          test "$role_drift" = 'f:f:0'
           fresh_migrator_password="$(openssl rand -hex 32)"
           fresh_app_password="$(openssl rand -hex 32)"
           fresh_issuer_password="$(openssl rand -hex 32)"
@@ -375,7 +384,8 @@ jobs:
             20260715050000_cap_embedding_terminal_revivals \
             20260715055000_validate_embedding_revival_budget \
             20260715060000_update_embedding_attempt_ceiling \
-            20260715065000_validate_embedding_attempt_ceiling; do
+            20260715065000_validate_embedding_attempt_ceiling \
+            20260715070000_harden_terminal_revival_exit; do
             for replay in 1 2; do
               PGOPTIONS='-c lock_timeout=5s -c statement_timeout=30s' PGPASSWORD="$fresh_migrator_password" psql "$fresh_migrator_url" -v ON_ERROR_STOP=1 -f "apps/web/prisma/migrations/${migration}/migration.sql"
             done
@@ -412,6 +422,29 @@ jobs:
             echo 'expected bounded lock timeout during migration replay'; exit 1
           fi
           wait "$holder_pid"
+
+          # Rehearse the other initial additive migrations on their actual
+          # tables too. Their immutable SQL is protected by the migration
+          # runner's bounded PGOPTIONS; a held lock must still fail closed.
+          (
+            PGPASSWORD=test psql "$fresh_url" -v ON_ERROR_STOP=1 -c 'BEGIN; LOCK TABLE public.asset_embeddings IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(7); COMMIT;'
+          ) &
+          asset_holder_pid=$!
+          sleep 1
+          if PGOPTIONS='-c lock_timeout=1s -c statement_timeout=5s' PGPASSWORD="$fresh_migrator_password" psql "$fresh_migrator_url" -v ON_ERROR_STOP=1 -f apps/web/prisma/migrations/20260715000000_add_embedding_resilience/migration.sql; then
+            echo 'expected bounded lock timeout during resilience migration replay'; exit 1
+          fi
+          wait "$asset_holder_pid"
+
+          (
+            PGPASSWORD=test psql "$fresh_url" -v ON_ERROR_STOP=1 -c 'BEGIN; LOCK TABLE public.embedding_provider_circuits IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(7); COMMIT;'
+          ) &
+          probe_holder_pid=$!
+          sleep 1
+          if PGOPTIONS='-c lock_timeout=1s -c statement_timeout=5s' PGPASSWORD="$fresh_migrator_password" psql "$fresh_migrator_url" -v ON_ERROR_STOP=1 -f apps/web/prisma/migrations/20260715020000_add_embedding_probe_lease_token/migration.sql; then
+            echo 'expected bounded lock timeout during probe migration replay'; exit 1
+          fi
+          wait "$probe_holder_pid"
 
           # 2) Real upgrade flow: install every pre-Stripe migration as the
           #    legacy owner, record it in Prisma's ledger, then prove the

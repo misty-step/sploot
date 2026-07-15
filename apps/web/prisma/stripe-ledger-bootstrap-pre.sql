@@ -25,6 +25,47 @@ BEGIN
 END
 $$;
 
+-- Existing roles are not trusted merely because they already exist. Converge
+-- every managed role to the least-privilege contract before migration DDL,
+-- including installations where an operator previously made a role
+-- SUPERUSER, INHERIT, BYPASSRLS, or a login role. Managed roles have no
+-- memberships; application credentials are rebound explicitly by deployment.
+DO $$
+DECLARE role_name TEXT;
+BEGIN
+  FOREACH role_name IN ARRAY ARRAY[
+    'sploot_stripe_ledger_owner',
+    'sploot_stripe_schema_migrator',
+    'sploot_stripe_ledger_issuer',
+    'sploot_stripe_ledger_consumer',
+    'sploot_stripe_ledger_maintenance',
+    'sploot_stripe_adversary',
+    'sploot_stripe_app'
+  ] LOOP
+    EXECUTE format(
+      'ALTER ROLE %I NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT NOLOGIN',
+      role_name
+    );
+  END LOOP;
+END
+$$;
+
+DO $$
+DECLARE membership RECORD;
+BEGIN
+  FOR membership IN
+    SELECT granted.rolname AS granted_name, member.rolname AS member_name
+    FROM pg_auth_members auth
+    JOIN pg_roles granted ON granted.oid = auth.roleid
+    JOIN pg_roles member ON member.oid = auth.member
+    WHERE granted.rolname LIKE 'sploot_stripe_%'
+       OR member.rolname LIKE 'sploot_stripe_%'
+  LOOP
+    EXECUTE format('REVOKE %I FROM %I', membership.granted_name, membership.member_name);
+  END LOOP;
+END
+$$;
+
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 

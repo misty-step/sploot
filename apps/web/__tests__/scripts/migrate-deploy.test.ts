@@ -77,6 +77,7 @@ describe('online migration transaction contract', () => {
       '20260715055000_validate_embedding_revival_budget',
       '20260715060000_update_embedding_attempt_ceiling',
       '20260715065000_validate_embedding_attempt_ceiling',
+      '20260715070000_harden_terminal_revival_exit',
     ]);
     for (const name of names) {
       const sql = readFileSync(join(migrationRoot, name, 'migration.sql'), 'utf8');
@@ -116,6 +117,11 @@ describe('online migration transaction contract', () => {
       expect(sql).toContain("SET LOCAL lock_timeout = '5s'");
       expect(sql).not.toContain('ADD CONSTRAINT');
     }
+    const replacement = readFileSync(join(migrationRoot, '20260715070000_harden_terminal_revival_exit/migration.sql'), 'utf8');
+    expect(replacement).toContain('CREATE OR REPLACE FUNCTION');
+    expect(replacement).toContain('terminal embedding may exit only through bounded revival transition');
+    expect(replacement).toContain("SET LOCAL lock_timeout = '5s'");
+    expect(replacement).toContain("SET LOCAL statement_timeout = '30s'");
   });
 
   it('enforces bounded DDL timeouts at the migration runner boundary without rewriting applied SQL', () => {
@@ -142,8 +148,8 @@ describe('online migration transaction contract', () => {
     expect(correction).toContain('ADD CONSTRAINT "embedding_attempt_count_ceiling"');
     expect(validation).toContain('VALIDATE CONSTRAINT "embedding_attempt_count_ceiling"');
     expect(correction).not.toContain('VALIDATE CONSTRAINT');
-    expect(post).toContain(`count <= ${policy.global.replicateDailyAttempts}`);
-    expect(post).toContain(`count <= ${policy.global.replicateMonthlyAttempts}`);
+    expect(post).toContain(`count<=${policy.global.replicateDailyAttempts}`);
+    expect(post).toContain(`count<=${policy.global.replicateMonthlyAttempts}`);
   });
 
   it('asserts the final embedding schema in the deployment bootstrap contract', () => {
@@ -178,6 +184,16 @@ describe('online migration transaction contract', () => {
     ), 'utf8');
     expect(sql).toContain('terminal embedding cannot be claimed or written outside revival');
     expect(sql).toContain('NEW."status" IN (\'pending\', \'processing\', \'ready\')');
+  });
+
+  it('does not permit a terminal row to clear terminal_at into failed state', () => {
+    const sql = readFileSync(join(
+      process.cwd(),
+      'prisma/migrations/20260715070000_harden_terminal_revival_exit/migration.sql',
+    ), 'utf8');
+    expect(sql).toMatch(/OLD\."terminal_at" IS NOT NULL AND NEW\."terminal_at" IS NULL/);
+    expect(sql).toContain("NEW.\"status\" <> 'pending'");
+    expect(sql).toContain('NEW."revive_count" <> OLD."revive_count"');
   });
 });
 
