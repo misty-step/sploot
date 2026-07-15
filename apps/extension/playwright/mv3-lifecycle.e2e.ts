@@ -460,7 +460,10 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
       send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'after-hung.png' }, 'post-hung save message'),
     ]);
     expect(hungResults).toHaveLength(3);
-    expect(uploadBodies.some(body => body.includes('after-hung.png'))).toBe(true);
+    await expect.poll(
+      () => uploadBodies.some(body => body.includes('after-hung.png')),
+      { timeout: 15_000 },
+    ).toBe(true);
   } finally {
     await closeMv3Context(context, testInfo);
   }

@@ -37,4 +37,9 @@ test('production extension transport precedes the real MV3 E2E artifact boundary
   assert.doesNotMatch(lifecycleTest, /getactivewindow/, 'Xvfb has no window manager active-window oracle');
   assert.match(lifecycleTest, /'search',[\s\S]*'--name',[\s\S]*'MV3 fixture'/, 'Linux CI must locate the real fixture browser window');
   assert.match(lifecycleTest, /'windowfocus',[\s\S]*'--sync'/, 'Linux CI must focus the fixture window without a window manager');
+  assert.match(
+    lifecycleTest,
+    /expect\.poll\([\s\S]{0,120}\(\) => uploadBodies\.some\(body => body\.includes\('after-hung\.png'\)\)/,
+    'the live post-hung upload oracle must wait for asynchronous queue convergence',
+  );
 });
