@@ -1,21 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { paginateSeededSearchResults } from '@/lib/db';
+import { vectorSearchOrderClause } from '@/lib/db';
 
 describe('seeded vector-search pagination', () => {
-  it('slices one deterministic candidate pool without overlap or omission', () => {
-    const candidates = Array.from({ length: 100 }, (_, index) => `asset-${index}`);
-    const pages = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90].map((offset) =>
-      paginateSeededSearchResults(candidates, 4242, offset, 10)
-    );
+  it('builds one stable total order in Postgres for a seeded page', () => {
+    const clause = vectorSearchOrderClause(4242);
 
-    expect(new Set(pages.flat()).size).toBe(100);
-    expect(pages.flat()).toEqual(
-      paginateSeededSearchResults(candidates, 4242, 0, 100)
+    expect(clause.strings.join('?')).toMatch(
+      /ORDER BY md5\(ranked\.id \|\| ':' \|\| \?\), ranked\.id ASC/
     );
-    expect(pages).toEqual(
-      [0, 10, 20, 30, 40, 50, 60, 70, 80, 90].map((offset) =>
-        paginateSeededSearchResults(candidates, 4242, offset, 10)
-      )
+    expect(clause.values).toEqual(['4242']);
+  });
+
+  it('keeps relevance ordering when no shuffle seed is requested', () => {
+    const clause = vectorSearchOrderClause();
+
+    expect(clause.strings.join('?')).toContain(
+      'ORDER BY ranked.distance DESC, ranked.id ASC'
     );
+    expect(clause.values).toEqual([]);
   });
 });

@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 import { databaseConfigured } from './env';
 import logger from './logger';
-import { shuffleWithSeed } from './seeded-random';
 import { getPerformanceMonitor } from './performance-monitor';
 import { logger as observabilityLogger } from './observability-logger';
 import { embeddingVectorSql } from './embedding-vector-sql';
@@ -816,13 +815,17 @@ export interface VectorSearchPage {
   total: number;
 }
 
-export function paginateSeededSearchResults<T>(
-  results: T[],
-  shuffleSeed: number,
-  offset: number,
-  limit: number,
-): T[] {
-  return shuffleWithSeed(results, shuffleSeed).slice(offset, offset + limit);
+export function vectorSearchOrderClause(shuffleSeed?: number): Prisma.Sql {
+  if (shuffleSeed === undefined) {
+    return Prisma.sql`ORDER BY ranked.distance DESC, ranked.id ASC`;
+  }
+
+  // Postgres owns the deterministic total order so large result sets are
+  // paged before crossing the process boundary. The id tie-breaker makes the
+  // vanishingly unlikely hash-collision case stable as well.
+  return Prisma.sql`
+    ORDER BY md5(ranked.id || ':' || ${shuffleSeed.toString()}), ranked.id ASC
+  `;
 }
 
 export async function vectorSearchPage(
@@ -845,14 +848,11 @@ export async function vectorSearchPage(
   const thresholdClause = typeof threshold === 'number' && threshold > 0
     ? Prisma.sql`AND 1 - (ae.image_embedding <=> ${vectorSql}) >= ${threshold}`
     : Prisma.empty;
-  const pageClause = shuffleSeed === undefined
-    ? Prisma.sql`LIMIT ${limit} OFFSET ${offset}`
-    : Prisma.empty;
+  const orderClause = vectorSearchOrderClause(shuffleSeed);
 
   try {
-    // Define the complete match set before pagination. A seeded page slices
-    // one deterministic shuffle; changing the SQL candidate window by offset
-    // causes overlaps and omissions.
+    // COUNT(*) OVER() keeps the total truthful while Postgres applies the
+    // stable order and bounded page before rows cross into application memory.
     const rows = await prisma.$queryRaw<Array<VectorSearchRow & { total_count: bigint | number }>>(Prisma.sql`
       WITH ranked AS (
         SELECT
@@ -876,15 +876,12 @@ export async function vectorSearchPage(
       )
       SELECT ranked.*, COUNT(*) OVER() AS total_count
       FROM ranked
-      ORDER BY ranked.distance DESC, ranked.id ASC
-      ${pageClause}
+      ${orderClause}
+      LIMIT ${limit} OFFSET ${offset}
     `);
 
     const total = Number(rows[0]?.total_count ?? 0);
-    const candidates = rows.map(({ total_count: _totalCount, ...row }) => row);
-    const results = shuffleSeed === undefined
-      ? candidates
-      : paginateSeededSearchResults(candidates, shuffleSeed, offset, limit);
+    const results = rows.map(({ total_count: _totalCount, ...row }) => row);
 
     return { results, total };
   } catch (error) {
