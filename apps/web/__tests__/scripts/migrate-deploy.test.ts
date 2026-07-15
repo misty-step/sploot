@@ -75,6 +75,8 @@ describe('online migration transaction contract', () => {
       '20260715045000_validate_embedding_processing_claim_token_state',
       '20260715050000_cap_embedding_terminal_revivals',
       '20260715055000_validate_embedding_revival_budget',
+      '20260715060000_update_embedding_attempt_ceiling',
+      '20260715065000_validate_embedding_attempt_ceiling',
     ]);
     for (const name of names) {
       const sql = readFileSync(join(migrationRoot, name, 'migration.sql'), 'utf8');
@@ -94,6 +96,7 @@ describe('online migration transaction contract', () => {
       '20260715030000_enforce_embedding_attempt_ceiling',
       '20260715040000_add_embedding_processing_claim_token',
       '20260715050000_cap_embedding_terminal_revivals',
+      '20260715060000_update_embedding_attempt_ceiling',
     ];
     for (const name of additive) {
       const sql = readFileSync(join(migrationRoot, name, 'migration.sql'), 'utf8');
@@ -106,6 +109,7 @@ describe('online migration transaction contract', () => {
       '20260715035000_validate_embedding_attempt_ceiling',
       '20260715045000_validate_embedding_processing_claim_token_state',
       '20260715055000_validate_embedding_revival_budget',
+      '20260715065000_validate_embedding_attempt_ceiling',
     ]) {
       const sql = readFileSync(join(migrationRoot, name, 'migration.sql'), 'utf8');
       expect(sql).toContain('VALIDATE CONSTRAINT');
@@ -118,6 +122,28 @@ describe('online migration transaction contract', () => {
     const runner = readFileSync(join(process.cwd(), 'scripts/migrate-deploy.mjs'), 'utf8');
     expect(runner).toContain("-c lock_timeout=5s");
     expect(runner).toContain("-c statement_timeout=30s");
+  });
+
+  it('binds the refreshed attempt ceiling to policy while preserving the immutable prior migration', () => {
+    const migrationRoot = join(process.cwd(), 'prisma/migrations');
+    const policy = JSON.parse(readFileSync(join(process.cwd(), '../../economics/policy.json'), 'utf8')) as {
+      global: { replicateDailyAttempts: number; replicateMonthlyAttempts: number };
+    };
+    const previous = readFileSync(join(migrationRoot, '20260715030000_enforce_embedding_attempt_ceiling/migration.sql'), 'utf8');
+    const correction = readFileSync(join(migrationRoot, '20260715060000_update_embedding_attempt_ceiling/migration.sql'), 'utf8');
+    const validation = readFileSync(join(migrationRoot, '20260715065000_validate_embedding_attempt_ceiling/migration.sql'), 'utf8');
+    const post = readFileSync(join(process.cwd(), 'prisma/stripe-ledger-bootstrap-post.sql'), 'utf8');
+
+    expect(previous).toContain('"count" <= 684');
+    expect(previous).toContain('"count" <= 20547');
+    expect(correction).toContain(`"count" <= ${policy.global.replicateDailyAttempts}`);
+    expect(correction).toContain(`"count" <= ${policy.global.replicateMonthlyAttempts}`);
+    expect(correction).toContain('DROP CONSTRAINT IF EXISTS');
+    expect(correction).toContain('ADD CONSTRAINT "embedding_attempt_count_ceiling"');
+    expect(validation).toContain('VALIDATE CONSTRAINT "embedding_attempt_count_ceiling"');
+    expect(correction).not.toContain('VALIDATE CONSTRAINT');
+    expect(post).toContain(`count <= ${policy.global.replicateDailyAttempts}`);
+    expect(post).toContain(`count <= ${policy.global.replicateMonthlyAttempts}`);
   });
 
   it('asserts the final embedding schema in the deployment bootstrap contract', () => {

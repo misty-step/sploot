@@ -19,6 +19,7 @@ import {
 } from '@/lib/billing/stripe-cancellation-monitor';
 import { consumeStripeWebhook, StripeSignatureVerifier, type StripeWebhookVerifier } from '@/lib/billing/stripe-webhook';
 import {
+  boundedStripeIssuerDatabaseUrl,
   createProductionStripeCancellationLedger,
   type CancellationDeliveryClaim,
   type CancellationDeliveryCompletion,
@@ -41,6 +42,13 @@ import {
 const sandboxKey = ['sk', 'test', 'fixture'].join('_');
 const snapshotSigningKeys = generateKeyPairSync('ed25519');
 const mintSigningKeys = generateKeyPairSync('ed25519');
+
+describe('production issuer pool contract', () => {
+  it('forces the issuer datasource to one Prisma connection', () => {
+    expect(boundedStripeIssuerDatabaseUrl('postgresql://issuer.example.test/sploot?sslmode=require&connection_limit=8'))
+      .toBe('postgresql://issuer.example.test/sploot?sslmode=require&connection_limit=1');
+  });
+});
 
 const mintRequest = {
   nonce: 'caller-nonce-1',

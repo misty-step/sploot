@@ -159,6 +159,16 @@ export class PrismaStripeCancellationLedger implements DurableStripeCancellation
   }
 }
 
+/** Keep the issuer authority's Prisma pool bounded to one connection per
+ * application isolate. The webhook route is sequentially reusable, but the
+ * issuer is a separate database role whose pool must not scale with requests.
+ */
+export function boundedStripeIssuerDatabaseUrl(rawUrl: string): string {
+  const url = new URL(rawUrl);
+  url.searchParams.set('connection_limit', '1');
+  return url.toString();
+}
+
 export function createProductionStripeCancellationLedger(database: PrismaClient | null | undefined = prisma, authorityUrl = process.env.STRIPE_LEDGER_ISSUER_DATABASE_URL): DurableStripeCancellationLedger {
   if (!database) throw new Error('production Stripe cancellation monitoring requires configured Postgres and issuer authority');
   const issuerUrl = authorityUrl;
@@ -167,7 +177,7 @@ export function createProductionStripeCancellationLedger(database: PrismaClient 
   if (cached && cached.authorityUrl !== issuerUrl) {
     throw new Error('Stripe issuer authority changed after initialization; restart the application to rotate it');
   }
-  const client = cached?.client ?? new PrismaClient({ datasources: { db: { url: issuerUrl } } });
+  const client = cached?.client ?? new PrismaClient({ datasources: { db: { url: boundedStripeIssuerDatabaseUrl(issuerUrl) } } });
   if (!cached) globalThis.splootStripeIssuerClient = { authorityUrl: issuerUrl, client };
   return new PrismaStripeCancellationLedger(client);
 }

@@ -66,8 +66,8 @@ receives the production Neon connection string.
 
 rolling the application back leaves both tables and the additive
 `embedding_attempt_count_ceiling` constraint in place and preserves all user
-data. The database rejects a daily counter above 684 or a monthly counter above
-20,547, so a former runtime with a higher daily limit fails closed at the
+data. The database rejects a daily counter above 2,272 or a monthly counter above
+68,181, so a former runtime with a higher daily limit fails closed at the
 current configured attempt ceiling. This is an attempt-count constraint
 derived from the provider-rate model, not durable provider-dollar enforcement.
 Because former runtimes do not maintain the monthly counter, operators must set

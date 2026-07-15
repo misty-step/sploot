@@ -56,7 +56,7 @@ const healthyDatabaseRow = [{
   pending_index: 'asset_embeddings_pending_next_attempt_idx',
   circuit_index: 'embedding_provider_circuits_open_until_idx',
   bootstrap_phase: 'ready',
-  bootstrap_version: '20260715055000',
+  bootstrap_version: '20260715065000',
 }];
 const context = { params: Promise.resolve({}) };
 
@@ -109,7 +109,7 @@ describe('/api/health', () => {
       pending_index: null,
       circuit_index: null,
       bootstrap_phase: 'preparing',
-      bootstrap_version: '20260715055000',
+      bootstrap_version: '20260715065000',
     }]);
 
     const res = await GET(createMockRequest('GET', null), context);

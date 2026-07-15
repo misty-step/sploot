@@ -6,6 +6,7 @@ import { canaryConfigured, reportCanaryCheckIn } from '@/lib/canary-reporter';
 import { prisma } from '@/lib/db';
 import { logger } from '@/lib/observability-logger';
 import { withObservability } from '@/lib/with-observability';
+import economicsPolicy from '../../../../../economics/policy.json';
 
 interface HealthDependencies {
   database: 'up' | 'down';
@@ -63,7 +64,7 @@ interface LimiterSchemaRow {
 const TIMEOUT_MS = 5_000;
 // The bootstrap file is the version authority. This value must advance with
 // that file so a pre-final-schema database cannot report healthy by accident.
-const FINAL_BOOTSTRAP_VERSION = '20260715055000';
+const FINAL_BOOTSTRAP_VERSION = '20260715065000';
 
 async function queryRuntimeSchema(): Promise<LimiterSchemaRow[]> {
   return prisma.$queryRaw<LimiterSchemaRow[]>`
@@ -123,6 +124,8 @@ async function queryRuntimeSchema(): Promise<LimiterSchemaRow[]> {
         WHERE c.conname = 'embedding_attempt_count_ceiling'
           AND t.relname = 'embedding_rate_buckets' AND n.nspname = 'public'
           AND c.convalidated
+          AND pg_get_constraintdef(c.oid) LIKE ${`%count <= ${economicsPolicy.global.replicateDailyAttempts}%`}
+          AND pg_get_constraintdef(c.oid) LIKE ${`%count <= ${economicsPolicy.global.replicateMonthlyAttempts}%`}
       ) AS attempt_ceiling_constraint,
       EXISTS (
         SELECT 1 FROM pg_constraint c

@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 
 import pg from 'pg';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const { Client } = pg;
-const expectedVersion = '20260715055000';
+const scriptDirectory = dirname(fileURLToPath(import.meta.url));
+const expectedVersion = readFileSync(resolve(scriptDirectory, '../prisma/stripe-ledger-bootstrap.version'), 'utf8').trim();
+const economicsPolicy = JSON.parse(readFileSync(resolve(scriptDirectory, '../../../economics/policy.json'), 'utf8'));
+const expectedDailyAttempts = economicsPolicy.global.replicateDailyAttempts;
+const expectedMonthlyAttempts = economicsPolicy.global.replicateMonthlyAttempts;
 
 export async function assertFinalEmbeddingSchema(databaseUrl = process.env.DATABASE_URL, ClientConstructor = Client) {
   if (!databaseUrl) throw new Error('[final-schema] DATABASE_URL is required');
@@ -46,8 +53,8 @@ export async function assertFinalEmbeddingSchema(databaseUrl = process.env.DATAB
         AND EXISTS (SELECT 1 FROM pg_constraint
                     WHERE conname = 'embedding_attempt_count_ceiling'
                     AND convalidated
-                    AND pg_get_constraintdef(oid) LIKE '%count <= 684%'
-                    AND pg_get_constraintdef(oid) LIKE '%count <= 20547%')
+                    AND pg_get_constraintdef(oid) LIKE ('%count <= ' || $1 || '%')
+                    AND pg_get_constraintdef(oid) LIKE ('%count <= ' || $2 || '%'))
         AND EXISTS (SELECT 1 FROM pg_constraint
                     WHERE conname = 'asset_embeddings_processing_claim_token_state'
                     AND convalidated
@@ -89,7 +96,7 @@ export async function assertFinalEmbeddingSchema(databaseUrl = process.env.DATAB
              AND pg_get_userbyid(p.proowner) = 'sploot_stripe_ledger_owner')
         AND EXISTS (SELECT 1 FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id = TRUE AND phase = 'ready' AND version = $1)
         AS ready
-    `, [expectedVersion]);
+    `, [expectedDailyAttempts, expectedMonthlyAttempts, expectedVersion]);
     if (result.rows[0]?.ready !== true) {
       throw new Error('[final-schema] final embedding/circuit schema contract is incomplete');
     }

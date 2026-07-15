@@ -373,7 +373,9 @@ jobs:
             20260715040000_add_embedding_processing_claim_token \
             20260715045000_validate_embedding_processing_claim_token_state \
             20260715050000_cap_embedding_terminal_revivals \
-            20260715055000_validate_embedding_revival_budget; do
+            20260715055000_validate_embedding_revival_budget \
+            20260715060000_update_embedding_attempt_ceiling \
+            20260715065000_validate_embedding_attempt_ceiling; do
             for replay in 1 2; do
               PGOPTIONS='-c lock_timeout=5s -c statement_timeout=30s' PGPASSWORD="$fresh_migrator_password" psql "$fresh_migrator_url" -v ON_ERROR_STOP=1 -f "apps/web/prisma/migrations/${migration}/migration.sql"
             done
@@ -426,7 +428,7 @@ jobs:
           # before the restricted role executes the new embedding migrations.
           # The upgrade must preserve data and later ownership/definitions.
           psql "$admin_url" -v ON_ERROR_STOP=1 <<'SQL'
-          INSERT INTO public.users (id, email) VALUES ('legacy-upgrade-user', 'legacy-upgrade@example.invalid');
+          INSERT INTO public.users (id, email, "createdAt", "updatedAt") VALUES ('legacy-upgrade-user', 'legacy-upgrade@example.invalid', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
           INSERT INTO public.assets (id, owner_user_id, blob_url, pathname, mime, size, checksum_sha256)
           VALUES ('legacy-upgrade-asset', 'legacy-upgrade-user', 'https://legacy.public.blob.vercel-storage.com/legacy.png', 'legacy.png', 'image/png', 7, 'legacy-upgrade-checksum');
           INSERT INTO public.asset_embeddings (asset_id, model_name, model_version, dim, status)

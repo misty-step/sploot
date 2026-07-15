@@ -551,8 +551,8 @@ BEGIN
       AND t.relname = 'embedding_rate_buckets'
       AND n.nspname = 'public'
       AND c.convalidated
-      AND pg_get_constraintdef(c.oid) LIKE '%count <= 684%'
-      AND pg_get_constraintdef(c.oid) LIKE '%count <= 20547%'
+      AND pg_get_constraintdef(c.oid) LIKE '%count <= 2272%'
+      AND pg_get_constraintdef(c.oid) LIKE '%count <= 68181%'
   ) OR to_regclass('public.asset_embeddings_pending_next_attempt_idx') IS NULL
     OR to_regclass('public.embedding_provider_circuits_open_until_idx') IS NULL
     OR NOT EXISTS (

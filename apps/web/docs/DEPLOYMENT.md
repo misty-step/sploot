@@ -204,7 +204,7 @@ DB-backed integration proof is green.
 
 ADR-010's limiter tables and the `embedding_attempt_count_ceiling` database
 constraint are additive and may remain. This attempt-count constraint rejects
-daily counters above 684 and monthly counters above 20,547, so even an
+daily counters above 2,272 and monthly counters above 68,181, so even an
 automatic rollback to the former 2,000-attempt daily runtime fails closed at
 the current configured attempt ceiling. It is derived from the provider-rate
 model and does not enforce durable provider dollars. Older code does not

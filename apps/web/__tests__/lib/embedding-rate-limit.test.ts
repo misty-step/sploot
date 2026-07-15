@@ -49,8 +49,8 @@ describe('embedding limiter fail-closed behavior', () => {
   it('uses the versioned economic policy for global daily and monthly caps', () => {
     expect(EMBEDDING_DAILY_BUDGET).toBe(policy.global.replicateDailyAttempts);
     expect(EMBEDDING_MONTHLY_BUDGET).toBe(policy.global.replicateMonthlyAttempts);
-    expect(EMBEDDING_DAILY_BUDGET).toBe(684);
-    expect(EMBEDDING_MONTHLY_BUDGET).toBe(20_547);
+    expect(EMBEDDING_DAILY_BUDGET).toBe(2_272);
+    expect(EMBEDDING_MONTHLY_BUDGET).toBe(68_181);
   });
 
   it('treats releasing a missing lease as a no-op', async () => {
