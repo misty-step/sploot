@@ -188,27 +188,6 @@ async function startImageFixture({ delayMs = 0, status = 200, contentType = 'ima
   };
 }
 
-test('public upload surface durably enqueues metadata without materializing the payload in list state', async ({ browser, baseURL }) => {
-  const context = await browser.newContext({ baseURL });
-  const page = await context.newPage();
-  try {
-    await openApp(page, 'qa-upload-queue-user');
-    await context.setOffline(true);
-    await page.locator('input[type="file"]').setInputFiles({ name: 'browser-queue.png', mimeType: 'image/png', buffer: Buffer.from('png') });
-    await expect(intentList(page).getByText('browser-queue.png', { exact: true })).toBeVisible();
-
-    const rows = await readRows(page, await ownerKey('qa-upload-queue-user'));
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ intent: 'file', filename: 'browser-queue.png' });
-    expect(rows[0]).not.toHaveProperty('fileData');
-    expect(await readPayloadIds(page)).toEqual([rows[0].id]);
-  } finally {
-    await context.setOffline(false);
-    await waitForBrowserHealth(page);
-    await context.close();
-  }
-});
-
 test('persistent Chromium restart preserves URL and file intent while A, B, and signed-out views stay isolated', async ({ browser, baseURL }) => {
   const userDataDir = mkdtempSync(join(tmpdir(), 'sploot-upload-queue-'));
   let context: BrowserContext | undefined;
@@ -270,6 +249,27 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     if (context) await context.setOffline(false);
     await context?.close();
     rmSync(userDataDir, { recursive: true, force: true });
+  }
+});
+
+test('public upload surface durably enqueues metadata without materializing the payload in list state', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({ baseURL });
+  const page = await context.newPage();
+  try {
+    await openApp(page, 'qa-upload-queue-user');
+    await context.setOffline(true);
+    await page.locator('input[type="file"]').setInputFiles({ name: 'browser-queue.png', mimeType: 'image/png', buffer: Buffer.from('png') });
+    await expect(intentList(page).getByText('browser-queue.png', { exact: true })).toBeVisible();
+
+    const rows = await readRows(page, await ownerKey('qa-upload-queue-user'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ intent: 'file', filename: 'browser-queue.png' });
+    expect(rows[0]).not.toHaveProperty('fileData');
+    expect(await readPayloadIds(page)).toEqual([rows[0].id]);
+  } finally {
+    await context.setOffline(false);
+    await waitForBrowserHealth(page);
+    await context.close();
   }
 });
 
