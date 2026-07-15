@@ -76,6 +76,19 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
     () => calculateScenario(missingWorkloadField, 'free', 'high'),
     /scenario free.blobDeliveryGb must be a finite nonnegative number/,
   );
+
+  const malformedPolicy = structuredClone(inputs);
+  malformedPolicy.policy.planBudgets.free.monthlyInfrastructureUsd = Number.NaN;
+  malformedPolicy.policy.global.replicateDailyAttempts = -1;
+  malformedPolicy.policy.providerHardCaps = [];
+  const policyErrors = validateInputs(malformedPolicy).join('\n');
+  assert.match(policyErrors, /policy\.planBudgets\.free\.monthlyInfrastructureUsd/);
+  assert.match(policyErrors, /policy\.global\.replicateDailyAttempts/);
+  assert.match(policyErrors, /policy\.providerHardCaps must be a non-empty array/);
+
+  const divergentDates = structuredClone(inputs);
+  divergentDates.rates[0].retrievedAt = '2026-07-14';
+  assert.match(validateInputs(divergentDates).join('\n'), /rate registry must use one retrieval date/);
 });
 
 test('live usage reconciles without identifiers or silently-zero unknowns', async () => {
@@ -141,4 +154,19 @@ test('the checked-in report is exactly reproducible', async () => {
   const expected = buildReport(inputs);
   const actual = await readFile(new URL('./REPORT.md', import.meta.url), 'utf8');
   assert.equal(actual, expected);
+});
+
+test('recommendations are derived from versioned rates and workloads', async () => {
+  const inputs = await loadInputs();
+  const changed = structuredClone(inputs);
+  changed.rates.forEach((rate) => { rate.retrievedAt = '2026-07-16'; });
+  const free = changed.scenarios.find((scenario) => scenario.id === 'free');
+  const collector = changed.scenarios.find((scenario) => scenario.id === 'collector');
+  free.sourceTrashStorageGb = 0.75;
+  collector.priceUsd = 13;
+
+  const report = buildReport(changed);
+  assert.match(report, /Rates were refreshed on 2026-07-16/);
+  assert.match(report, /Cardless Free:\*\* 0\.75 GB/);
+  assert.match(report, /Collector:\*\* \$13\/month/);
 });

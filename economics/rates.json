@@ -63,7 +63,7 @@
       "capabilities": ["blob-egress"],
       "value": 0.06,
       "unit": "GB origin transfer",
-      "includedAllowance": "Hobby: first 10 GB",
+      "includedAllowance": "Hobby: up to 10 GB; Pro: usage-based under the plan's shared monthly credit",
       "planAssumption": "North America on-demand rate; sensitivity varies uncached-origin share from 5% to 30%",
       "sourceUrl": "https://vercel.com/docs/manage-cdn-usage",
       "retrievedAt": "2026-07-15"
@@ -72,7 +72,7 @@
       "id": "replicate-clip-prediction",
       "provider": "Replicate",
       "capabilities": ["image-inference", "text-inference"],
-      "value": 0.00054,
+      "value": 0.00073,
       "unit": "typical prediction",
       "includedAllowance": null,
       "planAssumption": "krthr/clip-embeddings estimate; high sensitivity adds 20% potentially billed retry/cancel overhead",

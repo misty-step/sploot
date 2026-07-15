@@ -4,9 +4,9 @@ Generated deterministically from the versioned inputs in this directory. Rates w
 
 ## Recommendation
 
-- **Cardless Free:** 0.5 GB user-visible source-plus-trash allowance (rendition overhead is reserved separately), 100 new indexes and 100 novel text embeddings per month, 1 GB delivery, and at most 80 project-wide full-allowance equivalents before waitlist/paid admission. High-case variable cost is $0.26 per full account and $21.03 for the pool, below the $25 subsidy ceiling.
-- **Collector:** $12/month, 10 GB, 600 new indexes, 900 novel text embeddings, and 10 GB delivery. High-case COGS is $3.26 and gross margin is 72.8%. The computed 70%-margin price floor is $10.61.
-- **Archive:** $49/month, 100 GB, 2,500 new indexes, 2,500 novel text embeddings, and 40 GB delivery. High-case COGS is $14.41 and gross margin is 70.6%. The computed 70%-margin price floor is $47.81.
+- **Cardless Free:** 0.5 GB user-visible source-plus-trash allowance (rendition overhead is reserved separately), 100 new indexes and 100 novel text embeddings per month, 1 GB delivery, and at most 75 project-wide full-allowance equivalents before waitlist/paid admission. High-case variable cost is $0.31 per full account and $23.14 for the pool, below the $25.00 subsidy ceiling.
+- **Collector:** $12/month, 10 GB, 600 new indexes, 900 novel text embeddings, and 10 GB delivery. High-case COGS is $3.60 and gross margin is 70.0%. The computed 70%-margin price floor is $12.00.
+- **Archive:** $49/month, 100 GB, 2,000 new indexes, 2,000 novel text embeddings, and 40 GB delivery. High-case COGS is $14.67 and gross margin is 70.1%. The computed 70%-margin price floor is $48.89.
 - Existing content remains readable, exportable, and deletable after a cost boundary closes. No plan permits silent overage.
 
 These are candidates for entitlement and billing cards, not live promises. International/FX Stripe charges, provider-plan readbacks, and hard-cap receipts must be locked before GA.
@@ -17,10 +17,10 @@ Low/base/high vary physical rendition overhead (1.05×/1.10×/1.20×), Blob orig
 
 | Workload | Revenue | Low COGS | Base COGS | High COGS | High gross margin |
 |---|---:|---:|---:|---:|---:|
-| Cardless Free — full allowance | $0.00 | $0.22 | $0.24 | $0.26 | n/a |
-| Collector — 10 GB | $12.00 | $2.57 | $2.88 | $3.26 | 72.8% |
-| Archive — 100 GB | $49.00 | $11.30 | $12.66 | $14.41 | 70.6% |
-| Abusive novel-query and upload storm | $0.00 | $36.79 | $38.69 | $44.09 | n/a |
+| Cardless Free — full allowance | $0.00 | $0.26 | $0.28 | $0.31 | n/a |
+| Collector — 10 GB | $12.00 | $2.86 | $3.18 | $3.60 | 70.0% |
+| Archive — 100 GB | $49.00 | $11.52 | $12.89 | $14.67 | 70.1% |
+| Abusive novel-query and upload storm | $0.00 | $48.19 | $50.66 | $57.77 | n/a |
 | Viral public share / crawler month | $0.00 | $156.81 | $163.34 | $173.40 | n/a |
 
 The abusive and viral rows deliberately exceed their account/global budgets; they prove quotas must cover novel inference, bytes, and request delivery rather than storage alone.
@@ -29,11 +29,11 @@ The abusive and viral rows deliberately exceed their account/global budgets; the
 
 | Plan | Monthly infrastructure ceiling | Daily inference ceiling | Monthly inference ceiling |
 |---|---:|---:|---:|
-| free | $0.28 | $0.01 (12 attempts) | $0.13 (240 attempts) |
-| collector | $2.75 | $0.05 (90 attempts) | $0.97 (1800 attempts) |
-| archive | $12.50 | $0.16 (300 attempts) | $3.24 (6000 attempts) |
+| free | $0.28 | $0.01 (12 attempts) | $0.18 (240 attempts) |
+| collector | $2.75 | $0.07 (90 attempts) | $1.31 (1800 attempts) |
+| archive | $12.50 | $0.22 (300 attempts) | $3.50 (4800 attempts) |
 
-Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve, so full advertised use cannot exhaust its own budget merely because a provider attempt is retried. Pre-GA global variable spend is capped at $0.75/day and $25.00/month. Replicate is a sub-budget of $0.50/day (925 attempts) and $15.00/month. After paid admission, the monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; daily is `paidMonthlyBudget / 30`. Counters reserve worst-case dollars transactionally before work and reconcile provider usage afterward.
+Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve, so full advertised use cannot exhaust its own budget merely because a provider attempt is retried. Pre-GA global variable spend is capped at $0.75/day and $25.00/month. Replicate is a sub-budget of $0.50/day (684 attempts) and $15.00/month. After paid admission, the monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; daily is `paidMonthlyBudget / 30`. Counters reserve worst-case dollars transactionally before work and reconcile provider usage afterward.
 
 ## Provider hard-cap map
 
@@ -73,8 +73,8 @@ Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve, s
 | Vercel Blob | blob-operations, renditions | $5.00 / million advanced operations | Hobby: first 2,000 advanced operations | [official source](https://vercel.com/docs/vercel-blob/usage-and-pricing) | 2026-07-15 |
 | Vercel Blob | blob-egress | $0.050 / GB transferred | Hobby: first 10 GB | [official source](https://vercel.com/docs/vercel-blob/usage-and-pricing) | 2026-07-15 |
 | Vercel CDN | blob-egress | $2.00 / million edge requests | Hobby: first 1,000,000; Pro: first 10,000,000 | [official source](https://vercel.com/docs/manage-cdn-usage) | 2026-07-15 |
-| Vercel CDN | blob-egress | $0.060 / GB origin transfer | Hobby: first 10 GB | [official source](https://vercel.com/docs/manage-cdn-usage) | 2026-07-15 |
-| Replicate | image-inference, text-inference | $0.000540 / typical prediction | none | [official source](https://replicate.com/krthr/clip-embeddings) | 2026-07-15 |
+| Vercel CDN | blob-egress | $0.060 / GB origin transfer | Hobby: up to 10 GB; Pro: usage-based under the plan's shared monthly credit | [official source](https://vercel.com/docs/manage-cdn-usage) | 2026-07-15 |
+| Replicate | image-inference, text-inference | $0.000730 / typical prediction | none | [official source](https://replicate.com/krthr/clip-embeddings) | 2026-07-15 |
 | Neon | database-compute, vector-storage | $0.106 / CU-hour | Free: 100 CU-hours per project | [official source](https://neon.com/pricing) | 2026-07-15 |
 | Neon | vector-storage | $0.350 / GB-month | Free: 0.5 GB per project | [official source](https://neon.com/pricing) | 2026-07-15 |
 | Neon | vector-storage | $0.200 / GB-month of history/WAL | Plan-specific restore window | [official source](https://neon.com/pricing) | 2026-07-15 |

@@ -49,6 +49,20 @@ const REQUIRED_SENSITIVITY_NUMBERS = [
   'databaseComputeMultiplier',
   'stripeVariableSurcharge',
 ];
+const REQUIRED_PLAN_BUDGET_NUMBERS = [
+  'monthlyInfrastructureUsd',
+  'dailyInferenceUsd',
+  'monthlyInferenceUsd',
+  'dailyInferenceAttempts',
+  'monthlyInferenceAttempts',
+];
+const REQUIRED_GLOBAL_NUMBERS = [
+  'preGaDailyVariableUsd',
+  'preGaMonthlyVariableUsd',
+  'replicateDailyUsd',
+  'replicateDailyAttempts',
+  'replicateMonthlyUsd',
+];
 const round = (value, digits = 4) => Number(value.toFixed(digits));
 const money = (value) => `$${value.toFixed(2)}`;
 const percent = (value) => value === null ? 'n/a' : `${value.toFixed(1)}%`;
@@ -103,6 +117,12 @@ export function validateInputs(inputs, now = new Date()) {
   for (const rateId of REQUIRED_RATE_IDS) {
     if (!rateIds.has(rateId)) errors.push(`required rate missing: ${rateId}`);
   }
+  const retrievalDates = new Set(
+    inputs.rates
+      .filter((rate) => rate && typeof rate.retrievedAt === 'string')
+      .map((rate) => rate.retrievedAt),
+  );
+  if (retrievalDates.size !== 1) errors.push('rate registry must use one retrieval date');
 
   for (const scenario of inputs.scenarios) {
     if (!scenario || typeof scenario !== 'object' || Array.isArray(scenario)) {
@@ -137,6 +157,54 @@ export function validateInputs(inputs, now = new Date()) {
         errors.push(`policy sensitivity ${sensitivityId}.${key} must be a finite nonnegative number`);
       }
     }
+  }
+  if (!inputs.policy.planBudgets || typeof inputs.policy.planBudgets !== 'object'
+    || Array.isArray(inputs.policy.planBudgets)) {
+    errors.push('policy.planBudgets must be an object');
+  } else {
+    for (const planId of ['free', 'collector', 'archive']) {
+      const budget = inputs.policy.planBudgets[planId];
+      if (!budget || typeof budget !== 'object' || Array.isArray(budget)) {
+        errors.push(`policy.planBudgets.${planId} must be an object`);
+        continue;
+      }
+      for (const key of REQUIRED_PLAN_BUDGET_NUMBERS) {
+        if (!Number.isFinite(budget[key]) || budget[key] < 0) {
+          errors.push(`policy.planBudgets.${planId}.${key} must be a finite nonnegative number`);
+        }
+      }
+    }
+  }
+  if (!inputs.policy.global || typeof inputs.policy.global !== 'object'
+    || Array.isArray(inputs.policy.global)) {
+    errors.push('policy.global must be an object');
+  } else {
+    for (const key of REQUIRED_GLOBAL_NUMBERS) {
+      if (!Number.isFinite(inputs.policy.global[key]) || inputs.policy.global[key] < 0) {
+        errors.push(`policy.global.${key} must be a finite nonnegative number`);
+      }
+    }
+    for (const key of ['paidMonthlyFormula', 'paidDailyFormula']) {
+      if (typeof inputs.policy.global[key] !== 'string' || inputs.policy.global[key].length === 0) {
+        errors.push(`policy.global.${key} must be a non-empty string`);
+      }
+    }
+  }
+  if (!Array.isArray(inputs.policy.providerHardCaps)
+    || inputs.policy.providerHardCaps.length === 0) {
+    errors.push('policy.providerHardCaps must be a non-empty array');
+  } else {
+    inputs.policy.providerHardCaps.forEach((cap, index) => {
+      if (!cap || typeof cap !== 'object' || Array.isArray(cap)) {
+        errors.push(`policy.providerHardCaps[${index}] must be an object`);
+        return;
+      }
+      for (const key of ['provider', 'enforcement']) {
+        if (typeof cap[key] !== 'string' || cap[key].length === 0) {
+          errors.push(`policy.providerHardCaps[${index}].${key} must be a non-empty string`);
+        }
+      }
+    });
   }
   return errors;
 }
@@ -261,17 +329,19 @@ export function buildReport(inputs) {
   const liveFloor = calculateLiveKnownFloor(inputs);
   const freePool = freeHigh.totalCostUsd * inputs.policy.freeFullAllowanceAccounts;
   const live = inputs.liveUsage;
+  const plans = Object.fromEntries(inputs.scenarios.map((scenario) => [scenario.id, scenario]));
+  const refreshDate = inputs.rates[0].retrievedAt;
   const providerCaps = inputs.policy.providerHardCaps.map((cap) => `- **${cap.provider}:** ${cap.enforcement}.`).join('\n');
   const unknowns = live.unknowns.map((item) => `- **${item.name}:** unknown, not zero. ${item.impact}`).join('\n');
   return `# Sploot economic safety envelope
 
-Generated deterministically from the versioned inputs in this directory. Rates were refreshed on 2026-07-15 and CI expires them after ${inputs.policy.rateFreshnessDays} days. This is a release gate, not a forecast: paid-tier margins charge on-demand rates so shared included pools cannot make an unprofitable plan look safe.
+Generated deterministically from the versioned inputs in this directory. Rates were refreshed on ${refreshDate} and CI expires them after ${inputs.policy.rateFreshnessDays} days. This is a release gate, not a forecast: paid-tier margins charge on-demand rates so shared included pools cannot make an unprofitable plan look safe.
 
 ## Recommendation
 
-- **Cardless Free:** 0.5 GB user-visible source-plus-trash allowance (rendition overhead is reserved separately), 100 new indexes and 100 novel text embeddings per month, 1 GB delivery, and at most ${inputs.policy.freeFullAllowanceAccounts} project-wide full-allowance equivalents before waitlist/paid admission. High-case variable cost is ${money(freeHigh.totalCostUsd)} per full account and ${money(freePool)} for the pool, below the $25 subsidy ceiling.
-- **Collector:** $12/month, 10 GB, 600 new indexes, 900 novel text embeddings, and 10 GB delivery. High-case COGS is ${money(collectorHigh.totalCostUsd)} and gross margin is ${percent(collectorHigh.grossMarginPct)}. The computed 70%-margin price floor is ${money(collectorFloor)}.
-- **Archive:** $49/month, 100 GB, 2,500 new indexes, 2,500 novel text embeddings, and 40 GB delivery. High-case COGS is ${money(archiveHigh.totalCostUsd)} and gross margin is ${percent(archiveHigh.grossMarginPct)}. The computed 70%-margin price floor is ${money(archiveFloor)}.
+- **Cardless Free:** ${plans.free.sourceTrashStorageGb} GB user-visible source-plus-trash allowance (rendition overhead is reserved separately), ${plans.free.uploads.toLocaleString('en-US')} new indexes and ${plans.free.uniqueTextQueries.toLocaleString('en-US')} novel text embeddings per month, ${plans.free.blobDeliveryGb} GB delivery, and at most ${inputs.policy.freeFullAllowanceAccounts} project-wide full-allowance equivalents before waitlist/paid admission. High-case variable cost is ${money(freeHigh.totalCostUsd)} per full account and ${money(freePool)} for the pool, below the ${money(inputs.policy.global.preGaMonthlyVariableUsd)} subsidy ceiling.
+- **Collector:** $${plans.collector.priceUsd}/month, ${plans.collector.sourceTrashStorageGb} GB, ${plans.collector.uploads.toLocaleString('en-US')} new indexes, ${plans.collector.uniqueTextQueries.toLocaleString('en-US')} novel text embeddings, and ${plans.collector.blobDeliveryGb} GB delivery. High-case COGS is ${money(collectorHigh.totalCostUsd)} and gross margin is ${percent(collectorHigh.grossMarginPct)}. The computed 70%-margin price floor is ${money(collectorFloor)}.
+- **Archive:** $${plans.archive.priceUsd}/month, ${plans.archive.sourceTrashStorageGb} GB, ${plans.archive.uploads.toLocaleString('en-US')} new indexes, ${plans.archive.uniqueTextQueries.toLocaleString('en-US')} novel text embeddings, and ${plans.archive.blobDeliveryGb} GB delivery. High-case COGS is ${money(archiveHigh.totalCostUsd)} and gross margin is ${percent(archiveHigh.grossMarginPct)}. The computed 70%-margin price floor is ${money(archiveFloor)}.
 - Existing content remains readable, exportable, and deletable after a cost boundary closes. No plan permits silent overage.
 
 These are candidates for entitlement and billing cards, not live promises. International/FX Stripe charges, provider-plan readbacks, and hard-cap receipts must be locked before GA.
