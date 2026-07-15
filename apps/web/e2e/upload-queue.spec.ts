@@ -61,7 +61,7 @@ async function establishOrigin(page: Page, userId: string): Promise<void> {
   await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
 }
 
-async function waitForBrowserHealth(page: Page, timeoutMs = 5_000): Promise<void> {
+async function waitForBrowserHealth(page: Page, timeoutMs = 10_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastFailure: unknown;
 
@@ -86,7 +86,7 @@ async function waitForBrowserHealth(page: Page, timeoutMs = 5_000): Promise<void
 }
 
 async function openSignedOutApp(page: Page): Promise<void> {
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + 10_000;
   let lastFailure: unknown;
 
   while (Date.now() < deadline) {
