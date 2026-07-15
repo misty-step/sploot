@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => ({
   findManyAssetTags: vi.fn(),
   vectorSearchPage: vi.fn(),
   logSearch: vi.fn(),
+  decodeVectorSearchCursor: vi.fn(),
+  createVectorSearchContext: vi.fn(),
+  vectorSearchCursorMatchesContext: vi.fn(),
 }));
 
 // POST /api/search now resolves auth through withAuthenticatedApi (sploot-071:
@@ -63,6 +66,10 @@ vi.mock('@/lib/db', () => ({
   },
   vectorSearchPage: mocks.vectorSearchPage,
   logSearch: mocks.logSearch,
+  decodeVectorSearchCursor: mocks.decodeVectorSearchCursor,
+  createVectorSearchContext: mocks.createVectorSearchContext,
+  vectorSearchCursorMatchesContext: mocks.vectorSearchCursorMatchesContext,
+  VECTOR_SEARCH_CURSOR_CONTEXT_ERROR: 'Search cursor does not match search context',
 }));
 
 vi.mock('@/lib/with-observability', () => ({
@@ -87,6 +94,9 @@ describe('/api/search with a cached query embedding', () => {
     mocks.setSearchResultPage.mockResolvedValue(undefined);
     mocks.findManyAssetTags.mockResolvedValue([]);
     mocks.logSearch.mockResolvedValue(undefined);
+    mocks.createVectorSearchContext.mockImplementation((context: unknown) => context);
+    mocks.vectorSearchCursorMatchesContext.mockReturnValue(true);
+    mocks.decodeVectorSearchCursor.mockReturnValue(null);
   });
 
   it('serves results from the cached embedding without the Replicate service', async () => {
@@ -138,6 +148,44 @@ describe('/api/search with a cached query embedding', () => {
     expect(mocks.vectorSearchPage).not.toHaveBeenCalled();
   });
 
+  it('forwards favorite and tag filters as part of the server-side search contract', async () => {
+    mocks.getTextEmbedding.mockResolvedValue(new Array(512).fill(0.1));
+    mocks.vectorSearchPage.mockResolvedValue({ results: [], total: 0, hasMore: false });
+
+    const response = await search(searchRequest({
+      query: 'cats',
+      favoriteOnly: true,
+      tagId: 'tag-cats',
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.vectorSearchPage).toHaveBeenCalledWith(
+      'qa-design-user',
+      expect.any(Array),
+      expect.objectContaining({ favoriteOnly: true, tagId: 'tag-cats' }),
+    );
+  });
+
+  it('keeps semantic ordering relevance-first even when a gallery seed is supplied', async () => {
+    mocks.getTextEmbedding.mockResolvedValue(new Array(512).fill(0.1));
+    mocks.vectorSearchPage.mockResolvedValue({ results: [], total: 0, hasMore: false });
+
+    const response = await search(searchRequest({ query: 'cats', shuffleSeed: 4242 }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.vectorSearchPage).toHaveBeenCalledWith(
+      'qa-design-user',
+      expect.any(Array),
+      expect.any(Object),
+    );
+    expect(mocks.vectorSearchPage.mock.calls[0][2]).not.toHaveProperty('shuffleSeed');
+    expect(mocks.getSearchResultPage).toHaveBeenCalledWith(
+      'qa-design-user',
+      'cats',
+      expect.objectContaining({ sort: 'relevance', direction: 'desc' }),
+    );
+  });
+
   it('rejects unbounded pages and legacy offsets beyond the bounded window', async () => {
     mocks.getTextEmbedding.mockResolvedValue(new Array(512).fill(0.1));
 
@@ -146,6 +194,33 @@ describe('/api/search with a cached query embedding', () => {
 
     const tooFar = await search(searchRequest({ query: 'cats', offset: 501 }));
     expect(tooFar.status).toBe(400);
+    expect(mocks.vectorSearchPage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['query', { query: 'dogs', cursor: 'cursor-from-cats' }],
+    ['threshold', { query: 'cats', threshold: 0.9, cursor: 'cursor-from-cats' }],
+    ['favorite filter', { query: 'cats', favoriteOnly: true, cursor: 'cursor-from-cats' }],
+    ['tag filter', { query: 'cats', tagId: 'tag-dogs', cursor: 'cursor-from-cats' }],
+    ['page size', { query: 'cats', limit: 10, cursor: 'cursor-from-cats' }],
+  ])('rejects a cursor replay with a changed %s before embedding or DB execution', async (_change, body) => {
+    mocks.decodeVectorSearchCursor.mockReturnValue({
+      version: 2,
+      order: 'relevance',
+      id: 'asset-1',
+      distance: 0.9,
+      context: { query: 'cats', threshold: 0.2, sort: 'relevance', direction: 'desc', favoriteOnly: false, tagId: null, limit: 30 },
+    });
+    mocks.vectorSearchCursorMatchesContext.mockReturnValue(false);
+    mocks.getTextEmbedding.mockResolvedValue(new Array(512).fill(0.1));
+
+    const response = await search(searchRequest(body));
+    const responseBody = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(responseBody).toEqual({ error: 'Search cursor does not match search context' });
+    expect(mocks.getSearchResultPage).not.toHaveBeenCalled();
+    expect(mocks.getTextEmbedding).not.toHaveBeenCalled();
     expect(mocks.vectorSearchPage).not.toHaveBeenCalled();
   });
 });

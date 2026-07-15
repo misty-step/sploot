@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { decodeVectorSearchCursor, prisma, vectorSearchPage, logSearch, type VectorSearchRow } from '@/lib/db';
+import {
+  createVectorSearchContext,
+  decodeVectorSearchCursor,
+  prisma,
+  vectorSearchCursorMatchesContext,
+  vectorSearchPage,
+  logSearch,
+  VECTOR_SEARCH_CURSOR_CONTEXT_ERROR,
+  type VectorSearchRow,
+} from '@/lib/db';
 import { CLIP_MODEL, createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
 import {
   EmbeddingConfigurationError,
@@ -13,7 +22,7 @@ import { getAuthWithUser } from '@/lib/auth/server';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import { withObservability } from '@/lib/with-observability';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
-import { SEARCH_MAX_LIMIT, SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
+import { SEARCH_MAX_CURSOR_LENGTH, SEARCH_MAX_LIMIT, SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
 import {
   assertEnrolledUser,
   enrollmentDeniedResponse,
@@ -31,7 +40,8 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
   let query: string = '';
   let limit: number = 30;
   let threshold: number = SEARCH_SIMILARITY_FLOOR;
-  let shuffleSeed: number | undefined = undefined;
+  let favoriteOnly = false;
+  let tagId: string | null = null;
   let offset = 0;
   let cursor: string | undefined;
 
@@ -39,7 +49,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     const userId = principal.userId;
 
     const body = await req.json();
-    ({ query, limit = 30, threshold = SEARCH_SIMILARITY_FLOOR, shuffleSeed, offset = 0, cursor } = body);
+    ({ query, limit = 30, threshold = SEARCH_SIMILARITY_FLOOR, favoriteOnly = false, tagId = null, offset = 0, cursor } = body);
 
     if (!query || typeof query !== 'string') {
       return NextResponse.json(
@@ -56,21 +66,18 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       return NextResponse.json({ error: 'Invalid search offset; use the response cursor for pages beyond 500 results' }, { status: 400 });
     }
 
-    const decodedCursor = typeof cursor === 'string' ? decodeVectorSearchCursor(cursor) : null;
-    if (cursor !== undefined && (typeof cursor !== 'string' || cursor.length > 512 || !decodedCursor)) {
-      return NextResponse.json({ error: 'Invalid search cursor' }, { status: 400 });
-    }
-    if (cursor && offset > 0) {
-      return NextResponse.json({ error: 'Search cursor cannot be combined with offset' }, { status: 400 });
-    }
-    if (decodedCursor?.order === 'shuffle' && decodedCursor.shuffleSeed !== shuffleSeed) {
-      return NextResponse.json({ error: 'Search cursor does not match shuffleSeed' }, { status: 400 });
-    }
-    if (decodedCursor?.order === 'relevance' && shuffleSeed !== undefined) {
-      return NextResponse.json({ error: 'Search cursor does not match search ordering' }, { status: 400 });
+    if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+      return NextResponse.json({ error: 'Invalid search threshold; must be between 0 and 1' }, { status: 400 });
     }
 
-    const effectiveLimit = limit;
+    if (typeof favoriteOnly !== 'boolean') {
+      return NextResponse.json({ error: 'Invalid favoriteOnly filter; must be boolean' }, { status: 400 });
+    }
+
+    if (tagId !== null && tagId !== undefined && (typeof tagId !== 'string' || tagId.trim().length === 0)) {
+      return NextResponse.json({ error: 'Invalid tagId filter' }, { status: 400 });
+    }
+    tagId = typeof tagId === 'string' ? tagId.trim() || null : null;
 
     if (query.length > 500) {
       return NextResponse.json(
@@ -78,6 +85,23 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
         { status: 400 }
       );
     }
+
+    const searchContext = createVectorSearchContext({ query, threshold, favoriteOnly, tagId, limit });
+
+    const decodedCursor = typeof cursor === 'string' && cursor.length <= SEARCH_MAX_CURSOR_LENGTH
+      ? decodeVectorSearchCursor(cursor)
+      : null;
+    if (cursor !== undefined && (typeof cursor !== 'string' || cursor.length > SEARCH_MAX_CURSOR_LENGTH || !decodedCursor)) {
+      return NextResponse.json({ error: 'Invalid search cursor' }, { status: 400 });
+    }
+    if (cursor && offset > 0) {
+      return NextResponse.json({ error: 'Search cursor cannot be combined with offset' }, { status: 400 });
+    }
+    if (decodedCursor && !vectorSearchCursorMatchesContext(decodedCursor, searchContext)) {
+      return NextResponse.json({ error: VECTOR_SEARCH_CURSOR_CONTEXT_ERROR }, { status: 400 });
+    }
+
+    const effectiveLimit = limit;
 
     await assertEnrolledUser(userId, prisma);
 
@@ -87,7 +111,10 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     const searchFilters = {
       limit: effectiveLimit,
       threshold,
-      ...(shuffleSeed !== undefined && { shuffleSeed }),
+      sort: 'relevance' as const,
+      direction: 'desc' as const,
+      favoriteOnly,
+      tagId,
       ...(offset > 0 && { offset }),
       ...(cursor && { cursor }),
     };
@@ -158,7 +185,15 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     const searchPage = await vectorSearchPage(
       userId,
       queryEmbedding,
-      { limit: effectiveLimit, threshold, shuffleSeed, ...(offset > 0 && { offset }), ...(cursor && { cursor }) }
+      {
+        limit: effectiveLimit,
+        threshold,
+        favoriteOnly,
+        tagId,
+        cursorContext: searchContext,
+        ...(offset > 0 && { offset }),
+        ...(cursor && { cursor }),
+      }
     );
     const searchResults = searchPage.results;
 
@@ -204,7 +239,16 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       await cache.setSearchResultPage(
         userId,
         query,
-        { limit: effectiveLimit, threshold, shuffleSeed, ...(offset > 0 && { offset }), ...(cursor && { cursor }) },
+        {
+          limit: effectiveLimit,
+          threshold,
+          sort: 'relevance' as const,
+          direction: 'desc' as const,
+          favoriteOnly,
+          tagId,
+          ...(offset > 0 && { offset }),
+          ...(cursor && { cursor }),
+        },
         formattedResults,
         searchPage.total,
         searchPage.hasMore,
@@ -261,6 +305,9 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
 
     if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
     if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
+    if (error instanceof Error && error.message === VECTOR_SEARCH_CURSOR_CONTEXT_ERROR) {
+      return NextResponse.json({ error: VECTOR_SEARCH_CURSOR_CONTEXT_ERROR }, { status: 400 });
+    }
 
     return NextResponse.json(
       {

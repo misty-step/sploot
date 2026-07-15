@@ -1,8 +1,9 @@
 import { PrismaClient, Prisma } from '@prisma/client';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 import { databaseConfigured } from './env';
-import { SEARCH_MAX_LIMIT } from './search-config';
+import { normalizeSearchQuery, SEARCH_MAX_CURSOR_LENGTH, SEARCH_MAX_LIMIT } from './search-config';
+export { normalizeSearchQuery } from './search-config';
 import logger from './logger';
 import { getPerformanceMonitor } from './performance-monitor';
 import { logger as observabilityLogger } from './observability-logger';
@@ -818,32 +819,64 @@ export interface VectorSearchPage {
   nextCursor?: string;
 }
 
+export const VECTOR_SEARCH_CURSOR_CONTEXT_ERROR = 'Search cursor does not match search context';
+
+export interface VectorSearchContext {
+  query: string;
+  threshold: number;
+  sort: 'relevance';
+  direction: 'desc';
+  favoriteOnly: boolean;
+  tagId: string | null;
+  limit: number;
+}
+
 interface VectorSearchCursor {
-  version: 1;
-  order: 'relevance' | 'shuffle';
+  version: 2;
+  order: 'relevance';
   id: string;
-  distance?: number;
-  shuffleKey?: string;
-  shuffleSeed?: number;
+  distance: number;
+  context: VectorSearchContext;
+}
+
+export function createVectorSearchContext(input: {
+  query: string;
+  threshold: number;
+  favoriteOnly?: boolean;
+  tagId?: string | null;
+  limit: number;
+}): VectorSearchContext {
+  const normalizedTagId = typeof input.tagId === 'string' ? input.tagId.trim() || null : null;
+  return {
+    query: normalizeSearchQuery(input.query),
+    threshold: input.threshold,
+    sort: 'relevance',
+    direction: 'desc',
+    favoriteOnly: input.favoriteOnly ?? false,
+    tagId: normalizedTagId,
+    limit: input.limit,
+  };
 }
 
 export function encodeVectorSearchCursor(cursor: Omit<VectorSearchCursor, 'version'>): string {
-  return Buffer.from(JSON.stringify({ version: 1, ...cursor })).toString('base64url');
+  return Buffer.from(JSON.stringify({ version: 2, ...cursor })).toString('base64url');
 }
 
 export function decodeVectorSearchCursor(value: string): VectorSearchCursor | null {
   try {
     const cursor = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as VectorSearchCursor;
-    if (cursor.version !== 1 || (cursor.order !== 'relevance' && cursor.order !== 'shuffle') ||
-        typeof cursor.id !== 'string' || cursor.id.length === 0 || cursor.id.length > 200) {
-      return null;
-    }
-    if (cursor.order === 'relevance' && (typeof cursor.distance !== 'number' || !Number.isFinite(cursor.distance))) {
-      return null;
-    }
-    if (cursor.order === 'shuffle' &&
-        (typeof cursor.shuffleKey !== 'string' || !/^[a-f0-9]{32}$/.test(cursor.shuffleKey) ||
-         !Number.isSafeInteger(cursor.shuffleSeed))) {
+    const context = cursor.context;
+    if (cursor.version !== 2 || cursor.order !== 'relevance' ||
+        typeof cursor.id !== 'string' || cursor.id.length === 0 || cursor.id.length > 200 ||
+        typeof cursor.distance !== 'number' || !Number.isFinite(cursor.distance) ||
+        !context || typeof context !== 'object' ||
+        typeof context.query !== 'string' || context.query !== normalizeSearchQuery(context.query) ||
+        typeof context.threshold !== 'number' || !Number.isFinite(context.threshold) ||
+        context.threshold < 0 || context.threshold > 1 ||
+        context.sort !== 'relevance' || context.direction !== 'desc' ||
+        typeof context.favoriteOnly !== 'boolean' ||
+        (context.tagId !== null && (typeof context.tagId !== 'string' || context.tagId.length === 0)) ||
+        !Number.isSafeInteger(context.limit) || context.limit < 1 || context.limit > SEARCH_MAX_LIMIT) {
       return null;
     }
     return cursor;
@@ -852,17 +885,22 @@ export function decodeVectorSearchCursor(value: string): VectorSearchCursor | nu
   }
 }
 
-export function vectorSearchOrderClause(shuffleSeed?: number): Prisma.Sql {
-  if (shuffleSeed === undefined) {
-    return Prisma.sql`ORDER BY ranked.distance DESC, ranked.id ASC`;
-  }
+export function vectorSearchCursorMatchesContext(
+  cursor: VectorSearchCursor,
+  context: VectorSearchContext,
+): boolean {
+  return cursor.context.query === context.query &&
+    cursor.context.threshold === context.threshold &&
+    cursor.context.sort === context.sort &&
+    cursor.context.direction === context.direction &&
+    cursor.context.favoriteOnly === context.favoriteOnly &&
+    cursor.context.tagId === context.tagId &&
+    cursor.context.limit === context.limit;
+}
 
-  // Postgres owns the deterministic total order so large result sets are
-  // paged before crossing the process boundary. The id tie-breaker makes the
-  // vanishingly unlikely hash-collision case stable as well.
-  return Prisma.sql`
-    ORDER BY md5(ranked.id || ':' || ${shuffleSeed.toString()}), ranked.id ASC
-  `;
+/** Semantic search is always relevance-first; gallery shuffle belongs to /api/assets. */
+export function vectorSearchOrderClause(): Prisma.Sql {
+  return Prisma.sql`ORDER BY ranked.distance DESC, ranked.id ASC`;
 }
 
 export async function vectorSearchPage(
@@ -871,12 +909,22 @@ export async function vectorSearchPage(
   options?: {
     limit?: number;
     threshold?: number;
-    shuffleSeed?: number;
+    favoriteOnly?: boolean;
+    tagId?: string | null;
     offset?: number;
     cursor?: string;
+    cursorContext?: VectorSearchContext;
   }
 ): Promise<VectorSearchPage> {
-  const { limit = 30, threshold, shuffleSeed, offset = 0, cursor: cursorValue } = options || {};
+  const {
+    limit = 30,
+    threshold,
+    favoriteOnly = false,
+    tagId = null,
+    offset = 0,
+    cursor: cursorValue,
+    cursorContext,
+  } = options || {};
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > SEARCH_MAX_LIMIT) {
     throw new Error(`vector search page limit must be between 1 and ${SEARCH_MAX_LIMIT}`);
   }
@@ -884,14 +932,14 @@ export async function vectorSearchPage(
     throw new Error('vector search offset must be between 0 and 500; use a cursor for later pages');
   }
 
+  if (cursorValue && cursorValue.length > SEARCH_MAX_CURSOR_LENGTH) {
+    throw new Error('vector search cursor is invalid');
+  }
   const cursor = cursorValue ? decodeVectorSearchCursor(cursorValue) : null;
   if (cursorValue && !cursor) throw new Error('vector search cursor is invalid');
   if (cursor && offset > 0) throw new Error('vector search cursor cannot be combined with offset');
-  if (cursor?.order === 'shuffle' && cursor.shuffleSeed !== shuffleSeed) {
-    throw new Error('vector search cursor does not match shuffle seed');
-  }
-  if (cursor?.order === 'relevance' && shuffleSeed !== undefined) {
-    throw new Error('vector search cursor does not match sort order');
+  if (cursor && (!cursorContext || !vectorSearchCursorMatchesContext(cursor, cursorContext))) {
+    throw new Error(VECTOR_SEARCH_CURSOR_CONTEXT_ERROR);
   }
 
   if (!prisma) {
@@ -902,27 +950,30 @@ export async function vectorSearchPage(
   const thresholdClause = typeof threshold === 'number' && threshold > 0
     ? Prisma.sql`AND 1 - (ae.image_embedding <=> ${vectorSql}) >= ${threshold}`
     : Prisma.empty;
-  const orderClause = vectorSearchOrderClause(shuffleSeed);
+  const favoriteClause = favoriteOnly
+    ? Prisma.sql`AND a.favorite = true`
+    : Prisma.empty;
+  const tagClause = tagId
+    ? Prisma.sql`
+        AND EXISTS (
+          SELECT 1 FROM "asset_tags" at
+          WHERE at.asset_id = a.id AND at.tag_id = ${tagId}
+        )
+      `
+    : Prisma.empty;
+  const orderClause = vectorSearchOrderClause();
 
   try {
     // The ranked CTE owns the complete result set, while page applies a
     // bounded keyset/legacy page before rows cross into application memory.
     // The scalar count remains truthful when a cursor has already advanced.
-    const cursorClause = cursor?.order === 'shuffle'
+    const cursorClause = cursor
       ? Prisma.sql`
-          WHERE md5(ranked.id || ':' || ${shuffleSeed!.toString()}) > ${cursor.shuffleKey!}
-             OR (md5(ranked.id || ':' || ${shuffleSeed!.toString()}) = ${cursor.shuffleKey!}
-                 AND ranked.id > ${cursor.id})
+          WHERE ranked.distance < ${cursor.distance}
+             OR (ranked.distance = ${cursor.distance} AND ranked.id > ${cursor.id})
         `
-      : cursor?.order === 'relevance'
-        ? Prisma.sql`
-            WHERE ranked.distance < ${cursor.distance!}
-               OR (ranked.distance = ${cursor.distance!} AND ranked.id > ${cursor.id})
-          `
-        : Prisma.empty;
-    const pageOrderClause = shuffleSeed === undefined
-      ? Prisma.sql`ORDER BY page.distance DESC, page.id ASC`
-      : Prisma.sql`ORDER BY md5(page.id || ':' || ${shuffleSeed.toString()}), page.id ASC`;
+      : Prisma.empty;
+    const pageOrderClause = Prisma.sql`ORDER BY page.distance DESC, page.id ASC`;
     const rows = await prisma.$queryRaw<Array<VectorSearchRow & { total_count: bigint | number }>>(Prisma.sql`
       WITH ranked AS (
         SELECT
@@ -942,6 +993,8 @@ export async function vectorSearchPage(
         WHERE
           a.owner_user_id = ${userId}
           AND a.deleted_at IS NULL
+          ${favoriteClause}
+          ${tagClause}
           ${thresholdClause}
       )
       , page AS (
@@ -951,13 +1004,20 @@ export async function vectorSearchPage(
         ${orderClause}
         LIMIT ${limit + 1} OFFSET ${cursor ? 0 : offset}
       )
-      SELECT page.*, (SELECT COUNT(*) FROM ranked) AS total_count
-      FROM page
+      , totals AS (
+        SELECT COUNT(*) AS total_count FROM ranked
+      )
+      SELECT page.*, totals.total_count
+      FROM totals
+      LEFT JOIN page ON TRUE
       ${pageOrderClause}
     `);
 
     const total = Number(rows[0]?.total_count ?? 0);
-    const results = rows.slice(0, limit).map(({ total_count: _totalCount, ...row }) => row);
+    const results = rows
+      .filter((row) => row.id !== null && row.id !== undefined)
+      .slice(0, limit)
+      .map(({ total_count: _totalCount, ...row }) => row);
     // A cursor query starts at an arbitrary point in the ordered set, so its
     // page length cannot be compared with the global total. The +1 probe is
     // the authoritative continuation signal for keyset pages; legacy offset
@@ -966,15 +1026,8 @@ export async function vectorSearchPage(
       ? rows.length > limit
       : rows.length > limit || offset + results.length < total;
     const last = results.at(-1);
-    const nextCursor = hasMore && last
-      ? encodeVectorSearchCursor(shuffleSeed === undefined
-        ? { order: 'relevance', id: last.id, distance: last.distance }
-        : {
-            order: 'shuffle',
-            id: last.id,
-            shuffleKey: cryptoMd5(`${last.id}:${shuffleSeed}`),
-            shuffleSeed,
-          })
+    const nextCursor = hasMore && last && cursorContext
+      ? encodeVectorSearchCursor({ order: 'relevance', id: last.id, distance: last.distance, context: cursorContext })
       : undefined;
 
     return { results, total, hasMore, ...(nextCursor ? { nextCursor } : {}) };
@@ -996,17 +1049,15 @@ export async function vectorSearch(
   options?: {
     limit?: number;
     threshold?: number;
-    shuffleSeed?: number;
+    favoriteOnly?: boolean;
+    tagId?: string | null;
     offset?: number;
     cursor?: string;
+    cursorContext?: VectorSearchContext;
   }
 ) {
   const page = await vectorSearchPage(userId, queryEmbedding, options);
   return page.results;
-}
-
-function cryptoMd5(value: string): string {
-  return createHash('md5').update(value).digest('hex');
 }
 
 export async function logSearch(

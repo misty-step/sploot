@@ -83,13 +83,25 @@ export interface SearchFilters {
   /** Filter by favorite status */
   favorites?: boolean;
 
+  /** Semantic-search favorite-only filter. */
+  favoriteOnly?: boolean;
+
+  /** Semantic-search tag filter. */
+  tagId?: string | null;
+
+  /** Canonical semantic-search sort. */
+  sort?: 'relevance';
+
+  /** Canonical semantic-search direction. */
+  direction?: 'desc';
+
   /** Stable semantic-search page cursor. */
   cursor?: string;
 
   /** Legacy first-500 offset used only for backwards-compatible callers. */
   offset?: number;
 
-  /** Deterministic shuffle seed used by semantic search ordering. */
+  /** Legacy library-list shuffle seed; semantic search is relevance ordered. */
   shuffleSeed?: number;
 
   /** Filter by minimum image width in pixels */

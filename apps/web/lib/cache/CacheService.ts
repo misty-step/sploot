@@ -1,6 +1,7 @@
 import { ICacheBackend, CacheStats, SearchFilters } from './types';
 import { MemoryBackend } from './MemoryBackend';
 import { PostgresTextEmbeddingStore } from './PostgresTextEmbeddingStore';
+import { normalizeSearchQuery } from '../search-config';
 
 /**
  * Generate a hash string from input for cache key generation.
@@ -24,20 +25,20 @@ function hashString(str: string): string {
  * Cache key generators
  * Uses delimited hashing to prevent collisions
  */
-/**
- * Normalize query text for cache keying only (the raw text still goes to the
- * embedding model). Trim, lowercase, collapse whitespace.
- */
-function normalizeQueryText(text: string): string {
-  return text.trim().toLowerCase().replace(/\s+/g, ' ');
+function serializeSearchFilters(filters: SearchFilters): string {
+  return JSON.stringify(
+    Object.fromEntries(Object.entries(filters).sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0
+    ))
+  );
 }
 
 const CACHE_KEYS = {
   TEXT_EMBEDDING: (text: string, model: string) =>
-    `txt:${hashString(model)}:${hashString(normalizeQueryText(text))}`,
+    `txt:${hashString(model)}:${hashString(normalizeSearchQuery(text))}`,
   IMAGE_EMBEDDING: (checksum: string) => `img:${checksum}`,
   SEARCH_RESULTS: (userId: string, query: string, filters: string) =>
-    `search:${userId}:${hashString(query)}:${hashString(filters)}`,
+    `search:${userId}:${hashString(normalizeSearchQuery(query))}:${hashString(filters)}`,
   ASSET_LIST: (userId: string, params: string) =>
     `assets:${userId}:${hashString(params)}`,
 } as const;
@@ -155,7 +156,7 @@ export class CacheService {
     filters: SearchFilters = {}
   ): Promise<any[] | null> {
     try {
-      const filterKey = JSON.stringify(filters);
+      const filterKey = serializeSearchFilters(filters);
       const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
       const results = await this.backend.get<any[]>(key);
       if (results) {
@@ -182,7 +183,7 @@ export class CacheService {
     filters: SearchFilters = {},
   ): Promise<{ results: any[]; total: number; hasMore?: boolean; nextCursor?: string } | null> {
     try {
-      const filterKey = JSON.stringify({ ...filters, __pageEnvelope: true });
+      const filterKey = serializeSearchFilters({ ...filters, __pageEnvelope: true });
       const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
       const value = await this.backend.get<any>(key);
       if (!value) {
@@ -222,7 +223,7 @@ export class CacheService {
     results: any[]
   ): Promise<void> {
     try {
-      const filterKey = JSON.stringify(filters);
+      const filterKey = serializeSearchFilters(filters);
       const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
       await this.backend.set(key, results);
     } catch (error) {
@@ -245,7 +246,7 @@ export class CacheService {
     nextCursor?: string,
   ): Promise<void> {
     try {
-      const filterKey = JSON.stringify({ ...filters, __pageEnvelope: true });
+      const filterKey = serializeSearchFilters({ ...filters, __pageEnvelope: true });
       const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
       await this.backend.set(key, { results, total, hasMore, ...(nextCursor ? { nextCursor } : {}) });
     } catch (error) {

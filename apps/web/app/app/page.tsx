@@ -189,7 +189,12 @@ function AppPageClient() {
     metadata: searchMetadata,
     total: searchTotal,
     resultQuery: searchResultQuery,
-  } = useSearchAssets(debouncedLibraryQuery, { limit: SEARCH_DEFAULT_LIMIT, threshold: SEARCH_SIMILARITY_FLOOR, shuffleSeed });
+  } = useSearchAssets(debouncedLibraryQuery, {
+    limit: SEARCH_DEFAULT_LIMIT,
+    threshold: SEARCH_SIMILARITY_FLOOR,
+    favoriteOnly: bangersOnly,
+    tagId: tagIdParam,
+  });
 
   // Global keyboard shortcut to focus search (Cmd+K / Ctrl+K)
   const focusSearchBar = useCallback(() => {
@@ -280,16 +285,10 @@ function AppPageClient() {
     };
   }, []);
 
-  const filteredSearchAssets = useMemo(() => {
-    let results = searchAssets;
-    if (bangersOnly) {
-      results = results.filter((asset) => asset.favorite);
-    }
-    if (tagIdParam) {
-      results = results.filter((asset) => asset.tags?.some((tag) => tag.id === tagIdParam));
-    }
-    return results;
-  }, [searchAssets, bangersOnly, tagIdParam]);
+  // Semantic search applies favorite/tag filters in SQL before pagination and
+  // total computation. Keeping the server page intact preserves global count
+  // and empty-state truthfulness.
+  const filteredSearchAssets = searchAssets;
 
   // Update tag name when we have the asset data
   useEffect(() => {

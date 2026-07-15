@@ -464,8 +464,20 @@ interface SearchMetadata {
   cached?: boolean;
 }
 
-export function useSearchAssets(query: string, options: { limit?: number; threshold?: number; enabled?: boolean; shuffleSeed?: number } = {}) {
-  const { limit = SEARCH_DEFAULT_LIMIT, threshold = SEARCH_SIMILARITY_FLOOR, enabled = true, shuffleSeed } = options;
+export function useSearchAssets(query: string, options: {
+  limit?: number;
+  threshold?: number;
+  enabled?: boolean;
+  favoriteOnly?: boolean;
+  tagId?: string | null;
+} = {}) {
+  const {
+    limit = SEARCH_DEFAULT_LIMIT,
+    threshold = SEARCH_SIMILARITY_FLOOR,
+    enabled = true,
+    favoriteOnly = false,
+    tagId = null,
+  } = options;
 
   const [assets, setAssets] = useState<Asset[]>([]);
   const [loading, setLoading] = useState(false);
@@ -523,8 +535,9 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
           query: queryKey,
           limit,
           threshold,
+          favoriteOnly,
+          tagId,
           ...(currentCursor && { cursor: currentCursor }),
-          ...(shuffleSeed !== undefined && { shuffleSeed }),
         }),
         signal: controller.signal,
       });
@@ -604,7 +617,7 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
         setLoading(false);
       }
     }
-  }, [query, limit, threshold, shuffleSeed]);
+  }, [query, limit, threshold, favoriteOnly, tagId]);
 
   const loadMore = useCallback(() => search({ append: true }), [search]);
 

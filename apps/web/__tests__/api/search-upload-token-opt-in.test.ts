@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
   vectorSearch: vi.fn(),
   vectorSearchPage: vi.fn(),
   logSearch: vi.fn(),
+  decodeVectorSearchCursor: vi.fn(),
+  createVectorSearchContext: vi.fn((context: unknown) => context),
+  vectorSearchCursorMatchesContext: vi.fn(() => true),
 }));
 
 vi.mock('next/navigation', () => ({ unstable_rethrow: vi.fn() }));
@@ -56,6 +59,10 @@ vi.mock('@/lib/db', () => ({
   },
   vectorSearchPage: mocks.vectorSearchPage,
   logSearch: mocks.logSearch,
+  decodeVectorSearchCursor: mocks.decodeVectorSearchCursor,
+  createVectorSearchContext: mocks.createVectorSearchContext,
+  vectorSearchCursorMatchesContext: mocks.vectorSearchCursorMatchesContext,
+  VECTOR_SEARCH_CURSOR_CONTEXT_ERROR: 'Search cursor does not match search context',
 }));
 
 vi.mock('@/lib/with-observability', () => ({
@@ -80,6 +87,7 @@ beforeEach(() => {
   mocks.logSearch.mockResolvedValue(undefined);
   mocks.getTextEmbedding.mockResolvedValue(new Array(512).fill(0).map((_, i) => (i === 3 ? 1 : 0)));
   mocks.vectorSearchPage.mockResolvedValue({ results: [], total: 0 });
+  mocks.decodeVectorSearchCursor.mockReturnValue(null);
 });
 
 describe('POST /api/search opts into upload-token auth', () => {
