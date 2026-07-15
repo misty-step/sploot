@@ -42,7 +42,7 @@
     "provider:test": "node --test scripts/check-provider-retirement.test.mjs",
     "deployment:check": "node scripts/check-web-deployment-runtime.mjs",
     "deployment:build": "node scripts/build-web-without-runtime-secrets.mjs",
-    "deployment:test": "node --test scripts/check-web-deployment-runtime.test.mjs",
+    "deployment:test": "node --test scripts/check-web-deployment-runtime.test.mjs scripts/smoke-deployed-redirect.test.mjs",
     "release": "semantic-release",
     "release:dry-run": "semantic-release --dry-run --no-ci",
     "clean": "turbo run clean && rm -rf node_modules"
