@@ -14,7 +14,8 @@ function validateHnswPlanProbe(workflowText) {
   assert.match(source, /1 - \(ae\.image_embedding <=>/);
   assert.match(source, /a\.id ASC/);
   assert.match(source, /SET LOCAL enable_seqscan = off/);
-  assert.match(source, /BEGIN; SET LOCAL enable_seqscan = off; EXPLAIN[\s\S]*ROLLBACK/);
+  assert.match(source, /SET LOCAL enable_bitmapscan = off/);
+  assert.match(source, /BEGIN; SET LOCAL enable_seqscan = off; SET LOCAL enable_bitmapscan = off; EXPLAIN[\s\S]*ROLLBACK/);
   assert.match(source, /Index Scan using asset_embeddings_hnsw_idx/);
   assert.match(source, /default_plan/);
   assert.match(source, /transaction-local HNSW capability plan/);
