@@ -171,14 +171,27 @@ async function stopAndRestart(
       timeout: 15_000,
       predicate: candidate => candidate.url().startsWith('chrome-extension://'),
     });
+    let wake: Promise<{ ok: boolean }> | undefined;
     try {
       const targets = await cdp.send('Target.getTargets');
       const target = targets.targetInfos.find(info => info.type === 'service_worker' && info.url.startsWith('chrome-extension://'));
       expect(target).toBeTruthy();
       await cdp.send('Target.closeTarget', { targetId: target!.targetId });
+      wake = sendMv3Message<{ ok: boolean }>(
+        popup,
+        { type: LIST_QUEUE },
+        context,
+        testInfo,
+        step,
+        'wake restarted worker through real queue message',
+      );
       const worker = await restarted;
+      await wake;
       await wakeMv3Worker(worker, context, testInfo, step);
       return worker;
+    } catch (error) {
+      await wake?.catch(() => undefined);
+      throw error;
     } finally {
       const detach = cdp.detach();
       await Promise.race([
