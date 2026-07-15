@@ -48,6 +48,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm stripe:sandbox:check
+      - run: node --test scripts/check-stripe-sandbox.test.mjs
       - run: pnpm provider:check
       - run: pnpm provider:test
       - run: pnpm deployment:check
@@ -125,9 +127,40 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Provision restricted migration role without storing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PGPASSWORD=test
+          bootstrap_version="$(cat apps/web/prisma/stripe-ledger-bootstrap.version)"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-pre.sql
+          app_password="$(openssl rand -hex 32)"
+          migrator_password="$(openssl rand -hex 32)"
+          issuer_password="$(openssl rand -hex 32)"
+          consumer_password="$(openssl rand -hex 32)"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v app_password="$app_password" -v migrator_password="$migrator_password" -v issuer_password="$issuer_password" -v consumer_password="$consumer_password" <<'SQL'
+          ALTER ROLE sploot_stripe_app LOGIN PASSWORD :'app_password';
+          ALTER ROLE sploot_stripe_schema_migrator LOGIN PASSWORD :'migrator_password';
+          ALTER ROLE sploot_stripe_ledger_issuer LOGIN PASSWORD :'issuer_password';
+          ALTER ROLE sploot_stripe_ledger_consumer LOGIN PASSWORD :'consumer_password';
+          SQL
+          {
+            echo "DATABASE_URL=postgresql://sploot_stripe_app:${app_password}@localhost:5432/sploot_test?sslmode=disable"
+            echo "STRIPE_LEDGER_MIGRATION_DATABASE_URL=postgresql://sploot_stripe_schema_migrator:${migrator_password}@localhost:5432/sploot_test?sslmode=disable"
+            echo "STRIPE_LEDGER_ISSUER_DATABASE_URL=postgresql://sploot_stripe_ledger_issuer:${issuer_password}@localhost:5432/sploot_test?sslmode=disable"
+            echo "STRIPE_LEDGER_CONSUMER_DATABASE_URL=postgresql://sploot_stripe_ledger_consumer:${consumer_password}@localhost:5432/sploot_test?sslmode=disable"
+          } >> "$GITHUB_ENV"
       - name: Run database migrations
-        run: pnpm --filter web db:migrate
+        run: DATABASE_URL="$STRIPE_LEDGER_MIGRATION_DATABASE_URL" pnpm --filter web db:migrate
+      - name: Install privileged ledger owners and grants
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/sploot_test?sslmode=disable
+        run: |
+          export PGPASSWORD=test
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v bootstrap_version="$(cat apps/web/prisma/stripe-ledger-bootstrap.version)" -f apps/web/prisma/stripe-ledger-bootstrap-post.sql
       - name: Run tests
+        env:
+          STRIPE_LEDGER_ADMIN_DATABASE_URL: postgresql://test:test@localhost:5432/sploot_test?sslmode=disable
         run: pnpm --filter web test
       # Retrieval-quality gate (apps/web/eval/README.md): deterministic
       # golden-set eval against the committed baseline. Quality metrics have a
@@ -159,18 +192,128 @@ jobs:
           path: apps/extension/dist/
           retention-days: 7
 
+  db-authority:
+    name: Restricted DB authority (pg${{ matrix.pg }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ['15', '16']
+    services:
+      postgres:
+        image: pgvector/pgvector:pg${{ matrix.pg }}
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: sploot_upgrade
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Bootstrap and migrate as restricted production-shaped role
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PGPASSWORD=test
+          admin_url='postgresql://test:test@localhost:5432/sploot_upgrade?sslmode=disable'
+          bootstrap_version="$(cat apps/web/prisma/stripe-ledger-bootstrap.version)"
+
+          # 1) Injected pre-bootstrap fault on the truly empty cluster: the
+          #    transactional authority setup must leave nothing behind.
+          if PGOPTIONS='-c sploot.stripe_bootstrap_fault=pre' psql "$admin_url" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-pre.sql; then
+            echo 'expected injected pre-bootstrap fault to fail'; exit 1
+          fi
+          leftover_roles="$(psql "$admin_url" -Atc "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'sploot_stripe%'")"
+          test "$leftover_roles" = '0'
+          leftover_state="$(psql "$admin_url" -Atc "SELECT count(*) FROM pg_tables WHERE tablename='stripe_ledger_bootstrap_state'")"
+          test "$leftover_state" = '0'
+
+          # 2) Real upgrade flow: install every pre-Stripe migration as the
+          #    legacy owner, record it in Prisma's ledger, then prove the
+          #    restricted migrator can evolve that existing schema.
+          for migration in apps/web/prisma/migrations/*; do
+            [[ -d "$migration" ]] || continue
+            migration_name="$(basename "$migration")"
+            if [[ "$migration_name" == *stripe* ]]; then continue; fi
+            psql "$admin_url" -v ON_ERROR_STOP=1 -f "$migration/migration.sql"
+            DATABASE_URL="$admin_url" pnpm --filter web exec prisma migrate resolve --applied "$migration_name"
+          done
+
+          psql "$admin_url" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-pre.sql
+          marker="$(psql "$admin_url" -Atc "SELECT phase || ':' || version FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
+          test "$marker" = "preparing:${bootstrap_version}"
+          app_password="$(openssl rand -hex 32)"
+          migrator_password="$(openssl rand -hex 32)"
+          issuer_password="$(openssl rand -hex 32)"
+          consumer_password="$(openssl rand -hex 32)"
+          psql "$admin_url" -v ON_ERROR_STOP=1 -v app_password="$app_password" -v migrator_password="$migrator_password" -v issuer_password="$issuer_password" -v consumer_password="$consumer_password" <<'SQL'
+          ALTER ROLE sploot_stripe_app LOGIN PASSWORD :'app_password';
+          ALTER ROLE sploot_stripe_schema_migrator LOGIN PASSWORD :'migrator_password';
+          ALTER ROLE sploot_stripe_ledger_issuer LOGIN PASSWORD :'issuer_password';
+          ALTER ROLE sploot_stripe_ledger_consumer LOGIN PASSWORD :'consumer_password';
+          SQL
+          DATABASE_URL="postgresql://sploot_stripe_schema_migrator:${migrator_password}@localhost:5432/sploot_upgrade?sslmode=disable" pnpm --filter web exec prisma migrate deploy
+
+          # Ownership, not a table grant, is the durable migration oracle.
+          # Exercise representative future DDL against an object that existed
+          # before Stripe, then roll it back so the fixture stays canonical.
+          PGPASSWORD="$migrator_password" psql "postgresql://sploot_stripe_schema_migrator:${migrator_password}@localhost:5432/sploot_upgrade?sslmode=disable" -v ON_ERROR_STOP=1 <<'SQL'
+          BEGIN;
+          ALTER TABLE public.users ADD COLUMN stripe_authority_probe TEXT;
+          ROLLBACK;
+          SQL
+
+          # 3) Injected mid-install post-bootstrap fault: the transaction must
+          #    abort, the marker must stay non-ready, and the existence-safe
+          #    rollback must commit a durable 'failed' state.
+          if PGOPTIONS='-c sploot.stripe_bootstrap_fault=post' psql "$admin_url" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-post.sql; then
+            echo 'expected injected post-bootstrap fault to fail'; exit 1
+          fi
+          marker="$(psql "$admin_url" -Atc "SELECT phase FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
+          test "$marker" = 'preparing'
+          psql "$admin_url" -v ON_ERROR_STOP=1 -f apps/web/prisma/stripe-ledger-bootstrap-rollback.sql
+          marker="$(psql "$admin_url" -Atc "SELECT phase FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
+          test "$marker" = 'failed'
+          # Rollback is idempotent: a second run must also succeed.
+          psql "$admin_url" -v ON_ERROR_STOP=1 -f apps/web/prisma/stripe-ledger-bootstrap-rollback.sql
+
+          # 4) Recovery replay: a clean post run after the failed attempt
+          #    reaches 'ready' at the declared contract version.
+          psql "$admin_url" -v ON_ERROR_STOP=1 -v bootstrap_version="$bootstrap_version" -f apps/web/prisma/stripe-ledger-bootstrap-post.sql
+          marker="$(psql "$admin_url" -Atc "SELECT phase || ':' || version FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
+          test "$marker" = "ready:${bootstrap_version}"
+          public_exec="$(psql "$admin_url" -Atc "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.prosecdef AND EXISTS (SELECT 1 FROM aclexplode(COALESCE(p.proacl, acldefault('f',p.proowner))) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE')")"
+          test "$public_exec" = '0'
+          app_ledger_dml="$(PGPASSWORD="$app_password" psql "postgresql://sploot_stripe_app:${app_password}@localhost:5432/sploot_upgrade?sslmode=disable" -Atc "SELECT has_table_privilege(current_user, 'public.stripe_cancellation_deliveries', 'INSERT') OR has_table_privilege(current_user, 'public.stripe_cancellation_deliveries', 'UPDATE') OR has_table_privilege(current_user, 'public.stripe_cancellation_deliveries', 'DELETE')")"
+          test "$app_ledger_dml" = 'f'
+          legacy_owner="$(psql "$admin_url" -Atc "SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid='public.users'::regclass")"
+          test "$legacy_owner" = 'sploot_stripe_schema_migrator'
+          vector_owner="$(psql "$admin_url" -Atc "SELECT pg_get_userbyid(t.typowner) FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='public' AND t.typname='vector'")"
+          test "$vector_owner" != 'sploot_stripe_schema_migrator'
+
   merge-gate:
     name: merge-gate
     if: always()
-    needs: [secrets, lint, type-check, web-build, design, test, extension]
+    needs: [secrets, lint, type-check, web-build, design, test, extension, db-authority]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}")
+          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.db-authority.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" ]]; then
-              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }}"
+              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }} db-authority=${{ needs.db-authority.result }}"
               exit 1
             fi
           done

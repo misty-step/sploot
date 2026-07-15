@@ -14,6 +14,7 @@ This directory contains architecture decision records for Sploot, a DigitalOcean
 | [008](./008-cap-image-optimization-cost.md) | Cap image delivery cost | Accepted | Bound image variants and cache churn while preserving thumbnail quality |
 | [009](./009-stack-sovereignty-spike-leave-vercel-keep-neon.md) | Host migration spike | Accepted | Keep Neon and move the app host off Vercel |
 | [010](./010-digitalocean-runtime-controls.md) | DigitalOcean runtime controls | Accepted | Persist embedding limits in Postgres; retain only Vercel Blob |
+| [012](./012-stripe-blast-radius-posture.md) | Stripe blast-radius posture before billing | Accepted (external proof pending) | Sandbox-only recovery, verified webhook boundary, durable cancellation ledger, and fail-closed Mint handoff |
 
 ## Decision Process
 
