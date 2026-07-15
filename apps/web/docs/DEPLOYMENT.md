@@ -200,10 +200,11 @@ last green commit, then repeat both verification commands. Do not re-enable
 embeddings until the current admission runtime has been restored and its
 DB-backed integration proof is green.
 
-ADR-010's limiter tables and the `embedding_budget_hard_ceiling` database
-constraint are additive and may remain. The constraint rejects daily counters
-above 684 and monthly counters above 20,547, so even an automatic rollback to
-the former 2,000-attempt daily runtime fails closed at the current paid-provider
-ceiling. Older code does not maintain the monthly bucket, which is why the kill
-switch is mandatory for any deliberate or extended rollback. Forward recovery
-is preferred.
+ADR-010's limiter tables and the `embedding_attempt_count_ceiling` database
+constraint are additive and may remain. This attempt-count constraint rejects
+daily counters above 684 and monthly counters above 20,547, so even an
+automatic rollback to the former 2,000-attempt daily runtime fails closed at
+the current configured attempt ceiling. It is derived from the provider-rate
+model and does not enforce durable provider dollars. Older code does not
+maintain the monthly bucket, which is why the kill switch is mandatory for any
+deliberate or extended rollback. Forward recovery is preferred.

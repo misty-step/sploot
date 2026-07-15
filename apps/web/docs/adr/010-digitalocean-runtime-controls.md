@@ -64,14 +64,16 @@ migrations. GitHub CI migrates only its pgvector test database and never
 receives the production Neon connection string.
 
 rolling the application back leaves both tables and the additive
-`embedding_budget_hard_ceiling` constraint in place and preserves all user
+`embedding_attempt_count_ceiling` constraint in place and preserves all user
 data. The database rejects a daily counter above 684 or a monthly counter above
 20,547, so a former runtime with a higher daily limit fails closed at the
-current ceiling. Because former runtimes do not maintain the monthly counter,
-operators must set `SPLOOT_EMBEDDINGS_ENABLED=false` and verify the disabled
-route response before a deliberate or extended rollback; it stays disabled
-until the current admission runtime and its DB proof are restored. The additive
-budget ceiling is installed `NOT VALID` and validated separately, so the old
+current configured attempt ceiling. This is an attempt-count constraint
+derived from the provider-rate model, not durable provider-dollar enforcement.
+Because former runtimes do not maintain the monthly counter, operators must set
+`SPLOOT_EMBEDDINGS_ENABLED=false` and verify the disabled route response before
+a deliberate or extended rollback; it stays disabled until the current
+admission runtime and its DB proof are restored. The additive attempt-count
+constraint is installed `NOT VALID` and validated separately, so the old
 runtime remains fail-closed without a blocking constraint-creation scan.
 Share-slug
 resolution still falls through to Postgres. Forward recovery is preferred.

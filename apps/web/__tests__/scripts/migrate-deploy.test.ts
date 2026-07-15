@@ -65,7 +65,14 @@ describe('online migration transaction contract', () => {
     const names = readdirSync(migrationRoot)
       .filter((name) => /^20260715\d+_/.test(name))
       .sort();
-    expect(names).toHaveLength(7);
+    expect(names).toEqual([
+      '20260715000000_add_embedding_resilience',
+      '20260715010000_add_embedding_circuit_generation',
+      '20260715020000_add_embedding_probe_lease_token',
+      '20260715030000_enforce_embedding_attempt_ceiling',
+      '20260715040000_add_embedding_processing_claim_token',
+      '20260715050000_cap_embedding_terminal_revivals',
+    ]);
     for (const name of names) {
       const sql = readFileSync(join(migrationRoot, name, 'migration.sql'), 'utf8');
       expect(sql.trimStart()).toMatch(/^--[\s\S]*?\nBEGIN;/);

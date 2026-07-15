@@ -187,7 +187,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
     expect(rows[0]?.count).toBe(EMBEDDING_DAILY_BUDGET);
   });
 
-  it('keeps the economic ceilings fail-closed under an older runtime write', async () => {
+  it('keeps the attempt-count ceilings fail-closed under an older runtime write', async () => {
     await expect(prisma.$executeRaw`
       INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
       VALUES (
@@ -196,7 +196,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
         NOW() + INTERVAL '26 hours',
         NOW()
       )
-    `).rejects.toThrow(/embedding_budget_hard_ceiling/);
+    `).rejects.toThrow(/embedding_attempt_count_ceiling/);
 
     await expect(prisma.$executeRaw`
       INSERT INTO "embedding_rate_buckets" ("key", "count", "expires_at", "updated_at")
@@ -206,7 +206,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
         NOW() + INTERVAL '32 days',
         NOW()
       )
-    `).rejects.toThrow(/embedding_budget_hard_ceiling/);
+    `).rejects.toThrow(/embedding_attempt_count_ceiling/);
   });
 
   it('keeps every bucket and lease unchanged when atomic admission is denied by the daily ceiling', async () => {

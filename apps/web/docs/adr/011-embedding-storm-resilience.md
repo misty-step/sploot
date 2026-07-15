@@ -140,6 +140,6 @@ legacy-terminal-write trigger in place;
 the previous application ignores them and existing ready vectors remain valid.
 The follow-up generation/probe migration is also additive and uses
 `IF NOT EXISTS`, so a partially applied deploy can be retried safely. Do not
-delete terminal rows or vectors as part of rollback. The budget ceiling is
-added `NOT VALID` and validated separately, preserving online writes during
+delete terminal rows or vectors as part of rollback. The attempt-count ceiling
+is added `NOT VALID` and validated separately, preserving online writes during
 constraint creation; the database ceiling remains in force for old runtimes.
