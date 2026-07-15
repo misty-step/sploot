@@ -84,7 +84,7 @@ describe('qa-local auth security contract', () => {
     await expect(createQaLocalAuthToken({
       userId: 'qa-user-1',
       secret: SECRET,
-      expiresInSeconds: 8 * 60 * 60 + 1,
+      expiresInSeconds: 15 * 60 + 1,
     })).rejects.toThrow(/qa-local token lifetime/);
   });
 

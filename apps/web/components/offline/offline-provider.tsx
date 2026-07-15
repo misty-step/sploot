@@ -9,7 +9,7 @@ interface OfflineProviderProps {
 }
 
 export function OfflineProvider({ children }: OfflineProviderProps) {
-  const { queue, removeFromQueue, updateQueueItem, processQueue } = useUploadQueue();
+  const { queue, removeFromQueue, updateQueueItem, processQueue } = useUploadQueue({ autoProcess: true });
 
   const handleRetry = (id: string) => {
     updateQueueItem(id, { status: 'queued', retryCount: 0 });

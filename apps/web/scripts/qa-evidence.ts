@@ -704,7 +704,7 @@ async function main() {
     const token = await createQaLocalAuthToken({
       userId: QA_USER_ID,
       secret: env.SPLOOT_QA_AUTH_SECRET as string,
-      expiresInSeconds: 60 * 60,
+      expiresInSeconds: 15 * 60,
     });
     await browser('cookies', 'set', 'sploot_qa_auth', token, '--url', baseUrl);
 

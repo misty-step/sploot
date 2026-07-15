@@ -207,7 +207,7 @@ async function runDoctor(baseUrl: string, secret: string): Promise<boolean> {
     userId: QA_USER_ID,
     email: `${QA_USER_ID}@sploot.test`,
     secret,
-    expiresInSeconds: 30 * 60,
+    expiresInSeconds: 15 * 60,
   });
   const authHeaders = { cookie: `sploot_qa_auth=${token}` };
 

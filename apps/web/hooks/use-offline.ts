@@ -5,41 +5,50 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 export function useOffline() {
   const [isOffline, setIsOffline] = useState(false);
   const probeControllerRef = useRef<AbortController | null>(null);
+  const probePromiseRef = useRef<Promise<boolean> | null>(null);
   const mountedRef = useRef(true);
 
-  const checkConnection = useCallback(async () => {
+  const checkConnection = useCallback((): Promise<boolean> => {
     // Check navigator.onLine first
     if (!navigator.onLine) {
       setIsOffline(true);
-      return false;
+      return Promise.resolve(false);
     }
 
     // Try to fetch a small resource to verify actual connectivity
-    if (probeControllerRef.current) return true;
+    if (probePromiseRef.current) return probePromiseRef.current;
     const controller = new AbortController();
     probeControllerRef.current = controller;
     const timeoutId = setTimeout(() => controller.abort(), 30_000);
-    try {
-      const response = await fetch('/api/health', {
-        method: 'GET',
-        cache: 'no-cache',
-        signal: controller.signal,
-      });
+    const probe = (async () => {
+      try {
+        const response = await fetch('/api/health', {
+          method: 'GET',
+          cache: 'no-cache',
+          signal: controller.signal,
+        });
 
-      if (response.ok) {
-        if (mountedRef.current) setIsOffline(false);
-        return true;
+        if (response.ok) {
+          if (mountedRef.current) setIsOffline(false);
+          return true;
+        }
+      } catch {
+        // Network error or timeout
+        if (mountedRef.current) setIsOffline(true);
+        return false;
+      } finally {
+        clearTimeout(timeoutId);
+        if (probeControllerRef.current === controller) probeControllerRef.current = null;
       }
-    } catch (error) {
-      // Network error or timeout
-      if (mountedRef.current) setIsOffline(true);
-      return false;
-    } finally {
-      clearTimeout(timeoutId);
-      if (probeControllerRef.current === controller) probeControllerRef.current = null;
-    }
 
-    return false;
+      return false;
+    })();
+
+    probePromiseRef.current = probe;
+    void probe.then(() => {
+      if (probePromiseRef.current === probe) probePromiseRef.current = null;
+    });
+    return probe;
   }, []);
 
   useEffect(() => {
@@ -71,7 +80,9 @@ export function useOffline() {
       window.removeEventListener('offline', handleOffline);
       clearInterval(intervalId);
       mountedRef.current = false;
+      probeControllerRef.current?.abort();
       probeControllerRef.current = null;
+      probePromiseRef.current = null;
     };
   }, [checkConnection]);
 

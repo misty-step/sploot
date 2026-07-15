@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { error as logError } from '@/lib/logger';
 import { track } from '@/lib/analytics';
 import { getUploadQueueManager } from '@/lib/upload-queue';
@@ -49,12 +49,18 @@ function toQueuedUpload(upload: {
   };
 }
 
-export function useUploadQueue() {
+export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean } = {}) {
   const { isOffline } = useOffline();
   const [queue, setQueue] = useState<QueuedUpload[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const isOfflineRef = useRef(isOffline);
+  const isProcessingRef = useRef(false);
   const queueManager = useMemo(() => getUploadQueueManager(), []);
   const uploadClient = useMemo(() => getUploadNetworkClient(), []);
+
+  useEffect(() => {
+    isOfflineRef.current = isOffline;
+  }, [isOffline]);
 
   const refreshQueue = useCallback(async () => {
     try {
@@ -110,7 +116,8 @@ export function useUploadQueue() {
   }, [queueManager]);
 
   const processQueue = useCallback(async () => {
-    if (isOffline || isProcessing) return;
+    if (isOfflineRef.current || isProcessingRef.current) return;
+    isProcessingRef.current = true;
     setIsProcessing(true);
     try {
       const pending = await queueManager.getPendingUploads();
@@ -139,9 +146,17 @@ export function useUploadQueue() {
     } catch (error) {
       logError('Error processing upload queue:', error);
     } finally {
+      isProcessingRef.current = false;
       setIsProcessing(false);
     }
-  }, [isOffline, isProcessing, queueManager, uploadClient]);
+  }, [queueManager, uploadClient]);
+
+  useEffect(() => {
+    if (!autoProcess || isOffline) return;
+    queueMicrotask(() => {
+      void processQueue();
+    });
+  }, [autoProcess, isOffline, processQueue]);
 
   return {
     queue,
