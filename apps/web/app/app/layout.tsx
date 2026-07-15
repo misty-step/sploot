@@ -12,7 +12,11 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { userId } = await getAuthWithUser();
+  const { userId, authFailure } = await getAuthWithUser();
+
+  if (authFailure) {
+    redirect(`/sign-in?error=${encodeURIComponent(authFailure.code)}`);
+  }
 
   if (!userId) {
     redirect('/sign-in');

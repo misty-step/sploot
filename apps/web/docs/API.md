@@ -39,9 +39,9 @@ contract** (save + search) this section's internal detail feeds.
 - `apps/web/middleware.ts` protects only `/app(.*)` and redirects signed-out requests to `/sign-in`.
 - Clerk middleware still matches API routes so Clerk server auth can resolve,
   but API routes enforce auth in route handlers rather than middleware.
-- New protected API routes use `lib/auth/with-authenticated-api`; legacy direct
-  Clerk/helper imports are temporarily allowlisted by
-  `pnpm --filter web auth:guard` until route migration is complete.
+- Every protected product API route uses `lib/auth/with-authenticated-api`.
+  `pnpm --filter web auth:guard` fails on direct Clerk/legacy helper imports or
+  a missing boundary; only explicit operational/public routes are exempt.
 - The protected product JSON APIs listed below return this exact payload for
   missing auth:
 
@@ -65,6 +65,27 @@ Protected product API route inventory:
 - `/api/tags`, `/api/tags/{tagId}`
 - `/api/analytics/usage`, `/api/telemetry`
 - `/api/cache/stats`, `/api/embeddings/text`, `/api/embeddings/image`, `/api/sse/embedding-updates`
+
+The executable inventory also includes `GET /api/piles`,
+`POST /api/library/starter`, and `GET /api/health/user-sync`. Public
+operational routes are `/api/db-ping`, `/api/health`, `/api/health/services`,
+`/api/version`, and the non-production-only `/api/qa-auth/login`; cron routes
+use `CRON_SECRET` and are not session-authenticated. The authenticated browser
+`POST /share-target` uses the same boundary; missing auth redirects to
+sign-in with the internal `/share-target` destination, while external,
+scheme-relative, backslash, malformed, or otherwise unsafe destinations are
+replaced with `/app`. Typed identity/sync failures return their `401`/`409`/`503`
+JSON outcome instead of redirecting in a loop.
+
+For a Clerk session, the route boundary completes identity sync before calling
+the handler. Missing `currentUser` returns `401` with
+`{"error":"Unauthorized","code":"identity_missing"}`; unavailable
+database/sync returns retryable `503` with `code: "sync_unavailable"`; and a
+sync transaction conflict returns `409` with `code: "sync_conflict"`.
+Serializable `P2034` conflicts set `retryable: true`; other conflict classes
+remain non-retryable. Missing, invalid, or out-of-scope credentials retain the
+stable `401 {"error":"Unauthorized"}` payload. These boundary failures occur
+before request validation or tenant queries.
 
 ## Response Format
 
@@ -107,6 +128,18 @@ Check API availability and system status.
 ```
 
 ---
+
+#### GET /api/health/user-sync
+
+**Authentication:** Required. This diagnostic route uses the same required
+Clerk identity-sync boundary as product routes. Typed `401`/`409`/`503`
+boundary responses are returned before its database health body.
+
+#### GET /api/health/services
+
+**Authentication:** Not required. This operational report checks provider and
+configuration health without inspecting a caller's Clerk session. `OPTIONS` is
+a public CORS preflight.
 
 ### Upload Management
 
@@ -209,6 +242,11 @@ thumbnail for previews and embedding.
 - 500: Server error
 
 ---
+
+#### POST /api/library/starter
+
+**Authentication:** Required. Creates starter assets for the synced principal
+only; the identity boundary runs before the mutation.
 
 #### GET /api/piles
 

@@ -2,6 +2,11 @@ export type AuthProvider = 'clerk' | 'qa-local' | 'upload-token';
 export type AuthSource = 'clerk-request' | 'qa-local' | 'upload-token';
 export type AuthCredentialKind = 'cookie-or-bearer' | 'qa-local' | 'upload-token';
 export type AuthSyncStatus = 'success' | 'failed' | 'skipped';
+export type AuthFailureCode =
+  | 'identity_missing'
+  | 'identity_mismatch'
+  | 'sync_unavailable'
+  | 'sync_conflict';
 
 export interface AuthenticatedPrincipal {
   userId: string;
@@ -30,10 +35,19 @@ export interface ForbiddenAuthResult {
   reason: string;
 }
 
+export interface AuthBoundaryFailureResult {
+  status: 'boundary-failure';
+  code: AuthFailureCode;
+  httpStatus: 401 | 409 | 503;
+  retryable: boolean;
+  reason: string;
+}
+
 export type RequestAuthResult =
   | AuthenticatedResult
   | UnauthenticatedResult
-  | ForbiddenAuthResult;
+  | ForbiddenAuthResult
+  | AuthBoundaryFailureResult;
 
 export interface AuthPolicy {
   allowClerk?: boolean;
@@ -45,5 +59,7 @@ export interface AuthPolicy {
    */
   allowUploadToken?: boolean;
   requireUserSync?: boolean;
+  /** Browser-navigation policy used by the authenticated share target. */
+  unauthenticated?: 'json' | 'sign-in-redirect';
   env?: Record<string, string | undefined>;
 }

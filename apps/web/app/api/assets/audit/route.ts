@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireUserIdWithSync } from '@/lib/auth/server';
-import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
 
 interface AuditResult {
@@ -36,9 +36,9 @@ interface AuditSummary {
  * Returns JSON with lists of valid, broken (404/403), and error assets
  * Uses HEAD requests to minimize bandwidth usage
  */
-async function getHandler(req: NextRequest) {
+async function getHandler(req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   try {
-    const userId = await requireUserIdWithSync();
+    const userId = principal.userId;
 
     if (!prisma) {
       return NextResponse.json(
@@ -123,10 +123,6 @@ async function getHandler(req: NextRequest) {
 
     return NextResponse.json(summary, { status: 200 });
   } catch (error) {
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
     logError('assets:audit-failed', error);
     return NextResponse.json(
       {
@@ -141,4 +137,7 @@ async function getHandler(req: NextRequest) {
   }
 }
 
-export const GET = withObservability(getHandler, { operation: 'assets:audit' });
+export const GET = withObservability(
+  withAuthenticatedApi(getHandler, { requireUserSync: true }),
+  { operation: 'assets:audit' }
+);

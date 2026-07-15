@@ -14,6 +14,15 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth/server', () => ({ getAuth: mocks.getAuth }));
 
+vi.mock('@/lib/auth/request-auth', () => ({
+  authenticateRequest: async () => {
+    const auth = await mocks.getAuth();
+    return auth.userId
+      ? { status: 'authenticated', principal: { userId: auth.userId }, syncStatus: 'skipped' }
+      : { status: 'unauthenticated', reason: 'clerk-unauthorized' };
+  },
+}));
+
 vi.mock('@/lib/db', () => ({
   prisma: {
     asset: { findFirst: mocks.findAsset },

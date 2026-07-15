@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { clerkConfigured, blobConfigured, databaseConfigured, replicateConfigured } from '@/lib/env';
 import { prisma } from '@/lib/db';
-import { currentUser } from '@clerk/nextjs/server';
 import { canaryConfigured, checkCanaryStatus } from '@/lib/canary-reporter';
 import { withObservability } from '@/lib/with-observability';
 
@@ -21,12 +20,11 @@ async function getHandler(req: NextRequest) {
   // Check Clerk Authentication
   try {
     if (clerkConfigured) {
-      const user = await currentUser();
       services.clerk = {
         name: 'Authentication (Clerk)',
-        status: user ? 'healthy' : 'degraded',
+        status: 'healthy',
         configured: true,
-        message: user ? `Authenticated as ${user.emailAddresses[0]?.emailAddress}` : 'No active session',
+        message: 'Provider configured',
       };
     } else {
       services.clerk = {

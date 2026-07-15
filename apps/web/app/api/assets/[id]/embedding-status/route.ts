@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
@@ -11,10 +11,11 @@ import { logError } from '@/lib/observability-logger';
  */
 async function getHandler(
   request: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext
 ) {
   try {
-    const { userId } = await auth();
+    const userId = principal.userId;
     const params = await context.params;
     const id = params?.id;
 
@@ -78,4 +79,4 @@ async function getHandler(
   }
 }
 
-export const GET = withObservability(getHandler, { operation: 'assets:embedding-status' });
+export const GET = withObservability(withAuthenticatedApi(getHandler), { operation: 'assets:embedding-status' });

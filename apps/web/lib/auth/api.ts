@@ -19,7 +19,14 @@ function getErrorMessage(error: unknown): string | undefined {
 
 export function isUnauthorizedAuthError(error: unknown): boolean {
   const message = getErrorMessage(error);
-  return message === UNAUTHORIZED_ERROR_MESSAGE ||
+  const status = typeof error === 'object' && error !== null && 'status' in error
+    ? (error as { status?: unknown }).status
+    : undefined;
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? (error as { code?: unknown }).code
+    : undefined;
+  return status === 401 || code === 'unauthorized' ||
+    message === UNAUTHORIZED_ERROR_MESSAGE ||
     message?.startsWith(`${UNAUTHORIZED_ERROR_MESSAGE} -`) === true;
 }
 

@@ -6,6 +6,7 @@ import {
   IMAGE_FORMATS,
   IMAGE_MINIMUM_CACHE_TTL,
 } from "./lib/image-config";
+import { isQaLocalAuthEnabled } from "./lib/auth/qa-local";
 
 const nextConfig: NextConfig = {
   output: "standalone",
@@ -32,9 +33,9 @@ const nextConfig: NextConfig = {
   // Image optimization configuration
   images: {
     // QA-only: map the reserved seed host to local files so qa-seed fixtures
-    // render without weakening the blob_url CHECK constraints. Inert in
-    // production builds (NODE_ENV) and without the QA auth mode flag.
-    ...(process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && process.env.NODE_ENV !== 'production'
+    // render without weakening the blob_url CHECK constraints. Inert without
+    // the explicit non-production QA deployment allowlist.
+    ...(isQaLocalAuthEnabled()
       ? { loader: 'custom' as const, loaderFile: './lib/qa/qa-image-loader.ts' }
       : {}),
     // Configure domains for Next.js Image optimization

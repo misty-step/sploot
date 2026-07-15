@@ -127,6 +127,14 @@ describe('syncUser migration', () => {
         };
 
         userIdentity = {
+          findUnique: async ({ where }: any) => {
+            const unique = where.unique_provider_subject;
+            return state.identities.find(
+              (identity) =>
+                identity.provider === unique.provider &&
+                identity.providerSubject === unique.providerSubject
+            ) ?? null;
+          },
           upsert: async ({ where, update, create }: any) => {
             const unique = where.unique_provider_subject;
             const existing = state.identities.find(

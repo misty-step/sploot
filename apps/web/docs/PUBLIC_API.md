@@ -42,6 +42,22 @@ management, …) is Clerk/qa-local session-only and returns the stable
 cannot read your full library, delete anything, or manage other tokens. See
 `AUTH.md` for the auth-door architecture this is built on.
 
+The token branch is terminal and tenant-scoped: an invalid, revoked, duplicate,
+or database-unresolvable token returns the same `401` and never falls through
+to Clerk or QA credentials. QA-local credentials require an explicit
+non-production deployment identity allowlist; even a validly signed or
+malformed QA cookie cannot authenticate a production request. When QA is
+disabled, stray QA markers do not preempt a valid token or Clerk credential.
+Token-authenticated save/search calls skip Clerk user sync because the
+token already resolves to its stored owner; they never create or infer a
+different tenant.
+
+For completeness, session-only product routes include `GET /api/piles`,
+`POST /api/library/starter`, and `GET /api/health/user-sync`; the public
+operational inventory is `/api/db-ping`, `/api/health`,
+`/api/health/services`, and `/api/version`. None of these routes accepts a
+personal token.
+
 ## Base URL
 
 ```

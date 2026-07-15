@@ -9,11 +9,16 @@ request APIs directly.
 | Mode | Env | Provider | Permitted surfaces |
 |---|---|---|---|
 | `clerk` | default | Clerk cookies or Clerk session bearer token | local, preview, production |
-| `qa-local` | `SPLOOT_QA_AUTH_MODE=enabled` plus `SPLOOT_QA_AUTH_SECRET` | signed Sploot QA token | local and CI only |
+| `qa-local` | `SPLOOT_QA_AUTH_MODE=enabled`, `SPLOOT_QA_AUTH_SECRET`, and an explicit deployment identity allowlist | signed Sploot QA token | allowlisted non-production deployments only |
 | `upload-token` | always available | hashed personal API token (`Authorization: Bearer splt_…`) | **opt-in routes only**: save (`/api/upload`, `/api/upload/url`) + search (`/api/search`) |
 
-`qa-local` is rejected when `NODE_ENV=production`,
-even if the mode and secret are present.
+`qa-local` is enabled only when `SPLOOT_DEPLOYMENT_IDENTITY` is a member of the
+comma-separated `SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES` allowlist. The
+identity and `DEPLOYMENT_ENV` values `prod`/`production` are always rejected;
+`NODE_ENV=production` is also hard-refused. When QA is disabled,
+stray QA headers/cookies are ignored so valid Clerk or upload-token credentials
+can continue through their own policy. When QA is explicitly enabled, a QA
+credential is terminal and cannot fall through to another tenant.
 
 ## QA Token
 
@@ -46,13 +51,25 @@ a Clerk session.
   checks an upload token only when a route passes `allowUploadToken: true`.
   Three routes opt in — the two upload routes plus `POST /api/search`
   (sploot-071) — so a token presented anywhere else returns the stable `401`.
-  The `lib/auth/server.ts` auth path (`getAuth*`, used by most read/delete
-  routes) never calls the verifier at all; `POST /api/search` itself moved off
-  that path onto `withAuthenticatedApi` to make the opt-in possible (partial,
-  route-scoped step toward the full migration tracked in
-  `Powder card sploot-035`).
-- Verification is throw-safe: a DB error (including a not-yet-migrated table)
-  resolves to `401`, never `500`. Revoked and unknown tokens are
+  Every protected product API route now enters through `withAuthenticatedApi`,
+  and Clerk identity sync is required before the handler. The route's
+  `AuthPolicy` is the only upload-token decision point. The page-only
+  `lib/auth/server.ts` path remains token-blind as defense in depth;
+  `auth:guard` prevents product routes from importing either legacy door.
+- Clerk sync failures are typed at the boundary: missing `currentUser` is
+  `401` with `code: "identity_missing"`, unavailable sync is retryable `503`
+  with `code: "sync_unavailable"`, and a sync transaction conflict is `409`
+  with `code: "sync_conflict"`; serializable `P2034` conflicts set
+  `retryable: true`. The handler is never called for these states. The
+  verified Clerk subject must exactly match `currentUser.id` before email or
+  orphan migration. A missing `user_identities` table is typed unavailable,
+  never a successful sync. Clerk verifier/provider failures are typed `401`
+  for unauthorized responses or retryable `503` otherwise. User persistence
+  and the `user_identities` binding commit in one serializable transaction;
+  identity conflicts cannot reassign a provider subject, and bounded retries
+  cover transient `P2034`/race `P2002` failures.
+  Upload-token verification remains throw-safe: a DB error (including a
+  not-yet-migrated table) resolves to the stable `401`, never `500`. Revoked and unknown tokens are
   indistinguishable.
 - Managed at `/api/upload-tokens` (mint/list) and `/api/upload-tokens/{id}`
   (revoke), which are **session-authenticated** — an upload token cannot manage
@@ -121,8 +138,9 @@ The wrapper returns the stable API auth failure shape:
 { "error": "Unauthorized" }
 ```
 
-Legacy direct imports remain temporarily allowlisted until each route is
-migrated. Run:
+The guard inventories every API route, permits only explicit operational/public
+exemptions, and fails on direct provider/legacy auth imports or a missing
+`withAuthenticatedApi` boundary. Run:
 
 ```bash
 pnpm --filter web auth:guard

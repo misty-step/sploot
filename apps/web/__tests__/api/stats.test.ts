@@ -8,6 +8,17 @@ vi.mock('@/lib/auth/server', () => ({
   requireUserIdWithSync: () => mockRequireUserIdWithSync(),
 }));
 
+vi.mock('@/lib/auth/request-auth', () => ({
+  authenticateRequest: async () => {
+    try {
+      const userId = await mockRequireUserIdWithSync();
+      return { status: 'authenticated', principal: { userId }, syncStatus: 'success' };
+    } catch {
+      return { status: 'unauthenticated', reason: 'clerk-unauthorized' };
+    }
+  },
+}));
+
 // Mock lib/db
 const mockPrisma = {
   asset: {

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { authenticateRequest } from '@/lib/auth/request-auth';
+import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { ingestImage } from '@/lib/upload/ingest-image';
 import { getRuntimeGate } from '@/lib/runtime-gates';
 import { StorageQuotaExceededError } from '@/lib/quota/storage-quota-policy';
 import { logger } from '@/lib/logger';
-import { withObservability } from '@/lib/with-observability';
+import { withObservability, type RouteContext } from '@/lib/with-observability';
 
 /**
  * PWA share-target receiver (manifest.json `share_target`).
@@ -23,12 +24,12 @@ function redirectTo(req: NextRequest, path: string, status = 303): NextResponse 
   return NextResponse.redirect(new URL(path, req.url), status);
 }
 
-async function postHandler(req: NextRequest) {
-  const auth = await authenticateRequest(req);
-  if (auth.status !== 'authenticated') {
-    return redirectTo(req, '/sign-in');
-  }
-  const userId = auth.principal.userId;
+async function postHandler(
+  req: NextRequest,
+  _context: RouteContext,
+  { principal }: AuthenticatedApiContext
+) {
+  const userId = principal.userId;
 
   const uploadGate = getRuntimeGate('uploads');
   if (!uploadGate.enabled) {
@@ -83,7 +84,10 @@ async function getHandler(req: NextRequest) {
   return redirectTo(req, '/app', 307);
 }
 
-export const POST = withObservability(postHandler, { operation: 'share-target' });
+export const POST = withObservability(
+  withAuthenticatedApi(postHandler, { unauthenticated: 'sign-in-redirect' }),
+  { operation: 'share-target' }
+);
 export const GET = withObservability(getHandler, {
   operation: 'share-target:get',
   skipTiming: true,

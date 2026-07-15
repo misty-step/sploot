@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyBearerOrThrow } from '@/lib/auth/verify-bearer';
-import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma, assetExists } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
 
 /**
@@ -57,10 +57,9 @@ import { logError } from '@/lib/observability-logger';
  *   await uploadFile(file);
  * }
  */
-async function postHandler(req: NextRequest) {
+async function postHandler(req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   try {
-    // Check authentication (supports both Bearer token and cookies)
-    const userId = await verifyBearerOrThrow(req);
+    const userId = principal.userId;
 
     // Parse request body
     const body = await req.json();
@@ -125,10 +124,6 @@ async function postHandler(req: NextRequest) {
   } catch (error) {
     logError('upload:check-failed', error);
 
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
     return NextResponse.json(
       { error: 'Failed to perform preflight check' },
       { status: 500 }
@@ -149,7 +144,7 @@ async function optionsHandler(req: NextRequest) {
   });
 }
 
-export const POST = withObservability(postHandler, { operation: 'upload:check' });
+export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'upload:check' });
 export const OPTIONS = withObservability(optionsHandler, {
   operation: 'upload:check-options',
   skipTiming: true,

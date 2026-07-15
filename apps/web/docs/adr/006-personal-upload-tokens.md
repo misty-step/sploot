@@ -13,9 +13,11 @@ Clerk session — they need a credential.
 We need a credential a non-session client (an Apple Shortcut, later a CLI) can
 present to the upload API. Requirements from the ticket: mintable/revocable from
 settings, stored hashed, and **upload-only** (it must not be able to read or
-delete the library). Sploot had no token/API-key concept; auth ran through two
-paths — `authenticateRequest` (policy-based, `lib/auth/request-auth.ts`) and
-`getAuth*` (`lib/auth/server.ts`).
+delete the library). Sploot had no token/API-key concept; auth initially ran
+through two paths — `authenticateRequest` (policy-based,
+`lib/auth/request-auth.ts`) and `getAuth*` (`lib/auth/server.ts`). Protected
+product routes now share the policy-based boundary; `getAuth*` remains
+page-only and token-blind.
 
 ## Decision
 
@@ -30,10 +32,11 @@ demands *revocable* and *stored hashed*; a stateless token is neither.
 
 **2. Scope is enforced by policy, not a scope field.** `AuthPolicy` gains
 `allowUploadToken` (default `false`). `authenticateRequest` checks an upload
-token only when a route opts in. Exactly two routes opt in (`/api/upload`,
-`/api/upload/url`); every other policy-based route denies by default, and the
-`getAuth*` path never calls the verifier at all. Deny-by-default plus a
-single-function verifier *is* the upload-only guarantee. We rejected a generic
+token only when a route opts in. Three route handlers opt in (`POST
+/api/upload`, `POST /api/upload/url`, and `POST /api/search`); every other
+policy-based route denies by default, and the `getAuth*` path never calls the
+verifier at all. Deny-by-default plus a single-function verifier *is* the
+upload-only guarantee. We rejected a generic
 `scopes` column / API-key platform as speculative — there is one scope today.
 
 **3. Verification is throw-safe and revoked ≡ unknown.** A DB error (including a
@@ -52,9 +55,10 @@ token cannot manage tokens.
   CLI/automation ingestion. No new ingestion pipeline — `ingestImage()` is
   reused, so dedupe/quota/embeddings are unchanged. The blast radius of the new
   credential is one grep (`allowUploadToken`) plus one verifier function.
-- **Invariant to protect:** `lib/auth/server.ts` must stay token-blind. A guard
-  test asserts it contains no upload-token reference. If the two auth paths are
-  ever unified, the upload-only guarantee must be re-derived.
+- **Invariant to protect:** product routes cannot import
+  `lib/auth/server.ts` or `lib/auth/verify-bearer.ts`; `auth:guard` enforces
+  that inventory. The existing token-blind check on `server.ts` remains defense
+  in depth.
 - **Operational:** the `upload_tokens` migration must be applied
   (`prisma migrate deploy`) before the mint route works in an environment; on
   Vercel, migrations do not auto-run. Verification is throw-safe, so a token

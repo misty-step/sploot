@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import { logError, logInfo } from '@/lib/observability-logger';
@@ -27,18 +27,11 @@ interface BatchEmbeddingStatusResponse {
  * Request body: { assetIds: string[] }
  * Response: { statuses: { [assetId]: { hasEmbedding, status, error? } } }
  */
-async function postHandler(request: NextRequest) {
+async function postHandler(request: NextRequest, _context: {}, { principal }: AuthenticatedApiContext) {
   const startTime = Date.now();
 
   try {
-    const { userId } = await auth();
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     if ( !prisma) {
       return NextResponse.json(
@@ -150,6 +143,6 @@ async function postHandler(request: NextRequest) {
   }
 }
 
-export const POST = withObservability(postHandler, {
+export const POST = withObservability(withAuthenticatedApi(postHandler), {
   operation: 'assets:batch-embedding-status',
 });

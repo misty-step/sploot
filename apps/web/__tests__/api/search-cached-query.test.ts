@@ -12,24 +12,14 @@ const mocks = vi.hoisted(() => ({
   logSearch: vi.fn(),
 }));
 
-// POST /api/search now resolves auth through withAuthenticatedApi (sploot-071:
-// opted into allowUploadToken so a personal API token can drive search), not
-// getAuthWithUser directly — see search-upload-token-opt-in.test.ts for the
-// wiring proof.
-vi.mock('@/lib/auth/with-authenticated-api', () => ({
-  withAuthenticatedApi: (handler: any) => async (req: any, context: any = {}) => {
-    if (!mocks.authenticatedUserId) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-
-    return handler(req, context, {
-      principal: { userId: mocks.authenticatedUserId },
-      auth: { status: 'authenticated' },
-    });
-  },
+vi.mock('@/lib/auth/request-auth', () => ({
+  authenticateRequest: async () => mocks.authenticatedUserId
+    ? {
+        status: 'authenticated',
+        principal: { userId: mocks.authenticatedUserId },
+        syncStatus: 'skipped',
+      }
+    : { status: 'unauthenticated', reason: 'clerk-unauthorized' },
 }));
 
 vi.mock('@/lib/embeddings', () => ({

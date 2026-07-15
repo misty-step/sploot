@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/assets/[id]/share/route';
 import { generateMetadata } from '@/app/m/[id]/page';
 
@@ -6,6 +7,15 @@ import { generateMetadata } from '@/app/m/[id]/page';
 const mockAuth = vi.fn();
 vi.mock('@clerk/nextjs/server', () => ({
   auth: () => mockAuth(),
+}));
+
+vi.mock('@/lib/auth/request-auth', () => ({
+  authenticateRequest: async () => {
+    const auth = await mockAuth();
+    return auth.userId
+      ? { status: 'authenticated', principal: { userId: auth.userId }, syncStatus: 'skipped' }
+      : { status: 'unauthenticated', reason: 'clerk-unauthorized' };
+  },
 }));
 
 // Mock lib/db
@@ -64,7 +74,7 @@ describe('Share flow', () => {
       mockGetOrCreateShareSlug.mockResolvedValue(mockSlug);
 
       const response = await POST(
-        {} as any,
+        new NextRequest(`http://localhost:3000/api/assets/${mockAssetId}/share`, { method: 'POST' }),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
 
@@ -85,14 +95,14 @@ describe('Share flow', () => {
 
       // First share
       const response1 = await POST(
-        {} as any,
+        new NextRequest(`http://localhost:3000/api/assets/${mockAssetId}/share`, { method: 'POST' }),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
       const data1 = await response1.json();
 
       // Second share
       const response2 = await POST(
-        {} as any,
+        new NextRequest(`http://localhost:3000/api/assets/${mockAssetId}/share`, { method: 'POST' }),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
       const data2 = await response2.json();
@@ -108,7 +118,7 @@ describe('Share flow', () => {
       mockPrisma.asset.findFirst.mockResolvedValue(null);
 
       const response = await POST(
-        {} as any,
+        new NextRequest(`http://localhost:3000/api/assets/${mockAssetId}/share`, { method: 'POST' }),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
 
@@ -122,7 +132,7 @@ describe('Share flow', () => {
       mockAuth.mockResolvedValue({ userId: null });
 
       const response = await POST(
-        {} as any,
+        new NextRequest(`http://localhost:3000/api/assets/${mockAssetId}/share`, { method: 'POST' }),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
 
@@ -138,7 +148,7 @@ describe('Share flow', () => {
       mockPrisma.asset.findFirst.mockResolvedValue(null);
 
       const response = await POST(
-        {} as any,
+        new NextRequest(`http://localhost:3000/api/assets/${mockAssetId}/share`, { method: 'POST' }),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
 
@@ -152,7 +162,7 @@ describe('Share flow', () => {
       mockDatabaseAvailable = false;
 
       const response = await POST(
-        {} as any,
+        new NextRequest(`http://localhost:3000/api/assets/${mockAssetId}/share`, { method: 'POST' }),
         { params: Promise.resolve({ id: mockAssetId }) }
       );
 

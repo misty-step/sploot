@@ -5,8 +5,9 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
-import { getAuth } from '@/lib/auth/server';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 import { embeddingVectorSql as createEmbeddingVectorSql } from '@/lib/embedding-vector-sql';
 import { logError } from '@/lib/observability-logger';
@@ -21,7 +22,7 @@ interface SearchFilters {
   minHeight?: number;
 }
 
-async function postHandler(req: NextRequest) {
+async function postHandler(req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   const startTime = Date.now();
   let query: string = '';
   let filters: SearchFilters = {};
@@ -31,13 +32,7 @@ async function postHandler(req: NextRequest) {
   let sortBy: string = 'relevance';
 
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     const body = await req.json();
     ({
@@ -353,7 +348,7 @@ async function postHandler(req: NextRequest) {
   }
 }
 
-export const POST = withObservability(postHandler, { operation: 'search:advanced' });
+export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'search:advanced' });
 
 // Fallback metadata search when embeddings are unavailable
 async function performMetadataSearch(

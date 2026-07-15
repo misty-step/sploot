@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { isUnauthorizedAuthError } from './api';
 import { verifyQaLocalAuthHeaders } from './qa-local';
+import { syncClerkUser } from './user-sync';
 import type {
   AuthPolicy,
   AuthenticatedPrincipal,
@@ -15,10 +16,32 @@ const DEFAULT_AUTH_POLICY: Required<
   allowClerk: true,
   allowQaLocal: true,
   allowUploadToken: false,
-  requireUserSync: false,
+  // A Clerk principal is not usable by a tenant route until its application
+  // identity has been confirmed. QA-local and personal-token branches return
+  // before this policy and carry their explicit `skipped` semantics.
+  requireUserSync: true,
 };
 
 export async function authenticateRequest(
+  req: NextRequest,
+  policy: AuthPolicy = {}
+): Promise<RequestAuthResult> {
+  try {
+    return await authenticateRequestUnsafe(req, policy);
+  } catch {
+    // Provider, credential-store, and crypto failures must not escape as
+    // framework 500s or disclose provider/database details.
+    return {
+      status: 'boundary-failure',
+      code: 'sync_unavailable',
+      httpStatus: 503,
+      retryable: true,
+      reason: 'Authentication provider unavailable',
+    };
+  }
+}
+
+async function authenticateRequestUnsafe(
   req: NextRequest,
   policy: AuthPolicy = {}
 ): Promise<RequestAuthResult> {
@@ -30,8 +53,16 @@ export async function authenticateRequest(
 
   if (resolvedPolicy.allowQaLocal) {
     const qaResult = await verifyQaLocalAuthHeaders(req.headers, env);
-    if (qaResult.status !== 'unauthenticated' && qaResult.status !== 'forbidden') {
+    if (qaResult.status === 'authenticated') {
       return qaResult;
+    }
+
+    // A QA credential is terminal. Never let an invalid/disabled QA cookie
+    // fall through to Clerk and accidentally authenticate a different tenant.
+    if (qaResult.reason !== 'qa-local-missing') {
+      return qaResult.status === 'forbidden'
+        ? { status: 'unauthenticated', reason: qaResult.reason }
+        : qaResult;
     }
   }
 
@@ -54,17 +85,48 @@ export async function authenticateRequest(
 
   try {
     const userId = await verifyBearerOrThrow(req);
+    const principal = clerkPrincipal(userId);
+    const sync = resolvedPolicy.requireUserSync
+      ? await syncClerkUser(userId)
+      : { syncStatus: 'skipped' as const };
+
+    if (sync.failureCode) {
+      return {
+        status: 'boundary-failure',
+        code: sync.failureCode,
+        httpStatus: sync.failureCode === 'identity_missing'
+          || sync.failureCode === 'identity_mismatch'
+          ? 401
+          : sync.failureCode === 'sync_conflict'
+            ? 409
+            : 503,
+        retryable: sync.retryable ?? sync.failureCode === 'sync_unavailable',
+        reason: sync.syncError ?? sync.failureCode,
+      };
+    }
+
+    if (sync.email) {
+      principal.email = sync.email;
+    }
+
     return {
       status: 'authenticated',
-      principal: clerkPrincipal(userId),
-      syncStatus: resolvedPolicy.requireUserSync ? 'skipped' : 'skipped',
+      principal,
+      syncStatus: sync.syncStatus,
+      ...(sync.syncError ? { syncError: sync.syncError } : {}),
     };
   } catch (error) {
     if (isUnauthorizedAuthError(error)) {
       return { status: 'unauthenticated', reason: 'clerk-unauthorized' };
     }
 
-    throw error;
+    return {
+      status: 'boundary-failure',
+      code: 'sync_unavailable',
+      httpStatus: 503,
+      retryable: true,
+      reason: 'Clerk authentication provider unavailable',
+    };
   }
 }
 

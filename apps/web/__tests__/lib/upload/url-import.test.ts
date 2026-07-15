@@ -41,6 +41,8 @@ describe('validateImportUrl', () => {
     vi.stubEnv('SPLOOT_QA_ALLOW_LOCAL_URL_IMPORT', '1');
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
     vi.stubEnv('NODE_ENV', 'test');
+    vi.stubEnv('SPLOOT_DEPLOYMENT_IDENTITY', 'local-qa');
+    vi.stubEnv('SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES', 'local-qa');
 
     expect(validateImportUrl('http://localhost:3000/qa-blob-seed/x.png')).toMatchObject({
       ok: true,
@@ -51,6 +53,8 @@ describe('validateImportUrl', () => {
     vi.stubEnv('SPLOOT_QA_ALLOW_LOCAL_URL_IMPORT', '1');
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
     vi.stubEnv('NODE_ENV', 'test');
+    vi.stubEnv('SPLOOT_DEPLOYMENT_IDENTITY', 'local-qa');
+    vi.stubEnv('SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES', 'local-qa');
 
     expect(validateImportUrl('http://169.254.169.254/latest/meta-data')).toMatchObject({
       ok: false,
@@ -62,6 +66,9 @@ describe('validateImportUrl', () => {
     vi.stubEnv('SPLOOT_QA_ALLOW_LOCAL_URL_IMPORT', '1');
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
     vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('DEPLOYMENT_ENV', 'production');
+    vi.stubEnv('SPLOOT_DEPLOYMENT_IDENTITY', 'production');
+    vi.stubEnv('SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES', 'production');
 
     expect(validateImportUrl('http://localhost:3000/x.png')).toMatchObject({ ok: false });
   });

@@ -2,13 +2,30 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
-  authenticateRequest: vi.fn(),
+  verifyBearerOrThrow: vi.fn(),
+  currentUser: vi.fn(),
+  syncUser: vi.fn(),
   ingestImage: vi.fn(),
   uploadGateEnabled: true,
 }));
 
-vi.mock('@/lib/auth/request-auth', () => ({
-  authenticateRequest: mocks.authenticateRequest,
+vi.mock('@/lib/auth/verify-bearer', () => ({
+  verifyBearerOrThrow: mocks.verifyBearerOrThrow,
+}));
+
+vi.mock('@clerk/nextjs/server', () => ({
+  currentUser: mocks.currentUser,
+}));
+
+vi.mock('@/lib/db', () => ({
+  prisma: {},
+  syncUser: mocks.syncUser,
+}));
+
+vi.mock('@/lib/circuit-breaker', () => ({
+  getUserSyncCircuitBreaker: () => ({
+    execute: (operation: () => Promise<void>) => operation(),
+  }),
 }));
 
 vi.mock('@/lib/upload/ingest-image', () => ({
@@ -37,10 +54,12 @@ import { POST, GET } from '@/app/share-target/route';
 const BASE = 'http://localhost:3000';
 
 function authed(userId = 'qa-design-user') {
-  mocks.authenticateRequest.mockResolvedValue({
-    status: 'authenticated',
-    principal: { userId },
+  mocks.verifyBearerOrThrow.mockResolvedValue(userId);
+  mocks.currentUser.mockResolvedValue({
+    id: userId,
+    emailAddresses: [{ emailAddress: `${userId}@sploot.test` }],
   });
+  mocks.syncUser.mockResolvedValue(undefined);
 }
 
 function shareRequest(files: File[]): NextRequest {
@@ -61,17 +80,38 @@ function pngFile(name = 'shared.png'): File {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.uploadGateEnabled = true;
+  vi.stubEnv('CLERK_SECRET_KEY', 'sk_test_share_target');
+  vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', 'pk_test_share_target');
+  vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'disabled');
+  authed();
 });
 
 describe('POST /share-target', () => {
   it('redirects unauthenticated shares to sign-in', async () => {
-    mocks.authenticateRequest.mockResolvedValue({ status: 'unauthenticated', reason: 'x' });
+    mocks.verifyBearerOrThrow.mockRejectedValue(new Error('Unauthorized'));
 
     const response = await POST(shareRequest([pngFile()]));
 
     expect(response.status).toBe(303);
-    expect(response.headers.get('location')).toBe(`${BASE}/sign-in`);
+    expect(response.headers.get('location')).toBe(
+      `${BASE}/sign-in?redirect_url=%2Fshare-target`
+    );
     expect(mocks.ingestImage).not.toHaveBeenCalled();
+  });
+
+  it('keeps the sign-in destination internal when a share query is attacker-controlled', async () => {
+    mocks.verifyBearerOrThrow.mockRejectedValue(new Error('Unauthorized'));
+
+    const response = await POST(new NextRequest(
+      `${BASE}/share-target?redirect_url=https%3A%2F%2Fevil.example`,
+      { method: 'POST', body: new FormData() }
+    ));
+
+    expect(response.status).toBe(303);
+    const location = new URL(response.headers.get('location')!);
+    expect(location.origin).toBe(BASE);
+    expect(location.pathname).toBe('/sign-in');
+    expect(location.searchParams.get('redirect_url')).toBe('/share-target');
   });
 
   it('ingests each shared image and redirects to the library with counts', async () => {
@@ -124,6 +164,20 @@ describe('POST /share-target', () => {
     const response = await POST(shareRequest([pngFile()]));
 
     expect(response.status).toBe(303);
+    expect(mocks.ingestImage).not.toHaveBeenCalled();
+  });
+
+  it('returns typed 503 instead of redirecting a sync outage to sign-in', async () => {
+    mocks.syncUser.mockRejectedValue(new Error('database unavailable'));
+
+    const response = await POST(shareRequest([pngFile()]));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Authentication temporarily unavailable',
+      code: 'sync_unavailable',
+      retryable: true,
+    });
     expect(mocks.ingestImage).not.toHaveBeenCalled();
   });
 });

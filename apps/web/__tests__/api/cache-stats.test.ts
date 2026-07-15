@@ -34,6 +34,8 @@ describe('/api/cache/stats', () => {
     vi.clearAllMocks();
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
     vi.stubEnv('SPLOOT_QA_AUTH_SECRET', QA_SECRET);
+    vi.stubEnv('SPLOOT_DEPLOYMENT_IDENTITY', 'local-qa');
+    vi.stubEnv('SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES', 'local-qa');
     vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', '');
     vi.stubEnv('CLERK_SECRET_KEY', '');
   });

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthWithUser } from '@/lib/auth/server';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 
 /**
  * User Sync Health Check Endpoint
@@ -13,18 +14,10 @@ import { withObservability } from '@/lib/with-observability';
  *
  * Returns comprehensive health status for user sync system
  */
-async function getHandler(req: NextRequest) {
+async function getHandler(_req: NextRequest, _context: RouteContext, { principal, auth }: AuthenticatedApiContext) {
   try {
-    // Get auth with explicit sync status
-    const { userId, syncStatus, syncError } = await getAuthWithUser();
-
-    if (!userId) {
-      return NextResponse.json({
-        status: 'unauthenticated',
-        healthy: false,
-        message: 'User not authenticated',
-      });
-    }
+    const userId = principal.userId;
+    const { syncStatus, syncError } = auth;
 
     // Check if user actually exists in database
     const dbUser = await prisma?.user.findUnique({
@@ -67,7 +60,7 @@ async function getHandler(req: NextRequest) {
   }
 }
 
-export const GET = withObservability(getHandler, {
+export const GET = withObservability(withAuthenticatedApi(getHandler, { requireUserSync: true }), {
   operation: 'health:user-sync',
   skipTiming: true,
 });

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { authenticateRequest } from '@/lib/auth/request-auth';
-import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { blobConfigured } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { ingestImage } from '@/lib/upload/ingest-image';
@@ -12,6 +11,7 @@ import {
   StorageQuotaExceededError,
 } from '@/lib/quota/storage-quota-policy';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 
 /**
  * Configure route segment options
@@ -28,7 +28,7 @@ export const maxDuration = 60;
  * blob upload → record → embedding) lives in lib/upload/ingest-image.ts and
  * is shared with every other ingestion surface (share-target, URL import).
  */
-async function postHandler(req: NextRequest) {
+async function postHandler(req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   const startTime = Date.now();
 
   try {
@@ -36,14 +36,7 @@ async function postHandler(req: NextRequest) {
     const url = new URL(req.url);
     const syncEmbeddings = url.searchParams.get('sync_embeddings') === 'true';
 
-    // Authenticate user: Clerk bearer/cookies, the qa-local harness, or a
-    // personal upload token (Apple Shortcut / CLI). allowUploadToken is what
-    // makes this an upload-only credential — no other route opts in.
-    const auth = await authenticateRequest(req, { allowUploadToken: true });
-    if (auth.status !== 'authenticated') {
-      return unauthorizedResponse();
-    }
-    const userId = auth.principal.userId;
+    const userId = principal.userId;
 
     const uploadGate = getRuntimeGate('uploads');
     if (!uploadGate.enabled) {
@@ -105,10 +98,6 @@ async function postHandler(req: NextRequest) {
   } catch (error) {
     unstable_rethrow(error);
 
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
     if (error instanceof StorageQuotaExceededError) {
       return NextResponse.json(storageQuotaError(error.snapshot), { status: 403 });
     }
@@ -136,12 +125,7 @@ async function postHandler(req: NextRequest) {
 /**
  * GET endpoint for checking upload service status
  */
-async function getHandler(req: NextRequest) {
-  const auth = await authenticateRequest(req);
-  if (auth.status !== 'authenticated') {
-    return unauthorizedResponse();
-  }
-
+async function getHandler(_req: NextRequest, _context: RouteContext, _auth: AuthenticatedApiContext) {
   return NextResponse.json({
     status: 'ready',
     blobConfigured,
@@ -152,9 +136,12 @@ async function getHandler(req: NextRequest) {
   });
 }
 
-export const POST = withObservability(postHandler, { operation: 'upload:direct' });
+export const POST = withObservability(
+  withAuthenticatedApi(postHandler, { allowUploadToken: true }),
+  { operation: 'upload:direct' }
+);
 
-export const GET = withObservability(getHandler, {
+export const GET = withObservability(withAuthenticatedApi(getHandler), {
   operation: 'upload:status',
   skipTiming: true,
 });

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireUserIdWithSync } from '@/lib/auth/server';
-import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
@@ -11,7 +10,8 @@ import { logError } from '@/lib/observability-logger';
  */
 async function patchHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext
 ) {
   try {
     const params = await context.params;
@@ -23,7 +23,7 @@ async function patchHandler(
         { status: 404 }
       );
     }
-    const userId = await requireUserIdWithSync();
+    const userId = principal.userId;
     const { name, color } = await req.json();
 
     if ( !prisma) {
@@ -88,10 +88,6 @@ async function patchHandler(
       },
     });
   } catch (error) {
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
     logError('tags:update-failed', error);
     return NextResponse.json(
       { error: 'Failed to update tag' },
@@ -105,7 +101,8 @@ async function patchHandler(
  */
 async function deleteHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext
 ) {
   try {
     const params = await context.params;
@@ -117,7 +114,7 @@ async function deleteHandler(
         { status: 404 }
       );
     }
-    const userId = await requireUserIdWithSync();
+    const userId = principal.userId;
 
     if ( !prisma) {
       return NextResponse.json(
@@ -153,10 +150,6 @@ async function deleteHandler(
       message: 'Tag deleted successfully',
     });
   } catch (error) {
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
     logError('tags:delete-failed', error);
     return NextResponse.json(
       { error: 'Failed to delete tag' },
@@ -165,5 +158,11 @@ async function deleteHandler(
   }
 }
 
-export const PATCH = withObservability(patchHandler, { operation: 'tags:update' });
-export const DELETE = withObservability(deleteHandler, { operation: 'tags:delete' });
+export const PATCH = withObservability(
+  withAuthenticatedApi(patchHandler, { requireUserSync: true }),
+  { operation: 'tags:update' }
+);
+export const DELETE = withObservability(
+  withAuthenticatedApi(deleteHandler, { requireUserSync: true }),
+  { operation: 'tags:delete' }
+);

@@ -280,6 +280,8 @@ async function main() {
     ...process.env,
     DATABASE_URL: process.env.DATABASE_URL ?? DEFAULT_DB_URL,
     SPLOOT_QA_AUTH_MODE: 'enabled',
+    SPLOOT_DEPLOYMENT_IDENTITY: 'local-qa',
+    SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES: 'local-qa',
     SPLOOT_QA_AUTH_SECRET: await resolveAuthSecret(args.baseUrl),
     CI: '1',
   };

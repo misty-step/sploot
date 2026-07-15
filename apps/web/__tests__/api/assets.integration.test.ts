@@ -20,6 +20,15 @@ vi.mock("@/lib/auth/server", () => ({
   requireUserIdWithSync: auth.requireUserIdWithSync,
 }));
 
+vi.mock("@/lib/auth/request-auth", () => ({
+  authenticateRequest: async () => {
+    const result = await auth.getAuthWithUser();
+    return result.userId
+      ? { status: "authenticated", principal: { userId: result.userId }, syncStatus: "success" }
+      : { status: "unauthenticated", reason: "clerk-unauthorized" };
+  },
+}));
+
 import { GET } from "@/app/api/assets/route";
 import { prisma, upsertAssetEmbedding } from "@/lib/db";
 

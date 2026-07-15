@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { prisma, vectorSearch, type VectorSearchRow } from '@/lib/db';
-import { getAuth } from '@/lib/auth/server';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
 import { DEFAULT_NEAR_DUPLICATE_DISTANCE, hammingDistanceHex } from '@/lib/upload/perceptual-hash-service';
 
 async function getHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext
 ) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const userId = principal.userId;
 
     const params = await context.params;
     const id = params?.id;
@@ -113,4 +111,4 @@ async function getHandler(
   }
 }
 
-export const GET = withObservability(getHandler, { operation: 'assets:similar' });
+export const GET = withObservability(withAuthenticatedApi(getHandler), { operation: 'assets:similar' });

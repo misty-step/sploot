@@ -9,6 +9,8 @@ describe('qa-local auth tokens', () => {
   it('authenticates a signed non-production QA principal from headers', async () => {
     const env = {
       NODE_ENV: 'test',
+      SPLOOT_DEPLOYMENT_IDENTITY: 'local-qa',
+      SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES: 'local-qa',
       SPLOOT_QA_AUTH_MODE: 'enabled',
       SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
     };
@@ -35,7 +37,7 @@ describe('qa-local auth tokens', () => {
     }
   });
 
-  it('rejects QA auth in production even when the secret and mode are set', async () => {
+  it('rejects QA auth without an explicit non-production deployment identity', async () => {
     const token = await createQaLocalAuthToken({
       userId: 'qa-user-1',
       secret: 'test-secret-with-enough-entropy',
@@ -48,12 +50,54 @@ describe('qa-local auth tokens', () => {
         NODE_ENV: 'production',
         SPLOOT_QA_AUTH_MODE: 'enabled',
         SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
+        SPLOOT_DEPLOYMENT_IDENTITY: 'production',
+        SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES: 'production',
       }
     );
 
     expect(result).toMatchObject({
-      status: 'forbidden',
-      reason: 'qa-local-disabled',
+      status: 'unauthenticated',
+      reason: 'qa-local-missing',
     });
+  });
+
+  it('requires the allowlist even when NODE_ENV is non-production', async () => {
+    const token = await createQaLocalAuthToken({
+      userId: 'qa-user-1',
+      secret: 'test-secret-with-enough-entropy',
+      expiresInSeconds: 60,
+    });
+
+    const result = await verifyQaLocalAuthHeaders(
+      new Headers({ [getQaLocalAuthHeader()]: token }),
+      {
+        NODE_ENV: 'test',
+        SPLOOT_QA_AUTH_MODE: 'enabled',
+        SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
+      }
+    );
+
+    expect(result).toMatchObject({ status: 'unauthenticated', reason: 'qa-local-missing' });
+  });
+
+  it('rejects QA auth in production even when a local identity is allowlisted', async () => {
+    const token = await createQaLocalAuthToken({
+      userId: 'qa-user-1',
+      secret: 'test-secret-with-enough-entropy',
+      expiresInSeconds: 60,
+    });
+
+    const result = await verifyQaLocalAuthHeaders(
+      new Headers({ [getQaLocalAuthHeader()]: token }),
+      {
+        NODE_ENV: 'production',
+        SPLOOT_QA_AUTH_MODE: 'enabled',
+        SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
+        SPLOOT_DEPLOYMENT_IDENTITY: 'local-qa',
+        SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES: 'local-qa',
+      }
+    );
+
+    expect(result).toMatchObject({ status: 'unauthenticated', reason: 'qa-local-missing' });
   });
 });

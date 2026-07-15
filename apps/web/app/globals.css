@@ -101,6 +101,7 @@
   --sploot-dot: rgba(255, 255, 255, 0.68);
   --sploot-grid-line: rgba(28, 21, 71, 0.05);
   --sploot-touch-target: 44px;
+  --sploot-auth-placeholder: #5c5270;
   --sploot-command-surface: var(--sploot-panel);
   --sploot-command-surface-contrast: var(--sploot-ink);
   --sploot-pile-surface: var(--sploot-panel);
@@ -482,6 +483,7 @@ select:focus-visible {
   --sploot-dot: rgba(255, 255, 255, 0.09);
   --sploot-grid-line: rgba(255, 243, 220, 0.06);
   --sploot-touch-target: 44px;
+  --sploot-auth-placeholder: #d9ccba;
   --sploot-command-surface: var(--sploot-panel);
   --sploot-command-surface-contrast: var(--sploot-ink);
   --sploot-pile-surface: var(--sploot-panel);
@@ -627,6 +629,20 @@ select:focus-visible {
   background-color: var(--sploot-paper);
   background-image: radial-gradient(var(--sploot-dot) 2px, transparent 2.6px);
   background-size: 26px 26px;
+}
+
+/* Keep the skip destination focusable and keep both the bypass and landing
+   landmark visibly outlined when keyboard focus moves there. */
+.skip-link {
+  transform: translateY(-180%);
+  transition: transform 120ms ease-out;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+  outline: 4px solid var(--sploot-focus);
+  outline-offset: 4px;
 }
 
 .sploot-sticker-shadow {
@@ -923,6 +939,12 @@ select:focus-visible {
    classes cannot reach — pin them to the substrate. */
 .cl-formFieldInput {
   box-shadow: none !important;
+  color: var(--foreground) !important;
+  background: var(--background) !important;
+}
+.cl-formFieldInput::placeholder {
+  color: var(--sploot-auth-placeholder) !important;
+  opacity: 1 !important;
 }
 .cl-formFieldInput:focus,
 .cl-formFieldInput:focus-visible {
@@ -942,22 +964,18 @@ select:focus-visible {
 .cl-footer [class^='cl-internal'] * {
   color: var(--muted-foreground) !important;
 }
-/* Clerk renders 34px inputs/buttons; phones get the 44px touch floor. */
-@media (max-width: 640px) {
-  .cl-formFieldInput,
-  .cl-formButtonPrimary,
-  .cl-socialButtonsBlockButton {
-    min-height: var(--sploot-touch-target) !important;
-  }
-  .cl-formFieldInputShowPasswordButton {
-    min-height: var(--sploot-touch-target) !important;
-    min-width: var(--sploot-touch-target) !important;
-  }
-  .cl-footerActionLink {
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    min-height: var(--sploot-touch-target) !important;
-    min-width: var(--sploot-touch-target) !important;
-  }
+/* Clerk renders compact controls by default; keep the auth door touch-safe on
+   desktop too so keyboard and pointer targets share one contract. */
+.cl-formFieldInput,
+.cl-formButtonPrimary,
+.cl-socialButtonsBlockButton {
+  min-height: var(--sploot-touch-target) !important;
+}
+.cl-formFieldInputShowPasswordButton,
+.cl-footerActionLink {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: var(--sploot-touch-target) !important;
+  min-width: var(--sploot-touch-target) !important;
 }

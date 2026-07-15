@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { requireUserIdWithSync } from '@/lib/auth/server';
-import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
@@ -12,10 +11,11 @@ import { logError } from '@/lib/observability-logger';
  */
 async function getHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext
 ) {
   try {
-    const userId = await requireUserIdWithSync();
+    const userId = principal.userId;
     const params = await context.params;
     const id = params?.id;
 
@@ -65,10 +65,6 @@ async function getHandler(
       })),
     });
   } catch (error) {
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
     unstable_rethrow(error);
     logError('assets:tags-list-failed', error);
     return NextResponse.json(
@@ -83,10 +79,11 @@ async function getHandler(
  */
 async function postHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext
 ) {
   try {
-    const userId = await requireUserIdWithSync();
+    const userId = principal.userId;
     const params = await context.params;
     const id = params?.id;
 
@@ -211,10 +208,6 @@ async function postHandler(
       })),
     });
   } catch (error) {
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
     unstable_rethrow(error);
     logError('assets:tags-add-failed', error);
     return NextResponse.json(
@@ -229,10 +222,11 @@ async function postHandler(
  */
 async function deleteHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext
 ) {
   try {
-    const userId = await requireUserIdWithSync();
+    const userId = principal.userId;
     const params = await context.params;
     const id = params?.id;
 
@@ -289,10 +283,6 @@ async function deleteHandler(
       message: 'Tags removed from asset',
     });
   } catch (error) {
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
     unstable_rethrow(error);
     logError('assets:tags-remove-failed', error);
     return NextResponse.json(
@@ -302,6 +292,15 @@ async function deleteHandler(
   }
 }
 
-export const GET = withObservability(getHandler, { operation: 'assets:tags:list' });
-export const POST = withObservability(postHandler, { operation: 'assets:tags:add' });
-export const DELETE = withObservability(deleteHandler, { operation: 'assets:tags:remove' });
+export const GET = withObservability(
+  withAuthenticatedApi(getHandler, { requireUserSync: true }),
+  { operation: 'assets:tags:list' }
+);
+export const POST = withObservability(
+  withAuthenticatedApi(postHandler, { requireUserSync: true }),
+  { operation: 'assets:tags:add' }
+);
+export const DELETE = withObservability(
+  withAuthenticatedApi(deleteHandler, { requireUserSync: true }),
+  { operation: 'assets:tags:remove' }
+);

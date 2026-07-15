@@ -1,7 +1,6 @@
-import { syncUser } from '../db';
-import { getUserSyncCircuitBreaker } from '../circuit-breaker';
+import { syncClerkUser } from './user-sync';
 import { verifyQaLocalAuthHeaders } from './qa-local';
-import type { RequestAuthResult } from './types';
+import type { AuthFailureCode, RequestAuthResult } from './types';
 
 interface AuthResult {
   userId: string | null;
@@ -22,24 +21,37 @@ interface AuthWithUserResult extends AuthResult {
    * Error message if sync failed (for debugging/logging only)
    */
   syncError?: string;
+  authFailure?: {
+    code: AuthFailureCode;
+    httpStatus: 401 | 409 | 503;
+    retryable: boolean;
+  };
 }
 
 export async function getAuth(): Promise<AuthResult> {
-  const qaAuth = await getQaLocalAuthFromCurrentRequest();
-  if (qaAuth?.status === 'authenticated') {
+  try {
+    const qaAuth = await getQaLocalAuthFromCurrentRequest();
+    if (qaAuth?.status === 'authenticated') {
+      return {
+        userId: qaAuth.principal.userId,
+        sessionId: qaAuth.principal.sessionId ?? null,
+        getToken: async () => null,
+      };
+    }
+    if (isTerminalQaResult(qaAuth)) return emptyAuthResult();
+
+    const clerk = await import('@clerk/nextjs/server');
+    const auth = await clerk.auth();
     return {
-      userId: qaAuth.principal.userId,
-      sessionId: qaAuth.principal.sessionId ?? null,
-      getToken: async () => null,
+      userId: auth.userId,
+      sessionId: auth.sessionId,
+      getToken: auth.getToken as any,
     };
+  } catch {
+    // The landing page remains public when Clerk is unavailable; it must not
+    // turn a provider outage into an unredacted framework error.
+    return emptyAuthResult();
   }
-  const clerk = await import('@clerk/nextjs/server');
-  const auth = await clerk.auth();
-  return {
-    userId: auth.userId,
-    sessionId: auth.sessionId,
-    getToken: auth.getToken as any,
-  };
 }
 
 /**
@@ -47,99 +59,66 @@ export async function getAuth(): Promise<AuthResult> {
  * This automatically syncs Clerk users with our database
  */
 export async function getAuthWithUser(): Promise<AuthWithUserResult> {
-  const qaAuth = await getQaLocalAuthFromCurrentRequest();
-  if (qaAuth?.status === 'authenticated') {
-    return {
-      userId: qaAuth.principal.userId,
-      sessionId: qaAuth.principal.sessionId ?? null,
-      getToken: async () => null,
-      userEmail: qaAuth.principal.email,
-      syncStatus: 'skipped',
-    };
-  }
-  const clerk = await import('@clerk/nextjs/server');
-  const { logger } = await import('../observability-logger');
-
-  const authResult = await clerk.auth();
-
-  if (!authResult.userId) {
-    return {
-      userId: authResult.userId,
-      sessionId: authResult.sessionId,
-      getToken: authResult.getToken as any,
-      syncStatus: 'skipped', // No user to sync
-    };
-  }
-
   try {
-    // Get the full user details from Clerk
-    const user = await clerk.currentUser();
-    if (user) {
-      const email = user.emailAddresses[0]?.emailAddress || `${authResult.userId}@clerk.local`;
+    const qaAuth = await getQaLocalAuthFromCurrentRequest();
+    if (qaAuth?.status === 'authenticated') {
+      return {
+        userId: qaAuth.principal.userId,
+        sessionId: qaAuth.principal.sessionId ?? null,
+        getToken: async () => null,
+        userEmail: qaAuth.principal.email,
+        syncStatus: 'skipped',
+      };
+    }
+    if (isTerminalQaResult(qaAuth)) return emptySyncedAuthResult();
 
-      // Ensure user exists in database with error handling
-      // Ousterhout: Fail Fast - use circuit breaker to avoid repeated failures
-      try {
-        const circuitBreaker = getUserSyncCircuitBreaker();
+    const clerk = await import('@clerk/nextjs/server');
+    const authResult = await clerk.auth();
 
-        await circuitBreaker.execute(async () => {
-          await syncUser(authResult.userId, email);
-        });
-
-        // Sync succeeded - return success status
-        return {
-          userId: authResult.userId,
-          sessionId: authResult.sessionId,
-          getToken: authResult.getToken as any,
-          userEmail: email,
-          syncStatus: 'success',
-        };
-      } catch (dbError) {
-        // Check if circuit breaker is open (too many failures)
-        const isCircuitOpen = (dbError as Error).message.includes('Circuit breaker is OPEN');
-
-        // Log database sync error but don't block authentication
-        logger.logError('auth:db-sync-failed', dbError as Error, {
-          userId: authResult.userId,
-          email,
-          circuitBreakerOpen: isCircuitOpen,
-        });
-
-        // Allow authentication to proceed but expose sync failure
-        logger.logInfo('auth:proceeding-without-db-sync', {
-          userId: authResult.userId,
-          reason: isCircuitOpen
-            ? 'Circuit breaker open - too many sync failures'
-            : 'Database sync failed but allowing authentication',
-        });
-
-        // Sync failed - return failure status with error details
-        return {
-          userId: authResult.userId,
-          sessionId: authResult.sessionId,
-          getToken: authResult.getToken as any,
-          userEmail: email,
-          syncStatus: 'failed',
-          syncError: (dbError as Error).message,
-        };
-      }
+    if (!authResult.userId) {
+      return {
+        userId: authResult.userId,
+        sessionId: authResult.sessionId,
+        getToken: authResult.getToken as any,
+        syncStatus: 'skipped', // No user to sync
+      };
     }
 
-    // No user object from Clerk - skip sync
+    const sync = await syncClerkUser(authResult.userId);
+    if (sync.failureCode) {
+      return {
+        userId: null,
+        sessionId: authResult.sessionId,
+        getToken: authResult.getToken as any,
+        syncStatus: 'failed',
+        syncError: 'Authentication identity synchronization unavailable',
+        authFailure: {
+          code: sync.failureCode,
+          httpStatus: sync.failureCode === 'identity_missing' || sync.failureCode === 'identity_mismatch'
+            ? 401
+            : sync.failureCode === 'sync_conflict' ? 409 : 503,
+          retryable: sync.retryable ?? sync.failureCode === 'sync_unavailable',
+        },
+      };
+    }
+
     return {
       userId: authResult.userId,
       sessionId: authResult.sessionId,
       getToken: authResult.getToken as any,
-      syncStatus: 'skipped',
+      ...(sync.email ? { userEmail: sync.email } : {}),
+      syncStatus: sync.syncStatus,
     };
-  } catch (error) {
-    // Log unexpected error in auth flow
-    logger.logError('auth:unexpected-error', error as Error, {
-      userId: authResult.userId,
-    });
-
-    // Re-throw to trigger error boundary
-    throw error;
+  } catch {
+    return {
+      ...emptySyncedAuthResult(),
+      syncError: 'Authentication provider unavailable',
+      authFailure: {
+        code: 'sync_unavailable',
+        httpStatus: 503,
+        retryable: true,
+      },
+    };
   }
 }
 
@@ -156,11 +135,38 @@ export async function requireUserId(): Promise<string> {
  * Use this for any endpoint that writes to the database
  */
 export async function requireUserIdWithSync(): Promise<string> {
-  const { userId } = await getAuthWithUser();
+  const { userId, syncStatus, authFailure } = await getAuthWithUser();
   if (!userId) {
-    throw new Error('Unauthorized');
+    throw new AuthBoundaryError(authFailure?.code ?? 'identity_missing');
+  }
+  if (syncStatus === 'failed') {
+    throw new AuthBoundaryError(authFailure?.code ?? 'sync_unavailable');
   }
   return userId;
+}
+
+export class AuthBoundaryError extends Error {
+  readonly code: AuthFailureCode;
+
+  constructor(code: AuthFailureCode) {
+    super(code === 'identity_missing' || code === 'identity_mismatch'
+      ? 'Unauthorized'
+      : 'Authentication temporarily unavailable');
+    this.name = 'AuthBoundaryError';
+    this.code = code;
+  }
+}
+
+function emptyAuthResult(): AuthResult {
+  return { userId: null, sessionId: null, getToken: async () => null };
+}
+
+function emptySyncedAuthResult(): AuthWithUserResult {
+  return { ...emptyAuthResult(), syncStatus: 'failed' };
+}
+
+function isTerminalQaResult(result: RequestAuthResult | null): boolean {
+  return result?.status === 'unauthenticated' && result.reason !== 'qa-local-missing';
 }
 
 async function getQaLocalAuthFromCurrentRequest(): Promise<RequestAuthResult | null> {

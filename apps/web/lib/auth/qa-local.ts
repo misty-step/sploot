@@ -2,7 +2,10 @@ import type { AuthenticatedPrincipal, RequestAuthResult } from './types';
 
 const QA_LOCAL_AUTH_HEADER = 'x-sploot-qa-auth';
 const QA_LOCAL_AUTH_COOKIE = 'sploot_qa_auth';
+const QA_DEPLOYMENT_IDENTITY_ENV = 'SPLOOT_DEPLOYMENT_IDENTITY';
+const QA_ALLOWED_DEPLOYMENT_IDENTITIES_ENV = 'SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES';
 const TOKEN_VERSION = 1;
+const MAX_TOKEN_LENGTH = 4096;
 
 interface QaLocalAuthPayload {
   v: typeof TOKEN_VERSION;
@@ -31,8 +34,27 @@ export function getQaLocalAuthCookieName(): string {
 }
 
 export function isQaLocalAuthEnabled(env: Record<string, string | undefined> = process.env): boolean {
-  return env.SPLOOT_QA_AUTH_MODE === 'enabled' &&
-    env.NODE_ENV !== 'production';
+  if (env.SPLOOT_QA_AUTH_MODE !== 'enabled') {
+    return false;
+  }
+
+  const deploymentIdentity = env[QA_DEPLOYMENT_IDENTITY_ENV]?.trim();
+  const allowedIdentities = (env[QA_ALLOWED_DEPLOYMENT_IDENTITIES_ENV] ?? '')
+    .split(',')
+    .map(identity => identity.trim())
+    .filter(Boolean);
+
+  if (!deploymentIdentity || !allowedIdentities.includes(deploymentIdentity)) {
+    return false;
+  }
+
+  const normalizedIdentity = deploymentIdentity.toLowerCase();
+  const normalizedDeploymentEnvironment = env.DEPLOYMENT_ENV?.trim().toLowerCase();
+  return env.NODE_ENV !== 'production' &&
+    normalizedIdentity !== 'production' &&
+    normalizedIdentity !== 'prod' &&
+    normalizedDeploymentEnvironment !== 'production' &&
+    normalizedDeploymentEnvironment !== 'prod';
 }
 
 export async function createQaLocalAuthToken({
@@ -69,13 +91,30 @@ export async function verifyQaLocalAuthHeaders(
   headers: Headers,
   env: Record<string, string | undefined> = process.env
 ): Promise<RequestAuthResult> {
-  const token = headers.get(QA_LOCAL_AUTH_HEADER) ?? readCookie(headers.get('cookie'), QA_LOCAL_AUTH_COOKIE);
-  if (!token) {
+  const hasHeader = headers.has(QA_LOCAL_AUTH_HEADER);
+  const hasCookie = hasQaLocalCookie(headers);
+
+  if (!isQaLocalAuthEnabled(env)) {
+    // A stray QA marker is not an auth decision when this deployment has not
+    // explicitly opted into QA. Let a valid Clerk or upload-token credential
+    // continue through the normal policy chain.
     return { status: 'unauthenticated', reason: 'qa-local-missing' };
   }
 
-  if (!isQaLocalAuthEnabled(env)) {
-    return { status: 'forbidden', reason: 'qa-local-disabled' };
+  // Do not decode, JSON-parse, or verify any QA credential until the
+  // environment gate above has explicitly enabled this local-only door.
+  const headerToken = headers.get(QA_LOCAL_AUTH_HEADER);
+  const cookieToken = readCookie(headers.get('cookie'), QA_LOCAL_AUTH_COOKIE);
+
+  if (hasHeader && hasCookie) {
+    return { status: 'unauthenticated', reason: 'qa-local-duplicate' };
+  }
+
+  const token = headerToken ?? cookieToken;
+  if (!token) {
+    return hasQaLocalCredential(headers)
+      ? { status: 'unauthenticated', reason: 'qa-local-invalid' }
+      : { status: 'unauthenticated', reason: 'qa-local-missing' };
   }
 
   const secret = env.SPLOOT_QA_AUTH_SECRET;
@@ -96,6 +135,10 @@ export async function verifyQaLocalAuthHeaders(
 }
 
 async function verifyQaLocalAuthToken(token: string, secret: string): Promise<QaLocalAuthPayload | null> {
+  if (token.length > MAX_TOKEN_LENGTH) {
+    return null;
+  }
+
   const [encodedPayload, signature, extra] = token.split('.');
   if (!encodedPayload || !signature || extra !== undefined) {
     return null;
@@ -165,12 +208,30 @@ function readCookie(cookieHeader: string | null, name: string): string | null {
   }
 
   const prefix = `${name}=`;
-  const cookie = cookieHeader
+  const cookies = cookieHeader
     .split(';')
     .map(part => part.trim())
-    .find(part => part.startsWith(prefix));
+    .filter(part => part.startsWith(prefix));
 
-  return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : null;
+  if (cookies.length !== 1) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(cookies[0].slice(prefix.length));
+  } catch {
+    return null;
+  }
+}
+
+function hasQaLocalCredential(headers: Headers): boolean {
+  return headers.has(QA_LOCAL_AUTH_HEADER) || hasQaLocalCookie(headers);
+}
+
+function hasQaLocalCookie(headers: Headers): boolean {
+  return (headers.get('cookie') ?? '')
+    .split(';')
+    .some(part => part.trim().startsWith(`${QA_LOCAL_AUTH_COOKIE}=`));
 }
 
 function base64UrlEncode(value: string): string {

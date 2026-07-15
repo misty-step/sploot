@@ -13,6 +13,15 @@ vi.mock('@/lib/auth/server', () => ({
   getAuth: vi.fn(),
 }));
 
+vi.mock('@/lib/auth/request-auth', () => ({
+  authenticateRequest: async () => {
+    const auth = await mockGetAuth();
+    return auth.userId
+      ? { status: 'authenticated', principal: { userId: auth.userId }, syncStatus: 'skipped' }
+      : { status: 'unauthenticated', reason: 'clerk-unauthorized' };
+  },
+}));
+
 const observabilityLoggerMock = vi.hoisted(() => ({
   logInfo: vi.fn(),
   logError: vi.fn(),

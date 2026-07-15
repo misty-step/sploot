@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireUserIdWithSync } from '@/lib/auth/server';
-import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
 import { getStorageQuotaSnapshot } from '@/lib/quota/storage-quota-policy';
 
@@ -19,9 +19,9 @@ import { getStorageQuotaSnapshot } from '@/lib/quota/storage-quota-policy';
  *
  * Single asset aggregate plus quota snapshot.
  */
-async function getHandler(_req: NextRequest) {
+async function getHandler(_req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   try {
-    const userId = await requireUserIdWithSync();
+    const userId = principal.userId;
 
     if (!prisma) {
       return NextResponse.json(
@@ -64,10 +64,6 @@ async function getHandler(_req: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
     logError('stats:get-failed', error);
     return NextResponse.json(
       { error: 'Failed to fetch stats' },
@@ -76,4 +72,7 @@ async function getHandler(_req: NextRequest) {
   }
 }
 
-export const GET = withObservability(getHandler, { operation: 'stats:get' });
+export const GET = withObservability(
+  withAuthenticatedApi(getHandler, { requireUserSync: true }),
+  { operation: 'stats:get' }
+);

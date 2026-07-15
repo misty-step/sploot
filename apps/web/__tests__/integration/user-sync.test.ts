@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { syncUser } from '@/lib/db';
 import { prisma } from '@/lib/db';
 
@@ -13,6 +13,7 @@ describe('User Sync Integration Tests', () => {
   // Test user IDs
   const oldUserId = 'user_old_test_12345';
   const newUserId = 'user_new_test_67890';
+  const boundUserId = 'user_bound_identity_123';
   const testEmail = 'test@sploot-integration-test.com';
 
   beforeEach(async () => {
@@ -49,6 +50,7 @@ describe('User Sync Integration Tests', () => {
         OR: [
           { id: oldUserId },
           { id: newUserId },
+          { id: boundUserId },
           { email: testEmail },
         ],
       },
@@ -89,6 +91,7 @@ describe('User Sync Integration Tests', () => {
         OR: [
           { id: oldUserId },
           { id: newUserId },
+          { id: boundUserId },
           { email: testEmail },
         ],
       },
@@ -357,15 +360,37 @@ describe('User Sync Integration Tests', () => {
       expect(users).toHaveLength(1);
     });
 
-    it('should handle database unavailable gracefully', async () => {
-      // Act: Try to sync when prisma is null
-      const mockPrismaNull = vi.fn(() => null);
-      const result = await syncUser(newUserId, testEmail);
+    it('fails closed when the sync contract cannot complete', async () => {
+      if (!prisma) {
+        await expect(syncUser(newUserId, testEmail)).rejects.toThrow('database unavailable');
+        return;
+      }
 
-      // Assert: Returns mock user object without throwing
-      expect(result).toBeTruthy();
-      expect(result.id).toBe(newUserId);
-      expect(result.email).toBe(testEmail);
+      // A schema/provider failure must remain an error for the auth boundary;
+      // it must never synthesize an in-memory user row.
+      await expect(
+        prisma.$queryRaw`SELECT 1 FROM user_identities`
+      ).resolves.toBeDefined();
+    });
+
+    it('rejects a provider subject already bound to another application user', async () => {
+      if (!prisma) return;
+
+      await prisma.user.create({
+        data: { id: boundUserId, email: 'bound-identity@sploot-integration-test.com' },
+      });
+      await prisma.userIdentity.create({
+        data: {
+          userId: boundUserId,
+          provider: 'clerk',
+          providerSubject: newUserId,
+          email: 'bound-identity@sploot-integration-test.com',
+        },
+      });
+
+      await expect(syncUser(newUserId, testEmail)).rejects.toMatchObject({
+        code: 'AUTH_IDENTITY_CONFLICT',
+      });
     });
   });
 

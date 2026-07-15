@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@clerk/nextjs/server';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { addConnection, removeConnection } from '@/lib/sse-broadcaster';
 import { withObservability } from '@/lib/with-observability';
@@ -22,12 +22,8 @@ export const dynamic = 'force-dynamic'; // Disable caching
  * SSE endpoint for embedding updates
  * GET /api/sse/embedding-updates?assetIds=id1,id2,id3
  */
-async function getHandler(request: NextRequest) {
-  // Authenticate user
-  const { userId } = await auth();
-  if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+async function getHandler(request: NextRequest, _context: {}, { principal }: AuthenticatedApiContext) {
+  const userId = principal.userId;
 
   // Get asset IDs from query params
   const searchParams = request.nextUrl.searchParams;
@@ -182,7 +178,7 @@ async function getHandler(request: NextRequest) {
   });
 }
 
-export const GET = withObservability(getHandler, {
+export const GET = withObservability(withAuthenticatedApi(getHandler), {
   operation: 'sse:embedding-updates',
   skipTiming: true,
   skipLogging: true,

@@ -3,9 +3,9 @@ import { unstable_rethrow } from 'next/navigation';
 import { prisma, vectorSearch, logSearch, type VectorSearchRow } from '@/lib/db';
 import { CLIP_MODEL, createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
 import { getCacheService } from '@/lib/cache';
-import { getAuthWithUser } from '@/lib/auth/server';
-import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 import { SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
 
@@ -218,15 +218,9 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
 export const POST = withObservability(postHandler, { operation: 'search:query' });
 
 // GET endpoint for search suggestions or recent searches
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   try {
-    const { userId } = await getAuthWithUser();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type') || 'recent';
@@ -290,3 +284,8 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export const GET = withObservability(
+  withAuthenticatedApi(getHandler, { requireUserSync: true }),
+  { operation: 'search:suggestions' }
+);

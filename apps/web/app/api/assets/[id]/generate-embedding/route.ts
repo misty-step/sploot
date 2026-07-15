@@ -6,7 +6,7 @@ import {
   EmbeddingAdmissionError,
   EmbeddingError,
 } from '@/lib/embeddings';
-import { getAuth } from '@/lib/auth/server';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import {
   acquireEmbeddingProcessing,
   markEmbeddingFailed,
@@ -56,15 +56,12 @@ interface EmbeddingResponse {
   headers?: HeadersInit;
 }
 
-async function postHandler(req: NextRequest, context: RouteContext) {
+async function postHandler(req: NextRequest, context: RouteContext, { principal }: AuthenticatedApiContext) {
   const startTime = Date.now();
   performanceMetrics.totalRequests++;
 
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const userId = principal.userId;
 
     const params = await context.params;
     const id = params?.id;
@@ -483,6 +480,6 @@ async function postHandler(req: NextRequest, context: RouteContext) {
   }
 }
 
-export const POST = withObservability(postHandler, {
+export const POST = withObservability(withAuthenticatedApi(postHandler), {
   operation: 'assets:generate-embedding',
 });

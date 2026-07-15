@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createEmbeddingService, EmbeddingError } from '@/lib/embeddings';
-import { getAuth } from '@/lib/auth/server';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 
-async function postHandler(req: NextRequest) {
+async function postHandler(req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     const body = await req.json();
     const { query } = body;
@@ -77,4 +72,4 @@ async function postHandler(req: NextRequest) {
   }
 }
 
-export const POST = withObservability(postHandler, { operation: 'embeddings:text' });
+export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'embeddings:text' });

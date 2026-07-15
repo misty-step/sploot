@@ -27,6 +27,8 @@ describe('middleware auth boundary', () => {
   beforeEach(() => {
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
     vi.stubEnv('SPLOOT_QA_AUTH_SECRET', QA_SECRET);
+    vi.stubEnv('SPLOOT_DEPLOYMENT_IDENTITY', 'local-qa');
+    vi.stubEnv('SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES', 'local-qa');
   });
 
   it.each([
@@ -108,6 +110,7 @@ describe('middleware auth boundary', () => {
 
   it('does not let qa-local bypass app protection in production', async () => {
     vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('DEPLOYMENT_ENV', 'production');
     const protect = vi.fn();
     const token = await createQaLocalAuthToken({
       userId: 'qa-user-1',

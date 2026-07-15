@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuth } from '@/lib/auth/server';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { logError } from '@/lib/observability-logger';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 
 const COST_PER_UPLOAD = 0.00022; // $0.00022 per upload
 
-async function getHandler(_req: NextRequest) {
+async function getHandler(_req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const userId = principal.userId;
 
     if (!prisma) {
       return NextResponse.json({ error: 'Database unavailable' }, { status: 503 });
@@ -110,4 +108,4 @@ async function getHandler(_req: NextRequest) {
   }
 }
 
-export const GET = withObservability(getHandler, { operation: 'analytics:usage' });
+export const GET = withObservability(withAuthenticatedApi(getHandler), { operation: 'analytics:usage' });

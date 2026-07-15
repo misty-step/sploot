@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { getCacheService } from '@/lib/cache';
-import { getAuth } from '@/lib/auth/server';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { invalidateSlugCache } from '@/lib/slug-cache';
 import { withObservability } from '@/lib/with-observability';
@@ -9,16 +9,11 @@ import type { RouteContext } from '@/lib/with-observability';
 
 async function getHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext
 ) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     const params = await context.params;
     const id = params?.id;
@@ -92,16 +87,11 @@ async function getHandler(
 
 async function patchHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext
 ) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     const params = await context.params;
     const id = params?.id;
@@ -237,16 +227,11 @@ async function patchHandler(
 
 async function deleteHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext
 ) {
   try {
-    const { userId } = await getAuth();
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const userId = principal.userId;
 
     const params = await context.params;
     const id = params?.id;
@@ -337,6 +322,6 @@ async function invalidateDeletedAssetCaches(shareSlug: string | null): Promise<v
   }
 }
 
-export const GET = withObservability(getHandler, { operation: 'assets:detail' });
-export const PATCH = withObservability(patchHandler, { operation: 'assets:update' });
-export const DELETE = withObservability(deleteHandler, { operation: 'assets:delete' });
+export const GET = withObservability(withAuthenticatedApi(getHandler), { operation: 'assets:detail' });
+export const PATCH = withObservability(withAuthenticatedApi(patchHandler), { operation: 'assets:update' });
+export const DELETE = withObservability(withAuthenticatedApi(deleteHandler), { operation: 'assets:delete' });

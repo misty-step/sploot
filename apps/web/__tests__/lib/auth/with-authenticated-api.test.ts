@@ -34,6 +34,8 @@ describe('withAuthenticatedApi', () => {
         allowQaLocal: true,
         env: {
           NODE_ENV: 'test',
+          SPLOOT_DEPLOYMENT_IDENTITY: 'local-qa',
+          SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES: 'local-qa',
           SPLOOT_QA_AUTH_MODE: 'enabled',
           SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
         },

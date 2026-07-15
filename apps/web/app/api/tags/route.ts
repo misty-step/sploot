@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireUserIdWithSync } from '@/lib/auth/server';
-import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
+import type { RouteContext } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
 
 /**
  * GET /api/tags - Get all tags for the current user
  */
-async function getHandler(req: NextRequest) {
+async function getHandler(req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   try {
-    const userId = await requireUserIdWithSync();
+    const userId = principal.userId;
 
     if ( !prisma) {
       return NextResponse.json(
@@ -47,10 +47,6 @@ async function getHandler(req: NextRequest) {
       })),
     });
   } catch (error) {
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
     logError('tags:list-failed', error);
     return NextResponse.json(
       { error: 'Failed to fetch tags' },
@@ -62,9 +58,9 @@ async function getHandler(req: NextRequest) {
 /**
  * POST /api/tags - Create a new tag
  */
-async function postHandler(req: NextRequest) {
+async function postHandler(req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   try {
-    const userId = await requireUserIdWithSync();
+    const userId = principal.userId;
     const { name, color } = await req.json();
 
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -115,10 +111,6 @@ async function postHandler(req: NextRequest) {
       },
     });
   } catch (error) {
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
     logError('tags:create-failed', error);
     return NextResponse.json(
       { error: 'Failed to create tag' },
@@ -127,5 +119,11 @@ async function postHandler(req: NextRequest) {
   }
 }
 
-export const GET = withObservability(getHandler, { operation: 'tags:list' });
-export const POST = withObservability(postHandler, { operation: 'tags:create' });
+export const GET = withObservability(
+  withAuthenticatedApi(getHandler, { requireUserSync: true }),
+  { operation: 'tags:list' }
+);
+export const POST = withObservability(
+  withAuthenticatedApi(postHandler, { requireUserSync: true }),
+  { operation: 'tags:create' }
+);

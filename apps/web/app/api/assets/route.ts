@@ -8,14 +8,14 @@ import {
 import { createEmbeddingService, EmbeddingError } from "@/lib/embeddings";
 import crypto from "crypto";
 import { getCacheService } from "@/lib/cache";
-import { getAuthWithUser, requireUserIdWithSync } from "@/lib/auth/server";
-import { isUnauthorizedAuthError, unauthorizedResponse } from "@/lib/auth/api";
+import { withAuthenticatedApi, type AuthenticatedApiContext } from "@/lib/auth/with-authenticated-api";
 import { prisma, upsertAssetEmbedding } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import logger from "@/lib/logger";
 import { logError } from "@/lib/observability-logger";
 import { createErrorResponse } from "@/lib/error-response";
 import { withObservability } from "@/lib/with-observability";
+import type { RouteContext } from "@/lib/with-observability";
 import { logger as observabilityLogger } from "@/lib/observability-logger";
 import { getDbFingerprint } from "@/lib/db-fingerprint";
 import { getRuntimeGate, runtimeGateResponse } from "@/lib/runtime-gates";
@@ -217,12 +217,12 @@ async function fetchSeededShuffleAssets(
   return [...tailRows, ...headRows];
 }
 
-async function postHandler(req: NextRequest) {
+async function postHandler(req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   const requestId = crypto.randomUUID();
   let quotaReservationId: string | null = null;
 
   try {
-    const userId = await requireUserIdWithSync();
+    const userId = principal.userId;
 
     const uploadGate = getRuntimeGate("uploads");
     if (!uploadGate.enabled) {
@@ -398,10 +398,6 @@ async function postHandler(req: NextRequest) {
   } catch (error) {
     await releaseStorageQuotaReservation(quotaReservationId);
 
-    if (isUnauthorizedAuthError(error)) {
-      return unauthorizedResponse();
-    }
-
     if (error instanceof StorageQuotaExceededError) {
       return NextResponse.json(storageQuotaError(error.snapshot), {
         status: 403,
@@ -419,7 +415,7 @@ async function postHandler(req: NextRequest) {
   }
 }
 
-async function getHandler(req: NextRequest) {
+async function getHandler(req: NextRequest, _context: RouteContext, { principal, auth }: AuthenticatedApiContext) {
   const requestId = crypto.randomUUID();
   const fp = getDbFingerprint();
 
@@ -435,12 +431,10 @@ async function getHandler(req: NextRequest) {
   let includeTags = false;
 
   try {
-    // Get auth with explicit sync status before validating request details so
-    // signed-out callers consistently receive the auth contract.
-    const { userId, syncStatus, syncError } = await getAuthWithUser();
-    if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    // Auth is resolved before validating request details so signed-out callers
+    // consistently receive the stable auth contract.
+    const userId = principal.userId;
+    const { syncStatus, syncError } = auth;
 
     // Check if database sync failed (prevents empty gallery bug)
     if (syncStatus === "failed") {
@@ -737,11 +731,14 @@ async function getHandler(req: NextRequest) {
   }
 }
 
-export const POST = withObservability(postHandler, {
+export const POST = withObservability(withAuthenticatedApi(postHandler, { requireUserSync: true }), {
   operation: "assets:create",
 });
 
-export const GET = withObservability(getHandler, { operation: "assets:list" });
+export const GET = withObservability(
+  withAuthenticatedApi(getHandler, { requireUserSync: true }),
+  { operation: "assets:list" }
+);
 
 // Async function to generate embeddings without blocking the upload
 async function generateEmbeddingAsync(

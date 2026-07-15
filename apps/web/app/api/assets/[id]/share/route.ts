@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { getAuth } from '@/lib/auth/server';
+import { withAuthenticatedApi, type AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { getOrCreateShareSlug, AssetNotFoundError } from '@/lib/share';
 import { apiError } from '@/lib/api-error';
-import { unauthorizedResponse } from '@/lib/auth/api';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
@@ -25,14 +24,11 @@ import { logError } from '@/lib/observability-logger';
  */
 async function postHandler(
   req: NextRequest,
-  context: RouteContext
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext
 ) {
   try {
-    // 1. Extract and verify auth
-    const { userId } = await getAuth();
-    if (!userId) {
-      return unauthorizedResponse();
-    }
+    const userId = principal.userId;
 
     // 2. Extract asset ID from params
     const params = await context.params;
@@ -92,4 +88,4 @@ async function postHandler(
   }
 }
 
-export const POST = withObservability(postHandler, { operation: 'assets:share' });
+export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'assets:share' });

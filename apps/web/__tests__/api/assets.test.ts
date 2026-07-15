@@ -31,6 +31,15 @@ vi.mock("@/lib/auth/server", () => ({
   requireUserIdWithSync: mocks.requireUserIdWithSync,
 }));
 
+vi.mock("@/lib/auth/request-auth", () => ({
+  authenticateRequest: async () => {
+    const auth = await mocks.getAuthWithUser();
+    return auth.userId
+      ? { status: "authenticated", principal: { userId: auth.userId }, syncStatus: auth.syncStatus === "synced" ? "success" : "skipped" }
+      : { status: "unauthenticated", reason: "clerk-unauthorized" };
+  },
+}));
+
 vi.mock("@/lib/db-fingerprint", () => ({
   getDbFingerprint: mocks.getDbFingerprint,
 }));

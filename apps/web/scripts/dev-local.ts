@@ -350,6 +350,8 @@ async function main() {
     ...process.env,
     DATABASE_URL: `postgresql://test:test@localhost:${args.dbPort}/sploot_test?sslmode=disable`,
     SPLOOT_QA_AUTH_MODE: 'enabled',
+    SPLOOT_DEPLOYMENT_IDENTITY: 'local-qa',
+    SPLOOT_QA_ALLOWED_DEPLOYMENT_IDENTITIES: 'local-qa',
     SPLOOT_QA_AUTH_SECRET: secret,
     PORT: String(args.port),
   };
