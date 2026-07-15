@@ -49,14 +49,14 @@ test.beforeAll(async () => {
       response.end('<!doctype html><title>MV3 fixture</title><h1>Sploot fixture</h1><img src="/image.png" alt="fixture image">');
       return;
     }
-    if (request.url === '/image.png') {
-      response.writeHead(200, { 'content-type': 'image/png' });
-      response.end(Buffer.from(imageBytes));
-      return;
-    }
     if (request.url?.startsWith('/hung')) {
       // Deliberately leave the source response open; the extension's bounded
       // fetch admission and abort fence must let later work proceed.
+      return;
+    }
+    if (request.url?.endsWith('.png')) {
+      response.writeHead(200, { 'content-type': 'image/png' });
+      response.end(Buffer.from(imageBytes));
       return;
     }
     if (request.url === '/api/upload' && request.method === 'POST') {
@@ -215,12 +215,12 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     uploadMode = 'failure';
     imageBytes = 'original-image';
     await setAuth(worker, 'user-a');
-    await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'immutable.png' }, 'immutable save message');
+    await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/immutable.png`, filename: 'immutable.png' }, 'immutable save message');
     await waitForQueue(worker, context, testInfo, step, 'immutable bytes persisted', jobs => jobs.some(job => (
       job.filename === 'immutable.png' && job.sourceBytes
     )));
     const immutable = (await queue(worker)).find((job: any) => job.filename === 'immutable.png');
-    expect(immutable.imageUrl).toBe(`${API_ORIGIN}/image.png`);
+    expect(immutable.imageUrl).toBe(`${API_ORIGIN}/immutable.png`);
 
     await setAuth(worker, 'user-b');
     worker = await stopAndRestart(context, popup, testInfo, step);
@@ -248,12 +248,12 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     expect(uploadBodies.some(body => body.includes('changed-image'))).toBe(false);
 
     uploadMode = 'duplicate';
-    await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'duplicate.png' }, 'duplicate save message');
+    await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/duplicate.png`, filename: 'duplicate.png' }, 'duplicate save message');
     await waitForQueue(worker, context, testInfo, step, 'duplicate replay converged', jobs => !jobs.some(job => job.filename === 'duplicate.png'));
     expect(uploadBodies.at(-1)).toContain('changed-image');
 
     uploadMode = 'failure';
-    await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'popup-discard.png' }, 'popup-discard save message');
+    await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/popup-discard.png`, filename: 'popup-discard.png' }, 'popup-discard save message');
     await waitForQueue(worker, context, testInfo, step, 'popup discard bytes persisted', jobs => jobs.some(job => (
       job.filename === 'popup-discard.png' && job.sourceBytes
     )));
