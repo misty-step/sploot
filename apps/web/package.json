@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "PORT=${PORT:-3001} next dev",
-    "build": "pnpm validate:env && node scripts/migrate-deploy.mjs && next build --webpack",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint . && pnpm auth:guard",
     "type-check": "tsc --noEmit",

@@ -7,12 +7,7 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  # Cancel superseded PR runs to save CI, but never cancel an in-flight master
-  # run — the migrate-prod job below must not be killed mid-DDL by a newer push
-  # (a non-transactional migration could be left half-applied). Concurrent
-  # migrate-prod runs are still safe: prisma migrate deploy serializes on a
-  # Postgres advisory lock.
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+  cancel-in-progress: true
 
 jobs:
   secrets:
@@ -55,6 +50,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm provider:check
       - run: pnpm provider:test
+      - run: pnpm deployment:check
+      - run: pnpm deployment:test
       - run: pnpm turbo run lint
 
   type-check:
@@ -69,6 +66,20 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run type-check
+
+  web-build:
+    name: Web production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build without runtime database or provider secrets
+        run: pnpm deployment:build
 
   design:
     name: Design
@@ -151,44 +162,16 @@ jobs:
   merge-gate:
     name: merge-gate
     if: always()
-    needs: [secrets, lint, type-check, design, test, extension]
+    needs: [secrets, lint, type-check, web-build, design, test, extension]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.design.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}")
+          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" ]]; then
-              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} design=${{ needs.design.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }}"
+              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }}"
               exit 1
             fi
           done
           echo "All jobs passed"
-
-  # Apply pending Prisma migrations to production on merge to master, after the
-  # merge gate passes. The prod URL is held as a repo secret, so a schema change
-  # reaches prod with no human running a DDL command and no one handling the
-  # connection string per-deploy. Inert-but-loud until the secret is set.
-  # See apps/web/docs/adr/007-prod-migrations-via-github-actions.md.
-  migrate-prod:
-    name: Migrate Prod
-    needs: [merge-gate]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Apply pending migrations to production
-        env:
-          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-        run: |
-          if [[ -z "$DATABASE_URL" ]]; then
-            echo "::warning title=Prod auto-migrate not activated::PRODUCTION_DATABASE_URL secret is unset; skipping prod migrations. Set the production Neon URL as the repository secret to activate hands-off schema deploys."
-            exit 0
-          fi
-          pnpm --filter web exec node scripts/migrate-deploy.mjs

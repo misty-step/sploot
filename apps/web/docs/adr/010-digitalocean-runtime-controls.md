@@ -54,7 +54,11 @@ daily Replicate spend ceiling or permit more concurrent paid work.
 
 the migration is additive: it creates `embedding_rate_buckets` and
 `embedding_rate_leases` plus expiry indexes, without rewriting existing rows.
-the deploy path applies Prisma migrations before starting the new application.
+DigitalOcean applies Prisma migrations in the singleton
+`web-pre-deploy-migrate` `PRE_DEPLOY` job before replacing the web service. The
+service run command is start-only (`pnpm --filter web start`), so restarts and
+replicas cannot rerun migrations. GitHub CI migrates only its pgvector test
+database and never receives the production Neon connection string.
 
 rolling the application back leaves both tables inert and preserves all user
 data. the previous build fails embedding generation closed when its absent KV

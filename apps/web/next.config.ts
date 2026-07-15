@@ -8,7 +8,6 @@ import {
 } from "./lib/image-config";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   // Legacy route aliases live here as plain HTTP redirects. They used to be
   // RSC redirect() pages, but next@16.2.10's app-router throws "Rendered

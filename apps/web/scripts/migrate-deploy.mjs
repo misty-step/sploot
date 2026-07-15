@@ -2,9 +2,9 @@
 // Run `prisma migrate deploy` so schema and code cannot ship apart
 // (incident 2026-06-09: a user_identities migration never ran).
 //
-// Invoked by the production build and the `migrate-prod` GitHub Actions job.
-// A build without DATABASE_URL skips safely; the migration job owns the
-// production connection. See docs/adr/007-prod-migrations-via-github-actions.md.
+// Invoked only by the singleton DigitalOcean PRE_DEPLOY job. It fails closed
+// without DATABASE_URL; build, local development, and the long-lived service
+// start do not invoke this runner.
 //
 // Prisma migrations need a direct (non-pooler) connection. Prefer
 // DATABASE_URL_DIRECT when set; otherwise derive it from DATABASE_URL by
@@ -23,8 +23,7 @@ export function runMigrateDeploy(env = process.env) {
   const pooled = env.DATABASE_URL;
 
   if (!pooled) {
-    console.log('[migrate-deploy] DATABASE_URL not set; skipping migrations (local/CI build without database).');
-    return;
+    throw new Error('[migrate-deploy] DATABASE_URL is required; refusing to start without migrations.');
   }
 
   const directUrl = env.DATABASE_URL_DIRECT || deriveDirectUrl(pooled);
@@ -40,5 +39,5 @@ export function runMigrateDeploy(env = process.env) {
 // Run only when invoked directly (`node scripts/migrate-deploy.mjs`), so that
 // importing this module from a test does not trigger a migration.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runMigrateDeploy();
+  runMigrateDeploy(process.env);
 }
