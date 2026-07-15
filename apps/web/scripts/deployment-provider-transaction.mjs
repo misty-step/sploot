@@ -393,6 +393,17 @@ export function assertReadbackBinding(payload, { mode, appId, changeId, marker, 
   return payload;
 }
 
+export function assertPublicEnrollmentState(payload, { mode }) {
+  const mismatches = [];
+  if (!payload || typeof payload !== 'object') mismatches.push('missing_json');
+  if (payload?.configuration !== 'valid') mismatches.push('configuration_invalid');
+  if (payload?.mode !== mode) mismatches.push('mode_mismatch');
+  if (payload?.status !== (mode === 'ga' ? 'open' : 'paused')) mismatches.push('status_mismatch');
+  if (Object.keys(payload ?? {}).sort().join(',') !== 'configuration,mode,status') mismatches.push('public_shape_mismatch');
+  if (mismatches.length) throw new Error(`runtime enrollment probe failed: ${mismatches.join(',')}`);
+  return payload;
+}
+
 export function assertCompensationFence(current, currentDeployment, target) {
   const currentSourceCommit = deploymentWebSourceCommit(currentDeployment);
   const isExactTarget = target.observed === true &&

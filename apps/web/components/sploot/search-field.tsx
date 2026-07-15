@@ -9,7 +9,6 @@ import { cn } from '@/lib/utils';
 import { IconButton } from './icon-button';
 import { MemeCell, type MemeCellState } from './meme-cell';
 import { type MemeDoodleKind } from './meme-doodle';
-import { EnrollmentNotice } from '@/components/enrollment/enrollment-notice';
 
 // Signed-out demo pile: license-safe doodles with enough keywords for the
 // console to find the intended sample.
@@ -83,6 +82,17 @@ function shuffledOrder(order: number[]): number[] {
   return order.length > 1 ? [...order.slice(1), order[0]] : order;
 }
 
+function searchAnnouncement(query: string): string {
+  const tokens = tokenize(query);
+  const best = TILES
+    .map((tile) => ({ tile, value: score(tokens, `${tile.kw} ${tile.caption}`) }))
+    .sort((a, b) => b.value - a.value)[0];
+  const found = !!query.trim() && best.value >= THRESHOLD;
+  return found
+    ? `search complete: found ${best.tile.file} in the demo pile`
+    : 'search complete: no close demo match; showing the full demo pile';
+}
+
 export interface SearchFieldHandle {
   /** Reshuffles the at-rest tile order — wired to the tower's "shuffle the demo" CTA. */
   shuffle: () => void;
@@ -109,19 +119,25 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
   const [reducedMotion, setReducedMotion] = useState(false);
   const [order, setOrder] = useState<number[]>(() => TILES.map((_, i) => i));
   const [isShuffled, setIsShuffled] = useState(false);
-  const [searchRun, setSearchRun] = useState(0);
+  const [actionRun, setActionRun] = useState(0);
+  const [announcement, setAnnouncement] = useState('');
 
-  const runSearch = (nextQuery: string) => {
+  const commitSearch = (nextQuery: string) => {
     setQuery(nextQuery);
     setIsShuffled(false);
-    setSearchRun((current) => current + 1);
+    setAnnouncement(searchAnnouncement(nextQuery));
+    setActionRun((current) => current + 1);
+  };
+
+  const shuffleDemo = () => {
+    setOrder((current) => shuffledOrder(current));
+    setIsShuffled(true);
+    setAnnouncement('demo pile shuffled');
+    setActionRun((current) => current + 1);
   };
 
   useImperativeHandle(ref, () => ({
-    shuffle: () => {
-      setOrder((current) => shuffledOrder(current));
-      setIsShuffled(true);
-    },
+    shuffle: shuffleDemo,
   }));
 
   useEffect(() => {
@@ -159,9 +175,6 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
       hit: found ? best.tile.file : 'none',
       scanned: TILES.length,
       tokenCount: tokens.length,
-      announcement: found
-        ? `search complete: found ${best.tile.file} in the demo pile`
-        : 'search complete: no close demo match; showing the full demo pile',
     };
   }, [query]);
 
@@ -184,7 +197,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
           autoComplete="off"
           onSubmit={(e) => {
             e.preventDefault();
-            runSearch(query);
+            commitSearch(query);
           }}
           className="border-b-[3px] border-sploot-ink bg-sploot-yellow p-4"
         >
@@ -201,7 +214,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
                 type="search"
                 value={query}
                 spellCheck={false}
-                onChange={(e) => runSearch(e.target.value)}
+                onChange={(e) => setQuery(e.target.value)}
                 placeholder="what's that one meme..."
                 aria-describedby="search-readout"
                 className="w-full min-w-0 border-0 bg-transparent font-sans text-lg font-bold text-sploot-ink outline-none placeholder:text-muted-foreground"
@@ -218,7 +231,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
                 <button
                   key={chip}
                   type="button"
-                  onClick={() => runSearch(chip)}
+                  onClick={() => commitSearch(chip)}
                   className="sploot-press-sm sploot-shadow-sm rounded-[var(--sploot-radius-pill)] border-2 border-sploot-ink bg-sploot-panel px-3 py-1.5 font-sans text-[0.72rem] font-bold lowercase text-sploot-ink hover:bg-sploot-magenta hover:text-[#1c1547]"
                 >
                   try: {chip}
@@ -228,8 +241,8 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
           </div>
         </form>
 
-        <div key={`${result.announcement}-${searchRun}`} data-search-run={searchRun} data-testid="search-announcement" role="status" aria-live="polite" className="sr-only">
-          {result.announcement}
+        <div data-search-run={actionRun} data-testid="search-announcement" role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+          {announcement}
         </div>
 
         {/* machinery readout: the product truth shows */}
@@ -261,10 +274,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
           </span>
           <IconButton
             label="shuffle the demo pile"
-            onClick={() => {
-              setOrder((current) => shuffledOrder(current));
-              setIsShuffled(true);
-            }}
+            onClick={shuffleDemo}
             className="!border-[#1c1547] !text-[#1c1547]"
           >
             <Shuffle />
@@ -313,9 +323,7 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
             search your own pile
             <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
-        ) : (
-          <EnrollmentNotice state={enrollmentState} compact />
-        )}
+        ) : null}
       </div>
     </div>
   );

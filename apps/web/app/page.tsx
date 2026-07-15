@@ -5,7 +5,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { GlobalFooter } from "@/components/global-footer";
 import { LandingHero } from "@/components/landing/landing-hero";
 import { LandingStory } from "@/components/landing/landing-story";
-import { getPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
+import { prisma } from "@/lib/db";
+import { readPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
 
 // Authentication and enrollment are request/runtime concerns. Keeping this
 // route dynamic prevents a production build from requiring runtime secrets or
@@ -20,7 +21,7 @@ export default async function Home() {
     redirect("/app");
   }
 
-  const enrollmentState = getPublicEnrollmentState();
+  const { state: enrollmentState } = await readPublicEnrollmentState({ prisma });
 
   return (
     <div className="relative min-h-screen bg-sploot-workbench text-sploot-ink">

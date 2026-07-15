@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { EnrollmentNotice } from "@/components/enrollment/enrollment-notice";
+import { PublicPageHeader } from "@/components/public-page-header";
+import { prisma } from "@/lib/db";
+import { readPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
 
 export const metadata: Metadata = {
   title: "Save to Sploot on iPhone - Sploot Help",
@@ -7,9 +11,14 @@ export const metadata: Metadata = {
     "Set up the Save to Sploot Apple Shortcut so images share straight from any iPhone app into your library.",
 };
 
-export default function IosShortcutHelp() {
+export const dynamic = "force-dynamic";
+
+export default async function IosShortcutHelp() {
+  const { state: enrollmentState } = await readPublicEnrollmentState({ prisma });
+
   return (
     <main className="min-h-screen bg-background">
+      <PublicPageHeader current="/help" />
       <div className="max-w-3xl mx-auto px-6 py-12">
         <Link
           href="/help"
@@ -38,10 +47,17 @@ export default function IosShortcutHelp() {
           — a credential that can only upload to your library, never read or
           delete it.
         </p>
+        <EnrollmentNotice state={enrollmentState} />
+        {enrollmentState.status === 'paused' ? (
+          <p className="text-sm text-muted-foreground">
+            new enrollment is paused. Existing users can still sign in and
+            recover access through <Link href="/support" className="sploot-public-link">Support</Link>.
+          </p>
+        ) : null}
 
         <div className="space-y-10">
           <section>
-            <h2 className="text-xl font-semibold mb-4">1. Mint an upload token</h2>
+            <h2 className="text-xl font-semibold mb-4">1. Use an existing account&apos;s upload token</h2>
             <ol className="list-decimal pl-6 space-y-2 text-muted-foreground">
               <li>
                 Open Sploot →{" "}
@@ -50,7 +66,7 @@ export default function IosShortcutHelp() {
                 </Link>{" "}
                 → Upload tokens.
               </li>
-              <li>Name it (e.g. &quot;iphone&quot;) and tap mint token.</li>
+              <li>Existing Sploot users can name it (e.g. &quot;iphone&quot;) and tap mint token.</li>
               <li>
                 Copy the <code className="text-foreground">splt_…</code> value.{" "}
                 <strong className="text-foreground">It is shown only once.</strong> If

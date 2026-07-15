@@ -46,6 +46,7 @@
     "deployment:check": "node scripts/check-web-deployment-runtime.mjs",
     "deployment:build": "node scripts/build-web-without-runtime-secrets.mjs",
     "deployment:test": "node --test scripts/check-web-deployment-runtime.test.mjs scripts/smoke-deployed-redirect.test.mjs scripts/check-migration-history.test.mjs",
+    "ci:public-truth": "SPLOOT_DEPLOYMENT_ENV=test SPLOOT_ENROLLMENT_MODE=closed SPLOOT_PUBLIC_TRUTH_E2E_BUILD=true pnpm --filter web e2e:public-truth:build && SPLOOT_DEPLOYMENT_ENV=test SPLOOT_ENROLLMENT_MODE=closed SPLOOT_PUBLIC_TRUTH_E2E_BUILD=true pnpm --filter web e2e:public-truth",
     "release": "semantic-release",
     "release:dry-run": "semantic-release --dry-run --no-ci",
     "clean": "turbo run clean && rm -rf node_modules"

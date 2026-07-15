@@ -19,6 +19,7 @@ import { E2E_AUTH_MODE, EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYN
 import { getSplootAppUrl, getSplootEnrollmentUrl, getSplootSignInUrl } from '../../shared/app-url'
 import { runBestEffort } from '../../shared/best-effort'
 import { performContextMenuSaveAction, requestContextMenuSaveQueue } from './queue-recovery'
+import { loadPublicEnrollmentState } from '../../shared/enrollment-state'
 import './style.css'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
@@ -140,11 +141,10 @@ function SignedOutPanel() {
   })
 
   useEffect(() => {
-    fetch(getSplootEnrollmentUrl(), { cache: 'no-store' })
-      .then(response => response.ok ? response.json() : null)
-      .then(payload => {
-        if (payload?.publicState?.status === 'open') {
-          setEnrollmentState(payload.publicState)
+    loadPublicEnrollmentState(getSplootEnrollmentUrl())
+      .then(state => {
+        if (state) {
+          setEnrollmentState(state)
         }
       })
       .catch(() => {

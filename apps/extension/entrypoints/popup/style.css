@@ -483,6 +483,172 @@ button.debug:hover {
   }
 }
 
+/* Toybox bridge: the popup shares the web surface's ink, candy, rounded shell,
+   and drop-height grammar. Keep these values local so the extension remains a
+   standalone bundle, but keep token names/roles aligned with the web app. */
+:root {
+  --sploot-ink: #1c1547;
+  --sploot-paper: #cfe7ff;
+  --sploot-paper-warm: #f1f7ff;
+  --sploot-panel: #ffffff;
+  --sploot-void: #1c1547;
+  --sploot-blue: #087bc1;
+  --sploot-cyan: #39b1ff;
+  --sploot-magenta: #ed58bd;
+  --sploot-yellow: #ffdd00;
+  --sploot-focus: #4a25c7;
+  --sploot-shadow-color: #1c1547;
+  --sploot-radius: 18px;
+  --sploot-radius-pill: 999px;
+  --sploot-shadow: 0 5px 0 var(--sploot-shadow-color);
+  --sploot-on-blue: #ffffff;
+  --sploot-public-link: #075985;
+  --bg-primary: var(--sploot-paper);
+  --bg-secondary: var(--sploot-paper-warm);
+  --bg-tertiary: var(--sploot-panel);
+  --text-primary: var(--sploot-ink);
+  --text-secondary: #3e3766;
+  --text-tertiary: #5e5680;
+  --border-primary: var(--sploot-ink);
+  --border-secondary: var(--sploot-blue);
+  --accent-primary: var(--sploot-blue);
+  --accent-hover: #075985;
+  --accent-subtle: #e8f5ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sploot-ink: #fff3dc;
+    --sploot-paper: #19143d;
+    --sploot-paper-warm: #241d50;
+    --sploot-panel: #2d255e;
+    --sploot-void: #090720;
+    --sploot-blue: #63c3ff;
+    --sploot-cyan: #8ed2ff;
+    --sploot-magenta: #ff8ed7;
+    --sploot-yellow: #ffe45c;
+    --sploot-focus: #ffe45c;
+    --sploot-shadow-color: #090720;
+    --sploot-on-blue: #10203a;
+    --sploot-public-link: #8ed2ff;
+    --bg-primary: var(--sploot-paper);
+    --bg-secondary: var(--sploot-paper-warm);
+    --bg-tertiary: var(--sploot-panel);
+    --text-primary: var(--sploot-ink);
+    --text-secondary: #f0e6d6;
+    --text-tertiary: #d3c6b5;
+    --border-primary: var(--sploot-ink);
+    --border-secondary: var(--sploot-cyan);
+    --accent-primary: var(--sploot-blue);
+    --accent-hover: var(--sploot-cyan);
+    --accent-subtle: #3a316d;
+  }
+}
+
+body {
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.25) 2px, transparent 2.6px);
+  background-size: 26px 26px;
+}
+
+.popup-container {
+  margin: 8px;
+  min-height: 464px;
+  padding: var(--space-6) var(--space-5) var(--space-5);
+  background: var(--bg-primary);
+  border: 3px solid var(--sploot-ink);
+  border-radius: var(--sploot-radius);
+  box-shadow: var(--sploot-shadow);
+}
+
+.popup-container::before {
+  height: 5px;
+  background: var(--sploot-magenta);
+}
+
+header h1 {
+  font-weight: var(--weight-bold);
+  color: var(--sploot-ink);
+}
+
+.logo-icon {
+  border: 3px solid var(--sploot-ink);
+  border-radius: 9px;
+}
+
+.auth-panel,
+.signed-in-panel {
+  gap: var(--space-5);
+  animation: fadeIn var(--transition-base) ease-out;
+}
+
+.auth-header h2 {
+  font-weight: var(--weight-bold);
+  color: var(--sploot-ink);
+}
+
+.auth-header p,
+.signed-in-panel p {
+  color: var(--text-secondary);
+}
+
+.signed-in-panel {
+  background: var(--bg-tertiary);
+  border: 3px solid var(--sploot-ink);
+  border-radius: var(--sploot-radius);
+  box-shadow: var(--sploot-shadow);
+}
+
+.onboarding-tip {
+  background: var(--accent-subtle);
+  border: 3px solid var(--sploot-blue);
+  border-radius: var(--sploot-radius);
+}
+
+.onboarding-tip h3,
+.text-accent {
+  color: var(--sploot-blue);
+}
+
+button {
+  background: var(--sploot-blue);
+  color: var(--sploot-on-blue);
+  border: 3px solid var(--sploot-ink);
+  border-radius: var(--sploot-radius-pill);
+  box-shadow: 0 3px 0 var(--sploot-shadow-color);
+  transition: transform var(--sploot-motion-fast, 130ms) ease, box-shadow var(--sploot-motion-fast, 130ms) ease, background-color var(--sploot-motion-fast, 130ms) ease;
+}
+
+button:hover {
+  background: var(--accent-hover);
+  transform: translate(-2px, -2px);
+  box-shadow: 2px 5px 0 var(--sploot-shadow-color);
+}
+
+button:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 1px 0 var(--sploot-shadow-color);
+}
+
+button.secondary {
+  background: var(--bg-tertiary);
+  color: var(--sploot-ink);
+  border-color: var(--sploot-ink);
+}
+
+button.secondary:hover {
+  background: var(--sploot-yellow);
+  color: #1c1547;
+  border-color: var(--sploot-ink);
+}
+
+button:focus-visible {
+  outline: 4px solid var(--sploot-focus);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 7px var(--bg-primary), 0 3px 0 var(--sploot-shadow-color);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

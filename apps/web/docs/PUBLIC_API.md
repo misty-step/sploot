@@ -42,6 +42,12 @@ management, …) is Clerk/qa-local session-only and returns the stable
 cannot read your full library, delete anything, or manage other tokens. See
 `AUTH.md` for the auth-door architecture this is built on.
 
+New account enrollment is a separate server-owned boundary. Signed-out public
+surfaces and token-scoped save/search calls never mint a new account or token;
+existing users can continue using their already-issued personal token. When
+the boundary is paused or unavailable, save/search return the documented
+`403 enrollment_closed` or `503 enrollment_unavailable` response.
+
 ## Base URL
 
 ```

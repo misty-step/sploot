@@ -4,10 +4,24 @@ import {
   consoleDoorAppearance,
 } from "@/components/auth/console-door";
 import { EnrollmentPaused } from "@/components/enrollment/enrollment-paused";
-import { getPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
+import { getAuth } from "@/lib/auth/server";
+import { prisma } from "@/lib/db";
+import { readPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
+import { PublicPageHeader } from "@/components/public-page-header";
 
-export default function SignUpPage() {
-  if (getPublicEnrollmentState().status === 'paused') return <EnrollmentPaused />;
+export const dynamic = "force-dynamic";
+
+export default async function SignUpPage() {
+  const { state: enrollmentState } = await readPublicEnrollmentState({ prisma });
+  if (enrollmentState.status === 'paused') {
+    const { userId } = await getAuth();
+    return (
+      <>
+        <PublicPageHeader />
+        <EnrollmentPaused showSignOut={Boolean(userId)} />
+      </>
+    );
+  }
 
   return (
     <ConsoleDoor>

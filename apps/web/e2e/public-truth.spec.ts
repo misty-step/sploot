@@ -45,20 +45,24 @@ for (const theme of ['light', 'dark'] as const) {
       await expect(input).toBeFocused();
       await input.fill('galaxy brain');
       const announcement = page.getByTestId('search-announcement');
-      await expect(announcement).toContainText('search complete');
+      await expect(announcement).toHaveText('');
       const typedRun = await announcement.getAttribute('data-search-run');
       await page.keyboard.press('Enter');
       await expect(announcement).toContainText('search complete');
-      expect(await announcement.getAttribute('data-search-run')).not.toBe(typedRun);
+      const enterRun = await announcement.getAttribute('data-search-run');
+      expect(enterRun).not.toBe(typedRun);
       await page.getByRole('button', { name: 'run search' }).click();
-      expect(await announcement.getAttribute('data-search-run')).not.toBe(typedRun);
+      await expect(announcement).toContainText('search complete');
+      expect(await announcement.getAttribute('data-search-run')).not.toBe(enterRun);
 
       const tileOrder = () => page.getByRole('listitem').allTextContents();
       const initialOrder = await tileOrder();
       await page.getByRole('button', { name: 'shuffle the demo', exact: true }).click();
+      await expect(announcement).toHaveText('demo pile shuffled');
       expect(await tileOrder()).not.toEqual(initialOrder);
       const towerOrder = await tileOrder();
       await page.getByRole('button', { name: 'shuffle the demo pile' }).click();
+      await expect(announcement).toHaveText('demo pile shuffled');
       expect(await tileOrder()).not.toEqual(towerOrder);
 
       const tokens = await page.evaluate(() => {
@@ -74,11 +78,8 @@ for (const theme of ['light', 'dark'] as const) {
       expect(contrastRatio(tokens.footerLink, tokens.footer)).toBeGreaterThanOrEqual(4.5);
       expect(await page.getByRole('link', { name: 'support' }).last().evaluate((element) => getComputedStyle(element).textDecorationLine)).toContain('underline');
 
-      for (const route of ['/help', '/support', '/sign-up']) {
-        await page.goto(route, { waitUntil: 'networkidle' });
-        await expect(page.getByText(/new enrollment is paused/i).first()).toBeVisible();
-        expect((await page.locator('body').innerText()).toLowerCase()).not.toContain('create an account');
-      }
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
+      await expect(page.locator('.sploot-press').first()).toHaveCSS('animation-duration', '0s');
 
       if (evidenceDir) {
         await page.screenshot({
@@ -87,6 +88,29 @@ for (const theme of ['light', 'dark'] as const) {
         });
       }
 
+      for (const route of ['/help', '/help/ios-shortcut', '/support', '/sign-up']) {
+        await page.goto(route, { waitUntil: 'networkidle' });
+        await expect(page.getByText(/new enrollment is paused/i).first()).toBeVisible();
+        await expect(page.getByRole('navigation', { name: 'Public pages' })).toBeVisible();
+        const privacyLink = page.getByRole('link', { name: 'privacy', exact: true });
+        await privacyLink.focus();
+        await expect(privacyLink).toBeFocused();
+        await expect(privacyLink).toHaveCSS('text-decoration-line', /underline/);
+        expect((await page.locator('body').innerText()).toLowerCase()).not.toContain('create an account');
+        if (route === '/sign-up') {
+          await expect(page.getByRole('button', { name: 'Sign out' })).toHaveCount(0);
+        }
+      }
+
+      const enrollmentResponse = await page.request.get('/api/health/enrollment');
+      expect(enrollmentResponse.status()).toBe(200);
+      expect(enrollmentResponse.headers()['cache-control']).toBe('no-store, private');
+      expect(await enrollmentResponse.json()).toEqual({
+        status: 'paused',
+        mode: 'closed',
+        configuration: 'valid',
+      });
+
       await testInfo.attach('viewport', {
         body: JSON.stringify({ theme, ...viewport, tokens }, null, 2),
         contentType: 'application/json',
@@ -94,3 +118,11 @@ for (const theme of ['light', 'dark'] as const) {
     });
   }
 }
+
+test('public truth artifact preserves the protected redirect boundary', async ({ page }) => {
+  const response = await page.request.get('/app', { maxRedirects: 0 });
+  expect([307, 308, 401]).toContain(response.status());
+  if (response.status() === 307 || response.status() === 308) {
+    expect(response.headers().location).toContain('/sign-in');
+  }
+});

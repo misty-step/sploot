@@ -6,8 +6,15 @@ import {
   IMAGE_FORMATS,
   IMAGE_MINIMUM_CACHE_TTL,
 } from "./lib/image-config";
+import { assertPublicTruthE2EBuildAllowed, isPublicTruthE2EBuild } from "./lib/public-truth-e2e";
+
+assertPublicTruthE2EBuildAllowed(process.env);
+const publicTruthE2EBuild = isPublicTruthE2EBuild(process.env);
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E: publicTruthE2EBuild ? 'true' : 'false',
+  },
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   // @ffmpeg-installer resolves its platform binary with dynamic requires that
   // Turbopack cannot bundle — without this, `next dev` fails to compile

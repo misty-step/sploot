@@ -45,3 +45,5 @@ export type {
   SplootEnrollmentPublicStatus,
   StorageQuotaSnapshot,
 } from './types';
+
+export { isSplootEnrollmentPublicState } from './types';

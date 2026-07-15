@@ -1,20 +1,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import {
-  getEnrollmentReadback,
-  getPublicEnrollmentState,
-  enrollmentUnavailableResponse,
+  readPublicEnrollmentState,
 } from '@/lib/enrollment/enrollment-policy';
 
 export async function GET() {
-  try {
-    if (!prisma) return enrollmentUnavailableResponse();
-    const readback = getEnrollmentReadback(await prisma.user.count());
-    return NextResponse.json({
-      ...readback,
-      publicState: getPublicEnrollmentState(process.env, readback.acceptingNewAccounts),
-    }, { status: readback.configuration === 'valid' ? 200 : 503 });
-  } catch {
-    return enrollmentUnavailableResponse();
-  }
+  const read = await readPublicEnrollmentState({ prisma });
+  return NextResponse.json(read.state, {
+    status: read.available ? 200 : 503,
+    headers: { 'Cache-Control': 'no-store, private' },
+  });
 }

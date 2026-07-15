@@ -1,25 +1,24 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EnrollmentNotice } from "@/components/enrollment/enrollment-notice";
-import { getPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
+import { PublicPageHeader } from "@/components/public-page-header";
+import { prisma } from "@/lib/db";
+import { readPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
 
 export const metadata: Metadata = {
   title: "Help - Sploot",
   description: "Getting started, capture channels, and your data on Sploot",
 };
 
-export default function Help() {
-  const enrollmentState = getPublicEnrollmentState();
+export const dynamic = "force-dynamic";
+
+export default async function Help() {
+  const { state: enrollmentState } = await readPublicEnrollmentState({ prisma });
 
   return (
     <main className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-6 py-12">
-        <Link
-          href="/"
-          className="sploot-public-link mb-8 inline-block"
-        >
-          ← Back to Sploot
-        </Link>
+      <PublicPageHeader current="/help" />
+      <div className="mx-auto max-w-3xl px-6 py-12">
 
         <h1
           className="text-4xl md:text-5xl mb-4 tracking-wide"

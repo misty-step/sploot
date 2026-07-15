@@ -159,7 +159,7 @@ embedding endpoints cannot bypass it.
 ```
 
 The response is `403`. Production configuration is fail-closed; see
-[`DEPLOYMENT.md`](./DEPLOYMENT.md) for the capped mode, exact operator
+[`DEPLOYMENT.md`](./DEPLOYMENT.md) for the capped mode, authenticated operator
 readback, and the explicit `SPLOOT_ENROLLMENT_MODE=ga` lift action. Existing
 users retain read, download/export, and delete behavior because they are not
 re-admitted on each request.
@@ -173,10 +173,29 @@ If a verified identity conflicts with an existing Clerk identity, routes return
 `409` with `code: "enrollment_identity_conflict"`; this is an identity repair
 condition, not a new-account admission.
 
-The operator probe is `GET /api/health/enrollment`; it returns the current
-mode, configuration validity, aggregate account count, remaining capacity, and
-`gaLifted` state. Use the repo-owned `probe:enrollment` command against the
-exact active deployment URL.
+The public probe is `GET /api/health/enrollment`. It returns only this
+cache-disabled, anonymous-safe shape:
+
+```json
+{ "status": "paused", "mode": "closed", "configuration": "valid" }
+```
+
+`status` is `open` only after a live account-count read proves a GA or capped
+configuration is available; a capped limit, malformed configuration, or
+Prisma outage is fail-closed. The response sends
+`Cache-Control: no-store, private`. Operators who need account count,
+capacity, or deployment diagnostics must use the distinct authenticated
+`GET /api/health/enrollment/readback` route with an operator/admin account.
+Use the repo-owned `probe:enrollment` command against the exact active
+deployment URL for the anonymous-safe mode/status check.
+
+#### GET /api/health/enrollment
+
+**Authentication:** Not required. **Response:** exactly
+`SplootEnrollmentPublicState` (`status`, `mode`, `configuration`) with no
+account count, capacity, deployment identity, commit, or operator fields.
+Invalid configuration or an unavailable enrollment database returns the same
+paused state with HTTP `503`; a valid closed state returns HTTP `200`.
 
 #### POST /api/upload
 

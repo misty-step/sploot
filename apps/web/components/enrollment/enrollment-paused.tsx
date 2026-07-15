@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { EnrollmentEscapeActions } from './enrollment-escape-actions';
 
-export function EnrollmentPaused() {
+export function EnrollmentPaused({ showSignOut }: { showSignOut?: boolean } = {}) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-sploot-workbench px-6 py-12 text-sploot-ink">
       <section className="sploot-card max-w-xl space-y-5 p-8">
@@ -23,7 +23,7 @@ export function EnrollmentPaused() {
         <Link href="/support" className="inline-flex text-sm font-bold text-sploot-blue hover:underline">
           Contact support →
         </Link>
-        <EnrollmentEscapeActions />
+        <EnrollmentEscapeActions showSignOut={showSignOut} />
       </section>
     </main>
   );

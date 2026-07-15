@@ -3,6 +3,7 @@ import { prisma } from '../db';
 import { isUnauthorizedAuthError } from './api';
 import { getUserSyncCircuitBreaker } from '../circuit-breaker';
 import { hasQaLocalAuthInput, verifyQaLocalAuthHeaders } from './qa-local';
+import { isCompiledPublicTruthE2EBuild } from '@/lib/public-truth-e2e';
 import type { RequestAuthResult } from './types';
 import {
   EnrollmentDeniedError,
@@ -40,6 +41,13 @@ interface AuthWithUserResult extends AuthResult {
 }
 
 export async function getAuth(): Promise<AuthResult> {
+  // This branch exists only in the explicitly test-only public-truth build.
+  // Production config rejects that build flag; protected middleware remains
+  // the security boundary and is exercised separately by the browser gate.
+  if (isCompiledPublicTruthE2EBuild()) {
+    return { userId: null, sessionId: null, getToken: async () => null };
+  }
+
   const qaAuth = await getQaLocalAuthFromCurrentRequest();
   if (qaAuth?.status === 'authenticated') {
     return {

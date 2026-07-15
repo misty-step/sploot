@@ -46,6 +46,17 @@ export interface SplootEnrollmentPublicState {
   configuration: 'valid' | 'invalid';
 }
 
+export function isSplootEnrollmentPublicState(value: unknown): value is SplootEnrollmentPublicState {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    (candidate.status === 'open' || candidate.status === 'paused') &&
+    (candidate.mode === 'capped' || candidate.mode === 'ga' || candidate.mode === 'closed') &&
+    (candidate.configuration === 'valid' || candidate.configuration === 'invalid') &&
+    Object.keys(candidate).length === 3
+  );
+}
+
 /**
  * Response from POST /api/upload
  *

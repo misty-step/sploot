@@ -7,19 +7,15 @@ function argument(name) {
 
 const baseUrl = (argument('--url') || process.env.DEPLOYMENT_URL || '').replace(/\/$/, '');
 const expectedMode = argument('--expect-mode');
-const expectedAppId = argument('--expect-app-id');
-const expectedChangeId = argument('--expect-change-id');
-const expectedCommit = argument('--expect-commit');
-const expectedMarker = argument('--expect-marker');
-const expectedAccepting = argument('--expect-accepting');
+const expectedStatus = argument('--expect-status') || (expectedMode === 'ga' ? 'open' : 'paused');
 
 function boundedTimeout(value, fallback, maximum) {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= maximum ? parsed : fallback;
 }
 
-if (!baseUrl || !expectedMode || !expectedAppId || !expectedChangeId || !expectedCommit || !expectedMarker) {
-  console.error('Usage: probe-enrollment.mjs --url <exact-deployment-url> --expect-mode <closed|capped|ga> --expect-app-id <app-id> --expect-change-id <change-id> --expect-commit <sha> --expect-marker <production|staging> [--expect-accepting <true|false>]');
+if (!baseUrl || !expectedMode || !['closed', 'capped', 'ga'].includes(expectedMode) || !['open', 'paused'].includes(expectedStatus)) {
+  console.error('Usage: probe-enrollment.mjs --url <exact-deployment-url> --expect-mode <closed|capped|ga> [--expect-status <open|paused>]');
   process.exit(2);
 }
 
@@ -39,21 +35,13 @@ try {
 }
 const payload = await response.json().catch(() => null);
 
-const expectedGaLifted = expectedMode === 'ga';
-const expectedAcceptingNewAccounts = expectedAccepting === undefined
-  ? expectedMode === 'ga'
-  : expectedAccepting === 'true';
 const mismatches = [];
 if (!response.ok) mismatches.push(`http_status=${response.status}`);
 if (!payload) mismatches.push('missing_json');
 if (payload?.configuration !== 'valid') mismatches.push(`configuration=${payload?.configuration ?? 'missing'}`);
 if (payload?.mode !== expectedMode) mismatches.push(`mode=${payload?.mode ?? 'missing'}`);
-if (payload?.gaLifted !== expectedGaLifted) mismatches.push(`gaLifted=${payload?.gaLifted}`);
-if (payload?.acceptingNewAccounts !== expectedAcceptingNewAccounts) mismatches.push(`acceptingNewAccounts=${payload?.acceptingNewAccounts}`);
-if (expectedAppId && payload?.deploymentAppId !== expectedAppId) mismatches.push(`deploymentAppId=${payload?.deploymentAppId ?? 'missing'}`);
-if (expectedChangeId && payload?.deploymentChangeId !== expectedChangeId) mismatches.push(`deploymentChangeId=${payload?.deploymentChangeId ?? 'missing'}`);
-if (expectedCommit && payload?.deploymentCommit !== expectedCommit) mismatches.push(`deploymentCommit=${payload?.deploymentCommit ?? 'missing'}`);
-if (expectedMarker && payload?.deploymentMarker !== expectedMarker) mismatches.push(`deploymentMarker=${payload?.deploymentMarker ?? 'missing'}`);
+if (payload?.status !== expectedStatus) mismatches.push(`status=${payload?.status ?? 'missing'}`);
+if (Object.keys(payload ?? {}).sort().join(',') !== 'configuration,mode,status') mismatches.push('public_shape_mismatch');
 
 if (mismatches.length > 0) {
   console.error(JSON.stringify({
@@ -69,14 +57,7 @@ if (mismatches.length > 0) {
 console.log(JSON.stringify({
   ok: true,
   url: baseUrl,
+  status: payload.status,
   mode: payload.mode,
-  gaLifted: payload.gaLifted,
-  acceptingNewAccounts: payload.acceptingNewAccounts,
-  deploymentMarker: payload.deploymentMarker,
-  deploymentAppId: payload.deploymentAppId,
-  deploymentChangeId: payload.deploymentChangeId,
-  deploymentCommit: payload.deploymentCommit,
-  accountCount: payload.accountCount,
-  remainingAccounts: payload.remainingAccounts,
   configuration: payload.configuration,
 }, null, 2));

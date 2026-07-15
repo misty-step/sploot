@@ -120,9 +120,9 @@ dry-run by default. It rejects a capped-first lifecycle, requires a structured
 App spec with exact bindings, snapshots and proves the active closed
 deployment, then performs one DigitalOcean spec update (which itself creates
 the deployment), observes the single provider deployment, waits for it, and
-uses the exact HTTPS health endpoint as runtime authority. The probe checks
-`mode`, `gaLifted`, `acceptingNewAccounts`, app ID, change ID, marker, and
-resolved commit. If any step after mutation fails, it restores the snapshotted
+uses the exact HTTPS public enrollment endpoint as runtime mode/status
+authority. Provider receipts and the authenticated operator readback retain
+deployment identity, capacity, and resolved commit diagnostics. If any step after mutation fails, it restores the snapshotted
 closed spec through the same one-update path only when the source was not
 updated and the exact provider identity receipt is still available. A source
 update or lost provider identity produces a redacted operator-recovery packet;
@@ -213,10 +213,7 @@ Enrollment proof must target the exact active deployment URL:
 
 ```bash
 pnpm --filter web probe:enrollment -- \
-  --url "$EXACT_DEPLOYMENT_URL" --expect-mode closed \
-  --expect-app-id "$DO_APP_ID" --expect-change-id "$CHANGE_ID" \
-  --expect-commit "$DEPLOY_COMMIT" --expect-marker production \
-  --expect-accepting false
+  --url "$EXACT_DEPLOYMENT_URL" --expect-mode closed --expect-status paused
 ```
 
 the health contract requires database `up`, the embedding limiter `up`, the

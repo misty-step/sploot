@@ -2,7 +2,6 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { LandingHero } from '@/components/landing/landing-hero';
-import { LandingStory } from '@/components/landing/landing-story';
 import { SearchField } from '@/components/sploot/search-field';
 
 vi.mock('next/navigation', () => ({
@@ -20,28 +19,30 @@ function tileOrder(): string[] {
 }
 
 describe('signed-out landing demo truth', () => {
-  it('announces the same search action for typing, Enter, and Run search', async () => {
+  it('keeps typing visual-only and commits exactly once for Enter and Run search', async () => {
     const user = userEvent.setup();
     render(<SearchField enrollmentState={pausedEnrollment} />);
 
     const input = screen.getByRole('searchbox');
     const getLiveRegion = () => screen.getByTestId('search-announcement');
 
+    const liveRegion = getLiveRegion();
+    expect(liveRegion).toHaveTextContent('');
+    expect(liveRegion.getAttribute('data-search-run')).toBe('0');
+
     await user.clear(input);
     await user.type(input, 'galaxy brain');
-    const liveRegion = getLiveRegion();
-    const typedAnnouncement = liveRegion.textContent;
-    const typedRun = liveRegion.getAttribute('data-search-run');
-    expect(typedAnnouncement).toMatch(/search complete/i);
+    expect(getLiveRegion()).toHaveTextContent('');
+    expect(getLiveRegion().getAttribute('data-search-run')).toBe('0');
 
     await user.keyboard('{Enter}');
-    expect(getLiveRegion()).toHaveTextContent(typedAnnouncement ?? '');
-    expect(getLiveRegion().getAttribute('data-search-run')).not.toBe(typedRun);
+    expect(getLiveRegion()).toHaveTextContent(/search complete/i);
+    expect(getLiveRegion().getAttribute('data-search-run')).toBe('1');
 
     await user.click(screen.getByRole('button', { name: 'run search' }));
-    expect(getLiveRegion()).toHaveTextContent(typedAnnouncement ?? '');
-    expect(getLiveRegion().getAttribute('data-search-run')).not.toBe(typedRun);
-  });
+    expect(getLiveRegion()).toHaveTextContent(/search complete/i);
+    expect(getLiveRegion().getAttribute('data-search-run')).toBe('2');
+  }, 15_000);
 
   it('reorders the wall from both visible shuffle entry points', async () => {
     const user = userEvent.setup();
@@ -51,15 +52,18 @@ describe('signed-out landing demo truth', () => {
     await user.click(screen.getByRole('button', { name: 'shuffle the demo' }));
     const afterTowerShuffle = tileOrder();
     expect(afterTowerShuffle).not.toEqual(initial);
+    expect(screen.getByTestId('search-announcement')).toHaveTextContent('demo pile shuffled');
+    expect(screen.getByTestId('search-announcement')).toHaveAttribute('data-search-run', '1');
 
     await user.click(screen.getByRole('button', { name: 'shuffle the demo pile' }));
     expect(tileOrder()).not.toEqual(afterTowerShuffle);
+    expect(screen.getByTestId('search-announcement')).toHaveAttribute('data-search-run', '2');
   });
 
   it('does not render a home account-creation CTA while enrollment is paused', () => {
-    render(<LandingStory enrollmentState={pausedEnrollment} />);
+    render(<LandingHero enrollmentState={pausedEnrollment} />);
 
     expect(screen.queryByRole('link', { name: 'claim your library' })).not.toBeInTheDocument();
-    expect(screen.getByText('new enrollment is paused')).toBeInTheDocument();
+    expect(screen.getAllByText('new enrollment is paused')).toHaveLength(1);
   });
 });

@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import type { SplootEnrollmentPublicState } from '@sploot/common';
 import { Button } from '@/components/ui/button';
-import { EnrollmentNotice } from '@/components/enrollment/enrollment-notice';
 import { StickerTab } from '@/components/sploot';
 
 type StoryTone = 'cyan' | 'coral' | 'lime';
@@ -80,9 +79,7 @@ export function LandingStory({ enrollmentState }: { enrollmentState: SplootEnrol
             <Button asChild variant="ink" size="lg">
               <Link href="/sign-up">claim your library</Link>
             </Button>
-          ) : (
-            <EnrollmentNotice state={enrollmentState} compact />
-          )}
+          ) : null}
         </div>
       </div>
     </section>

@@ -1,25 +1,24 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EnrollmentNotice } from "@/components/enrollment/enrollment-notice";
-import { getPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
+import { PublicPageHeader } from "@/components/public-page-header";
+import { prisma } from "@/lib/db";
+import { readPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
 
 export const metadata: Metadata = {
   title: "Support - Sploot",
   description: "Get help with Sploot meme library and Chrome extension",
 };
 
-export default function Support() {
-  const enrollmentState = getPublicEnrollmentState();
+export const dynamic = "force-dynamic";
+
+export default async function Support() {
+  const { state: enrollmentState } = await readPublicEnrollmentState({ prisma });
 
   return (
     <main className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-6 py-12">
-        <Link
-          href="/"
-          className="sploot-public-link mb-8 inline-block"
-        >
-          ← Back to Sploot
-        </Link>
+      <PublicPageHeader current="/support" />
+      <div className="mx-auto max-w-3xl px-6 py-12">
 
         <h1
           className="text-4xl md:text-5xl mb-8 tracking-wide"
@@ -55,7 +54,11 @@ export default function Support() {
               <h3 className="font-medium">How to save images</h3>
               <ol className="list-decimal pl-6 space-y-2 text-muted-foreground">
                 <li>Install the Sploot extension from the Chrome Web Store</li>
-                <li>new enrollment is paused; existing users can sign in at sploot.app</li>
+                <li>
+                  {enrollmentState.status === 'paused'
+                    ? 'New enrollment is paused; existing users can sign in at sploot.app'
+                    : 'Enrollment is open; new users can sign up at sploot.app'}
+                </li>
                 <li>Right-click any image on any website</li>
                 <li>Select &quot;Save to Sploot&quot; from the menu</li>
                 <li>You&apos;ll see a notification confirming the save</li>

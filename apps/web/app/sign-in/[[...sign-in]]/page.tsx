@@ -3,10 +3,13 @@ import {
   ConsoleDoor,
   consoleDoorAppearance,
 } from "@/components/auth/console-door";
-import { getPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
+import { prisma } from "@/lib/db";
+import { readPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
 
-export default function SignInPage() {
-  const enrollmentState = getPublicEnrollmentState();
+export const dynamic = "force-dynamic";
+
+export default async function SignInPage() {
+  const { state: enrollmentState } = await readPublicEnrollmentState({ prisma });
 
   return (
     <ConsoleDoor>

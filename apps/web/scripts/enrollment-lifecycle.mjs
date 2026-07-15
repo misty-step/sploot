@@ -15,6 +15,7 @@ import {
   assertLegacyClosedSnapshot,
   assertReadbackBinding,
   assertRoutedSpecBindings,
+  assertPublicEnrollmentState,
   assertSpecBindings,
   createDeploymentProviderTransaction,
   deriveClosedStageSpec,
@@ -122,7 +123,7 @@ async function runtimeProbe(expected) {
   }
   const payload = await response.json().catch(() => null);
   if (!response.ok) fail(`runtime enrollment probe failed: http_status=${response.status}`);
-  return assertReadbackBinding(payload, expected);
+  return assertPublicEnrollmentState(payload, expected);
 }
 
 const provider = createDeploymentProviderTransaction({

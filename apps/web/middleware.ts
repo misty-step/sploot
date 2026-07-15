@@ -35,7 +35,7 @@ export function getCanonicalWebRedirectUrl(req: Pick<NextRequest, 'method'> & { 
   return new URL(`${url.pathname}${url.search}`, CANONICAL_WEB_ORIGIN)
 }
 
-export default clerkMiddleware(async (auth, req) => {
+const clerkAuthMiddleware = clerkMiddleware(async (auth, req) => {
   const canonicalUrl = getCanonicalWebRedirectUrl(req)
   if (canonicalUrl) {
     return NextResponse.redirect(canonicalUrl, 308)
@@ -50,6 +50,26 @@ export default clerkMiddleware(async (auth, req) => {
     await auth.protect({ unauthenticatedUrl: new URL('/sign-in', req.url).toString() })
   }
 })
+
+/**
+ * The production-shaped anonymous artifact has no provider credentials. Its
+ * build-time-only seam makes the signed-out boundary explicit for public proof;
+ * production authority rejects the artifact and always uses Clerk below.
+ */
+const publicTruthSignedOutMiddleware = (req: NextRequest) => {
+  const canonicalUrl = getCanonicalWebRedirectUrl(req)
+  if (canonicalUrl) return NextResponse.redirect(canonicalUrl, 308)
+  if (isProtectedRoute(req)) return NextResponse.redirect(new URL('/sign-in', req.url), 307)
+  return NextResponse.next()
+}
+
+const isPublicTruthSignedOutBuild =
+  process.env.NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E === 'true' &&
+  (process.env.SPLOOT_DEPLOYMENT_ENV === 'test' || process.env.SPLOOT_DEPLOYMENT_ENV === 'evidence')
+
+export default isPublicTruthSignedOutBuild
+  ? publicTruthSignedOutMiddleware
+  : clerkAuthMiddleware
 
 export const config = {
   matcher: [

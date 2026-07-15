@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { PublicPageHeader } from "@/components/public-page-header";
 
 export const metadata: Metadata = {
   title: "Privacy Policy - Sploot",
@@ -9,13 +9,8 @@ export const metadata: Metadata = {
 export default function PrivacyPolicy() {
   return (
     <main className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-6 py-12">
-        <Link
-          href="/"
-          className="sploot-public-link mb-8 inline-block"
-        >
-          ← Back to Sploot
-        </Link>
+      <PublicPageHeader current="/privacy" />
+      <div className="mx-auto max-w-3xl px-6 py-12">
 
         <h1
           className="text-4xl md:text-5xl mb-8 tracking-wide"

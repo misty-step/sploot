@@ -10,14 +10,14 @@ PWA can never appear in the iPhone share sheet the way it does on Android. The
 sanctioned workaround is an **Apple Shortcut**: it can sit in the share sheet,
 accept an image, and make an authenticated HTTP request.
 
-Shortcuts can't carry your Clerk login, so they authenticate with a **personal
-upload token** instead — a credential that can *only* upload to your library
-(never read or delete it).
+Shortcuts can't carry your Clerk login, so existing Sploot users authenticate
+with a **personal upload token** instead — a credential that can *only* upload
+to their library (never read or delete it). The public state is closed: new enrollment is paused; this guide does not mint a new account or promise immediate token availability.
 
-## 1. Mint an upload token
+## 1. Use an existing account's upload token
 
-1. Open Sploot → **Settings** → **Upload tokens**.
-2. Name it (e.g. `iphone`) and tap **mint token**.
+1. Existing Sploot users can open Sploot → **Settings** → **Upload tokens**.
+2. Name a token (e.g. `iphone`) and tap **mint token**.
 3. Copy the `splt_…` value. **It is shown only once.** If you lose it, revoke it
    and mint a new one.
 

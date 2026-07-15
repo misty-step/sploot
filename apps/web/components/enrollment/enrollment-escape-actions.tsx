@@ -2,17 +2,10 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useUser } from '@clerk/nextjs';
 import { useAuthActions } from '@/lib/auth/client';
 
-export function EnrollmentEscapeActions() {
-  const { signOut } = useAuthActions();
-  const router = useRouter();
-
-  async function handleSignOut() {
-    await signOut();
-    router.push('/');
-  }
-
+export function EnrollmentEscapeActions({ showSignOut = true }: { showSignOut?: boolean }) {
   return (
     <div className="flex flex-wrap gap-3" aria-label="account recovery actions">
       <Link
@@ -27,13 +20,30 @@ export function EnrollmentEscapeActions() {
       >
         Existing user: sign in
       </Link>
-      <button
-        type="button"
-        onClick={handleSignOut}
-        className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-sploot-ink bg-sploot-ink px-4 py-2 text-sm font-bold text-sploot-paper hover:underline focus-visible:outline focus-visible:outline-4 focus-visible:outline-sploot-focus"
-      >
-        Sign out
-      </button>
+      {showSignOut ? <SignedInSignOutEscape /> : null}
     </div>
+  );
+}
+
+function SignedInSignOutEscape() {
+  const { signOut } = useAuthActions();
+  const { isLoaded, isSignedIn } = useUser();
+  const router = useRouter();
+
+  async function handleSignOut() {
+    await signOut();
+    router.push('/');
+  }
+
+  if (!isLoaded || !isSignedIn) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={handleSignOut}
+      className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-sploot-ink bg-sploot-ink px-4 py-2 text-sm font-bold text-sploot-paper hover:underline focus-visible:outline focus-visible:outline-4 focus-visible:outline-sploot-focus"
+    >
+      Sign out
+    </button>
   );
 }

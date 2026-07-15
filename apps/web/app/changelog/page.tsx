@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { PublicPageHeader } from "@/components/public-page-header";
 import { Suspense } from "react";
 import sanitizeHtml from "sanitize-html";
 import { getReleases, type Release } from "@/lib/releases";
@@ -164,13 +164,8 @@ function ReleasesLoading() {
 export default function ChangelogPage() {
   return (
     <main className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-6 py-12">
-        <Link
-          href="/"
-          className="sploot-public-link mb-8 inline-block"
-        >
-          &larr; Back to Sploot
-        </Link>
+      <PublicPageHeader current="/changelog" />
+      <div className="mx-auto max-w-3xl px-6 py-12">
 
         <header className="mb-12">
           <h1
