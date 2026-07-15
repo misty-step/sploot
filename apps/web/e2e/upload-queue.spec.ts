@@ -206,8 +206,8 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     const accountATab = await context.newPage();
     const accountBTab = await context.newPage();
     const signedOut = await context.newPage();
-    await Promise.all([openApp(accountATab, accountA), openApp(accountBTab, accountB)]);
     await signedOut.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
+    await Promise.all([openApp(accountATab, accountA), openApp(accountBTab, accountB)]);
     await context.setOffline(true);
 
     await accountATab.locator('input[type="file"]').setInputFiles({ name: 'account-a.png', mimeType: 'image/png', buffer: Buffer.from('png') });
