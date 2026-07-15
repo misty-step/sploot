@@ -140,6 +140,20 @@ test('live usage reconciles without identifiers or silently-zero unknowns', asyn
   assert.equal(inputs.liveUsage.database.databaseBytes, 42_016_768);
   assert.equal(inputs.liveUsage.inference.latestPredictionSample.failed, 95);
   assert.equal(inputs.liveUsage.telemetry.errors30d, 5_917);
+  assert.equal(inputs.liveUsage.digitalOcean.monthToDateUsageUsd, 45.84);
+  assert.equal(inputs.liveUsage.digitalOcean.invoicePreviewUsd, 41.69);
+  assert.equal(inputs.liveUsage.digitalOcean.namedVarianceUsd, 4.15);
+  const vercel = inputs.liveUsage.vercel;
+  const vercelCategoryTotal = vercel.categories.reduce(
+    (sum, category) => sum + category.effectiveUsageUsd,
+    0,
+  );
+  assert.equal(
+    Number((vercelCategoryTotal + vercel.subCentRemainderUsd).toFixed(10)),
+    vercel.projectEffectiveUsageUsd,
+  );
+  assert.equal(vercel.allowanceAbsorbedUsd, null);
+  assert.equal(vercel.billedAfterAllowanceUsd, null);
   assert.equal(
     Number((inputs.liveUsage.digitalOcean.monthToDateUsageUsd
       - inputs.liveUsage.digitalOcean.invoicePreviewUsd).toFixed(2)),

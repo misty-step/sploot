@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-07-15T06:51:35Z",
+  "capturedAt": "2026-07-15T13:53:21Z",
   "storage": {
     "blobObjects": 6461,
     "blobBytes": 532395408,
@@ -9,7 +9,7 @@
     "liveAssets": 3232,
     "deletedAssets": 1,
     "liveThumbnails": 3113,
-    "reconciliation": "Blob is 33,110,277 bytes above source bytes recorded in Postgres. The named 6.63% gap contains thumbnails plus any unreferenced objects; physical attribution remains the storage-ledger card's job."
+    "reconciliation": "Blob is 33,110,277 bytes above source bytes recorded in Postgres. The named 6.63% gap contains thumbnails plus any unreferenced objects; Vercel Blob billing remains account-wide and unattributed at store level."
   },
   "database": {
     "databaseBytes": 42016768,
@@ -41,9 +41,28 @@
     "embeddingJobSchedule": "three calls over about ten minutes every fifteen minutes",
     "embeddingJobEstimatedMonthlyUsd": 3.33,
     "invoicePreviewUsd": 41.69,
-    "monthToDateUsageUsd": 43.76,
-    "namedVarianceUsd": 2.07,
-    "varianceExplanation": "Preview and balance endpoints update on different cadences and cover the entire account, which hosts multiple apps. DigitalOcean exposes no per-app accrued-transfer or invoice-preview allocation, so Sploot's exact July line item is not inferable from this authority."
+    "monthToDateUsageUsd": 45.84,
+    "namedVarianceUsd": 4.15,
+    "varianceExplanation": "The latest redacted account readback is $45.84 month-to-date versus a $41.69 invoice preview, a named $4.15 cadence/account-wide variance. Preview and balance endpoints update on different cadences and cover the entire account, which hosts multiple apps. DigitalOcean exposes no per-app accrued-transfer or invoice-preview allocation, so Sploot's exact July line item is not inferable from this authority."
+  },
+  "vercel": {
+    "periodStart": "2026-07-01",
+    "periodEnd": "2026-07-15",
+    "projectEffectiveUsageUsd": 1.6836573508,
+    "allowanceAbsorbedUsd": null,
+    "billedAfterAllowanceUsd": null,
+    "categories": [
+      {"name": "build CPU", "effectiveUsageUsd": 0.778009},
+      {"name": "analytics", "effectiveUsageUsd": 0.45915},
+      {"name": "observability", "effectiveUsageUsd": 0.222658},
+      {"name": "provisioned memory", "effectiveUsageUsd": 0.067224},
+      {"name": "active CPU", "effectiveUsageUsd": 0.064374},
+      {"name": "origin transfer", "effectiveUsageUsd": 0.044212},
+      {"name": "invocations", "effectiveUsageUsd": 0.039175}
+    ],
+    "subCentRemainderUsd": 0.0088553508,
+    "reconciliation": "Sploot project effective usage for the current period is attributed by project. The remaining categories are each below $0.01 and are retained as an aggregate sub-cent remainder; the provider readback describes usage as almost entirely absorbed by allowance and billed usage as almost $0, but does not provide exact post-allowance dollars.",
+    "blobAttribution": "Vercel Blob remains account-wide and unattributed at store level."
   },
   "telemetry": {
     "errors30d": 5917,
@@ -58,9 +77,9 @@
   },
   "unknowns": [
     {
-      "name": "Vercel billed operations and transfer for the current cycle",
+      "name": "Vercel Blob billed operations and transfer attribution for the current cycle",
       "value": null,
-      "impact": "Object bytes are exact, but invoice reconciliation cannot distinguish reads, writes, edge requests, and origin misses without Vercel usage authority."
+      "impact": "Blob object bytes are exact, but Vercel Blob billing is account-wide and unattributed at store level; invoice reconciliation cannot distinguish Sploot reads, writes, edge requests, and origin misses."
     },
     {
       "name": "Neon production plan, CU-hours, history bytes, and transfer",

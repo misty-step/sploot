@@ -90,6 +90,8 @@ const REQUIRED_LIVE_NUMBER_PATHS = [
   'digitalOcean.invoicePreviewUsd',
   'digitalOcean.monthToDateUsageUsd',
   'digitalOcean.namedVarianceUsd',
+  'vercel.projectEffectiveUsageUsd',
+  'vercel.subCentRemainderUsd',
   'telemetry.errors30d',
   'telemetry.errorGroupsReturned',
   'github.activeCacheCount',
@@ -103,6 +105,10 @@ const REQUIRED_LIVE_STRING_PATHS = [
   'digitalOcean.webInstance',
   'digitalOcean.embeddingJobSchedule',
   'digitalOcean.varianceExplanation',
+  'vercel.periodStart',
+  'vercel.periodEnd',
+  'vercel.reconciliation',
+  'vercel.blobAttribution',
   'telemetry.reconciliation',
   'github.repositoryVisibility',
   'github.reconciliation',
@@ -114,6 +120,7 @@ const REQUIRED_LIVE_TIMESTAMP_PATHS = [
 ];
 const round = (value, digits = 4) => Number(value.toFixed(digits));
 const money = (value) => `$${value.toFixed(2)}`;
+const preciseMoney = (value, digits = 10) => `$${value.toFixed(digits)}`;
 const percent = (value) => value === null ? 'n/a' : `${value.toFixed(1)}%`;
 const rateMoney = (value) => value < 0.01 ? `$${value.toFixed(6)}` : value < 1 ? `$${value.toFixed(3)}` : money(value);
 const sensitivityMultiplierText = (inputs, key) => ['low', 'base', 'high']
@@ -311,6 +318,52 @@ export function validateInputs(inputs, now = new Date()) {
       }
       if (unknown.value !== null) errors.push(`liveUsage.unknowns[${index}].value must be null`);
     });
+  }
+  const vercel = inputs.liveUsage.vercel;
+  if (!isRecord(vercel)) {
+    errors.push('liveUsage.vercel must be an object');
+  } else {
+    const periodStart = Date.parse(`${vercel.periodStart}T00:00:00Z`);
+    const periodEnd = Date.parse(`${vercel.periodEnd}T00:00:00Z`);
+    if (!Number.isFinite(periodStart) || !Number.isFinite(periodEnd) || periodStart > periodEnd) {
+      errors.push('liveUsage.vercel period must be an ordered pair of valid dates');
+    }
+    if (!Array.isArray(vercel.categories) || vercel.categories.length === 0) {
+      errors.push('liveUsage.vercel.categories must be a non-empty array');
+    } else {
+      vercel.categories.forEach((category, index) => {
+        if (!isRecord(category)) {
+          errors.push(`liveUsage.vercel.categories[${index}] must be an object`);
+          return;
+        }
+        if (typeof category.name !== 'string' || category.name.length === 0) {
+          errors.push(`liveUsage.vercel.categories[${index}].name must be a non-empty string`);
+        }
+        if (!Number.isFinite(category.effectiveUsageUsd) || category.effectiveUsageUsd < 0) {
+          errors.push(`liveUsage.vercel.categories[${index}].effectiveUsageUsd must be a finite nonnegative number`);
+        }
+      });
+      const categoryTotal = vercel.categories.reduce((sum, category) => sum + category.effectiveUsageUsd, 0);
+      if (Number.isFinite(categoryTotal)
+        && Number.isFinite(vercel.subCentRemainderUsd)
+        && Math.abs(categoryTotal + vercel.subCentRemainderUsd - vercel.projectEffectiveUsageUsd) > 1e-9) {
+        errors.push('liveUsage.vercel category total must equal project effective usage');
+      }
+    }
+    if (Number.isFinite(vercel.projectEffectiveUsageUsd)
+      && Number.isFinite(vercel.allowanceAbsorbedUsd)
+      && Number.isFinite(vercel.billedAfterAllowanceUsd)
+      && Math.abs(vercel.allowanceAbsorbedUsd + vercel.billedAfterAllowanceUsd - vercel.projectEffectiveUsageUsd) > 1e-9) {
+      errors.push('liveUsage.vercel allowance and billed usage must equal project effective usage');
+    }
+    for (const key of ['allowanceAbsorbedUsd', 'billedAfterAllowanceUsd']) {
+      if (vercel[key] !== null && (!Number.isFinite(vercel[key]) || vercel[key] < 0)) {
+        errors.push(`liveUsage.vercel.${key} must be null or a finite nonnegative number`);
+      }
+    }
+    if (Number.isFinite(vercel.subCentRemainderUsd) && vercel.subCentRemainderUsd >= 0.01) {
+      errors.push('liveUsage.vercel.subCentRemainderUsd must remain below one cent');
+    }
   }
   if (REQUIRED_RATE_IDS.every((id) => rateIds.has(id))
     && isRecord(inputs.policy.global)
@@ -514,6 +567,9 @@ export function buildReport(inputs) {
   const refreshDate = inputs.rates[0].retrievedAt;
   const providerCaps = inputs.policy.providerHardCaps.map((cap) => `- **${cap.provider}:** ${cap.enforcement}.`).join('\n');
   const unknowns = live.unknowns.map((item) => `- **${item.name}:** unknown, not zero. ${item.impact}`).join('\n');
+  const vercelCategories = live.vercel.categories
+    .map((category) => `${category.name} ${preciseMoney(category.effectiveUsageUsd, 6)}`)
+    .join(', ');
   const highInferenceReservePct = (inputs.policy.sensitivity.high.inferenceAttemptMultiplier - 1) * 100;
   const sensitivitySummary = [
     `physical rendition overhead (${sensitivityMultiplierText(inputs, 'renditionMultiplier')})`,
@@ -564,6 +620,7 @@ ${providerCaps}
 - Replicate: latest ${live.inference.latestPredictionSample.size} predictions were ${live.inference.latestPredictionSample.failed} failed, ${live.inference.latestPredictionSample.canceled} canceled, and ${live.inference.latestPredictionSample.succeeded} succeeded. ${live.inference.reconciliation}
 - DigitalOcean: invoice preview ${money(live.digitalOcean.invoicePreviewUsd)} versus account month-to-date usage ${money(live.digitalOcean.monthToDateUsageUsd)}, a named ${money(live.digitalOcean.namedVarianceUsd)} variance. ${live.digitalOcean.varianceExplanation}
   - Fixed baseline: the Sploot web service is ${money(rateMap(inputs)['digitalocean-web-service'].value)}/month. The current sleep-heavy embedding schedule is estimated at ${money(live.digitalOcean.embeddingJobEstimatedMonthlyUsd)}/month before other short jobs; Canary is a ${money(rateMap(inputs)['canary-shared-service'].value)}/month service shared across projects. These fixed costs are visible but excluded from the Vision's ${money(inputs.policy.global.preGaMonthlyVariableUsd)} variable free-subsidy ratchet and per-account margin.
+- Vercel project (${live.vercel.periodStart}..${live.vercel.periodEnd}): effective usage ${preciseMoney(live.vercel.projectEffectiveUsageUsd)}, including ${vercelCategories}, plus a ${preciseMoney(live.vercel.subCentRemainderUsd)} aggregate remainder where each remaining category is below $0.01. ${live.vercel.reconciliation} ${live.vercel.blobAttribution}
 - Modeled known-cost reconciliation: current web, embedding-job schedule, Blob bytes at the on-demand rate, and database bytes at the Launch storage rate produce a ${money(liveFloor.knownSplootFloorUsd)} monthly baseline. It deliberately excludes unknown history/WAL, operations, and transfer rather than treating them as zero. The ${money(liveFloor.accountPreviewDifferenceUsd)} difference to the account-wide invoice preview is deliberately not attributed to Sploot: it contains unrelated apps, Canary allocation, other jobs, transfer/operations, and endpoint timing.
 - Canary: ${live.telemetry.errors30d.toLocaleString('en-US')} Sploot errors in 30 days. ${live.telemetry.reconciliation}
 - GitHub: public repository, ${live.github.activeCacheCount} active caches / ${(live.github.activeCacheBytes / 2 ** 30).toFixed(2)} GiB. ${live.github.reconciliation}
