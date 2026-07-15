@@ -16,6 +16,10 @@ const terminalRevivalSql = readFileSync(resolve(
   scriptDirectory,
   '../prisma/migrations/20260715070000_harden_terminal_revival_exit/migration.sql',
 ), 'utf8');
+const terminalRevivalTriggerSql = readFileSync(resolve(
+  scriptDirectory,
+  '../prisma/migrations/20260715050000_cap_embedding_terminal_revivals/migration.sql',
+), 'utf8');
 
 const managedRoles = [
   'sploot_stripe_ledger_owner',
@@ -66,9 +70,12 @@ function normalizeSql(sql) {
     .replaceAll('public.', '')
     .replace(/!~~/g, 'not like')
     .replace(/set\s+search_path\s*(?:=|to)\s*'?pg_catalog'?\s*,\s*'?public'?(?:::name)?/gi, 'set search_path = pg_catalog, public')
+    .replace(/\btimestamp(?:\(\d+\))?(?:\s+without\s+time\s+zone)?/gi, 'timestamp')
     .replace(/::[a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)?(?:\(\d+\))?(?:\s+(?:without|with)\s+time\s+zone)?/gi, '')
     .replace(/\s+/g, ' ')
     .replace(/\s*,\s*/g, ',')
+    .replace(/\(\s+/g, '(')
+    .replace(/\s+\)/g, ')')
     .trim()
     .replace(/;$/, '')
     .toLowerCase();
@@ -81,7 +88,7 @@ function expectedFunctionDefinition(name) {
 }
 
 function expectedTriggerDefinition(name) {
-  const source = name === 'asset_embeddings_revival_budget' ? terminalRevivalSql : bootstrapPostSql;
+  const source = name === 'asset_embeddings_revival_budget' ? terminalRevivalTriggerSql : bootstrapPostSql;
   const marker = name === 'asset_embeddings_revival_budget'
     ? 'CREATE TRIGGER "asset_embeddings_revival_budget"'
     : `CREATE TRIGGER ${name}`;
@@ -109,7 +116,7 @@ const expectedColumns = {
 };
 
 const expectedConstraints = {
-  embedding_attempt_count_ceiling: `CHECK (((key NOT LIKE 'embedding:daily:%') OR (count <= ${expectedDailyAttempts})) AND ((key NOT LIKE 'embedding:monthly:%') OR (count <= ${expectedMonthlyAttempts})))`,
+  embedding_attempt_count_ceiling: `CHECK ((((key NOT LIKE 'embedding:daily:%') OR (count <= ${expectedDailyAttempts})) AND ((key NOT LIKE 'embedding:monthly:%') OR (count <= ${expectedMonthlyAttempts}))))`,
   asset_embeddings_processing_claim_token_state: "CHECK (((processing_claim_token IS NULL) OR (status = 'processing')))",
   asset_embeddings_revive_count_bounded: 'CHECK (((revive_count >= 0) AND (revive_count <= 1)))',
 };
@@ -189,9 +196,9 @@ export async function assertFinalEmbeddingSchema(databaseUrl = process.env.DATAB
                'sploot_purge_stripe_audit', 'sploot_purge_stripe_raw_provenance'
              ])
              AND pg_get_userbyid(p.proowner) = 'sploot_stripe_ledger_owner')
-        AND EXISTS (SELECT 1 FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id = TRUE AND phase = 'ready' AND version = $3)
+        AND EXISTS (SELECT 1 FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id = TRUE AND phase = 'ready' AND version = $1)
         AS ready
-    `, [expectedDailyAttempts, expectedMonthlyAttempts, expectedVersion]);
+    `, [expectedVersion]);
     if (result.rows[0]?.ready !== true) {
       throw new Error('[final-schema] final embedding/circuit schema contract is incomplete');
     }

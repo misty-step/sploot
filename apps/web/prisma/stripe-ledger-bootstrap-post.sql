@@ -322,7 +322,7 @@ END
 $$;
 
 CREATE OR REPLACE FUNCTION public.sploot_stripe_ledger_append_only()
-RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog, public AS $$
+RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
 BEGIN
   IF current_user = 'sploot_stripe_ledger_owner' AND pg_catalog.current_setting('sploot.ledger_fenced_mutation', true) IN ('purge:v1', 'purge-provenance:v1') THEN
     IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
@@ -443,8 +443,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.embedding_rate_leases, public.embedding_provider_circuits
 TO sploot_stripe_app;
 
--- Strip PUBLIC EXECUTE from every SECURITY DEFINER function, then re-grant
--- only the exact role contract.
+-- Strip PUBLIC EXECUTE from every SECURITY DEFINER function and from trigger
+-- functions that have no direct-call contract, then re-grant only the exact
+-- role contract.
 DO $$
 DECLARE fn RECORD;
 BEGIN
@@ -453,7 +454,10 @@ BEGIN
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public'
-      AND (p.prosecdef OR p.proname = 'sploot_stripe_ledger_append_only')
+      AND (p.prosecdef OR p.proname IN (
+        'sploot_stripe_ledger_append_only',
+        'enforce_asset_embedding_revival_budget'
+      ))
   LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, sploot_stripe_app, sploot_stripe_schema_migrator, sploot_stripe_ledger_issuer, sploot_stripe_ledger_consumer, sploot_stripe_ledger_maintenance', fn.signature);
   END LOOP;

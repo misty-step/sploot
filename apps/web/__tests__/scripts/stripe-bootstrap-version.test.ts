@@ -103,7 +103,8 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(postSql).toContain('asset_embeddings_processing_claim_token_state');
     expect(postSql).toContain('asset_embeddings_revival_budget');
     expect(postSql).toContain('final embedding column type/default/nullability contract is incomplete');
-    expect(postSql).toContain("p.prosecdef OR p.proname = 'sploot_stripe_ledger_append_only'");
+    expect(postSql).toContain("'sploot_stripe_ledger_append_only',");
+    expect(postSql).toContain("'enforce_asset_embedding_revival_budget'");
     expect(postSql).toContain(
       'create trigger stripe_cancellation_events_append_only before delete or update on stripe_cancellation_events',
     );
@@ -172,7 +173,10 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(verifier).toContain('has_function_privilege');
     expect(verifier).toContain('pg_auth_members');
     expect(verifier).toContain('rolsuper');
-    expect(verifier).toContain('version = $3');
+    expect(verifier).toContain('version = $1');
+    expect(verifier).not.toMatch(/version = \$[23]/);
+    expect(verifier).not.toContain('[expectedDailyAttempts, expectedMonthlyAttempts, expectedVersion]');
+    expect(verifier).toContain('20260715050000_cap_embedding_terminal_revivals/migration.sql');
     const finalContract = readFileSync(resolve(webRoot, 'prisma/stripe-ledger-bootstrap-post.sql'), 'utf8')
       .slice(readFileSync(resolve(webRoot, 'prisma/stripe-ledger-bootstrap-post.sql'), 'utf8').indexOf('-- The bootstrap contract is not ready'));
     expect(finalContract).not.toMatch(/pg_get_(?:indexdef|constraintdef)\([^\n]+\)\s+LIKE/i);
