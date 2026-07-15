@@ -86,8 +86,24 @@ async function waitForBrowserHealth(page: Page, timeoutMs = 5_000): Promise<void
 }
 
 async function openSignedOutApp(page: Page): Promise<void> {
-  await waitForBrowserHealth(page);
-  await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
+  const deadline = Date.now() + 5_000;
+  let lastFailure: unknown;
+
+  while (Date.now() < deadline) {
+    try {
+      await waitForBrowserHealth(page, Math.min(1_000, Math.max(1, deadline - Date.now())));
+      await page.goto('/app?upload=1', {
+        waitUntil: 'domcontentloaded',
+        timeout: Math.min(1_000, Math.max(1, deadline - Date.now())),
+      });
+      return;
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('ERR_NAME_NOT_RESOLVED')) throw error;
+      lastFailure = error;
+    }
+  }
+
+  throw new Error('browser could not navigate to the signed-out app after /api/health', { cause: lastFailure });
 }
 
 function intentList(page: Page) {
