@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { prisma, vectorSearch, logSearch, type VectorSearchRow } from '@/lib/db';
+import { prisma, vectorSearchPage, logSearch, type VectorSearchRow } from '@/lib/db';
 import { CLIP_MODEL, createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
 import {
   EmbeddingConfigurationError,
@@ -32,18 +32,23 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
   let limit: number = 30;
   let threshold: number = SEARCH_SIMILARITY_FLOOR;
   let shuffleSeed: number | undefined = undefined;
+  let offset = 0;
 
   try {
     const userId = principal.userId;
 
     const body = await req.json();
-    ({ query, limit = 30, threshold = SEARCH_SIMILARITY_FLOOR, shuffleSeed } = body);
+    ({ query, limit = 30, threshold = SEARCH_SIMILARITY_FLOOR, shuffleSeed, offset = 0 } = body);
 
     if (!query || typeof query !== 'string') {
       return NextResponse.json(
         { error: 'Missing or invalid query parameter' },
         { status: 400 }
       );
+    }
+
+    if (!Number.isInteger(offset) || offset < 0 || offset > 500) {
+      return NextResponse.json({ error: 'Invalid search offset' }, { status: 400 });
     }
 
     const effectiveLimit = limit;
@@ -60,24 +65,33 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     // Get cache service
     const cache = getCacheService();
 
-    const cachedResults = await cache.getSearchResults(
+    const searchFilters = {
+      limit: effectiveLimit,
+      threshold,
+      ...(shuffleSeed !== undefined && { shuffleSeed }),
+      ...(offset > 0 && { offset }),
+    };
+
+    const cachedPage = await cache.getSearchResultPage(
       userId,
       query,
-      { limit: effectiveLimit, threshold, shuffleSeed }
+      searchFilters
     );
 
-    if (cachedResults) {
+    if (cachedPage) {
+      const cachedResults = cachedPage.results;
       const cachedFallbackUsed = cachedResults.some((result: any) => Boolean(result?.belowThreshold));
       // Cache hit for search
       return NextResponse.json({
         results: cachedResults,
         query,
-        total: cachedResults.length,
+        total: cachedPage.total,
         limit: effectiveLimit,
         requestedLimit: limit,
         threshold,
         requestedThreshold: threshold,
         thresholdFallback: cachedFallbackUsed,
+        hasMore: offset + cachedResults.length < cachedPage.total,
         processingTime: Date.now() - startTime,
         cached: true,
       });
@@ -120,14 +134,12 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
 
     // Perform vector similarity search. Keep zero-results honest: callers asked
     // for a similarity floor, so do not pad misses with threshold-0 results.
-    let searchResults = await vectorSearch(
+    const searchPage = await vectorSearchPage(
       userId,
       queryEmbedding,
-      { limit: effectiveLimit, threshold, shuffleSeed }
+      { limit: effectiveLimit, threshold, shuffleSeed, ...(offset > 0 && { offset }) }
     );
-
-    // Ensure we only return up to the effective limit
-    searchResults = searchResults.slice(0, effectiveLimit);
+    const searchResults = searchPage.results;
 
     // Format results with additional metadata
     const formattedResults = await Promise.all(
@@ -168,11 +180,12 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
 
     // Cache the search results
     if (formattedResults.length > 0) {
-      await cache.setSearchResults(
+      await cache.setSearchResultPage(
         userId,
         query,
-        { limit: effectiveLimit, threshold, shuffleSeed },
-        formattedResults
+        { limit: effectiveLimit, threshold, shuffleSeed, ...(offset > 0 && { offset }) },
+        formattedResults,
+        searchPage.total
       );
     }
 
@@ -184,7 +197,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     return NextResponse.json({
       results: formattedResults,
       query,
-      total: formattedResults.length,
+      total: searchPage.total,
       limit: effectiveLimit,
       requestedLimit: limit,
       threshold,
@@ -193,6 +206,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       embeddingModel,
       cached: false,
       thresholdFallback: false,
+      hasMore: offset + formattedResults.length < searchPage.total,
     });
 
   } catch (error) {

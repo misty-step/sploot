@@ -1,4 +1,6 @@
 #!/usr/bin/env tsx
+import { validateQaProofConfig } from '../lib/auth/qa-local';
+
 /**
  * Environment Variable Validation Script
  *
@@ -100,6 +102,24 @@ function validateDatabaseUrl(): ValidationResult {
   return result;
 }
 
+function validateQaProofDeployment(): ValidationResult {
+  const proofSettingsPresent = Object.keys(process.env).some((key) =>
+    key === 'SPLOOT_QA_EVIDENCE_MODE' || key.startsWith('NEXT_PUBLIC_SPLOOT_QA_') ||
+    key === 'SPLOOT_QA_DEPLOYMENT_ID' || key === 'SPLOOT_QA_DEPLOYMENT_AUDIENCE'
+  );
+  if (!proofSettingsPresent) return { valid: true, errors: [], warnings: [] };
+
+  const result = validateQaProofConfig(process.env);
+  if (!result.valid) {
+    return {
+      valid: false,
+      errors: [`QA proof authentication is fail-closed: ${result.reason}`],
+      warnings: [],
+    };
+  }
+  return { valid: true, errors: [], warnings: [] };
+}
+
 function printResult(result: ValidationResult) {
   console.log('\n🔍 Database Configuration Validation\n');
 
@@ -181,6 +201,10 @@ function main() {
   result.valid = result.valid && enrollment.valid;
   result.errors.push(...enrollment.errors);
   result.warnings.push(...enrollment.warnings);
+  const proofResult = validateQaProofDeployment();
+  result.valid = result.valid && proofResult.valid;
+  result.errors.push(...proofResult.errors);
+  result.warnings.push(...proofResult.warnings);
   printResult(result);
 
   if (!result.valid) {

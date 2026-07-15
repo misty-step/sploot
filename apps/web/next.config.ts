@@ -10,24 +10,25 @@ import { assertPublicTruthE2EBuildAllowed, isPublicTruthE2EBuild } from "./lib/p
 
 assertPublicTruthE2EBuildAllowed(process.env);
 const publicTruthE2EBuild = isPublicTruthE2EBuild(process.env);
-
-// The qa-local auth harness is a build-time capability, not just a runtime
-// flag: only explicit dev/test deployments may compile the seam in at all.
-// Production/staging builds inline 'false', so webpack dead-code-eliminates
-// every qa-local import and marker out of the shipped artifact (the
-// production public-truth guard proves the omission on each CI run).
 const qaLocalDeployment =
-  process.env.SPLOOT_DEPLOYMENT_ENV === 'development' || process.env.SPLOOT_DEPLOYMENT_ENV === 'test';
+  process.env.SPLOOT_DEPLOYMENT_ENV === 'development' ||
+  process.env.SPLOOT_DEPLOYMENT_ENV === 'test' ||
+  process.env.DEPLOYMENT_ENV === 'qa-local';
 if (process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && !qaLocalDeployment) {
-  throw new Error('SPLOOT_QA_AUTH_MODE=enabled is dev/test-only and requires SPLOOT_DEPLOYMENT_ENV=development or test');
+  throw new Error('SPLOOT_QA_AUTH_MODE=enabled is dev/test-only and requires a non-production deployment marker');
 }
 const qaLocalAuthBuild = process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && qaLocalDeployment;
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   env: {
     NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E: publicTruthE2EBuild ? 'true' : 'false',
     NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: qaLocalAuthBuild ? 'true' : 'false',
   },
+  // The local QA browser loop must not mount Next's dev-tools portal into
+  // captured evidence. Production is unaffected because the portal is dev
+  // only, while the QA assertion still rejects any accidental mount.
+  devIndicators: false,
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
   // @ffmpeg-installer resolves its platform binary with dynamic requires that
   // Turbopack cannot bundle — without this, `next dev` fails to compile
@@ -56,9 +57,14 @@ const nextConfig: NextConfig = {
   // Image optimization configuration
   images: {
     // QA-only: map the reserved seed host to local files so qa-seed fixtures
-    // render without weakening the blob_url CHECK constraints. Inert in
-    // production builds (NODE_ENV) and without the QA auth mode flag.
-    ...(process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && process.env.NODE_ENV !== 'production'
+    // render without weakening the blob_url CHECK constraints. Inert unless
+    // every explicit non-production evidence marker is present.
+    ...(process.env.SPLOOT_QA_AUTH_MODE === 'enabled' &&
+      process.env.SPLOOT_QA_EVIDENCE_MODE === 'enabled' &&
+      process.env.SPLOOT_QA_DEPLOYMENT_ID === 'sploot-gallery-qa-local' &&
+      process.env.SPLOOT_QA_DEPLOYMENT_AUDIENCE === 'sploot-gallery-evidence' &&
+      process.env.DEPLOYMENT_ENV === 'qa-local' &&
+      !process.env.CLERK_SECRET_KEY && !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
       ? { loader: 'custom' as const, loaderFile: './lib/qa/qa-image-loader.ts' }
       : {}),
     // Configure domains for Next.js Image optimization

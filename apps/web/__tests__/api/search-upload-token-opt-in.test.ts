@@ -14,10 +14,13 @@ const mocks = vi.hoisted(() => ({
   authenticateRequest: vi.fn(),
   createEmbeddingService: vi.fn(),
   getSearchResults: vi.fn(),
+  getSearchResultPage: vi.fn(),
   setSearchResults: vi.fn(),
+  setSearchResultPage: vi.fn(),
   getTextEmbedding: vi.fn(),
   findManyAssetTags: vi.fn(),
   vectorSearch: vi.fn(),
+  vectorSearchPage: vi.fn(),
   logSearch: vi.fn(),
 }));
 
@@ -36,8 +39,8 @@ vi.mock('@/lib/embeddings', () => ({
 
 vi.mock('@/lib/cache', () => ({
   getCacheService: () => ({
-    getSearchResults: mocks.getSearchResults,
-    setSearchResults: mocks.setSearchResults,
+    getSearchResultPage: mocks.getSearchResultPage,
+    setSearchResultPage: mocks.setSearchResultPage,
     getTextEmbedding: mocks.getTextEmbedding,
   }),
 }));
@@ -51,7 +54,7 @@ vi.mock('@/lib/db', () => ({
       findMany: mocks.findManyAssetTags,
     },
   },
-  vectorSearch: mocks.vectorSearch,
+  vectorSearchPage: mocks.vectorSearchPage,
   logSearch: mocks.logSearch,
 }));
 
@@ -71,12 +74,12 @@ function searchRequest(body: unknown): NextRequest {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.getSearchResults.mockResolvedValue(null);
-  mocks.setSearchResults.mockResolvedValue(undefined);
+  mocks.getSearchResultPage.mockResolvedValue(null);
+  mocks.setSearchResultPage.mockResolvedValue(undefined);
   mocks.findManyAssetTags.mockResolvedValue([]);
   mocks.logSearch.mockResolvedValue(undefined);
   mocks.getTextEmbedding.mockResolvedValue(new Array(512).fill(0).map((_, i) => (i === 3 ? 1 : 0)));
-  mocks.vectorSearch.mockResolvedValue([]);
+  mocks.vectorSearchPage.mockResolvedValue({ results: [], total: 0 });
 });
 
 describe('POST /api/search opts into upload-token auth', () => {
@@ -94,7 +97,7 @@ describe('POST /api/search opts into upload-token auth', () => {
       expect.anything(),
       expect.objectContaining({ allowUploadToken: true })
     );
-    expect(mocks.vectorSearch).toHaveBeenCalledWith(
+    expect(mocks.vectorSearchPage).toHaveBeenCalledWith(
       'user-token-1',
       expect.any(Array),
       expect.objectContaining({ limit: 30 })
@@ -111,6 +114,6 @@ describe('POST /api/search opts into upload-token auth', () => {
 
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: 'Unauthorized' });
-    expect(mocks.vectorSearch).not.toHaveBeenCalled();
+    expect(mocks.vectorSearchPage).not.toHaveBeenCalled();
   });
 });

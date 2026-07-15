@@ -33,6 +33,7 @@
     "build": "turbo run build",
     "lint": "pnpm stripe:sandbox:check && pnpm provider:check && pnpm provider:test && turbo run lint",
     "lint:design": "node scripts/check-design-system.mjs",
+    "qa:gallery": "pnpm --filter web qa:gallery",
     "type-check": "turbo run type-check",
     "test": "turbo run test",
     "economics": "node economics/cost-model.mjs",

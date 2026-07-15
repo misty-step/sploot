@@ -353,6 +353,13 @@ async function main() {
     // an explicit dev marker keeps the harness self-sufficient without .env.local.
     SPLOOT_DEPLOYMENT_ENV: process.env.SPLOOT_DEPLOYMENT_ENV ?? 'development',
     SPLOOT_QA_AUTH_MODE: 'enabled',
+    SPLOOT_QA_EVIDENCE_MODE: 'enabled',
+    SPLOOT_QA_DEPLOYMENT_ID: 'sploot-gallery-qa-local',
+    SPLOOT_QA_DEPLOYMENT_AUDIENCE: 'sploot-gallery-evidence',
+    DEPLOYMENT_ENV: 'qa-local',
+    NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: 'enabled',
+    NEXT_PUBLIC_SPLOOT_QA_EVIDENCE_MODE: 'enabled',
+    NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID: 'sploot-gallery-qa-local',
     SPLOOT_QA_AUTH_SECRET: secret,
     PORT: String(args.port),
   };

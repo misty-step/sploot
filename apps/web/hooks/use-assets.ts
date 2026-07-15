@@ -460,6 +460,8 @@ interface SearchMetadata {
   requestedThreshold: number;
   thresholdFallback: boolean;
   latencyMs?: number;
+  model?: string;
+  cached?: boolean;
 }
 
 export function useSearchAssets(query: string, options: { limit?: number; threshold?: number; enabled?: boolean; shuffleSeed?: number } = {}) {
@@ -470,19 +472,36 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
   const [metadata, setMetadata] = useState<SearchMetadata | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [resultQuery, setResultQuery] = useState<string | null>(null);
+  const offsetRef = useRef(0);
+  const loadingRef = useRef(false);
+  const hasMoreRef = useRef(false);
+  const requestIdRef = useRef(0);
 
   // Use AbortController for cancelling in-flight requests
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const search = useCallback(async () => {
+  const search = useCallback(async ({ append = false }: { append?: boolean } = {}) => {
+    if (append && (loadingRef.current || !hasMoreRef.current)) return;
+
+    const queryKey = query.trim();
+    const requestId = ++requestIdRef.current;
+
     // Cancel any in-flight request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
-    if (!query.trim()) {
+    if (!queryKey) {
       setAssets([]);
       setTotal(0);
+      setResultQuery(null);
       setMetadata(null);
+      hasMoreRef.current = false;
+      setHasMore(false);
+      offsetRef.current = 0;
+      loadingRef.current = false;
+      setLoading(false);
       return;
     }
 
@@ -491,30 +510,29 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
     abortControllerRef.current = controller;
 
     setLoading(true);
+    loadingRef.current = true;
     setError(null);
 
-    const startTime = performance.now();
+    const currentOffset = append ? offsetRef.current : 0;
 
     try {
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: query.trim(),
+          query: queryKey,
           limit,
           threshold,
+          ...(currentOffset > 0 && { offset: currentOffset }),
           ...(shuffleSeed !== undefined && { shuffleSeed }),
         }),
         signal: controller.signal,
       });
 
       const data = await response.json();
-      const endTime = performance.now();
-      const latencyMs = Math.round(endTime - startTime);
-
       if (!response.ok) {
         // Only update state if this request wasn't aborted
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && requestId === requestIdRef.current) {
           // Check if the error is related to embeddings/search service
           const errorMessage = data.error || 'Search failed';
           if (errorMessage.includes('embedding') || errorMessage.includes('Replicate')) {
@@ -522,30 +540,40 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
           } else {
             setError(errorMessage);
           }
-          setAssets([]);
+          if (!append) setAssets([]);
           setTotal(0);
+          setResultQuery(null);
           setMetadata(null);
+          hasMoreRef.current = false;
+          setHasMore(false);
         }
         return;
       }
 
       // Only update state if this request wasn't aborted
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && requestId === requestIdRef.current) {
         // Handle successful response
         const results = data.results || [];
-        const total = data.total || 0;
+        const total = Number.isFinite(data.total) ? Number(data.total) : currentOffset + results.length;
         const searchMetadata = {
           limit: data.limit ?? limit,
           requestedLimit: data.requestedLimit ?? limit,
           threshold: data.threshold ?? threshold,
           requestedThreshold: data.requestedThreshold ?? threshold,
           thresholdFallback: Boolean(data.thresholdFallback),
-          latencyMs,
+          latencyMs: typeof data.processingTime === 'number' ? data.processingTime : undefined,
+          model: typeof data.embeddingModel === 'string' ? data.embeddingModel : undefined,
+          cached: Boolean(data.cached),
         };
 
-        setAssets(results);
+        setAssets((previous) => append ? [...previous, ...results] : results);
         setTotal(total);
+        offsetRef.current = currentOffset + results.length;
+        const nextHasMore = Boolean(data.hasMore ?? results.length >= limit);
+        hasMoreRef.current = nextHasMore;
+        setHasMore(nextHasMore);
         setMetadata(searchMetadata);
+        setResultQuery(queryKey);
 
         // Server-side caching handles all caching now
         // No client-side cache needed
@@ -560,19 +588,25 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
       }
 
       // Only update state if this request wasn't aborted
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && requestId === requestIdRef.current) {
         logError('Search error:', err);
         setError('Unable to search. Please try again.');
-        setAssets([]);
+        if (!append) setAssets([]);
         setTotal(0);
+        setResultQuery(null);
         setMetadata(null);
+        hasMoreRef.current = false;
+        setHasMore(false);
       }
     } finally {
-      if (!controller.signal.aborted) {
+      if (requestId === requestIdRef.current) {
+        loadingRef.current = false;
         setLoading(false);
       }
     }
   }, [query, limit, threshold, shuffleSeed]);
+
+  const loadMore = useCallback(() => search({ append: true }), [search]);
 
   const updateAsset = useCallback((id: string, updates: Partial<Asset>) => {
     setAssets((prev) =>
@@ -605,37 +639,46 @@ export function useSearchAssets(query: string, options: { limit?: number; thresh
   // Auto-search when the settled query changes. The app page passes a debounced
   // query so typing does not trigger one embedding call per keystroke.
   useEffect(() => {
-    let cancelled = false;
-
+    const queryKey = query.trim();
+    let active = true;
     queueMicrotask(() => {
-      if (cancelled) {
-        return;
-      }
-
-      if (enabled && query) {
+      if (!active) return;
+      offsetRef.current = 0;
+      hasMoreRef.current = false;
+      setHasMore(false);
+      setTotal(0);
+      setMetadata(null);
+      setResultQuery(null);
+      setError(null);
+      if (enabled && queryKey) {
+        setLoading(true);
+        loadingRef.current = true;
         void search();
-      } else if (!enabled || !query) {
+      } else {
         setAssets([]);
-        setTotal(0);
-        setError(null);
+        setLoading(false);
+        loadingRef.current = false;
       }
     });
 
     // Cleanup function to cancel request on unmount or query change
     return () => {
-      cancelled = true;
+      active = false;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
-  }, [query, enabled, search]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [query, enabled, search]);
 
   return {
     assets,
     loading,
+    hasMore,
     error,
     total,
+    resultQuery,
     search,
+    loadMore,
     updateAsset,
     deleteAsset,
     metadata,

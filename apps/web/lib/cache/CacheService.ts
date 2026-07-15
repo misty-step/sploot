@@ -176,6 +176,40 @@ export class CacheService {
     }
   }
 
+  async getSearchResultPage(
+    userId: string,
+    query: string,
+    filters: SearchFilters = {},
+  ): Promise<{ results: any[]; total: number } | null> {
+    try {
+      const filterKey = JSON.stringify({ ...filters, __pageEnvelope: true });
+      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
+      const value = await this.backend.get<any>(key);
+      if (!value) {
+        this.incrementMiss();
+        return null;
+      }
+
+      this.incrementHit();
+      if (Array.isArray(value)) {
+        return { results: value, total: value.length };
+      }
+      if (Array.isArray(value.results) && Number.isInteger(value.total)) {
+        return { results: value.results, total: value.total };
+      }
+      this.incrementMiss();
+      return null;
+    } catch (error) {
+      console.error('[CacheService] getSearchResultPage failed:', {
+        userId,
+        queryPreview: query.substring(0, 50),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.incrementMiss();
+      return null;
+    }
+  }
+
   async setSearchResults(
     userId: string,
     query: string,
@@ -192,6 +226,27 @@ export class CacheService {
         queryPreview: query.substring(0, 50),
         resultsCount: results.length,
         error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  async setSearchResultPage(
+    userId: string,
+    query: string,
+    filters: SearchFilters,
+    results: any[],
+    total: number,
+  ): Promise<void> {
+    try {
+      const filterKey = JSON.stringify({ ...filters, __pageEnvelope: true });
+      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
+      await this.backend.set(key, { results, total });
+    } catch (error) {
+      console.error('[CacheService] setSearchResultPage failed:', {
+        userId,
+        queryPreview: query.substring(0, 50),
+        resultsCount: results.length,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }

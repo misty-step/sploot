@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>gallery-lab-001 · sploot gallery design lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css?v=1" />
+</head>
+<body>
+<header id="topbar">
+  <strong id="labname">gallery-lab-001</strong>
+  <nav id="viewports" aria-label="viewport presets"></nav>
+  <div id="customvp">
+    <input id="vpw" type="number" min="320" max="3840" aria-label="viewport width" />
+    <span>×</span>
+    <input id="vph" type="number" min="480" max="2400" aria-label="viewport height" />
+  </div>
+  <span id="vpreadout" class="mono"></span>
+  <div id="staterow" aria-label="option state"></div>
+  <button id="themebtn" title="theme: system / light / dark">theme: system</button>
+</header>
+<div id="main">
+  <aside id="sidebar">
+    <p id="roundline" class="mono">round 1 · awaiting verdicts</p>
+    <div id="optlist"></div>
+    <footer class="mono" id="sidefoot">←/→ options · matrix in README.md</footer>
+  </aside>
+  <main id="stage">
+    <div id="framebox">
+      <iframe id="frame" src="frame.html" title="option preview"></iframe>
+    </div>
+  </main>
+</div>
+<script type="module" src="app.js?v=1"></script>
+</body>
+</html>

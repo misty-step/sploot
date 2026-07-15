@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
-import { createQaLocalAuthToken, getQaLocalAuthHeader } from '@/lib/auth/qa-local';
+import { createQaLocalAuthToken, getQaLocalAuthHeader, getQaLocalRemoteAddressHeader } from '@/lib/auth/qa-local';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 
 const mocks = vi.hoisted(() => ({
@@ -48,6 +48,10 @@ describe('withAuthenticatedApi', () => {
           NODE_ENV: 'test',
           SPLOOT_DEPLOYMENT_ENV: 'test',
           SPLOOT_QA_AUTH_MODE: 'enabled',
+          SPLOOT_QA_EVIDENCE_MODE: 'enabled',
+          SPLOOT_QA_DEPLOYMENT_ID: 'sploot-gallery-qa-local',
+          SPLOOT_QA_DEPLOYMENT_AUDIENCE: 'sploot-gallery-evidence',
+          DEPLOYMENT_ENV: 'qa-local',
           SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
         },
       }
@@ -55,7 +59,10 @@ describe('withAuthenticatedApi', () => {
 
     const response = await handler(
       new NextRequest('http://localhost:3001/api/cache/stats', {
-        headers: { [getQaLocalAuthHeader()]: token },
+        headers: {
+          [getQaLocalAuthHeader()]: token,
+          [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+        },
       }),
       { params: Promise.resolve({}) }
     );

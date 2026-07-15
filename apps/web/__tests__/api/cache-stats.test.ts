@@ -3,7 +3,7 @@ import { GET, POST } from '@/app/api/cache/stats/route';
 import { createMockRequest } from '../utils/test-helpers';
 import { getCacheService } from '@/lib/cache';
 import type { CacheStats } from '@/lib/cache';
-import { createQaLocalAuthToken, getQaLocalAuthHeader } from '@/lib/auth/qa-local';
+import { createQaLocalAuthToken, getQaLocalAuthHeader, getQaLocalRemoteAddressHeader } from '@/lib/auth/qa-local';
 
 // Mock dependencies
 vi.mock('@/lib/cache');
@@ -37,6 +37,10 @@ describe('/api/cache/stats', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
+    vi.stubEnv('SPLOOT_QA_EVIDENCE_MODE', 'enabled');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ID', 'sploot-gallery-qa-local');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_AUDIENCE', 'sploot-gallery-evidence');
+    vi.stubEnv('DEPLOYMENT_ENV', 'qa-local');
     vi.stubEnv('SPLOOT_QA_AUTH_SECRET', QA_SECRET);
     vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'test');
     vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', '');
@@ -55,6 +59,7 @@ describe('/api/cache/stats', () => {
 
     return createMockRequest(method, null, {
       [getQaLocalAuthHeader()]: token,
+      [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
     }, searchParams);
   }
 

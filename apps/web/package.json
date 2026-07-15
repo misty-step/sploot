@@ -14,10 +14,7 @@
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
     "e2e:auth": "playwright test --config playwright.config.ts",
-    "e2e:public-truth": "playwright test --config playwright.config.ts --grep \"public truth\"",
-    "e2e:public-truth:build": "node scripts/build-public-truth.mjs",
-    "e2e:public-truth:production-guard": "node scripts/verify-production-public-truth-guard.mjs",
-    "e2e:public-truth:serve": "node scripts/serve-public-truth.mjs",
+    "qa:gallery": "node scripts/qa-gallery-gate.mjs",
     "qa:seed": "tsx scripts/qa-seed.ts",
     "eval:fixtures": "tsx scripts/eval-build-fixtures.ts",
     "eval:search": "tsx scripts/eval-search.ts",
@@ -49,7 +46,11 @@
     "probe:enrollment": "node scripts/probe-enrollment.mjs",
     "enrollment:lifecycle": "node scripts/enrollment-lifecycle.mjs",
     "db:fingerprint": "./scripts/db-fingerprint.sh",
-    "db:drift": "./scripts/db-drift-check.sh"
+    "db:drift": "./scripts/db-drift-check.sh",
+    "e2e:public-truth": "playwright test --config playwright.config.ts --grep \"public truth\"",
+    "e2e:public-truth:build": "node scripts/build-public-truth.mjs",
+    "e2e:public-truth:production-guard": "node scripts/verify-production-public-truth-guard.mjs",
+    "e2e:public-truth:serve": "node scripts/serve-public-truth.mjs"
   },
   "dependencies": {
     "@clerk/backend": "^2.33.4",

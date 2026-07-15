@@ -145,11 +145,13 @@ web app itself calls.
 **Request:**
 
 ```json
-{ "query": "distracted boyfriend", "limit": 30, "threshold": 0.2 }
+{ "query": "distracted boyfriend", "limit": 30, "offset": 0, "threshold": 0.2 }
 ```
 
 - `query` (string, required, max 500 chars)
 - `limit` (number, optional, default 30)
+- `offset` (number, optional, default 0, max 500) — fetch the next page from
+  the same semantic result set; pagination stays on `POST /api/search`.
 - `threshold` (number, optional, 0–1, default 0.2) — results below this
   similarity are not returned; a real miss is an empty `results` array, never
   low-similarity padding.
@@ -172,6 +174,7 @@ web app itself calls.
   ],
   "query": "distracted boyfriend",
   "total": 1,
+  "hasMore": false,
   "limit": 30,
   "threshold": 0.2,
   "processingTime": 245
