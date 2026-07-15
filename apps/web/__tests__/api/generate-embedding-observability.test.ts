@@ -3,7 +3,9 @@ import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
   getAuth: vi.fn(),
+  authenticateRequest: vi.fn(),
   findAsset: vi.fn(),
+  userFindUnique: vi.fn(),
   upsertAssetEmbedding: vi.fn(),
   createEmbeddingService: vi.fn(),
   acquireEmbeddingProcessing: vi.fn(),
@@ -20,9 +22,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/auth/server', () => ({ getAuth: mocks.getAuth }));
+vi.mock('@/lib/auth/request-auth', () => ({ authenticateRequest: mocks.authenticateRequest }));
 
 vi.mock('@/lib/db', () => ({
   prisma: {
+    user: { findUnique: mocks.userFindUnique },
     asset: { findFirst: mocks.findAsset },
     assetEmbedding: { findUnique: vi.fn() },
   },
@@ -109,10 +113,24 @@ describe('POST /api/assets/[id]/generate-embedding observability composition', (
     vi.spyOn(routeLogger, 'logInfo');
     vi.spyOn(routeLogger, 'logError');
     mocks.getAuth.mockResolvedValue({ userId: 'user-1' });
+    mocks.authenticateRequest.mockResolvedValue({
+      status: 'authenticated',
+      principal: {
+        userId: 'user-1',
+        provider: 'qa-local',
+        providerSubject: 'user-1',
+        source: 'qa-local',
+        credentialKind: 'qa-local',
+      },
+      syncStatus: 'success',
+    });
+    mocks.userFindUnique.mockResolvedValue({ id: 'user-1' });
     mocks.findAsset.mockResolvedValue({
       id: 'asset-1',
       blobUrl: 'https://blob.example/image.jpg',
       checksumSha256: 'sha-256',
+      mime: 'image/jpeg',
+      thumbnailUrl: null,
       embedding: null,
     });
     mocks.acquireEmbeddingProcessing.mockResolvedValue({

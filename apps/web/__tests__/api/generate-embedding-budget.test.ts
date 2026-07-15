@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   acquireEmbeddingProcessing: vi.fn(),
   resolveEmbeddingGateState: vi.fn(),
   markEmbeddingFailed: vi.fn(),
+  markEmbeddingTerminalSkipped: vi.fn(),
   deferEmbeddingAdmission: vi.fn(),
   logInfo: vi.fn(),
   logError: vi.fn(),
@@ -57,6 +58,7 @@ vi.mock('@/lib/embedding-guard', () => ({
   resolveEmbeddingGateState: mocks.resolveEmbeddingGateState,
   acquireEmbeddingProcessing: mocks.acquireEmbeddingProcessing,
   markEmbeddingFailed: mocks.markEmbeddingFailed,
+  markEmbeddingTerminalSkipped: mocks.markEmbeddingTerminalSkipped,
 }));
 
 vi.mock('@/lib/embedding-resilience', () => ({
@@ -112,6 +114,8 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
       id: 'asset-1',
       blobUrl: 'https://blob.example/image.jpg',
       checksumSha256: 'sha-256',
+      mime: 'image/jpeg',
+      thumbnailUrl: null,
       embedding: null,
     });
     mocks.acquireEmbeddingProcessing.mockResolvedValue({
@@ -169,6 +173,34 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
       'generate-embedding:failed',
       expect.any(Error),
       expect.objectContaining({ processingTimeMs: expect.any(Number) }),
+    );
+  });
+
+  it('terminal-skips unsupported video without a poster before admission', async () => {
+    mocks.findAsset.mockResolvedValue({
+      id: 'asset-video',
+      blobUrl: 'https://blob.example/raw.webm',
+      checksumSha256: 'sha-256-video',
+      mime: 'video/webm',
+      thumbnailUrl: null,
+      embedding: null,
+    });
+
+    const response = await POST(request('asset-video'), {
+      params: Promise.resolve({ id: 'asset-video' }),
+    });
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      status: 'terminal_skip',
+      reason: 'video_without_poster',
+    });
+    expect(mocks.acquireEmbeddingProcessing).not.toHaveBeenCalled();
+    expect(mocks.createEmbeddingService).not.toHaveBeenCalled();
+    expect(mocks.markEmbeddingTerminalSkipped).toHaveBeenCalledWith(
+      'asset-video',
+      'Unsupported video without a poster thumbnail'
     );
   });
 

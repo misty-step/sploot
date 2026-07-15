@@ -11,10 +11,13 @@ import {
 } from '@/lib/embedding-errors';
 import {
   acquireEmbeddingProcessing,
+  markEmbeddingTerminalSkipped,
   resolveEmbeddingGateState,
 } from '@/lib/embedding-guard';
-import { getRuntimeGate } from '@/lib/runtime-gates';
-import { logger } from '@/lib/logger';
+import {
+  resolveEmbeddingMediaSource,
+  type EmbeddingMediaSkipReason,
+} from '@/lib/embedding-media';
 import {
   deferEmbeddingAdmission,
   type EmbeddingAttemptFailure,
@@ -22,6 +25,8 @@ import {
   isEmbeddingAdmissionFailure,
   recordEmbeddingAttemptFailure,
 } from '@/lib/embedding-resilience';
+import { getRuntimeGate } from '@/lib/runtime-gates';
+import { logger } from '@/lib/logger';
 
 /**
  * Embedding scheduling error
@@ -58,6 +63,8 @@ export type EmbeddingScheduleMode = 'sync' | 'async';
 export interface EmbeddingScheduleParams {
   assetId: string;
   blobUrl: string;
+  mime: string;
+  thumbnailUrl?: string | null;
   checksum: string;
   mode: EmbeddingScheduleMode;
   /** Asset owner, for the per-user embedding rate limit lease. */
@@ -71,7 +78,7 @@ export interface EmbeddingScheduleResult {
   scheduled: boolean;
   mode: EmbeddingScheduleMode;
   assetId: string;
-  reason?: 'embeddings_disabled';
+  reason?: 'embeddings_disabled' | EmbeddingMediaSkipReason;
 }
 
 /**
@@ -97,7 +104,12 @@ export class EmbeddingSchedulerService {
   async scheduleEmbedding(
     params: EmbeddingScheduleParams
   ): Promise<EmbeddingScheduleResult> {
-    const { assetId, blobUrl, checksum, mode, ownerUserId } = params;
+    const { assetId, blobUrl, checksum, mode, ownerUserId, mime, thumbnailUrl } = params;
+    const media = resolveEmbeddingMediaSource({
+      mime,
+      blobUrl,
+      thumbnailUrl,
+    });
 
     logger.info('Scheduling embedding generation', {
       assetId,
@@ -114,10 +126,32 @@ export class EmbeddingSchedulerService {
       return { scheduled: false, mode, assetId, reason: 'embeddings_disabled' };
     }
 
+    if (media.sourceKind === 'unsupported') {
+      await markEmbeddingTerminalSkipped(
+        assetId,
+        'Unsupported video without a poster thumbnail'
+      );
+      logger.warn('Embedding generation terminal-skipped', {
+        assetId,
+        reason: media.skipReason,
+      });
+      return { scheduled: false, mode, assetId, reason: media.skipReason };
+    }
+
     if (mode === 'sync') {
       // Synchronous mode: generate embedding immediately
       try {
-        await this.generateEmbedding(assetId, blobUrl, checksum, ownerUserId);
+        const generated = await this.generateEmbedding(
+          assetId,
+          blobUrl,
+          checksum,
+          ownerUserId,
+          mime,
+          thumbnailUrl
+        );
+        if (!generated) {
+          return { scheduled: false, mode: 'sync', assetId, reason: media.skipReason };
+        }
         logger.info('Embedding generated synchronously', { assetId });
         return { scheduled: true, mode: 'sync', assetId };
       } catch (error) {
@@ -140,7 +174,14 @@ export class EmbeddingSchedulerService {
       // Asynchronous mode: schedule with Next.js after()
       after(async () => {
         try {
-          await this.generateEmbedding(assetId, blobUrl, checksum, ownerUserId);
+          await this.generateEmbedding(
+            assetId,
+            blobUrl,
+            checksum,
+            ownerUserId,
+            mime,
+            thumbnailUrl
+          );
           logger.info('Embedding generated asynchronously', { assetId });
         } catch (error) {
           logger.error('Async embedding generation failed', {
@@ -166,8 +207,10 @@ export class EmbeddingSchedulerService {
     assetId: string,
     blobUrl: string,
     checksum: string,
-    ownerUserId: string
-  ): Promise<void> {
+    ownerUserId: string,
+    mime: string,
+    thumbnailUrl?: string | null
+  ): Promise<boolean> {
     logger.debug('Starting embedding generation', { assetId });
 
     // Skip if database not available
@@ -175,7 +218,7 @@ export class EmbeddingSchedulerService {
       logger.warn('Database not available, skipping embedding generation', {
         assetId,
       });
-      return;
+      return false;
     }
 
     // Check if embedding already exists
@@ -189,21 +232,38 @@ export class EmbeddingSchedulerService {
         logger.info('Embedding already exists, skipping generation', {
           assetId,
         });
-        return;
+        return true;
       }
       if (gateState.state === 'processing') {
         logger.info('Embedding already processing, skipping generation', {
           assetId,
         });
-        return;
+        return true;
       }
       if (gateState.state === 'cooldown') {
         logger.info('Embedding in cooldown, skipping generation', {
           assetId,
           retryAfterMs: gateState.retryAfterMs,
         });
-        return;
+        return true;
       }
+    }
+
+    const media = resolveEmbeddingMediaSource({
+      mime,
+      blobUrl,
+      thumbnailUrl,
+    });
+    if (media.sourceKind === 'unsupported') {
+      await markEmbeddingTerminalSkipped(
+        assetId,
+        'Unsupported video without a poster thumbnail'
+      );
+      logger.warn('Embedding generation terminal-skipped', {
+        assetId,
+        reason: media.skipReason,
+      });
+      return false;
     }
 
     // The provider service owns the durable concurrency/rate/daily admission
@@ -215,7 +275,7 @@ export class EmbeddingSchedulerService {
         state: lock.state,
         retryAfterMs: lock.retryAfterMs,
       });
-      return;
+      return true;
     }
 
     // Initialize embedding service
@@ -249,7 +309,7 @@ export class EmbeddingSchedulerService {
     // Generate image embedding
     try {
       logger.debug('Calling embedding service', { assetId });
-      const result = await embeddingService.embedImage(blobUrl, checksum);
+      const result = await embeddingService.embedImage(media.sourceUrl, checksum);
 
       // Store embedding in database
       await upsertAssetEmbedding({
@@ -265,6 +325,7 @@ export class EmbeddingSchedulerService {
         model: result.model,
         dimension: result.dimension,
       });
+      return true;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';

@@ -32,6 +32,22 @@ vi.mock('@/lib/auth/server', () => ({
   getAuth: vi.fn(async () => ({ userId: authUser.current })),
 }));
 
+// The generate-embedding route authenticates through withAuthenticatedApi →
+// authenticateRequest; enrollment (assertEnrolledUser) still runs against the
+// live database, so tests must create a users row for the acting principal.
+vi.mock('@/lib/auth/request-auth', () => ({
+  authenticateRequest: vi.fn(async () => ({
+    status: 'authenticated',
+    principal: {
+      userId: authUser.current,
+      provider: 'qa-local',
+      providerSubject: authUser.current,
+      source: 'qa-local',
+      credentialKind: 'qa-local',
+    },
+  })),
+}));
+
 vi.mock('replicate', () => ({
   default: class Replicate {
     run = providerRun;
@@ -170,6 +186,8 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     await new EmbeddingSchedulerService().scheduleEmbedding({
       assetId: chainAssetIds[index],
       blobUrl: `https://embedding-resilience.public.blob.vercel-storage.com/${chainAssetIds[index]}.jpg`,
+      mime: 'image/jpeg',
+      thumbnailUrl: null,
       checksum: `${chainAssetIds[index]}-checksum-${chainCacheSuffix}`,
       mode: 'sync',
       ownerUserId: chainUserIds[index],
@@ -291,6 +309,12 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     const nowMs = Date.UTC(2026, 6, 14, 12, 30, 0);
     vi.useFakeTimers();
     vi.setSystemTime(nowMs);
+
+    // The limiter proves enrollment inside the admission transaction.
+    await prisma.user.createMany({
+      data: [{ id: userId, email: `${userId}@example.test` }],
+      skipDuplicates: true,
+    });
 
     const rate = await acquireEmbeddingRateLimit(userId, nowMs);
     expect(rate.allowed).toBe(true);

@@ -5,7 +5,7 @@ import { createServer } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   assertReadbackBinding,
   assertDeploymentContents,
@@ -589,6 +589,11 @@ async function runAppliedLifecycle(
   return { result: { status, stdout, stderr }, state, probeCount };
 }
 
+// These cases launch a real Node child, OpenSSL, a local HTTPS server, and a
+// fake provider CLI. Five seconds is below the observed cold-start time on
+// the CI-sized runner, so keep the command-graph oracle while giving the
+// subprocess harness a deterministic budget.
+vi.setConfig({ testTimeout: 15_000 });
 describe('enrollment lifecycle command graph', () => {
   it('dry-runs only an explicit closed or GA action and requires provider bindings', () => {
     const directory = mkdtempSync(join(tmpdir(), 'sploot-enrollment-dry-run-'));
@@ -714,7 +719,7 @@ describe('enrollment lifecycle command graph', () => {
     expect(state.phase).toBe('rollback');
     expect(result.stderr).not.toContain(secretValue);
     expect(result.stderr).not.toContain(secretHash);
-  });
+  }, 10000);
 
   it('refuses stale compensation after an unrelated provider mutation', async () => {
     const { result, state } = await runAppliedLifecycle('unrelated');
@@ -723,5 +728,5 @@ describe('enrollment lifecycle command graph', () => {
     expect(state.commands.filter((command: string) => command.startsWith('apps update')).length).toBe(2);
     expect(result.stderr).not.toContain(secretValue);
     expect(result.stderr).not.toContain(secretHash);
-  });
+  }, 10000);
 });

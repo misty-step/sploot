@@ -19,6 +19,7 @@ import { getRuntimeGate, runtimeGateError } from '@/lib/runtime-gates';
 import {
   acquireEmbeddingProcessing,
   EMBEDDING_PROCESSING_TTL_MS,
+  markEmbeddingTerminalSkipped,
 } from '@/lib/embedding-guard';
 import {
   deferEmbeddingAdmission,
@@ -29,6 +30,7 @@ import {
   recordEmbeddingAttemptFailure,
 } from '@/lib/embedding-resilience';
 import type { EmbeddingOutcome } from '@/lib/embedding-errors';
+import { resolveEmbeddingMediaSource } from '@/lib/embedding-media';
 
 // Hard per-run cap on embeddings generated — the bound on Replicate spend per
 // invocation. With the */5 * * * * schedule this ceilings throughput at
@@ -178,6 +180,8 @@ async function getHandler(request: NextRequest) {
       select: {
         id: true,
         blobUrl: true,
+        mime: true,
+        thumbnailUrl: true,
         checksumSha256: true,
         ownerUserId: true,
         createdAt: true,
@@ -216,6 +220,24 @@ async function getHandler(request: NextRequest) {
           assetId: asset.id,
           createdAt: asset.createdAt,
         });
+
+        const media = resolveEmbeddingMediaSource({
+          mime: asset.mime,
+          blobUrl: asset.blobUrl,
+          thumbnailUrl: asset.thumbnailUrl,
+        });
+        if (media.sourceKind === 'unsupported') {
+          await markEmbeddingTerminalSkipped(
+            asset.id,
+            'Unsupported video without a poster thumbnail'
+          );
+          stats.skippedCount++;
+          logger.logInfo('cron.process-embeddings.asset-skipped', {
+            assetId: asset.id,
+            reason: media.skipReason,
+          });
+          continue;
+        }
 
         // Claim/create the durable row before any fallible service
         // initialization. Assets whose embedding is null therefore receive a
@@ -295,7 +317,7 @@ async function getHandler(request: NextRequest) {
 
         // Generate embedding
         const result = await embeddingService.embedImage(
-          asset.blobUrl,
+          media.sourceUrl,
           asset.checksumSha256
         );
 
