@@ -151,6 +151,12 @@ export function SearchBar({
           <input
             ref={inputRef}
             type="text"
+            aria-label="Search your memes"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="search-history-listbox"
+            aria-expanded={showHistory}
+            aria-activedescendant={selectedIndex >= 0 ? `search-history-option-${selectedIndex}` : undefined}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -190,6 +196,7 @@ export function SearchBar({
             {/* Clear button - only show when there's text */}
             {query && (
               <button
+                type="button"
                 onClick={handleClear}
                 className="flex min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)] items-center justify-center text-muted-foreground/80 hover:text-destructive cursor-pointer"
                 aria-label="clear search"
@@ -218,6 +225,9 @@ export function SearchBar({
       {showHistory && history.length > 0 && (
         <div
           ref={dropdownRef}
+          id="search-history-listbox"
+          role="listbox"
+          aria-label="Recent searches"
           className="
             absolute top-full mt-2 w-full
             bg-sploot-panel border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] sploot-shadow
@@ -228,6 +238,7 @@ export function SearchBar({
           <div className="flex items-center justify-between px-4 py-3 border-b-2 border-sploot-ink">
             <span className="font-mono text-xs text-muted-foreground">recent searches</span>
             <button
+              type="button"
               onClick={() => {
                 clearHistory();
                 setShowHistory(false);
@@ -243,6 +254,10 @@ export function SearchBar({
             {history.map((item, index) => (
               <div
                 key={item.timestamp}
+                id={`search-history-option-${index}`}
+                role="option"
+                aria-selected={selectedIndex === index}
+                tabIndex={-1}
                 className={`
                   flex items-center justify-between px-4 py-3
                   hover:bg-muted cursor-pointer group
@@ -267,6 +282,7 @@ export function SearchBar({
                   <span className="font-mono text-sm text-foreground truncate">{item.query}</span>
                 </div>
                 <button
+                  type="button"
                   onClick={(e) => handleHistoryRemove(e, item.query)}
                   className="p-1 text-muted-foreground/80 hover:text-destructive opacity-0 group-hover:opacity-100 cursor-pointer"
                   aria-label="Remove from history"

@@ -94,12 +94,41 @@ function gitPaths(repositoryRoot: string, command: string): string[] {
 
 export function buildRelevantSourcePaths(repositoryRoot: string): string[] {
   const paths = [
-    ...gitPaths(repositoryRoot, 'diff --name-only -z HEAD'),
+    ...gitPaths(repositoryRoot, 'ls-files -z'),
     ...gitPaths(repositoryRoot, 'ls-files --others --exclude-standard -z'),
   ];
   return [...new Set(paths)].filter((path) =>
     !GENERATED_PREFIXES.some((prefix) => path.startsWith(prefix)) && !GENERATED_FILES.has(path)
   );
+}
+
+function immutableSourceDigest(repositoryRoot: string, paths: string[]): string {
+  const requested = new Set(paths);
+  const records = execFileSync(
+    'git',
+    ['ls-tree', '-r', '-z', '--full-tree', 'HEAD'],
+    { cwd: repositoryRoot, encoding: 'buffer' },
+  ).toString().split('\0').filter(Boolean);
+  const entries = records.flatMap((record) => {
+    const separator = record.indexOf('\t');
+    if (separator < 0) return [];
+    const [mode, _kind, object] = record.slice(0, separator).split(' ');
+    const path = record.slice(separator + 1);
+    if (!requested.has(path)) return [];
+    return [{
+      path,
+      kind: mode === '120000' ? 'symlink' as const : 'file' as const,
+      mode,
+      // The Git object id is the immutable source anchor. It is deliberately
+      // independent of bytes read from the mutable checkout below.
+      bytes: object,
+    }];
+  });
+
+  if (entries.length !== paths.length) {
+    throw new Error('provenance requires a clean tracked source tree');
+  }
+  return canonicalDigest(entries);
 }
 
 export function canonicalStandaloneRoot(repositoryRoot: string): string {
@@ -162,7 +191,9 @@ export function createQaProvenanceManifest(
   if (resolve(artifactRoot) !== resolve(canonicalRoot)) {
     throw new Error('provenance build artifact must be the canonical standalone root');
   }
-  const sourceFiles = digestPaths(repositoryRoot, buildRelevantSourcePaths(repositoryRoot));
+  const sourcePaths = buildRelevantSourcePaths(repositoryRoot);
+  const sourceFiles = digestPaths(repositoryRoot, sourcePaths);
+  const sourceDigest = immutableSourceDigest(repositoryRoot, sourcePaths);
   const artifactFiles = digestDirectory(artifactRoot);
   if (sourceFiles.files.length === 0 || artifactFiles.files.length === 0) {
     throw new Error('provenance requires nonempty source and built-artifact inputs');
@@ -172,7 +203,7 @@ export function createQaProvenanceManifest(
     generatedAt: new Date().toISOString(),
     base: baseIdentity(repositoryRoot),
     sourceFiles: sourceFiles.files,
-    sourceDigest: sourceFiles.digest,
+    sourceDigest,
     artifactRoot: relative(repositoryRoot, canonicalRoot).split('\\').join('/'),
     artifactFiles: artifactFiles.files,
     artifactDigest: artifactFiles.digest,
@@ -193,7 +224,11 @@ export function verifyQaProvenanceManifest(
   const expectedSourcePaths = buildRelevantSourcePaths(repositoryRoot);
   assertExactDigestPaths('source', expectedSourcePaths, manifest.sourceFiles);
   const source = digestPaths(repositoryRoot, expectedSourcePaths);
-  if (source.digest !== manifest.sourceDigest) {
+  const immutableDigest = immutableSourceDigest(repositoryRoot, expectedSourcePaths);
+  if (immutableDigest !== manifest.sourceDigest) {
+    throw new Error('source tree anchor changed since build');
+  }
+  if (source.digest !== canonicalDigest(manifest.sourceFiles)) {
     throw new Error('modified/untracked source changed since build');
   }
   assertExactDigestEntries('source', source.files, manifest.sourceFiles);

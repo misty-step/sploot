@@ -3,7 +3,7 @@ import { GET, POST } from '@/app/api/cache/stats/route';
 import { createMockRequest } from '../utils/test-helpers';
 import { getCacheService } from '@/lib/cache';
 import type { CacheStats } from '@/lib/cache';
-import { createQaLocalAuthToken, getQaLocalAuthHeader, getQaLocalRemoteAddressHeader } from '@/lib/auth/qa-local';
+import { createQaLocalAuthToken, createQaLocalProxyProof, getQaLocalAuthHeader, getQaLocalProxyProofHeader } from '@/lib/auth/qa-local';
 
 // Mock dependencies
 vi.mock('@/lib/cache');
@@ -56,10 +56,11 @@ describe('/api/cache/stats', () => {
       secret: QA_SECRET,
       expiresInSeconds: 60,
     });
+    const proxyProof = await createQaLocalProxyProof('localhost', '127.0.0.1', QA_SECRET);
 
     return createMockRequest(method, null, {
       [getQaLocalAuthHeader()]: token,
-      [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+      [getQaLocalProxyProofHeader()]: proxyProof,
     }, searchParams);
   }
 

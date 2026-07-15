@@ -11,12 +11,14 @@
  */
 import http from 'node:http';
 import { spawn } from 'node:child_process';
+import { createHmac } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import process from 'node:process';
 
 const publicPort = Number(process.env.PORT ?? 3474);
 const appPort = Number(process.env.QA_NEXT_PORT ?? publicPort + 1);
 const appHost = '127.0.0.1';
+const qaSecret = process.env.SPLOOT_QA_AUTH_SECRET;
 const lifecyclePath = process.env.QA_EVIDENCE_LIFECYCLE_PATH;
 const lifecycle = {
   command: `${process.execPath} .next/standalone/apps/web/server.js`,
@@ -54,6 +56,13 @@ const hostName = (value) => {
   return raw.split(':')[0];
 };
 
+const proxyProof = (host, remoteAddress) => {
+  if (!qaSecret) return null;
+  const payload = Buffer.from(JSON.stringify({ host, remoteAddress })).toString('base64url');
+  const signature = createHmac('sha256', qaSecret).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+};
+
 const server = http.createServer((request, response) => {
   const remoteAddress = request.socket.remoteAddress;
   const host = hostName(request.headers.host);
@@ -65,8 +74,10 @@ const server = http.createServer((request, response) => {
 
   const headers = { ...request.headers };
   delete headers['x-sploot-qa-remote-address'];
+  delete headers['x-sploot-qa-proxy-proof'];
   headers.host = request.headers.host;
-  headers['x-sploot-qa-remote-address'] = remoteAddress.replace(/^::ffff:/, '');
+  const proof = proxyProof(host, remoteAddress.replace(/^::ffff:/, ''));
+  if (proof) headers['x-sploot-qa-proxy-proof'] = proof;
 
   const upstream = http.request({
     hostname: appHost,

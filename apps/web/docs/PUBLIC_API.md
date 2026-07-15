@@ -145,13 +145,16 @@ web app itself calls.
 **Request:**
 
 ```json
-{ "query": "distracted boyfriend", "limit": 30, "offset": 0, "threshold": 0.2 }
+{ "query": "distracted boyfriend", "limit": 30, "threshold": 0.2 }
 ```
 
 - `query` (string, required, max 500 chars)
-- `limit` (number, optional, default 30)
-- `offset` (number, optional, default 0, max 500) — fetch the next page from
-  the same semantic result set; pagination stays on `POST /api/search`.
+- `limit` (number, optional, default 30, max 100) — each page is bounded.
+- `cursor` (string, optional) — opaque cursor from the previous response for
+  deterministic keyset traversal. It is the pagination mechanism for results
+  beyond the legacy offset window.
+- `offset` (number, optional, default 0, max 500) — retained for backwards
+  compatibility on the first 500 results; do not combine it with `cursor`.
 - `threshold` (number, optional, 0–1, default 0.2) — results below this
   similarity are not returned; a real miss is an empty `results` array, never
   low-similarity padding.
@@ -180,6 +183,9 @@ web app itself calls.
   "processingTime": 245
 }
 ```
+
+When `hasMore` is true, the response also includes `nextCursor`; send it as
+`cursor` on the next request.
 
 **Errors:** `400` missing/invalid/too-long query · `401` bad or missing token ·
 `403 {"code":"enrollment_closed"}` admission paused ·

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createQaLocalAuthToken, getQaLocalRemoteAddressHeader } from '../lib/auth/qa-local';
+import { createQaLocalAuthToken } from '../lib/auth/qa-local';
 import { assertNoBrowserRequestFailures } from '../lib/qa/request-failure-policy';
 import { verifyQaProvenanceManifest, type QaProvenanceManifest } from '../scripts/qa-provenance';
 
@@ -135,7 +135,6 @@ test.describe('authenticated seeded gallery', () => {
         const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
         await context.setExtraHTTPHeaders({
           'x-sploot-qa-auth': token,
-          [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
         });
         await context.addCookies([
           { name: 'sploot_qa_auth', value: token, url: baseURL },
@@ -196,6 +195,20 @@ test.describe('authenticated seeded gallery', () => {
         await expect(dialog).toBeVisible();
         await expect(dialog.getByText('cosine')).toBeVisible();
         await expect(dialog.getByText(/match/i)).toBeVisible();
+        await expect(dialog.getByRole('definition').first()).toBeVisible();
+        const dialogButtons = dialog.getByRole('button');
+        const firstDialogButton = dialogButtons.first();
+        const lastDialogButton = dialogButtons.last();
+        await firstDialogButton.focus();
+        await page.keyboard.press('Shift+Tab');
+        await expect(lastDialogButton).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(firstDialogButton).toBeFocused();
+        const touchTargets = await dialogButtons.evaluateAll((buttons) => buttons.map((button) => {
+          const rect = button.getBoundingClientRect();
+          return { width: rect.width, height: rect.height };
+        }));
+        expect(touchTargets.every(({ width, height }) => width >= 44 && height >= 44)).toBe(true);
         await assertA11y(page);
         await page.screenshot({ path: testInfo.outputPath(`${theme}-${viewport.label}-detail.png`) });
         await page.keyboard.press('Escape');
@@ -339,7 +352,6 @@ test.describe('authenticated seeded gallery', () => {
           });
           await reducedContext.setExtraHTTPHeaders({
             'x-sploot-qa-auth': token,
-            [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
           });
           await reducedContext.addCookies([
             { name: 'sploot_qa_auth', value: token, url: baseURL },

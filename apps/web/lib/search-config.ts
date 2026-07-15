@@ -39,3 +39,6 @@ export const SIMILARITY_NEAR_BOUNDARY = 0.25;
 
 /** Default number of results the client requests. */
 export const SEARCH_DEFAULT_LIMIT = 50;
+
+/** Maximum number of results any one semantic-search page may return. */
+export const SEARCH_MAX_LIMIT = 100;

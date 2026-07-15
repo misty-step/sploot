@@ -2,6 +2,7 @@ import type { AuthenticatedPrincipal, RequestAuthResult } from './types';
 
 const QA_LOCAL_AUTH_HEADER = 'x-sploot-qa-auth';
 const QA_LOCAL_AUTH_COOKIE = 'sploot_qa_auth';
+const QA_LOCAL_PROXY_PROOF_HEADER = 'x-sploot-qa-proxy-proof';
 const QA_LOCAL_REMOTE_ADDRESS_HEADER = 'x-sploot-qa-remote-address';
 const TOKEN_VERSION = 1;
 const QA_USER_ID_PATTERN = /^qa-[a-z0-9-]{1,64}$/;
@@ -62,6 +63,20 @@ export function getQaLocalRemoteAddressHeader(): string {
   return QA_LOCAL_REMOTE_ADDRESS_HEADER;
 }
 
+export function getQaLocalProxyProofHeader(): string {
+  return QA_LOCAL_PROXY_PROOF_HEADER;
+}
+
+export async function createQaLocalProxyProof(
+  host: string,
+  remoteAddress: string,
+  secret: string,
+): Promise<string> {
+  const payload = base64UrlEncode(JSON.stringify({ host, remoteAddress }));
+  return `${payload}.${await signPayload(payload, secret)}`;
+}
+}
+
 export function getQaProofRequestContext(headers: Headers): QaProofRequestContext {
   const rawHost = headers.get('host') ?? '';
   const host = rawHost.startsWith('[')
@@ -69,13 +84,16 @@ export function getQaProofRequestContext(headers: Headers): QaProofRequestContex
     : rawHost.split(':')[0];
   return {
     host,
-    remoteAddress: headers.get(QA_LOCAL_REMOTE_ADDRESS_HEADER) ?? '',
+    remoteAddress: headers.get(QA_LOCAL_REMOTE_ADDRESS_HEADER) ?? undefined,
+    proxyProof: headers.get(QA_LOCAL_PROXY_PROOF_HEADER) ?? undefined,
   };
 }
 
 export interface QaProofRequestContext {
   host: string;
-  remoteAddress: string;
+  /** Only populated by the server adapter or a verified front-door proof. */
+  remoteAddress?: string;
+  proxyProof?: string;
 }
 
 export interface QaProofConfigResult {
@@ -176,15 +194,16 @@ export async function verifyQaLocalAuthHeaders(
     return { status: 'forbidden', reason: 'qa-local-disabled' };
   }
 
-  const host = request?.host ?? getQaProofRequestContext(headers).host;
-  const remoteAddress = request?.remoteAddress ?? headers.get(QA_LOCAL_REMOTE_ADDRESS_HEADER) ?? '';
-  if (!LOOPBACK_HOSTS.has(host) || !isLoopbackAddress(remoteAddress)) {
-    return { status: 'forbidden', reason: 'qa-local-non-loopback' };
-  }
-
   const secret = env.SPLOOT_QA_AUTH_SECRET;
   if (!secret) {
     return { status: 'forbidden', reason: 'qa-local-secret-missing' };
+  }
+
+  const context = request ?? getQaProofRequestContext(headers);
+  const host = context.host;
+  const remoteAddress = context.remoteAddress ?? await verifyQaLocalProxyProof(context.proxyProof, host, secret);
+  if (!LOOPBACK_HOSTS.has(host) || !isLoopbackAddress(remoteAddress)) {
+    return { status: 'forbidden', reason: 'qa-local-non-loopback' };
   }
 
   const payload = await verifyQaLocalAuthToken(token, secret, {
@@ -200,6 +219,30 @@ export async function verifyQaLocalAuthHeaders(
     principal: principalFromPayload(payload),
     syncStatus: 'skipped',
   };
+}
+
+async function verifyQaLocalProxyProof(
+  proof: string | undefined,
+  expectedHost: string,
+  secret: string,
+): Promise<string> {
+  if (!proof) return '';
+  const [encodedPayload, signature, extra] = proof.split('.');
+  if (!encodedPayload || !signature || extra !== undefined ||
+      !constantTimeEqual(signature, await signPayload(encodedPayload, secret))) {
+    return '';
+  }
+
+  try {
+    const payload = JSON.parse(base64UrlDecode(encodedPayload)) as {
+      host?: string;
+      remoteAddress?: string;
+    };
+    if (payload.host !== expectedHost || typeof payload.remoteAddress !== 'string') return '';
+    return payload.remoteAddress;
+  } catch {
+    return '';
+  }
 }
 
 async function verifyQaLocalAuthToken(

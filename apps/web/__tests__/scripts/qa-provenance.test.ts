@@ -60,4 +60,18 @@ describe('QA capture provenance', () => {
     const altered = { ...manifest, artifactDigest: 'f'.repeat(64) };
     expect(() => verifyQaProvenanceManifest(repositoryRoot, altered)).toThrow(/built artifact changed/);
   });
+
+  it('rejects a self-consistent rewrite that replaces the immutable source anchor', () => {
+    const repositoryRoot = process.cwd().replace(/\/apps\/web$/, '');
+    const artifactRoot = canonicalStandaloneRoot(repositoryRoot);
+    if (!existsSync(join(artifactRoot, 'server.js')) || readdirSync(artifactRoot).length === 0) return;
+    const manifest = createQaProvenanceManifest(repositoryRoot, artifactRoot);
+    const rewrittenSourceDigest = digestPaths(repositoryRoot, manifest.sourceFiles.map(({ path }) => path)).digest;
+
+    expect(rewrittenSourceDigest).not.toBe(manifest.sourceDigest);
+    expect(() => verifyQaProvenanceManifest(repositoryRoot, {
+      ...manifest,
+      sourceDigest: rewrittenSourceDigest,
+    })).toThrow(/source tree anchor/);
+  });
 });

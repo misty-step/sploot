@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
-import { createQaLocalAuthToken, getQaLocalAuthHeader, getQaLocalRemoteAddressHeader } from '@/lib/auth/qa-local';
+import { createQaLocalAuthToken, createQaLocalProxyProof, getQaLocalAuthHeader, getQaLocalProxyProofHeader } from '@/lib/auth/qa-local';
 import { POST } from '@/app/api/assets/[id]/share/route';
 import { generateMetadata } from '@/app/m/[id]/page';
 
@@ -64,11 +64,12 @@ describe('Share flow', () => {
       secret: 'test-secret-with-enough-entropy',
       expiresInSeconds: 60,
     });
+    const proxyProof = await createQaLocalProxyProof('localhost', '127.0.0.1', 'test-secret-with-enough-entropy');
     return new NextRequest('http://localhost:3000/api/assets/asset_123/share', {
       method: 'POST',
       headers: {
         [getQaLocalAuthHeader()]: token,
-        [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+        [getQaLocalProxyProofHeader()]: proxyProof,
       },
     });
   }

@@ -19,7 +19,7 @@ vi.mock('@clerk/nextjs/server', () => {
 });
 
 import middleware, { config } from '@/middleware';
-import { createQaLocalAuthToken, getQaLocalAuthHeader, getQaLocalRemoteAddressHeader } from '@/lib/auth/qa-local';
+import { createQaLocalAuthToken, createQaLocalProxyProof, getQaLocalAuthHeader, getQaLocalProxyProofHeader } from '@/lib/auth/qa-local';
 
 describe('middleware auth boundary', () => {
   const QA_SECRET = 'test-secret-with-enough-entropy';
@@ -102,6 +102,7 @@ describe('middleware auth boundary', () => {
       secret: QA_SECRET,
       expiresInSeconds: 60,
     });
+    const proxyProof = await createQaLocalProxyProof('localhost', '127.0.0.1', QA_SECRET);
 
     const response = await middleware(
       { protect } as any,
@@ -112,7 +113,7 @@ describe('middleware auth boundary', () => {
         headers: new Headers({
           host: 'localhost:3001',
           [getQaLocalAuthHeader()]: token,
-          [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+          [getQaLocalProxyProofHeader()]: proxyProof,
         }),
       } as any
     );

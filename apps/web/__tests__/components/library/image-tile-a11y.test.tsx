@@ -31,7 +31,7 @@ const asset: Asset = {
 
 describe('ImageTile interaction semantics', () => {
   it('uses a sibling open button instead of nesting action buttons in a button role', () => {
-    render(
+    const { container } = render(
       <BlobCircuitBreakerProvider>
         <ImageTile asset={asset} />
       </BlobCircuitBreakerProvider>
@@ -42,6 +42,15 @@ describe('ImageTile interaction semantics', () => {
     expect(screen.getByRole('button', { name: /share meme/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /delete meme/i })).toBeInTheDocument();
     expect(screen.getByRole('article')).not.toHaveAttribute('role', 'button');
+
+    const buttons = Array.from(container.querySelectorAll('button'));
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'open meme.jpg',
+      'mark as banger',
+      'share meme',
+      'delete meme',
+    ]);
+    expect(buttons[0].contains(buttons[1])).toBe(false);
   });
 
   it('activates the accessible open button with the supplied selection callback', () => {

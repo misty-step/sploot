@@ -137,4 +137,15 @@ describe('/api/search with a cached query embedding', () => {
     expect(res.status).toBe(503);
     expect(mocks.vectorSearchPage).not.toHaveBeenCalled();
   });
+
+  it('rejects unbounded pages and legacy offsets beyond the bounded window', async () => {
+    mocks.getTextEmbedding.mockResolvedValue(new Array(512).fill(0.1));
+
+    const tooLarge = await search(searchRequest({ query: 'cats', limit: 101 }));
+    expect(tooLarge.status).toBe(400);
+
+    const tooFar = await search(searchRequest({ query: 'cats', offset: 501 }));
+    expect(tooFar.status).toBe(400);
+    expect(mocks.vectorSearchPage).not.toHaveBeenCalled();
+  });
 });
