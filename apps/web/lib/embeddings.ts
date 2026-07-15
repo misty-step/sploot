@@ -4,7 +4,6 @@ import { getRuntimeGate } from './runtime-gates';
 import {
   acquireEmbeddingDailyBudget,
   acquireEmbeddingRateLimit,
-  refundEmbeddingBudget,
   releaseEmbeddingRateLimit,
   type EmbeddingDailyBudgetReason,
   type EmbeddingRateLimitLease,
@@ -261,16 +260,10 @@ class ReplicateEmbeddingService implements EmbeddingService {
           budget.retryAfterSec
         );
       }
-      if (!budget.reservation) {
-        throw new EmbeddingAdmissionError('limiter_unavailable', 30);
-      }
 
-      try {
-        return await operation();
-      } catch (error) {
-        await refundEmbeddingBudget(budget.reservation);
-        throw error;
-      }
+      // The provider may bill failed, canceled, or timed-out predictions. Once
+      // the provider operation begins, retain both budget counters.
+      return await operation();
     } finally {
       await releaseEmbeddingRateLimit(lease);
     }

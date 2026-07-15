@@ -51,12 +51,6 @@ export interface EmbeddingDailyBudgetResult {
   count: number;
   limit: number;
   retryAfterSec?: number;
-  reservation?: EmbeddingBudgetReservation;
-}
-
-export interface EmbeddingBudgetReservation {
-  dateKey: string;
-  monthKey: string;
 }
 
 export interface EmbeddingRateLimitLease {
@@ -132,10 +126,8 @@ async function pruneExpiredLimiterState(
   tx: Prisma.TransactionClient,
   now: Date
 ): Promise<void> {
-  await Promise.all([
-    tx.embeddingRateLease.deleteMany({ where: { expiresAt: { lte: now } } }),
-    tx.embeddingRateBucket.deleteMany({ where: { expiresAt: { lte: now } } }),
-  ]);
+  await tx.embeddingRateLease.deleteMany({ where: { expiresAt: { lte: now } } });
+  await tx.embeddingRateBucket.deleteMany({ where: { expiresAt: { lte: now } } });
 }
 
 async function incrementBucket(
@@ -150,19 +142,6 @@ async function incrementBucket(
     select: { count: true },
   });
   return bucket.count;
-}
-
-async function decrementBucket(
-  tx: Prisma.TransactionClient,
-  key: string
-): Promise<void> {
-  const result = await tx.embeddingRateBucket.updateMany({
-    where: { key, count: { gt: 0 } },
-    data: { count: { decrement: 1 } },
-  });
-  if (result.count !== 1) {
-    throw new Error(`Embedding budget reservation missing: ${key}`);
-  }
 }
 
 export async function acquireEmbeddingRateLimit(
@@ -187,12 +166,18 @@ export async function acquireEmbeddingRateLimit(
       }
       await pruneExpiredLimiterState(tx, now);
 
-      const [userInflight, globalInflight, userBucket, globalBucket] = await Promise.all([
-        tx.embeddingRateLease.count({ where: { userId, expiresAt: { gt: now } } }),
-        tx.embeddingRateLease.count({ where: { expiresAt: { gt: now } } }),
-        tx.embeddingRateBucket.findUnique({ where: { key: userWindowKey } }),
-        tx.embeddingRateBucket.findUnique({ where: { key: globalWindowKey } }),
-      ]);
+      const userInflight = await tx.embeddingRateLease.count({
+        where: { userId, expiresAt: { gt: now } },
+      });
+      const globalInflight = await tx.embeddingRateLease.count({
+        where: { expiresAt: { gt: now } },
+      });
+      const userBucket = await tx.embeddingRateBucket.findUnique({
+        where: { key: userWindowKey },
+      });
+      const globalBucket = await tx.embeddingRateBucket.findUnique({
+        where: { key: globalWindowKey },
+      });
 
       const userWindow = userBucket?.count ?? 0;
       const globalWindow = globalBucket?.count ?? 0;
@@ -255,16 +240,14 @@ export async function acquireEmbeddingRateLimit(
         userId,
       };
 
-      const [persistedUserWindow, persistedGlobalWindow] = await Promise.all([
-        incrementBucket(tx, userWindowKey, expiresAt),
-        incrementBucket(tx, globalWindowKey, expiresAt),
-        tx.embeddingRateLease.create({
-          data: {
-            ...lease,
-            expiresAt: new Date(nowMs + EMBEDDING_INFLIGHT_TTL_SECONDS * 1000),
-          },
-        }),
-      ]);
+      const persistedUserWindow = await incrementBucket(tx, userWindowKey, expiresAt);
+      const persistedGlobalWindow = await incrementBucket(tx, globalWindowKey, expiresAt);
+      await tx.embeddingRateLease.create({
+        data: {
+          ...lease,
+          expiresAt: new Date(nowMs + EMBEDDING_INFLIGHT_TTL_SECONDS * 1000),
+        },
+      });
 
       return {
         allowed: true,
@@ -317,10 +300,12 @@ export async function acquireEmbeddingDailyBudget(
   try {
     return await withLimiterLock(async (tx) => {
       await pruneExpiredLimiterState(tx, now);
-      const [dailyBucket, monthlyBucket] = await Promise.all([
-        tx.embeddingRateBucket.findUnique({ where: { key: dailyKey } }),
-        tx.embeddingRateBucket.findUnique({ where: { key: monthlyKey } }),
-      ]);
+      const dailyBucket = await tx.embeddingRateBucket.findUnique({
+        where: { key: dailyKey },
+      });
+      const monthlyBucket = await tx.embeddingRateBucket.findUnique({
+        where: { key: monthlyKey },
+      });
       const count = dailyBucket?.count ?? 0;
       const monthlyCount = monthlyBucket?.count ?? 0;
 
@@ -354,23 +339,20 @@ export async function acquireEmbeddingDailyBudget(
         };
       }
 
-      const [persistedCount] = await Promise.all([
-        incrementBucket(
-          tx,
-          dailyKey,
-          new Date(nowMs + EMBEDDING_DAILY_BUDGET_TTL_SECONDS * 1000)
-        ),
-        incrementBucket(
-          tx,
-          monthlyKey,
-          new Date(nowMs + EMBEDDING_MONTHLY_BUDGET_TTL_SECONDS * 1000)
-        ),
-      ]);
+      const persistedCount = await incrementBucket(
+        tx,
+        dailyKey,
+        new Date(nowMs + EMBEDDING_DAILY_BUDGET_TTL_SECONDS * 1000)
+      );
+      await incrementBucket(
+        tx,
+        monthlyKey,
+        new Date(nowMs + EMBEDDING_MONTHLY_BUDGET_TTL_SECONDS * 1000)
+      );
       return {
         allowed: true,
         count: persistedCount,
         limit: EMBEDDING_DAILY_BUDGET,
-        reservation: { dateKey, monthKey },
       };
     });
   } catch (error) {
@@ -382,21 +364,5 @@ export async function acquireEmbeddingDailyBudget(
       limit: EMBEDDING_DAILY_BUDGET,
       retryAfterSec: 30,
     };
-  }
-}
-
-/** Refund one failed embedding reservation across both UTC budget buckets. */
-export async function refundEmbeddingBudget(
-  reservation: EmbeddingBudgetReservation | undefined | null
-): Promise<void> {
-  if (!reservation) return;
-
-  try {
-    await withLimiterLock(async (tx) => {
-      await decrementBucket(tx, `embedding:daily:${reservation.dateKey}`);
-      await decrementBucket(tx, `embedding:monthly:${reservation.monthKey}`);
-    });
-  } catch (error) {
-    logger.logError('embedding-rate-limit.budget-refund-failed', error, reservation);
   }
 }
