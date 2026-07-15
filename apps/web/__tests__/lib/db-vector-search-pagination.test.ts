@@ -71,6 +71,21 @@ describe('seeded vector-search pagination', () => {
     expect(sql).not.toContain('AND a.favorite');
   });
 
+  it('pushes direct-path thresholds into pgvector SQL before the result limit', () => {
+    const query = buildUnfilteredVectorSearchQuery(
+      'similar-assets-user',
+      Array(EMBEDDING_DIMENSION).fill(0.1),
+      12,
+      0.8,
+    );
+    const sql = query.strings.join(' ');
+
+    expect(sql).toContain('1 - (ae.image_embedding <=>');
+    expect(sql).toContain('>=');
+    expect(sql).not.toContain('WITH ranked');
+    expect(sql).not.toContain('COUNT');
+  });
+
   it('encodes a canonical search-context-bound cursor without exposing pagination offsets', () => {
     const context = createVectorSearchContext({
       query: 'cats in hats',

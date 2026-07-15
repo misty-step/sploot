@@ -119,6 +119,22 @@ describe('CacheService', () => {
 
       expect(keys.some(key => key.startsWith('txt:'))).toBe(true);
     });
+
+    it('does not let known legacy 32-bit collisions cross-contaminate embeddings', async () => {
+      await cacheService.setTextEmbedding('a!', [0.1], 'model');
+
+      await expect(cacheService.getTextEmbedding('`@', 'model')).resolves.toBeNull();
+      await expect(cacheService.getTextEmbedding('a!', 'model')).resolves.toEqual([0.1]);
+
+      const keys = Array.from(mockBackend.getStore().keys());
+      expect(keys.some((key) => key.startsWith('txt:v2:'))).toBe(true);
+    });
+
+    it('ignores pre-v2 text keys so old lossy entries migrate by expiry', async () => {
+      await mockBackend.set('txt:0:2cg', [9, 9, 9]);
+
+      await expect(cacheService.getTextEmbedding('a!', '')).resolves.toBeNull();
+    });
   });
 
   describe('Image Embeddings', () => {
@@ -238,6 +254,25 @@ describe('CacheService', () => {
       await cacheService.setSearchResultPage(userId, '  Funny   Cats  ', filters, page.results, page.total, page.hasMore);
 
       await expect(cacheService.getSearchResultPage(userId, 'funny cats', filters)).resolves.toEqual(page);
+    });
+
+    it('does not let known legacy 32-bit collisions cross-contaminate page results', async () => {
+      const firstPage = [{ id: 'asset-a' }];
+      const secondPage = [{ id: 'asset-b' }];
+
+      await cacheService.setSearchResultPage(userId, 'a!', filters, firstPage, 1, false);
+      await cacheService.setSearchResultPage(userId, '`@', filters, secondPage, 1, false);
+
+      await expect(cacheService.getSearchResultPage(userId, 'a!', filters)).resolves.toEqual({
+        results: firstPage,
+        total: 1,
+        hasMore: false,
+      });
+      await expect(cacheService.getSearchResultPage(userId, '`@', filters)).resolves.toEqual({
+        results: secondPage,
+        total: 1,
+        hasMore: false,
+      });
     });
 
     it('should isolate every semantic page-shaping filter', async () => {

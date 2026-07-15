@@ -125,7 +125,8 @@ test.describe('authenticated seeded gallery', () => {
       secret: qaSecret,
       expiresInSeconds: 15 * 60,
     });
-    const runSeed = Date.now() % 1_000_000;
+    const runSeed = Number(process.env.SPLOOT_QA_GALLERY_SEED ?? '296');
+    expect(Number.isSafeInteger(runSeed)).toBe(true);
     const provenance: Array<Record<string, unknown>> = [];
     const buildProvenance = assertBuildProvenance();
 
