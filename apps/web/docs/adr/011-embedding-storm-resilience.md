@@ -60,9 +60,11 @@ inside the quarantine the route returns `429` with
 receive at most one revival over its lifetime. Three further failures re-poison
 the row; after its new quarantine expires, owner requests return `422` with
 `reason: "revival_exhausted"`. The `revive_count` column, bounded check, and
-transition trigger enforce that policy even if an older runtime is rolled back,
-so a permanently bad asset cannot enter an unbounded paid retry loop. Cron never
-revives; every revive emits a structured `embedding.terminal-revived` log with
+transition trigger enforce that policy even if an older runtime is rolled back;
+the follow-up legacy-write trigger also rejects old claim and vector-write SQL
+while `terminal_at` remains set. A permanently bad asset cannot enter an
+unbounded paid retry loop. Cron never revives; every revive emits a structured
+`embedding.terminal-revived` log with
 the prior attempt count, revival count, and terminal timestamp. All retry,
 terminal, circuit-open, and recovery
 timestamps are computed from the caller-supplied clock; retry delays are
@@ -133,7 +135,8 @@ generic 5xx Canary event.
 
 ## Rollback
 
-Rollback application code first, then leave the additive columns/table in place;
+Rollback application code first, then leave the additive columns/table and
+legacy-terminal-write trigger in place;
 the previous application ignores them and existing ready vectors remain valid.
 The follow-up generation/probe migration is also additive and uses
 `IF NOT EXISTS`, so a partially applied deploy can be retried safely. Do not

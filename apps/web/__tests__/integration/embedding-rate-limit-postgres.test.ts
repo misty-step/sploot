@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { PrismaClient } from '@prisma/client';
 
 import {
   acquireEmbeddingAdmissionReservation,
@@ -16,6 +17,12 @@ import { prisma } from '@/lib/db';
 const describeWithDatabase = process.env.DATABASE_URL && prisma
   ? describe.sequential
   : describe.skip;
+
+const limiterAdmin = process.env.STRIPE_LEDGER_ADMIN_DATABASE_URL
+  ? new PrismaClient({
+      datasources: { db: { url: process.env.STRIPE_LEDGER_ADMIN_DATABASE_URL } },
+    })
+  : prisma;
 
 const limiterUserIds = [
   'user-lease',
@@ -71,6 +78,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
   afterAll(async () => {
     await resetLimiterState();
     await prisma.user.deleteMany({ where: { id: { in: limiterUserIds } } });
+    if (limiterAdmin !== prisma) await limiterAdmin.$disconnect();
   });
 
   it('persists a releasable lease for an allowed request', async () => {
@@ -320,7 +328,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
     expect(admitted.allowed).toBe(true);
     const reservation = admitted.reservation!;
 
-    await prisma.$executeRawUnsafe(`
+    await limiterAdmin.$executeRawUnsafe(`
       CREATE OR REPLACE FUNCTION sploot_test_refund_failure()
       RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
@@ -328,7 +336,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
       END;
       $$
     `);
-    await prisma.$executeRawUnsafe(`
+    await limiterAdmin.$executeRawUnsafe(`
       CREATE TRIGGER sploot_test_refund_failure_trigger
       BEFORE UPDATE ON "embedding_rate_buckets"
       FOR EACH ROW EXECUTE FUNCTION sploot_test_refund_failure()
@@ -359,8 +367,8 @@ describeWithDatabase('Postgres embedding limiter', () => {
       expect(charged).toHaveLength(4);
       expect(charged.filter(({ count }) => count === 1)).toHaveLength(4);
     } finally {
-      await prisma.$executeRawUnsafe('DROP TRIGGER IF EXISTS sploot_test_refund_failure_trigger ON "embedding_rate_buckets"');
-      await prisma.$executeRawUnsafe('DROP FUNCTION IF EXISTS sploot_test_refund_failure()');
+      await limiterAdmin.$executeRawUnsafe('DROP TRIGGER IF EXISTS sploot_test_refund_failure_trigger ON "embedding_rate_buckets"');
+      await limiterAdmin.$executeRawUnsafe('DROP FUNCTION IF EXISTS sploot_test_refund_failure()');
     }
 
     await expect(

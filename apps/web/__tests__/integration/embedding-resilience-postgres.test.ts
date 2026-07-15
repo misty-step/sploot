@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Prisma } from '@prisma/client';
 
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import {
@@ -19,6 +20,7 @@ import {
   markEmbeddingTerminalSkipped,
 } from '@/lib/embedding-guard';
 import { EmbeddingSchedulerService } from '@/lib/upload/embedding-scheduler-service';
+import { embeddingVectorSql } from '@/lib/embedding-vector-sql';
 import {
   acquireEmbeddingDailyBudget,
   acquireEmbeddingRateLimit,
@@ -960,6 +962,69 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
         select: { status: true, dim: true },
       }),
     ).resolves.toMatchObject({ status: 'ready', dim: 768 });
+  }, 30_000);
+
+  it('preserves the revival cap for current and rolled-back embedding writers', async () => {
+    const nowMs = Date.UTC(2026, 6, 15, 8, 0, 0);
+    await seedTerminalChainAsset(3, nowMs - 20 * 60_000);
+    const terminalAssetId = chainAssetIds[3];
+    await prisma.assetEmbedding.update({
+      where: { assetId: terminalAssetId },
+      data: { reviveCount: 1 },
+    });
+
+    await expect(
+      upsertAssetEmbedding({
+        assetId: terminalAssetId,
+        modelName: 'current-route-model',
+        modelVersion: 'current-route-model',
+        dim: 768,
+        embedding: Array(768).fill(0.1),
+      }),
+    ).resolves.toBeNull();
+
+    await expect(
+      prisma.$queryRaw(Prisma.sql`
+        UPDATE "asset_embeddings"
+        SET "status" = 'processing', "error" = NULL, "updatedAt" = NOW()
+        WHERE "asset_id" = ${terminalAssetId}
+          AND "image_embedding" IS NULL
+          AND ("dim" IS NULL OR "dim" = 0)
+      `),
+    ).rejects.toThrow(/terminal embedding cannot be claimed/);
+
+    const vectorSql = embeddingVectorSql(Array(768).fill(0.2), 'rollback embedding');
+    await expect(
+      prisma.$queryRaw(Prisma.sql`
+        INSERT INTO "asset_embeddings" (
+          "asset_id", "model_name", "model_version", "dim", "image_embedding",
+          "status", "error", "completedAt", "createdAt", "updatedAt"
+        ) VALUES (
+          ${terminalAssetId}, 'rollback-model', 'rollback-model', 768, ${vectorSql},
+          'ready', NULL, NOW(), NOW(), NOW()
+        )
+        ON CONFLICT ("asset_id") DO UPDATE SET
+          "model_name" = EXCLUDED."model_name",
+          "model_version" = EXCLUDED."model_version",
+          "dim" = EXCLUDED."dim",
+          "image_embedding" = EXCLUDED."image_embedding",
+          "status" = 'ready',
+          "completedAt" = NOW(),
+          "updatedAt" = NOW()
+      `),
+    ).rejects.toThrow(/terminal embedding cannot be claimed/);
+
+    await expect(
+      prisma.assetEmbedding.findUnique({
+        where: { assetId: terminalAssetId },
+        select: { status: true, dim: true, terminalAt: true, reviveCount: true },
+      }),
+    ).resolves.toMatchObject({
+      status: 'failed',
+      dim: 0,
+      terminalAt: new Date(nowMs - 20 * 60_000),
+      reviveCount: 1,
+    });
   }, 30_000);
 
   it('quarantines a fresh terminal row against immediate owner retry without touching state', async () => {
