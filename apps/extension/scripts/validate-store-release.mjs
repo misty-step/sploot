@@ -113,7 +113,7 @@ async function validateZip() {
     'https://sploot.app/*',
     'https://clerk.sploot.app/*',
   ];
-  const requiredPermissions = ['storage', 'tabs', 'contextMenus', 'notifications', 'cookies'];
+  const requiredPermissions = ['storage', 'tabs', 'activeTab', 'contextMenus', 'notifications', 'cookies'];
 
   if (manifest.version !== '1.0.0') {
     recordLocal(`release zip version is ${manifest.version ?? '<missing>'}, expected 1.0.0`);
@@ -129,6 +129,14 @@ async function validateZip() {
     if (!permissions.has(permission)) {
       recordLocal(`release zip manifest missing permission ${permission}`);
     }
+  }
+
+  if (!hostPermissions.has('*://*/*')) {
+    recordLocal('release zip manifest missing narrow web host permission *://*/*');
+  }
+
+  if (hostPermissions.has('<all_urls>')) {
+    recordLocal('release zip manifest must not request broad <all_urls>; use activeTab with *://*/*');
   }
 
   const devHost = [...hostPermissions].find(host => {

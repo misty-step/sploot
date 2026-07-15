@@ -8,6 +8,7 @@
  */
 
 import { getSplootAppUrl } from '../../shared/app-url';
+import { setSaveStatus } from '../../shared/save-status';
 import { flashErrorBadge, flashSuccessBadge } from './badge';
 
 export interface ErrorNotificationInput {
@@ -66,6 +67,13 @@ export function showSuccessNotification(
 
   notificationActions.set(notificationId, getSplootAppUrl());
   flashSuccessBadge();
+  // Persistent trace for the popup — survives DND-suppressed notifications.
+  setSaveStatus({
+    state: 'success',
+    filename,
+    isDuplicate: options?.isDuplicate ?? false,
+    at: Date.now(),
+  });
 
   setTimeout(() => dismiss(notificationId), SUCCESS_DISMISS_MS);
 }
@@ -122,6 +130,7 @@ export function showErrorNotification(error: string | ErrorNotificationInput): v
     notificationActions.set(notificationId, actionUrl);
   }
   flashErrorBadge();
+  setSaveStatus({ state: 'error', message: userMessage, at: Date.now() });
 
   setTimeout(() => dismiss(notificationId), ERROR_DISMISS_MS);
 }

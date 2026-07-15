@@ -140,6 +140,13 @@ Required to sync the user's Clerk session between the Sploot web app and the ext
 Required to open the Sploot library and sign-in pages from extension actions.
 ```
 
+**activeTab**
+
+```text
+Required to capture the visible tab only after the user invokes the Sploot
+popup action. This temporary grant avoids requesting file: or ftp: host access.
+```
+
 **Host permission: `*://*/*`**
 
 ```text

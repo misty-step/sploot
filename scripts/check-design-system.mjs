@@ -164,9 +164,15 @@ for (const [path, phrases] of Object.entries({
   // Card/icon illustration (DESIGN.md §6 empty-state rule).
   'apps/web/components/library/empty-state.tsx': ['MemeCell', 'StickerTab', 'lab-074-capture-activation'],
   // The popup adopts tokens through its stylesheet: App.tsx must import the
-  // token-driven style.css and use its semantic panel classes.
-  'apps/extension/entrypoints/popup/App.tsx': ["import './style.css'", 'auth-panel'],
-  'apps/extension/entrypoints/popup/style.css': ['--sploot-cyan', '--sploot-coral', '--radius-square: 0px'],
+  // token-driven style.css, use its semantic panel classes, and render the
+  // persistent last-save strip (sploot-045: unmissable save feedback).
+  'apps/extension/entrypoints/popup/App.tsx': ["import './style.css'", 'auth-panel', 'LastSaveStrip'],
+  'apps/extension/entrypoints/popup/style.css': [
+    '--sploot-blue',
+    '--sploot-yellow',
+    'prefers-color-scheme: dark',
+    'prefers-reduced-motion: reduce',
+  ],
   'apps/web/app/page.tsx': ['LandingHero'],
 })) {
   for (const phrase of phrases) {
@@ -248,21 +254,129 @@ for (const file of landingSystemFiles) {
   }
 }
 
-const extensionUiFiles = [
-  'apps/extension/entrypoints/popup/App.tsx',
-  'apps/extension/entrypoints/popup/style.css',
-];
+// ═══════════════════════════════════════════════════════════════════
+// Extension popup ↔ web token parity (sploot-045)
+//
+// Saving from Chrome is part of the product surface, so the popup must be
+// the SAME toybox system, not a fork: every --sploot-* color it defines must
+// carry the exact value the web globals define, in BOTH themes, and its raw
+// hex usage is limited to that shared palette.
+// ═══════════════════════════════════════════════════════════════════
+const extensionCssPath = 'apps/extension/entrypoints/popup/style.css';
+const extensionUiFiles = ['apps/extension/entrypoints/popup/App.tsx', extensionCssPath];
 
-for (const file of extensionUiFiles) {
-  const content = read(file);
-  for (const forbidden of ['#7C5CFF', "borderRadius: '8px'", 'backdrop-filter']) {
-    if (content.includes(forbidden)) {
-      fail(`${file}: extension popup must use Sploot square token grammar, found ${forbidden}`);
+function tokenValue(cssSlice, token) {
+  const match = cssSlice.match(new RegExp(`${token}:\\s*([^;]+);`));
+  return match ? match[1].trim().replace(/\s+/g, ' ').toLowerCase() : null;
+}
+
+{
+  const webCss = read(cssPath);
+  const extCss = read(extensionCssPath);
+
+  // Theme scopes: web = :root … .dark { … }; extension = :root … @media dark.
+  const webDarkStart = webCss.indexOf('.dark {');
+  const webLight = webCss.slice(0, webDarkStart);
+  const webDark = webCss.slice(webDarkStart);
+  const extDarkStart = extCss.indexOf('@media (prefers-color-scheme: dark)');
+  const extLight = extCss.slice(0, extDarkStart);
+  const extDark = extCss.slice(extDarkStart);
+
+  if (webDarkStart === -1) fail(`${cssPath}: missing .dark theme block`);
+  if (extDarkStart === -1) fail(`${extensionCssPath}: missing prefers-color-scheme dark theme block`);
+
+  const themedTokens = [
+    '--sploot-ink',
+    '--sploot-paper',
+    '--sploot-paper-warm',
+    '--sploot-panel',
+    '--sploot-blue',
+    '--sploot-cyan',
+    '--sploot-magenta',
+    '--sploot-yellow',
+    '--sploot-orange',
+    '--sploot-lime',
+    '--sploot-red',
+    '--sploot-purple',
+    '--sploot-focus',
+    '--sploot-on-blue',
+    '--sploot-on-red',
+    '--sploot-shadow-color',
+  ];
+  const sharedPalette = new Set(['#1c1547']);
+  for (const [theme, webSlice, extSlice] of [
+    ['light', webLight, extLight],
+    ['dark', webDark, extDark],
+  ]) {
+    for (const token of themedTokens) {
+      const webValue = tokenValue(webSlice, token);
+      const extValue = tokenValue(extSlice, token);
+      if (webValue) sharedPalette.add(webValue);
+      if (!webValue) {
+        fail(`${cssPath}: ${token} missing from the ${theme} theme block`);
+      } else if (extValue !== webValue) {
+        fail(
+          `${extensionCssPath}: ${token} (${theme}) diverges from web globals — expected "${webValue}", found "${extValue ?? 'missing'}"`
+        );
+      }
     }
   }
-  if (content.includes('linear-gradient') && !content.includes('linear-gradient(var(--sploot-grid-line)')) {
-    fail(`${file}: extension popup may use Sploot grid lines, not decorative gradients`);
+
+  // Structural grammar must match too: shells, rounding, drop-height physics.
+  for (const token of [
+    '--sploot-border',
+    '--sploot-radius',
+    '--sploot-radius-pill',
+    '--sploot-shadow',
+    '--sploot-shadow-hover',
+    '--sploot-shadow-press',
+    '--sploot-touch-target',
+    '--sploot-ease-snap',
+  ]) {
+    const webValue = tokenValue(webLight, token);
+    const extValue = tokenValue(extCss, token);
+    if (webValue && extValue !== webValue) {
+      fail(
+        `${extensionCssPath}: structural token ${token} diverges from web globals — expected "${webValue}", found "${extValue ?? 'missing'}"`
+      );
+    }
   }
+
+  // Any raw hex in extension UI/feedback code must be a value from the shared
+  // web palette (the popup css is the extension's token home; badge colors
+  // must be toybox candy, not ad-hoc greens/reds).
+  for (const file of [...extensionUiFiles, 'apps/extension/entrypoints/background/badge.ts']) {
+    const content = read(file);
+    for (const hex of content.match(/#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g) ?? []) {
+      if (!sharedPalette.has(hex.toLowerCase())) {
+        fail(`${file}: hex ${hex} is not a web --sploot-* token value — use the shared toybox palette`);
+      }
+    }
+  }
+
+  // Banned grammar (DESIGN.md anti-patterns) in extension UI files.
+  for (const file of extensionUiFiles) {
+    const content = read(file);
+    for (const forbidden of ['backdrop-filter', 'backdrop-blur', 'linear-gradient(', '--radius-square', 'letter-spacing: -']) {
+      if (content.includes(forbidden)) {
+        fail(`${file}: extension popup must stay on the toybox token grammar, found ${forbidden}`);
+      }
+    }
+  }
+
+  // Production carries no debug affordances: the diagnostics context-menu item
+  // and popup debug button gate on the shared build-mode flag.
+  assertIncludes('apps/extension/shared/build-mode.ts', 'import.meta.env.DEV', 'build-mode source flag');
+  assertIncludes(
+    'apps/extension/entrypoints/background/context-menu.ts',
+    'if (IS_DEV_BUILD)',
+    'production gate on the debug context-menu item'
+  );
+  assertIncludes(
+    'apps/extension/entrypoints/popup/App.tsx',
+    'IS_DEV_BUILD &&',
+    'production gate on the popup debug button'
+  );
 }
 
 const trackedUiFiles = execSync(

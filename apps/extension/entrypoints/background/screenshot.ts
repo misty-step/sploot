@@ -31,11 +31,17 @@ export function captureAndSaveVisibleTab(): Promise<void> {
     }
 
     // Fails on restricted pages (chrome://, the Web Store, the PDF viewer) —
-    // the rejection message is surfaced to the user by saveToSploot.
-    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+    // rethrown with user-facing copy; the raw error goes to the console.
+    let dataUrl: string;
+    try {
+      dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+    } catch (error) {
+      console.warn('[Screenshot] captureVisibleTab failed', error);
+      throw new Error("Chrome doesn't allow capturing this page. Try a normal web page.");
+    }
     const blob = await (await fetch(dataUrl)).blob();
     return { blob, filename: screenshotFilename(tab.url) };
-  }, 'the screenshot');
+  }, 'screenshot');
 }
 
 /** e.g. "screenshot-twitter.com-1750000000000.png". */

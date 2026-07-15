@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   uploadImage: vi.fn(),
   showSuccessNotification: vi.fn(),
   showErrorNotification: vi.fn(),
+  setSaveStatus: vi.fn(),
 }));
 
 vi.mock('./auth-manager', () => ({
@@ -17,6 +18,7 @@ vi.mock('./notifications', () => ({
   showSuccessNotification: mocks.showSuccessNotification,
   showErrorNotification: mocks.showErrorNotification,
 }));
+vi.mock('../../shared/save-status', () => ({ setSaveStatus: mocks.setSaveStatus }));
 
 import { saveToSploot } from './save-flow';
 
@@ -35,11 +37,21 @@ beforeEach(() => {
 
 describe('saveToSploot', () => {
   it('produces, uploads, and reports success when authenticated', async () => {
-    await saveToSploot(produce, 'saving');
+    await saveToSploot(produce, 'image');
 
     expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'meme.png');
     expect(mocks.showSuccessNotification).toHaveBeenCalledWith('meme.png', 't', { isDuplicate: false });
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
+  });
+
+  it('records live "saving" progress for the popup status strip', async () => {
+    await saveToSploot(produce, 'screenshot');
+
+    expect(mocks.setSaveStatus).toHaveBeenCalledWith({
+      state: 'saving',
+      label: 'Saving screenshot…',
+      at: expect.any(Number),
+    });
   });
 
   it('prompts sign-in and aborts (no produce, no upload) when sign-in fails', async () => {
@@ -47,12 +59,12 @@ describe('saveToSploot', () => {
     mocks.promptUserSignIn.mockResolvedValue(false);
     const producer = vi.fn(produce);
 
-    await saveToSploot(producer, 'the screenshot');
+    await saveToSploot(producer, 'screenshot');
 
     expect(producer).not.toHaveBeenCalled();
     expect(mocks.uploadImage).not.toHaveBeenCalled();
     expect(mocks.showErrorNotification).toHaveBeenCalledWith(
-      'Sign in on Sploot, then try the screenshot again.'
+      'Sign in on Sploot, then try saving the screenshot again.'
     );
   });
 
@@ -61,7 +73,7 @@ describe('saveToSploot', () => {
       throw new Error('Cannot capture chrome:// pages');
     };
 
-    await saveToSploot(producer, 'the screenshot');
+    await saveToSploot(producer, 'screenshot');
 
     expect(mocks.uploadImage).not.toHaveBeenCalled();
     expect(mocks.showErrorNotification).toHaveBeenCalledWith('Cannot capture chrome:// pages');
@@ -71,7 +83,7 @@ describe('saveToSploot', () => {
     const err = Object.assign(new Error('Storage quota exceeded'), { actionHref: '/app/settings' });
     mocks.uploadImage.mockRejectedValue(err);
 
-    await saveToSploot(produce, 'saving');
+    await saveToSploot(produce, 'image');
 
     expect(mocks.showErrorNotification).toHaveBeenCalledWith({
       message: 'Storage quota exceeded',

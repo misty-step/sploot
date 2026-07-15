@@ -25,6 +25,10 @@ let chromeMock: {
     query: ReturnType<typeof vi.fn>;
     captureVisibleTab: ReturnType<typeof vi.fn>;
   };
+  storage: {
+    local: { set: ReturnType<typeof vi.fn> };
+    onChanged: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
+  };
 };
 
 beforeEach(() => {
@@ -33,6 +37,10 @@ beforeEach(() => {
     tabs: {
       query: vi.fn().mockResolvedValue([{ windowId: 1, url: 'https://twitter.com/i/status/1' }]),
       captureVisibleTab: vi.fn().mockResolvedValue('data:image/png;base64,AAAA'),
+    },
+    storage: {
+      local: { set: vi.fn().mockResolvedValue(undefined) },
+      onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
     },
   };
   vi.stubGlobal('chrome', chromeMock);
@@ -59,15 +67,23 @@ describe('captureAndSaveVisibleTab', () => {
     expect(filename).toMatch(/^screenshot-twitter\.com-\d+\.png$/);
     expect(mocks.showSuccessNotification).toHaveBeenCalled();
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
+    // The real save pipeline records live progress for the popup strip.
+    expect(chromeMock.storage.local.set).toHaveBeenCalledWith({
+      'sploot:last-save': expect.objectContaining({ state: 'saving', label: 'Saving screenshot…' }),
+    });
   });
 
-  it('surfaces the rejection message when capture fails on a restricted page', async () => {
-    chromeMock.tabs.captureVisibleTab.mockRejectedValue(new Error('Cannot capture chrome:// pages'));
+  it('maps a restricted-page capture failure to user-facing copy', async () => {
+    chromeMock.tabs.captureVisibleTab.mockRejectedValue(
+      new Error("Either the '<all_urls>' or 'activeTab' permission is required.")
+    );
 
     await captureAndSaveVisibleTab();
 
     expect(mocks.uploadImage).not.toHaveBeenCalled();
-    expect(mocks.showErrorNotification).toHaveBeenCalledWith('Cannot capture chrome:// pages');
+    expect(mocks.showErrorNotification).toHaveBeenCalledWith(
+      "Chrome doesn't allow capturing this page. Try a normal web page."
+    );
   });
 
   it('prompts sign-in and aborts (no capture) when unauthenticated and sign-in fails', async () => {

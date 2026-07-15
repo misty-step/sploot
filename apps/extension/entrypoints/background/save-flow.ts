@@ -9,6 +9,7 @@
 
 import { isAuthenticated, promptUserSignIn } from './auth-manager';
 import { uploadImage } from '../../shared/api-client';
+import { setSaveStatus } from '../../shared/save-status';
 import { showSuccessNotification, showErrorNotification } from './notifications';
 
 export interface ProducedImage {
@@ -17,21 +18,24 @@ export interface ProducedImage {
 }
 
 /**
- * @param produce    yields the image to upload (fetch from a URL, capture a tab, …)
- * @param retryLabel verb phrase for the sign-in prompts, e.g. "saving" or
- *                   "the screenshot" — "Try {retryLabel} again after signing in."
+ * @param produce yields the image to upload (fetch from a URL, capture a tab, …)
+ * @param subject noun for user-facing copy, e.g. "image" or "screenshot" —
+ *                "Saving {subject}…", "try saving the {subject} again".
  */
 export async function saveToSploot(
   produce: () => Promise<ProducedImage>,
-  retryLabel: string
+  subject: string
 ): Promise<void> {
   try {
+    // Live progress for the popup's persistent status strip.
+    setSaveStatus({ state: 'saving', label: `Saving ${subject}…`, at: Date.now() });
+
     const authenticated = await isAuthenticated();
     if (!authenticated) {
-      showErrorNotification(`Opening Sploot sign-in. Try ${retryLabel} again after signing in.`);
+      showErrorNotification(`Opening Sploot sign-in. Try saving the ${subject} again after signing in.`);
       const signedIn = await promptUserSignIn();
       if (!signedIn) {
-        showErrorNotification(`Sign in on Sploot, then try ${retryLabel} again.`);
+        showErrorNotification(`Sign in on Sploot, then try saving the ${subject} again.`);
         return;
       }
     }

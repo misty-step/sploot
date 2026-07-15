@@ -21,10 +21,15 @@ function flashBadge(text: string, color: string): void {
   }
 }
 
+// Toybox palette (apps/web/app/globals.css): the badge API needs concrete
+// colors, so these are the light-theme --sploot-lime / --sploot-red values.
+const SPLOOT_LIME = '#138a50';
+const SPLOOT_RED = '#e52347';
+
 export function flashSuccessBadge(): void {
-  flashBadge('✓', '#16a34a');
+  flashBadge('✓', SPLOOT_LIME);
 }
 
 export function flashErrorBadge(): void {
-  flashBadge('!', '#dc2626');
+  flashBadge('!', SPLOOT_RED);
 }

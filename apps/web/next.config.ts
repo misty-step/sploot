@@ -9,6 +9,11 @@ import {
 
 const nextConfig: NextConfig = {
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
+  // @ffmpeg-installer resolves its platform binary with dynamic requires that
+  // Turbopack cannot bundle — without this, `next dev` fails to compile
+  // /api/upload (HTTP 500 for every upload, incl. the Chrome extension's
+  // localhost dev flow). Keep it a runtime node_modules require.
+  serverExternalPackages: ["@ffmpeg-installer/ffmpeg"],
   // Legacy route aliases live here as plain HTTP redirects. They used to be
   // RSC redirect() pages, but next@16.2.10's app-router throws "Rendered
   // more hooks than during the previous render" when hydrating an RSC

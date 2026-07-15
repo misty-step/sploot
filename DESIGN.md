@@ -384,8 +384,11 @@ Governance rules:
 - Record source/provenance changes in `design-contract.md`.
 - Run `pnpm lint:design` before shipping visual-system changes. The lint must
   require both the contract artifacts and at least one concrete product-surface
-  adoption point. It also covers extension popup token drift because saving
-  from Chrome is part of the product surface.
+  adoption point. It also enforces extension popup parity because saving from
+  Chrome is part of the product surface: every `--sploot-*` value in
+  `apps/extension/entrypoints/popup/style.css` must equal the web globals in
+  BOTH themes, the popup must ship dark mode and reduced-motion support, and
+  built artifacts must carry no debug affordances (sploot-045).
 - Exploratory design catalogs stay on branches or local artifacts until
   production movement is explicitly approved.
 

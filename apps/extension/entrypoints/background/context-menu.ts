@@ -5,6 +5,7 @@
  * Handles image capture and upload coordination.
  */
 
+import { IS_DEV_BUILD } from '../../shared/build-mode';
 import { runAuthDiagnostics } from './auth-manager';
 import { fetchImage } from './image-fetcher';
 import { showErrorNotification } from './notifications';
@@ -24,11 +25,17 @@ export function ensureContextMenus() {
       contexts: ['image'],
     }, () => void chrome.runtime.lastError); // ignore duplicate errors
 
-    chrome.contextMenus.create({
-      id: MENU_ID_DIAGNOSTICS,
-      title: 'Sploot Debug: Dump Auth State',
-      contexts: ['action'],
-    }, () => void chrome.runtime.lastError);
+    if (IS_DEV_BUILD) {
+      // Dev-build-only diagnostics; production ships no debug menu items.
+      chrome.contextMenus.create({
+        id: MENU_ID_DIAGNOSTICS,
+        title: 'Sploot Debug: Dump Auth State',
+        contexts: ['action'],
+      }, () => void chrome.runtime.lastError);
+    } else {
+      // A previous dev build may have left the item behind in this profile.
+      chrome.contextMenus.remove(MENU_ID_DIAGNOSTICS, () => void chrome.runtime.lastError);
+    }
 
     console.log('[ContextMenu] Ensured context menus exist');
   } catch (error) {
@@ -52,7 +59,7 @@ export function setupContextMenu() {
       return;
     }
 
-    if (info.menuItemId === MENU_ID_DIAGNOSTICS) {
+    if (info.menuItemId === MENU_ID_DIAGNOSTICS && IS_DEV_BUILD) {
       await handleDiagnostics();
     }
   });
@@ -75,7 +82,7 @@ async function handleImageSave(
       blob: await fetchImage(imageUrl), // handles CORS
       filename: extractFilename(imageUrl, tab?.title),
     }),
-    'saving'
+    'image'
   );
 }
 

@@ -1,39 +1,92 @@
-/* Sploot extension popup: self-organizing zine archive grammar. */
+/* Sploot extension popup — TOYBOX grammar (lab-034, AFD-8 "ink minis").
+ *
+ * Token VALUES are copied verbatim from apps/web/app/globals.css (the token
+ * home) so saving from Chrome looks like the same product: toy ink shells,
+ * candy fills, hard drop-height elevation, both themes. pnpm lint:design
+ * asserts value parity between this file and the web globals — when the web
+ * palette moves, move these with it. */
 
-/* Design Tokens */
+/* ── Design tokens: light / default (mirrors globals.css :root) ── */
 :root {
-  --sploot-ink: #0A0A0A;
-  --sploot-paper: #FAFAF5;
-  --sploot-paper-warm: #F3F0E6;
-  --sploot-cyan: #0891B2;
-  --sploot-cyan-muted: #0E7490;
-  --sploot-coral: #DC2626;
-  --sploot-violet: #7C3AED;
-  --sploot-grid-line: rgba(10, 10, 10, 0.06);
-  --sploot-sticker-shadow: 2px 2px 0 var(--sploot-ink);
+  --sploot-ink: #1c1547;            /* deep toy ink — text, shells, outlines */
+  --sploot-paper: #cfe7ff;          /* the shelf — resting dotted background */
+  --sploot-paper-warm: #f1f7ff;     /* inner panel wash */
+  --sploot-panel: #ffffff;          /* toy surface — cards, consoles */
+  --sploot-void: #1c1547;
+
+  --sploot-blue: #087bc1;           /* PRIMARY action */
+  --sploot-cyan: #39b1ff;           /* brand through-line */
+  --sploot-magenta: #ed58bd;        /* bubblegum — attention */
+  --sploot-yellow: #ffdd00;         /* banana — the ONE highlight */
+  --sploot-orange: #d97500;         /* near-match / warning */
+  --sploot-lime: #138a50;           /* apple green — success */
+  --sploot-red: #e52347;            /* cherry — error */
+  --sploot-purple: #7547e8;         /* grape — selected */
+  --sploot-focus: #4a25c7;          /* focus-visible outline */
+
+  --sploot-on-blue: #ffffff;
+  --sploot-on-red: #ffffff;
+  --sploot-on-void: #cfe7ff;
+
+  --sploot-coral: var(--sploot-magenta);
+  --sploot-violet: var(--sploot-purple);
+
+  --sploot-shadow-color: #1c1547;
+  --sploot-dot: rgba(255, 255, 255, 0.68);
+  --sploot-grid-line: rgba(28, 21, 71, 0.05);
+}
+
+/* ── Design tokens: dark / night shelf (mirrors globals.css .dark) ── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sploot-ink: #fff3dc;          /* warm cream ink */
+    --sploot-paper: #19143d;        /* night shelf */
+    --sploot-paper-warm: #241d50;
+    --sploot-panel: #2d255e;
+    --sploot-void: #090720;
+
+    --sploot-blue: #63c3ff;
+    --sploot-cyan: #8ed2ff;
+    --sploot-magenta: #ff8ed7;
+    --sploot-yellow: #ffe45c;
+    --sploot-orange: #ffb13b;
+    --sploot-lime: #55d992;
+    --sploot-red: #ff5d73;
+    --sploot-purple: #a78aff;
+    --sploot-focus: #ffe45c;
+
+    --sploot-on-blue: #10203a;
+    --sploot-on-red: #3a0d14;
+    --sploot-on-void: #fff3dc;
+
+    --sploot-shadow-color: #090720;
+    --sploot-dot: rgba(255, 255, 255, 0.09);
+    --sploot-grid-line: rgba(255, 243, 220, 0.06);
+  }
+}
+
+/* ── Structural tokens (theme-independent, mirrors globals.css) ── */
+:root {
+  --sploot-border: 3px solid var(--sploot-ink);
+  --sploot-border-thin: 2px solid var(--sploot-ink);
+  --sploot-radius: 18px;            /* cards, consoles */
+  --sploot-radius-inner: 10px;      /* frames inside cards */
+  --sploot-radius-ctl: 9px;         /* ink-mini icon controls */
+  --sploot-radius-pill: 999px;      /* buttons, tabs, chips */
+  --sploot-shadow: 0 5px 0 var(--sploot-shadow-color);
+  --sploot-shadow-sm: 0 3px 0 var(--sploot-shadow-color);
+  --sploot-shadow-hover: 2px 7px 0 var(--sploot-shadow-color);
+  --sploot-shadow-hover-sm: 2px 5px 0 var(--sploot-shadow-color);
+  --sploot-shadow-press: 0 1px 0 var(--sploot-shadow-color);
+  --sploot-sticker-shadow: 0 3px 0 var(--sploot-shadow-color);
   --sploot-touch-target: 44px;
-  --radius-square: 0px;
+  --sploot-motion-fast: 130ms;
+  --sploot-motion-base: 150ms;
+  --sploot-motion-panel: 200ms;
+  --sploot-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --sploot-ease-snap: cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  --bg-primary: var(--sploot-paper);
-  --bg-secondary: var(--sploot-paper-warm);
-  --bg-tertiary: #FFFFFF;
-  --text-primary: var(--sploot-ink);
-  --text-secondary: #525252;
-  --text-tertiary: #737373;
-  --border-primary: var(--sploot-ink);
-  --border-secondary: var(--sploot-cyan);
-
-  --accent-primary: var(--sploot-cyan);
-  --accent-hover: var(--sploot-cyan-muted);
-  --accent-subtle: color-mix(in srgb, var(--sploot-cyan) 12%, white);
-  --accent-shadow: rgba(8, 145, 178, 0.24);
-
-  /* Colors - Functional */
-  --success: #00C853;
-  --error: #FF3B30;
-  --warning: #FF9500;
-
-  /* Typography Scale */
+  /* Type scale */
   --font-xs: 11px;
   --font-sm: 12px;
   --font-base: 13px;
@@ -41,45 +94,9 @@
   --font-lg: 16px;
   --font-xl: 20px;
   --font-2xl: 24px;
-
-  /* Font Weights */
-  --weight-light: 300;
-  --weight-normal: 400;
-  --weight-medium: 500;
-  --weight-semibold: 600;
-  --weight-bold: 700;
-
-  /* Spacing Scale (4px base) */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
-
-  --radius-sm: var(--radius-square);
-  --radius-md: var(--radius-square);
-  --radius-lg: var(--radius-square);
-  --radius-xl: var(--radius-square);
-  --radius-full: var(--radius-square);
-
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
-  --shadow-accent: 0 4px 12px var(--accent-shadow);
-
-  /* Transitions */
-  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ============================================
-   BASE STYLES
-   ============================================ */
+/* ── Base ── */
 
 * {
   margin: 0;
@@ -88,36 +105,33 @@
 }
 
 body {
-  margin: 0;
-  padding: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
   font-size: var(--font-base);
-  font-weight: var(--weight-normal);
-  color: var(--text-primary);
-  background-color: var(--bg-primary);
-  background-image:
-    linear-gradient(var(--sploot-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--sploot-grid-line) 1px, transparent 1px);
-  background-size: 18px 18px;
+  font-weight: 500;
+  letter-spacing: 0; /* letter spacing stays at 0 (DESIGN.md) */
+  color: var(--sploot-ink);
+  /* The candy-shelf substrate: polka dots on the shelf color. */
+  background-color: var(--sploot-paper);
+  background-image: radial-gradient(var(--sploot-dot) 2px, transparent 2.6px);
+  background-size: 26px 26px;
   min-height: 480px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-html, body {
+html,
+body {
   width: auto;
   max-width: 100%;
   min-width: 320px;
-  overflow-x: hidden;  /* Prevent resize loops from horizontal overflow */
+  overflow-x: hidden; /* prevent popup resize loops from horizontal overflow */
 }
 
-/* ============================================
-   LAYOUT
-   ============================================ */
+/* ── Layout ── */
 
 .popup-frame {
   width: 360px;
-  max-width: 360px;
+  max-width: 100%; /* never clip on narrow hosts — the panel shrinks instead */
   min-width: 320px;
   margin: 0 auto;
   overflow: hidden;
@@ -125,238 +139,249 @@ html, body {
 }
 
 .popup-container {
-  position: relative;
-  padding: var(--space-6) var(--space-5) var(--space-5) var(--space-5);
+  padding: 16px 16px 20px 16px;
   min-height: 480px;
   display: flex;
   flex-direction: column;
 }
 
-/* Decorative top border accent */
-.popup-container::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--accent-primary);
-}
-
-/* ============================================
-   HEADER
-   ============================================ */
+/* ── Header ── */
 
 header {
-  margin-bottom: var(--space-6);
-  position: relative;
+  margin-bottom: 16px;
 }
 
 header h1 {
   font-size: var(--font-2xl);
-  font-weight: var(--weight-light);
-  letter-spacing: -0.02em;
-  margin: 0;
-  color: var(--text-primary);
+  font-weight: 800;
+  color: var(--sploot-ink);
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 10px;
 }
 
 .logo-icon {
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--sploot-ink);
-  border-radius: var(--radius-sm);
+  width: 32px;
+  height: 32px;
+  border: var(--sploot-border-thin);
+  border-radius: var(--sploot-radius-ctl);
+  background: var(--sploot-panel);
+  box-shadow: var(--sploot-sticker-shadow);
 }
 
-/* ============================================
-   MAIN CONTENT
-   ============================================ */
+/* ── Main ── */
 
 main {
   flex: 1;
   display: flex;
   flex-direction: column;
+  gap: 16px;
+  /* room for the strip's drop shadow at the popup foot */
+  padding-bottom: 4px;
 }
 
-/* ============================================
-   AUTH PANEL (Signed Out State)
-   ============================================ */
+/* ── Panels: toy cards (ink shell + drop-height elevation) ── */
 
-.auth-panel {
+.auth-panel,
+.signed-in-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  animation: fadeIn var(--transition-slow) ease-out;
-}
-
-.auth-header {
-  margin-bottom: var(--space-4);
+  gap: 16px;
+  background: var(--sploot-panel);
+  border: var(--sploot-border);
+  border-radius: var(--sploot-radius);
+  box-shadow: var(--sploot-shadow);
+  padding: 20px;
+  animation: fadeIn var(--sploot-motion-panel) var(--sploot-ease-out);
 }
 
 .auth-header h2 {
   font-size: var(--font-xl);
-  font-weight: var(--weight-semibold);
-  margin: 0 0 var(--space-2) 0;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
+  font-weight: 800;
+  margin: 0 0 8px 0;
+  color: var(--sploot-ink);
 }
 
-.auth-header p {
-  font-size: var(--font-md);
-  color: var(--text-secondary);
-  margin: 0;
-  line-height: 1.5;
-}
-
-/* ============================================
-   SIGNED IN PANEL
-   ============================================ */
-
-.signed-in-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
-  animation: fadeIn var(--transition-slow) ease-out;
-}
-
-.signed-in-panel > * {
-  animation: slideUp var(--transition-slow) ease-out backwards;
-}
-
-.signed-in-panel > *:nth-child(1) { animation-delay: 0s; }
-.signed-in-panel > *:nth-child(2) { animation-delay: 0.05s; }
-.signed-in-panel > *:nth-child(3) { animation-delay: 0.1s; }
-
+.auth-header p,
 .signed-in-panel p {
-  margin: 0;
   font-size: var(--font-md);
-  color: var(--text-secondary);
+  color: var(--sploot-ink);
+  margin: 0;
   line-height: 1.5;
 }
 
 .signed-in-panel p strong {
-  color: var(--text-primary);
-  font-weight: var(--weight-medium);
+  font-weight: 800;
 }
 
 .signed-in-panel .meta {
-  font-family: 'SF Mono', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
   font-size: var(--font-sm);
-  color: var(--text-tertiary);
-  margin-top: calc(var(--space-2) * -1);
 }
 
-/* ============================================
-   ONBOARDING TIP
-   ============================================ */
+.signed-in-panel .meta.warning {
+  color: var(--sploot-orange);
+  font-weight: 800;
+}
+
+/* ── Onboarding tip: banana sticker chip ── */
 
 .onboarding-tip {
-  background: var(--accent-subtle);
-  border: 1px solid var(--accent-primary);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
-  margin-bottom: var(--space-2);
+  background: var(--sploot-yellow);
+  color: #1c1547; /* ink-on-candy stays toy ink in both themes */
+  border: var(--sploot-border-thin);
+  border-radius: var(--sploot-radius-inner);
+  box-shadow: var(--sploot-sticker-shadow);
+  padding: 12px 14px;
 }
 
 .onboarding-tip h3 {
   font-size: var(--font-md);
-  font-weight: var(--weight-semibold);
-  margin: 0 0 var(--space-2) 0;
-  color: var(--accent-primary);
+  font-weight: 800;
+  margin: 0 0 4px 0;
+  color: #1c1547;
 }
 
 .onboarding-tip p {
   font-size: var(--font-sm);
-  color: var(--text-primary);
+  color: #1c1547;
   margin: 0;
   line-height: 1.5;
 }
 
-/* ============================================
-   BUTTONS
-   ============================================ */
+/* ── Buttons: pill toys, 3px ink shell, hover-physics law ──
+   On hover the surface lifts while the shadow anchors/extends; on press it
+   sinks and the shadow collapses (operator rule, lab-034). */
 
 .actions {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  margin-top: var(--space-2);
+  gap: 12px;
+  margin-top: 4px;
 }
 
 button {
-  background: var(--accent-primary);
-  color: white;
-  border: 1px solid var(--sploot-ink);
-  padding: var(--space-3) var(--space-5);
-  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sploot-blue);
+  color: var(--sploot-on-blue);
+  border: var(--sploot-border);
+  border-radius: var(--sploot-radius-pill);
+  padding: 8px 20px;
   cursor: pointer;
   font-size: var(--font-md);
-  font-weight: var(--weight-medium);
+  font-weight: 800;
   font-family: inherit;
+  letter-spacing: 0;
   min-height: var(--sploot-touch-target);
-  transition: all var(--transition-fast);
-  transform: scale(1);
-  box-shadow: var(--shadow-sm);
-  position: relative;
-  overflow: hidden;
+  box-shadow: var(--sploot-shadow);
+  transition:
+    transform var(--sploot-motion-fast) var(--sploot-ease-snap),
+    box-shadow var(--sploot-motion-fast) var(--sploot-ease-snap);
 }
 
 button:hover {
-  background: var(--accent-hover);
-  transform: scale(1.02) translateY(-1px);
-  box-shadow: var(--shadow-accent);
+  transform: translate(-2px, -2px);
+  box-shadow: var(--sploot-shadow-hover);
 }
 
 button:active {
-  transform: scale(0.98) translateY(0);
-  box-shadow: var(--shadow-sm);
+  transform: translate(3px, 3px) scale(0.98, 0.94);
+  box-shadow: var(--sploot-shadow-press);
 }
 
 button:focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 4px rgba(255, 92, 141, 0.1);
+  outline: 4px solid var(--sploot-focus);
+  outline-offset: 3px;
 }
 
-/* Button Variants */
+button:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+/* ghost toy: panel fill, same shell + drop */
 button.secondary {
-  background: transparent;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-primary);
-  font-weight: var(--weight-normal);
+  background: var(--sploot-panel);
+  color: var(--sploot-ink);
 }
 
-button.secondary:hover {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border-color: var(--border-secondary);
-  transform: scale(1.01) translateY(-1px);
-  box-shadow: var(--shadow-sm);
-}
-
+/* compact dev-only toy: smaller drop, same law */
 button.debug {
-  background: var(--bg-tertiary);
-  color: var(--text-tertiary);
+  background: var(--sploot-paper-warm);
+  color: var(--sploot-ink);
   font-size: var(--font-sm);
-  font-family: 'SF Mono', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
-  padding: var(--space-2) var(--space-3);
+  border: var(--sploot-border-thin);
+  box-shadow: var(--sploot-shadow-sm);
 }
 
 button.debug:hover {
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  transform: scale(1.01);
+  box-shadow: var(--sploot-shadow-hover-sm);
 }
 
-/* ============================================
-   ANIMATIONS
-   ============================================ */
+/* ── Last-save strip: persistent outcome chip ── */
+
+.save-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto; /* pin to the popup foot, below whichever panel renders */
+  background: var(--sploot-panel);
+  box-shadow: var(--sploot-shadow-sm);
+  border: var(--sploot-border-thin);
+  border-radius: var(--sploot-radius-inner);
+  padding: 10px 12px;
+  font-size: var(--font-sm);
+  color: var(--sploot-ink);
+  animation: slideUp var(--sploot-motion-panel) var(--sploot-ease-out);
+}
+
+.save-strip strong {
+  font-weight: 800;
+}
+
+.save-strip .save-copy {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-strip .save-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.72;
+}
+
+.save-strip .save-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--sploot-ink);
+  border-radius: var(--sploot-radius-pill);
+}
+
+.save-strip.saving .save-dot {
+  background: var(--sploot-yellow);
+  animation: pulse 1s var(--sploot-ease-out) infinite;
+}
+
+.save-strip.success .save-dot {
+  background: var(--sploot-lime);
+}
+
+.save-strip.error {
+  border-color: var(--sploot-red);
+}
+
+.save-strip.error .save-dot {
+  background: var(--sploot-red);
+  border-color: var(--sploot-red);
+}
+
+/* ── Motion ── */
 
 @keyframes fadeIn {
   from {
@@ -378,42 +403,22 @@ button.debug:hover {
   }
 }
 
-/* ============================================
-   UTILITY CLASSES
-   ============================================ */
-
-.text-primary {
-  color: var(--text-primary);
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
-.text-secondary {
-  color: var(--text-secondary);
-}
-
-.text-accent {
-  color: var(--accent-primary);
-}
-
-.bg-sploot-cyan {
-  background: var(--sploot-cyan) !important;
-}
-
-.hover\:bg-sploot-cyan-muted:hover {
-  background: var(--sploot-cyan-muted) !important;
-}
-
-.border-sploot-ink {
-  border-color: var(--sploot-ink) !important;
-}
-
-.text-sploot-cyan {
-  color: var(--sploot-cyan) !important;
-}
-
-.hover\:text-sploot-cyan-muted:hover {
-  color: var(--sploot-cyan-muted) !important;
-}
-
-.mono {
-  font-family: 'SF Mono', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

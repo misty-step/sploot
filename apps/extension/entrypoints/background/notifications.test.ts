@@ -19,6 +19,10 @@ interface ChromeMock {
     setBadgeText: ReturnType<typeof vi.fn>;
     setBadgeBackgroundColor: ReturnType<typeof vi.fn>;
   };
+  storage: {
+    local: { set: ReturnType<typeof vi.fn> };
+    onChanged: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
+  };
 }
 
 let clickListeners: Array<(notificationId: string) => void>;
@@ -43,6 +47,10 @@ beforeEach(() => {
     runtime: { getURL: vi.fn(path => `chrome-extension://extension-id/${path}`) },
     tabs: { create: vi.fn() },
     action: { setBadgeText: vi.fn(), setBadgeBackgroundColor: vi.fn() },
+    storage: {
+      local: { set: vi.fn().mockResolvedValue(undefined) },
+      onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+    },
   };
   vi.stubGlobal('chrome', chromeMock);
 });
@@ -98,6 +106,37 @@ describe('notifications', () => {
     showErrorNotification('boom');
 
     expect(chromeMock.action.setBadgeText).toHaveBeenCalledWith({ text: '!' });
+  });
+
+  it('persists the success outcome so the popup shows it even when notifications are suppressed', async () => {
+    const { setupNotificationFeedback, showSuccessNotification } = await import('./notifications');
+
+    setupNotificationFeedback();
+    showSuccessNotification('meme.jpg', undefined, { isDuplicate: true });
+
+    expect(chromeMock.storage.local.set).toHaveBeenCalledWith({
+      'sploot:last-save': {
+        state: 'success',
+        filename: 'meme.jpg',
+        isDuplicate: true,
+        at: new Date('2026-05-18T12:00:00.000Z').getTime(),
+      },
+    });
+  });
+
+  it('persists the user-facing error outcome for the popup status strip', async () => {
+    const { setupNotificationFeedback, showErrorNotification } = await import('./notifications');
+
+    setupNotificationFeedback();
+    showErrorNotification('Authentication required');
+
+    expect(chromeMock.storage.local.set).toHaveBeenCalledWith({
+      'sploot:last-save': {
+        state: 'error',
+        message: 'Please login to sploot.app first',
+        at: new Date('2026-05-18T12:00:00.000Z').getTime(),
+      },
+    });
   });
 
   it('uses explicit copy for duplicate success notifications', async () => {
