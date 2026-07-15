@@ -34,4 +34,7 @@ test('production extension transport precedes the real MV3 E2E artifact boundary
   assert.ok(lifecycle > acceleratorDriver, 'MV3 lifecycle E2E must follow native accelerator setup');
   assert.ok(lifecycle > popup, 'MV3 lifecycle E2E must follow popup E2E');
   assert.match(lifecycleTest, /execFileSync\('xdotool'/, 'Linux CI must invoke the browser-level action shortcut');
+  assert.doesNotMatch(lifecycleTest, /getactivewindow/, 'Xvfb has no window manager active-window oracle');
+  assert.match(lifecycleTest, /'search',[\s\S]*'--name',[\s\S]*'MV3 fixture'/, 'Linux CI must locate the real fixture browser window');
+  assert.match(lifecycleTest, /'windowfocus',[\s\S]*'--sync'/, 'Linux CI must focus the fixture window without a window manager');
 });

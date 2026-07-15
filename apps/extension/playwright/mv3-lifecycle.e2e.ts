@@ -41,15 +41,23 @@ function json(response: import('node:http').ServerResponse, status: number, body
 async function invokeBrowserActionShortcut(page: Page) {
   if (process.platform === 'linux') {
     // Playwright key events target the renderer and do not cross Chrome's UI
-    // accelerator boundary. Xvfb gives CI a real browser window, so xdotool
-    // invokes the installed extension's reserved _execute_action command and
-    // earns the same transient activeTab grant as an operator shortcut.
-    execFileSync('xdotool', [
-      'getactivewindow',
-      'key',
-      '--clearmodifiers',
-      'ctrl+shift+y',
-    ], { stdio: 'pipe' });
+    // accelerator boundary. Xvfb intentionally has no window manager, so find
+    // and focus the real fixture window directly before invoking the installed
+    // extension's reserved _execute_action command. That earns the same
+    // transient activeTab grant as an operator shortcut.
+    const fixtureWindow = execFileSync('xdotool', [
+      'search',
+      '--sync',
+      '--onlyvisible',
+      '--name',
+      'MV3 fixture',
+    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+      .trim()
+      .split(/\s+/)
+      .at(-1);
+    if (!fixtureWindow) throw new Error('xdotool could not locate the MV3 fixture window');
+    execFileSync('xdotool', ['windowfocus', '--sync', fixtureWindow], { stdio: 'pipe' });
+    execFileSync('xdotool', ['key', '--clearmodifiers', 'ctrl+shift+y'], { stdio: 'pipe' });
     return;
   }
   await page.keyboard.press(ACTION_SHORTCUT);
