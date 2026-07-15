@@ -857,6 +857,23 @@ export interface VectorSearchPage {
   nextCursor?: string;
 }
 
+const HNSW_MAX_SCAN_TUPLES = 20_000;
+
+/**
+ * pgvector filtering is approximate unless iterative scans are enabled. Keep
+ * the setting transaction-local, strict-ordered, and bounded; every ranked
+ * production query uses this seam so a caller cannot accidentally revert to a
+ * lossy post-filtered HNSW scan.
+ */
+export async function queryHnswRanked<T>(query: Prisma.Sql): Promise<T[]> {
+  if (!prisma) return [];
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe("SET LOCAL hnsw.iterative_scan = 'strict_order'");
+    await tx.$executeRawUnsafe(`SET LOCAL hnsw.max_scan_tuples = ${HNSW_MAX_SCAN_TUPLES}`);
+    return tx.$queryRaw<T[]>(query);
+  });
+}
+
 export const VECTOR_SEARCH_CURSOR_CONTEXT_ERROR = 'Search cursor does not match search context';
 
 const VECTOR_SEARCH_CURSOR_VERSION = 3;
@@ -1023,6 +1040,48 @@ export function vectorSearchFilterClause(
   }
 }
 
+/**
+ * Keep pgvector's order-by/LIMIT contract at an owner-scoped scan boundary.
+ * The outer query repeats visibility predicates defensively, but no other
+ * tenant or deleted asset can consume a candidate slot.
+ */
+export function buildRankedEmbeddingCte(
+  vectorSql: Prisma.Sql,
+  candidateLimit: number,
+  ownerUserId: string,
+  cursor: Pick<VectorSearchCursor, 'distance' | 'id'> | null = null,
+): Prisma.Sql {
+  // Cursor.distance is the public similarity score (higher is better), while
+  // pgvector orders by cosine distance (lower is better).
+  const cursorRawDistance = cursor ? 1 - cursor.distance : null;
+  const cursorClause = cursor
+    ? Prisma.sql`
+        AND (
+          ae.image_embedding <=> ${vectorSql} > ${cursorRawDistance}
+          OR (
+            ae.image_embedding <=> ${vectorSql} = ${cursorRawDistance}
+            AND ae.asset_id > ${cursor.id}
+          )
+        )
+      `
+    : Prisma.empty;
+
+  return Prisma.sql`
+    WITH ranked AS MATERIALIZED (
+      SELECT
+        ae.asset_id AS id,
+        ae.image_embedding <=> ${vectorSql} AS distance
+      FROM "asset_embeddings" ae
+      WHERE ae.owner_user_id = ${ownerUserId}
+        AND ae.asset_deleted_at IS NULL
+        AND ae.status = 'ready'
+        ${cursorClause}
+      ORDER BY ae.image_embedding <=> ${vectorSql} ASC, ae.asset_id ASC
+      LIMIT ${candidateLimit}
+    )
+  `;
+}
+
 export function buildVectorSearchPageQuery(
   userId: string,
   queryEmbedding: number[],
@@ -1033,30 +1092,25 @@ export function buildVectorSearchPageQuery(
     tagId: string | null;
     offset: number;
     cursor: VectorSearchCursor | null;
+    candidateLimit?: number;
   },
 ): Prisma.Sql {
   const vectorSql = embeddingVectorSql(queryEmbedding, 'search query embedding');
   const thresholdClause = typeof options.threshold === 'number' && options.threshold > 0
-    ? Prisma.sql`AND 1 - (ae.image_embedding <=> ${vectorSql}) >= ${options.threshold}`
+    ? Prisma.sql`AND 1 - ranked.distance >= ${options.threshold}`
     : Prisma.empty;
   const filterClause = vectorSearchFilterClause(
     vectorSearchFilterVariant({ favoriteOnly: options.favoriteOnly, tagId: options.tagId }),
     options.tagId,
     thresholdClause,
   );
-  const cursorClause = options.cursor
-    ? Prisma.sql`
-        AND (
-          1 - (ae.image_embedding <=> ${vectorSql}) < ${options.cursor.distance}
-          OR (
-            1 - (ae.image_embedding <=> ${vectorSql}) = ${options.cursor.distance}
-            AND a.id > ${options.cursor.id}
-          )
-        )
-      `
-    : Prisma.empty;
-
   return Prisma.sql`
+    ${buildRankedEmbeddingCte(
+      vectorSql,
+      options.candidateLimit ?? Math.max(options.limit + 1, options.offset + options.limit + 1),
+      userId,
+      options.cursor,
+    )}
     SELECT
       a.id,
       a.blob_url,
@@ -1068,17 +1122,14 @@ export function buildVectorSearchPageQuery(
       a.favorite,
       a.size,
       a."createdAt" AS created_at,
-      1 - (ae.image_embedding <=> ${vectorSql}) AS distance
-    FROM "assets" a
-    INNER JOIN "asset_embeddings" ae ON a.id = ae.asset_id
+      1 - ranked.distance AS distance
+    FROM ranked
+    INNER JOIN "assets" a ON a.id = ranked.id
     WHERE
       a.owner_user_id = ${userId}
       AND a.deleted_at IS NULL
-      AND ae.status = 'ready'
       ${filterClause}
-      ${cursorClause}
-    ORDER BY ae.image_embedding <=> ${vectorSql} ASC, a.id ASC
-    LIMIT ${options.limit + 1} OFFSET ${options.cursor ? 0 : options.offset}
+    ORDER BY ranked.distance ASC, a.id ASC
   `;
 }
 
@@ -1132,12 +1183,6 @@ export async function vectorSearchPage(
   const filterClause = vectorSearchFilterClause(filterVariant, tagId, thresholdClause);
 
   try {
-    const rows = await prisma.$queryRaw<VectorSearchRow[]>(buildVectorSearchPageQuery(
-      userId,
-      queryEmbedding,
-      { limit, threshold, favoriteOnly, tagId, offset, cursor },
-    ));
-
     const countRows = await prisma.$queryRaw<Array<{ total_count: bigint | number }>>(Prisma.sql`
       SELECT COUNT(*) AS total_count
       FROM "assets" a
@@ -1149,17 +1194,42 @@ export async function vectorSearchPage(
         ${filterClause}
       `);
     const total = Number(countRows[0]?.total_count ?? 0);
+    const eligibleCountRows = await prisma.$queryRaw<Array<{ eligible_count: bigint | number }>>(Prisma.sql`
+      SELECT COUNT(*) AS eligible_count
+      FROM "asset_embeddings"
+      WHERE owner_user_id = ${userId}
+        AND asset_deleted_at IS NULL
+        AND status = 'ready'
+    `);
+    const eligibleCount = Number(eligibleCountRows[0]?.eligible_count ?? 0);
+    let candidateLimit = Math.min(
+      Math.max(limit + 1, offset + limit + 1),
+      Math.max(eligibleCount, 1),
+    );
+    let rows: VectorSearchRow[] = [];
+    let candidateWindowExhausted = false;
+    while (true) {
+      rows = await queryHnswRanked<VectorSearchRow>(buildVectorSearchPageQuery(
+        userId,
+        queryEmbedding,
+        { limit, threshold, favoriteOnly, tagId, offset, cursor, candidateLimit },
+      ));
+      candidateWindowExhausted = candidateLimit >= eligibleCount;
+      if (candidateWindowExhausted || rows.length >= offset + limit + 1) break;
+      candidateLimit = Math.min(
+        eligibleCount,
+        Math.max(candidateLimit * 2, candidateLimit + limit),
+      );
+    }
     const results = rows
       .filter((row) => row.id !== null && row.id !== undefined)
-      .slice(0, limit)
+      .slice(offset, offset + limit)
       .map((row) => row);
     // A cursor query starts at an arbitrary point in the ordered set, so its
     // page length cannot be compared with the global total. The +1 probe is
     // the authoritative continuation signal for keyset pages; legacy offset
     // pages retain the total-based check.
-    const hasMore = cursor
-      ? rows.length > limit
-      : rows.length > limit || offset + results.length < total;
+    const hasMore = rows.length > offset + limit;
     const last = results.at(-1);
     const nextCursor = hasMore && last && cursorContext
       ? encodeVectorSearchCursor({ userId, order: 'relevance', id: last.id, distance: last.distance, context: cursorContext })
@@ -1226,7 +1296,7 @@ async function vectorSearchLegacyUnfiltered(
     // Keep the golden eval and similar-assets path on the pre-pagination SQL
     // shape: no CTE, count, or optional filter joins when no filters apply.
     while (true) {
-      const results = await prisma!.$queryRaw<VectorSearchRow[]>(buildUnfilteredVectorSearchQuery(
+      const results = await queryHnswRanked<VectorSearchRow>(buildUnfilteredVectorSearchQuery(
         userId,
         queryEmbedding,
         fetchLimit,
@@ -1264,6 +1334,7 @@ export function buildUnfilteredVectorSearchQuery(
 ): Prisma.Sql {
   const vectorSql = embeddingVectorSql(queryEmbedding, 'search query embedding');
   return Prisma.sql`
+      ${buildRankedEmbeddingCte(vectorSql, fetchLimit, userId)}
       SELECT
         a.id,
         a.blob_url,
@@ -1275,15 +1346,13 @@ export function buildUnfilteredVectorSearchQuery(
         a.favorite,
         a.size,
         a."createdAt" AS created_at,
-        1 - (ae.image_embedding <=> ${vectorSql}) AS distance
-      FROM "assets" a
-      INNER JOIN "asset_embeddings" ae ON a.id = ae.asset_id
+        1 - ranked.distance AS distance
+      FROM ranked
+      INNER JOIN "assets" a ON a.id = ranked.id
       WHERE
         a.owner_user_id = ${userId}
         AND a.deleted_at IS NULL
-        AND ae.status = 'ready'
-      ORDER BY ae.image_embedding <=> ${vectorSql} ASC, a.id ASC
-      LIMIT ${fetchLimit}
+      ORDER BY ranked.distance ASC, a.id ASC
     `;
 }
 

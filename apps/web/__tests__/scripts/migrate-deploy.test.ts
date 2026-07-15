@@ -87,6 +87,7 @@ describe('online migration transaction contract', () => {
       .sort();
     expect(names).toEqual([
       '20260715000000_add_embedding_resilience',
+      '20260715000000_restore_asset_embeddings_hnsw_index',
       '20260715010000_add_embedding_circuit_generation',
       '20260715020000_add_embedding_probe_lease_token',
       '20260715030000_enforce_embedding_attempt_ceiling',
@@ -99,6 +100,9 @@ describe('online migration transaction contract', () => {
       '20260715065000_validate_embedding_attempt_ceiling',
       '20260715070000_harden_terminal_revival_exit',
       '20260715080000_add_library_exports',
+      '20260715120000_add_asset_embedding_owner_visibility',
+      '20260715121000_backfill_asset_embedding_owner_visibility',
+      '20260715122000_enforce_asset_embedding_owner_visibility'
       '20260715130000_add_provider_neutral_storage',
     ]);
     for (const name of names) {

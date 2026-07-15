@@ -2,6 +2,8 @@
 -- dimension migrations. This is intentionally additive: canonical migration
 -- history is immutable, and both fresh installs and legacy upgrades must end
 -- with the same vector(768) index contract.
+BEGIN;
+
 DO $$
 DECLARE
   existing_definition TEXT;
@@ -36,3 +38,5 @@ BEGIN
       existing_definition;
   END IF;
 END $$;
+
+COMMIT;
