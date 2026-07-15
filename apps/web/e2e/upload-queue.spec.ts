@@ -61,6 +61,14 @@ async function establishOrigin(page: Page, userId: string): Promise<void> {
   await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
 }
 
+async function openSignedOutApp(page: Page): Promise<void> {
+  const healthResponse = await page.goto('/api/health', { waitUntil: 'domcontentloaded', timeout: 10_000 });
+  expect(healthResponse?.ok()).toBe(true);
+  const health = JSON.parse((await page.locator('body').textContent()) ?? '{}') as { status?: string };
+  expect(health.status).toBe('ok');
+  await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
+}
+
 function intentList(page: Page) {
   return page.getByTestId('upload-intent-list');
 }
@@ -206,7 +214,7 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     const accountATab = await context.newPage();
     const accountBTab = await context.newPage();
     const signedOut = await context.newPage();
-    await signedOut.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
+    await openSignedOutApp(signedOut);
     await Promise.all([openApp(accountATab, accountA), openApp(accountBTab, accountB)]);
     await context.setOffline(true);
 
