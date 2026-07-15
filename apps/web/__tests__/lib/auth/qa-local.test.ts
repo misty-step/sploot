@@ -167,4 +167,25 @@ describe('qa-local auth tokens', () => {
     expect(result).toMatchObject({ status: 'unauthenticated', reason: 'qa-local-invalid' });
     expect(clerkMock.verifyBearerOrThrow).not.toHaveBeenCalled();
   });
+
+  it('does not throw or fall through when a synthetic QA request URL is malformed', async () => {
+    clerkMock.verifyBearerOrThrow.mockResolvedValue('clerk-user');
+    const request = {
+      headers: new Headers({
+        host: 'localhost:3000',
+        [getQaLocalAuthHeader()]: 'not-a-valid-token',
+        [getQaLocalRemoteAddressHeader()]: '127.0.0.1',
+      }),
+      url: 'not a URL',
+    } as never;
+
+    await expect(
+      authenticateRequest(request, {
+        allowClerk: true,
+        allowQaLocal: true,
+        env: QA_ENV,
+      })
+    ).resolves.toMatchObject({ status: 'unauthenticated', reason: 'qa-local-invalid' });
+    expect(clerkMock.verifyBearerOrThrow).not.toHaveBeenCalled();
+  });
 });

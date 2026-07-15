@@ -31,7 +31,7 @@ export async function authenticateRequest(
   if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' && resolvedPolicy.allowQaLocal && hasQaInput) {
     const { getQaProofRequestContext, verifyQaLocalAuthHeaders } = await import('./qa-local');
     const requestContext = getQaProofRequestContext(req.headers);
-    requestContext.host = req.nextUrl?.hostname || new URL(req.url).hostname || requestContext.host;
+    requestContext.host = requestHostname(req) || requestContext.host;
     const qaResult = await verifyQaLocalAuthHeaders(req.headers, env, requestContext);
     // QA credentials are terminal input. A malformed, expired, disabled, or
     // otherwise forbidden QA credential must never fall through to Clerk.
@@ -78,6 +78,17 @@ export async function authenticateRequest(
     }
 
     return { status: 'unavailable', reason: 'enrollment_unavailable' };
+  }
+}
+
+function requestHostname(req: NextRequest): string {
+  if (req.nextUrl?.hostname) return req.nextUrl.hostname;
+  try {
+    return new URL(req.url).hostname;
+  } catch {
+    // A malformed synthetic request cannot crash authentication. Retain the
+    // signed QA context's host so verification still fails closed on mismatch.
+    return '';
   }
 }
 
