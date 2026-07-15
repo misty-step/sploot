@@ -182,7 +182,11 @@ export async function verifyQaLocalAuthHeaders(
   const cookieHeader = headers.get('cookie');
   const headerToken = headers.get(QA_LOCAL_AUTH_HEADER);
   const cookieToken = readCookie(cookieHeader, QA_LOCAL_AUTH_COOKIE);
-  const token = headerToken ?? cookieToken;
+  // Browser sessions are refreshed by /api/qa-auth/login. A caller may still
+  // carry an older explicit header (for example Playwright's context header),
+  // so the signed session cookie is authoritative whenever it is present.
+  // Header-only callers retain the token-scoped API contract.
+  const token = cookieToken ?? headerToken;
   if (!token) {
     return hasCookie(cookieHeader, QA_LOCAL_AUTH_COOKIE) || headerToken !== null
       ? { status: 'unauthenticated', reason: 'qa-local-invalid' }

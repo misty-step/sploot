@@ -1,5 +1,5 @@
 import { GET } from '@/app/api/qa-auth/login/route';
-import { verifyQaLocalAuthHeaders } from '@/lib/auth/qa-local';
+import { createQaLocalAuthToken, verifyQaLocalAuthHeaders } from '@/lib/auth/qa-local';
 import { NextRequest } from 'next/server';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
@@ -75,12 +75,40 @@ describe('/api/qa-auth/login', () => {
   });
 
   it('returns 404 when the qa-local build seam is compiled out, before any runtime gate', async () => {
-    // Production builds inline NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD to 'false',
-    // making the handler an unconditional 404 regardless of runtime env.
     process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD = 'false';
 
     const res = await GET(makeRequest());
     expect(res.status).toBe(404);
     expect(res.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('uses the refreshed signed cookie when an older header is also present', async () => {
+    const staleHeaderToken = await createQaLocalAuthToken({
+      userId: 'qa-design-user',
+      email: 'qa-design-user@qa.local',
+      secret: QA_SECRET,
+      expiresInSeconds: 15 * 60,
+    });
+    const refreshedCookieToken = await createQaLocalAuthToken({
+      userId: 'qa-design-user',
+      email: 'qa-design-user@sploot.test',
+      secret: QA_SECRET,
+      expiresInSeconds: 15 * 60,
+    });
+    const headers = new Headers({
+      host: 'localhost:3001',
+      cookie: `sploot_qa_auth=${encodeURIComponent(refreshedCookieToken)}`,
+      'x-sploot-qa-auth': staleHeaderToken,
+    });
+
+    const auth = await verifyQaLocalAuthHeaders(headers, process.env, {
+      host: 'localhost',
+      remoteAddress: '127.0.0.1',
+    });
+
+    expect(auth.status).toBe('authenticated');
+    if (auth.status === 'authenticated') {
+      expect(auth.principal.email).toBe('qa-design-user@sploot.test');
+    }
   });
 });
