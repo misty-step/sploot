@@ -59,12 +59,17 @@ interface LimiterSchemaRow {
   circuit_index: string | null;
   bootstrap_phase: string | null;
   bootstrap_version: string | null;
+  bootstrap_schema_version: string | null;
 }
 
 const TIMEOUT_MS = 5_000;
-// The bootstrap file is the version authority. This value must advance with
-// that file so a pre-final-schema database cannot report healthy by accident.
-const FINAL_BOOTSTRAP_VERSION = '20260715070000';
+
+function stripeBootstrapRequired(): boolean {
+  const configured = process.env.STRIPE_LEDGER_BOOTSTRAP_REQUIRED;
+  if (configured === undefined || configured === '' || configured === 'false') return false;
+  if (configured === 'true') return true;
+  throw new Error('STRIPE_LEDGER_BOOTSTRAP_REQUIRED must be true or false');
+}
 
 async function queryRuntimeSchema(): Promise<LimiterSchemaRow[]> {
   return prisma.$queryRaw<LimiterSchemaRow[]>`
@@ -153,17 +158,51 @@ async function queryRuntimeSchema(): Promise<LimiterSchemaRow[]> {
       ) AS revival_trigger
       ,to_regclass('public.asset_embeddings_pending_next_attempt_idx')::text AS pending_index
       ,to_regclass('public.embedding_provider_circuits_open_until_idx')::text AS circuit_index
-      ,(
-        SELECT phase FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id = TRUE
-      ) AS bootstrap_phase
-      ,(
-        SELECT version FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id = TRUE
-      ) AS bootstrap_version
+      ,NULL::text AS bootstrap_phase
+      ,NULL::text AS bootstrap_version
+      ,NULL::text AS bootstrap_schema_version
   `;
 }
 
-function schemaIsReady(rows: LimiterSchemaRow[]): boolean {
+interface BootstrapMarkerRow {
+  bootstrap_phase: string | null;
+  bootstrap_version: string | null;
+  bootstrap_schema_version: string | null;
+}
+
+async function queryBootstrapMarker(): Promise<BootstrapMarkerRow[]> {
+  return prisma.$queryRaw<BootstrapMarkerRow[]>`
+    SELECT
+      marker.phase AS bootstrap_phase,
+      marker.version AS bootstrap_version,
+      (
+        SELECT rpad(split_part(migration_name, '_', 1), 14, '0')
+        FROM public._prisma_migrations
+        WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+        ORDER BY migration_name DESC
+        LIMIT 1
+      ) AS bootstrap_schema_version
+    FROM sploot_bootstrap.stripe_ledger_bootstrap_state marker
+    WHERE marker.id = TRUE
+  `;
+}
+
+async function queryRequiredRuntimeSchema(bootstrapRequired: boolean): Promise<LimiterSchemaRow[]> {
+  const rows = await queryRuntimeSchema();
+  if (bootstrapRequired) {
+    const [marker] = await queryBootstrapMarker();
+    if (rows[0] && marker) Object.assign(rows[0], marker);
+  }
+  return rows;
+}
+
+function schemaIsReady(rows: LimiterSchemaRow[], bootstrapRequired: boolean): boolean {
   const row = rows[0];
+  const bootstrapReady = !bootstrapRequired || Boolean(
+    row?.bootstrap_phase === 'ready' &&
+    row.bootstrap_version &&
+    row.bootstrap_version === row.bootstrap_schema_version,
+  );
   return Boolean(
     row?.limiter_buckets &&
     row.limiter_leases &&
@@ -183,8 +222,7 @@ function schemaIsReady(rows: LimiterSchemaRow[]): boolean {
     row.revival_trigger &&
     row.pending_index &&
     row.circuit_index &&
-    row.bootstrap_phase === 'ready' &&
-    row.bootstrap_version === FINAL_BOOTSTRAP_VERSION,
+    bootstrapReady,
   );
 }
 
@@ -201,10 +239,11 @@ async function checkDatabase(): Promise<DatabaseHealth> {
   }
 
   try {
-    const rows = await queryRuntimeSchema();
+    const bootstrapRequired = stripeBootstrapRequired();
+    const rows = await queryRequiredRuntimeSchema(bootstrapRequired);
     return {
       success: true,
-      limiterSchema: schemaIsReady(rows),
+      limiterSchema: schemaIsReady(rows, bootstrapRequired),
       latency_ms: Date.now() - startedAt,
       prisma_test: true,
     };
@@ -238,12 +277,13 @@ async function checkDatabase(): Promise<DatabaseHealth> {
     try {
       await prisma.$disconnect();
       await prisma.$connect();
-      const rows = await queryRuntimeSchema();
+      const bootstrapRequired = stripeBootstrapRequired();
+      const rows = await queryRequiredRuntimeSchema(bootstrapRequired);
       const latencyMs = Date.now() - startedAt;
       logger.logInfo('health-check-db-reconnect-success', { latency_ms: latencyMs });
       return {
         success: true,
-        limiterSchema: schemaIsReady(rows),
+        limiterSchema: schemaIsReady(rows, bootstrapRequired),
         latency_ms: latencyMs,
         prisma_test: true,
       };

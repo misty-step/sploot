@@ -46,8 +46,13 @@ its webhook authorities are configured. Before billing is enabled, provision
 the separate Stripe bootstrap and schema-migration roles, bind
 `STRIPE_LEDGER_BOOTSTRAP_DATABASE_URL` and
 `STRIPE_LEDGER_MIGRATION_DATABASE_URL` to the singleton PRE_DEPLOY job, and set
-`STRIPE_LEDGER_BOOTSTRAP_REQUIRED=true`. With that explicit flag, the runner
-refuses to derive either privileged authority from the runtime pooled URL.
+`STRIPE_LEDGER_BOOTSTRAP_REQUIRED=true` on both that job and the web runtime.
+With the runtime flag enabled, `/api/health` reads the bootstrap marker through
+the restricted application role and binds its version to the newest applied
+Prisma migration. Before billing activation, omit the runtime flag (or set it
+to `false`); limiter/schema health stays mandatory without referencing an
+intentionally absent Stripe bootstrap. The PRE_DEPLOY runner refuses to derive
+either privileged authority from the runtime pooled URL.
 
 The privileged Stripe ledger bootstrap is a three-phase state machine recorded
 in `sploot_bootstrap.stripe_ledger_bootstrap_state`: the transactional

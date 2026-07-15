@@ -66,6 +66,10 @@ ALTER TABLE public.stripe_cancellation_deliveries OWNER TO sploot_stripe_ledger_
 ALTER TABLE public.stripe_cancellation_maintenance OWNER TO sploot_stripe_ledger_owner;
 ALTER TABLE public.stripe_cancellation_maintenance_tokens OWNER TO sploot_stripe_ledger_owner;
 ALTER TABLE sploot_bootstrap.stripe_ledger_bootstrap_state OWNER TO sploot_stripe_ledger_owner;
+REVOKE ALL ON SCHEMA sploot_bootstrap FROM PUBLIC;
+REVOKE ALL ON TABLE sploot_bootstrap.stripe_ledger_bootstrap_state FROM PUBLIC, sploot_stripe_app;
+GRANT USAGE ON SCHEMA sploot_bootstrap TO sploot_stripe_app;
+GRANT SELECT ON TABLE sploot_bootstrap.stripe_ledger_bootstrap_state TO sploot_stripe_app;
 
 -- Deliberate mid-install failure hook for rollback/recovery proof. Enabled by
 -- running the script under PGOPTIONS="-c sploot.stripe_bootstrap_fault=post".
@@ -442,6 +446,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.search_logs, public.text_embedding_cache, public.embedding_rate_buckets,
   public.embedding_rate_leases, public.embedding_provider_circuits
 TO sploot_stripe_app;
+-- Health may inspect migration names to bind the ready marker to the newest
+-- applied schema version. The runtime remains unable to mutate Prisma's ledger.
+GRANT SELECT ON TABLE public._prisma_migrations TO sploot_stripe_app;
 
 -- Strip PUBLIC EXECUTE from every SECURITY DEFINER function and from trigger
 -- functions, then re-grant only the exact runtime or migration-authority

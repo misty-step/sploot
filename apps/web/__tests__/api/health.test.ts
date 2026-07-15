@@ -56,7 +56,8 @@ const healthyDatabaseRow = [{
   pending_index: 'asset_embeddings_pending_next_attempt_idx',
   circuit_index: 'embedding_provider_circuits_open_until_idx',
   bootstrap_phase: 'ready',
-    bootstrap_version: '20260715070000',
+  bootstrap_version: '20260715070000',
+  bootstrap_schema_version: '20260715070000',
 }];
 const context = { params: Promise.resolve({}) };
 
@@ -64,6 +65,7 @@ describe('/api/health', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.DATABASE_URL = 'postgresql://configured';
+    delete process.env.STRIPE_LEDGER_BOOTSTRAP_REQUIRED;
   });
 
   it('reports the real Postgres-backed runtime dependencies', async () => {
@@ -110,6 +112,7 @@ describe('/api/health', () => {
       circuit_index: null,
       bootstrap_phase: 'preparing',
       bootstrap_version: '20260715070000',
+      bootstrap_schema_version: '20260715070000',
     }]);
 
     const res = await GET(createMockRequest('GET', null), context);
@@ -142,8 +145,6 @@ describe('/api/health', () => {
     'revival_trigger',
     'pending_index',
     'circuit_index',
-    'bootstrap_phase',
-    'bootstrap_version',
   ]) {
     it(`fails closed when final schema field ${field} drifts`, async () => {
       mockPrisma.$queryRaw.mockResolvedValue([{ ...healthyDatabaseRow[0], [field]: null }]);
@@ -152,6 +153,59 @@ describe('/api/health', () => {
       expect((await res.json()).diagnostics.embedding_limiter_schema).toBe(false);
     });
   }
+
+  for (const field of ['bootstrap_phase', 'bootstrap_version', 'bootstrap_schema_version']) {
+    it(`fails closed when required bootstrap field ${field} drifts`, async () => {
+      process.env.STRIPE_LEDGER_BOOTSTRAP_REQUIRED = 'true';
+      mockPrisma.$queryRaw.mockResolvedValue([{ ...healthyDatabaseRow[0], [field]: null }]);
+      const res = await GET(createMockRequest('GET', null), context);
+      expect(res.status).toBe(503);
+      expect((await res.json()).diagnostics.embedding_limiter_schema).toBe(false);
+    });
+  }
+
+  it('does not require the Stripe bootstrap marker before billing is activated', async () => {
+    mockPrisma.$queryRaw.mockResolvedValue([{
+      ...healthyDatabaseRow[0],
+      bootstrap_phase: null,
+      bootstrap_version: null,
+      bootstrap_schema_version: null,
+    }]);
+
+    const res = await GET(createMockRequest('GET', null), context);
+    expect(res.status).toBe(200);
+    expect(mockPrisma.$queryRaw).toHaveBeenCalledOnce();
+  });
+
+  it('binds a required bootstrap marker to the newest applied migration', async () => {
+    process.env.STRIPE_LEDGER_BOOTSTRAP_REQUIRED = 'true';
+    mockPrisma.$queryRaw.mockResolvedValue(healthyDatabaseRow);
+
+    const res = await GET(createMockRequest('GET', null), context);
+    expect(res.status).toBe(200);
+    expect(mockPrisma.$queryRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a required bootstrap marker from an older schema version', async () => {
+    process.env.STRIPE_LEDGER_BOOTSTRAP_REQUIRED = 'true';
+    mockPrisma.$queryRaw.mockResolvedValue([{
+      ...healthyDatabaseRow[0],
+      bootstrap_schema_version: '20260716000000',
+    }]);
+
+    const res = await GET(createMockRequest('GET', null), context);
+    expect(res.status).toBe(503);
+  });
+
+  it('fails closed on a malformed bootstrap requirement', async () => {
+    process.env.STRIPE_LEDGER_BOOTSTRAP_REQUIRED = 'sometimes';
+    mockPrisma.$queryRaw.mockResolvedValue(healthyDatabaseRow);
+
+    const res = await GET(createMockRequest('GET', null), context);
+    expect(res.status).toBe(503);
+    expect((await res.json()).error).toContain('STRIPE_LEDGER_BOOTSTRAP_REQUIRED');
+    expect(mockPrisma.$queryRaw).not.toHaveBeenCalled();
+  });
 
   it('returns 503 when Postgres is down', async () => {
     mockPrisma.$queryRaw.mockRejectedValue(new Error('DB Connection Failed'));

@@ -108,6 +108,11 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(postSql).toContain(
       'GRANT EXECUTE ON FUNCTION public.enforce_asset_embedding_revival_budget() TO sploot_stripe_schema_migrator',
     );
+    expect(postSql).toContain('GRANT USAGE ON SCHEMA sploot_bootstrap TO sploot_stripe_app');
+    expect(postSql).toContain(
+      'GRANT SELECT ON TABLE sploot_bootstrap.stripe_ledger_bootstrap_state TO sploot_stripe_app',
+    );
+    expect(postSql).toContain('GRANT SELECT ON TABLE public._prisma_migrations TO sploot_stripe_app');
     expect(postSql).toContain(
       'create trigger stripe_cancellation_events_append_only before delete or update on stripe_cancellation_events',
     );
@@ -205,6 +210,14 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(ci).toContain('prisma/stripe-ledger-bootstrap.version');
     expect(ci).not.toMatch(/ready:\d{14}/);
     expect(ci).not.toMatch(/bootstrap_version=\d/);
+  });
+
+  it('does not hardcode the bootstrap version in runtime health', () => {
+    const healthRoute = readFileSync(resolve(webRoot, 'app/api/health/route.ts'), 'utf8');
+    expect(healthRoute).not.toContain(version);
+    expect(healthRoute).toContain('FROM public._prisma_migrations');
+    expect(healthRoute).toContain("rpad(split_part(migration_name, '_', 1), 14, '0')");
+    expect(healthRoute).toContain('STRIPE_LEDGER_BOOTSTRAP_REQUIRED');
   });
 
   it('keeps the inert legacy-owner migration path self-contained before privileged activation', () => {

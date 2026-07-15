@@ -562,6 +562,27 @@ jobs:
           test "$public_exec" = '0'
           app_ledger_dml="$(PGPASSWORD="$app_password" psql "postgresql://sploot_stripe_app:${app_password}@localhost:5432/sploot_upgrade?sslmode=disable" -Atc "SELECT has_table_privilege(current_user, 'public.stripe_cancellation_deliveries', 'INSERT') OR has_table_privilege(current_user, 'public.stripe_cancellation_deliveries', 'UPDATE') OR has_table_privilege(current_user, 'public.stripe_cancellation_deliveries', 'DELETE')")"
           test "$app_ledger_dml" = 'f'
+          app_url="postgresql://sploot_stripe_app:${app_password}@localhost:5432/sploot_upgrade?sslmode=disable"
+          app_bootstrap_marker="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT phase || ':' || version FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
+          test "$app_bootstrap_marker" = "ready:${bootstrap_version}"
+          app_bootstrap_mutation="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'sploot_bootstrap.stripe_ledger_bootstrap_state', 'INSERT,UPDATE,DELETE') OR has_table_privilege(current_user, 'public._prisma_migrations', 'INSERT,UPDATE,DELETE')")"
+          test "$app_bootstrap_mutation" = 'f'
+          health_port="$((3100 + ${{ matrix.pg }}))"
+          DATABASE_URL="$app_url" \
+          STRIPE_LEDGER_BOOTSTRAP_REQUIRED=true \
+          SPLOOT_DEPLOYMENT_ENV=test \
+          pnpm --filter web exec next dev --hostname 127.0.0.1 --port "$health_port" >/tmp/sploot-health-${{ matrix.pg }}.log 2>&1 &
+          health_pid=$!
+          trap 'kill "$health_pid" 2>/dev/null || true' EXIT
+          health_json=''
+          for _ in $(seq 1 60); do
+            if health_json="$(curl --fail --silent --show-error "http://127.0.0.1:${health_port}/api/health" 2>/dev/null)"; then break; fi
+            sleep 1
+          done
+          HEALTH_JSON="$health_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") process.exit(1)'
+          kill "$health_pid"
+          wait "$health_pid" 2>/dev/null || true
+          trap - EXIT
           legacy_owner="$(psql "$admin_url" -Atc "SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid='public.users'::regclass")"
           test "$legacy_owner" = 'sploot_stripe_schema_migrator'
           vector_owner="$(psql "$admin_url" -Atc "SELECT pg_get_userbyid(t.typowner) FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='public' AND t.typname='vector'")"

@@ -196,6 +196,11 @@ export async function assertFinalEmbeddingSchema(databaseUrl = process.env.DATAB
                'sploot_purge_stripe_audit', 'sploot_purge_stripe_raw_provenance'
              ])
              AND pg_get_userbyid(p.proowner) = 'sploot_stripe_ledger_owner')
+        AND has_schema_privilege('sploot_stripe_app', 'sploot_bootstrap', 'USAGE')
+        AND has_table_privilege('sploot_stripe_app', 'sploot_bootstrap.stripe_ledger_bootstrap_state', 'SELECT')
+        AND NOT has_table_privilege('sploot_stripe_app', 'sploot_bootstrap.stripe_ledger_bootstrap_state', 'INSERT,UPDATE,DELETE')
+        AND has_table_privilege('sploot_stripe_app', 'public._prisma_migrations', 'SELECT')
+        AND NOT has_table_privilege('sploot_stripe_app', 'public._prisma_migrations', 'INSERT,UPDATE,DELETE')
         AND EXISTS (SELECT 1 FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id = TRUE AND phase = 'ready' AND version = $1)
         AS ready
     `, [expectedVersion]);
