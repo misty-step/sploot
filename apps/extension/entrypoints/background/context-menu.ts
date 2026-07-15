@@ -65,20 +65,20 @@ export function setupContextMenu() {
   setupContextMenuSaveQueue();
 
   // Recover jobs that were left in-flight when the MV3 worker was terminated.
-  void recoverPendingContextMenuSaves().catch(error => {
+  void recoverPendingContextMenuSaves('startup').catch(error => {
     console.error('[Background][ContextMenu] Recovery failed', error);
   });
 
   // Create context menu on extension install/update
   chrome.runtime.onInstalled.addListener(() => {
     ensureContextMenus();
-    void recoverPendingContextMenuSaves().catch(error => {
+    void recoverPendingContextMenuSaves('startup').catch(error => {
       console.error('[Background][ContextMenu] Install recovery failed', error);
     });
   });
 
   chrome.runtime.onStartup.addListener(() => {
-    return recoverPendingContextMenuSaves().catch(error => {
+    return recoverPendingContextMenuSaves('startup').catch(error => {
       console.error('[Background][ContextMenu] Startup recovery failed', error);
     });
   });

@@ -551,13 +551,15 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
   });
 }
 
-async function recoverPendingSavesLocked(): Promise<void> {
+type RecoveryTrigger = 'startup' | 'alarm' | 'enqueue';
+
+async function recoverPendingSavesLocked(trigger: RecoveryTrigger = 'alarm'): Promise<void> {
   const jobs = await readJobs();
   const now = Date.now();
   const recovered = jobs.map(job => {
     if (
       job.state === 'processing'
-      && now - (job.processingStartedAt ?? job.createdAt) >= PROCESSING_STALE_TIMEOUT_MS
+      && (trigger === 'startup' || now - (job.processingStartedAt ?? job.createdAt) >= PROCESSING_STALE_TIMEOUT_MS)
     ) {
       return {
         ...job,
@@ -640,7 +642,7 @@ export function enqueueCapturedSave(blob: Blob, filename: string, imageUrl = 'ca
       // A durable enqueue is the caller's acknowledgement boundary. Recovery
       // is deliberately detached so a slow upload cannot hold the context-menu
       // event or popup message open.
-      void recoverPendingContextMenuSaves().catch(error => {
+      void recoverPendingContextMenuSaves('enqueue').catch(error => {
         console.error('[Background][ContextMenu] Enqueued save recovery failed', error);
       });
     });
@@ -654,8 +656,8 @@ export function enqueueContextMenuSave(imageUrl: string, filename: string): Prom
   )).then(blob => enqueueCapturedSave(blob, filename, imageUrl));
 }
 
-export function recoverPendingContextMenuSaves(): Promise<void> {
-  return exclusively(recoverPendingSavesLocked);
+export function recoverPendingContextMenuSaves(trigger: RecoveryTrigger = 'alarm'): Promise<void> {
+  return exclusively(() => recoverPendingSavesLocked(trigger));
 }
 
 export function listContextMenuSaves(): Promise<ContextMenuSaveJob[]> {

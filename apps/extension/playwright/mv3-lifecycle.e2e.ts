@@ -13,17 +13,17 @@ import {
 
 const PORT = 3345;
 const API_ORIGIN = `http://127.0.0.1:${PORT}`;
-const AUTH_KEY = 'sploot:e2e-auth-authority';
-const QUEUE_KEY = 'sploot:context-menu-queue';
 const E2E_SAVE = 'sploot:e2e:context-menu-save';
 const LIST_QUEUE = 'sploot:context-menu-save:list-queue';
 const DISCARD = 'sploot:context-menu-save:discard';
+const RETRY = 'sploot:context-menu-save:retry';
 const CAPTURE = 'CAPTURE_VISIBLE_TAB';
 
 let server: Server;
 let uploadMode: 'success' | 'failure' | 'duplicate' = 'success';
 let imageBytes = 'original-image';
 const uploadBodies: string[] = [];
+const requestLog: string[] = [];
 
 function json(response: import('node:http').ServerResponse, status: number, body: unknown) {
   response.writeHead(status, {
@@ -35,8 +35,10 @@ function json(response: import('node:http').ServerResponse, status: number, body
 
 test.beforeAll(async () => {
   server = createServer((request, response) => {
+    requestLog.push(`${request.method ?? 'UNKNOWN'} ${request.url ?? ''}`);
     response.setHeader('access-control-allow-origin', '*');
     response.setHeader('access-control-allow-headers', 'authorization, content-type');
+    response.setHeader('access-control-allow-methods', 'POST, OPTIONS');
     if (request.method === 'OPTIONS') {
       response.writeHead(204);
       response.end();
@@ -91,6 +93,13 @@ test.beforeAll(async () => {
   await new Promise<void>(resolve => server.listen(PORT, '127.0.0.1', resolve));
 });
 
+test.beforeEach(() => {
+  uploadBodies.length = 0;
+  requestLog.length = 0;
+  uploadMode = 'success';
+  imageBytes = 'original-image';
+});
+
 test.afterAll(async () => {
   await new Promise<void>(resolve => server.close(() => resolve()));
 });
@@ -129,17 +138,56 @@ async function queue(worker: Worker) {
   return await worker.evaluate(async () => (await chrome.storage.local.get('sploot:context-menu-queue'))['sploot:context-menu-queue'] ?? []);
 }
 
-async function waitForQueue(worker: Worker, predicate: (jobs: any[]) => boolean) {
-  await expect.poll(async () => predicate(await queue(worker)), { timeout: 15_000 }).toBe(true);
+async function waitForQueue(
+  worker: Worker,
+  context: BrowserContext,
+  testInfo: import('@playwright/test').TestInfo,
+  step: Mv3Step,
+  title: string,
+  predicate: (jobs: any[]) => boolean,
+) {
+  await runMv3Step(context, testInfo, step, title, async () => {
+    let lastJobs: any[] = [];
+    try {
+      await expect.poll(async () => {
+        lastJobs = await queue(worker);
+        return predicate(lastJobs);
+      }, { timeout: 15_000 }).toBe(true);
+    } catch (error) {
+      throw new Error(`${title} timed out; queue=${JSON.stringify(lastJobs)} requests=${JSON.stringify(requestLog)}`, { cause: error });
+    }
+  });
 }
 
-async function stopAndRestart(context: BrowserContext, popup: Page): Promise<Worker> {
-  const cdp = await context.newCDPSession(popup);
-  const targets = await cdp.send('Target.getTargets');
-  const target = targets.targetInfos.find(info => info.type === 'service_worker' && info.url.startsWith('chrome-extension://'));
-  expect(target).toBeTruthy();
-  await cdp.send('Target.closeTarget', { targetId: target!.targetId });
-  return await context.waitForEvent('serviceworker');
+async function stopAndRestart(
+  context: BrowserContext,
+  popup: Page,
+  testInfo: import('@playwright/test').TestInfo,
+  step: Mv3Step,
+): Promise<Worker> {
+  return runMv3Step(context, testInfo, step, 'service worker termination and bounded restart', async () => {
+    const cdp = await context.newCDPSession(popup);
+    const restarted = context.waitForEvent('serviceworker', {
+      timeout: 15_000,
+      predicate: candidate => candidate.url().startsWith('chrome-extension://'),
+    });
+    try {
+      const targets = await cdp.send('Target.getTargets');
+      const target = targets.targetInfos.find(info => info.type === 'service_worker' && info.url.startsWith('chrome-extension://'));
+      expect(target).toBeTruthy();
+      await cdp.send('Target.closeTarget', { targetId: target!.targetId });
+      const worker = await restarted;
+      await wakeMv3Worker(worker, context, testInfo, step);
+      return worker;
+    } finally {
+      const detach = cdp.detach();
+      await Promise.race([
+        detach,
+        new Promise<void>(resolve => setTimeout(resolve, 5_000)),
+      ]);
+      void detach.catch(() => undefined);
+    }
+  });
 }
 
 test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and duplicates', async ({}, testInfo) => {
@@ -155,15 +203,18 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     imageBytes = 'original-image';
     await setAuth(worker, 'user-a');
     await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'immutable.png' }, 'immutable save message');
-    await waitForQueue(worker, jobs => jobs.some(job => (
-      job.filename === 'immutable.png' && job.sourceBytes && job.state !== 'processing'
+    await waitForQueue(worker, context, testInfo, step, 'immutable bytes persisted', jobs => jobs.some(job => (
+      job.filename === 'immutable.png' && job.sourceBytes
     )));
     const immutable = (await queue(worker)).find((job: any) => job.filename === 'immutable.png');
     expect(immutable.imageUrl).toBe(`${API_ORIGIN}/image.png`);
 
-    worker = await stopAndRestart(context, popup);
-    ({ context, popup } = opened);
     await setAuth(worker, 'user-b');
+    worker = await stopAndRestart(context, popup, testInfo, step);
+    ({ context, popup } = opened);
+    await waitForQueue(worker, context, testInfo, step, 'account switch pauses original-owner job', jobs => jobs.some(job => (
+      job.id === immutable?.id && job.state === 'paused'
+    )));
     const otherOwnerList = await send({ type: LIST_QUEUE }, 'different-owner queue-list message');
     expect(otherOwnerList).toEqual({ ok: true, jobs: [] });
     expect(JSON.stringify(otherOwnerList)).not.toContain('immutable.png');
@@ -177,25 +228,21 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     await setAuth(worker, 'user-a');
     uploadMode = 'success';
     imageBytes = 'changed-image';
-    await worker.evaluate(async () => {
-      const stored = await chrome.storage.local.get('sploot:context-menu-queue');
-      const jobs = (stored['sploot:context-menu-queue'] as any[]).map(job => ({ ...job, nextAttemptAt: Date.now() }));
-      await chrome.storage.local.set({ 'sploot:context-menu-queue': jobs });
-    });
-    await stopAndRestart(context, popup).then(next => { worker = next; });
-    await waitForQueue(worker, jobs => !jobs.some(job => job.id === immutable.id));
+    expect(await send({ type: RETRY, jobId: immutable.id }, 'original-owner retry message')).toMatchObject({ ok: true });
+    await stopAndRestart(context, popup, testInfo, step).then(next => { worker = next; });
+    await waitForQueue(worker, context, testInfo, step, 'immutable retry converged', jobs => !jobs.some(job => job.id === immutable.id));
     expect(uploadBodies.some(body => body.includes('original-image'))).toBe(true);
     expect(uploadBodies.some(body => body.includes('changed-image'))).toBe(false);
 
     uploadMode = 'duplicate';
     await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'duplicate.png' }, 'duplicate save message');
-    await waitForQueue(worker, jobs => !jobs.some(job => job.filename === 'duplicate.png'));
+    await waitForQueue(worker, context, testInfo, step, 'duplicate replay converged', jobs => !jobs.some(job => job.filename === 'duplicate.png'));
     expect(uploadBodies.at(-1)).toContain('changed-image');
 
     uploadMode = 'failure';
     await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/image.png`, filename: 'popup-discard.png' }, 'popup-discard save message');
-    await waitForQueue(worker, jobs => jobs.some(job => (
-      job.filename === 'popup-discard.png' && job.sourceBytes && job.state !== 'processing'
+    await waitForQueue(worker, context, testInfo, step, 'popup discard bytes persisted', jobs => jobs.some(job => (
+      job.filename === 'popup-discard.png' && job.sourceBytes
     )));
     await worker.evaluate(async () => {
       const stored = await chrome.storage.local.get('sploot:context-menu-queue');
@@ -208,15 +255,15 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     await expect(popup.getByText('popup-discard.png')).toBeVisible();
     const discardJob = (await queue(worker)).find((job: any) => job.filename === 'popup-discard.png');
     await popup.getByRole('button', { name: 'Discard' }).click();
-    await waitForQueue(worker, jobs => !jobs.some(job => job.id === discardJob.id));
+    await waitForQueue(worker, context, testInfo, step, 'popup discard converged', jobs => !jobs.some(job => job.id === discardJob.id));
 
     const fixture = await context.newPage();
     await fixture.goto(`${API_ORIGIN}/fixture`);
     await fixture.bringToFront();
     uploadMode = 'failure';
     await send({ type: CAPTURE }, 'screenshot capture message');
-    await waitForQueue(worker, jobs => jobs.some(job => (
-      job.filename.startsWith('screenshot-') && job.sourceBytes && job.state !== 'processing'
+    await waitForQueue(worker, context, testInfo, step, 'screenshot bytes persisted', jobs => jobs.some(job => (
+      job.filename.startsWith('screenshot-') && job.sourceBytes
     )));
     const screenshotJob = (await queue(worker)).find((job: any) => job.filename.startsWith('screenshot-'));
     expect(screenshotJob.imageUrl).toContain('captured://');
@@ -230,8 +277,8 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
       ));
       await chrome.storage.local.set({ 'sploot:context-menu-queue': jobs });
     });
-    worker = await stopAndRestart(context, popup);
-    await waitForQueue(worker, jobs => !jobs.some(job => job.id === screenshotJob.id));
+    worker = await stopAndRestart(context, popup, testInfo, step);
+    await waitForQueue(worker, context, testInfo, step, 'screenshot retry converged', jobs => !jobs.some(job => job.id === screenshotJob.id));
     await fixture.close();
 
     uploadMode = 'success';

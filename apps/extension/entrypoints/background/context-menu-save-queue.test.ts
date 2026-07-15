@@ -190,6 +190,24 @@ describe('durable context-menu save queue', () => {
     });
   });
 
+  it('replays a processing job immediately when a new worker starts', async () => {
+    storedQueue = [{
+      id: 'restarted',
+      imageUrl: 'https://x.test/restarted.png',
+      filename: 'restarted.png',
+      state: 'processing',
+      createdAt: Date.now(),
+      attempts: 1,
+      nextAttemptAt: Date.now(),
+      processingStartedAt: Date.now(),
+    }];
+
+    await recoverPendingContextMenuSaves('startup');
+
+    expect(mocks.saveToSploot).toHaveBeenCalledOnce();
+    expect(storedQueue).toEqual([]);
+  });
+
   it('retains a terminal failure and its payload after the attempt cap', async () => {
     storedQueue = [{
       id: 'poison',
