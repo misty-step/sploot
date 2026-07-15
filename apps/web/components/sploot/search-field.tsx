@@ -311,14 +311,14 @@ export const SearchField = forwardRef<SearchFieldHandle, SearchFieldProps>(funct
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-3">
-        <span className="font-mono text-xs font-bold lowercase text-[#1c1547] sploot-tabular">
+        <span data-testid="demo-count" className="font-mono text-xs font-bold lowercase text-sploot-ink sploot-tabular">
           8 in the demo pile
         </span>
         {enrollmentState.status === 'open' ? (
           <button
             type="button"
             onClick={() => router.push('/sign-up')}
-            className="flex items-center gap-1.5 font-mono text-xs font-bold lowercase text-[#1c1547] underline decoration-sploot-magenta decoration-[3px] underline-offset-4 transition-opacity duration-[var(--sploot-motion-fast)] hover:opacity-70"
+            className="sploot-public-cta flex items-center gap-1.5 font-mono text-xs font-bold lowercase transition-opacity duration-[var(--sploot-motion-fast)] hover:opacity-70"
           >
             search your own pile
             <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />

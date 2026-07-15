@@ -78,8 +78,10 @@ The App Platform spec must bind `SPLOOT_DEPLOYMENT_APP_ID` to `${APP_ID}` and
 `SPLOOT_DEPLOYMENT_COMMIT` to `${_self.COMMIT_HASH}`. Set
 `SPLOOT_DEPLOYMENT_CHANGE_ID` to a nonempty immutable operator-generated
 change ID. DigitalOcean assigns the provider deployment ID after the update;
-record it in the proof packet, never in the spec. Runtime health must echo the
-resolved app ID, change ID, commit, marker, and enrollment mode.
+record it in the proof packet, never in the public health contract. The public
+enrollment endpoint intentionally returns only `configuration`, `mode`, and
+`status`; use the authenticated admin readback and provider receipt for
+deployment identity and diagnostics.
 
 `SPLOOT_ENROLLMENT_MODE` is the server-owned pre-GA containment boundary. In
 `capped` mode, new `users` rows are admitted only while the aggregate count is

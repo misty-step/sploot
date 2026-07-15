@@ -21,6 +21,15 @@ describe('public enrollment popup seam', () => {
     })
   })
 
+  it.each([
+    { status: 'open', mode: 'closed', configuration: 'valid' },
+    { status: 'open', mode: 'ga', configuration: 'invalid' },
+    { status: 'paused', mode: 'capped', configuration: 'invalid' },
+    { status: 'paused', mode: 'closed', configuration: 'invalid', extra: true },
+  ])('fails closed for impossible public state %#', (payload) => {
+    expect(parsePublicEnrollmentState(payload)).toBeNull()
+  })
+
   it('fails closed for unavailable and network-failed public reads', async () => {
     const unavailable = await loadPublicEnrollmentState('/api/health/enrollment', async () => new Response('', { status: 503 }))
     expect(unavailable).toBeNull()

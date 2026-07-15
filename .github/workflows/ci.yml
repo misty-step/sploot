@@ -330,13 +330,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Reject provider omission under production authority
-        shell: bash
-        run: |
-          if pnpm --filter web exec next build --webpack; then
-            echo 'expected public-truth omission flag to be rejected under production authority'
-            exit 1
-          fi
+      - name: Prove production omission guard and compiled-bundle safety
+        run: pnpm --filter web e2e:public-truth:production-guard
 
   db-authority:
     name: Restricted DB authority (pg${{ matrix.pg }})

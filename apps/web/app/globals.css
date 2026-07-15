@@ -773,6 +773,13 @@ select:focus-visible {
   text-underline-offset: 3px;
 }
 
+.sploot-public-cta {
+  color: var(--sploot-public-link);
+  text-decoration-line: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
 .sploot-public-footer-link {
   color: var(--sploot-public-footer-link);
 }

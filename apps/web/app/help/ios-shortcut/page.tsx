@@ -48,12 +48,6 @@ export default async function IosShortcutHelp() {
           delete it.
         </p>
         <EnrollmentNotice state={enrollmentState} />
-        {enrollmentState.status === 'paused' ? (
-          <p className="text-sm text-muted-foreground">
-            new enrollment is paused. Existing users can still sign in and
-            recover access through <Link href="/support" className="sploot-public-link">Support</Link>.
-          </p>
-        ) : null}
 
         <div className="space-y-10">
           <section>
@@ -61,7 +55,7 @@ export default async function IosShortcutHelp() {
             <ol className="list-decimal pl-6 space-y-2 text-muted-foreground">
               <li>
                 Open Sploot →{" "}
-                <Link href="/app/settings" className="text-accent-cyan hover:underline">
+                <Link href="/app/settings" className="sploot-public-link">
                   Settings
                 </Link>{" "}
                 → Upload tokens.
@@ -161,7 +155,11 @@ export default async function IosShortcutHelp() {
                   </tr>
                   <tr>
                     <td className="py-2 pr-4">503</td>
-                    <td className="py-2">Uploads are temporarily paused.</td>
+                    <td className="py-2"><code>enrollment_unavailable</code> — enrollment/configuration or database boundary unavailable.</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2 pr-4">503</td>
+                    <td className="py-2"><code>uploads_disabled</code> — uploads are temporarily paused by the runtime gate.</td>
                   </tr>
                 </tbody>
               </table>
@@ -179,7 +177,7 @@ export default async function IosShortcutHelp() {
               <li>Only a hash of the token is stored server-side; the plaintext is shown once.</li>
               <li>
                 If a token leaks (lost phone, shared screenshot), open{" "}
-                <Link href="/app/settings" className="text-accent-cyan hover:underline">
+                <Link href="/app/settings" className="sploot-public-link">
                   Settings → Upload tokens
                 </Link>{" "}
                 and revoke it. Revocation is immediate.

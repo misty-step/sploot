@@ -16,6 +16,7 @@
     "e2e:auth": "playwright test --config playwright.config.ts",
     "e2e:public-truth": "playwright test --config playwright.config.ts --grep \"public truth\"",
     "e2e:public-truth:build": "node scripts/build-public-truth.mjs",
+    "e2e:public-truth:production-guard": "node scripts/verify-production-public-truth-guard.mjs",
     "e2e:public-truth:serve": "node scripts/serve-public-truth.mjs",
     "qa:seed": "tsx scripts/qa-seed.ts",
     "eval:fixtures": "tsx scripts/eval-build-fixtures.ts",

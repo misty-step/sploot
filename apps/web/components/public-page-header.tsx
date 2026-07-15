@@ -23,7 +23,7 @@ export function PublicPageHeader({ current }: { current?: (typeof LINKS)[number]
             key={link.href}
             href={link.href}
             aria-current={current === link.href ? 'page' : undefined}
-            className="sploot-public-link focus-visible:outline focus-visible:outline-4 focus-visible:outline-sploot-focus"
+            className="sploot-public-link inline-flex min-h-11 min-w-11 items-center justify-center px-1 focus-visible:outline focus-visible:outline-4 focus-visible:outline-sploot-focus"
           >
             {link.label}
           </Link>

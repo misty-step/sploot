@@ -78,6 +78,7 @@ describe('public truth contracts', () => {
     expect(read('e2e/clerk-provider.spec.ts')).toContain('SPLOOT_REAL_CLERK_E2E');
     expect(workflow).toMatch(/public-truth:[\s\S]*pnpm --filter web e2e:public-truth/);
     expect(workflow).toContain('pnpm --filter web e2e:public-truth:build');
+    expect(workflow).toContain('pnpm --filter web e2e:public-truth:production-guard');
     expect(workflow).toContain('public-truth-production-guard');
     expect(workflow).toMatch(/merge-gate:[\s\S]*needs: \[[^\]]*public-truth/);
   });
@@ -96,6 +97,8 @@ describe('public truth contracts', () => {
     expect(read('playwright.config.ts')).toContain('e2e:public-truth:serve');
     expect(read('playwright.config.ts')).not.toContain('next dev');
     expect(read('scripts/build-public-truth.mjs')).toContain('public-truth-build.json');
+    expect(read('scripts/verify-production-public-truth-guard.mjs')).toContain('unrelated reason');
+    expect(read('scripts/verify-production-public-truth-guard.mjs')).toContain('compiled production bundle contains');
     expect(read('scripts/serve-public-truth.mjs')).toContain('stale or mismatched public-truth artifact');
   });
 
@@ -104,10 +107,11 @@ describe('public truth contracts', () => {
     const shortcutDoc = readFileSync(resolve(root, 'docs/shortcuts/save-to-sploot.md'), 'utf8');
     const popup = read('../extension/entrypoints/popup/App.tsx');
 
-    expect(shortcut).toContain('new enrollment is paused');
-    expect(shortcut).toContain('Existing users can still sign in');
+    expect(shortcut).toContain('<EnrollmentNotice state={enrollmentState} />');
     expect(shortcutDoc).toContain('Existing Sploot users can open');
     expect(shortcutDoc).toContain('new enrollment is paused');
+    expect(shortcutDoc).toContain('enrollment_unavailable');
+    expect(shortcutDoc).toContain('uploads_disabled');
     expect(popup).toContain('loadPublicEnrollmentState');
     expect(popup).not.toContain('payload?.publicState');
   });
@@ -144,6 +148,24 @@ describe('public truth contracts', () => {
     ]) {
       expect(read(file), `${file} should use the public-link token`).toContain('sploot-public-link');
     }
+  });
+
+  it('keeps the public endpoint to its intentional three-field shape', () => {
+    const deployment = read('docs/DEPLOYMENT.md');
+    const api = read('docs/PUBLIC_API.md');
+    expect(deployment).toContain('enrollment endpoint intentionally returns only `configuration`, `mode`, and');
+    expect(deployment).toContain('authenticated admin readback');
+    expect(api).toContain('existing users can continue using their already-issued personal token');
+    expect(api).toContain('enrollment/configuration or database boundary');
+  });
+
+  it('inventories every public route and the extension save/duplicate oracle', () => {
+    const browser = read('e2e/public-truth.spec.ts');
+    for (const route of ['/privacy', '/changelog', '/sign-in', '/app/settings']) {
+      expect(browser).toContain(route);
+    }
+    expect(read('../extension/entrypoints/background/context-menu.test.ts')).toContain('duplicate save');
+    expect(read('../extension/entrypoints/background/context-menu.test.ts')).toContain('isAuthenticated');
   });
 
   it('disables extension motion under the user preference', () => {

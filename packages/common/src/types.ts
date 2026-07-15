@@ -49,12 +49,25 @@ export interface SplootEnrollmentPublicState {
 export function isSplootEnrollmentPublicState(value: unknown): value is SplootEnrollmentPublicState {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
-  return (
+  const shapeIsValid = (
     (candidate.status === 'open' || candidate.status === 'paused') &&
     (candidate.mode === 'capped' || candidate.mode === 'ga' || candidate.mode === 'closed') &&
     (candidate.configuration === 'valid' || candidate.configuration === 'invalid') &&
     Object.keys(candidate).length === 3
   );
+
+  if (!shapeIsValid) return false;
+
+  // Public state is a projection, not a bag of independent flags. Invalid
+  // configuration is always the canonical closed/paused fail-safe; an open
+  // state can only come from a valid capped or GA policy.
+  if (candidate.configuration === 'invalid') {
+    return candidate.status === 'paused' && candidate.mode === 'closed';
+  }
+
+  if (candidate.mode === 'closed') return candidate.status === 'paused';
+  if (candidate.status === 'open') return candidate.mode === 'capped' || candidate.mode === 'ga';
+  return true;
 }
 
 /**

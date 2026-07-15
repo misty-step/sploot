@@ -8,8 +8,16 @@ const viewports = [
 
 const evidenceDir = process.env.EVIDENCE_DIR;
 
-function luminance(hex: string): number {
-  const channels = hex.replace('#', '').match(/.{2}/g)?.map((channel) => Number.parseInt(channel, 16) / 255) ?? [];
+function parseColor(color: string): number[] {
+  if (color.startsWith('#')) {
+    return color.replace('#', '').match(/.{2}/g)?.map((channel) => Number.parseInt(channel, 16) / 255) ?? [];
+  }
+  const channels = color.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number) ?? [];
+  return channels.map((channel) => channel / 255);
+}
+
+function luminance(color: string): number {
+  const channels = parseColor(color);
   const linear = channels.map((channel) => channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
   return 0.2126 * (linear[0] ?? 0) + 0.7152 * (linear[1] ?? 0) + 0.0722 * (linear[2] ?? 0);
 }
@@ -67,15 +75,28 @@ for (const theme of ['light', 'dark'] as const) {
 
       const tokens = await page.evaluate(() => {
         const styles = getComputedStyle(document.documentElement);
+        const demoCount = document.querySelector('[data-testid="demo-count"]');
+        const effectiveBackground = (element: Element | null) => {
+          let current = element;
+          while (current) {
+            const background = getComputedStyle(current).backgroundColor;
+            if (background !== 'rgba(0, 0, 0, 0)' && background !== 'transparent') return background;
+            current = current.parentElement;
+          }
+          return getComputedStyle(document.body).backgroundColor;
+        };
         return {
           link: styles.getPropertyValue('--sploot-public-link').trim(),
           shelf: styles.getPropertyValue('--sploot-paper').trim(),
           footerLink: styles.getPropertyValue('--sploot-public-footer-link').trim(),
           footer: styles.getPropertyValue('--sploot-void').trim(),
+          demoCountColor: demoCount ? getComputedStyle(demoCount).color : '',
+          demoCountBackground: effectiveBackground(demoCount),
         };
       });
       expect(contrastRatio(tokens.link, tokens.shelf)).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(tokens.footerLink, tokens.footer)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(tokens.demoCountColor, tokens.demoCountBackground), 'demo count must be readable in the active theme').toBeGreaterThanOrEqual(4.5);
       expect(await page.getByRole('link', { name: 'support' }).last().evaluate((element) => getComputedStyle(element).textDecorationLine)).toContain('underline');
 
       await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
@@ -92,6 +113,16 @@ for (const theme of ['light', 'dark'] as const) {
         await page.goto(route, { waitUntil: 'networkidle' });
         await expect(page.getByText(/new enrollment is paused/i).first()).toBeVisible();
         await expect(page.getByRole('navigation', { name: 'Public pages' })).toBeVisible();
+        const navTargets = await page.getByRole('navigation', { name: 'Public pages' }).locator('a').evaluateAll((links) =>
+          links.map((link) => {
+            const rect = link.getBoundingClientRect();
+            return { label: link.textContent?.trim(), width: rect.width, height: rect.height };
+          }),
+        );
+        for (const target of navTargets) {
+          expect(target.width, `${target.label} nav target width`).toBeGreaterThanOrEqual(44);
+          expect(target.height, `${target.label} nav target height`).toBeGreaterThanOrEqual(44);
+        }
         const privacyLink = page.getByRole('link', { name: 'privacy', exact: true });
         await privacyLink.focus();
         await expect(privacyLink).toBeFocused();
@@ -100,6 +131,37 @@ for (const theme of ['light', 'dark'] as const) {
         if (route === '/sign-up') {
           await expect(page.getByRole('button', { name: 'Sign out' })).toHaveCount(0);
         }
+        if (route === '/help/ios-shortcut') {
+          await expect(page.getByText('new enrollment is paused', { exact: true })).toHaveCount(1);
+          for (const settingsLink of await page.getByRole('link', { name: 'Settings', exact: true }).all()) {
+            const metrics = await settingsLink.evaluate((element) => {
+              const style = getComputedStyle(element);
+              const rect = element.getBoundingClientRect();
+              return {
+                color: style.color,
+                background: style.backgroundColor,
+                width: rect.width,
+                height: rect.height,
+              };
+            });
+            expect(metrics.width).toBeGreaterThan(0);
+            expect(metrics.height).toBeGreaterThanOrEqual(0);
+            expect(contrastRatio(metrics.color, metrics.background === 'rgba(0, 0, 0, 0)' ? tokens.shelf : metrics.background)).toBeGreaterThanOrEqual(4.5);
+          }
+        }
+      }
+
+      for (const route of ['/privacy', '/changelog', '/sign-in']) {
+        await page.goto(route, { waitUntil: 'domcontentloaded' });
+        if (route === '/sign-in') {
+          expect((await page.locator('body').innerText()).toLowerCase()).not.toContain('create an account');
+        }
+      }
+
+      const settingsResponse = await page.request.get('/app/settings', { maxRedirects: 0 });
+      expect([307, 308, 401]).toContain(settingsResponse.status());
+      if (settingsResponse.status() === 307 || settingsResponse.status() === 308) {
+        expect(settingsResponse.headers().location).toContain('/sign-in');
       }
 
       const enrollmentResponse = await page.request.get('/api/health/enrollment');

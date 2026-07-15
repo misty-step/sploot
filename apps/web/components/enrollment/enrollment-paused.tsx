@@ -14,13 +14,14 @@ export function EnrollmentPaused({ showSignOut }: { showSignOut?: boolean } = {}
         <p className="text-base leading-7 text-muted-foreground">
           Sploot is not accepting new library accounts right now while the
           launch systems finish cooking. Nothing was uploaded, billed, or
-          deleted. Existing libraries remain preserved.
+          deleted. Existing libraries remain preserved, and existing users can
+          sign in below as usual.
         </p>
         <p className="text-sm text-muted-foreground">
           Try again later, or contact support if you think this is your existing
           account.
         </p>
-        <Link href="/support" className="inline-flex text-sm font-bold text-sploot-blue hover:underline">
+        <Link href="/support" className="sploot-public-link inline-flex min-h-11 items-center text-sm font-bold">
           Contact support →
         </Link>
         <EnrollmentEscapeActions showSignOut={showSignOut} />
@@ -44,7 +45,7 @@ export function EnrollmentUnavailable() {
           cost-bearing action was admitted. Please try again later; existing
           library data is preserved.
         </p>
-        <Link href="/support" className="inline-flex text-sm font-bold text-sploot-blue hover:underline">
+        <Link href="/support" className="sploot-public-link inline-flex min-h-11 items-center text-sm font-bold">
           Contact support →
         </Link>
         <EnrollmentEscapeActions />

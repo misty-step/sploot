@@ -61,7 +61,8 @@ it returns the existing asset rather than creating a duplicate.
 | `401` | `{"error":"Unauthorized"}` — token missing, mistyped, or revoked. |
 | `403` | `code: "quota_exceeded"` — you're out of storage. |
 | `413` | The image is larger than the upload limit. |
-| `503` | `code: "uploads_disabled"` — uploads are temporarily paused. |
+| `503` | `code: "enrollment_unavailable"` — the enrollment/configuration or database boundary is unavailable; try again later. |
+| `503` | `code: "uploads_disabled"` — the independent upload runtime gate is paused; try again later. |
 
 ## Security
 
