@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { EMBEDDING_DIMENSION } from '@sploot/common';
 import {
+  buildUnfilteredVectorSearchQuery,
   createVectorSearchContext,
   decodeVectorSearchCursor,
   encodeVectorSearchCursor,
   vectorSearchCursorMatchesContext,
+  vectorSearchFilterClause,
+  vectorSearchFilterVariant,
   vectorSearchOrderClause,
   vectorSearchPage,
 } from '@/lib/db';
@@ -25,6 +29,46 @@ describe('seeded vector-search pagination', () => {
       'ORDER BY ranked.distance DESC, ranked.id ASC'
     );
     expect(clause.values).toEqual([]);
+  });
+
+  it('selects explicit SQL filter variants without nullable optional predicates', () => {
+    expect(vectorSearchFilterVariant({})).toBe('unfiltered');
+    expect(vectorSearchFilterVariant({ favoriteOnly: true })).toBe('favorite');
+    expect(vectorSearchFilterVariant({ tagId: 'tag-cats' })).toBe('tag');
+    expect(vectorSearchFilterVariant({ favoriteOnly: true, tagId: 'tag-cats' })).toBe('favorite+tag');
+
+    const unfilteredSql = vectorSearchFilterClause('unfiltered', null).strings.join(' ');
+    expect(unfilteredSql).not.toContain('favorite');
+    expect(unfilteredSql).not.toContain('asset_tags');
+
+    const favoriteSql = vectorSearchFilterClause('favorite', null).strings.join(' ');
+    expect(favoriteSql).toContain('a.favorite = true');
+    expect(favoriteSql).not.toContain('asset_tags');
+
+    const tagSql = vectorSearchFilterClause('tag', 'tag-cats').strings.join(' ');
+    expect(tagSql).toContain('asset_tags');
+    expect(tagSql).toContain('at.tag_id =');
+
+    const combinedSql = vectorSearchFilterClause('favorite+tag', 'tag-cats').strings.join(' ');
+    expect(combinedSql).toContain('a.favorite = true');
+    expect(combinedSql).toContain('asset_tags');
+  });
+
+  it('keeps the unfiltered eval query on the direct pgvector plan shape', () => {
+    const query = buildUnfilteredVectorSearchQuery(
+      'eval-user',
+      Array(EMBEDDING_DIMENSION).fill(0.1),
+      120,
+    );
+    const sql = query.strings.join(' ');
+
+    expect(sql).toContain('FROM "assets" a');
+    expect(sql).toContain('ORDER BY ae.image_embedding <=>');
+    expect(sql).toContain('LIMIT');
+    expect(sql).not.toContain('WITH ranked');
+    expect(sql).not.toContain('COUNT');
+    expect(sql).not.toContain('asset_tags');
+    expect(sql).not.toContain('AND a.favorite');
   });
 
   it('encodes a canonical search-context-bound cursor without exposing pagination offsets', () => {
