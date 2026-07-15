@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
     addedAt: 1,
     status: 'pending',
     retryCount: 0,
+    claimToken: 'attempt-1',
   };
   const manager = {
     init: vi.fn().mockResolvedValue(undefined),
@@ -22,7 +23,7 @@ const mocks = vi.hoisted(() => {
     removeUpload: vi.fn(async () => { removed = true; }),
     claimUpload: vi.fn(async () => upload),
     completeUpload: vi.fn(async () => { removed = true; return true; }),
-    releaseUploadClaim: vi.fn(async (_id: string, _owner: string, error?: string) => ({ ...upload, status: 'failed', error, retryCount: upload.retryCount + 1 })),
+    releaseUploadClaim: vi.fn(async (_id: string, _owner: string, _claimToken: string, error?: string) => ({ ...upload, status: 'failed', error, retryCount: upload.retryCount + 1 })),
     updateUploadStatus: vi.fn().mockResolvedValue(undefined),
     resetUploadForRetry: vi.fn().mockResolvedValue(undefined),
     toFile: vi.fn(async () => new File(['data'], upload.filename, { type: upload.mimeType })),
@@ -43,6 +44,7 @@ vi.mock('@/hooks/use-offline', () => ({
   useOffline: () => ({ isOffline: mocks.offline, checkConnection: vi.fn() }),
 }));
 vi.mock('@/lib/upload-queue', () => ({
+  createUploadId: () => 'stable-tab-owner',
   getUploadQueueManager: () => mocks.manager,
 }));
 vi.mock('@/lib/upload/upload-network-client', () => ({
@@ -71,7 +73,7 @@ describe('offline recovery', () => {
     });
 
     await waitFor(() => expect(mocks.client.uploadFile).toHaveBeenCalledTimes(1));
-    expect(mocks.manager.completeUpload).toHaveBeenCalledWith('queued-1', expect.any(String));
+    expect(mocks.manager.completeUpload).toHaveBeenCalledWith('queued-1', expect.any(String), 'attempt-1');
     expect(mocks.client.uploadFile).toHaveBeenCalledWith(expect.any(File), { idempotencyKey: 'queued-1' });
     hook.unmount();
   });

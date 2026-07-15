@@ -19,6 +19,8 @@ export interface PersistedUpload {
   error?: string;
   retryCount: number;
   claimOwner?: string;
+  /** Random token for this exact claim generation, not just the tab owner. */
+  claimToken?: string;
   claimExpiresAt?: number;
 }
 
@@ -217,6 +219,7 @@ export class UploadQueueManager {
         if (error) upload.error = error;
         if (status === 'failed') upload.retryCount++;
         delete upload.claimOwner;
+        delete upload.claimToken;
         delete upload.claimExpiresAt;
         if (upload.retryCount >= UPLOAD_QUEUE_MAX_RETRIES) {
           upload.status = 'terminal';
@@ -257,6 +260,7 @@ export class UploadQueueManager {
             ? 'Automatic retries exhausted. Retry or remove this upload.'
             : 'Upload is older than 24 hours. Retry or remove this upload.';
           delete upload.claimOwner;
+          delete upload.claimToken;
           delete upload.claimExpiresAt;
           store.put(upload);
           return;
@@ -264,6 +268,7 @@ export class UploadQueueManager {
 
         upload.status = 'uploading';
         upload.claimOwner = owner;
+        upload.claimToken = createUploadId();
         upload.claimExpiresAt = now + leaseMs;
         const updateRequest = store.put(upload);
         updateRequest.onsuccess = () => { claimed = upload; };
@@ -276,7 +281,7 @@ export class UploadQueueManager {
   }
 
   /** Record a failed attempt only if this manager still owns the claim. */
-  async releaseUploadClaim(id: string, owner: string, error?: string): Promise<PersistedUpload | null> {
+  async releaseUploadClaim(id: string, owner: string, claimToken: string, error?: string): Promise<PersistedUpload | null> {
     if (!this.db) return null;
 
     return new Promise((resolve, reject) => {
@@ -286,11 +291,12 @@ export class UploadQueueManager {
       let released: PersistedUpload | null = null;
       request.onsuccess = () => {
         const upload = request.result as PersistedUpload | undefined;
-        if (!upload || upload.claimOwner !== owner || (upload.claimExpiresAt ?? 0) <= Date.now()) return;
+        if (!upload || upload.claimOwner !== owner || upload.claimToken !== claimToken || (upload.claimExpiresAt ?? 0) <= Date.now()) return;
         upload.status = 'failed';
         upload.retryCount += 1;
         upload.error = error;
         delete upload.claimOwner;
+        delete upload.claimToken;
         delete upload.claimExpiresAt;
         if (upload.retryCount >= UPLOAD_QUEUE_MAX_RETRIES) {
           upload.status = 'terminal';
@@ -310,7 +316,7 @@ export class UploadQueueManager {
   }
 
   /** Delete an upload only after its owning claim has completed successfully. */
-  async completeUpload(id: string, owner: string): Promise<boolean> {
+  async completeUpload(id: string, owner: string, claimToken: string): Promise<boolean> {
     if (!this.db) return false;
 
     return new Promise((resolve, reject) => {
@@ -320,7 +326,7 @@ export class UploadQueueManager {
       let completed = false;
       request.onsuccess = () => {
         const upload = request.result as PersistedUpload | undefined;
-        if (!upload || upload.claimOwner !== owner || (upload.claimExpiresAt ?? 0) <= Date.now()) return;
+        if (!upload || upload.claimOwner !== owner || upload.claimToken !== claimToken || (upload.claimExpiresAt ?? 0) <= Date.now()) return;
         store.delete(id);
         completed = true;
       };
@@ -352,6 +358,7 @@ export class UploadQueueManager {
         upload.attemptStartedAt = Date.now();
         delete upload.error;
         delete upload.claimOwner;
+        delete upload.claimToken;
         delete upload.claimExpiresAt;
         const updateRequest = store.put(upload);
         updateRequest.onerror = () => reject(updateRequest.error);
@@ -410,6 +417,7 @@ export class UploadQueueManager {
           if (normalized.status === 'uploading' && (normalized.claimExpiresAt ?? 0) <= Date.now()) {
             normalized.status = 'pending';
             delete normalized.claimOwner;
+            delete normalized.claimToken;
             delete normalized.claimExpiresAt;
           }
           if (normalized.status !== 'terminal' && (expired || normalized.retryCount >= UPLOAD_QUEUE_MAX_RETRIES)) {
@@ -418,6 +426,7 @@ export class UploadQueueManager {
               ? 'Upload is older than 24 hours. Retry or remove this upload.'
               : 'Automatic retries exhausted. Retry or remove this upload.';
             delete normalized.claimOwner;
+            delete normalized.claimToken;
             delete normalized.claimExpiresAt;
           }
           if (JSON.stringify(normalized) !== JSON.stringify(upload)) store.put(normalized);

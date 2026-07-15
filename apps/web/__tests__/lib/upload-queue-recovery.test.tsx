@@ -46,9 +46,45 @@ describe('UploadQueueManager durable boundaries', () => {
       const stillClaimed = await secondTab.claimUpload(id, 'tab-b-retry', 1_000);
       expect(stillClaimed).toBeNull();
       vi.setSystemTime(new Date('2026-07-15T00:00:01.001Z'));
-      await expect(firstTab.completeUpload(id, 'tab-a')).resolves.toBe(false);
+      const firstClaim = claims.find(Boolean);
+      await expect(firstTab.completeUpload(id, 'tab-a', firstClaim?.claimToken ?? 'missing-token')).resolves.toBe(false);
       const recovered = await secondTab.claimUpload(id, 'tab-b-recovery', 1_000);
       expect(recovered?.id).toBe(id);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fences stale completion and release by exact attempt token when an owner is reused', async () => {
+    const firstTab = UploadQueueManager.create();
+    const secondTab = UploadQueueManager.create();
+    await Promise.all([firstTab.init(), secondTab.init()]);
+    await firstTab.clearAll();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-07-15T00:00:00.000Z'));
+      const id = await firstTab.addUpload(new File(['data'], 'stale-generation.png', { type: 'image/png' }));
+      const firstClaim = await firstTab.claimUpload(id, 'same-owner', 1_000);
+      expect(firstClaim?.claimToken).toEqual(expect.any(String));
+
+      vi.setSystemTime(new Date('2026-07-15T00:00:01.001Z'));
+      const currentClaim = await secondTab.claimUpload(id, 'same-owner', 1_000);
+      expect(currentClaim?.claimToken).toEqual(expect.any(String));
+      expect(currentClaim?.claimToken).not.toBe(firstClaim?.claimToken);
+
+      await expect(firstTab.completeUpload(id, 'same-owner', firstClaim!.claimToken!)).resolves.toBe(false);
+      await expect(firstTab.releaseUploadClaim(id, 'same-owner', firstClaim!.claimToken!, 'stale failure')).resolves.toBeNull();
+      await expect(secondTab.getPendingUploads()).resolves.toEqual([
+        expect.objectContaining({
+          id,
+          status: 'uploading',
+          claimOwner: 'same-owner',
+          claimToken: currentClaim!.claimToken,
+        }),
+      ]);
+
+      await expect(secondTab.completeUpload(id, 'same-owner', currentClaim!.claimToken!)).resolves.toBe(true);
+      await expect(secondTab.getPendingUploads()).resolves.toHaveLength(0);
     } finally {
       vi.useRealTimers();
     }

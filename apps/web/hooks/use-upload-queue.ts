@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { error as logError } from '@/lib/logger';
 import { track } from '@/lib/analytics';
-import { getUploadQueueManager } from '@/lib/upload-queue';
+import { createUploadId, getUploadQueueManager } from '@/lib/upload-queue';
 import { getUploadNetworkClient } from '@/lib/upload/upload-network-client';
 import { useOffline } from './use-offline';
 
@@ -25,6 +25,12 @@ export interface QueuedUpload {
 type QueueListener = () => void;
 let queueSnapshot: QueuedUpload[] = [];
 const queueListeners = new Set<QueueListener>();
+let queueOwner: string | null = null;
+
+function getQueueOwner(): string {
+  if (!queueOwner) queueOwner = `queue-${createUploadId()}`;
+  return queueOwner;
+}
 
 function subscribeToQueue(listener: QueueListener): () => void {
   queueListeners.add(listener);
@@ -73,7 +79,7 @@ export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean 
   const [isProcessing, setIsProcessing] = useState(false);
   const isOfflineRef = useRef(isOffline);
   const isProcessingRef = useRef(false);
-  const claimOwner = `queue-${useId()}`;
+  const claimOwner = getQueueOwner();
   const queueManager = useMemo(() => getUploadQueueManager(), []);
   const uploadClient = useMemo(() => getUploadNetworkClient(), []);
 
@@ -151,7 +157,7 @@ export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean 
           const file = await queueManager.toFile(claimed);
           const result = await uploadClient.uploadFile(file, { idempotencyKey: claimed.id });
           if (!result.success) throw new Error(result.error || 'Upload failed');
-          const completed = await queueManager.completeUpload(upload.id, claimOwner);
+          const completed = await queueManager.completeUpload(upload.id, claimOwner, claimed.claimToken!);
           if (!completed) {
             const refreshed = await queueManager.getPendingUploads();
             const durable = refreshed.find((candidate) => candidate.id === upload.id);
@@ -166,7 +172,7 @@ export function useUploadQueue({ autoProcess = false }: { autoProcess?: boolean 
           track({ name: 'upload_completed', properties: { assetId: upload.id, duration: 0, size: upload.size } });
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Upload failed';
-          const released = await queueManager.releaseUploadClaim(upload.id, claimOwner, message);
+          const released = await queueManager.releaseUploadClaim(upload.id, claimOwner, claimed.claimToken!, message);
           publishQueue((previous) => previous.map((item) => item.id === upload.id ? {
             ...item,
             status: released?.status === 'terminal' ? 'terminal' : 'error',
