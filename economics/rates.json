@@ -75,9 +75,10 @@
       "value": 0.00073,
       "unit": "typical prediction",
       "includedAllowance": null,
-      "planAssumption": "krthr/clip-embeddings typical estimate; policy sensitivity supplies potentially billed retry/cancel overhead",
+      "planAssumption": "Target model rate only; policy sensitivity supplies a potentially billed retry/cancel reserve, while live billed dollars remain unavailable",
       "sourceUrl": "https://replicate.com/krthr/clip-embeddings",
-      "sourceEvidence": "Retrieved model page states approximately $0.00073 to run and 1369 runs per $1.",
+      "sourceEvidence": "Provider model page states approximately $0.00073 per typical run and 1369 runs per $1; this is a target rate assumption, not a live invoice readback.",
+      "sourceEvidenceType": "provider_model_page_estimate",
       "retrievedAt": "2026-07-15"
     },
     {

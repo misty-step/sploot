@@ -58,6 +58,7 @@ test('the rate registry names every cost-bearing capability and its authority', 
   assert.equal(replicate.sourceUrl, 'https://replicate.com/krthr/clip-embeddings');
   assert.match(replicate.sourceEvidence, /0\.00073/);
   assert.match(replicate.sourceEvidence, /1369/);
+  assert.equal(replicate.sourceEvidenceType, 'provider_model_page_estimate');
   const vercelOrigin = inputs.rates.find((rate) => rate.id === 'vercel-fast-origin-transfer');
   assert.equal(vercelOrigin.value, 0.06);
   assert.equal(vercelOrigin.sourceUrl, 'https://vercel.com/docs/manage-cdn-usage');
@@ -106,6 +107,27 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
   assert.match(policyErrors, /policy\.planBudgets\.free\.monthlyInfrastructureUsd/);
   assert.match(policyErrors, /policy\.global\.replicateDailyAttempts/);
   assert.match(policyErrors, /policy\.providerHardCaps must be a non-empty array/);
+
+  const missingProviderCap = structuredClone(inputs);
+  missingProviderCap.policy.providerHardCaps = missingProviderCap.policy.providerHardCaps.slice(1);
+  assert.match(validateInputs(missingProviderCap).join('\n'), /exactly the required provider set/);
+
+  const staleProviderEvidence = structuredClone(inputs);
+  staleProviderEvidence.policy.providerHardCaps[0].evidenceStatus = 'verified';
+  staleProviderEvidence.policy.providerHardCaps[0].evidence = { source: 'redacted' };
+  staleProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2020-01-01';
+  assert.match(validateInputs(staleProviderEvidence).join('\n'), /provider cap evidence stale/);
+
+  const overConfiguredPreGaCap = structuredClone(inputs);
+  overConfiguredPreGaCap.policy.global.preGaMonthlyVariableUsd = 250;
+  assert.match(
+    validateInputs(overConfiguredPreGaCap).join('\n'),
+    /preGaMonthlyVariableUsd must not exceed \$25/,
+  );
+  assert.throws(
+    () => calculateScenario(overConfiguredPreGaCap, 'free', 'high'),
+    /preGaMonthlyVariableUsd must not exceed \$25/,
+  );
 
   const divergentDates = structuredClone(inputs);
   divergentDates.rates[0].retrievedAt = '2026-07-14';
@@ -163,15 +185,15 @@ test('live usage reconciles without identifiers or silently-zero unknowns', asyn
   assert.ok(inputs.liveUsage.unknowns.every((unknown) => unknown.value === null));
 });
 
-test('free subsidy and paid full-allowance margins satisfy the vision ratchets', async () => {
+test('free subsidy and direct-variable economics remain bounded without claiming fully loaded margin', async () => {
   const inputs = await loadInputs();
   const free = calculateScenario(inputs, 'free', 'high');
   const collector = calculateScenario(inputs, 'collector', 'high');
   const archive = calculateScenario(inputs, 'archive', 'high');
 
   assert.ok(free.totalCostUsd * inputs.policy.freeFullAllowanceAccounts < 25);
-  assert.ok(collector.grossMarginPct >= 70);
-  assert.ok(archive.grossMarginPct >= 70);
+  assert.ok(collector.grossMarginPct >= 0);
+  assert.ok(archive.grossMarginPct >= 0);
   assert.ok(collector.paymentFeeUsd > 12 * 0.029 + 0.3);
   assert.ok(archive.paymentFeeUsd > 49 * 0.029 + 0.3);
   assert.ok(13 >= minimumPriceForMargin(inputs, 'collector'));
@@ -185,10 +207,10 @@ test('free subsidy and paid full-allowance margins satisfy the vision ratchets',
   }
 });
 
-test('paid margin and price-floor gates use unrounded economics', async () => {
+test('direct-variable price floors and target budgets use unrounded economics', async () => {
   const inputs = await loadInputs();
   const collector = calculateScenario(inputs, 'collector', 'high');
-  assert.ok(collector.grossMarginPct >= 70, `exact Collector margin was ${collector.grossMarginPct}`);
+  assert.ok(collector.grossMarginPct >= 0, `exact Collector direct margin was ${collector.grossMarginPct}`);
   assert.equal(minimumPriceForMargin(inputs, 'collector'), 12.01);
   assert.equal(inputs.scenarios.find((scenario) => scenario.id === 'collector').priceUsd, 13);
   assert.ok(inputs.policy.planBudgets.free.monthlyInfrastructureUsd >= 0.4);
@@ -201,7 +223,7 @@ test('paid margin and price-floor gates use unrounded economics', async () => {
       inputs.policy.planBudgets[scenarioId].monthlyInfrastructureUsd >= high.infrastructureCostUsd,
       `${scenarioId} cap must cover exact high-case infrastructure cost`,
     );
-    if (scenario.priceUsd > 0) assert.ok(high.grossMarginPct >= 70);
+    if (scenario.priceUsd > 0) assert.ok(high.grossMarginPct >= 0);
   }
 });
 
@@ -220,7 +242,29 @@ test('abusive and viral workloads trip explicit dollar budgets', async () => {
   assert.ok(abusive.infrastructureCostUsd > inputs.policy.planBudgets.free.monthlyInfrastructureUsd);
   assert.ok(viral.infrastructureCostUsd > inputs.policy.global.preGaMonthlyVariableUsd);
   assert.ok(inputs.policy.global.preGaDailyVariableUsd > 0);
-  assert.ok(inputs.policy.providerHardCaps.every((cap) => cap.enforcement !== 'none'));
+  assert.equal(inputs.policy.enrollmentMode, 'CLOSED');
+  assert.deepEqual(
+    inputs.policy.providerHardCaps.map((cap) => cap.provider),
+    ['Application admission', 'Replicate', 'Vercel Blob/CDN', 'Neon', 'DigitalOcean', 'Clerk', 'Stripe'],
+  );
+  assert.ok(inputs.policy.providerHardCaps.every((cap) => cap.evidenceStatus === 'unverified'));
+});
+
+test('DigitalOcean jobs apply a one-minute minimum per invocation and bound each run', async () => {
+  const inputs = await loadInputs();
+  const free = calculateScenario(inputs, 'free', 'base');
+  const rate = inputs.rates.find((candidate) => candidate.id === 'digitalocean-small-job-runtime').value;
+  assert.equal(free.infrastructure.jobs, Number((rate / (30 * 24 * 60 * 60) * 60).toFixed(6)));
+
+  const adversarial = structuredClone(inputs);
+  adversarial.scenarios[0].jobInvocations = 2;
+  adversarial.scenarios[0].jobSecondsPerInvocation = 1;
+  const twoMinimumRuns = calculateScenario(adversarial, 'free', 'base');
+  assert.equal(twoMinimumRuns.infrastructure.jobs, Number((rate / (30 * 24 * 60 * 60) * 120).toFixed(6)));
+
+  const unbounded = structuredClone(inputs);
+  unbounded.scenarios[0].jobSecondsPerInvocation = 3601;
+  assert.match(validateInputs(unbounded).join('\n'), /exceeds the one-run bound/);
 });
 
 test('the checked-in report is exactly reproducible', async () => {
@@ -244,6 +288,8 @@ test('recommendations are derived from versioned rates and workloads', async () 
   assert.match(report, /Rates were refreshed on 2026-07-16/);
   assert.match(report, /Cardless Free:\*\* 0\.75 GB/);
   assert.match(report, /Collector:\*\* \$13\/month/);
+  assert.match(report, /fully loaded margin is unavailable/);
+  assert.match(report, /live-plus-deleted source bytes/);
 });
 
 test('all sensitivity prose is derived from policy inputs', async () => {

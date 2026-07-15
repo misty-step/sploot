@@ -1,5 +1,6 @@
 -- Durable embedding retry state and provider admission backoff.
 -- Additive so an application rollback can continue to read existing rows.
+BEGIN;
 
 ALTER TABLE "asset_embeddings"
   ADD COLUMN IF NOT EXISTS "attempt_count" INTEGER NOT NULL DEFAULT 0,
@@ -7,9 +8,8 @@ ALTER TABLE "asset_embeddings"
   ADD COLUMN IF NOT EXISTS "terminal_at" TIMESTAMP(3);
 
 -- The pending-attempt index is created concurrently by the repo-owned
--- migrate-deploy runner after this migration commits. Prisma 6.19.3 wraps
--- migration SQL in a transaction, so keeping CREATE INDEX CONCURRENTLY here
--- would make every deploy fail before the resilience columns are usable.
+-- migrate-deploy runner after this explicit transaction commits. Keeping the
+-- concurrent build in that separate autocommit stage preserves online writes.
 
 CREATE TABLE IF NOT EXISTS "embedding_provider_circuits" (
   "key" TEXT NOT NULL,
@@ -35,3 +35,5 @@ ALTER TABLE "embedding_provider_circuits"
 
 CREATE INDEX IF NOT EXISTS "embedding_provider_circuits_open_until_idx"
   ON "embedding_provider_circuits"("open_until");
+
+COMMIT;

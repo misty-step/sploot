@@ -9,7 +9,7 @@
     "liveAssets": 3232,
     "deletedAssets": 1,
     "liveThumbnails": 3113,
-    "reconciliation": "Blob is 33,110,277 bytes above source bytes recorded in Postgres. The named 6.63% gap contains thumbnails plus any unreferenced objects; Vercel Blob billing remains account-wide and unattributed at store level."
+    "reconciliation": "The displayed gap is derived from Blob bytes minus live-plus-deleted Postgres source bytes; the residual may include thumbnails or unreferenced objects. Vercel Blob billing remains account-wide and unattributed at store level."
   },
   "database": {
     "databaseBytes": 42016768,

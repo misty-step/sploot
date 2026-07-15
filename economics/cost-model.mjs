@@ -38,9 +38,19 @@ const REQUIRED_SCENARIO_NUMBERS = [
   'neonCuHours',
   'neonTransferGb',
   'appEgressGib',
-  'jobSeconds',
+  'jobInvocations',
+  'jobSecondsPerInvocation',
   'canaryAllocationUsd',
   'clerkMru',
+];
+const REQUIRED_PROVIDER_CAPS = [
+  'Application admission',
+  'Replicate',
+  'Vercel Blob/CDN',
+  'Neon',
+  'DigitalOcean',
+  'Clerk',
+  'Stripe',
 ];
 const REQUIRED_SENSITIVITY_NUMBERS = [
   'renditionMultiplier',
@@ -170,7 +180,8 @@ export function validateInputs(inputs, now = new Date()) {
       || !Object.hasOwn(rate, 'includedAllowance')) errors.push(`authority missing: ${rate.id}`);
     if (rate.id === 'replicate-clip-prediction'
       && (typeof rate.sourceEvidence !== 'string' || !rate.sourceEvidence.includes('0.00073')
-        || !rate.sourceEvidence.includes('1369'))) {
+        || !rate.sourceEvidence.includes('1369')
+        || rate.sourceEvidenceType !== 'provider_model_page_estimate')) {
       errors.push('source evidence missing: replicate-clip-prediction');
     }
     const retrievedAt = Date.parse(`${rate.retrievedAt}T00:00:00Z`);
@@ -212,6 +223,15 @@ export function validateInputs(inputs, now = new Date()) {
         errors.push(`scenario ${scenario.id ?? '<unknown>'}.${key} must be a finite nonnegative number`);
       }
     }
+    if (!Number.isInteger(scenario.jobInvocations)) {
+      errors.push(`scenario ${scenario.id ?? '<unknown>'}.jobInvocations must be an integer`);
+    }
+    if (scenario.jobSecondsPerInvocation > 3_600) {
+      errors.push(`scenario ${scenario.id ?? '<unknown>'}.jobSecondsPerInvocation exceeds the one-run bound`);
+    }
+    if (scenario.jobInvocations === 0 && scenario.jobSecondsPerInvocation !== 0) {
+      errors.push(`scenario ${scenario.id ?? '<unknown>'}.jobSecondsPerInvocation must be zero when jobInvocations is zero`);
+    }
   }
 
   if (!Number.isInteger(inputs.policy.rateFreshnessDays) || inputs.policy.rateFreshnessDays <= 0) {
@@ -220,6 +240,16 @@ export function validateInputs(inputs, now = new Date()) {
   if (!Number.isInteger(inputs.policy.freeFullAllowanceAccounts)
     || inputs.policy.freeFullAllowanceAccounts <= 0) {
     errors.push('policy.freeFullAllowanceAccounts must be a positive integer');
+  }
+  if (inputs.policy.enrollmentMode !== 'CLOSED') {
+    errors.push('policy.enrollmentMode must remain CLOSED until durable dollar admission exists');
+  }
+  if (!isRecord(inputs.policy.targetPolicy)
+    || inputs.policy.targetPolicy.freeSourceStorageGb !== 0.5
+    || inputs.policy.targetPolicy.freeDeliveryGb !== 1
+    || inputs.policy.targetPolicy.freeFullAllowanceAccounts !== 75
+    || inputs.policy.targetPolicy.admissionImplementation !== 'unimplemented; enrollment remains CLOSED') {
+    errors.push('policy.targetPolicy must declare the closed 75-account, 0.5 GB source, 1 GB delivery target');
   }
   if (!Number.isInteger(inputs.policy.liveUsageFreshnessHours)
     || inputs.policy.liveUsageFreshnessHours <= 0) {
@@ -265,6 +295,9 @@ export function validateInputs(inputs, now = new Date()) {
       if (!Number.isFinite(inputs.policy.global[key]) || inputs.policy.global[key] < 0) {
         errors.push(`policy.global.${key} must be a finite nonnegative number`);
       }
+    }
+    if (inputs.policy.global.preGaMonthlyVariableUsd > 25) {
+      errors.push('policy.global.preGaMonthlyVariableUsd must not exceed $25 before dollar admission exists');
     }
     for (const key of ['paidMonthlyFormula', 'paidDailyFormula']) {
       if (typeof inputs.policy.global[key] !== 'string' || inputs.policy.global[key].length === 0) {
@@ -387,9 +420,6 @@ export function validateInputs(inputs, now = new Date()) {
           >= inputs.policy.global.preGaMonthlyVariableUsd) {
         errors.push('free high-case subsidy pool must be strictly below policy.global.preGaMonthlyVariableUsd');
       }
-      if (planId !== 'free' && Number.isFinite(high.grossMarginPct) && high.grossMarginPct < 70) {
-        errors.push(`scenario ${planId} high-case gross margin must be at least 70% unrounded`);
-      }
       for (const [period, usdKey, attemptsKey] of [
         ['daily', 'dailyInferenceUsd', 'dailyInferenceAttempts'],
         ['monthly', 'monthlyInferenceUsd', 'monthlyInferenceAttempts'],
@@ -420,17 +450,54 @@ export function validateInputs(inputs, now = new Date()) {
     || inputs.policy.providerHardCaps.length === 0) {
     errors.push('policy.providerHardCaps must be a non-empty array');
   } else {
+    const providers = new Set();
     inputs.policy.providerHardCaps.forEach((cap, index) => {
       if (!cap || typeof cap !== 'object' || Array.isArray(cap)) {
         errors.push(`policy.providerHardCaps[${index}] must be an object`);
         return;
       }
-      for (const key of ['provider', 'enforcement']) {
+      for (const key of ['provider', 'period', 'action', 'enforcementStatus', 'evidenceStatus', 'evidenceNote']) {
         if (typeof cap[key] !== 'string' || cap[key].length === 0) {
           errors.push(`policy.providerHardCaps[${index}].${key} must be a non-empty string`);
         }
       }
+      if (providers.has(cap.provider)) errors.push(`duplicate provider cap: ${cap.provider}`);
+      providers.add(cap.provider);
+      if (cap.amountUsd !== null && (!Number.isFinite(cap.amountUsd) || cap.amountUsd < 0)) {
+        errors.push(`policy.providerHardCaps[${index}].amountUsd must be null or a finite nonnegative number`);
+      }
+      if (!Object.hasOwn(cap, 'evidence') || (cap.evidence !== null && !isRecord(cap.evidence))) {
+        errors.push(`policy.providerHardCaps[${index}].evidence must be an object or null`);
+      }
+      if (!Object.hasOwn(cap, 'lastVerifiedAt')) {
+        errors.push(`policy.providerHardCaps[${index}].lastVerifiedAt is required`);
+      }
+      if (!['unimplemented', 'unverified', 'attempt_only'].includes(cap.enforcementStatus)) {
+        errors.push(`policy.providerHardCaps[${index}].enforcementStatus is invalid`);
+      }
+      if (!['unverified', 'verified'].includes(cap.evidenceStatus)) {
+        errors.push(`policy.providerHardCaps[${index}].evidenceStatus is invalid`);
+      }
+      if (cap.evidenceStatus === 'verified' && (!cap.evidence || typeof cap.lastVerifiedAt !== 'string')) {
+        errors.push(`policy.providerHardCaps[${index}] verified evidence requires lastVerifiedAt and evidence`);
+      }
+      if (cap.evidenceStatus === 'verified' && typeof cap.lastVerifiedAt === 'string') {
+        const verifiedAt = Date.parse(`${cap.lastVerifiedAt}T00:00:00Z`);
+        if (!Number.isFinite(verifiedAt)) errors.push(`policy.providerHardCaps[${index}].lastVerifiedAt is invalid`);
+        else if (verifiedAt > now.getTime() + 300_000) errors.push(`policy.providerHardCaps[${index}].lastVerifiedAt is future-dated`);
+        else if (now.getTime() - verifiedAt > inputs.policy.rateFreshnessDays * 86_400_000) errors.push(`provider cap evidence stale: ${cap.provider}`);
+      }
+      if (cap.evidenceStatus === 'unverified' && cap.evidence !== null) {
+        errors.push(`policy.providerHardCaps[${index}] unverified evidence must be null`);
+      }
+      if (cap.evidenceStatus === 'unverified' && cap.lastVerifiedAt !== null) {
+        errors.push(`policy.providerHardCaps[${index}] unverified evidence must have null lastVerifiedAt`);
+      }
     });
+    if (providers.size !== REQUIRED_PROVIDER_CAPS.length
+      || REQUIRED_PROVIDER_CAPS.some((provider) => !providers.has(provider))) {
+      errors.push('policy.providerHardCaps must contain exactly the required provider set');
+    }
   }
   return errors;
 }
@@ -460,7 +527,7 @@ function calculateScenarioRaw(inputs, workload, sensitivity) {
     databaseCompute: workload.neonCuHours * sensitivity.databaseComputeMultiplier * rates['neon-launch-compute'].value,
     databaseTransfer: workload.neonTransferGb * rates['neon-network-transfer'].value,
     appEgress: workload.appEgressGib * rates['digitalocean-egress'].value,
-    jobs: workload.jobSeconds * jobSecondRate,
+    jobs: workload.jobInvocations * Math.max(60, workload.jobSecondsPerInvocation) * jobSecondRate,
     canaryAllocation: workload.canaryAllocationUsd,
     clerkOverage: Math.max(0, workload.clerkMru - 50_000) * rates['clerk-pro-mru-overage'].value,
   };
@@ -565,7 +632,9 @@ export function buildReport(inputs) {
   const live = inputs.liveUsage;
   const plans = Object.fromEntries(inputs.scenarios.map((scenario) => [scenario.id, scenario]));
   const refreshDate = inputs.rates[0].retrievedAt;
-  const providerCaps = inputs.policy.providerHardCaps.map((cap) => `- **${cap.provider}:** ${cap.enforcement}.`).join('\n');
+  const providerCaps = inputs.policy.providerHardCaps
+    .map((cap) => `- **${cap.provider}:** target ${cap.amountUsd === null ? 'amount unknown' : money(cap.amountUsd)} per ${cap.period}; action: ${cap.action}; enforcement: ${cap.enforcementStatus}; evidence: ${cap.evidenceStatus} (${cap.evidenceNote}).`)
+    .join('\n');
   const unknowns = live.unknowns.map((item) => `- **${item.name}:** unknown, not zero. ${item.impact}`).join('\n');
   const vercelCategories = live.vercel.categories
     .map((category) => `${category.name} ${preciseMoney(category.effectiveUsageUsd, 6)}`)
@@ -578,6 +647,9 @@ export function buildReport(inputs) {
     `database compute (${sensitivityMultiplierText(inputs, 'databaseComputeMultiplier')})`,
     `Stripe variable surcharge (${sensitivityPercentText(inputs, 'stripeVariableSurcharge')})`,
   ].join(', ');
+  const sourceBytesTotal = live.storage.databaseSourceBytesLive + live.storage.databaseSourceBytesDeleted;
+  const storageGapBytes = live.storage.blobBytes - sourceBytesTotal;
+  const storageGapPct = sourceBytesTotal > 0 ? storageGapBytes / sourceBytesTotal * 100 : null;
   return `# Sploot economic safety envelope
 
 Generated deterministically from the versioned inputs in this directory. Rates were refreshed on ${refreshDate} and CI expires them after ${inputs.policy.rateFreshnessDays} days. This is a release gate, not a forecast: paid-tier margins charge on-demand rates so shared included pools cannot make an unprofitable plan look safe.
@@ -585,11 +657,15 @@ Generated deterministically from the versioned inputs in this directory. Rates w
 ## Recommendation
 
 - **Cardless Free:** ${plans.free.sourceTrashStorageGb} GB user-visible source-plus-trash allowance (rendition overhead is reserved separately), ${plans.free.uploads.toLocaleString('en-US')} new indexes and ${plans.free.uniqueTextQueries.toLocaleString('en-US')} novel text embeddings per month, ${plans.free.blobDeliveryGb} GB delivery, and at most ${inputs.policy.freeFullAllowanceAccounts} project-wide full-allowance equivalents before waitlist/paid admission. High-case variable cost is ${money(freeHigh.totalCostUsd)} per full account and ${money(freePool)} for the pool, below the ${money(inputs.policy.global.preGaMonthlyVariableUsd)} subsidy ceiling.
-- **Collector:** $${plans.collector.priceUsd}/month, ${plans.collector.sourceTrashStorageGb} GB, ${plans.collector.uploads.toLocaleString('en-US')} new indexes, ${plans.collector.uniqueTextQueries.toLocaleString('en-US')} novel text embeddings, and ${plans.collector.blobDeliveryGb} GB delivery. High-case COGS is ${money(collectorHigh.totalCostUsd)} and gross margin is ${percent(collectorHigh.grossMarginPct)}. The computed 70%-margin price floor is ${money(collectorFloor)}.
-- **Archive:** $${plans.archive.priceUsd}/month, ${plans.archive.sourceTrashStorageGb} GB, ${plans.archive.uploads.toLocaleString('en-US')} new indexes, ${plans.archive.uniqueTextQueries.toLocaleString('en-US')} novel text embeddings, and ${plans.archive.blobDeliveryGb} GB delivery. High-case COGS is ${money(archiveHigh.totalCostUsd)} and gross margin is ${percent(archiveHigh.grossMarginPct)}. The computed 70%-margin price floor is ${money(archiveFloor)}.
+- **Collector:** $${plans.collector.priceUsd}/month, ${plans.collector.sourceTrashStorageGb} GB, ${plans.collector.uploads.toLocaleString('en-US')} new indexes, ${plans.collector.uniqueTextQueries.toLocaleString('en-US')} novel text embeddings, and ${plans.collector.blobDeliveryGb} GB delivery. Modeled direct-variable COGS is ${money(collectorHigh.totalCostUsd)}; the fully loaded margin is unavailable until shared provider costs and a paid-customer mix are declared and read back.
+- **Archive:** $${plans.archive.priceUsd}/month, ${plans.archive.sourceTrashStorageGb} GB, ${plans.archive.uploads.toLocaleString('en-US')} new indexes, ${plans.archive.uniqueTextQueries.toLocaleString('en-US')} novel text embeddings, and ${plans.archive.blobDeliveryGb} GB delivery. Modeled direct-variable COGS is ${money(archiveHigh.totalCostUsd)}; the fully loaded margin is unavailable until shared provider costs and a paid-customer mix are declared and read back.
 - Existing content remains readable, exportable, and deletable after a cost boundary closes. No plan permits silent overage.
 
-These are candidates for entitlement and billing cards, not live promises. International/FX Stripe charges, provider-plan readbacks, and hard-cap receipts must be locked before GA.
+These are target candidates for entitlement and billing cards, not live promises. Enrollment is CLOSED. The runtime currently enforces attempt counters and claim/lease safety, not durable provider-dollar reservation or reconciliation. International/FX Stripe charges, provider-plan readbacks, shared DigitalOcean/Vercel allocation, and hard-cap receipts are unmet GA prerequisites; GA remains fail-closed.
+
+## Fully loaded margin status
+
+The direct-variable table deliberately excludes shared DigitalOcean hosting and Vercel platform charges (compute, analytics, and observability). No paid-customer mix is declared, so those shared costs cannot be allocated without inventing attribution. The 70% direct-variable calculations are not fully loaded gross-margin evidence and do not establish release readiness.
 
 ## Workload and sensitivity results
 
@@ -607,15 +683,15 @@ The abusive and viral rows deliberately exceed their account/global budgets; the
 |---|---:|---:|---:|
 ${budgetTable(inputs)}
 
-${inputs.policy.planBudgetSemantics} Plan inference ceilings include the high-sensitivity ${highInferenceReservePct.toFixed(0)}% retry/cancel reserve, so full advertised use cannot exhaust its own budget merely because a provider attempt is retried. Pre-GA global variable spend is capped at ${money(inputs.policy.global.preGaDailyVariableUsd)}/day and ${money(inputs.policy.global.preGaMonthlyVariableUsd)}/month. Replicate is a sub-budget of ${money(inputs.policy.global.replicateDailyUsd)}/day (${inputs.policy.global.replicateDailyAttempts} attempts) and ${money(inputs.policy.global.replicateMonthlyUsd)}/month (${inputs.policy.global.replicateMonthlyAttempts} attempts). After paid admission, the monthly ceiling is \`${inputs.policy.global.paidMonthlyFormula}\`; daily is \`${inputs.policy.global.paidDailyFormula}\`. Counters reserve worst-case dollars transactionally before work and reconcile provider usage afterward.
+${inputs.policy.planBudgetSemantics} Plan inference ceilings include the high-sensitivity ${highInferenceReservePct.toFixed(0)}% retry/cancel reserve. The pre-GA target is capped at ${money(inputs.policy.global.preGaDailyVariableUsd)}/day and ${money(inputs.policy.global.preGaMonthlyVariableUsd)}/month; the runtime currently enforces attempt counters, not dollar reservation/reconciliation. Replicate's target model sub-budget is ${money(inputs.policy.global.replicateDailyUsd)}/day (${inputs.policy.global.replicateDailyAttempts} attempts) and ${money(inputs.policy.global.replicateMonthlyUsd)}/month (${inputs.policy.global.replicateMonthlyAttempts} attempts); live billed dollars remain unknown. After a future paid-admission implementation, the target monthly ceiling is \`${inputs.policy.global.paidMonthlyFormula}\`; it is not a current runtime guarantee.
 
-## Provider hard-cap map
+## Provider control targets and evidence status
 
 ${providerCaps}
 
 ## Live reconciliation (redacted)
 
-- Vercel Blob: ${live.storage.blobObjects.toLocaleString('en-US')} objects / ${(live.storage.blobBytes / 1_000_000).toFixed(1)} MB versus ${(live.storage.databaseSourceBytesLive / 1_000_000).toFixed(1)} MB of live source bytes in Postgres. ${live.storage.reconciliation}
+- Vercel Blob: ${live.storage.blobObjects.toLocaleString('en-US')} objects / ${(live.storage.blobBytes / 1_000_000).toFixed(1)} MB versus ${(live.storage.databaseSourceBytesLive / 1_000_000).toFixed(1)} MB live plus ${(live.storage.databaseSourceBytesDeleted / 1_000_000).toFixed(3)} MB deleted source bytes in Postgres (${(sourceBytesTotal / 1_000_000).toFixed(1)} MB total). The derived gap is ${storageGapBytes.toLocaleString('en-US')} bytes (${storageGapPct === null ? 'n/a' : `${storageGapPct.toFixed(2)}%`} of live-plus-deleted source bytes). ${live.storage.reconciliation}
 - Neon/Postgres: ${(live.database.databaseBytes / 1_000_000).toFixed(1)} MB database, ${live.database.users} users, ${live.database.readyEmbeddings.toLocaleString('en-US')} ready embeddings.
 - Replicate: latest ${live.inference.latestPredictionSample.size} predictions were ${live.inference.latestPredictionSample.failed} failed, ${live.inference.latestPredictionSample.canceled} canceled, and ${live.inference.latestPredictionSample.succeeded} succeeded. ${live.inference.reconciliation}
 - DigitalOcean: invoice preview ${money(live.digitalOcean.invoicePreviewUsd)} versus account month-to-date usage ${money(live.digitalOcean.monthToDateUsageUsd)}, a named ${money(live.digitalOcean.namedVarianceUsd)} variance. ${live.digitalOcean.varianceExplanation}

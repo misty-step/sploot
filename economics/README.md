@@ -15,6 +15,6 @@ This model does not activate plans, open enrollment, or substitute for provider 
 
 ## Future composition
 
-PR #293 is an unmerged follow-on. This correction intentionally does not import
+The economics correction is composed into PR #294. It intentionally does not import
 its changes; future composition must reconcile the versioned policy, the web
 embedding reservation/refund seam, and these generated inputs at rebase time.

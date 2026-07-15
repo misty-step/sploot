@@ -5,11 +5,15 @@ Generated deterministically from the versioned inputs in this directory. Rates w
 ## Recommendation
 
 - **Cardless Free:** 0.5 GB user-visible source-plus-trash allowance (rendition overhead is reserved separately), 100 new indexes and 100 novel text embeddings per month, 1 GB delivery, and at most 75 project-wide full-allowance equivalents before waitlist/paid admission. High-case variable cost is $0.31 per full account and $23.14 for the pool, below the $25.00 subsidy ceiling.
-- **Collector:** $13/month, 10 GB, 600 new indexes, 900 novel text embeddings, and 10 GB delivery. High-case COGS is $3.65 and gross margin is 71.9%. The computed 70%-margin price floor is $12.01.
-- **Archive:** $49/month, 100 GB, 2,000 new indexes, 2,000 novel text embeddings, and 40 GB delivery. High-case COGS is $14.67 and gross margin is 70.1%. The computed 70%-margin price floor is $48.89.
+- **Collector:** $13/month, 10 GB, 600 new indexes, 900 novel text embeddings, and 10 GB delivery. Modeled direct-variable COGS is $3.65; the fully loaded margin is unavailable until shared provider costs and a paid-customer mix are declared and read back.
+- **Archive:** $49/month, 100 GB, 2,000 new indexes, 2,000 novel text embeddings, and 40 GB delivery. Modeled direct-variable COGS is $14.67; the fully loaded margin is unavailable until shared provider costs and a paid-customer mix are declared and read back.
 - Existing content remains readable, exportable, and deletable after a cost boundary closes. No plan permits silent overage.
 
-These are candidates for entitlement and billing cards, not live promises. International/FX Stripe charges, provider-plan readbacks, and hard-cap receipts must be locked before GA.
+These are target candidates for entitlement and billing cards, not live promises. Enrollment is CLOSED. The runtime currently enforces attempt counters and claim/lease safety, not durable provider-dollar reservation or reconciliation. International/FX Stripe charges, provider-plan readbacks, shared DigitalOcean/Vercel allocation, and hard-cap receipts are unmet GA prerequisites; GA remains fail-closed.
+
+## Fully loaded margin status
+
+The direct-variable table deliberately excludes shared DigitalOcean hosting and Vercel platform charges (compute, analytics, and observability). No paid-customer mix is declared, so those shared costs cannot be allocated without inventing attribution. The 70% direct-variable calculations are not fully loaded gross-margin evidence and do not establish release readiness.
 
 ## Workload and sensitivity results
 
@@ -20,7 +24,7 @@ Low/base/high vary physical rendition overhead (1.05×/1.10×/1.20×), Blob orig
 | Cardless Free — full allowance | $0.00 | $0.26 | $0.28 | $0.31 | n/a |
 | Collector — 10 GB | $13.00 | $2.89 | $3.22 | $3.65 | 71.9% |
 | Archive — 100 GB | $49.00 | $11.52 | $12.89 | $14.67 | 70.1% |
-| Abusive novel-query and upload storm | $0.00 | $48.19 | $50.66 | $57.77 | n/a |
+| Abusive novel-query and upload storm | $0.00 | $50.24 | $52.70 | $59.82 | n/a |
 | Viral public share / crawler month | $0.00 | $156.81 | $163.34 | $173.40 | n/a |
 
 The abusive and viral rows deliberately exceed their account/global budgets; they prove quotas must cover novel inference, bytes, and request delivery rather than storage alone.
@@ -33,21 +37,21 @@ The abusive and viral rows deliberately exceed their account/global budgets; the
 | collector | $3.00 | $0.07 (90 attempts) | $1.31 (1800 attempts) |
 | archive | $13.00 | $0.22 (300 attempts) | $3.50 (4800 attempts) |
 
-monthlyInfrastructureUsd is an inclusive hard cap in unrounded USD for each scenario's high-sensitivity full allowance; the cap must cover exact modeled infrastructure cost. Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve, so full advertised use cannot exhaust its own budget merely because a provider attempt is retried. Pre-GA global variable spend is capped at $0.75/day and $25.00/month. Replicate is a sub-budget of $0.50/day (684 attempts) and $15.00/month (20547 attempts). After paid admission, the monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; daily is `paidMonthlyBudget / 30`. Counters reserve worst-case dollars transactionally before work and reconcile provider usage afterward.
+monthlyInfrastructureUsd is a target direct-variable ceiling in unrounded USD for each scenario's high-sensitivity full allowance; it is not a currently enforced provider-dollar cap. Plan inference ceilings include the high-sensitivity 20% retry/cancel reserve. The pre-GA target is capped at $0.75/day and $25.00/month; the runtime currently enforces attempt counters, not dollar reservation/reconciliation. Replicate's target model sub-budget is $0.50/day (684 attempts) and $15.00/month (20547 attempts); live billed dollars remain unknown. After a future paid-admission implementation, the target monthly ceiling is `25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions`; it is not a current runtime guarantee.
 
-## Provider hard-cap map
+## Provider control targets and evidence status
 
-- **Application admission:** Postgres transactional per-plan counters plus global dollar ledger; deny before Blob, Replicate, or public-delivery work.
-- **Replicate:** Repository UTC-daily and UTC-calendar-month dollar-derived attempt counters plus embeddings kill switch; no provider cap is relied upon.
-- **Vercel Blob/CDN:** Vercel Spend Management action plus application byte/request egress leases; verify provider action before GA.
-- **Neon:** Autosuspend, CU ceiling, transfer alert, and application query/work admission; exact plan controls need provider authority.
-- **DigitalOcean:** One fixed web instance, fixed component sizes/counts, scheduled-job runtime budgets, and team billing alerts.
-- **Clerk:** Hobby 50,000-MRU allowance and application enrollment cap; SMS and paid add-ons remain disabled without a ledger rate.
-- **Stripe:** One subscription charge per period, plan-price allowlist, webhook idempotency, and fail-closed entitlements.
+- **Application admission:** target $25.00 per calendar month; action: deny new provider work before Blob, Replicate, or public delivery; enforcement: attempt_only; evidence: unverified (Dollar reservation and reconciliation are a later implementation; enrollment is CLOSED.).
+- **Replicate:** target $15.00 per calendar month; action: deny the target paid-attempt budget before provider work; enforcement: attempt_only; evidence: unverified (Runtime has attempt counters only; provider billed-dollar readback is unavailable.).
+- **Vercel Blob/CDN:** target amount unknown per current billing cycle; action: operator spend action plus application byte/request admission; enforcement: unverified; evidence: unverified (Blob billing is account-wide and unattributed at store level.).
+- **Neon:** target amount unknown per current billing cycle; action: provider plan controls plus application query/work admission; enforcement: unverified; evidence: unverified (Production plan, history, compute, and transfer readbacks are unavailable.).
+- **DigitalOcean:** target amount unknown per current billing cycle; action: fixed component sizing, bounded jobs, and team billing alert; enforcement: unverified; evidence: unverified (Account-wide readback cannot allocate Sploot-only accrued charges.).
+- **Clerk:** target amount unknown per monthly retained-user period; action: closed enrollment until plan and MRU authority are verified; enforcement: unverified; evidence: unverified (Dashboard plan and MRU readback are unavailable.).
+- **Stripe:** target amount unknown per billing period; action: allowlisted price, idempotent webhook, and fail-closed entitlement; enforcement: unverified; evidence: unverified (Provider receipts and paid-admission ledger are not part of this card.).
 
 ## Live reconciliation (redacted)
 
-- Vercel Blob: 6,461 objects / 532.4 MB versus 499.3 MB of live source bytes in Postgres. Blob is 33,110,277 bytes above source bytes recorded in Postgres. The named 6.63% gap contains thumbnails plus any unreferenced objects; Vercel Blob billing remains account-wide and unattributed at store level.
+- Vercel Blob: 6,461 objects / 532.4 MB versus 499.3 MB live plus 0.019 MB deleted source bytes in Postgres (499.3 MB total). The derived gap is 33,110,277 bytes (6.63% of live-plus-deleted source bytes). The displayed gap is derived from Blob bytes minus live-plus-deleted Postgres source bytes; the residual may include thumbnails or unreferenced objects. Vercel Blob billing remains account-wide and unattributed at store level.
 - Neon/Postgres: 42.0 MB database, 10 users, 3,088 ready embeddings.
 - Replicate: latest 100 predictions were 95 failed, 1 canceled, and 4 succeeded. This is operational usage, not a bill. Public-model failed predictions are documented as unbilled, while canceled/time-based work may bill; exact Replicate dollars are unavailable to the API authority.
 - DigitalOcean: invoice preview $41.69 versus account month-to-date usage $45.84, a named $4.15 variance. The latest redacted account readback is $45.84 month-to-date versus a $41.69 invoice preview, a named $4.15 cadence/account-wide variance. Preview and balance endpoints update on different cadences and cover the entire account, which hosts multiple apps. DigitalOcean exposes no per-app accrued-transfer or invoice-preview allocation, so Sploot's exact July line item is not inferable from this authority.

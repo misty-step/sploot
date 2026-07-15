@@ -2,8 +2,15 @@
   "schemaVersion": 1,
   "rateFreshnessDays": 30,
   "liveUsageFreshnessHours": 48,
+  "enrollmentMode": "CLOSED",
   "freeFullAllowanceAccounts": 75,
-  "planBudgetSemantics": "monthlyInfrastructureUsd is an inclusive hard cap in unrounded USD for each scenario's high-sensitivity full allowance; the cap must cover exact modeled infrastructure cost.",
+  "targetPolicy": {
+    "freeSourceStorageGb": 0.5,
+    "freeDeliveryGb": 1,
+    "freeFullAllowanceAccounts": 75,
+    "admissionImplementation": "unimplemented; enrollment remains CLOSED"
+  },
+  "planBudgetSemantics": "monthlyInfrastructureUsd is a target direct-variable ceiling in unrounded USD for each scenario's high-sensitivity full allowance; it is not a currently enforced provider-dollar cap.",
   "sensitivity": {
     "low": {"renditionMultiplier": 1.05, "originMissRatio": 0.05, "inferenceAttemptMultiplier": 1, "databaseComputeMultiplier": 0.75, "stripeVariableSurcharge": 0},
     "base": {"renditionMultiplier": 1.1, "originMissRatio": 0.15, "inferenceAttemptMultiplier": 1.05, "databaseComputeMultiplier": 1, "stripeVariableSurcharge": 0.015},
@@ -25,12 +32,12 @@
     "paidDailyFormula": "paidMonthlyBudget / 30"
   },
   "providerHardCaps": [
-    {"provider": "Application admission", "enforcement": "Postgres transactional per-plan counters plus global dollar ledger; deny before Blob, Replicate, or public-delivery work"},
-    {"provider": "Replicate", "enforcement": "Repository UTC-daily and UTC-calendar-month dollar-derived attempt counters plus embeddings kill switch; no provider cap is relied upon"},
-    {"provider": "Vercel Blob/CDN", "enforcement": "Vercel Spend Management action plus application byte/request egress leases; verify provider action before GA"},
-    {"provider": "Neon", "enforcement": "Autosuspend, CU ceiling, transfer alert, and application query/work admission; exact plan controls need provider authority"},
-    {"provider": "DigitalOcean", "enforcement": "One fixed web instance, fixed component sizes/counts, scheduled-job runtime budgets, and team billing alerts"},
-    {"provider": "Clerk", "enforcement": "Hobby 50,000-MRU allowance and application enrollment cap; SMS and paid add-ons remain disabled without a ledger rate"},
-    {"provider": "Stripe", "enforcement": "One subscription charge per period, plan-price allowlist, webhook idempotency, and fail-closed entitlements"}
+    {"provider": "Application admission", "amountUsd": 25, "period": "calendar month", "action": "deny new provider work before Blob, Replicate, or public delivery", "enforcementStatus": "attempt_only", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Dollar reservation and reconciliation are a later implementation; enrollment is CLOSED."},
+    {"provider": "Replicate", "amountUsd": 15, "period": "calendar month", "action": "deny the target paid-attempt budget before provider work", "enforcementStatus": "attempt_only", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Runtime has attempt counters only; provider billed-dollar readback is unavailable."},
+    {"provider": "Vercel Blob/CDN", "amountUsd": null, "period": "current billing cycle", "action": "operator spend action plus application byte/request admission", "enforcementStatus": "unverified", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Blob billing is account-wide and unattributed at store level."},
+    {"provider": "Neon", "amountUsd": null, "period": "current billing cycle", "action": "provider plan controls plus application query/work admission", "enforcementStatus": "unverified", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Production plan, history, compute, and transfer readbacks are unavailable."},
+    {"provider": "DigitalOcean", "amountUsd": null, "period": "current billing cycle", "action": "fixed component sizing, bounded jobs, and team billing alert", "enforcementStatus": "unverified", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Account-wide readback cannot allocate Sploot-only accrued charges."},
+    {"provider": "Clerk", "amountUsd": null, "period": "monthly retained-user period", "action": "closed enrollment until plan and MRU authority are verified", "enforcementStatus": "unverified", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Dashboard plan and MRU readback are unavailable."},
+    {"provider": "Stripe", "amountUsd": null, "period": "billing period", "action": "allowlisted price, idempotent webhook, and fail-closed entitlement", "enforcementStatus": "unverified", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Provider receipts and paid-admission ledger are not part of this card."}
   ]
 }

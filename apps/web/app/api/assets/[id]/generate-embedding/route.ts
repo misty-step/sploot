@@ -20,6 +20,7 @@ import {
 } from '@/lib/embedding-guard';
 import {
   deferEmbeddingAdmission,
+  deferEmbeddingProviderInitialization,
   getEmbeddingAdmissionReason,
   getEmbeddingProviderCircuit,
   isEmbeddingAdmissionFailure,
@@ -283,6 +284,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
     // Create a new promise for this embedding generation
     const embeddingPromise = (async (): Promise<EmbeddingResponse> => {
       let processingClaimToken: string | undefined;
+      let providerInitializationDeferred = false;
       try {
         const lock = await acquireEmbeddingProcessing(asset.id);
         if (!lock.acquired) {
@@ -368,8 +370,25 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
           throw new EmbeddingProviderCircuitOpenError(providerCircuit.retryAfterSec);
         }
 
-        // Generate embedding
-        const embeddingService = createEmbeddingService(userId);
+        // Client construction happens before any provider attempt. Missing
+        // configuration is therefore deferred without consuming the asset's
+        // retry budget; failures from embedImage remain real provider
+        // attempts and are handled by the ordinary failure path below.
+        let embeddingService;
+        try {
+          embeddingService = createEmbeddingService(userId);
+        } catch (error) {
+          if (error instanceof EmbeddingProviderUnavailableError && processingClaimToken) {
+            providerInitializationDeferred = true;
+            await deferEmbeddingProviderInitialization(
+              asset.id,
+              error.message,
+              error.retryAfterSec,
+              processingClaimToken,
+            );
+          }
+          throw error;
+        }
 
         const apiStartTime = Date.now();
         const result = await embeddingService.embedImage(
@@ -470,6 +489,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
             processingClaimToken,
           );
         } else if (
+          !providerInitializationDeferred &&
           processingClaimToken &&
           prisma &&
           typeof prisma.$queryRaw === 'function'

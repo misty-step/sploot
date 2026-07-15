@@ -1,6 +1,7 @@
 -- A terminal embedding may receive one owner-authorized recovery cycle over
 -- its lifetime. Enforce the budget in Postgres so an older runtime rolled
 -- back after this migration cannot repeatedly reset poisoned media.
+BEGIN;
 
 ALTER TABLE "asset_embeddings"
   ADD COLUMN "revive_count" INTEGER NOT NULL DEFAULT 0;
@@ -14,6 +15,17 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  IF OLD."terminal_at" IS NOT NULL
+     AND NEW."terminal_at" IS NOT NULL
+     AND (
+       NEW."image_embedding" IS NOT NULL
+       OR NEW."status" IN ('pending', 'processing', 'ready')
+     ) THEN
+    RAISE EXCEPTION 'terminal embedding cannot be claimed or written outside revival'
+      USING ERRCODE = '23514',
+            CONSTRAINT = 'asset_embeddings_revive_count_bounded';
+  END IF;
+
   IF NEW."revive_count" < OLD."revive_count" THEN
     RAISE EXCEPTION 'asset embedding revive_count cannot decrease'
       USING ERRCODE = '23514',
@@ -41,3 +53,5 @@ CREATE TRIGGER "asset_embeddings_revival_budget"
 BEFORE UPDATE ON "asset_embeddings"
 FOR EACH ROW
 EXECUTE FUNCTION "enforce_asset_embedding_revival_budget"();
+
+COMMIT;

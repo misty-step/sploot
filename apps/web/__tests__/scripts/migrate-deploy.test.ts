@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it, expect } from 'vitest';
@@ -56,6 +56,35 @@ describe('privileged production migration contract', () => {
 describe('declared bootstrap version authority', () => {
   it('reads the single 14-digit contract version', () => {
     expect(readBootstrapVersion()).toMatch(/^\d{14}$/);
+  });
+});
+
+describe('online migration transaction contract', () => {
+  it('wraps every new regular embedding migration explicitly and keeps the index helper separate', () => {
+    const migrationRoot = join(process.cwd(), 'prisma/migrations');
+    const names = readdirSync(migrationRoot)
+      .filter((name) => /^20260715\d+_/.test(name))
+      .sort();
+    expect(names).toHaveLength(7);
+    for (const name of names) {
+      const sql = readFileSync(join(migrationRoot, name, 'migration.sql'), 'utf8');
+      expect(sql.trimStart()).toMatch(/^--[\s\S]*?\nBEGIN;/);
+      expect(sql.trimEnd()).toMatch(/COMMIT;$/);
+      expect(sql).not.toMatch(/CREATE INDEX CONCURRENTLY/);
+    }
+    const helper = readFileSync(join(process.cwd(), 'scripts/apply-online-embedding-index.mjs'), 'utf8');
+    expect(helper).toContain('CREATE INDEX CONCURRENTLY');
+    expect(helper).toContain('indisvalid');
+    expect(helper).toContain('indisready');
+  });
+
+  it('keeps the terminal fence in the cap migration for rollback compatibility', () => {
+    const sql = readFileSync(join(
+      process.cwd(),
+      'prisma/migrations/20260715050000_cap_embedding_terminal_revivals/migration.sql',
+    ), 'utf8');
+    expect(sql).toContain('terminal embedding cannot be claimed or written outside revival');
+    expect(sql).toContain('NEW."status" IN (\'pending\', \'processing\', \'ready\')');
   });
 });
 

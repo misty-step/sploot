@@ -2,6 +2,7 @@
 -- rolled back to a runtime whose in-code limits are higher or incomplete.
 -- Existing over-ceiling counters are clamped to the ceiling (never reset), so
 -- migration leaves the affected window denied rather than granting capacity.
+BEGIN;
 
 UPDATE "embedding_rate_buckets"
 SET "count" = 684
@@ -22,3 +23,5 @@ ALTER TABLE "embedding_rate_buckets"
 
 ALTER TABLE "embedding_rate_buckets"
   VALIDATE CONSTRAINT "embedding_budget_hard_ceiling";
+
+COMMIT;

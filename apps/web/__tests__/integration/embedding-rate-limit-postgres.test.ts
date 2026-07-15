@@ -18,11 +18,13 @@ const describeWithDatabase = process.env.DATABASE_URL && prisma
   ? describe.sequential
   : describe.skip;
 
-const limiterAdmin = process.env.STRIPE_LEDGER_ADMIN_DATABASE_URL
-  ? new PrismaClient({
-      datasources: { db: { url: process.env.STRIPE_LEDGER_ADMIN_DATABASE_URL } },
-    })
-  : prisma;
+const limiterAdminUrl = process.env.STRIPE_LEDGER_ADMIN_DATABASE_URL;
+// Trigger installation is an authority-owned test seam. Never fall back to
+// the restricted runtime Prisma user, or the test would prove the wrong
+// permission boundary and fail with 42501 in CI.
+const limiterAdmin = limiterAdminUrl
+  ? new PrismaClient({ datasources: { db: { url: limiterAdminUrl } } })
+  : null;
 
 const limiterUserIds = [
   'user-lease',
@@ -78,7 +80,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
   afterAll(async () => {
     await resetLimiterState();
     await prisma.user.deleteMany({ where: { id: { in: limiterUserIds } } });
-    if (limiterAdmin !== prisma) await limiterAdmin.$disconnect();
+    await limiterAdmin?.$disconnect();
   });
 
   it('persists a releasable lease for an allowed request', async () => {
@@ -322,13 +324,13 @@ describeWithDatabase('Postgres embedding limiter', () => {
     })).toBe(0);
   });
 
-  it('keeps the only lease when an atomic refund fails, then retries safely', async () => {
+  it.skipIf(!limiterAdmin)('keeps the only lease when an atomic refund fails, then retries safely', async () => {
     const nowMs = Date.UTC(2026, 6, 10, 14, 30, 0);
     const admitted = await acquireEmbeddingAdmissionReservation('atomic-user-a', nowMs);
     expect(admitted.allowed).toBe(true);
     const reservation = admitted.reservation!;
 
-    await limiterAdmin.$executeRawUnsafe(`
+    await limiterAdmin!.$executeRawUnsafe(`
       CREATE OR REPLACE FUNCTION sploot_test_refund_failure()
       RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
@@ -336,7 +338,7 @@ describeWithDatabase('Postgres embedding limiter', () => {
       END;
       $$
     `);
-    await limiterAdmin.$executeRawUnsafe(`
+    await limiterAdmin!.$executeRawUnsafe(`
       CREATE TRIGGER sploot_test_refund_failure_trigger
       BEFORE UPDATE ON "embedding_rate_buckets"
       FOR EACH ROW EXECUTE FUNCTION sploot_test_refund_failure()
@@ -367,8 +369,8 @@ describeWithDatabase('Postgres embedding limiter', () => {
       expect(charged).toHaveLength(4);
       expect(charged.filter(({ count }) => count === 1)).toHaveLength(4);
     } finally {
-      await limiterAdmin.$executeRawUnsafe('DROP TRIGGER IF EXISTS sploot_test_refund_failure_trigger ON "embedding_rate_buckets"');
-      await limiterAdmin.$executeRawUnsafe('DROP FUNCTION IF EXISTS sploot_test_refund_failure()');
+      await limiterAdmin!.$executeRawUnsafe('DROP TRIGGER IF EXISTS sploot_test_refund_failure_trigger ON "embedding_rate_buckets"');
+      await limiterAdmin!.$executeRawUnsafe('DROP FUNCTION IF EXISTS sploot_test_refund_failure()');
     }
 
     await expect(

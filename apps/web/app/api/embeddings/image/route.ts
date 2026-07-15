@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
-import { embeddingRetryHeaders } from '@/lib/embedding-errors';
+import {
+  embeddingRetryAfterHeader,
+  embeddingRetryHeaders,
+  EmbeddingProviderCircuitOpenError,
+  EmbeddingProviderUnavailableError,
+} from '@/lib/embedding-errors';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
@@ -8,12 +13,34 @@ import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api'
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 import { resolveEmbeddingMediaSource } from '@/lib/embedding-media';
 import {
+  acquireEmbeddingProcessing,
+  markEmbeddingTerminalSkipped,
+  resolveEmbeddingGateState,
+} from '@/lib/embedding-guard';
+import {
+  deferEmbeddingAdmission,
+  deferEmbeddingProviderInitialization,
+  getEmbeddingAdmissionReason,
+  getEmbeddingProviderCircuit,
+  isEmbeddingAdmissionFailure,
+  recordEmbeddingAttemptFailure,
+  reviveTerminalEmbedding,
+} from '@/lib/embedding-resilience';
+import {
   assertEnrolledUser,
   enrollmentDeniedResponse,
   enrollmentUnavailableResponse,
   isEnrollmentDeniedError,
   isEnrollmentUnavailableError,
 } from '@/lib/enrollment/enrollment-policy';
+
+interface EmbeddingResponse {
+  status: number;
+  body: Record<string, unknown>;
+  headers?: HeadersInit;
+}
+
+const inFlightRequests = new Map<string, Promise<EmbeddingResponse>>();
 
 async function postHandler(req: NextRequest, _context: unknown, { principal }: AuthenticatedApiContext) {
   try {
@@ -32,10 +59,21 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     }
 
     let asset: {
+      id: string;
       blobUrl: string;
       thumbnailUrl: string | null;
       mime: string;
       checksumSha256: string;
+      embedding: {
+        modelName: string;
+        dim: number;
+        createdAt: Date;
+        status: string | null;
+        updatedAt: Date;
+        completedAt: Date | null;
+        nextAttemptAt: Date | null;
+        terminalAt: Date | null;
+      } | null;
     } | null = null;
     if (assetId) {
       asset = await prisma.asset.findFirst({
@@ -45,10 +83,23 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
           deletedAt: null,
         },
         select: {
+          id: true,
           blobUrl: true,
           thumbnailUrl: true,
           mime: true,
           checksumSha256: true,
+          embedding: {
+            select: {
+              modelName: true,
+              dim: true,
+              createdAt: true,
+              status: true,
+              updatedAt: true,
+              completedAt: true,
+              nextAttemptAt: true,
+              terminalAt: true,
+            },
+          },
         },
       });
 
@@ -68,7 +119,43 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
         })
       : { sourceUrl: imageUrl, sourceKind: 'blob' as const };
 
+    if (asset) {
+      const gateState = resolveEmbeddingGateState(asset.embedding);
+      if (gateState.state === 'ready') {
+        return NextResponse.json({
+          success: true,
+          status: 'ready',
+          alreadyExists: true,
+          message: 'Embedding already exists',
+          embedding: {
+            modelName: asset.embedding?.modelName,
+            dimension: asset.embedding?.dim,
+            createdAt: asset.embedding?.createdAt,
+          },
+        });
+      }
+      if (gateState.state === 'processing') {
+        const retryAfterSec = gateState.retryAfterMs
+          ? Math.max(1, Math.ceil(gateState.retryAfterMs / 1000))
+          : undefined;
+        return NextResponse.json(
+          { success: true, status: 'processing', message: 'Embedding already processing', retryAfter: retryAfterSec },
+          { status: 202, headers: retryAfterSec ? { 'Retry-After': retryAfterSec.toString() } : undefined },
+        );
+      }
+      if (gateState.state === 'cooldown') {
+        const retryAfterSec = gateState.retryAfterMs
+          ? Math.max(1, Math.ceil(gateState.retryAfterMs / 1000))
+          : undefined;
+        return NextResponse.json(
+          { success: false, status: 'cooldown', error: 'Embedding recently failed, retry later', retryAfter: retryAfterSec },
+          { status: 429, headers: embeddingRetryAfterHeader(retryAfterSec) },
+        );
+      }
+    }
+
     if (media.sourceKind === 'unsupported') {
+      if (asset) await markEmbeddingTerminalSkipped(asset.id, 'Unsupported video without a poster thumbnail');
       return NextResponse.json(
         {
           success: false,
@@ -85,46 +172,118 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
       return runtimeGateResponse(embeddingGate);
     }
 
-    let embeddingService;
-    try {
-      embeddingService = createEmbeddingService(userId);
-    } catch (error) {
-      if (error instanceof EmbeddingError) throw error;
-      return NextResponse.json(
-        { error: 'Embedding service not configured' },
-        { status: 503 }
-      );
+    if (!asset) {
+      const embeddingService = createEmbeddingService(userId);
+      const result = await embeddingService.embedImage(media.sourceUrl);
+      return NextResponse.json({
+        success: true,
+        embedding: result.embedding,
+        model: result.model,
+        dimension: result.dimension,
+        processingTime: result.processingTime,
+        assetId: null,
+      });
     }
 
-    const result = await embeddingService.embedImage(
-      media.sourceUrl,
-      asset?.checksumSha256,
-    );
+    const requestKey = `${userId}-${asset.id}`;
+    const existingRequest = inFlightRequests.get(requestKey);
+    if (existingRequest) {
+      const response = await existingRequest;
+      return NextResponse.json(response.body, { status: response.status, headers: response.headers });
+    }
 
-    if (assetId && prisma) {
-      const storedEmbedding = await upsertAssetEmbedding({
-        assetId,
-        modelName: result.model,
-        modelVersion: result.model,
-        dim: result.dimension,
-        embedding: result.embedding,
-      });
-      if (!storedEmbedding) {
+    let revivedFromTerminal = false;
+    if (resolveEmbeddingGateState(asset.embedding).state === 'terminal') {
+      const revive = await reviveTerminalEmbedding(asset.id);
+      if (!revive.revived && revive.reason === 'quarantine') {
         return NextResponse.json(
-          { error: 'Embedding state changed; retry the request' },
-          { status: 409 },
+          { success: false, status: 'terminal_quarantine', error: 'Embedding retries exhausted recently, retry later', retryAfter: revive.retryAfterSec },
+          { status: 429, headers: embeddingRetryAfterHeader(revive.retryAfterSec) },
         );
       }
+      if (!revive.revived && revive.reason === 'revival_exhausted') {
+        return NextResponse.json(
+          { success: false, status: 'terminal_failure', reason: 'revival_exhausted', error: 'Embedding recovery attempts exhausted for this asset' },
+          { status: 422 },
+        );
+      }
+      revivedFromTerminal = revive.revived;
     }
 
-    return NextResponse.json({
-      success: true,
-      embedding: result.embedding,
-      model: result.model,
-      dimension: result.dimension,
-      processingTime: result.processingTime,
-      assetId: assetId || null,
-    });
+    const embeddingPromise = (async (): Promise<EmbeddingResponse> => {
+      let processingClaimToken: string | undefined;
+      let providerInitializationDeferred = false;
+      try {
+        const lock = await acquireEmbeddingProcessing(asset.id);
+        if (!lock.acquired) {
+          const retryAfterSec = lock.retryAfterMs
+            ? Math.max(1, Math.ceil(lock.retryAfterMs / 1000))
+            : undefined;
+          if (lock.state === 'ready') {
+            return { status: 200, body: { success: true, status: 'ready', alreadyExists: true, message: 'Embedding already exists' } };
+          }
+          if (lock.state === 'processing') {
+            return { status: 202, headers: retryAfterSec ? { 'Retry-After': retryAfterSec.toString() } : undefined, body: { success: true, status: 'processing', message: 'Embedding already processing', retryAfter: retryAfterSec } };
+          }
+          if (lock.state === 'cooldown') {
+            return { status: 429, headers: embeddingRetryAfterHeader(retryAfterSec), body: { success: false, status: 'cooldown', error: 'Embedding recently failed, retry later', retryAfter: retryAfterSec } };
+          }
+          return { status: 503, body: { success: false, error: 'Embedding lock unavailable' } };
+        }
+        processingClaimToken = lock.processingClaimToken;
+
+        const providerCircuit = await getEmbeddingProviderCircuit();
+        if (providerCircuit.open) throw new EmbeddingProviderCircuitOpenError(providerCircuit.retryAfterSec);
+
+        let embeddingService;
+        try {
+          embeddingService = createEmbeddingService(userId);
+        } catch (error) {
+          if (error instanceof EmbeddingProviderUnavailableError && processingClaimToken) {
+            providerInitializationDeferred = true;
+            await deferEmbeddingProviderInitialization(asset.id, error.message, error.retryAfterSec, processingClaimToken);
+          }
+          throw error;
+        }
+
+        const result = await embeddingService.embedImage(media.sourceUrl, asset.checksumSha256);
+        const storedEmbedding = await upsertAssetEmbedding({
+          assetId: asset.id,
+          modelName: result.model,
+          modelVersion: result.model,
+          dim: result.dimension,
+          embedding: result.embedding,
+        }, processingClaimToken);
+        if (!storedEmbedding) return { status: 409, body: { error: 'Embedding state changed; retry the request' } };
+        return {
+          status: 200,
+          body: {
+            success: true,
+            embedding: result.embedding,
+            model: result.model,
+            dimension: result.dimension,
+            processingTime: result.processingTime,
+            assetId: asset.id,
+            ...(revivedFromTerminal ? { revived: true } : {}),
+          },
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (error instanceof EmbeddingProviderCircuitOpenError) {
+          await deferEmbeddingAdmission(asset.id, message, 'provider_circuit_open', error.retryAfterSec, processingClaimToken);
+        } else if (isEmbeddingAdmissionFailure(error)) {
+          await deferEmbeddingAdmission(asset.id, message, getEmbeddingAdmissionReason(error) ?? 'limiter_unavailable', error.retryAfterSec, processingClaimToken);
+        } else if (!providerInitializationDeferred && processingClaimToken) {
+          await recordEmbeddingAttemptFailure(asset.id, message, processingClaimToken);
+        }
+        throw error;
+      } finally {
+        setTimeout(() => inFlightRequests.delete(requestKey), 100);
+      }
+    })();
+    inFlightRequests.set(requestKey, embeddingPromise);
+    const response = await embeddingPromise;
+    return NextResponse.json(response.body, { status: response.status, headers: response.headers });
 
   } catch (error) {
     if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
@@ -136,7 +295,11 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     }
     // Error generating image embedding
 
-    if (error instanceof EmbeddingError) {
+    if (
+      error instanceof EmbeddingError
+      || error instanceof EmbeddingProviderCircuitOpenError
+      || error instanceof EmbeddingProviderUnavailableError
+    ) {
       return NextResponse.json(
         { error: error.message, ...(error instanceof EmbeddingAdmissionError && error.code ? { code: error.code } : {}) },
         {

@@ -2,6 +2,7 @@
 -- processing claim tokens and the explicit terminal_at predicate. Such a
 -- runtime can otherwise move a terminal row to processing or ready while
 -- leaving terminal_at set, bypassing the one-revival budget.
+BEGIN;
 
 CREATE OR REPLACE FUNCTION "enforce_asset_embedding_revival_budget"()
 RETURNS TRIGGER
@@ -41,3 +42,5 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+COMMIT;
