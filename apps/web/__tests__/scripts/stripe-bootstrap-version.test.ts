@@ -167,6 +167,12 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(ci).toContain(
       'INSERT INTO public.asset_embeddings (asset_id, model_name, model_version, dim, status, "createdAt", "updatedAt")',
     );
+    expect(ci).toContain(
+      '(alert_key, window_start, window_seconds, count, event_ids, created_at, updated_at)',
+    );
+    expect(ci).toContain(
+      'payload_version, payload, payload_bytes, created_at, updated_at)',
+    );
     expect(ci).toContain('CREATE ROLE sploot_stripe_app SUPERUSER INHERIT');
     expect(ci).toContain("test \"$role_converged\" = 't'");
   });

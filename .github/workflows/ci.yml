@@ -479,17 +479,17 @@ jobs:
              'legacy-raw-digest', '{"legacy":true}'::jsonb, decode('00', 'hex'), decode('01', 'hex'),
              'legacy-key', 'legacy-signature-digest', false, 'acct_legacy', 'sub_legacy', 'subscription', 1700000000);
           INSERT INTO public.stripe_cancellation_alerts
-            (alert_key, window_start, window_seconds, count, event_ids)
-          VALUES ('legacy-upgrade-alert', 1700000000, 3600, 1, '["legacy-upgrade-event"]'::jsonb);
+            (alert_key, window_start, window_seconds, count, event_ids, created_at, updated_at)
+          VALUES ('legacy-upgrade-alert', 1700000000, 3600, 1, '["legacy-upgrade-event"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
           INSERT INTO public.stripe_cancellation_audit
             (id, event_id, alert_key, action, provenance_digest, details)
           VALUES ('legacy-upgrade-audit', 'legacy-upgrade-event', 'legacy-upgrade-alert', 'observe', 'legacy-audit-digest', '{"legacy":true}'::jsonb);
           INSERT INTO public.stripe_cancellation_deliveries
             (delivery_key, alert_key, adapter, status, next_attempt_at, replay_key, payload_digest,
-             payload_version, payload, payload_bytes)
+             payload_version, payload, payload_bytes, created_at, updated_at)
           VALUES ('legacy-upgrade-delivery', 'legacy-upgrade-alert', 'circuit', 'pending', CURRENT_TIMESTAMP,
                   'legacy-upgrade-replay', 'legacy-delivery-digest', 'stripe-cancellation-http-v1',
-                  '{"legacy":true}'::jsonb, '{"legacy":true}');
+                  '{"legacy":true}'::jsonb, '{"legacy":true}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
           INSERT INTO public.stripe_cancellation_maintenance
             (id, actor, reason, purged_count, purged_digest, record_digest)
           VALUES ('legacy-upgrade-maintenance', 'legacy-upgrade-operator', 'upgrade rehearsal', 0, 'legacy-purged-digest', 'legacy-record-digest');
