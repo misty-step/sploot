@@ -19,7 +19,7 @@ export interface ContextMenuSaveJobSummary {
   lastError?: string;
 }
 
-export type QueueErrorCode = 'storage-unavailable' | 'invalid-request' | 'not-found' | 'message-failed' | 'queue-error';
+export type QueueErrorCode = 'storage-unavailable' | 'invalid-request' | 'not-found' | 'message-failed' | 'queue-error' | 'auth-required';
 
 export type QueueListResponse =
   | { ok: true; jobs: ContextMenuSaveJobSummary[] }

@@ -19,7 +19,15 @@ const E2E_AUTH_KEY = 'sploot:e2e-auth-authority'
 let cachedState: AuthState = { status: 'unknown' }
 const waiters = new Set<(state: AuthState) => void>()
 
-/** The exact Clerk authority that created a durable save job. */
+/**
+ * The Clerk authority behind a durable save job.
+ *
+ * Durable ownership is the STABLE account identity (`userId` plus the account
+ * boundary `accountId`). `sessionId` records the credential that was live when
+ * the job was created — it is credential freshness only and never participates
+ * in ownership decisions: ordinary sign-out/re-auth mints a new session for the
+ * same account and must not orphan durable work.
+ */
 export interface AuthAuthority {
   userId: string
   /** Clerk's account boundary is currently the user; keep it explicit for future organizations. */
@@ -36,13 +44,17 @@ function sessionAuthority(session: { id?: string | null; user?: { id?: string | 
   return { userId, accountId: userId, sessionId }
 }
 
-export function sameAuthAuthority(left: AuthAuthority | null | undefined, right: AuthAuthority | null | undefined): boolean {
+/**
+ * Whether two authorities belong to the same stable account. This is the ONLY
+ * comparison durable ownership may use; session identity is deliberately
+ * ignored so a re-authenticated account keeps its queued work.
+ */
+export function sameAccountAuthority(left: AuthAuthority | null | undefined, right: AuthAuthority | null | undefined): boolean {
   return Boolean(
     left
     && right
     && left.userId === right.userId
-    && (left.accountId ?? left.userId) === (right.accountId ?? right.userId)
-    && left.sessionId === right.sessionId,
+    && (left.accountId ?? left.userId) === (right.accountId ?? right.userId),
   )
 }
 
@@ -133,43 +145,59 @@ export async function getAuthToken(signal?: AbortSignal): Promise<string | null>
   }
 }
 
-/** Read the current session authority without exposing it in user-facing copy. */
+/**
+ * Read the current session authority, THROWING on auth transport failure.
+ *
+ * `null` means "verifiably signed out"; a thrown error means "could not
+ * determine" — callers that fence durable work must treat the two differently
+ * (a transient failure schedules a retry; it never masquerades as an owner
+ * change).
+ */
+export async function readAuthAuthority(signal?: AbortSignal): Promise<AuthAuthority | null> {
+  if (E2E_AUTH_MODE) {
+    return await getE2eAuthority(signal);
+  }
+  const clerk = await withAbort(createFreshClerkClient(), signal)
+  const authority = sessionAuthority(clerk.session)
+  if (authority) {
+    updateCachedState({
+      status: 'signed-in',
+      userId: authority.userId,
+      sessionId: authority.sessionId,
+      expiresAt: clerk.session?.expireAt?.getTime(),
+    })
+  } else {
+    updateCachedState({ status: 'signed-out' })
+  }
+  return authority
+}
+
+/** Lenient wrapper: read the current session authority, null on any failure. */
 export async function getAuthAuthority(signal?: AbortSignal): Promise<AuthAuthority | null> {
   try {
-    if (E2E_AUTH_MODE) {
-      return await getE2eAuthority(signal);
-    }
-    const clerk = await withAbort(createFreshClerkClient(), signal)
-    const authority = sessionAuthority(clerk.session)
-    if (authority) {
-      updateCachedState({
-        status: 'signed-in',
-        userId: authority.userId,
-        sessionId: authority.sessionId,
-        expiresAt: clerk.session?.expireAt?.getTime(),
-      })
-    } else {
-      updateCachedState({ status: 'signed-out' })
-    }
-    return authority
+    return await readAuthAuthority(signal)
   } catch (error) {
     console.error('[Auth] Failed to read session authority', error)
     return null
   }
 }
 
-/** Obtain a token only while the original durable-job authority is still active. */
+/**
+ * Obtain a token only while the durable job's stable ACCOUNT is still active.
+ * The token always comes from the LIVE session — session identity is
+ * credential freshness, so a re-authenticated same-account session is valid.
+ */
 export async function getAuthTokenForAuthority(expected: AuthAuthority, signal?: AbortSignal): Promise<string | null> {
   try {
     if (E2E_AUTH_MODE) {
       const actual = await getE2eAuthority(signal);
-      return sameAuthAuthority(actual, expected)
-        ? `e2e-token-${expected.userId}-${expected.sessionId}`
+      return sameAccountAuthority(actual, expected) && actual
+        ? `e2e-token-${actual.userId}-${actual.sessionId}`
         : null;
     }
     const clerk = await withAbort(createFreshClerkClient(), signal)
     const actual = sessionAuthority(clerk.session)
-    if (!sameAuthAuthority(actual, expected) || !clerk.session) {
+    if (!sameAccountAuthority(actual, expected) || !clerk.session) {
       return null
     }
     return await withAbort(clerk.session.getToken(), signal)

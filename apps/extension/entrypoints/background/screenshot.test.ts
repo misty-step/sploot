@@ -131,6 +131,32 @@ describe('captureAndSaveVisibleTab', () => {
     );
   }, 15_000);
 
+  it('reports an oversized screenshot as an image-size failure, not an unexpected one', async () => {
+    let messageListener:
+      | ((message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean | undefined)
+      | undefined;
+    chromeMock.runtime.onMessage.addListener.mockImplementation(listener => {
+      messageListener = listener;
+    });
+    const oversized = new Uint8Array(UPLOAD.multipartSafeSize + 1);
+    let binary = '';
+    for (const byte of oversized) binary += String.fromCharCode(byte);
+    chromeMock.tabs.captureVisibleTab.mockResolvedValue(
+      `data:image/png;base64,${btoa(binary)}`,
+    );
+    const sendResponse = vi.fn();
+
+    setupScreenshotCapture();
+    expect(messageListener?.({ type: 'CAPTURE_VISIBLE_TAB' }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => expect(sendResponse).toHaveBeenCalledWith({
+      completed: false,
+      stage: 'prepare-image',
+      reason: 'image-too-large',
+    }), { timeout: 15_000 });
+    expect(mocks.enqueueCapturedSave).not.toHaveBeenCalled();
+  }, 20_000);
+
   it('runs the real popup message listener through capture, upload, and feedback', async () => {
     let messageListener:
       | ((message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean | undefined)

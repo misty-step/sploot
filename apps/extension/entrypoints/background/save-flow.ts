@@ -12,7 +12,7 @@ import {
   getAuthTokenForAuthority,
   isAuthenticated,
   promptUserSignIn,
-  sameAuthAuthority,
+  sameAccountAuthority,
   type AuthAuthority,
 } from './auth-manager';
 import { uploadImage } from '../../shared/api-client';
@@ -27,7 +27,7 @@ export interface ProducedImage {
 export interface SaveOptions {
   /** Produce bytes before auth can open or focus another browser tab. */
   prepareBeforeAuth?: boolean;
-  /** When present, upload is fenced to this exact Clerk user/session. */
+  /** When present, upload is fenced to this stable Clerk account identity. */
   owner?: AuthAuthority;
   signal?: AbortSignal;
 }
@@ -66,7 +66,7 @@ export async function saveToSploot(
     const owner = options.owner;
     if (owner) {
       const currentOwner = await getAuthAuthority(options.signal);
-      if (!sameAuthAuthority(currentOwner, owner)) {
+      if (!sameAccountAuthority(currentOwner, owner)) {
         throw new Error('The original Sploot account is no longer active. Sign in to that account to resume this save.');
       }
       const result = await uploadImage(blob, filename, {

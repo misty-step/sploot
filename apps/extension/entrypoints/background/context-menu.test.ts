@@ -6,8 +6,9 @@ const mocks = vi.hoisted(() => ({
   isAuthenticated: vi.fn(),
   promptUserSignIn: vi.fn(),
   getAuthAuthority: vi.fn(),
+  readAuthAuthority: vi.fn(),
   getAuthTokenForAuthority: vi.fn(),
-  sameAuthAuthority: vi.fn(),
+  sameAccountAuthority: vi.fn(),
   runAuthDiagnostics: vi.fn(),
   uploadImage: vi.fn(),
   showSuccessNotification: vi.fn(),
@@ -27,8 +28,9 @@ vi.mock('./auth-manager', () => ({
   isAuthenticated: mocks.isAuthenticated,
   promptUserSignIn: mocks.promptUserSignIn,
   getAuthAuthority: mocks.getAuthAuthority,
+  readAuthAuthority: mocks.readAuthAuthority,
   getAuthTokenForAuthority: mocks.getAuthTokenForAuthority,
-  sameAuthAuthority: mocks.sameAuthAuthority,
+  sameAccountAuthority: mocks.sameAccountAuthority,
   runAuthDiagnostics: mocks.runAuthDiagnostics,
 }));
 vi.mock('../../shared/api-client', () => ({ uploadImage: mocks.uploadImage }));
@@ -98,8 +100,13 @@ beforeEach(() => {
   });
   mocks.isAuthenticated.mockResolvedValue(true);
   mocks.getAuthAuthority.mockResolvedValue(OWNER);
+  mocks.readAuthAuthority.mockImplementation((signal?: AbortSignal) => mocks.getAuthAuthority(signal));
   mocks.getAuthTokenForAuthority.mockResolvedValue('token');
-  mocks.sameAuthAuthority.mockImplementation((left, right) => left?.userId === right?.userId && left?.sessionId === right?.sessionId);
+  mocks.sameAccountAuthority.mockImplementation((left, right) => Boolean(
+    left && right
+    && left.userId === right.userId
+    && (left.accountId ?? left.userId) === (right.accountId ?? right.userId),
+  ));
   mocks.fetchImage.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
   mocks.uploadImage.mockResolvedValue({
     assetId: 'a1',
@@ -242,11 +249,67 @@ describe('context menu save', () => {
     await vi.waitFor(() => expect(signedOutList).toHaveBeenCalledWith({ ok: true, jobs: [] }));
     const signedOutDiscard = vi.fn();
     onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.DISCARD, jobId: 'owner-a' }, {}, signedOutDiscard);
-    await vi.waitFor(() => expect(signedOutDiscard).toHaveBeenCalledWith({ ok: false, code: 'not-found', error: 'Queue job not found.' }));
+    await vi.waitFor(() => expect(signedOutDiscard).toHaveBeenCalledWith({
+      ok: false,
+      code: 'auth-required',
+      error: 'Sign in to Sploot to manage retained saves.',
+    }));
     expect(storedQueue).toHaveLength(1);
   });
 
+  it('answers signed-out retry with an auth-required code instead of a misleading one', async () => {
+    storedQueue = [{
+      id: 'needs-auth',
+      imageUrl: 'https://x.test/needs-auth.png',
+      filename: 'needs-auth.png',
+      state: 'failed',
+      createdAt: Date.now(),
+      attempts: 5,
+      nextAttemptAt: 0,
+    }];
+    mocks.getAuthAuthority.mockResolvedValue(null);
+
+    const retryResponse = vi.fn();
+    expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.RETRY, jobId: 'needs-auth' }, {}, retryResponse)).toBe(true);
+    await vi.waitFor(() => expect(retryResponse).toHaveBeenCalledWith({
+      ok: false,
+      code: 'auth-required',
+      error: 'Sign in to Sploot to manage retained saves.',
+    }));
+    expect(storedQueue).toHaveLength(1);
+  });
+
+  it('lists and retries a retained save for the same account under a new session', async () => {
+    storedQueue = [{
+      id: 'same-account',
+      imageUrl: 'https://x.test/same-account.png',
+      filename: 'same-account.png',
+      state: 'failed',
+      createdAt: Date.now(),
+      attempts: 5,
+      nextAttemptAt: 0,
+      lastError: 'needs attention',
+      owner: { userId: 'user-1', accountId: 'user-1', sessionId: 'session-original' },
+    }];
+    mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-1', accountId: 'user-1', sessionId: 'session-after-reauth' });
+
+    const listResponse = vi.fn();
+    expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.LIST_QUEUE }, {}, listResponse)).toBe(true);
+    await vi.waitFor(() => expect(listResponse).toHaveBeenCalledWith({
+      ok: true,
+      jobs: [expect.objectContaining({ id: 'same-account', state: 'failed' })],
+    }));
+
+    const retryResponse = vi.fn();
+    expect(onMessage({ type: CONTEXT_MENU_SAVE_MESSAGES.RETRY, jobId: 'same-account' }, {}, retryResponse)).toBe(true);
+    await vi.waitFor(() => expect(retryResponse).toHaveBeenCalledWith({ ok: true, action: 'retry-queued' }));
+  });
+
   it('returns a stable error when LIST_FAILED storage access rejects', async () => {
+    // Let the startup recovery kicked off by setupContextMenu() settle (it is
+    // purely microtask-based) so the one-shot rejection below is consumed by
+    // the LIST_FAILED read and not by recovery's own queue reads.
+    await new Promise(resolve => setTimeout(resolve, 0));
     const get = chrome.storage.local.get as unknown as ReturnType<typeof vi.fn>;
     get.mockRejectedValueOnce(new Error('storage offline'));
 

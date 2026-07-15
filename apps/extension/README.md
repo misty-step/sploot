@@ -71,6 +71,18 @@ exercises the actual popup queue listing/actions, image fetch, capture, retry,
 duplicate response, owner switch, and abort paths. The popup layout oracle
 runs the same real artifact at both 280px and 240px.
 
+Durable saves are owned by the STABLE Clerk account identity
+(`userId`/`accountId`); the recorded session id is credential provenance only.
+Ordinary sign-out/re-auth (same account, new session) adopts and resumes
+retained work, while a different account can never list, retry, discard, or
+upload another owner's jobs. Global queue capacity (50 jobs / 8 MB of retained
+source bytes) stays hard, but is recoverable: terminal (failed/paused) saves
+expire after a bounded retention window, and admission deterministically
+reclaims non-active jobs owned by other accounts — oldest terminal first,
+never anything actively processing, and without surfacing or uploading the
+evicted jobs. The lifecycle harness proves the same-account/new-session
+adoption and the foreign-owner wedge recovery against the real worker.
+
 Native Chrome context-menu UI cannot be clicked by Playwright in the CI
 browser seam, so the E2E-only message invokes the same production
 `handleImageSave` path that the registered `chrome.contextMenus.onClicked`

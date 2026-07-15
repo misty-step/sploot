@@ -5,24 +5,41 @@ const mocks = vi.hoisted(() => ({
   saveToSploot: vi.fn(),
   showErrorNotification: vi.fn(),
   getAuthAuthority: vi.fn(),
+  readAuthAuthority: vi.fn(),
 }));
+
+interface MockAuthority {
+  userId: string;
+  accountId?: string;
+  sessionId: string;
+}
 
 vi.mock('./image-fetcher', () => ({ fetchImage: mocks.fetchImage }));
 vi.mock('./save-flow', () => ({ saveToSploot: mocks.saveToSploot }));
 vi.mock('./notifications', () => ({ showErrorNotification: mocks.showErrorNotification }));
 vi.mock('./auth-manager', () => ({
   getAuthAuthority: mocks.getAuthAuthority,
-  sameAuthAuthority: (left: { userId: string; sessionId: string } | null, right: { userId: string; sessionId: string } | null) => Boolean(left && right && left.userId === right.userId && left.sessionId === right.sessionId),
+  readAuthAuthority: mocks.readAuthAuthority,
+  // Mirrors the production contract proven in auth-manager.test.ts: durable
+  // ownership is the stable account identity; sessionId never participates.
+  sameAccountAuthority: (left: MockAuthority | null, right: MockAuthority | null) => Boolean(
+    left && right
+    && left.userId === right.userId
+    && (left.accountId ?? left.userId) === (right.accountId ?? right.userId),
+  ),
 }));
 
 import {
   CONTEXT_MENU_QUEUE_KEY,
   CONTEXT_MENU_SAVE_DEADLINE_MS,
   CONTEXT_MENU_SAVE_ALARM_NAME,
+  ConcurrencyGate,
   MAX_CONTEXT_MENU_SAVE_ATTEMPTS,
   MAX_CONTEXT_MENU_SAVE_AGE_MS,
   MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE,
+  MAX_CONTEXT_MENU_SAVE_STORAGE_BYTES,
   PROCESSING_STALE_TIMEOUT_MS,
+  TERMINAL_SAVE_RETENTION_MS,
   discardContextMenuSave,
   enqueueCapturedSave,
   enqueueContextMenuSave,
@@ -44,9 +61,11 @@ interface StoredJob {
   processingStartedAt?: number;
   processingToken?: string;
   lastError?: string;
+  failedAt?: number;
+  pausedAt?: number;
   sourceBytes?: string;
   sourceType?: string;
-  owner?: { userId: string; sessionId: string };
+  owner?: { userId: string; accountId?: string; sessionId: string };
 }
 
 let storedQueue: StoredJob[];
@@ -93,6 +112,9 @@ beforeEach(() => {
   });
   setupContextMenuSaveQueue();
   mocks.getAuthAuthority.mockResolvedValue(OWNER);
+  // readAuthAuthority is the throwing variant of getAuthAuthority; by default
+  // mirror it so owner-fencing tests drive both through one seam.
+  mocks.readAuthAuthority.mockImplementation((signal?: AbortSignal) => mocks.getAuthAuthority(signal));
   mocks.fetchImage.mockResolvedValue(new Blob(['image'], { type: 'image/png' }));
   mocks.saveToSploot.mockResolvedValue({ ok: true, filename: 'cat.png', isDuplicate: false });
 });
@@ -678,5 +700,294 @@ describe.sequential('durable context-menu save queue', () => {
     await expect(enqueueCapturedSave(new Blob(['not-durable'], { type: 'image/png' }), 'lost.png'))
       .rejects.toThrow('worker terminated before commit');
     expect(mocks.saveToSploot).not.toHaveBeenCalled();
+  });
+
+  it('adopts a paused save for the same account under a new session', async () => {
+    storedQueue = [{
+      id: 'adopt',
+      imageUrl: 'https://x.test/adopt.png',
+      filename: 'adopt.png',
+      state: 'paused',
+      createdAt: Date.now(),
+      attempts: 1,
+      nextAttemptAt: 0,
+      lastError: 'Sign in to the original Sploot account to resume this save.',
+      owner: { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' },
+    }];
+    mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-1', accountId: 'user-1', sessionId: 'session-99' });
+
+    await recoverPendingContextMenuSaves();
+
+    expect(mocks.saveToSploot).toHaveBeenCalledOnce();
+    expect(storedQueue).toEqual([]);
+  });
+
+  it('lets the same account retry and discard terminal saves under a new session', async () => {
+    storedQueue = [{
+      id: 'stranded',
+      imageUrl: 'https://x.test/stranded.png',
+      filename: 'stranded.png',
+      state: 'failed',
+      createdAt: Date.now(),
+      attempts: MAX_CONTEXT_MENU_SAVE_ATTEMPTS,
+      nextAttemptAt: 0,
+      lastError: 'needs attention',
+      owner: { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' },
+    }];
+    mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-1', accountId: 'user-1', sessionId: 'session-99' });
+
+    await expect(retryContextMenuSave('stranded')).resolves.toBe(true);
+    expect(storedQueue[0]).toMatchObject({ state: 'pending', attempts: 0 });
+
+    storedQueue = [{
+      ...storedQueue[0],
+      id: 'stranded-2',
+      state: 'failed',
+      nextAttemptAt: 0,
+    }];
+    await expect(discardContextMenuSave('stranded-2')).resolves.toBe(true);
+    expect(storedQueue).toEqual([]);
+  });
+
+  it('refuses retry and discard for a different account even with an identical session id', async () => {
+    storedQueue = [{
+      id: 'foreign',
+      imageUrl: 'https://x.test/foreign.png',
+      filename: 'foreign.png',
+      state: 'failed',
+      createdAt: Date.now(),
+      attempts: MAX_CONTEXT_MENU_SAVE_ATTEMPTS,
+      nextAttemptAt: 0,
+      owner: { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' },
+    }];
+    mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-2', accountId: 'user-2', sessionId: 'session-1' });
+
+    await expect(retryContextMenuSave('foreign')).resolves.toBe(false);
+    await expect(discardContextMenuSave('foreign')).resolves.toBe(false);
+    expect(storedQueue).toHaveLength(1);
+    expect(mocks.saveToSploot).not.toHaveBeenCalled();
+  });
+
+  it('drops terminal saves after the bounded retention window', async () => {
+    storedQueue = [{
+      id: 'expired-failed',
+      imageUrl: 'https://x.test/expired-failed.png',
+      filename: 'expired-failed.png',
+      state: 'failed',
+      createdAt: Date.now() - TERMINAL_SAVE_RETENTION_MS - 120_000,
+      attempts: MAX_CONTEXT_MENU_SAVE_ATTEMPTS,
+      nextAttemptAt: 0,
+      failedAt: Date.now() - TERMINAL_SAVE_RETENTION_MS - 1,
+    }, {
+      id: 'expired-paused',
+      imageUrl: 'https://x.test/expired-paused.png',
+      filename: 'expired-paused.png',
+      state: 'paused',
+      createdAt: Date.now() - TERMINAL_SAVE_RETENTION_MS - 120_000,
+      attempts: 1,
+      nextAttemptAt: 0,
+      pausedAt: Date.now() - TERMINAL_SAVE_RETENTION_MS - 1,
+      owner: { userId: 'user-9', accountId: 'user-9', sessionId: 'session-9' },
+    }, {
+      id: 'fresh-failed',
+      imageUrl: 'https://x.test/fresh-failed.png',
+      filename: 'fresh-failed.png',
+      state: 'failed',
+      createdAt: Date.now() - 60_000,
+      attempts: MAX_CONTEXT_MENU_SAVE_ATTEMPTS,
+      nextAttemptAt: 0,
+      failedAt: Date.now() - 1_000,
+    }];
+
+    await recoverPendingContextMenuSaves();
+
+    expect(storedQueue.map(job => job.id)).toEqual(['fresh-failed']);
+    expect(mocks.saveToSploot).not.toHaveBeenCalled();
+  });
+
+  it('reclaims a full queue of another account\'s failures so the current account can save', async () => {
+    storedQueue = Array.from({ length: MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE }, (_, index) => ({
+      id: `foreign-${index}`,
+      imageUrl: `https://private.test/${index}.png`,
+      filename: `foreign-${index}.png`,
+      state: 'failed' as const,
+      createdAt: Date.now() - (MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE - index) * 1_000,
+      attempts: MAX_CONTEXT_MENU_SAVE_ATTEMPTS,
+      nextAttemptAt: 0,
+      failedAt: Date.now() - 1_000,
+      lastError: 'old account failure',
+      owner: { userId: 'user-old', accountId: 'user-old', sessionId: 'session-old' },
+    }));
+
+    await enqueueContextMenuSave('https://x.test/new.png', 'new.png');
+
+    // Deterministic, privacy-safe reclaim: the oldest non-active foreign job is
+    // evicted (never uploaded, never surfaced) and the new save proceeds.
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(storedQueue.every(job => job.filename !== 'new.png')).toBe(true));
+    expect(storedQueue).toHaveLength(MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE - 1);
+    expect(storedQueue.some(job => job.id === 'foreign-0')).toBe(false);
+    expect(storedQueue.some(job => job.id === 'foreign-1')).toBe(true);
+    expect(mocks.showErrorNotification).not.toHaveBeenCalled();
+  });
+
+  it('reclaims byte-budget pressure from foreign saves without uploading or leaking them', async () => {
+    const halfBudget = btoa('a'.repeat(3 * 1024 * 1024)).slice(0, Math.ceil(MAX_CONTEXT_MENU_SAVE_STORAGE_BYTES / 2));
+    storedQueue = [0, 1].map(index => ({
+      id: `foreign-bytes-${index}`,
+      imageUrl: `https://private.test/bytes-${index}.png`,
+      filename: `foreign-bytes-${index}.png`,
+      state: 'failed' as const,
+      createdAt: Date.now() - (2 - index) * 1_000,
+      attempts: MAX_CONTEXT_MENU_SAVE_ATTEMPTS,
+      nextAttemptAt: 0,
+      failedAt: Date.now() - 1_000,
+      sourceBytes: halfBudget,
+      sourceType: 'image/png',
+      owner: { userId: 'user-old', accountId: 'user-old', sessionId: 'session-old' },
+    }));
+
+    await enqueueCapturedSave(new Blob(['captured-new'], { type: 'image/png' }), 'fresh-capture.png');
+
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledOnce());
+    expect(storedQueue.map(job => job.id)).toEqual(['foreign-bytes-1']);
+    expect(mocks.showErrorNotification).not.toHaveBeenCalled();
+  });
+
+  it('never evicts current-owner or actively processing jobs to admit a new save', async () => {
+    storedQueue = Array.from({ length: MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE - 1 }, (_, index) => ({
+      id: `mine-${index}`,
+      imageUrl: `https://x.test/mine-${index}.png`,
+      filename: `mine-${index}.png`,
+      state: 'failed' as const,
+      createdAt: Date.now() - index * 1_000,
+      attempts: MAX_CONTEXT_MENU_SAVE_ATTEMPTS,
+      nextAttemptAt: 0,
+      failedAt: Date.now() - 1_000,
+      owner: OWNER,
+    }));
+    storedQueue.push({
+      id: 'foreign-active',
+      imageUrl: 'https://private.test/active.png',
+      filename: 'foreign-active.png',
+      state: 'processing',
+      createdAt: Date.now() - 500_000,
+      attempts: 1,
+      nextAttemptAt: 0,
+      processingStartedAt: Date.now(),
+      processingToken: 'active-token',
+      owner: { userId: 'user-old', accountId: 'user-old', sessionId: 'session-old' },
+    });
+    const before = structuredClone(storedQueue);
+
+    await expect(enqueueContextMenuSave('https://x.test/new.png', 'new.png'))
+      .rejects.toMatchObject({ code: 'queue-full' });
+
+    expect(storedQueue).toEqual(before);
+    expect(mocks.saveToSploot).not.toHaveBeenCalled();
+  });
+
+  it('schedules a bounded retry instead of pausing when the auth check fails transiently', async () => {
+    storedQueue = [{
+      id: 'transient-auth',
+      imageUrl: 'https://x.test/transient.png',
+      filename: 'transient.png',
+      state: 'pending',
+      createdAt: Date.now(),
+      attempts: 0,
+      nextAttemptAt: Date.now(),
+      owner: OWNER,
+    }];
+    mocks.readAuthAuthority.mockRejectedValue(new Error('clerk transport down'));
+
+    await recoverPendingContextMenuSaves();
+
+    expect(mocks.saveToSploot).not.toHaveBeenCalled();
+    expect(storedQueue[0]).toMatchObject({
+      state: 'pending',
+      attempts: 1,
+      lastError: 'clerk transport down',
+    });
+    expect(storedQueue[0].nextAttemptAt).toBeGreaterThan(Date.now());
+    const storageSet = chrome.storage.local.set as unknown as ReturnType<typeof vi.fn>;
+    expect(storageSet).toHaveBeenCalledWith(expect.objectContaining({
+      'sploot:last-save': expect.objectContaining({ state: 'retrying' }),
+    }));
+  });
+
+  it('terminalizes a save when transient auth failures exhaust the attempt budget', async () => {
+    storedQueue = [{
+      id: 'auth-exhausted',
+      imageUrl: 'https://x.test/auth-exhausted.png',
+      filename: 'auth-exhausted.png',
+      state: 'pending',
+      createdAt: Date.now(),
+      attempts: MAX_CONTEXT_MENU_SAVE_ATTEMPTS - 1,
+      nextAttemptAt: Date.now(),
+      owner: OWNER,
+    }];
+    mocks.readAuthAuthority.mockRejectedValue(new Error('clerk transport down'));
+
+    await recoverPendingContextMenuSaves();
+
+    expect(mocks.saveToSploot).not.toHaveBeenCalled();
+    expect(storedQueue[0]).toMatchObject({ state: 'failed', attempts: MAX_CONTEXT_MENU_SAVE_ATTEMPTS });
+    expect(mocks.showErrorNotification).toHaveBeenCalledOnce();
+  });
+
+  it('notifies once per recovery pass when saves pause for a different account', async () => {
+    storedQueue = ['a', 'b'].map(suffix => ({
+      id: `paused-${suffix}`,
+      imageUrl: `https://private.test/${suffix}.png`,
+      filename: `private-${suffix}.png`,
+      state: 'pending' as const,
+      createdAt: Date.now(),
+      attempts: 0,
+      nextAttemptAt: Date.now(),
+      owner: { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' },
+    }));
+    mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-2', accountId: 'user-2', sessionId: 'session-2' });
+
+    await recoverPendingContextMenuSaves();
+
+    expect(storedQueue.every(job => job.state === 'paused')).toBe(true);
+    expect(mocks.saveToSploot).not.toHaveBeenCalled();
+    expect(mocks.showErrorNotification).toHaveBeenCalledOnce();
+    const [notified] = mocks.showErrorNotification.mock.calls[0];
+    const message = typeof notified === 'string' ? notified : notified.message;
+    expect(message).toContain('original Sploot account');
+    expect(message).not.toContain('private-');
+  });
+
+  it('never admits more than the gate limit when a release races a new caller', async () => {
+    const gate = new ConcurrencyGate(1);
+    let active = 0;
+    let maximum = 0;
+    const releases: Array<() => void> = [];
+    const operation = async () => {
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise<void>(resolve => releases.push(resolve));
+      active -= 1;
+    };
+
+    const first = gate.run(operation);
+    const second = gate.run(operation);
+    await vi.waitFor(() => expect(releases).toHaveLength(1));
+    releases.shift()!();
+    // Land a new admission attempt inside the release window, after the gate
+    // wakes its waiter but before that waiter re-enters.
+    await Promise.resolve();
+    await Promise.resolve();
+    const third = gate.run(operation);
+
+    while (releases.length > 0 || active > 0) {
+      releases.shift()?.();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    await Promise.all([first, second, third]);
+    expect(maximum).toBe(1);
   });
 });

@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   promptUserSignIn: vi.fn(),
   getAuthAuthority: vi.fn(),
   getAuthTokenForAuthority: vi.fn(),
-  sameAuthAuthority: vi.fn(),
+  sameAccountAuthority: vi.fn(),
   uploadImage: vi.fn(),
   showSuccessNotification: vi.fn(),
   showErrorNotification: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock('./auth-manager', () => ({
   promptUserSignIn: mocks.promptUserSignIn,
   getAuthAuthority: mocks.getAuthAuthority,
   getAuthTokenForAuthority: mocks.getAuthTokenForAuthority,
-  sameAuthAuthority: mocks.sameAuthAuthority,
+  sameAccountAuthority: mocks.sameAccountAuthority,
 }));
 vi.mock('../../shared/api-client', () => ({ uploadImage: mocks.uploadImage }));
 vi.mock('./notifications', () => ({
@@ -35,7 +35,11 @@ beforeEach(() => {
   mocks.isAuthenticated.mockResolvedValue(true);
   mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-1', sessionId: 'session-1' });
   mocks.getAuthTokenForAuthority.mockResolvedValue('token');
-  mocks.sameAuthAuthority.mockImplementation((left, right) => left?.userId === right?.userId && left?.sessionId === right?.sessionId);
+  mocks.sameAccountAuthority.mockImplementation((left, right) => Boolean(
+    left && right
+    && left.userId === right.userId
+    && (left.accountId ?? left.userId) === (right.accountId ?? right.userId),
+  ));
   mocks.uploadImage.mockResolvedValue({
     assetId: 'a1',
     blobUrl: 'b',
@@ -104,7 +108,7 @@ describe('saveToSploot', () => {
     });
   });
 
-  it('fences an owner-bound upload when the Clerk session changes', async () => {
+  it('fences an owner-bound upload when a different account is active', async () => {
     mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-2', sessionId: 'session-2' });
     const outcome = await saveToSploot(produce, 'image', {
       owner: { userId: 'user-1', sessionId: 'session-1' },
@@ -113,5 +117,21 @@ describe('saveToSploot', () => {
     expect(outcome.ok).toBe(false);
     expect(mocks.uploadImage).not.toHaveBeenCalled();
     expect(mocks.showErrorNotification).toHaveBeenCalledWith(expect.stringContaining('original Sploot account'));
+  });
+
+  it('uploads an owner-bound save under a new session of the same account', async () => {
+    mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-1', accountId: 'user-1', sessionId: 'session-2' });
+    const outcome = await saveToSploot(produce, 'image', {
+      owner: { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' },
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(mocks.uploadImage).toHaveBeenCalledWith(
+      expect.any(Blob),
+      'meme.png',
+      { getToken: expect.any(Function) },
+      undefined,
+    );
+    expect(mocks.showErrorNotification).not.toHaveBeenCalled();
   });
 });

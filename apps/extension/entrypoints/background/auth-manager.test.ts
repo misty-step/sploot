@@ -117,6 +117,57 @@ describe('auth-manager', () => {
     });
   });
 
+  it('treats a new session for the same account as the same durable owner', async () => {
+    const { sameAccountAuthority } = await importAuthManager();
+
+    expect(sameAccountAuthority(
+      { userId: 'user-1', accountId: 'user-1', sessionId: 'session-2' },
+      { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' },
+    )).toBe(true);
+    expect(sameAccountAuthority(
+      { userId: 'user-1', sessionId: 'session-2' },
+      { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' },
+    )).toBe(true);
+    expect(sameAccountAuthority(
+      { userId: 'user-2', accountId: 'user-2', sessionId: 'session-1' },
+      { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' },
+    )).toBe(false);
+    expect(sameAccountAuthority(
+      { userId: 'user-1', accountId: 'org-a', sessionId: 'session-1' },
+      { userId: 'user-1', accountId: 'org-b', sessionId: 'session-1' },
+    )).toBe(false);
+    expect(sameAccountAuthority(null, { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' })).toBe(false);
+    expect(sameAccountAuthority({ userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' }, null)).toBe(false);
+  });
+
+  it('issues a live token for the same account under a new session and refuses other accounts', async () => {
+    const getToken = vi.fn(async () => 'fresh-token');
+    createClerkClient.mockResolvedValue({
+      session: {
+        id: 'session-new',
+        user: { id: 'user-1' },
+        getToken,
+      },
+    });
+
+    const { getAuthTokenForAuthority } = await importAuthManager();
+
+    await expect(getAuthTokenForAuthority({ userId: 'user-1', accountId: 'user-1', sessionId: 'session-old' }))
+      .resolves.toBe('fresh-token');
+    await expect(getAuthTokenForAuthority({ userId: 'user-2', accountId: 'user-2', sessionId: 'session-old' }))
+      .resolves.toBeNull();
+    expect(getToken).toHaveBeenCalledOnce();
+  });
+
+  it('surfaces auth transport failures from readAuthAuthority instead of reporting signed-out', async () => {
+    createClerkClient.mockRejectedValue(new Error('clerk transport down'));
+
+    const { readAuthAuthority, getAuthAuthority } = await importAuthManager();
+
+    await expect(readAuthAuthority()).rejects.toThrow('clerk transport down');
+    await expect(getAuthAuthority()).resolves.toBeNull();
+  });
+
   it('returns null instead of requesting a token when there is no session', async () => {
     createClerkClient.mockResolvedValue({ session: null });
 

@@ -183,14 +183,22 @@ async function screenshotRuntimeDiagnostics(worker: Worker) {
   });
 }
 
-async function setAuth(worker: Worker, userId: string | null) {
-  await worker.evaluate(async ({ userId: nextUserId }) => {
+interface TestAuthority {
+  userId: string;
+  /** Independent of userId so account boundaries are testable on their own. */
+  accountId?: string;
+  /** Independent of userId: same-account re-auth mints a NEW session id. */
+  sessionId: string;
+}
+
+async function setAuth(worker: Worker, authority: TestAuthority | null) {
+  await worker.evaluate(async ({ next }) => {
     await chrome.storage.local.set({
-      'sploot:e2e-auth-authority': nextUserId
-        ? { userId: nextUserId, accountId: nextUserId, sessionId: `session-${nextUserId}` }
+      'sploot:e2e-auth-authority': next
+        ? { userId: next.userId, accountId: next.accountId ?? next.userId, sessionId: next.sessionId }
         : null,
     });
-  }, { userId });
+  }, { next: authority });
 }
 
 async function queue(worker: Worker) {
@@ -332,7 +340,7 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
   try {
     uploadMode = 'failure';
     imageBytes = 'original-image';
-    await setAuth(worker, 'user-a');
+    await setAuth(worker, { userId: 'user-a', sessionId: 'session-a1' });
     await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/immutable.png`, filename: 'immutable.png' }, 'immutable save message');
     await waitForQueue(worker, context, testInfo, step, 'immutable bytes persisted', jobs => jobs.some(job => (
       job.filename === 'immutable.png' && job.sourceBytes
@@ -340,7 +348,7 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     const immutable = (await queue(worker)).find((job: any) => job.filename === 'immutable.png');
     expect(immutable.imageUrl).toBe(`${API_ORIGIN}/immutable.png`);
 
-    await setAuth(worker, 'user-b');
+    await setAuth(worker, { userId: 'user-b', sessionId: 'session-b1' });
     worker = await stopAndRestart(context, popup, worker, testInfo, step);
     ({ context, popup } = opened);
     await waitForQueue(worker, context, testInfo, step, 'account switch pauses original-owner job', jobs => jobs.some(job => (
@@ -356,10 +364,20 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     expect(await send({ type: LIST_QUEUE }, 'signed-out queue-list message')).toEqual({ ok: true, jobs: [] });
     expect(await send({ type: DISCARD, jobId: immutable.id }, 'signed-out discard message')).toMatchObject({ ok: false });
 
-    await setAuth(worker, 'user-a');
+    // Ordinary sign-out/re-auth: the SAME account returns under a brand-new
+    // session id. Durable ownership is the stable account identity, so the
+    // retained job must be listable and retryable — a session-bound owner
+    // check would orphan it here permanently.
+    await setAuth(worker, { userId: 'user-a', sessionId: 'session-a2' });
     uploadMode = 'success';
     imageBytes = 'changed-image';
-    expect(await send({ type: RETRY, jobId: immutable.id }, 'original-owner retry message')).toMatchObject({ ok: true });
+    const newSessionList = await send<{ ok: boolean; jobs: Array<{ id: string }> }>(
+      { type: LIST_QUEUE },
+      'same-account new-session queue-list message',
+    );
+    expect(newSessionList.ok).toBe(true);
+    expect(newSessionList.jobs.some(job => job.id === immutable.id)).toBe(true);
+    expect(await send({ type: RETRY, jobId: immutable.id }, 'same-account new-session retry message')).toMatchObject({ ok: true });
     await stopAndRestart(context, popup, worker, testInfo, step).then(next => { worker = next; });
     await waitForQueue(worker, context, testInfo, step, 'immutable retry converged', jobs => !jobs.some(job => job.id === immutable.id));
     expect(uploadBodies.some(body => body.includes('original-image'))).toBe(true);
@@ -370,10 +388,51 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
     await waitForQueue(worker, context, testInfo, step, 'duplicate replay converged', jobs => !jobs.some(job => job.filename === 'duplicate.png'));
     expect(uploadBodies.at(-1)).toContain('changed-image');
 
+    // A previous account's invisible terminal failures must never wedge this
+    // profile: a full foreign-owner queue is reclaimed deterministically
+    // (oldest terminal job evicted, never uploaded) and the new save lands.
+    await runMv3Step(context, testInfo, step, 'seed a full foreign-owner failed queue', async () => {
+      await worker.evaluate(async () => {
+        const jobs = Array.from({ length: 50 }, (_, index) => ({
+          id: `foreign-wedge-${index}`,
+          imageUrl: `https://private.invalid/wedge-${index}.png`,
+          filename: `foreign-wedge-${index}.png`,
+          state: 'failed',
+          createdAt: Date.now() - (50 - index) * 1_000,
+          attempts: 5,
+          nextAttemptAt: 0,
+          failedAt: Date.now() - 1_000,
+          lastError: 'foreign failure',
+          owner: { userId: 'user-old', accountId: 'user-old', sessionId: 'session-old' },
+          sourceBytes: btoa('foreign-bytes'),
+          sourceType: 'image/png',
+        }));
+        await chrome.storage.local.set({ 'sploot:context-menu-queue': jobs });
+      });
+    });
+    uploadMode = 'success';
+    await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/reclaimed.png`, filename: 'reclaimed.png' }, 'save through wedged queue message');
+    await waitForQueue(worker, context, testInfo, step, 'wedged queue reclaimed and save converged', jobs => (
+      !jobs.some(job => job.filename === 'reclaimed.png')
+      && jobs.length === 49
+      && !jobs.some(job => job.id === 'foreign-wedge-0')
+      && jobs.some(job => job.id === 'foreign-wedge-1')
+    ));
+    expect(uploadBodies.some(body => body.includes('reclaimed.png'))).toBe(true);
+    expect(uploadBodies.every(body => !body.includes('foreign-wedge'))).toBe(true);
+    await runMv3Step(context, testInfo, step, 'clear reclaimed foreign queue', async () => {
+      await worker.evaluate(async () => {
+        await chrome.storage.local.set({ 'sploot:context-menu-queue': [] });
+      });
+    });
+
     uploadMode = 'failure';
     await send({ type: E2E_SAVE, imageUrl: `${API_ORIGIN}/popup-discard.png`, filename: 'popup-discard.png' }, 'popup-discard save message');
-    await waitForQueue(worker, context, testInfo, step, 'popup discard bytes persisted', jobs => jobs.some(job => (
-      job.filename === 'popup-discard.png' && job.sourceBytes
+    // Wait for the first attempt to settle (failed upload → pending with a
+    // scheduled retry) so the terminal-state overwrite below cannot race the
+    // in-flight processing generation.
+    await waitForQueue(worker, context, testInfo, step, 'popup discard first attempt settled', jobs => jobs.some(job => (
+      job.filename === 'popup-discard.png' && job.sourceBytes && job.state === 'pending' && job.attempts >= 1
     )));
     await worker.evaluate(async () => {
       const stored = await chrome.storage.local.get('sploot:context-menu-queue');
@@ -383,7 +442,9 @@ test('real unpacked MV3 lifecycle preserves bytes, owner fences, retries, and du
       await chrome.storage.local.set({ 'sploot:context-menu-queue': jobs });
     });
     await popup.reload();
-    await expect(popup.getByText('popup-discard.png')).toBeVisible();
+    // Scope to the queue strip: the persistent last-save strip may also name
+    // this file ("Retry scheduled for popup-discard.png.").
+    await expect(popup.locator('.save-strip.queue-failure').getByText('popup-discard.png')).toBeVisible();
     const discardJob = (await queue(worker)).find((job: any) => job.filename === 'popup-discard.png');
     await popup.getByRole('button', { name: 'Discard' }).click();
     await waitForQueue(worker, context, testInfo, step, 'popup discard converged', jobs => !jobs.some(job => job.id === discardJob.id));

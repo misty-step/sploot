@@ -65,6 +65,20 @@ describe('fetchImage', () => {
     expect(imageConstructor).not.toHaveBeenCalled();
   });
 
+  it('surfaces the HTTP failure in a worker without Image instead of crashing the fallback', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('unavailable', {
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { 'content-type': 'text/plain' },
+    })));
+    // MV3 service workers have no DOM: Image is not a constructor there.
+    vi.stubGlobal('Image', undefined);
+
+    const { fetchImage } = await importImageFetcher();
+
+    await expect(fetchImage('https://example.com/broken.png')).rejects.toThrow('HTTP 503');
+  });
+
   it('aborts and rejects a fetch that ignores AbortSignal', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)));

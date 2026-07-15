@@ -69,6 +69,13 @@ export async function fetchImage(url: string, signal?: AbortSignal): Promise<Blo
       throw error;
     }
 
+    // The fallback renders through an <img> element, which only exists in DOM
+    // contexts. MV3 service workers have no Image constructor — surface the
+    // real fetch failure instead of crashing on a ReferenceError.
+    if (typeof Image === 'undefined') {
+      throw error;
+    }
+
     console.warn('[ImageFetcher] Fetch failed, trying bounded fallback:', error);
     return await fetchViaImageElement(url, signal);
   }

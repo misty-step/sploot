@@ -15,6 +15,7 @@ import {
 } from '../../shared/context-menu-save-messages';
 import { getAuthAuthority, runAuthDiagnostics } from './auth-manager';
 import {
+  ContextMenuSaveQueueError,
   discardContextMenuSave,
   enqueueContextMenuSave,
   listContextMenuSaves,
@@ -120,18 +121,30 @@ export function setupContextMenu() {
         return true;
       }
 
-      void getAuthAuthority().then(owner => message.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY
-        ? retryContextMenuSave(message.jobId, owner)
-        : discardContextMenuSave(message.jobId, owner)
-      ).then(ok => {
-        if (!ok) {
-          sendResponse({ ok: false, code: 'not-found', error: 'Queue job not found.' } satisfies QueueActionResponse);
+      void getAuthAuthority().then(owner => {
+        if (!owner) {
+          // Truthful code: without a signed-in account this is an auth gap,
+          // not a missing job and not a storage failure.
+          sendResponse({
+            ok: false,
+            code: 'auth-required',
+            error: 'Sign in to Sploot to manage retained saves.',
+          } satisfies QueueActionResponse);
           return;
         }
-        sendResponse({
-          ok: true,
-          action: message.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY ? 'retry-queued' : 'discarded',
-        } satisfies QueueActionResponse);
+        return (message.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY
+          ? retryContextMenuSave(message.jobId, owner)
+          : discardContextMenuSave(message.jobId, owner)
+        ).then(ok => {
+          if (!ok) {
+            sendResponse({ ok: false, code: 'not-found', error: 'Queue job not found.' } satisfies QueueActionResponse);
+            return;
+          }
+          sendResponse({
+            ok: true,
+            action: message.type === CONTEXT_MENU_SAVE_MESSAGES.RETRY ? 'retry-queued' : 'discarded',
+          } satisfies QueueActionResponse);
+        });
       }).catch(error => {
         sendResponse(queueErrorResponse(error));
       });
@@ -168,8 +181,9 @@ function toQueueSummary(job: Awaited<ReturnType<typeof listContextMenuSaves>>[nu
 
 function queueErrorResponse(error: unknown): QueueListResponse | QueueActionResponse {
   const message = error instanceof Error ? error.message : 'Queue operation failed.';
-  const code: QueueErrorCode = error instanceof Error && 'code' in error && error.code === 'queue-full'
-    ? 'queue-error'
+  // Truthful codes: owner problems are auth gaps, never storage failures.
+  const code: QueueErrorCode = error instanceof ContextMenuSaveQueueError
+    ? (error.code === 'queue-full' ? 'queue-error' : 'auth-required')
     : 'storage-unavailable';
   return { ok: false, code, error: message };
 }

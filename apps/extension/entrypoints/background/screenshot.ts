@@ -31,6 +31,7 @@ export type ScreenshotFailureReason =
   | 'capture-failed'
   | 'invalid-capture-data'
   | 'image-preparation-failed'
+  | 'image-too-large'
   | 'queue-persistence-failed'
   | 'unexpected-failure';
 
@@ -168,7 +169,13 @@ async function captureVisibleTabImage(): Promise<{ blob: Blob; filename: string 
   }
   if (preparedImage.file.size > UPLOAD.multipartSafeSize) {
     const sizeMB = (preparedImage.file.size / 1024 / 1024).toFixed(2);
-    throw new Error(`Image too large after compression: ${sizeMB}MB`);
+    // A too-large capture is a known preparation outcome, not an unexpected
+    // failure — report it with its own stage/reason so callers can be truthful.
+    throw new ScreenshotFailure(
+      `Image too large after compression: ${sizeMB}MB`,
+      'prepare-image',
+      'image-too-large',
+    );
   }
 
   return { blob: preparedImage.file, filename: preparedImage.file.name };

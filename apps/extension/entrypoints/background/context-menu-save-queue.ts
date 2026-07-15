@@ -1,6 +1,6 @@
 import { UPLOAD } from '@sploot/common';
 import { setSaveStatus } from '../../shared/save-status';
-import { getAuthAuthority, sameAuthAuthority, type AuthAuthority } from './auth-manager';
+import { getAuthAuthority, readAuthAuthority, sameAccountAuthority, type AuthAuthority } from './auth-manager';
 import { fetchImage } from './image-fetcher';
 import { showErrorNotification } from './notifications';
 import { saveToSploot } from './save-flow';
@@ -10,6 +10,13 @@ export const CONTEXT_MENU_SAVE_ALARM_NAME = 'sploot:context-menu-save-wakeup';
 export const MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE = 50;
 export const MAX_CONTEXT_MENU_SAVE_ATTEMPTS = 5;
 export const MAX_CONTEXT_MENU_SAVE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Failed/paused saves are retained for the popup to retry or discard, but only
+ * for a bounded window after they became terminal. Without expiry, another
+ * account's invisible terminal jobs would hold global queue/byte capacity
+ * forever and permanently wedge this profile.
+ */
+export const TERMINAL_SAVE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const PROCESSING_STALE_TIMEOUT_MS = 5 * 60 * 1000;
 export const RETRY_BACKOFF_BASE_MS = 30 * 1000;
 export const RETRY_BACKOFF_MAX_MS = 6 * 60 * 60 * 1000;
@@ -35,7 +42,13 @@ export interface ContextMenuSaveJob {
   processingSettling?: boolean;
   lastError?: string;
   failedAt?: number;
-  /** Exact Clerk authority that created the durable job. Never shown in popup summaries. */
+  /** When the job was paused for an owner change; bounds terminal retention. */
+  pausedAt?: number;
+  /**
+   * Stable Clerk ACCOUNT identity that owns the durable job (the recorded
+   * sessionId is credential provenance only — ownership checks compare
+   * account identity via sameAccountAuthority). Never shown in popup summaries.
+   */
   owner?: AuthAuthority;
   /** Original bytes are persisted before the job is authoritative. */
   sourceBytes?: string;
@@ -57,14 +70,18 @@ export class ContextMenuSaveQueueError extends Error {
 let queueOperations = Promise.resolve();
 let jobMutations = Promise.resolve();
 
-class ConcurrencyGate {
+/** Exported for direct unit coverage of the admission fence. */
+export class ConcurrencyGate {
   private active = 0;
   private readonly waiters: Array<() => void> = [];
 
   constructor(private readonly limit: number) {}
 
   async run<T>(operation: () => Promise<T>): Promise<T> {
-    if (this.active >= this.limit) {
+    // Re-check after every wake: a new caller can be admitted synchronously
+    // between a release waking this waiter and the waiter resuming, so a woken
+    // waiter must never assume a free slot (that soft-over-admits the gate).
+    while (this.active >= this.limit) {
       await new Promise<void>(resolve => this.waiters.push(resolve));
     }
     this.active += 1;
@@ -168,6 +185,9 @@ function normalizeJob(job: unknown): ContextMenuSaveJob | null {
   if (typeof candidate.failedAt === 'number' && Number.isFinite(candidate.failedAt)) {
     normalized.failedAt = candidate.failedAt;
   }
+  if (typeof candidate.pausedAt === 'number' && Number.isFinite(candidate.pausedAt)) {
+    normalized.pausedAt = candidate.pausedAt;
+  }
   if (typeof candidate.sourceBytes === 'string' && typeof candidate.sourceType === 'string') {
     normalized.sourceBytes = candidate.sourceBytes;
     normalized.sourceType = candidate.sourceType;
@@ -200,7 +220,7 @@ function retainedSourceBytes(jobs: ContextMenuSaveJob[]): number {
   return jobs.reduce((total, job) => total + (job.sourceBytes?.length ?? 0), 0);
 }
 
-async function blobToStoredSource(blob: Blob): Promise<Pick<ContextMenuSaveJob, 'sourceBytes' | 'sourceType' | 'sourceSha256'>> {
+async function blobToStoredSource(blob: Blob): Promise<Required<Pick<ContextMenuSaveJob, 'sourceBytes' | 'sourceType' | 'sourceSha256'>>> {
   if (blob.size <= 0 || blob.size > UPLOAD.multipartSafeSize) {
     throw new Error('Original image cannot be retained within the bounded retry storage budget.');
   }
@@ -245,6 +265,17 @@ function isTooOld(job: ContextMenuSaveJob, now: number): boolean {
   return now - job.createdAt >= MAX_CONTEXT_MENU_SAVE_AGE_MS;
 }
 
+/** Terminal (failed/paused) saves age out after the bounded retention window. */
+function isTerminalExpired(job: ContextMenuSaveJob, now: number): boolean {
+  if (job.state !== 'failed' && job.state !== 'paused') {
+    return false;
+  }
+  const terminalAt = job.state === 'failed'
+    ? (job.failedAt ?? job.createdAt)
+    : (job.pausedAt ?? job.createdAt);
+  return now - terminalAt >= TERMINAL_SAVE_RETENTION_MS;
+}
+
 function terminalFailure(job: ContextMenuSaveJob, now: number, error: string): ContextMenuSaveJob {
   return {
     ...job,
@@ -258,7 +289,7 @@ function terminalFailure(job: ContextMenuSaveJob, now: number, error: string): C
   };
 }
 
-function pauseForOwnerChange(job: ContextMenuSaveJob): ContextMenuSaveJob {
+function pauseForOwnerChange(job: ContextMenuSaveJob, now: number): ContextMenuSaveJob {
   return {
     ...job,
     state: 'paused',
@@ -267,6 +298,7 @@ function pauseForOwnerChange(job: ContextMenuSaveJob): ContextMenuSaveJob {
     processingToken: undefined,
     processingSettling: undefined,
     lastError: 'Sign in to the original Sploot account to resume this save.',
+    pausedAt: now,
   };
 }
 
@@ -414,7 +446,50 @@ async function terminalizeIfNeeded(
   return { jobs: nextJobs, job: terminal, terminalized };
 }
 
-async function processJob(job: ContextMenuSaveJob): Promise<void> {
+interface PauseSweep {
+  pauseNotified: boolean;
+}
+
+/**
+ * A transient auth failure is NOT an owner change: keep the job pending with a
+ * bounded, visible retry instead of silently pausing it.
+ */
+async function deferForTransientAuthFailure(job: ContextMenuSaveJob, message: string): Promise<void> {
+  const now = Date.now();
+  const attempts = job.attempts + 1;
+  const deferred: ContextMenuSaveJob = {
+    ...job,
+    state: 'pending',
+    attempts,
+    nextAttemptAt: now + retryDelayMs(attempts),
+    lastError: message,
+  };
+  let persisted = false;
+  await mutateJobs(async () => {
+    const latest = await readJobs();
+    const live = latest.find(candidate => candidate.id === job.id && candidate.state === 'pending');
+    if (!live) {
+      return;
+    }
+    await writeJobs(latest.map(candidate => candidate.id === job.id ? deferred : candidate));
+    persisted = true;
+  });
+  if (!persisted) {
+    return;
+  }
+  const terminal = await terminalizeIfNeeded(await readJobs(), deferred, Date.now());
+  if (terminal.terminalized) {
+    return;
+  }
+  setSaveStatus({
+    state: 'retrying',
+    label: `Retry scheduled for ${deferred.filename}.`,
+    nextAttemptAt: deferred.nextAttemptAt,
+    at: Date.now(),
+  });
+}
+
+async function processJob(job: ContextMenuSaveJob, sweep: PauseSweep = { pauseNotified: false }): Promise<void> {
   const jobs = await readJobs();
   const current = jobs.find(candidate => candidate.id === job.id);
   if (!current || current.state !== 'pending') {
@@ -430,15 +505,43 @@ async function processJob(job: ContextMenuSaveJob): Promise<void> {
     return;
   }
 
-  const currentOwner = await withDeadline(
-    signal => getAuthAuthority(signal),
-    'Auth check timed out; retry scheduled.',
-  ).catch(() => null);
-  if (!sameAuthAuthority(currentOwner, current.owner)) {
+  let currentOwner: AuthAuthority | null;
+  try {
+    currentOwner = await withDeadline(
+      signal => readAuthAuthority(signal),
+      'Auth check timed out; retry scheduled.',
+    );
+  } catch (error) {
+    if (current.nextAttemptAt > Date.now()) {
+      // Not due yet; the durable alarm re-checks without burning an attempt.
+      return;
+    }
+    await deferForTransientAuthFailure(current, queueError(error).message);
+    return;
+  }
+  if (!sameAccountAuthority(currentOwner, current.owner)) {
+    let paused = false;
     await mutateJobs(async () => {
       const latest = await readJobs();
-      await writeJobs(latest.map(candidate => candidate.id === current.id ? pauseForOwnerChange(candidate) : candidate));
+      const live = latest.find(candidate => candidate.id === current.id && candidate.state === 'pending');
+      if (!live) {
+        return;
+      }
+      await writeJobs(latest.map(candidate => candidate.id === current.id ? pauseForOwnerChange(candidate, Date.now()) : candidate));
+      paused = true;
     });
+    if (paused && !sweep.pauseNotified) {
+      sweep.pauseNotified = true;
+      try {
+        // One notification per recovery pass; never name the paused files —
+        // they belong to a different account than the one signed in here.
+        showErrorNotification({
+          message: 'Sign in to the original Sploot account to resume paused saves. Open the extension popup to review them.',
+        });
+      } catch (error) {
+        console.error('[Background][ContextMenu] Pause feedback failed', error);
+      }
+    }
     return;
   }
 
@@ -595,21 +698,37 @@ async function recoverPendingSavesLocked(
 ): Promise<void> {
   const jobs = await readJobs();
   const now = Date.now();
-  const recovered = jobs.map(job => {
-    if (
-      job.state === 'processing'
-      && (trigger === 'startup' || now - (job.processingStartedAt ?? job.createdAt) >= PROCESSING_STALE_TIMEOUT_MS)
-    ) {
-      return {
-        ...job,
-        state: 'pending' as const,
-        processingStartedAt: undefined,
-        processingToken: undefined,
-        nextAttemptAt: Math.max(job.nextAttemptAt, now),
-      };
-    }
-    return job;
-  });
+  // Lenient read: adoption below is an optimization, so a transient auth
+  // failure must not fail recovery — it simply skips adoption this pass.
+  const currentAuthority = await getAuthAuthority();
+  const recovered = jobs
+    .filter(job => !isTerminalExpired(job, now))
+    .map(job => {
+      if (
+        job.state === 'processing'
+        && (trigger === 'startup' || now - (job.processingStartedAt ?? job.createdAt) >= PROCESSING_STALE_TIMEOUT_MS)
+      ) {
+        return {
+          ...job,
+          state: 'pending' as const,
+          processingStartedAt: undefined,
+          processingToken: undefined,
+          nextAttemptAt: Math.max(job.nextAttemptAt, now),
+        };
+      }
+      // Same-account adoption: a new session of the owning account resumes its
+      // paused saves — sign-out/re-auth must never orphan durable work.
+      if (job.state === 'paused' && job.owner && sameAccountAuthority(currentAuthority, job.owner)) {
+        return {
+          ...job,
+          state: 'pending' as const,
+          pausedAt: undefined,
+          lastError: undefined,
+          nextAttemptAt: Math.max(job.nextAttemptAt, now),
+        };
+      }
+      return job;
+    });
 
   if (JSON.stringify(recovered) !== JSON.stringify(jobs)) {
     await writeJobs(recovered);
@@ -623,12 +742,13 @@ async function recoverPendingSavesLocked(
   const eligible = recovered.filter(job => (
     job.state === 'pending' && (!onlyJobId || job.id === onlyJobId)
   ));
+  const sweep: PauseSweep = { pauseNotified: false };
   let nextIndex = 0;
   const worker = async () => {
     while (nextIndex < eligible.length) {
       const index = nextIndex;
       nextIndex += 1;
-      await recoveryAdmission.run(() => processJob(eligible[index]));
+      await recoveryAdmission.run(() => processJob(eligible[index], sweep));
     }
   };
   const firstWorker = worker();
@@ -649,12 +769,81 @@ export function setupContextMenuSaveQueue(): void {
   });
 }
 
+interface QueueAdmission {
+  admitted: boolean;
+  jobs: ContextMenuSaveJob[];
+  evictedCount: number;
+}
+
+/**
+ * Deterministic privacy-safe eviction order for capacity reclaim: only
+ * NON-ACTIVE jobs owned by a DIFFERENT account are candidates — terminal
+ * (failed/paused) before pending, oldest first, id as the final tiebreak.
+ * Actively processing jobs stay fenced and current-owner jobs are never
+ * evicted (the signed-in owner manages those via the popup). Evicted jobs are
+ * deleted outright — never uploaded, and their filenames/URLs never surface.
+ */
+function evictionCandidateIndex(jobs: ContextMenuSaveJob[], owner: AuthAuthority): number {
+  let best: { index: number; stateRank: number; createdAt: number; id: string } | undefined;
+  jobs.forEach((job, index) => {
+    if (job.state === 'processing' || sameAccountAuthority(job.owner ?? null, owner)) {
+      return;
+    }
+    const candidate = {
+      index,
+      stateRank: job.state === 'failed' || job.state === 'paused' ? 0 : 1,
+      createdAt: job.createdAt,
+      id: job.id,
+    };
+    if (
+      !best
+      || candidate.stateRank < best.stateRank
+      || (candidate.stateRank === best.stateRank && candidate.createdAt < best.createdAt)
+      || (candidate.stateRank === best.stateRank && candidate.createdAt === best.createdAt && candidate.id < best.id)
+    ) {
+      best = candidate;
+    }
+  });
+  return best?.index ?? -1;
+}
+
+/**
+ * Make room for a new save without ever weakening the hard job/byte bounds:
+ * drop terminal jobs past retention, then evict non-active foreign-owner jobs
+ * in the deterministic order above. If capacity is still held by the current
+ * owner's or actively processing work, admission fails closed (queue-full).
+ */
+function reclaimQueueCapacity(
+  jobs: ContextMenuSaveJob[],
+  owner: AuthAuthority,
+  incomingSourceBytes: number,
+  now: number,
+): QueueAdmission {
+  const retained = jobs.filter(job => !isTerminalExpired(job, now));
+  let evictedCount = jobs.length - retained.length;
+  const overCapacity = () => (
+    retained.length >= MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE
+    || retainedSourceBytes(retained) + incomingSourceBytes > MAX_CONTEXT_MENU_SAVE_STORAGE_BYTES
+  );
+  while (overCapacity()) {
+    const candidateIndex = evictionCandidateIndex(retained, owner);
+    if (candidateIndex < 0) {
+      return { admitted: false, jobs, evictedCount: 0 };
+    }
+    retained.splice(candidateIndex, 1);
+    evictedCount += 1;
+  }
+  return { admitted: true, jobs: retained, evictedCount };
+}
+
 /** Persist captured bytes and owner in one authoritative storage transition. */
 export function enqueueCapturedSave(blob: Blob, filename: string, imageUrl = 'captured://visible-tab'): Promise<void> {
   return withDeadline(() => blobToStoredSource(blob), 'Image preparation timed out; save was not queued.')
     .then(retained => exclusively(async () => {
+      // Throwing read: a transient auth failure surfaces as its own error
+      // instead of masquerading as "signed out".
       const owner = await withDeadline(
-        signal => getAuthAuthority(signal),
+        signal => readAuthAuthority(signal),
         'Auth check timed out; save was not queued.',
       );
       if (!owner) {
@@ -662,14 +851,20 @@ export function enqueueCapturedSave(blob: Blob, filename: string, imageUrl = 'ca
       }
 
       const jobs = await readJobs();
-      if (jobs.length >= MAX_CONTEXT_MENU_SAVE_QUEUE_SIZE) {
+      const now = Date.now();
+      const admission = reclaimQueueCapacity(jobs, owner, retained.sourceBytes.length, now);
+      if (!admission.admitted) {
         throw new ContextMenuSaveQueueError(
           'Save queue is full. Open the extension popup to retry or discard a failed save, then try again.',
           'queue-full',
         );
       }
+      if (admission.evictedCount > 0) {
+        // Count only: evicted jobs belong to other accounts and their
+        // filenames/URLs must not leak into this profile's logs.
+        console.log(`[Background][ContextMenu] Reclaimed ${admission.evictedCount} expired or inactive retained save(s) to admit a new save`);
+      }
 
-      const now = Date.now();
       const job: ContextMenuSaveJob = {
         id: crypto.randomUUID(),
         imageUrl,
@@ -681,7 +876,7 @@ export function enqueueCapturedSave(blob: Blob, filename: string, imageUrl = 'ca
         attempts: 0,
         nextAttemptAt: now,
       };
-      await writeJobs([...jobs, job]);
+      await writeJobs([...admission.jobs, job]);
       setQueuedStatus(filename);
       return job.id;
     }))
@@ -715,7 +910,7 @@ export function listContextMenuSaves(): Promise<ContextMenuSaveJob[]> {
 
 export function listContextMenuSavesForOwner(owner: AuthAuthority | null): Promise<ContextMenuSaveJob[]> {
   if (!owner) return Promise.resolve([]);
-  return readJobs().then(jobs => jobs.filter(job => sameAuthAuthority(job.owner ?? null, owner)));
+  return readJobs().then(jobs => jobs.filter(job => sameAccountAuthority(job.owner ?? null, owner)));
 }
 
 export function listFailedContextMenuSaves(): Promise<ContextMenuSaveJob[]> {
@@ -726,7 +921,7 @@ export function listFailedContextMenuSavesForOwner(owner: AuthAuthority | null):
   if (!owner) return Promise.resolve([]);
   return readJobs().then(jobs => jobs.filter(job => (
     (job.state === 'failed' || job.state === 'paused')
-    && sameAuthAuthority(job.owner ?? null, owner)
+    && sameAccountAuthority(job.owner ?? null, owner)
   )));
 }
 
@@ -739,7 +934,7 @@ export function retryContextMenuSave(jobId: string, expectedOwner?: AuthAuthorit
     }
 
     const owner = expectedOwner === undefined ? await getAuthAuthority() : expectedOwner;
-    if (!sameAuthAuthority(owner, failed.owner)) {
+    if (!sameAccountAuthority(owner, failed.owner)) {
       return false;
     }
 
@@ -769,7 +964,7 @@ export function discardContextMenuSave(jobId: string, expectedOwner?: AuthAuthor
     if (!owner || !jobs.some(job => (
       (job.state === 'failed' || job.state === 'paused')
       && job.id === jobId
-      && sameAuthAuthority(job.owner ?? null, owner)
+      && sameAccountAuthority(job.owner ?? null, owner)
     ))) {
       return false;
     }
