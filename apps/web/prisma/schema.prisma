@@ -247,3 +247,118 @@ model EmbeddingRateLease {
   @@index([expiresAt])
   @@map("embedding_rate_leases")
 }
+
+// Append-only Stripe webhook provenance and durable cancellation monitoring.
+// Alert delivery flags are operational state; event and audit rows are never
+// updated or deleted by the repository-owned adapter.
+model StripeCancellationEvent {
+  eventId              String   @id @map("event_id")
+  eventType            String   @map("event_type")
+  createdEpoch         Int      @map("created_epoch")
+  payloadDigest        String   @map("payload_digest")
+  rawBodyDigest        String   @map("raw_body_digest")
+  rawPayload           Json     @map("raw_payload")
+  rawBodyCiphertext    Bytes    @map("raw_body_ciphertext")
+  rawBodyNonce         Bytes    @map("raw_body_nonce")
+  rawBodyKeyId         String   @map("raw_body_key_id")
+  signatureHeaderDigest String  @map("signature_header_digest")
+  livemode             Boolean
+  accountId            String?  @map("account_id")
+  objectId             String   @map("object_id")
+  objectType           String   @map("object_type")
+  signatureTimestamp   Int      @map("signature_timestamp")
+  receivedAt           DateTime @default(now()) @map("received_at")
+
+  @@index([createdEpoch])
+  @@map("stripe_cancellation_events")
+}
+
+model StripeCancellationAlert {
+  alertKey       String   @id @map("alert_key")
+  windowStart    Int      @map("window_start")
+  windowSeconds  Int      @map("window_seconds")
+  count          Int
+  eventIds       Json     @map("event_ids")
+  circuitOpened  Boolean  @default(false) @map("circuit_opened")
+  pageSent       Boolean  @default(false) @map("page_sent")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("stripe_cancellation_alerts")
+}
+
+model StripeCancellationAudit {
+  id               String   @id @default(cuid())
+  eventId          String?  @map("event_id")
+  alertKey         String?  @map("alert_key")
+  action           String
+  provenanceDigest String   @map("provenance_digest")
+  details          Json
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([eventId, createdAt])
+  @@index([alertKey, createdAt])
+  @@map("stripe_cancellation_audit")
+}
+
+// Transactional outbox rows. A claimed row is fenced by its token and lease;
+// an expired claim becomes pending again without losing the stable delivery key.
+model StripeCancellationDelivery {
+  deliveryKey   String    @id @map("delivery_key")
+  alertKey      String    @map("alert_key")
+  adapter       String
+  status        String    @default("pending")
+  claimToken    String?   @map("claim_token")
+  leaseExpiresAt DateTime? @map("lease_expires_at")
+  attempts      Int       @default(0)
+  lastError     String?   @map("last_error")
+  deliveredAt   DateTime? @map("delivered_at")
+  nextAttemptAt  DateTime  @default(now()) @map("next_attempt_at")
+  generation     Int       @default(0)
+  deadLetteredAt DateTime? @map("dead_lettered_at")
+  replayKey      String    @unique @map("replay_key")
+  payloadDigest  String    @map("payload_digest")
+  payloadVersion String    @map("payload_version")
+  payload        Json      @map("payload")
+  payloadBytes   String    @map("payload_bytes")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@unique([alertKey, adapter])
+  @@index([alertKey, status, leaseExpiresAt])
+  @@map("stripe_cancellation_deliveries")
+}
+
+model StripeCancellationMaintenance {
+  id                   String   @id
+  actor                String
+  reason               String
+  rangeStart           DateTime? @map("range_start")
+  rangeEnd             DateTime? @map("range_end")
+  purgedCount          Int      @map("purged_count")
+  purgedDigest         String   @map("purged_digest")
+  previousRecordDigest String?  @map("previous_record_digest")
+  recordDigest         String   @map("record_digest")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("stripe_cancellation_maintenance")
+}
+
+model StripeCancellationMaintenanceToken {
+  tokenDigest   String    @id @map("token_digest")
+  generation    Int
+  actor         String
+  purpose       String
+  subjectKind   String    @map("subject_kind")
+  subjectId     String    @map("subject_id")
+  timeBasis     String    @map("time_basis")
+  rangeStart    DateTime  @map("range_start")
+  rangeEnd      DateTime  @map("range_end")
+  legalMinimumSince DateTime @map("legal_minimum_since")
+  issuedAt      DateTime  @map("issued_at")
+  expiresAt     DateTime  @map("expires_at")
+  consumedAt    DateTime? @map("consumed_at")
+
+  @@map("stripe_cancellation_maintenance_tokens")
+}

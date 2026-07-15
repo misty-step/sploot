@@ -39,8 +39,28 @@ SPLOOT_DEPLOYMENT_COMMIT=${_self.COMMIT_HASH}
 SPLOOT_DEPLOYMENT_CHANGE_ID=
 ```
 
-`DATABASE_URL_DIRECT` is preferred for migrations; the migration helper derives
-the direct Neon endpoint from the pooled URL when it is absent.
+`DATABASE_URL_DIRECT` is preferred for migrations and the runner always fails
+closed when `DATABASE_URL` is absent. The Stripe ledger schema is inert until
+its webhook authorities are configured. Before billing is enabled, provision
+the separate Stripe bootstrap and schema-migration roles, bind
+`STRIPE_LEDGER_BOOTSTRAP_DATABASE_URL` and
+`STRIPE_LEDGER_MIGRATION_DATABASE_URL` to the singleton PRE_DEPLOY job, and set
+`STRIPE_LEDGER_BOOTSTRAP_REQUIRED=true`. With that explicit flag, the runner
+refuses to derive either privileged authority from the runtime pooled URL.
+
+The privileged Stripe ledger bootstrap is a three-phase state machine recorded
+in `sploot_bootstrap.stripe_ledger_bootstrap_state`: the transactional
+pre-bootstrap commits `preparing`, the transactional post-bootstrap commits
+`ready`, and any failure runs the existence-safe rollback which commits
+`failed`. If even the rollback fails, `migrate-deploy.mjs` writes a last-resort
+`failed` marker plus a durable failure report
+(`stripe-ledger-bootstrap-failure-report.json`, path overridable via
+`STRIPE_BOOTSTRAP_REPORT_PATH`). The single declared contract version lives in
+`apps/web/prisma/stripe-ledger-bootstrap.version`; every psql invocation of the
+pre/post scripts must pass it as the `bootstrap_version` variable (the helper
+and CI both read the file — an unset variable is a hard failure). Both fault
+paths can be rehearsed with
+`PGOPTIONS="-c sploot.stripe_bootstrap_fault=pre|post"`.
 
 `SPLOOT_DEPLOYMENT_ENV` is the deterministic runtime marker. Production and
 staging deployments must set it explicitly; missing or ambiguous markers fail

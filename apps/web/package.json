@@ -20,6 +20,7 @@
     "dev:local": "tsx scripts/dev-local.ts",
     "dev:local:down": "tsx scripts/dev-local.ts --down",
     "qa:evidence": "tsx scripts/qa-evidence.ts",
+    "stripe:recreate": "tsx scripts/stripe-recreate-subscriptions.ts",
     "auth:guard": "node scripts/check-auth-boundary.mjs",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
