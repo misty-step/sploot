@@ -8,6 +8,7 @@ import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
 import type { RouteContext } from '@/lib/with-observability';
 import { acquireEnrollmentIdentityWriterLock, enrollmentResponseForError, enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
+import { ConfiguredStorageWriter } from '@/lib/storage/object-store';
 
 async function getHandler(
   req: NextRequest,
@@ -203,17 +204,39 @@ async function deleteHandler(
 
     if (!prisma) return enrollmentUnavailableResponse();
 
+    if (permanent) {
+      const existingAsset = await prisma.asset.findFirst({ where: { id, ownerUserId: userId } });
+      if (!existingAsset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
+      const storage = new ConfiguredStorageWriter();
+      const keys = [
+        existingAsset.storageKey ? { provider: existingAsset.storageProvider, key: existingAsset.storageKey } : null,
+        existingAsset.thumbnailStorageKey ? { provider: existingAsset.storageProvider, key: existingAsset.thumbnailStorageKey } : null,
+      ].filter((entry): entry is { provider: string; key: string } => Boolean(entry));
+      const fallbackUrls = [
+        !existingAsset.storageKey ? existingAsset.blobUrl : null,
+        !existingAsset.thumbnailStorageKey ? existingAsset.thumbnailUrl : null,
+      ].filter((url): url is string => Boolean(url));
+      if (storage.deleteKey) await Promise.all(keys.map(entry => storage.deleteKey!(entry.provider, entry.key)));
+      await Promise.all(fallbackUrls.map(url => storage.deleteUrl(url)));
+
+      const permanentResult = await prisma.$transaction(async (tx) => {
+        await acquireEnrollmentIdentityWriterLock(tx, userId);
+        const lockedAsset = await tx.asset.findFirst({ where: { id, ownerUserId: userId } });
+        if (!lockedAsset) return null;
+        await tx.assetTag.deleteMany({ where: { assetId: id } });
+        await tx.assetEmbedding.deleteMany({ where: { assetId: id } });
+        await tx.asset.delete({ where: { id } });
+        return { kind: 'permanent' as const, shareSlug: lockedAsset.shareSlug };
+      });
+      if (!permanentResult) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
+      await invalidateDeletedAssetCaches(permanentResult.shareSlug);
+      return NextResponse.json({ message: 'Asset permanently deleted' });
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       await acquireEnrollmentIdentityWriterLock(tx, userId);
       const existingAsset = await tx.asset.findFirst({ where: { id, ownerUserId: userId } });
       if (!existingAsset) return null;
-
-      if (permanent) {
-        await tx.assetTag.deleteMany({ where: { assetId: id } });
-        await tx.assetEmbedding.deleteMany({ where: { assetId: id } });
-        await tx.asset.delete({ where: { id } });
-        return { kind: 'permanent' as const, shareSlug: existingAsset.shareSlug };
-      }
 
       const asset = await tx.asset.update({ where: { id }, data: { deletedAt: new Date() } });
       return { kind: 'soft' as const, shareSlug: existingAsset.shareSlug, asset };
@@ -224,12 +247,6 @@ async function deleteHandler(
     }
 
     await invalidateDeletedAssetCaches(result.shareSlug);
-
-    if (result.kind === 'permanent') {
-      return NextResponse.json({
-        message: 'Asset permanently deleted',
-      });
-    }
 
     return NextResponse.json({
       message: 'Asset soft deleted',

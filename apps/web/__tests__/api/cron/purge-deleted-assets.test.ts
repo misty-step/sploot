@@ -43,6 +43,7 @@ describe('/api/cron/purge-deleted-assets', () => {
   beforeEach(() => {
     // Set up environment
     process.env.CRON_SECRET = CRON_SECRET;
+    process.env.NEXT_PUBLIC_BLOB_BASE_URL = 'https://blob.vercel-storage.com';
     mockDatabaseAvailable = true;
 
     // Reset all mocks
@@ -204,7 +205,7 @@ describe('/api/cron/purge-deleted-assets', () => {
 
       mockPrisma.asset.findMany.mockResolvedValue(mockAssets);
 
-      // Blob deletion fails but asset purge should continue
+      // Blob deletion failure is fail-closed: the database row remains for retry
       vi.mocked(blobModule.del).mockRejectedValue(new Error('Blob not found'));
 
       // Suppress structured logging output (logError writes JSON to console.error)
@@ -214,17 +215,10 @@ describe('/api/cron/purge-deleted-assets', () => {
       const data = await response.json();
 
       expect(response.status).toBe(200);
-      expect(data.stats.purgedCount).toBe(1); // Still purged from database
-      expect(data.stats.failedCount).toBe(0); // Blob failure doesn't count as asset failure
-      expect(data.stats.blobsDeleted).toBe(0); // No blobs deleted successfully
-
-      // Database record should still be deleted
-      expect(mockPrisma.asset.delete).toHaveBeenCalledWith({ where: { id: 'asset-1' } });
-
-      // Verify error was logged via structured logging (JSON with context field)
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"context":"cron:purge-deleted-assets:blob-delete-failed"')
-      );
+      expect(data.stats.purgedCount).toBe(0);
+      expect(data.stats.failedCount).toBe(1);
+      expect(data.stats.blobsDeleted).toBe(0);
+      expect(mockPrisma.asset.delete).not.toHaveBeenCalled();
 
       consoleErrorSpy.mockRestore();
     });

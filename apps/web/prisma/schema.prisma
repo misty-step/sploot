@@ -437,3 +437,23 @@ model StorageCutoverState {
 
   @@map("storage_cutover_state")
 }
+
+
+model StorageInventoryState {
+  id                  String   @id
+  cursor              String?
+  providerFingerprint String   @map("provider_fingerprint")
+  lastError           String?  @map("last_error")
+  updatedAt           DateTime @map("updated_at")
+  @@map("storage_inventory_state")
+}
+
+model StorageInventoryFailure {
+  assetId   String   @map("asset_id")
+  kind      String
+  error     String
+  attempts  Int      @default(1)
+  updatedAt DateTime @map("updated_at")
+  @@id([assetId, kind])
+  @@map("storage_inventory_failures")
+}

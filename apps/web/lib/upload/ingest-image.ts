@@ -188,6 +188,7 @@ export async function ingestImage({
           pathname: uploadResult.mainPathname,
           thumbnailPath: uploadResult.thumbnailPathname,
           storageProvider: uploadResult.storageProvider,
+          storageConfigFingerprint: uploadResult.storageConfigFingerprint,
           storageKey: uploadResult.storageKey,
           thumbnailStorageKey: uploadResult.thumbnailStorageKey,
           storageSize: uploadResult.mainSize,

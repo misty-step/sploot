@@ -517,6 +517,7 @@ export async function findOrCreateAsset(
     storageProvider?: string;
     storageKey?: string | null;
     thumbnailStorageKey?: string | null;
+    storageConfigFingerprint?: string | null;
   }
 ): Promise<ExistingAssetMetadata> {
   if (!prisma) {
@@ -552,6 +553,7 @@ export async function findOrCreateAsset(
           ...(assetData.storageProvider ? { storageProvider: assetData.storageProvider } : {}),
           ...(assetData.storageKey !== undefined ? { storageKey: assetData.storageKey } : {}),
           ...(assetData.thumbnailStorageKey !== undefined ? { thumbnailStorageKey: assetData.thumbnailStorageKey } : {}),
+          ...(assetData.storageConfigFingerprint !== undefined ? { storageConfigFingerprint: assetData.storageConfigFingerprint } : {}),
           favorite: false,
         },
         select: {

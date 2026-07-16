@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { del as deleteBlob } from '@vercel/blob';
+import { ConfiguredStorageWriter } from '@/lib/storage/object-store';
 import { headers } from 'next/headers';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
@@ -63,6 +63,8 @@ async function getHandler(request: NextRequest) {
       );
     }
 
+    const storage = new ConfiguredStorageWriter();
+
     // Calculate cutoff date: 30 days ago
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
@@ -79,6 +81,9 @@ async function getHandler(request: NextRequest) {
         blobUrl: true,
         thumbnailUrl: true,
         pathname: true,
+        storageProvider: true,
+        storageKey: true,
+        thumbnailStorageKey: true,
         deletedAt: true,
         ownerUserId: true,
       },
@@ -106,25 +111,24 @@ async function getHandler(request: NextRequest) {
           deletedAt: asset.deletedAt,
         });
 
-        // Delete blobs from Vercel Blob storage
-        const blobUrls = [asset.blobUrl];
-        if (asset.thumbnailUrl) {
-          blobUrls.push(asset.thumbnailUrl);
-        }
-
-        for (const blobUrl of blobUrls) {
-          try {
-            await deleteBlob(blobUrl);
+        // Delete every provider replica before removing the database row.
+        const keys = [asset.storageKey, asset.thumbnailStorageKey].filter((key): key is string => Boolean(key));
+        const fallbackUrls = [
+          !asset.storageKey ? asset.blobUrl : null,
+          !asset.thumbnailStorageKey ? asset.thumbnailUrl : null,
+        ].filter((url): url is string => Boolean(url));
+        if (storage.deleteKey) {
+          await Promise.all(keys.map(async (key) => {
+            await storage.deleteKey!(asset.storageProvider, key);
             stats.blobsDeleted++;
-            logger.logInfo('cron.purge-deleted-assets.blob-deleted', {
-              assetId: asset.id,
-              blobUrl,
-            });
-          } catch (blobError) {
-            // Log but continue - blob might already be deleted
-            logger.logError('cron:purge-deleted-assets:blob-delete-failed', blobError as Error, { assetId: asset.id, blobUrl });
-          }
+            logger.logInfo('cron.purge-deleted-assets.blob-deleted', { assetId: asset.id, provider: asset.storageProvider, key });
+          }));
         }
+        await Promise.all(fallbackUrls.map(async (blobUrl) => {
+          await storage.deleteUrl(blobUrl);
+          stats.blobsDeleted++;
+          logger.logInfo('cron.purge-deleted-assets.blob-deleted', { assetId: asset.id, blobUrl });
+        }));
 
         // Delete from database (cascades to embeddings and tags via schema)
         await prisma.asset.delete({

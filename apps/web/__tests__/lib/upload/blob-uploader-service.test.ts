@@ -35,6 +35,7 @@ describe('BlobUploaderService', () => {
   };
 
   beforeEach(() => {
+    process.env.NEXT_PUBLIC_BLOB_BASE_URL = 'https://blob.store';
     uploader = new BlobUploaderService();
     vi.clearAllMocks();
 

@@ -54,4 +54,26 @@ CREATE TABLE "storage_cutover_state" (
 
 COMMENT ON COLUMN "assets"."storage_provider" IS 'Provider identity, never a credential or public URL authority';
 COMMENT ON COLUMN "assets"."storage_key" IS 'Canonical provider-neutral logical key';
+ALTER TABLE "assets" DROP CONSTRAINT IF EXISTS "assets_blob_url_format_check";
+ALTER TABLE "assets" DROP CONSTRAINT IF EXISTS "assets_thumbnail_url_format_check";
+COMMENT ON COLUMN "assets"."blob_url" IS 'Validated by provider-neutral storage configuration; always a fetchable HTTPS delivery URL';
+COMMENT ON COLUMN "assets"."thumbnail_url" IS 'Validated by provider-neutral storage configuration; always a fetchable HTTPS delivery URL';
+
+CREATE TABLE "storage_inventory_state" (
+  "id" TEXT NOT NULL,
+  "cursor" TEXT,
+  "provider_fingerprint" TEXT NOT NULL,
+  "last_error" TEXT,
+  "updated_at" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "storage_inventory_state_pkey" PRIMARY KEY ("id")
+);
+CREATE TABLE "storage_inventory_failures" (
+  "asset_id" TEXT NOT NULL,
+  "kind" TEXT NOT NULL,
+  "error" TEXT NOT NULL,
+  "attempts" INTEGER NOT NULL DEFAULT 1,
+  "updated_at" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "storage_inventory_failures_pkey" PRIMARY KEY ("asset_id", "kind")
+);
+
 COMMIT;
