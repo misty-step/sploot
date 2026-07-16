@@ -9,7 +9,9 @@ rules the endpoints enforce.
 ## Design
 
 - **One visible operation.** Settings → *Export your library* creates (or
-  resumes) the user's single active export session. Everything else — parts,
+  resumes) the user's single active export session. A manifest that reaches its terminal
+  fence is durably marked `complete` with its bounded summary before the final
+  bytes are emitted; a retry replays that summary after a process crash. Everything else — parts,
   manifest, progress, cancel — hangs off that session.
 - **Frozen snapshot.** An export covers exactly the assets that existed and
   were not deleted at `snapshotAt`. Uploads and deletions during the export

@@ -822,6 +822,20 @@ describe('GET /api/library/export/:exportId/manifest', () => {
     expect(manifest.assets[0].tags).toEqual([longTag]);
   });
 
+  it('propagates terminal bookkeeping failures instead of closing successfully', async () => {
+    seedAsset('asset-bookkeeping', USER, new Uint8Array([1, 2]));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+    row.servedParts = [0];
+    const stream = streamExportManifest({
+      row: row as any,
+      onComplete: async () => {
+        throw new Error('egress bookkeeping failed');
+      },
+    });
+    await expect(new Response(stream).text()).rejects.toThrow(/bookkeeping/i);
+  });
+
   it('fails closed when a client never drains manifest backpressure', async () => {
     seedAsset('asset-slow-manifest', USER, new Uint8Array([1, 2]));
     const created = await createExport();

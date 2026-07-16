@@ -4,6 +4,7 @@ import { acquireEnrollmentIdentityWriterLock } from '@/lib/enrollment/enrollment
 import { estimateManifestEgressBytesForExport } from './export-manifest';
 import {
   EXPORT_EGRESS_WINDOW_MS,
+  EXPORT_MAX_FAILURES_PER_PART,
   EXPORT_MANIFEST_VERSION,
   EXPORT_SCAN_PAGE_SIZE,
   EXPORT_TTL_MS,
@@ -35,7 +36,7 @@ import type { ExportZipEntry } from './export-zip';
  * the loser adopts the winner's row.
  */
 
-export type LibraryExportStatus = 'active' | 'superseded' | 'canceled';
+export type LibraryExportStatus = 'active' | 'complete' | 'superseded' | 'canceled';
 
 export interface ExportRowData {
   id: string;
@@ -53,6 +54,8 @@ export interface ExportRowData {
   manifestMetadataBytes: bigint;
   createdAt: Date;
   updatedAt: Date;
+  manifestFinalizedAt: Date | null;
+  manifestFinalizedSummary: Record<string, unknown> | null;
 }
 
 export interface LibraryExportView {
@@ -111,6 +114,9 @@ export function normalizeExportRow(row: Record<string, unknown>): ExportRowData 
     row.failures && typeof row.failures === 'object' && !Array.isArray(row.failures)
       ? (row.failures as ExportFailuresByPart)
       : {};
+  if (Object.values(failures).some((items) => !Array.isArray(items) || items.length > EXPORT_MAX_FAILURES_PER_PART)) {
+    throw new Error('library export has oversized failure metadata');
+  }
 
   return {
     id: String(row.id),
@@ -128,6 +134,8 @@ export function normalizeExportRow(row: Record<string, unknown>): ExportRowData 
     manifestMetadataBytes: BigInt((row.manifestMetadataBytes as bigint | number | undefined) ?? 0),
     createdAt: row.createdAt as Date,
     updatedAt: row.updatedAt as Date,
+    manifestFinalizedAt: (row.manifestFinalizedAt as Date | null | undefined) ?? null,
+    manifestFinalizedSummary: (row.manifestFinalizedSummary as Record<string, unknown> | null | undefined) ?? null,
   };
 }
 
@@ -386,7 +394,7 @@ export async function accessExportForDownload(
 ): Promise<ExportAccess> {
   const row = await getOwnedExport(userId, exportId);
   if (!row) return { kind: 'not_found' };
-  if (row.status !== 'active') return { kind: 'gone', code: 'export_unavailable' };
+  if (row.status !== 'active' && row.status !== 'complete') return { kind: 'gone', code: 'export_unavailable' };
   if (isExportExpired(row.expiresAt)) return { kind: 'gone', code: 'export_expired' };
   return { kind: 'ok', row };
 }
@@ -420,6 +428,7 @@ export async function reserveExportEgress(
   reserveBytes: bigint,
   now: Date = new Date(),
   database?: ExportDatabase,
+  allowComplete = false,
 ): Promise<ExportEgressAdmission> {
   const db = requireDb(database);
   const perExportAllowance = exportEgressAllowance(row.totalOriginalBytes, row.totalAssets, row.manifestMetadataBytes);
@@ -450,11 +459,18 @@ export async function reserveExportEgress(
   if (admitted.count === 1) {
     return { kind: 'reserved', reservedBytes: reserveBytes };
   }
+  if (allowComplete) {
+    const completedAdmission = await db.libraryExport.updateMany({
+      where: { id: row.id, status: 'complete', expiresAt: { gt: now }, egressBytes: { lte: ceiling - reserveBytes } },
+      data: { egressBytes: { increment: reserveBytes } },
+    });
+    if (completedAdmission.count === 1) return { kind: 'reserved', reservedBytes: reserveBytes };
+  }
 
   // Refused — classify against fresh state (informational only; the refusal
   // itself was decided atomically above).
   const fresh = await getOwnedExport(row.ownerUserId, row.id, db);
-  if (!fresh || fresh.status !== 'active' || isExportExpired(fresh.expiresAt, now)) {
+  if (!fresh || (fresh.status !== 'active' && fresh.status !== 'complete') || isExportExpired(fresh.expiresAt, now)) {
     return { kind: 'gone' };
   }
   if (fresh.egressBytes + reserveBytes > perExportAllowance) {
@@ -472,10 +488,16 @@ export async function reserveExportEgress(
 export async function refundExportEgress(exportId: string, refundBytes: bigint): Promise<void> {
   if (refundBytes <= BigInt(0)) return;
   const db = requireDb();
-  await db.libraryExport.updateMany({
+  const activeRefund = await db.libraryExport.updateMany({
     where: { id: exportId, status: 'active', expiresAt: { gt: new Date() }, egressBytes: { gte: refundBytes } },
     data: { egressBytes: { decrement: refundBytes } },
   });
+  if (activeRefund.count === 0) {
+    await db.libraryExport.updateMany({
+      where: { id: exportId, status: 'complete', expiresAt: { gt: new Date() }, egressBytes: { gte: refundBytes } },
+      data: { egressBytes: { decrement: refundBytes } },
+    });
+  }
 }
 
 /** Resolve the concrete asset entries for one part of the frozen snapshot. */
@@ -524,8 +546,11 @@ export async function recordPartOutcome(
   partIndex: number,
   failures: ExportFailure[],
 ): Promise<void> {
-  const db = requireDb();
+  const db = requirePrismaDb();
   const indexJson = JSON.stringify(partIndex);
+  if (failures.length > EXPORT_MAX_FAILURES_PER_PART) {
+    throw new Error('export part has too many failures');
+  }
   const failuresJson = JSON.stringify(failures);
   const partKey = String(partIndex);
 

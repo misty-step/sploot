@@ -69,7 +69,7 @@ async function getHandler(
     const { reserve, admission } = await prisma.$transaction(async (tx) => {
       await acquireEnrollmentIdentityWriterLock(tx, row.ownerUserId);
       const reserve = await estimateManifestEgressBytesForExport(row, tx);
-      const admission = await reserveExportEgress(row, reserve, new Date(), tx);
+      const admission = await reserveExportEgress(row, reserve, new Date(), tx, row.status === 'complete');
       return { reserve, admission };
     }, { maxWait: 120_000, timeout: 120_000 });
     if (admission.kind !== 'reserved') {
@@ -88,11 +88,7 @@ async function getHandler(
       signal: lifecycle.signal,
       onFinish: lifecycle.stop,
       onComplete: async (bytesStreamed) => {
-        try {
-          await refundExportEgress(row.id, reserve - BigInt(bytesStreamed));
-        } catch (error) {
-          logger.error('library-export:manifest-egress-failed', error);
-        }
+        await refundExportEgress(row.id, reserve - BigInt(bytesStreamed));
       },
     });
 

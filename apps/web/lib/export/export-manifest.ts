@@ -81,7 +81,7 @@ async function withManifestRead<T>(
     const current = await tx.libraryExport.findFirst({
       where: { id: row.id, ownerUserId: row.ownerUserId },
     });
-    if (!current || current.status !== 'active') {
+    if (!current || (current.status !== 'active' && current.status !== 'complete')) {
       throw new Error('export became unavailable during manifest read');
     }
     return read(tx, normalizeExportRow(current as unknown as Record<string, unknown>));
@@ -166,7 +166,8 @@ function manifestSummary(
       servedParts: row.servedParts.length,
       failedObjects: failures.length,
     },
-    failures,
+    failureCount: failures.length,
+    failures: failures.slice(0, 10_000),
     parts: row.partBoundaries.map((part) => ({
       index: part.index,
       file: partFileName(row.id, part.index, row.partBoundaries.length),
@@ -434,8 +435,11 @@ export function streamExportManifest(
         backpressureTimeoutMs,
         () => abort(),
       );
-      await withManifestRead(db, row, async (_db, finalRow) => {
-        if (!ensureOpen()) return;
+      const terminalSummary = await withManifestRead(db, row, async (tx, finalRow) => {
+        if (!ensureOpen()) return null;
+        if (finalRow.status === 'complete' && finalRow.manifestFinalizedSummary) {
+          return finalRow.manifestFinalizedSummary;
+        }
         const finalFailures = flattenFailures(finalRow.failures);
         const finalCompleteness = computeCompleteness(
           finalRow.partBoundaries.length,
@@ -453,13 +457,22 @@ export function streamExportManifest(
           manifestReasons,
           finalFailures,
         );
-        const chunk = encoder.encode('],' + JSON.stringify(summary).slice(1));
-        if (maxBytes !== undefined && BigInt(bytesStreamed + chunk.length) > maxBytes) {
-          throw new Error('export manifest would exceed its egress reservation');
-        }
-        bytesStreamed += chunk.length;
-        controller.enqueue(chunk);
+        const claimed = await tx.libraryExport.updateMany({
+          where: { id: finalRow.id, ownerUserId: finalRow.ownerUserId, status: 'active', manifestFinalizedAt: null },
+          data: { status: 'complete', manifestFinalizedAt: new Date(), manifestFinalizedSummary: summary as unknown as Prisma.InputJsonValue },
+        });
+        if (claimed.count !== 1) throw new Error('export completion fence was lost');
+        return summary;
       });
+      if (!terminalSummary) return;
+      const summaryChunk = encoder.encode('],' + JSON.stringify(terminalSummary).slice(1));
+      if (maxBytes !== undefined && BigInt(bytesStreamed + summaryChunk.length) > maxBytes) {
+        throw new Error('export manifest would exceed its egress reservation');
+      }
+      await waitForExportCapacity(() => controller.desiredSize, () => canceled, backpressureTimeoutMs);
+      if (!ensureOpen()) return;
+      bytesStreamed += summaryChunk.length;
+      controller.enqueue(summaryChunk);
 
       if (!ensureOpen()) return;
       if (onComplete) {

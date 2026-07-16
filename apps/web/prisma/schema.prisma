@@ -235,7 +235,7 @@ model AssetTag {
 model LibraryExport {
   id                 String   @id @default(cuid())
   ownerUserId        String   @map("owner_user_id")
-  status             String   @default("active") // active | superseded | canceled
+  status             String   @default("active") // active | complete | superseded | canceled
   snapshotAt         DateTime @map("snapshot_at")
   expiresAt          DateTime @map("expires_at")
   manifestVersion    String   @map("manifest_version")
@@ -247,6 +247,8 @@ model LibraryExport {
   egressBytes        BigInt   @default(0) @map("egress_bytes")
   manifestMetadataBytes BigInt @default(0) @map("manifest_metadata_bytes")
   createdAt          DateTime @default(now()) @map("created_at")
+  manifestFinalizedAt DateTime? @map("manifest_finalized_at")
+  manifestFinalizedSummary Json? @map("manifest_finalized_summary")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   owner User @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)

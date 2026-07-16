@@ -81,6 +81,9 @@ async function getHandler(
     }
 
     const row = access.row;
+    if (row.status === 'complete') {
+      return NextResponse.json({ error: 'Export part is no longer available.', code: 'export_unavailable', retryable: false }, { status: 410 });
+    }
     if (!PART_INDEX_PATTERN.test(rawIndex)) {
       return NextResponse.json({ error: 'Export part not found' }, { status: 404 });
     }
@@ -120,17 +123,11 @@ async function getHandler(
       signal: lifecycle.signal,
       onFinish: lifecycle.stop,
       onComplete: async ({ failures, bytesStreamed }) => {
-        try {
-          await recordPartOutcome(row.id, partIndex, failures);
-          // Clean completion: settle the conservative reservation down to the
-          // bytes actually streamed. If this is lost (crash, DB blip), the
-          // full charge simply stands — conservative, never unbounded.
-          await refundExportEgress(row.id, reserve - BigInt(bytesStreamed));
-        } catch (error) {
-          // The bytes were delivered; losing the bookkeeping must not break
-          // the download. The part simply stays un-served for retry.
-          logger.error('library-export:part-outcome-failed', error);
-        }
+        await recordPartOutcome(row.id, partIndex, failures);
+        // Clean completion settles the conservative reservation to actual bytes.
+        // If bookkeeping fails, this callback rejects and the reservation stays
+        // charged in full for expiry/reclaim; never report a silent success.
+        await refundExportEgress(row.id, reserve - BigInt(bytesStreamed));
       },
     });
 

@@ -803,7 +803,8 @@ gates: over-limit, delinquent, and canceled accounts export normally.
 
 #### POST /api/library/export
 
-Create the caller's export session, or return the existing active one
+Create the caller's export session, or return the existing active one. A finalized
+manifest may report `status: complete` and remains retryable for the manifest only
 (`reused: true`). Body (optional): `{"force": true}` supersedes the active
 session and snapshots fresh. At most one active session per user.
 
