@@ -409,7 +409,7 @@ export async function accessExportForDownload(
 
 export type ExportEgressAdmission =
   | { kind: 'reserved'; reservedBytes: bigint }
-  | { kind: 'refused'; code: 'export_egress_exhausted' | 'export_egress_window_exhausted' }
+  | { kind: 'refused'; code: 'export_egress_exhausted' | 'export_egress_window_exhausted' | 'export_manifest_too_large' }
   | { kind: 'gone' };
 
 /**

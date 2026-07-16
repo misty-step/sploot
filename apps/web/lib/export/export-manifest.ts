@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { acquireEnrollmentIdentityWriterLock } from '@/lib/enrollment/enrollment-policy';
 import {
   EXPORT_SCAN_PAGE_SIZE,
+  EXPORT_MANIFEST_MAX_BYTES,
   archivePathFor,
   computeCompleteness,
   flattenFailures,
@@ -203,7 +204,7 @@ function manifestAssetEntry(
 
 /** Covers small metadata changes between the admission scan and stream scan. */
 const MANIFEST_RESERVATION_SLACK_BYTES = 4 * 1024;
-const MANIFEST_FINALIZED_ARTIFACT_MAX_BYTES = 4 * 1024 * 1024;
+const MANIFEST_FINALIZED_ARTIFACT_MAX_BYTES = EXPORT_MANIFEST_MAX_BYTES;
 
 const manifestEncoder = new TextEncoder();
 function utf8Bytes(value: string): bigint {
@@ -482,7 +483,7 @@ export function streamExportManifest(
           all.set(summaryChunk, offset);
           artifact = new TextDecoder().decode(all);
         }
-        const canFinalize = summary.complete === true;
+        const canFinalize = summary.complete === true && artifact !== null;
         if (canFinalize) {
           const claimed = await tx.libraryExport.updateMany({
             where: { id: finalRow.id, ownerUserId: finalRow.ownerUserId, status: 'active', manifestFinalizedAt: null },
@@ -493,7 +494,10 @@ export function streamExportManifest(
         return { summary, artifact: canFinalize ? artifact : null, summaryChunk };
       });
       if (!terminalResult) return;
-      const terminalSummary = terminalResult.summary;      if (!terminalSummary) return;
+      const terminalSummary = terminalResult.summary;       if (terminalSummary.complete === true && terminalResult.artifact === null) {
+        throw new Error('export manifest exceeds the durable replay limit');
+      }
+     if (!terminalSummary) return;
       const summaryChunk = terminalResult.summaryChunk;
       if (maxBytes !== undefined && BigInt(bytesStreamed + summaryChunk.length) > maxBytes) {
         throw new Error('export manifest would exceed its egress reservation');

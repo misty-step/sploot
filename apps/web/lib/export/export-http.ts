@@ -24,12 +24,14 @@ export function exportAdmissionErrorResponse(
   return NextResponse.json(
     {
       error:
-        admission.code === 'export_egress_exhausted'
+        admission.code === 'export_manifest_too_large'
+          ? 'This manifest is too large for durable replay.'
+          : admission.code === 'export_egress_exhausted'
           ? 'This export hit its download budget. Start a new export from Settings.'
           : 'Export downloads hit the rolling 24-hour budget. Try again later — your data is never locked away.',
       code: admission.code,
       retryable: admission.code === 'export_egress_window_exhausted',
     },
-    { status: 429 },
+    { status: admission.code === 'export_manifest_too_large' ? 413 : 429 },
   );
 }

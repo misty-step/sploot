@@ -14,6 +14,9 @@ import { isValidAssetId } from '@sploot/common';
 
 export const EXPORT_MANIFEST_VERSION = '1.0';
 
+/** Maximum manifest bytes that can be durably replayed for exact retries. */
+export const EXPORT_MANIFEST_MAX_BYTES = 16 * 1024 * 1024;
+
 /** How long an export session (and its download capabilities) stays valid. */
 export const EXPORT_TTL_MS = 24 * 60 * 60 * 1000;
 

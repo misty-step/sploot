@@ -18,6 +18,7 @@ import {
   reserveExportEgress,
   monitorExportLifecycle,
 } from '@/lib/export/export-service';
+import { EXPORT_MANIFEST_MAX_BYTES } from '@/lib/export/export-policy';
 import type { RouteContext } from '@/lib/with-observability';
 import { withObservability } from '@/lib/with-observability';
 import logger from '@/lib/logger';
@@ -71,7 +72,9 @@ async function getHandler(
       const reserve = row.status === 'complete' && row.manifestFinalizedArtifact
         ? BigInt(new TextEncoder().encode(row.manifestFinalizedArtifact).byteLength)
         : await estimateManifestEgressBytesForExport(row, tx);
-      const admission = await reserveExportEgress(row, reserve, new Date(), tx, row.status === 'complete');
+      const admission = reserve > BigInt(EXPORT_MANIFEST_MAX_BYTES)
+        ? { kind: 'refused' as const, code: 'export_manifest_too_large' as const }
+        : await reserveExportEgress(row, reserve, new Date(), tx, row.status === 'complete');
       return { reserve, admission };
     }, { maxWait: 120_000, timeout: 120_000 });
     if (admission.kind !== 'reserved') {
