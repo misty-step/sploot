@@ -24,6 +24,7 @@ interface FakeExportRow {
   servedParts: number[];
   failures: Record<string, Array<{ assetId: string; archivePath: string; reason: string }>>;
   egressBytes: bigint;
+  manifestMetadataBytes: bigint;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -97,6 +98,14 @@ const fakePrisma = vi.hoisted(() => {
         state.users.has(where.id) ? { id: where.id } : null,
     },
     libraryExport: {
+      findMany: async ({ where, skip = 0, take, select }: any) => {
+        const rows = [...state.exports.values()].filter((row) => {
+          if (where.ownerUserId && row.ownerUserId !== where.ownerUserId) return false;
+          if (where.status?.not && row.status === where.status.not) return false;
+          return true;
+        }).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(skip, take ? skip + take : undefined);
+        return rows.map((row) => select ? { id: row.id } : { ...row });
+      },
       findFirst: async ({ where }: any) => {
         for (const row of state.exports.values()) {
           if (where.id && row.id !== where.id) continue;
@@ -119,6 +128,7 @@ const fakePrisma = vi.hoisted(() => {
           servedParts: [],
           failures: {},
           egressBytes: BigInt(0),
+          manifestMetadataBytes: BigInt(0),
           createdAt: new Date(),
           updatedAt: new Date(),
           ...data,
@@ -177,6 +187,7 @@ const fakePrisma = vi.hoisted(() => {
         let count = 0;
         for (const [id, row] of state.exports) {
           if (where.ownerUserId && row.ownerUserId !== where.ownerUserId) continue;
+          if (where.id?.in && !where.id.in.includes(id)) continue;
           if (where.expiresAt?.lt && !(row.expiresAt < where.expiresAt.lt)) continue;
           state.exports.delete(id);
           count += 1;
@@ -185,6 +196,7 @@ const fakePrisma = vi.hoisted(() => {
       },
     },
     asset: {
+      count: async ({ where }: any) => state.assets.filter((asset) => matchesSnapshot(asset, where)).length,
       findMany: async ({ where, orderBy, take, select }: any) => {
         void orderBy;
         const rows = state.assets
@@ -391,6 +403,25 @@ describe('POST /api/library/export', () => {
     expect(state.exports.get(first.id)!.status).toBe('superseded');
   });
 
+  it('caps retained sessions during a force-create burst', async () => {
+    seedAsset('asset-a', USER, new Uint8Array([1]));
+    await createExport();
+    for (let index = 0; index < 40; index += 1) {
+      const response = await createPost(
+        request('/api/library/export', {
+          method: 'POST',
+          body: JSON.stringify({ force: true }),
+          headers: { 'content-type': 'application/json' },
+        }),
+        ctx({}),
+      );
+      expect(response.status).toBe(201);
+    }
+    const rows = [...state.exports.values()];
+    expect(rows.filter((row) => row.status === 'active')).toHaveLength(1);
+    expect(rows.length).toBeLessThanOrEqual(32);
+  });
+
   it('creates a valid zero-part export for an empty library', async () => {
     const view = await createExport();
     expect(view.totals).toEqual({ assets: 0, originalBytes: 0 });
@@ -553,7 +584,7 @@ describe('GET /api/library/export/:exportId/parts/:partIndex', () => {
     seedAsset('asset-a', USER, new Uint8Array([1]));
     const created = await createExport();
     const row = state.exports.get(created.id)!;
-    row.egressBytes = exportEgressAllowance(row.totalOriginalBytes) + BigInt(1);
+    row.egressBytes = exportEgressAllowance(row.totalOriginalBytes, row.totalAssets, row.manifestMetadataBytes) + BigInt(1);
 
     const response = await partGet(
       request(`/api/library/export/${created.id}/parts/0`),
@@ -619,7 +650,7 @@ describe('egress bound — durable reservation admission', () => {
     seedAsset('asset-a', USER, new Uint8Array(100).fill(1));
     const created = await createExport();
     const row = state.exports.get(created.id)!;
-    const allowance = exportEgressAllowance(row.totalOriginalBytes);
+    const allowance = exportEgressAllowance(row.totalOriginalBytes, row.totalAssets, row.manifestMetadataBytes);
     const reserve = partReserve(created);
 
     // One byte past the exact fit: refused before any bytes stream.
@@ -640,7 +671,7 @@ describe('egress bound — durable reservation admission', () => {
     seedAsset('asset-a', USER, new Uint8Array(100).fill(1));
     const created = await createExport();
     const row = state.exports.get(created.id)!;
-    const allowance = exportEgressAllowance(row.totalOriginalBytes);
+    const allowance = exportEgressAllowance(row.totalOriginalBytes, row.totalAssets, row.manifestMetadataBytes);
     row.egressBytes = allowance - partReserve(created); // budget fits exactly one
 
     const [first, second] = await Promise.all([getPart(created), getPart(created)]);
@@ -656,7 +687,7 @@ describe('egress bound — durable reservation admission', () => {
     seedAsset('asset-a', USER, new Uint8Array(100).fill(1));
     const created = await createExport();
     const row = state.exports.get(created.id)!;
-    const allowance = exportEgressAllowance(row.totalOriginalBytes);
+    const allowance = exportEgressAllowance(row.totalOriginalBytes, row.totalAssets, row.manifestMetadataBytes);
     const manifestReserve = await estimateManifestEgressBytesForExport(row);
     // Headroom fits either request alone, but not both.
     row.egressBytes = allowance - partReserve(created) - manifestReserve + BigInt(1);
@@ -686,21 +717,21 @@ describe('egress bound — durable reservation admission', () => {
     // Two prior sessions in the window, each fully spent to the per-export cap.
     const first = await createExport();
     const firstRow = state.exports.get(first.id)!;
-    firstRow.egressBytes = exportEgressAllowance(firstRow.totalOriginalBytes);
+    firstRow.egressBytes = exportEgressAllowance(firstRow.totalOriginalBytes, firstRow.totalAssets, firstRow.manifestMetadataBytes);
     firstRow.status = 'superseded';
     firstRow.updatedAt = new Date();
 
     const second = await createExport();
     const secondRow = state.exports.get(second.id)!;
-    secondRow.egressBytes = exportEgressAllowance(secondRow.totalOriginalBytes);
+    secondRow.egressBytes = exportEgressAllowance(secondRow.totalOriginalBytes, secondRow.totalAssets, secondRow.manifestMetadataBytes);
     secondRow.status = 'superseded';
     secondRow.updatedAt = new Date();
 
     // Window allowance = 2 × per-export allowance: already fully consumed.
     const third = await createExport();
     expect(
-      exportEgressWindowAllowance(secondRow.totalOriginalBytes),
-    ).toBe(exportEgressAllowance(secondRow.totalOriginalBytes) * BigInt(2));
+      exportEgressWindowAllowance(secondRow.totalOriginalBytes, secondRow.totalAssets, secondRow.manifestMetadataBytes),
+    ).toBe(exportEgressAllowance(secondRow.totalOriginalBytes, secondRow.totalAssets, secondRow.manifestMetadataBytes) * BigInt(2));
 
     let response = await getPart(third);
     expect(response.status).toBe(429);
@@ -715,7 +746,7 @@ describe('egress bound — durable reservation admission', () => {
     seedAsset('asset-a', USER, new Uint8Array(100).fill(1));
     const first = await createExport();
     const firstRow = state.exports.get(first.id)!;
-    firstRow.egressBytes = exportEgressAllowance(firstRow.totalOriginalBytes) * BigInt(2);
+    firstRow.egressBytes = exportEgressAllowance(firstRow.totalOriginalBytes, firstRow.totalAssets, firstRow.manifestMetadataBytes) * BigInt(2);
     firstRow.status = 'superseded';
     // Spent long ago — outside the rolling window.
     firstRow.updatedAt = new Date(Date.now() - 25 * 60 * 60 * 1000);
@@ -786,6 +817,24 @@ describe('GET /api/library/export/:exportId/manifest', () => {
     const manifest = JSON.parse(await response.text());
     expect(manifest.tags).toEqual([{ name: longTag, color: null }]);
     expect(manifest.assets[0].tags).toEqual([longTag]);
+  });
+
+  it('reports live membership separately when a planned asset disappears', async () => {
+    seedAsset('asset-a', USER, new Uint8Array([1, 2]));
+    const created = await createExport();
+    state.exports.get(created.id)!.servedParts = [0];
+    state.assets = [];
+
+    const response = await manifestGet(
+      request('/api/library/export/' + created.id + '/manifest'),
+      ctx({ exportId: created.id }),
+    );
+    expect(response.status).toBe(200);
+    const manifest = await response.json();
+    expect(manifest.complete).toBe(false);
+    expect(manifest.incompleteReasons).toContain('snapshot_membership_changed');
+    expect(manifest.totals).toMatchObject({ assets: 0, snapshotAssets: 1 });
+    expect(manifest.assets).toEqual([]);
   });
 
   it('never claims completeness for undownloaded parts or failed objects', async () => {

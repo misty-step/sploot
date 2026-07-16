@@ -18,6 +18,8 @@ export const EXPORT_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** Byte budget per zip part. A part always contains at least one asset. */
 export const EXPORT_PART_MAX_BYTES = 256 * 1024 * 1024;
+/** Keep zip central directories and per-part admission bounded for tiny assets. */
+export const EXPORT_PART_MAX_ENTRIES = 10_000;
 
 /**
  * Egress cost bound: an export may stream at most
@@ -27,6 +29,8 @@ export const EXPORT_PART_MAX_BYTES = 256 * 1024 * 1024;
  */
 export const EXPORT_EGRESS_FACTOR = 3;
 export const EXPORT_EGRESS_SLACK_BYTES = 128 * 1024 * 1024;
+/** Metadata/framing allowance per asset, including manifest and zip retries. */
+export const EXPORT_EGRESS_METADATA_PER_ASSET_BYTES = 3_072;
 
 /**
  * Egress admission is reservation-based: a conservative, deterministic upper
@@ -85,7 +89,8 @@ export interface ExportEntrySeed {
 
 export type ExportIncompleteReason =
   | 'parts_not_fully_downloaded'
-  | 'objects_missing_or_failed';
+  | 'objects_missing_or_failed'
+  | 'snapshot_membership_changed';
 
 const MIME_EXTENSIONS: Record<string, string> = {
   'image/png': 'png',
@@ -109,6 +114,7 @@ export interface ExportPartPlanner {
 
 export function createExportPartPlanner(
   maxPartBytes: number = EXPORT_PART_MAX_BYTES,
+  maxPartEntries: number = EXPORT_PART_MAX_ENTRIES,
 ): ExportPartPlanner {
   const parts: ExportPartBoundary[] = [];
   let current: ExportPartBoundary | null = null;
@@ -118,7 +124,9 @@ export function createExportPartPlanner(
     parts,
     add(entry) {
       const startsNewPart =
-        current === null || (current.count > 0 && current.bytes + entry.size > maxPartBytes);
+        current === null ||
+        (current.count > 0 &&
+          (current.bytes + entry.size > maxPartBytes || current.count >= maxPartEntries));
 
       if (startsNewPart) {
         current = {
@@ -145,8 +153,9 @@ export function createExportPartPlanner(
 export function planExportParts(
   entries: Iterable<ExportEntrySeed>,
   maxPartBytes: number = EXPORT_PART_MAX_BYTES,
+  maxPartEntries: number = EXPORT_PART_MAX_ENTRIES,
 ): ExportPartBoundary[] {
-  const planner = createExportPartPlanner(maxPartBytes);
+  const planner = createExportPartPlanner(maxPartBytes, maxPartEntries);
   for (const entry of entries) planner.add(entry);
   return planner.parts;
 }
@@ -207,16 +216,29 @@ export function computeCompleteness(
   return { complete: reasons.length === 0, reasons };
 }
 
-export function exportEgressAllowance(totalOriginalBytes: bigint | number): bigint {
+export function exportEgressAllowance(
+  totalOriginalBytes: bigint | number,
+  totalAssets: number = 0,
+  manifestMetadataBytes: bigint | number = 0,
+): bigint {
+  const metadataBytes = BigInt(totalAssets) * BigInt(EXPORT_EGRESS_METADATA_PER_ASSET_BYTES);
   return (
-    BigInt(totalOriginalBytes) * BigInt(EXPORT_EGRESS_FACTOR) +
+    (BigInt(totalOriginalBytes) + metadataBytes + BigInt(manifestMetadataBytes)) *
+      BigInt(EXPORT_EGRESS_FACTOR) +
     BigInt(EXPORT_EGRESS_SLACK_BYTES)
   );
 }
 
 /** Rolling-window tenant allowance; see EXPORT_EGRESS_WINDOW_MS. */
-export function exportEgressWindowAllowance(totalOriginalBytes: bigint | number): bigint {
-  return exportEgressAllowance(totalOriginalBytes) * BigInt(EXPORT_EGRESS_WINDOW_FACTOR);
+export function exportEgressWindowAllowance(
+  totalOriginalBytes: bigint | number,
+  totalAssets: number = 0,
+  manifestMetadataBytes: bigint | number = 0,
+): bigint {
+  return (
+    exportEgressAllowance(totalOriginalBytes, totalAssets, manifestMetadataBytes) *
+    BigInt(EXPORT_EGRESS_WINDOW_FACTOR)
+  );
 }
 
 /**

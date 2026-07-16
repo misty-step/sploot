@@ -15,6 +15,7 @@ CREATE TABLE "library_exports" (
     "served_parts" JSONB NOT NULL DEFAULT '[]',
     "failures" JSONB NOT NULL DEFAULT '{}',
     "egress_bytes" BIGINT NOT NULL DEFAULT 0,
+    "manifest_metadata_bytes" BIGINT NOT NULL DEFAULT 0,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 

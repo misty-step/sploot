@@ -2,11 +2,9 @@
  * Provider-neutral object reader for library exports.
  *
  * The export pipeline only ever needs "open this stored object as a byte
- * stream". Keeping that behind `ExportObjectReader` means the blob provider
- * can change (see the storage-portability work on
- * `agent/sploot-blob-portability-v2`) by swapping this one function — the
- * zip/manifest/route layers never learn provider details, and no signed
- * provider URLs ever reach the client.
+ * stream". Keeping that behind ExportObjectReader means the blob provider
+ * can change by swapping this one function — the zip/manifest/route layers
+ * never learn provider details, and no signed provider URLs reach the client.
  */
 
 import { createReadStream } from 'node:fs';
@@ -25,13 +23,26 @@ export type OpenExportObjectResult =
   | { ok: true; body: ReadableStream<Uint8Array> }
   | { ok: false; reason: ExportObjectFailureReason };
 
-export type ExportObjectReader = (url: string) => Promise<OpenExportObjectResult>;
+export type ExportObjectReader = (
+  url: string,
+  signal?: AbortSignal,
+) => Promise<OpenExportObjectResult>;
+
+export const EXPORT_OBJECT_HEADER_TIMEOUT_MS = 60_000;
+export const EXPORT_OBJECT_READ_IDLE_TIMEOUT_MS = 60_000;
+export const EXPORT_OBJECT_MAX_REDIRECTS = 3;
+
+export interface ExportObjectReaderOptions {
+  headerTimeoutMs?: number;
+  readIdleTimeoutMs?: number;
+  maxRedirects?: number;
+}
 
 /**
  * Defense in depth against SSRF: stored object URLs are already constrained
- * by a database CHECK (`assets_blob_url_format_check`), but the export path
- * re-validates before fetching so a corrupted or migrated row can never
- * point this server at an internal or attacker-controlled host.
+ * by a database CHECK, but the export path re-validates every redirect hop so
+ * a corrupted or migrated row can never point this server at an internal or
+ * attacker-controlled host.
  */
 const ALLOWED_OBJECT_HOST = /^[a-z0-9-]+\.public\.blob\.vercel-storage\.com$/;
 
@@ -45,59 +56,164 @@ export function isAllowedExportObjectUrl(rawUrl: string): boolean {
   return url.protocol === 'https:' && ALLOWED_OBJECT_HOST.test(url.hostname);
 }
 
-/**
- * QA-only mapping mirroring `lib/qa/qa-image-loader.ts`: seed rows point at
- * the reserved QA_SEED_BLOB_HOST while their bytes live in `public/`. Active
- * only when qa-local auth mode is on (never in production); path-traversal
- * guarded. Returns null on every non-QA path.
- */
+/** QA-only mapping onto public/; active only in qa-local mode and path guarded. */
 export function resolveQaSeedObjectPath(
   url: string,
   env: Record<string, string | undefined> = process.env,
 ): string | null {
   if (env.NODE_ENV === 'production' || !isQaLocalAuthEnabled(env)) return null;
-  if (!url.startsWith(`${QA_SEED_BLOB_HOST}/`)) return null;
-  const relativePath = url.slice(`${QA_SEED_BLOB_HOST}/`.length);
+  const qaPrefix = QA_SEED_BLOB_HOST + '/';
+  if (!url.startsWith(qaPrefix)) return null;
+  const relativePath = url.slice(qaPrefix.length);
   const root = resolve(process.cwd(), 'public');
   const full = resolve(root, relativePath);
-  if (!full.startsWith(`${root}${sep}`)) return null;
+  if (!full.startsWith(root + sep)) return null;
   return full;
 }
 
-export const openExportObject: ExportObjectReader = async (url) => {
-  if (!isAllowedExportObjectUrl(url)) {
-    return { ok: false, reason: 'object_url_rejected' };
-  }
+function cancelBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
+  if (!body) return Promise.resolve();
+  return body.cancel().catch(() => undefined);
+}
 
-  const qaSeedPath = resolveQaSeedObjectPath(url);
-  if (qaSeedPath) {
-    try {
-      await stat(qaSeedPath);
-    } catch {
-      return { ok: false, reason: 'object_missing' };
-    }
-    return {
-      ok: true,
-      body: Readable.toWeb(createReadStream(qaSeedPath)) as ReadableStream<Uint8Array>,
-    };
-  }
+function linkAbortSignal(external: AbortSignal | undefined, controller: AbortController): () => void {
+  if (!external) return () => undefined;
+  const abort = () => controller.abort(external.reason);
+  if (external.aborted) abort();
+  else external.addEventListener('abort', abort, { once: true });
+  return () => external.removeEventListener('abort', abort);
+}
 
-  let response: Response;
+function readWithIdleTimeout<T>(
+  read: Promise<T>,
+  timeoutMs: number,
+  onTimeout: () => void,
+): Promise<T> {
+  return new Promise<T>((resolveRead, rejectRead) => {
+    const timer = setTimeout(() => {
+      onTimeout();
+      rejectRead(new Error('export object provider read timed out'));
+    }, timeoutMs);
+    read.then(
+      (value) => {
+        clearTimeout(timer);
+        resolveRead(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        rejectRead(error);
+      },
+    );
+  });
+}
+
+/** Wrap a provider body so idle timeout covers only provider reads, never client backpressure. */
+function streamProviderBody(
+  body: ReadableStream<Uint8Array>,
+  controller: AbortController,
+  readIdleTimeoutMs: number,
+): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  return new ReadableStream<Uint8Array>({
+    async pull(streamController) {
+      try {
+        const result = await readWithIdleTimeout(
+          reader.read(),
+          readIdleTimeoutMs,
+          () => controller.abort(),
+        );
+        if (result.done) streamController.close();
+        else if (result.value) streamController.enqueue(result.value);
+      } catch (error) {
+        controller.abort();
+        await reader.cancel().catch(() => undefined);
+        streamController.error(error);
+      }
+    },
+    async cancel(reason) {
+      controller.abort(reason);
+      await reader.cancel(reason).catch(() => undefined);
+    },
+  });
+}
+
+async function fetchHeaders(
+  url: string,
+  controller: AbortController,
+  timeoutMs: number,
+): Promise<Response> {
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    response = await fetch(url, {
-      // Bounded: a stalled provider must not pin the part stream forever.
-      signal: AbortSignal.timeout(60_000),
-    });
-  } catch {
-    return { ok: false, reason: 'object_fetch_failed' };
+    return await fetch(url, { redirect: 'manual', signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
   }
+}
 
-  if (response.status === 404 || response.status === 410) {
-    return { ok: false, reason: 'object_missing' };
-  }
-  if (!response.ok || !response.body) {
-    return { ok: false, reason: 'object_fetch_failed' };
-  }
+export function createExportObjectReader(
+  options: ExportObjectReaderOptions = {},
+): ExportObjectReader {
+  const headerTimeoutMs = options.headerTimeoutMs ?? EXPORT_OBJECT_HEADER_TIMEOUT_MS;
+  const readIdleTimeoutMs = options.readIdleTimeoutMs ?? EXPORT_OBJECT_READ_IDLE_TIMEOUT_MS;
+  const maxRedirects = options.maxRedirects ?? EXPORT_OBJECT_MAX_REDIRECTS;
 
-  return { ok: true, body: response.body };
-};
+  return async (url, externalSignal) => {
+    if (!isAllowedExportObjectUrl(url)) {
+      return { ok: false, reason: 'object_url_rejected' };
+    }
+
+    const controller = new AbortController();
+    const unlinkAbort = linkAbortSignal(externalSignal, controller);
+    let currentUrl = url;
+    let redirects = 0;
+
+    try {
+      for (;;) {
+        if (controller.signal.aborted) return { ok: false, reason: 'object_fetch_failed' };
+        let response: Response;
+        try {
+          response = await fetchHeaders(currentUrl, controller, headerTimeoutMs);
+        } catch {
+          return { ok: false, reason: 'object_fetch_failed' };
+        }
+
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get('location');
+          await cancelBody(response.body);
+          if (!location) return { ok: false, reason: 'object_fetch_failed' };
+          if (redirects >= maxRedirects) return { ok: false, reason: 'object_fetch_failed' };
+          let nextUrl: string;
+          try {
+            nextUrl = new URL(location, currentUrl).toString();
+          } catch {
+            return { ok: false, reason: 'object_url_rejected' };
+          }
+          if (!isAllowedExportObjectUrl(nextUrl)) {
+            return { ok: false, reason: 'object_url_rejected' };
+          }
+          currentUrl = nextUrl;
+          redirects += 1;
+          continue;
+        }
+
+        if (response.status === 404 || response.status === 410) {
+          await cancelBody(response.body);
+          return { ok: false, reason: 'object_missing' };
+        }
+        if (!response.ok || !response.body) {
+          await cancelBody(response.body);
+          return { ok: false, reason: 'object_fetch_failed' };
+        }
+
+        return {
+          ok: true,
+          body: streamProviderBody(response.body, controller, readIdleTimeoutMs),
+        };
+      }
+    } finally {
+      unlinkAbort();
+    }
+  };
+}
+
+export const openExportObject: ExportObjectReader = createExportObjectReader();

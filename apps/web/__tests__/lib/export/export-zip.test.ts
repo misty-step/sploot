@@ -187,6 +187,27 @@ describe('streamExportPartZip', () => {
     expect(new Uint8Array(unzipSync(zipBytes)['assets/asset1.png'])).toEqual(a);
   });
 
+  it('cancels the provider reader when the downstream zip is canceled', async () => {
+    let canceled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise(() => undefined);
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+    const stream = streamExportPartZip({
+      entries: [entry('slow', new Uint8Array([1]))],
+      reader: async () => ({ ok: true as const, body }),
+      maxBytes: BigInt(64 * 1024),
+    });
+    const downstream = stream.getReader();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await downstream.cancel();
+    expect(canceled).toBe(true);
+  });
+
   it('produces an empty-but-valid zip when every object is unavailable', async () => {
     const only = entry('gone', new Uint8Array([1]));
     const reader = readerFor({ [only.url]: 'error' });

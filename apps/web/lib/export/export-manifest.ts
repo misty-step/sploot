@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import {
   EXPORT_SCAN_PAGE_SIZE,
@@ -51,7 +52,10 @@ interface ManifestAssetTagRow {
   tag: { name: string };
 }
 
-function requireDb(): NonNullable<typeof prisma> {
+type ManifestDatabase = NonNullable<typeof prisma> | Prisma.TransactionClient;
+
+function requireDb(database?: ManifestDatabase): ManifestDatabase {
+  if (database) return database;
   if (!prisma) {
     throw new Error('library export requires a configured database');
   }
@@ -60,6 +64,7 @@ function requireDb(): NonNullable<typeof prisma> {
 
 function manifestHead(
   row: ExportRowData,
+  liveAssets: number,
   complete: boolean,
   reasons: string[],
   failures: ReturnType<typeof flattenFailures>,
@@ -75,7 +80,8 @@ function manifestHead(
     complete,
     incompleteReasons: reasons,
     totals: {
-      assets: row.totalAssets,
+      assets: liveAssets,
+      snapshotAssets: row.totalAssets,
       originalBytes: Number(row.totalOriginalBytes),
       parts: row.partBoundaries.length,
       servedParts: row.servedParts.length,
@@ -128,26 +134,40 @@ function utf8Bytes(value: string): bigint {
  * manifest in memory. Tag names are user-controlled and have no length cap,
  * so a fixed per-asset estimate cannot safely bound this response.
  */
-export async function estimateManifestEgressBytesForExport(row: ExportRowData): Promise<bigint> {
-  const db = requireDb();
+export async function estimateManifestEgressBytesForExport(
+  row: ExportRowData,
+  database?: ManifestDatabase,
+): Promise<bigint> {
+  const db = requireDb(database);
   const { complete, reasons } = computeCompleteness(
     row.partBoundaries.length,
     row.servedParts,
     row.failures,
   );
   const failures = flattenFailures(row.failures);
-  const head = manifestHead(row, complete, reasons, failures);
+  const liveAssets = await db.asset.count({
+    where: snapshotAssetWhere(row.ownerUserId, row.snapshotAt),
+  });
+  const manifestComplete = complete && liveAssets >= row.totalAssets;
+  const manifestReasons = liveAssets < row.totalAssets
+    ? [...reasons, 'snapshot_membership_changed' as const]
+    : reasons;
+  const head = manifestHead(row, liveAssets, manifestComplete, manifestReasons, failures);
   const headJson = JSON.stringify(head);
   let bytes = utf8Bytes(headJson.slice(0, -1) + ',"tags":[');
   let emittedTag = false;
   let tagCursor: string | null = null;
 
   for (;;) {
+    const tagScope = {
+      ownerUserId: row.ownerUserId,
+      assets: { some: { asset: snapshotAssetWhere(row.ownerUserId, row.snapshotAt) } },
+    };
     const page: ManifestTagRow[] = await db.tag.findMany({
       where:
         tagCursor === null
-          ? { ownerUserId: row.ownerUserId }
-          : { ownerUserId: row.ownerUserId, name: { gt: tagCursor } },
+          ? tagScope
+          : { ...tagScope, name: { gt: tagCursor } },
       orderBy: { name: 'asc' },
       take: EXPORT_SCAN_PAGE_SIZE,
       select: { name: true, color: true },
@@ -253,7 +273,14 @@ export function streamExportManifest(
         row.failures,
       );
       const failures = flattenFailures(row.failures);
-      const head = manifestHead(row, complete, reasons, failures);
+      const liveAssets = await db.asset.count({
+        where: snapshotAssetWhere(row.ownerUserId, row.snapshotAt),
+      });
+      const manifestComplete = complete && liveAssets >= row.totalAssets;
+      const manifestReasons = liveAssets < row.totalAssets
+        ? [...reasons, 'snapshot_membership_changed' as const]
+        : reasons;
+      const head = manifestHead(row, liveAssets, manifestComplete, manifestReasons, failures);
       const headJson = JSON.stringify(head);
       // Open the tags array by splicing into the serialized head object.
       emit(headJson.slice(0, -1) + ',"tags":[');
@@ -262,11 +289,15 @@ export function streamExportManifest(
       let tagCursor: string | null = null;
       for (;;) {
         if (canceled) return;
+        const tagScope = {
+          ownerUserId: row.ownerUserId,
+          assets: { some: { asset: snapshotAssetWhere(row.ownerUserId, row.snapshotAt) } },
+        };
         const page: ManifestTagRow[] = await db.tag.findMany({
           where:
             tagCursor === null
-              ? { ownerUserId: row.ownerUserId }
-              : { ownerUserId: row.ownerUserId, name: { gt: tagCursor } },
+              ? tagScope
+              : { ...tagScope, name: { gt: tagCursor } },
           orderBy: { name: 'asc' },
           take: EXPORT_SCAN_PAGE_SIZE,
           select: { name: true, color: true },

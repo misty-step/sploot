@@ -1,5 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
+import { acquireEnrollmentIdentityWriterLock } from '@/lib/enrollment/enrollment-policy';
+import { estimateManifestEgressBytesForExport } from './export-manifest';
 import {
   EXPORT_EGRESS_WINDOW_MS,
   EXPORT_MANIFEST_VERSION,
@@ -47,6 +49,7 @@ export interface ExportRowData {
   servedParts: number[];
   failures: ExportFailuresByPart;
   egressBytes: bigint;
+  manifestMetadataBytes: bigint;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -70,12 +73,19 @@ export interface LibraryExportView {
 
 /** How long finished (superseded/canceled/expired) rows linger for debugging. */
 const EXPORT_ROW_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+/** Active plus bounded inactive history; force-create cannot grow rows forever. */
+const EXPORT_MAX_RETAINED_ROWS_PER_USER = 32;
 
-function requireDb(): NonNullable<typeof prisma> {
-  if (!prisma) {
-    throw new Error('library export requires a configured database');
-  }
+type ExportDatabase = NonNullable<typeof prisma> | Prisma.TransactionClient;
+
+function requirePrismaDb(): NonNullable<typeof prisma> {
+  if (!prisma) throw new Error('library export requires a configured database');
   return prisma;
+}
+
+function requireDb(database?: ExportDatabase): ExportDatabase {
+  if (database) return database;
+  return requirePrismaDb();
 }
 
 // Prisma returns Json columns as unknown; normalize defensively so a
@@ -105,6 +115,7 @@ export function normalizeExportRow(row: Record<string, unknown>): ExportRowData 
     servedParts,
     failures,
     egressBytes: BigInt(row.egressBytes as bigint | number),
+    manifestMetadataBytes: BigInt((row.manifestMetadataBytes as bigint | number | undefined) ?? 0),
     createdAt: row.createdAt as Date,
     updatedAt: row.updatedAt as Date,
   };
@@ -145,8 +156,8 @@ export function toExportView(row: ExportRowData, now: Date = new Date()): Librar
     incompleteReasons: reasons,
     egress: {
       usedBytes: Number(row.egressBytes),
-      allowanceBytes: Number(exportEgressAllowance(row.totalOriginalBytes)),
-      windowAllowanceBytes: Number(exportEgressWindowAllowance(row.totalOriginalBytes)),
+      allowanceBytes: Number(exportEgressAllowance(row.totalOriginalBytes, row.totalAssets, row.manifestMetadataBytes)),
+      windowAllowanceBytes: Number(exportEgressWindowAllowance(row.totalOriginalBytes, row.totalAssets, row.manifestMetadataBytes)),
     },
     downloads: {
       status: base,
@@ -157,10 +168,10 @@ export function toExportView(row: ExportRowData, now: Date = new Date()): Librar
 }
 
 async function planSnapshot(
+  db: ExportDatabase,
   userId: string,
   snapshotAt: Date,
 ): Promise<{ boundaries: ExportPartBoundary[]; totalAssets: number; totalOriginalBytes: bigint }> {
-  const db = requireDb();
   const where = snapshotAssetWhere(userId, snapshotAt);
   const planner = createExportPartPlanner();
   const boundaries = planner.parts;
@@ -191,7 +202,7 @@ export async function createOrReuseExport(
   userId: string,
   options: { force?: boolean } = {},
 ): Promise<{ export: LibraryExportView; reused: boolean }> {
-  const db = requireDb();
+  const db = requirePrismaDb();
   const now = new Date();
 
   const active = await db.libraryExport.findFirst({
@@ -201,15 +212,24 @@ export async function createOrReuseExport(
     return { export: toExportView(normalizeExportRow(active)), reused: true };
   }
 
-  const snapshotAt = now;
-  const { boundaries, totalAssets, totalOriginalBytes } = await planSnapshot(
-    userId,
-    snapshotAt,
-  );
-
   try {
-    const created = await db.$transaction(async (tx) => {
-      // Lazy retention cleanup: finished rows are metadata-only; drop the stale ones.
+    const result = await db.$transaction(async (tx) => {
+      await acquireEnrollmentIdentityWriterLock(tx, userId);
+      const lockedActive = await tx.libraryExport.findFirst({
+        where: { ownerUserId: userId, status: 'active' },
+      });
+      if (lockedActive && !options.force && !isExportExpired(lockedActive.expiresAt as Date, now)) {
+        return { row: lockedActive, reused: true };
+      }
+
+      // Keep planning and active-row creation under the same identity lock as
+      // permanent asset deletion. Never hold this transaction across streaming.
+      const snapshotAt = new Date();
+      const { boundaries, totalAssets, totalOriginalBytes } = await planSnapshot(
+        tx,
+        userId,
+        snapshotAt,
+      );
       await tx.libraryExport.deleteMany({
         where: {
           ownerUserId: userId,
@@ -220,31 +240,53 @@ export async function createOrReuseExport(
         where: { ownerUserId: userId, status: 'active' },
         data: { status: 'superseded' },
       });
-      return tx.libraryExport.create({
+      const inactiveToDelete = await tx.libraryExport.findMany({
+        where: { ownerUserId: userId, status: { not: 'active' } },
+        orderBy: { updatedAt: 'desc' },
+        skip: EXPORT_MAX_RETAINED_ROWS_PER_USER - 1,
+        select: { id: true },
+      });
+      if (inactiveToDelete.length > 0) {
+        await tx.libraryExport.deleteMany({
+          where: { id: { in: inactiveToDelete.map((row) => row.id) } },
+        });
+      }
+      const row = await tx.libraryExport.create({
         data: {
           ownerUserId: userId,
           status: 'active',
           snapshotAt,
-          expiresAt: new Date(now.getTime() + EXPORT_TTL_MS),
+          expiresAt: new Date(snapshotAt.getTime() + EXPORT_TTL_MS),
           manifestVersion: EXPORT_MANIFEST_VERSION,
           totalAssets,
           totalOriginalBytes,
+          manifestMetadataBytes: BigInt(0),
           partBoundaries: boundaries as unknown as Prisma.InputJsonValue,
           servedParts: [] as unknown as Prisma.InputJsonValue,
           failures: {} as unknown as Prisma.InputJsonValue,
         },
       });
+      const manifestMetadataBytes = await estimateManifestEgressBytesForExport(
+        normalizeExportRow(row),
+        tx,
+      );
+      await tx.libraryExport.updateMany({
+        where: { id: row.id },
+        data: { manifestMetadataBytes },
+      });
+      const finalized = await tx.libraryExport.findFirst({ where: { id: row.id } });
+      return { row: finalized ?? row, reused: false };
     });
-    return { export: toExportView(normalizeExportRow(created)), reused: false };
+    return {
+      export: toExportView(normalizeExportRow(result.row)),
+      reused: result.reused,
+    };
   } catch (error: unknown) {
-    // Partial unique index: a concurrent create won. Adopt its export.
     if ((error as { code?: string })?.code === 'P2002') {
       const winner = await db.libraryExport.findFirst({
         where: { ownerUserId: userId, status: 'active' },
       });
-      if (winner) {
-        return { export: toExportView(normalizeExportRow(winner)), reused: true };
-      }
+      if (winner) return { export: toExportView(normalizeExportRow(winner)), reused: true };
     }
     throw error;
   }
@@ -258,8 +300,12 @@ export async function getActiveExport(userId: string): Promise<LibraryExportView
   return row ? toExportView(normalizeExportRow(row)) : null;
 }
 
-export async function getOwnedExport(userId: string, exportId: string): Promise<ExportRowData | null> {
-  const db = requireDb();
+export async function getOwnedExport(
+  userId: string,
+  exportId: string,
+  database?: ExportDatabase,
+): Promise<ExportRowData | null> {
+  const db = requireDb(database);
   const row = await db.libraryExport.findFirst({
     where: { id: exportId, ownerUserId: userId },
   });
@@ -320,10 +366,11 @@ export async function reserveExportEgress(
   row: ExportRowData,
   reserveBytes: bigint,
   now: Date = new Date(),
+  database?: ExportDatabase,
 ): Promise<ExportEgressAdmission> {
-  const db = requireDb();
-  const perExportAllowance = exportEgressAllowance(row.totalOriginalBytes);
-  const windowAllowance = exportEgressWindowAllowance(row.totalOriginalBytes);
+  const db = requireDb(database);
+  const perExportAllowance = exportEgressAllowance(row.totalOriginalBytes, row.totalAssets, row.manifestMetadataBytes);
+  const windowAllowance = exportEgressWindowAllowance(row.totalOriginalBytes, row.totalAssets, row.manifestMetadataBytes);
   const windowStart = new Date(now.getTime() - EXPORT_EGRESS_WINDOW_MS);
 
   const others = await db.libraryExport.aggregate({
@@ -353,7 +400,7 @@ export async function reserveExportEgress(
 
   // Refused — classify against fresh state (informational only; the refusal
   // itself was decided atomically above).
-  const fresh = await getOwnedExport(row.ownerUserId, row.id);
+  const fresh = await getOwnedExport(row.ownerUserId, row.id, db);
   if (!fresh || fresh.status !== 'active' || isExportExpired(fresh.expiresAt, now)) {
     return { kind: 'gone' };
   }
@@ -382,8 +429,9 @@ export async function refundExportEgress(exportId: string, refundBytes: bigint):
 export async function entriesForPart(
   row: ExportRowData,
   partIndex: number,
+  database?: ExportDatabase,
 ): Promise<ExportZipEntry[]> {
-  const db = requireDb();
+  const db = requireDb(database);
   const boundary = row.partBoundaries[partIndex];
   if (!boundary) {
     throw new Error(`export ${row.id} has no part ${partIndex}`);

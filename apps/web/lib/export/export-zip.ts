@@ -54,6 +54,8 @@ function sleep(ms: number): Promise<void> {
 export function streamExportPartZip(options: StreamExportPartZipOptions): ReadableStream<Uint8Array> {
   const { entries, reader, maxBytes, onComplete } = options;
   let canceled = false;
+  let activeRequestController: AbortController | null = null;
+  let activeObjectReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
   async function run(controller: ReadableStreamDefaultController<Uint8Array>): Promise<void> {
     const failures: ExportFailure[] = [];
@@ -89,7 +91,14 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
       for (const entry of entries) {
         if (canceled) return;
 
-        const opened = await reader(entry.url);
+        const requestController = new AbortController();
+        activeRequestController = requestController;
+        const opened = await reader(entry.url, requestController.signal);
+        activeRequestController = null;
+        if (canceled) {
+          if (opened.ok) await opened.body.cancel();
+          return;
+        }
         if (!opened.ok) {
           failures.push({
             assetId: entry.assetId,
@@ -104,6 +113,7 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
 
         const hash = createHash('sha256');
         const objectReader = opened.body.getReader();
+        activeObjectReader = objectReader;
         try {
           for (;;) {
             if (canceled) return;
@@ -116,6 +126,8 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
             if (zipError) throw zipError;
           }
         } finally {
+          activeObjectReader = null;
+          await objectReader.cancel().catch(() => undefined);
           objectReader.releaseLock();
         }
 
@@ -150,8 +162,10 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
     start(controller) {
       void run(controller);
     },
-    cancel() {
+    async cancel() {
       canceled = true;
+      activeRequestController?.abort();
+      await activeObjectReader?.cancel().catch(() => undefined);
     },
   });
 }

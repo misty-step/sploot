@@ -5,7 +5,10 @@ import {
   type AuthenticatedApiContext,
 } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
-import { enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
+import {
+  acquireEnrollmentIdentityWriterLock,
+  enrollmentUnavailableResponse,
+} from '@/lib/enrollment/enrollment-policy';
 import { exportAdmissionErrorResponse } from '@/lib/export/export-http';
 import { openExportObject } from '@/lib/export/export-objects';
 import { estimatePartEgressBytes, partFileName } from '@/lib/export/export-policy';
@@ -85,15 +88,24 @@ async function getHandler(
       return NextResponse.json({ error: 'Export part not found' }, { status: 404 });
     }
 
-    // Durable pre-stream admission: no response bytes exist unless the whole
-    // part's conservative reservation fits the budget right now.
+    // Serialize admission with permanent deletion. The transaction ends before
+    // any network streaming begins: it only fences snapshot membership and
+    // reserves egress, then the immutable entry list is streamed afterward.
     const reserve = estimatePartEgressBytes(row.partBoundaries[partIndex]);
-    const admission = await reserveExportEgress(row, reserve);
-    if (admission.kind !== 'reserved') {
-      return exportAdmissionErrorResponse(admission);
+    const { admission, entries } = await prisma.$transaction(async (tx) => {
+      await acquireEnrollmentIdentityWriterLock(tx, row.ownerUserId);
+      const admission = await reserveExportEgress(row, reserve, new Date(), tx);
+      if (admission.kind !== 'reserved') return { admission, entries: null };
+      return { admission, entries: await entriesForPart(row, partIndex, tx) };
+    });
+    if (admission.kind === 'gone') {
+      return NextResponse.json(
+        { error: 'This export is no longer available.', code: 'export_unavailable', retryable: false },
+        { status: 410 },
+      );
     }
-
-    const entries = await entriesForPart(row, partIndex);
+    if (admission.kind !== 'reserved') return exportAdmissionErrorResponse(admission);
+    if (!entries) throw new Error('reserved export part has no entries');
     const stream = streamExportPartZip({
       entries,
       reader: openExportObject,

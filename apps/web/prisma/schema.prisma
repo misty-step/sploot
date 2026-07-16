@@ -245,6 +245,7 @@ model LibraryExport {
   servedParts        Json     @default("[]") @map("served_parts") // number[]
   failures           Json     @default("{}") // {"<partIndex>": [{assetId, archivePath, reason}]}
   egressBytes        BigInt   @default(0) @map("egress_bytes")
+  manifestMetadataBytes BigInt @default(0) @map("manifest_metadata_bytes")
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 

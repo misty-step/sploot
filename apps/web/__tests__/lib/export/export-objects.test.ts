@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   isAllowedExportObjectUrl,
+  createExportObjectReader,
   openExportObject,
   resolveQaSeedObjectPath,
 } from '@/lib/export/export-objects';
@@ -55,6 +56,111 @@ describe('export object reader', () => {
       const buffer = new Uint8Array(await new Response(result.body).arrayBuffer());
       expect(buffer).toEqual(bytes);
     }
+  });
+
+  it('rejects an off-allowlist redirect without fetching the destination', async () => {
+    const fetchSpy = vi.fn(async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: 'https://evil.example/private' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const result = await openExportObject(
+      'https://abc.public.blob.vercel-storage.com/u/file.png',
+    );
+    expect(result).toEqual({ ok: false, reason: 'object_url_rejected' });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds same-host redirect hops', async () => {
+    const fetchSpy = vi.fn(async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: 'https://abc.public.blob.vercel-storage.com/u/next' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const result = await createExportObjectReader({ maxRedirects: 2 })(
+      'https://abc.public.blob.vercel-storage.com/u/file.png',
+    );
+    expect(result).toEqual({ ok: false, reason: 'object_fetch_failed' });
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('times out an idle provider read but not slow client backpressure', async () => {
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new Uint8Array([pulls]));
+        if (pulls === 2) controller.close();
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200 })));
+    const reader = createExportObjectReader({ readIdleTimeoutMs: 20 });
+    const opened = await reader('https://abc.public.blob.vercel-storage.com/u/file.png');
+    expect(opened.ok).toBe(true);
+    if (opened.ok) {
+      const streamReader = opened.body.getReader();
+      expect((await streamReader.read()).value).toEqual(new Uint8Array([1]));
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect((await streamReader.read()).value).toEqual(new Uint8Array([2]));
+      await streamReader.cancel();
+    }
+  });
+
+  it('cancels the provider body when an idle read times out', async () => {
+    let canceled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise(() => undefined);
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200 })));
+    const opened = await createExportObjectReader({ readIdleTimeoutMs: 10 })(
+      'https://abc.public.blob.vercel-storage.com/u/file.png',
+    );
+    expect(opened.ok).toBe(true);
+    if (opened.ok) {
+      await expect(opened.body.getReader().read()).rejects.toThrow('timed out');
+    }
+    expect(canceled).toBe(true);
+  });
+
+  it('aborts the provider fetch and body when downstream cancels', async () => {
+    let signal: AbortSignal | undefined;
+    let canceled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise(() => undefined);
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        signal = init.signal;
+        return new Response(body, { status: 200 });
+      }),
+    );
+    const opened = await openExportObject(
+      'https://abc.public.blob.vercel-storage.com/u/file.png',
+    );
+    expect(opened.ok).toBe(true);
+    if (opened.ok) {
+      const streamReader = opened.body.getReader();
+      await streamReader.cancel();
+    }
+    expect(signal?.aborted).toBe(true);
+    expect(canceled).toBe(true);
   });
 
   describe('resolveQaSeedObjectPath (QA seed mapping)', () => {

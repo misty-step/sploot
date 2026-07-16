@@ -4,6 +4,7 @@ import {
   EXPORT_EGRESS_WINDOW_MS,
   EXPORT_MANIFEST_VERSION,
   EXPORT_PART_MAX_BYTES,
+  EXPORT_PART_MAX_ENTRIES,
   EXPORT_PART_RESERVE_BASE_BYTES,
   EXPORT_PART_RESERVE_ENTRY_OVERHEAD_BYTES,
   EXPORT_TTL_MS,
@@ -43,6 +44,17 @@ describe('export policy', () => {
         { index: 0, afterId: null, count: 2, bytes: 90 },
         { index: 1, afterId: 'a2', count: 2, bytes: 40 },
       ]);
+    });
+
+    it('caps tiny-asset parts by entry count', () => {
+      const entries = Array.from({ length: EXPORT_PART_MAX_ENTRIES + 1 }, (_, index) => ({
+        id: `tiny-${String(index).padStart(5, '0')}`,
+        size: 1,
+      }));
+      const parts = planExportParts(entries, Number.MAX_SAFE_INTEGER);
+      expect(parts).toHaveLength(2);
+      expect(parts[0].count).toBe(EXPORT_PART_MAX_ENTRIES);
+      expect(parts[1].count).toBe(1);
     });
 
     it('gives an oversized entry its own part instead of dropping it', () => {
@@ -156,6 +168,14 @@ describe('export policy', () => {
       expect(exportEgressWindowAllowance(BigInt(1000))).toBe(
         exportEgressAllowance(BigInt(1000)) * BigInt(2),
       );
+    });
+
+    it('scales allowance by tiny-asset count so every bounded part fits', () => {
+      const totalAssets = 200_000;
+      const allowance = exportEgressAllowance(20_000_000, totalAssets);
+      const part = estimatePartEgressBytes({ index: 0, afterId: null, count: 10_000, bytes: 1_000_000 });
+      expect(part <= allowance).toBe(true);
+      expect(exportEgressWindowAllowance(20_000_000, totalAssets) >= allowance).toBe(true);
     });
 
     it('a part reservation always fits a fresh export allowance', () => {
