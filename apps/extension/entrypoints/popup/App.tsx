@@ -118,6 +118,7 @@ function E2EPopup() {
           </h1>
         </header>
         <main>
+          <UpdateNoticePanel />
           {authority ? (
             <div className="signed-in-panel">
               <p>Signed in as <strong>{authority.userId}</strong></p>
@@ -164,6 +165,49 @@ const SIGNED_OUT_COPY: Record<'checking' | 'unreachable' | 'unknown' | 'paused' 
     body: 'Use the full Sploot sign-in page, then return here to save images from the web.',
   },
 }
+
+function UpdateNoticePanel() {
+  const [notice, setNotice] = useState<UpdateNotice | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const refresh = () => {
+      void getUpdateNotice().then(next => {
+        if (!cancelled) setNotice(next && !next.dismissed ? next : null)
+      })
+    }
+    refresh()
+    const unsubscribe = onUpdateStatusChanged(refresh)
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [])
+
+  if (!notice) return null
+
+  const handleDismiss = () => {
+    void dismissUpdate(notice.version).then(() => setNotice(null))
+  }
+
+  const handleUpdate = () => {
+    void openUpdatePage()
+  }
+
+  return (
+    <section className="update-notice" role="status" aria-live="polite">
+      <div className="update-notice-copy">
+        <strong>Update available</strong>
+        <span>Sploot {notice.version} is ready.</span>
+      </div>
+      <div className="update-notice-actions">
+        <button onClick={handleUpdate}>Update</button>
+        <button className="secondary" onClick={handleDismiss} aria-label={'Dismiss Sploot update ' + notice.version}>Dismiss</button>
+      </div>
+    </section>
+  )
+}
+
 
 function SignedOutPanel() {
   const [enrollmentState, setEnrollmentState] = useState<SignedOutEnrollment>({ status: 'checking' })

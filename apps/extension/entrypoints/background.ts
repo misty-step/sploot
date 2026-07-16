@@ -3,6 +3,8 @@ import { setupContextMenu, ensureContextMenus } from './background/context-menu'
 import { setupNotificationFeedback } from './background/notifications';
 import { setupScreenshotCapture } from './background/screenshot';
 import { checkApiHealth } from '../shared/api-health';
+import { IS_DEV_BUILD } from '../shared/build-mode';
+import { UPDATE_MESSAGES, setupUpdateStatus, setInstalledVersionForTesting, setUpdateAvailableForTesting } from '../shared/update-status';
 
 export default defineBackground(() => {
   console.log('[Background] ========================================');
@@ -22,7 +24,23 @@ export default defineBackground(() => {
   console.log('[Background] Host permissions:', manifest.host_permissions);
 
   try {
-    // Fire-and-forget health check; don't block startup (Chrome requires sync main)
+    // Fire-and-forget health and update checks; neither may block startup.
+    setupUpdateStatus();
+    if (IS_DEV_BUILD) {
+      chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+        if (typeof message?.version !== 'string') return undefined;
+        if (message.type === UPDATE_MESSAGES.TEST_SET_AVAILABLE) {
+          void setUpdateAvailableForTesting(message.version).then(ok => sendResponse({ ok }));
+          return true;
+        }
+        if (message.type === UPDATE_MESSAGES.TEST_SET_INSTALLED) {
+          sendResponse({ ok: setInstalledVersionForTesting(message.version) });
+          return false;
+        }
+        return undefined;
+      });
+    }
+
     checkApiHealth().then(ok => {
       if (!ok) {
         console.warn('[Background] API is unreachable at startup; uploads may fail until API is up.');
