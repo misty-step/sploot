@@ -70,6 +70,14 @@ export async function getAuth(): Promise<AuthResult> {
  * This automatically syncs Clerk users with our database
  */
 export async function getAuthWithUser(): Promise<AuthWithUserResult> {
+  // Same public-truth short-circuit as getAuth: the signed-out artifact has
+  // no provider credentials by design, so Clerk would throw and produce a
+  // misleading 'unavailable' sync status. Protected middleware remains the
+  // security boundary and is exercised separately by the browser gate.
+  if (isCompiledPublicTruthE2EBuild()) {
+    return { userId: null, sessionId: null, getToken: async () => null, syncStatus: 'skipped' };
+  }
+
   // Same compile-time omission as getAuth: qa-local exists only in explicit
   // dev/test qa builds and is proven absent from production bundles.
   if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
