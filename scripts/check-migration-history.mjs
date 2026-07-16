@@ -77,6 +77,16 @@ export function assertMigrationHistory(rows, expected, compatibility = { approve
   let previousIndex = -1;
 
   for (const row of rows) {
+    // Prisma retains failed attempts after `migrate resolve --rolled-back`.
+    // They are audit records, not applied migrations: ignore only the canonical
+    // unfinished+rolled-back shape. A row cannot be both finished and rolled
+    // back without pausing deployment for reconciliation.
+    if (row.rolledBackAt !== null && row.rolledBackAt !== undefined) {
+      if (row.finishedAt) {
+        throw new Error(`[migration-history] migration ${row.migrationName} is both finished and rolled-back; deployment is paused`);
+      }
+      continue;
+    }
     const current = expected[row.migrationName];
     if (current) {
       if (seenNames.has(row.migrationName) || seenIdentities.has(row.migrationName)) {
@@ -92,8 +102,8 @@ export function assertMigrationHistory(rows, expected, compatibility = { approve
       if (current !== row.checksum) {
         throw new Error(`[migration-history] checksum mismatch for applied migration ${row.migrationName}; immutable history is paused`);
       }
-      if (!row.finishedAt || row.rolledBackAt !== null) {
-        throw new Error(`[migration-history] unfinished or rolled-back migration ${row.migrationName}; deployment is paused`);
+      if (!row.finishedAt) {
+        throw new Error(`[migration-history] unfinished migration ${row.migrationName}; deployment is paused`);
       }
       continue;
     }
@@ -110,8 +120,8 @@ export function assertMigrationHistory(rows, expected, compatibility = { approve
       previousIndex = index;
       seenNames.add(row.migrationName);
       seenIdentities.add(approved.replacement);
-      if (!row.finishedAt || row.rolledBackAt !== null) {
-        throw new Error(`[migration-history] unfinished or rolled-back compatibility migration ${row.migrationName}; deployment is paused`);
+      if (!row.finishedAt) {
+        throw new Error(`[migration-history] unfinished compatibility migration ${row.migrationName}; deployment is paused`);
       }
       continue;
     }
