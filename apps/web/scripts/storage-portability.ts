@@ -7,6 +7,7 @@ import { assertCutoverTransition, canonicalLogicalKey, stableDeliveryUrl, storag
 import { type MigrationManifestEntry } from '../lib/storage/migration';
 import { rollbackPrismaMigrationBatch, runPrismaMigrationBatch, seedMigrationManifest, storageMigrationReceipt } from '../lib/storage/prisma-journal';
 import { S3CompatibleObjectStore, VercelObjectStore, bodyToBuffer } from '../lib/storage/object-store';
+import { processStorageCleanup } from '../lib/storage/cleanup-outbox';
 
 const MAX_BATCH = 100;
 const INVENTORY_ID = 'legacy-assets';
@@ -140,7 +141,7 @@ async function commitCutover(manifest: MigrationManifestEntry[], config: Storage
       for (const asset of assets) {
         const thumbnail = asset.thumbnailStorageSourceKey === entry.sourceKey || asset.thumbnailStorageKey === entry.logicalKey;
         const rendition = thumbnail ? 'thumbnail' : 'original';
-        const oldKey = thumbnail ? asset.thumbnailStorageKey ?? asset.thumbnailStorageSourceKey ?? entry.sourceKey : asset.storageKey ?? asset.storageSourceKey ?? entry.sourceKey;
+        const oldKey = thumbnail ? asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey ?? entry.sourceKey : asset.storageSourceKey ?? asset.storageKey ?? entry.sourceKey;
         const oldUrl = thumbnail ? asset.thumbnailUrl : asset.blobUrl;
         const targetUrl = stableDeliveryUrl(config, entry.logicalKey);
         await tx.$executeRawUnsafe('INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, source_key, logical_key, delivery_url, size, sha256, content_type, generation, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false) ON CONFLICT DO NOTHING', randomUUID(), asset.id, rendition, asset.storageProvider, oldKey, entry.logicalKey, oldUrl, entry.size, entry.sha256, entry.contentType ?? asset.mime, generation);
@@ -172,23 +173,9 @@ async function restoreCutoverMappings(config: StorageConfig, digest: string): Pr
 
 async function cleanup(limit: number): Promise<void> {
   await requireOperatorAuthority();
-  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_BATCH) throw new Error('Cleanup batch size must be 1-' + MAX_BATCH);
-  const config = storageConfigFromEnv();
-  const storage: S3CompatibleObjectStore | VercelObjectStore = config.provider === 's3' ? new S3CompatibleObjectStore(config) : new VercelObjectStore(config.legacyBaseUrl);
-  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; provider: string; key: string; url: string }>>("SELECT id, provider, key, url FROM storage_cleanup_outbox WHERE status='pending' AND available_at <= NOW() ORDER BY created_at LIMIT $1 FOR UPDATE SKIP LOCKED", limit);
-  let failed = 0;
-  for (const row of rows) {
-    try {
-      if (row.provider === 'vercel') await (storage as VercelObjectStore).deleteUrl(row.url);
-      else await (storage as S3CompatibleObjectStore).delete(row.key);
-      await prisma.$executeRawUnsafe("UPDATE storage_cleanup_outbox SET status='done', updated_at=NOW() WHERE id=$1", row.id);
-    } catch (error) {
-      failed++;
-      await prisma.$executeRawUnsafe("UPDATE storage_cleanup_outbox SET status='pending', attempts=attempts+1, last_error=$2, available_at=NOW()+INTERVAL '1 minute', updated_at=NOW() WHERE id=$1", row.id, error instanceof Error ? error.message : String(error));
-    }
-  }
-  if (failed) throw new Error('Storage cleanup failed for ' + failed + ' item(s)');
-  process.stdout.write(JSON.stringify({ processed: rows.length, failed }) + '\n');
+  const result = await processStorageCleanup(prisma, limit);
+  process.stdout.write(JSON.stringify(result) + '\n');
+  if (result.failed) throw new Error('Storage cleanup failed for ' + result.failed + ' item(s)');
 }
 
 async function run(command: 'verify' | 'rollback', args: string[]) {

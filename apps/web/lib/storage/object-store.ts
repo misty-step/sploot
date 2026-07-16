@@ -160,22 +160,26 @@ export class PortableObjectStore {
   }
 
   async deleteUrl(url: string): Promise<void> {
-    const owned = [this.options.legacy, this.target].filter(Boolean) as ObjectStore[];
-    const owner = owned.find(provider => provider.ownsUrl?.(url));
+    const owner = [this.options.legacy, this.target].find(provider => provider?.ownsUrl?.(url));
     if (!owner?.deleteUrl) throw new Error('Storage URL is not owned by a configured provider');
-    const key = (owner as ObjectStore & { keyFromUrl?: (value: string) => string | null }).keyFromUrl?.(url);
-    if (!key) return owner.deleteUrl(url);
-    const results = await Promise.allSettled(owned.map(provider => provider === owner && provider.deleteUrl ? provider.deleteUrl(url) : provider.delete(key)));
-    const failure = results.find(result => result.status === 'rejected') as PromiseRejectedResult | undefined;
-    if (failure) throw failure.reason;
+    // A URL identifies one provider-local object. Never derive a logical key
+    // and delete the same-looking key from another provider: legacy source keys
+    // can be inventory-rewritten and may contain encoded path bytes.
+    await owner.deleteUrl(url);
+  }
+
+  async deleteReplica(replica: StorageReplica): Promise<void> {
+    const provider = [this.options.legacy, this.target].find(candidate => candidate?.provider === replica.provider);
+    if (!provider) throw new Error(`Storage provider is not configured: ${replica.provider}`);
+    if (replica.provider === this.options.legacy.provider && provider.deleteUrl) {
+      await provider.deleteUrl(replica.url);
+      return;
+    }
+    await provider.delete(replica.key);
   }
 
   async deleteReplicas(replicas: StorageReplica[]): Promise<void> {
-    const results = await Promise.allSettled(replicas.map(replica => {
-      const provider = [this.options.legacy, this.target].find(candidate => candidate?.provider === replica.provider);
-      if (!provider) throw new Error(`Storage provider is not configured: ${replica.provider}`);
-      return provider.deleteUrl ? provider.deleteUrl(replica.url) : provider.delete(replica.key);
-    }));
+    const results = await Promise.allSettled(replicas.map(replica => this.deleteReplica(replica)));
     const failure = results.find(result => result.status === 'rejected') as PromiseRejectedResult | undefined;
     if (failure) throw failure.reason;
   }
@@ -186,6 +190,7 @@ export interface StorageWriter {
   put(key: string, body: ObjectBody, metadata: ObjectMetadata): Promise<StorageWrite>;
   deleteUrl(url: string): Promise<void>;
   deleteReplicas?(replicas: StorageReplica[]): Promise<void>;
+  deleteReplica?(replica: StorageReplica): Promise<void>;
   deleteKey?(provider: string, key: string): Promise<void>;
 }
 
@@ -235,16 +240,27 @@ export class ConfiguredStorageWriter implements StorageWriter {
     return this.legacy.get(key);
   }
 
-  async deleteKey(_provider: string, key: string) {
+  async deleteKey(provider: string, key: string) {
     await this.assertRuntimeCutoverState();
-    if (this.portable) return this.portable.delete(key);
+    if (this.portable) {
+      if (provider === 'vercel') throw new Error('Provider-local Vercel deletion requires the recorded delivery URL');
+      return this.portable.deleteReplica({ provider, key, url: '' });
+    }
+    if (provider !== 'vercel') throw new Error(`Storage provider is not configured: ${provider}`);
     return this.legacy.delete(key);
+  }
+
+  async deleteReplica(replica: StorageReplica) {
+    await this.assertRuntimeCutoverState();
+    if (this.portable) return this.portable.deleteReplica(replica);
+    if (replica.provider !== 'vercel') throw new Error(`Storage provider is not configured: ${replica.provider}`);
+    return this.legacy.deleteUrl(replica.url);
   }
 
   async deleteReplicas(replicas: StorageReplica[]) {
     await this.assertRuntimeCutoverState();
     if (this.portable) return this.portable.deleteReplicas(replicas);
-    return Promise.all(replicas.map(replica => this.legacy.delete(replica.url))).then(() => undefined);
+    return Promise.all(replicas.map(replica => this.deleteReplica(replica))).then(() => undefined);
   }
 
   async deleteUrl(url: string) {
@@ -316,7 +332,26 @@ export class VercelObjectStore implements ObjectStore {
     return { key: logicalKey, url: response.url, metadata: { size: Number(response.headers.get('content-length') ?? 0), sha256: response.headers.get('x-amz-meta-sha256') ?? '', contentType: response.headers.get('content-type') ?? undefined }, body: response.body };
   }
   ownsUrl(url: string): boolean {
-    return this.keyFromUrl(url) !== null;
+    return this.ownsDeliveryUrl(url);
+  }
+
+  private ownsDeliveryUrl(url: string): boolean {
+    try {
+      // URL parsing normalizes literal/encoded dot segments, so reject those
+      // bytes in the raw input before normalization can hide traversal.
+      if (/(?:\\|%2e|%2f|%5c)/i.test(url)) return false;
+      const candidate = new URL(url);
+      const base = new URL(this.baseUrl);
+      if (candidate.protocol !== 'https:' || candidate.origin !== base.origin || candidate.search || candidate.hash || candidate.username || candidate.password) return false;
+      // Reject encoded traversal/separator bytes before passing the raw URL to
+      // the provider; encoded spaces and other ordinary pathname bytes remain valid.
+      if (/[\\]|%2e|%2f|%5c/i.test(candidate.pathname)) return false;
+      const basePath = base.pathname.replace(/\/$/, '');
+      const prefix = basePath ? `${basePath}/` : '/';
+      return candidate.pathname.startsWith(prefix) && candidate.pathname.length > prefix.length;
+    } catch {
+      return false;
+    }
   }
 
   keyFromUrl(url: string): string | null {
@@ -334,7 +369,9 @@ export class VercelObjectStore implements ObjectStore {
     }
   }
   async deleteUrl(url: string) {
-    if (!this.ownsUrl(url)) throw new Error('Storage URL is not owned by the configured Vercel provider');
+    // Deletion validates provider ownership without canonicalizing the raw URL.
+    // Legacy Blob pathname bytes may be percent-encoded or contain spaces.
+    if (!this.ownsDeliveryUrl(url)) throw new Error('Storage URL is not owned by the configured Vercel provider');
     await del(url);
   }
 
