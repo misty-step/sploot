@@ -1,9 +1,9 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { isValidMimeType, normalizeMimeType } from '@sploot/common';
 import { prisma } from '../lib/db';
-import { assertCutoverTransition, canonicalLogicalKey, storageConfigFromEnv, storageConfigFingerprint, type StorageConfig } from '../lib/storage/config';
+import { assertCutoverTransition, canonicalLogicalKey, stableDeliveryUrl, storageConfigFromEnv, storageConfigFingerprint, type StorageConfig } from '../lib/storage/config';
 import { type MigrationManifestEntry } from '../lib/storage/migration';
 import { rollbackPrismaMigrationBatch, runPrismaMigrationBatch, seedMigrationManifest, storageMigrationReceipt } from '../lib/storage/prisma-journal';
 import { S3CompatibleObjectStore, VercelObjectStore, bodyToBuffer } from '../lib/storage/object-store';
@@ -28,7 +28,7 @@ async function recordInventoryFailure(assetId: string, error: string): Promise<v
 
 
 function usage(): never {
-  console.error('Usage: storage-portability.ts inventory [--limit N] [--cursor ID] | verify --manifest FILE --receipt FILE | rollback --manifest FILE --receipt FILE');
+  console.error('Usage: storage-portability.ts inventory [--limit N] [--cursor ID] | verify --manifest FILE --receipt FILE | rollback --manifest FILE --receipt FILE | gc [--limit N]');
   process.exit(2);
 }
 
@@ -114,7 +114,7 @@ async function inventory(limit: number, cursor?: string) {
   const durableManifest = await prisma.storageMigrationEntry.findMany({ orderBy: { logicalKey: 'asc' }, select: { logicalKey: true, sourceKey: true, size: true, sha256: true, contentType: true } });
   process.stdout.write(JSON.stringify(durableManifest) + '\n');
 }
-async function ensureCutoverState(config: StorageConfig, digest: string, phase: 'dual-write' | 'rollback'): Promise<void> {
+async function ensureCutoverState(config: StorageConfig, digest: string, phase: 'dual-write' | 'target' | 'rollback'): Promise<void> {
   const fingerprint = storageConfigFingerprint(config);
   const existing = await prisma.storageCutoverState.findUnique({ where: { id: 'default' } });
   if (existing && (existing.providerFingerprint !== fingerprint || existing.manifestSha256 !== digest)) throw new Error('Storage cutover state does not match provider configuration and manifest');
@@ -128,6 +128,69 @@ async function ensureCutoverState(config: StorageConfig, digest: string, phase: 
   }
 }
 
+
+async function commitCutover(manifest: MigrationManifestEntry[], config: StorageConfig, digest: string): Promise<void> {
+  const fingerprint = storageConfigFingerprint(config);
+  await prisma.$transaction(async (tx) => {
+    const state = await tx.storageCutoverState.findUnique({ where: { id: 'default' } });
+    if (!state || state.phase !== 'dual-write' || state.providerFingerprint !== fingerprint || state.manifestSha256 !== digest) throw new Error('Cutover fence mismatch; refusing asset rebinding');
+    const generation = state.generation + 1;
+    for (const entry of manifest) {
+      const assets = await tx.asset.findMany({ where: { deletedAt: null, OR: [{ storageSourceKey: entry.sourceKey }, { thumbnailStorageSourceKey: entry.sourceKey }, { storageKey: entry.logicalKey }, { thumbnailStorageKey: entry.logicalKey }] }, select: { id: true, storageProvider: true, storageKey: true, storageSourceKey: true, blobUrl: true, thumbnailStorageKey: true, thumbnailStorageSourceKey: true, thumbnailUrl: true, mime: true } });
+      for (const asset of assets) {
+        const thumbnail = asset.thumbnailStorageSourceKey === entry.sourceKey || asset.thumbnailStorageKey === entry.logicalKey;
+        const rendition = thumbnail ? 'thumbnail' : 'original';
+        const oldKey = thumbnail ? asset.thumbnailStorageKey ?? asset.thumbnailStorageSourceKey ?? entry.sourceKey : asset.storageKey ?? asset.storageSourceKey ?? entry.sourceKey;
+        const oldUrl = thumbnail ? asset.thumbnailUrl : asset.blobUrl;
+        const targetUrl = stableDeliveryUrl(config, entry.logicalKey);
+        await tx.$executeRawUnsafe('INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, source_key, logical_key, delivery_url, size, sha256, content_type, generation, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false) ON CONFLICT DO NOTHING', randomUUID(), asset.id, rendition, asset.storageProvider, oldKey, entry.logicalKey, oldUrl, entry.size, entry.sha256, entry.contentType ?? asset.mime, generation);
+        await tx.$executeRawUnsafe('INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, source_key, logical_key, delivery_url, size, sha256, content_type, generation, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true)', randomUUID(), asset.id, rendition, config.provider, entry.sourceKey, entry.logicalKey, targetUrl, entry.size, entry.sha256, entry.contentType ?? asset.mime, generation);
+        await tx.asset.update({ where: { id: asset.id }, data: thumbnail ? { storageProvider: config.provider, thumbnailStorageKey: entry.logicalKey, thumbnailStorageSourceKey: entry.sourceKey, thumbnailUrl: targetUrl, thumbnailStorageSize: entry.size, thumbnailStorageSha256: entry.sha256, storageConfigFingerprint: fingerprint } : { storageProvider: config.provider, storageKey: entry.logicalKey, storageSourceKey: entry.sourceKey, blobUrl: targetUrl, storageSize: entry.size, storageSha256: entry.sha256, storageConfigFingerprint: fingerprint } });
+      }
+    }
+    const updated = await tx.storageCutoverState.updateMany({ where: { id: 'default', phase: 'dual-write', generation: state.generation, providerFingerprint: fingerprint, manifestSha256: digest }, data: { phase: 'target', generation, verifiedAt: new Date(), updatedAt: new Date() } });
+    if (updated.count !== 1) throw new Error('Cutover fence lost while committing asset mappings');
+  });
+}
+
+
+async function restoreCutoverMappings(config: StorageConfig, digest: string): Promise<void> {
+  const fingerprint = storageConfigFingerprint(config);
+  await prisma.$transaction(async (tx) => {
+    const state = await tx.storageCutoverState.findUnique({ where: { id: 'default' } });
+    if (!state || state.phase !== 'target' || state.providerFingerprint !== fingerprint || state.manifestSha256 !== digest) throw new Error('Rollback fence mismatch; refusing mapping restoration');
+    const rows = await tx.$queryRawUnsafe<Array<{ asset_id: string; rendition: string; provider: string; source_key: string | null; delivery_url: string }>>('SELECT r.asset_id, r.rendition, old.provider, old.source_key, old.delivery_url FROM asset_storage_replicas r JOIN asset_storage_replicas old ON old.asset_id=r.asset_id AND old.rendition=r.rendition AND old.generation=r.generation AND old.active=false WHERE r.generation=$1 AND r.active=true', state.generation);
+    for (const row of rows) {
+      if (row.rendition === 'thumbnail') await tx.asset.update({ where: { id: row.asset_id }, data: { storageProvider: row.provider, thumbnailStorageKey: row.source_key, thumbnailStorageSourceKey: row.source_key, thumbnailUrl: row.delivery_url } });
+      else await tx.asset.update({ where: { id: row.asset_id }, data: { storageProvider: row.provider, storageKey: row.source_key, storageSourceKey: row.source_key, blobUrl: row.delivery_url } });
+    }
+    await tx.$executeRawUnsafe('UPDATE asset_storage_replicas SET active=false WHERE generation=$1', state.generation);
+    await tx.storageCutoverState.updateMany({ where: { id: 'default', phase: 'target', generation: state.generation, providerFingerprint: fingerprint, manifestSha256: digest }, data: { phase: 'rollback', rollbackAt: new Date(), updatedAt: new Date() } });
+  });
+}
+
+
+async function cleanup(limit: number): Promise<void> {
+  await requireOperatorAuthority();
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_BATCH) throw new Error('Cleanup batch size must be 1-' + MAX_BATCH);
+  const config = storageConfigFromEnv();
+  const storage: S3CompatibleObjectStore | VercelObjectStore = config.provider === 's3' ? new S3CompatibleObjectStore(config) : new VercelObjectStore(config.legacyBaseUrl);
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; provider: string; key: string; url: string }>>("SELECT id, provider, key, url FROM storage_cleanup_outbox WHERE status='pending' AND available_at <= NOW() ORDER BY created_at LIMIT $1 FOR UPDATE SKIP LOCKED", limit);
+  let failed = 0;
+  for (const row of rows) {
+    try {
+      if (row.provider === 'vercel') await (storage as VercelObjectStore).deleteUrl(row.url);
+      else await (storage as S3CompatibleObjectStore).delete(row.key);
+      await prisma.$executeRawUnsafe("UPDATE storage_cleanup_outbox SET status='done', updated_at=NOW() WHERE id=$1", row.id);
+    } catch (error) {
+      failed++;
+      await prisma.$executeRawUnsafe("UPDATE storage_cleanup_outbox SET status='pending', attempts=attempts+1, last_error=$2, available_at=NOW()+INTERVAL '1 minute', updated_at=NOW() WHERE id=$1", row.id, error instanceof Error ? error.message : String(error));
+    }
+  }
+  if (failed) throw new Error('Storage cleanup failed for ' + failed + ' item(s)');
+  process.stdout.write(JSON.stringify({ processed: rows.length, failed }) + '\n');
+}
+
 async function run(command: 'verify' | 'rollback', args: string[]) {
   await requireOperatorAuthority();
   if (process.env.STORAGE_MIGRATION_CONFIRM !== 'sploot-blob-portability') {
@@ -137,7 +200,7 @@ async function run(command: 'verify' | 'rollback', args: string[]) {
   const manifest = JSON.parse(await readFile(value(args, '--manifest'), 'utf8')) as MigrationManifestEntry[];
   const digest = manifestSha256(manifest);
   if (config.manifestSha256 !== digest) throw new Error('Manifest SHA-256 does not match STORAGE_CUTOVER_MANIFEST_SHA256');
-  await ensureCutoverState(config, digest, command === 'rollback' ? 'rollback' : 'dual-write');
+  await ensureCutoverState(config, digest, command === 'rollback' ? 'target' : 'dual-write');
   const source = new VercelObjectStore(config.legacyBaseUrl);
   const target = new S3CompatibleObjectStore(config);
   const workerId = `storage-portability-${process.pid}`;
@@ -164,12 +227,14 @@ async function run(command: 'verify' | 'rollback', args: string[]) {
   await writeFile(value(args, '--receipt'), JSON.stringify(finalReceipt, null, 2) + '\n', 'utf8');
   const incomplete = finalReceipt.entries.some(entry => entry.status !== (command === 'rollback' ? 'rolled_back' : 'verified'));
   if (incomplete) throw new Error('Storage ' + command + ' parity failed: ' + JSON.stringify(finalReceipt.counts));
-  await prisma.storageCutoverState.update({ where: { id: 'default' }, data: command === 'verify' ? { phase: 'target', verifiedAt: new Date() } : { phase: 'rollback', rollbackAt: new Date() } });
+  if (command === 'verify') await commitCutover(manifest, config, digest);
+  else await restoreCutoverMappings(config, digest);
 }
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
-  if (command === 'inventory') await inventory(Number(args[args.indexOf('--limit') + 1] ?? MAX_BATCH), args.includes('--cursor') ? value(args, '--cursor') : undefined);
+  if (command === 'inventory') { const rawLimit = args.includes('--limit') ? value(args, '--limit') : String(MAX_BATCH); const parsed = Number(rawLimit); if (!Number.isSafeInteger(parsed)) throw new Error('--limit must be an integer'); await inventory(parsed, args.includes('--cursor') ? value(args, '--cursor') : undefined); }
+  else if (command === 'gc') { const rawLimit = args.includes('--limit') ? value(args, '--limit') : String(MAX_BATCH); const parsed = Number(rawLimit); if (!Number.isSafeInteger(parsed)) throw new Error('--limit must be an integer'); await cleanup(parsed); }
   else if (command === 'verify' || command === 'rollback') await run(command, args);
   else usage();
 }

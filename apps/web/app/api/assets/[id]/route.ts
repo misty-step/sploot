@@ -205,35 +205,39 @@ async function deleteHandler(
     if (!prisma) return enrollmentUnavailableResponse();
 
     if (permanent) {
-      const existingAsset = await prisma.asset.findFirst({ where: { id, ownerUserId: userId } });
-      if (!existingAsset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
       const storage = new ConfiguredStorageWriter();
-      const keys = [
-        existingAsset.storageProvider === 'vercel'
-          ? null
-          : (existingAsset.storageKey ? { provider: existingAsset.storageProvider, key: existingAsset.storageKey } : null),
-        existingAsset.storageProvider === 'vercel'
-          ? null
-          : (existingAsset.thumbnailStorageKey ? { provider: existingAsset.storageProvider, key: existingAsset.thumbnailStorageKey } : null),
-      ].filter((entry): entry is { provider: string; key: string } => Boolean(entry));
-      const fallbackUrls = [
-        (existingAsset.storageProvider === 'vercel' || !existingAsset.storageKey) ? existingAsset.blobUrl : null,
-        (existingAsset.storageProvider === 'vercel' || !existingAsset.thumbnailStorageKey) ? existingAsset.thumbnailUrl : null,
-      ].filter((url): url is string => Boolean(url));
-      if (storage.deleteKey) await Promise.all(keys.map(entry => storage.deleteKey!(entry.provider, entry.key)));
-      await Promise.all(fallbackUrls.map(url => storage.deleteUrl(url)));
-
-      const permanentResult = await prisma.$transaction(async (tx) => {
+      const tombstone = await prisma.$transaction(async (tx) => {
         await acquireEnrollmentIdentityWriterLock(tx, userId);
-        const lockedAsset = await tx.asset.findFirst({ where: { id, ownerUserId: userId } });
-        if (!lockedAsset) return null;
-        await tx.assetTag.deleteMany({ where: { assetId: id } });
-        await tx.assetEmbedding.deleteMany({ where: { assetId: id } });
-        await tx.asset.delete({ where: { id } });
-        return { kind: 'permanent' as const, shareSlug: lockedAsset.shareSlug };
+        const asset = await tx.asset.findFirst({ where: { id, ownerUserId: userId } });
+        if (!asset) return null;
+        const replicas = await tx.$queryRawUnsafe<Array<{ provider: string; key: string; url: string }>>('SELECT provider, logical_key AS key, delivery_url AS url FROM asset_storage_replicas WHERE asset_id=$1 AND active=true', id);
+        const fallback = [
+          { provider: asset.storageProvider, key: asset.storageKey ?? asset.pathname, url: asset.blobUrl },
+          asset.thumbnailUrl ? { provider: asset.storageProvider, key: asset.thumbnailStorageKey ?? asset.thumbnailPath ?? asset.pathname, url: asset.thumbnailUrl } : null,
+        ].filter((entry): entry is { provider: string; key: string; url: string } => Boolean(entry));
+        const all = replicas.length ? replicas : fallback;
+        await tx.asset.update({ where: { id }, data: { deletedAt: new Date() } });
+        for (const replica of all) await tx.$executeRawUnsafe("INSERT INTO storage_cleanup_outbox (id, asset_id, provider, key, url, action, status, updated_at) VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,'pending',NOW())", id, replica.provider, replica.key, replica.url, 'permanent-delete');
+        return { shareSlug: asset.shareSlug, replicas: all };
       });
-      if (!permanentResult) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
-      await invalidateDeletedAssetCaches(permanentResult.shareSlug);
+      if (!tombstone) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
+      try {
+        for (const replica of tombstone.replicas) {
+          if (storage.deleteKey && replica.provider !== 'vercel') await storage.deleteKey(replica.provider, replica.key);
+          else await storage.deleteUrl(replica.url);
+        }
+        await prisma.$transaction(async (tx) => {
+          await acquireEnrollmentIdentityWriterLock(tx, userId);
+          const locked = await tx.asset.findFirst({ where: { id, ownerUserId: userId, deletedAt: { not: null } } });
+          if (!locked) return;
+          await tx.assetTag.deleteMany({ where: { assetId: id } });
+          await tx.assetEmbedding.deleteMany({ where: { assetId: id } });
+          await tx.asset.delete({ where: { id } });
+        });
+      } catch (error) {
+        return NextResponse.json({ error: 'Asset tombstoned; cleanup pending', detail: error instanceof Error ? error.message : String(error) }, { status: 202 });
+      }
+      await invalidateDeletedAssetCaches(tombstone.shareSlug);
       return NextResponse.json({ message: 'Asset permanently deleted' });
     }
 

@@ -132,6 +132,7 @@ model Asset {
   owner     User            @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
   embedding AssetEmbedding?
   tags      AssetTag[]
+  storageReplicas AssetStorageReplica[]
 
   // Indexes
   @@unique([ownerUserId, checksumSha256], name: "unique_user_checksum")
@@ -423,6 +424,44 @@ model StorageMigrationEntry {
 
   @@index([status, leaseExpiresAt, logicalKey])
   @@map("storage_migration_entries")
+}
+
+model AssetStorageReplica {
+  id          String   @id @default(cuid())
+  assetId     String   @map("asset_id")
+  rendition   String
+  provider    String
+  sourceKey   String?  @map("source_key")
+  logicalKey  String   @map("logical_key")
+  deliveryUrl String   @map("delivery_url")
+  size        Int
+  sha256      String
+  contentType String?  @map("content_type")
+  generation  Int
+  active      Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  @@unique([assetId, rendition, generation])
+  @@index([assetId, rendition, active])
+  @@map("asset_storage_replicas")
+}
+
+model StorageCleanupOutbox {
+  id          String   @id @default(cuid())
+  assetId     String?  @map("asset_id")
+  provider    String
+  key         String
+  url         String
+  action      String
+  status      String   @default("pending")
+  attempts    Int      @default(0)
+  lastError   String?  @map("last_error")
+  availableAt DateTime @default(now()) @map("available_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  @@index([status, availableAt])
+  @@map("storage_cleanup_outbox")
 }
 
 model StorageCutoverState {

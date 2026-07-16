@@ -33,8 +33,8 @@ const ASPECT_TOLERANCE = 0.02;
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 
-async function recordThumbnailCleanupFailure(assetId: string, error: string): Promise<void> {
-  await prisma.$executeRawUnsafe(`INSERT INTO "storage_inventory_failures" ("asset_id", "kind", "error", "attempts", "updated_at") VALUES ($1, 'thumbnail-delete', $2, 1, NOW()) ON CONFLICT ("asset_id", "kind") DO UPDATE SET "error" = EXCLUDED."error", "attempts" = "storage_inventory_failures"."attempts" + 1, "updated_at" = NOW()`, assetId, error);
+async function recordThumbnailCleanupFailure(assetId: string, provider: string, key: string, url: string, error: string): Promise<void> {
+  await prisma.$executeRawUnsafe(`INSERT INTO "storage_cleanup_outbox" ("id", "asset_id", "provider", "key", "url", "action", "status", "last_error", "updated_at") VALUES (gen_random_uuid()::text, $1, $2, $3, $4, 'delete-thumbnail', 'pending', $5, NOW())`, assetId, provider, key, url, error);
 }
 
 const SUPPORTED_THUMBNAIL_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -146,6 +146,7 @@ async function getHandler(request: NextRequest) {
       const metadata = { size: newThumb.byteLength, sha256: createHash('sha256').update(newThumb).digest('hex'), contentType: 'image/' + (format === 'jpeg' ? 'jpeg' : format) };
       const blob = await storage.put(key, newThumb, metadata);
       const oldThumbUrl = asset.thumbnailUrl!;
+      const oldThumb = { provider: asset.storageProvider, key: asset.thumbnailStorageKey ?? asset.thumbnailPath ?? '', url: oldThumbUrl };
       try {
         await prisma.asset.update({
           where: { id: asset.id },
@@ -166,7 +167,7 @@ async function getHandler(request: NextRequest) {
       try {
         await storage.deleteUrl(oldThumbUrl);
       } catch (error) {
-        await recordThumbnailCleanupFailure(asset.id, error instanceof Error ? error.message : String(error));
+        await recordThumbnailCleanupFailure(asset.id, oldThumb.provider, oldThumb.key, oldThumb.url, error instanceof Error ? error.message : String(error));
         throw error;
       }
       regenerated++;

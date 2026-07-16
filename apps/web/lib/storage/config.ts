@@ -139,6 +139,15 @@ export function storageConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Stor
   });
 }
 
+export function stableDeliveryUrl(config: StorageConfig, logicalKey: string): string {
+  const key = canonicalLogicalKey(logicalKey);
+  if (config.provider === 's3') {
+    if (!config.publicUrlBase) throw new Error('S3 stable delivery URL base is required');
+    return config.publicUrlBase.replace(/\/$/, '') + '/' + key.split('/').map(encodeURIComponent).join('/');
+  }
+  return config.legacyBaseUrl.replace(/\/$/, '') + '/' + key.split('/').map(encodeURIComponent).join('/');
+}
+
 export function storageConfigFingerprint(config: StorageConfig): string {
   const identity = JSON.stringify({
     provider: config.provider,
