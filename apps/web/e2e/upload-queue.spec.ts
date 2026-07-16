@@ -1,4 +1,5 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, request as httpRequest, type Server } from 'node:http';
+import { request as httpsRequest } from 'node:https';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -168,6 +169,71 @@ async function pasteUrl(page: Page, url: string): Promise<void> {
   }, url);
 }
 
+type PersistentAppProxy = {
+  url: string;
+  forwardedRequests: () => number;
+  close: () => Promise<void>;
+};
+
+/**
+ * A real network bridge for the separately spawned persistent browser process.
+ * It forwards only the configured app origin; every other destination fails
+ * instead of being synthesized, so a broken app/server still fails the test.
+ */
+async function startPersistentAppProxy(appBaseURL: string): Promise<PersistentAppProxy> {
+  const target = new URL(appBaseURL);
+  const requestClient = target.protocol === 'https:' ? httpsRequest : httpRequest;
+  let forwardedRequestCount = 0;
+  const server: Server = createServer((request, response) => {
+    if (!request.url) {
+      response.statusCode = 400;
+      response.end('proxy request did not include a URL');
+      return;
+    }
+    let destination: URL;
+    try {
+      destination = new URL(request.url, target);
+    } catch {
+      response.statusCode = 400;
+      response.end('proxy request included an invalid URL');
+      return;
+    }
+    if (destination.origin !== target.origin) {
+      response.statusCode = 502;
+      response.end('proxy refused destination outside the app origin');
+      return;
+    }
+    forwardedRequestCount += 1;
+    const upstream = requestClient({
+      hostname: destination.hostname,
+      port: destination.port,
+      method: request.method,
+      path: destination.pathname + destination.search,
+      headers: { ...request.headers, host: destination.host },
+    }, (upstreamResponse) => {
+      response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+      upstreamResponse.pipe(response);
+    });
+    upstream.once('error', (error) => {
+      if (!response.headersSent) response.statusCode = 502;
+      response.end(error instanceof Error ? error.message : 'upstream request failed');
+    });
+    request.pipe(upstream);
+  });
+  server.on('connect', (_request, socket) => socket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n'));
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve());
+  });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('persistent app proxy did not bind a port');
+  return {
+    url: `http://127.0.0.1:${address.port}`,
+    forwardedRequests: () => forwardedRequestCount,
+    close: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
+  };
+}
+
 async function startImageFixture({ delayMs = 0, status = 200, contentType = 'image/png' } = {}): Promise<{ url: string; close: () => Promise<void> }> {
   const server: Server = createServer((_request, response) => {
     setTimeout(() => {
@@ -196,16 +262,22 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
   const accountAKey = await ownerKey(accountA);
   const url = 'https://images.example.test/bookmark.png';
   const browserBaseURL = baseURL;
-  const persistentBrowserArgs = ['--no-proxy-server', '--proxy-bypass-list=*'];
+  const persistentBrowserEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !/^(?:HTTP|HTTPS|ALL|NO)_PROXY$/i.test(name)),
+  );
+  let appProxy: PersistentAppProxy | undefined;
   try {
+    appProxy = await startPersistentAppProxy(browserBaseURL);
     context = await browser.browserType().launchPersistentContext(userDataDir, {
-      args: persistentBrowserArgs,
       baseURL: browserBaseURL,
+      env: persistentBrowserEnv,
+      proxy: { server: appProxy.url },
     });
     const signedOut = context.pages()[0] ?? await context.newPage();
     await context.setOffline(false);
     await expect.poll(() => signedOut.evaluate(() => navigator.onLine), { timeout: 5_000 }).toBe(true);
     await openSignedOutApp(signedOut);
+    expect(appProxy.forwardedRequests()).toBeGreaterThan(0);
     const accountATab = await context.newPage();
     const accountBTab = await context.newPage();
     await Promise.all([openApp(accountATab, accountA), openApp(accountBTab, accountB)]);
@@ -236,8 +308,9 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     context = undefined;
 
     context = await browser.browserType().launchPersistentContext(userDataDir, {
-      args: persistentBrowserArgs,
       baseURL: browserBaseURL,
+      env: persistentBrowserEnv,
+      proxy: { server: appProxy.url },
     });
     const reopened = await context.newPage();
     await context.setOffline(true);
@@ -248,6 +321,7 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
   } finally {
     if (context) await context.setOffline(false);
     await context?.close();
+    await appProxy?.close();
     rmSync(userDataDir, { recursive: true, force: true });
   }
 });
