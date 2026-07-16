@@ -66,6 +66,7 @@ export interface EmbeddingAdmissionReservation {
     userWindow: number;
     globalWindow: number;
     dailyBudget: number;
+    monthlyBudget: number;
   };
 }
 
@@ -457,7 +458,9 @@ export async function acquireEmbeddingAdmissionReservation(
   const userWindowKey = `embedding:rate:user:${userId}:${windowId}`;
   const globalWindowKey = `${GLOBAL_WINDOW_KEY_PREFIX}:${windowId}`;
   const dailyDateKey = getUtcDateKey(nowMs);
+  const monthKey = getUtcMonthKey(nowMs);
   const dailyKey = `embedding:daily:${dailyDateKey}`;
+  const monthlyKey = `embedding:monthly:${monthKey}`;
 
   try {
     return await withLimiterLock(async (tx) => {
@@ -491,10 +494,14 @@ export async function acquireEmbeddingAdmissionReservation(
       const dailyBucket = await tx.embeddingRateBucket.findUnique({
         where: { key: dailyKey },
       });
+      const monthlyBucket = await tx.embeddingRateBucket.findUnique({
+        where: { key: monthlyKey },
+      });
 
       const userWindow = userBucket?.count ?? 0;
       const globalWindow = globalBucket?.count ?? 0;
       const dailyCount = dailyBucket?.count ?? 0;
+      const monthlyCount = monthlyBucket?.count ?? 0;
 
       if (userInflight >= EMBEDDING_USER_CONCURRENCY_LIMIT) {
         return {
@@ -536,6 +543,14 @@ export async function acquireEmbeddingAdmissionReservation(
         };
       }
 
+      if (monthlyCount >= EMBEDDING_MONTHLY_BUDGET) {
+        return {
+          allowed: false,
+          reason: 'monthly_budget',
+          retryAfterSec: secondsUntilNextUtcMonth(nowMs),
+        };
+      }
+
       const expiresAt = getWindowExpiry(windowId);
       const lease = {
         id: randomUUID(),
@@ -549,6 +564,11 @@ export async function acquireEmbeddingAdmissionReservation(
         dailyKey,
         new Date(nowMs + EMBEDDING_DAILY_BUDGET_TTL_SECONDS * 1000)
       );
+      const persistedMonthlyBudget = await incrementBucket(
+        tx,
+        monthlyKey,
+        new Date(nowMs + EMBEDDING_MONTHLY_BUDGET_TTL_SECONDS * 1000)
+      );
       await tx.embeddingRateLease.create({
         data: {
           id: lease.id,
@@ -561,11 +581,12 @@ export async function acquireEmbeddingAdmissionReservation(
         allowed: true,
         reservation: {
           lease,
-          dailyReservation: { dateKey: dailyDateKey, monthKey: getUtcMonthKey(nowMs) },
+          dailyReservation: { dateKey: dailyDateKey, monthKey },
           counts: {
             userWindow: persistedUserWindow,
             globalWindow: persistedGlobalWindow,
             dailyBudget: persistedDailyBudget,
+            monthlyBudget: persistedMonthlyBudget,
           },
         },
       };

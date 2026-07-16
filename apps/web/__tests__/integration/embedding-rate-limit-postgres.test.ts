@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import {
   acquireEmbeddingAdmissionReservation,
   acquireEmbeddingDailyBudget,
+  refundEmbeddingAdmissionCapacity,
   acquireEmbeddingRateLimit,
   releaseEmbeddingRateLimit,
   EMBEDDING_DAILY_BUDGET,
