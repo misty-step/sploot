@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import { put, del } from '@vercel/blob';
+import { createHash, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { prisma } from '@/lib/db';
 import { generateThumbnail } from '@/lib/image-processing';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
+import { ConfiguredStorageWriter, bodyToBuffer, ObjectNotFoundError } from '@/lib/storage/object-store';
+import { storageConfigFromEnv, storageConfigFingerprint } from '@/lib/storage/config';
 
 /**
  * GET /api/cron/regenerate-thumbnails?limit=25&cursor=<assetId>
@@ -69,6 +71,8 @@ async function getHandler(request: NextRequest) {
     MAX_LIMIT
   );
   const cursor = params.get('cursor');
+  const storage = new ConfiguredStorageWriter();
+  const configFingerprint = storageConfigFingerprint(storageConfigFromEnv());
 
   const candidates = await prisma.asset.findMany({
     where: {
@@ -86,6 +90,9 @@ async function getHandler(request: NextRequest) {
       blobUrl: true,
       thumbnailUrl: true,
       pathname: true,
+      storageKey: true,
+      thumbnailStorageKey: true,
+      thumbnailPath: true,
       mime: true,
       width: true,
       height: true,
@@ -104,49 +111,47 @@ async function getHandler(request: NextRequest) {
     try {
       const originalAspect = asset.width! / asset.height!;
 
-      const thumbRes = await fetch(asset.thumbnailUrl!);
-      if (thumbRes.ok) {
-        const thumbBuffer = Buffer.from(await thumbRes.arrayBuffer());
+      let thumbBuffer: Buffer | null = null;
+      try {
+        const thumbnail = await storage.get(asset.thumbnailStorageKey ?? asset.thumbnailPath ?? asset.thumbnailUrl!);
+        thumbBuffer = await bodyToBuffer(thumbnail.body, 512 * 1024 * 1024);
+      } catch (error) {
+        if (!(error instanceof ObjectNotFoundError)) throw error;
+      }
+      if (thumbBuffer) {
         const thumbMeta = await sharp(thumbBuffer).metadata();
         if (!thumbMeta.width || !thumbMeta.height) throw new Error('thumbnail unreadable');
-
         const thumbAspect = thumbMeta.width / thumbMeta.height;
         if (Math.abs(thumbAspect - originalAspect) / originalAspect <= ASPECT_TOLERANCE) {
           alreadyCorrect++;
           continue;
         }
-      } else if (thumbRes.status !== 404) {
-        throw new Error(`thumbnail fetch ${thumbRes.status}`);
       }
 
-      // Legacy crop confirmed — regenerate from the original.
-      const originalRes = await fetch(asset.blobUrl);
-      if (!originalRes.ok) throw new Error(`original fetch ${originalRes.status}`);
-      const originalBuffer = Buffer.from(await originalRes.arrayBuffer());
-
+      // Legacy crop confirmed — regenerate from the original through the configured reader.
+      const original = await storage.get(asset.storageKey ?? asset.pathname);
+      const originalBuffer = await bodyToBuffer(original.body, 512 * 1024 * 1024);
       const format = formatForMime(asset.mime);
       const newThumb = await generateThumbnail(originalBuffer, format);
-      const blob = await put(thumbPathname(asset.pathname, format), newThumb, {
-        access: 'public',
-        // fresh pathname per run — old CDN entries can't shadow the fix
-        addRandomSuffix: true,
-        contentType: `image/${format === 'jpeg' ? 'jpeg' : format}`,
-      });
+      const key = thumbPathname(asset.pathname, format) + '-' + randomUUID();
+      const metadata = { size: newThumb.byteLength, sha256: createHash('sha256').update(newThumb).digest('hex'), contentType: 'image/' + (format === 'jpeg' ? 'jpeg' : format) };
+      const blob = await storage.put(key, newThumb, metadata);
 
       const oldThumbUrl = asset.thumbnailUrl!;
       await prisma.asset.update({
         where: { id: asset.id },
-        data: { thumbnailUrl: blob.url, thumbnailPath: blob.pathname },
+        data: {
+          thumbnailUrl: blob.url,
+          thumbnailPath: blob.key,
+          thumbnailStorageKey: blob.key,
+          thumbnailStorageSize: blob.metadata.size,
+          thumbnailStorageSha256: blob.metadata.sha256,
+          storageConfigFingerprint: configFingerprint,
+        },
       });
 
-      // best-effort: drop the orphaned cropped thumbnail
-      try {
-        await del(oldThumbUrl);
-      } catch {
-        // orphan cleanup is non-critical; audit-assets sweeps blobs daily
-      }
-
-      regenerated++;
+      await storage.deleteUrl(oldThumbUrl);
+          regenerated++;
     } catch (error) {
       failed++;
       failures.push({

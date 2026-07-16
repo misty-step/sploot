@@ -223,12 +223,11 @@ describe('auth error contracts', () => {
     await expect(removeResponse.json()).resolves.toEqual({ error: 'Unauthorized' });
   });
 
-  it('returns 401 json for unauthenticated POST /api/assets', async () => {
+  it('returns 410 json for the disabled legacy POST /api/assets', async () => {
     const response = await postAsset(makeRequest('/api/assets', 'POST'));
 
-    expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' });
-    expect(mocks.createErrorResponse).not.toHaveBeenCalled();
+    expect(response.status).toBe(410);
+    await expect(response.json()).resolves.toMatchObject({ error: expect.stringContaining('/api/upload') });
   });
 
   it('returns 401 json for unauthenticated GET /api/assets before query validation', async () => {

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   canonicalLogicalKey,
   createStorageConfig,
@@ -108,11 +108,23 @@ describe('portable storage contract', () => {
     expect(provider.objects.has('assets/user_1/poison.png')).toBe(false);
   });
 
+  it('returns a fetchable HTTPS delivery URL for target writes', async () => {
+    const target = new S3CompatibleObjectStore(createStorageConfig({ provider: 's3', endpoint: 'https://objects.example.test', bucket: 'sploot', accessKeyId: 'public-id', secretAccessKey: 'secret' }));
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(bytes, { status: 200, headers: { 'content-length': String(bytes.byteLength), 'content-type': 'image/png', 'x-amz-meta-sha256': metadata.sha256 } }));
+    const result = await target.put('assets/a.png', bytes, metadata);
+    expect(result.url).toBe('https://objects.example.test/sploot/assets/a.png');
+    expect(result.url).not.toMatch(/^s3:/);
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(URL), expect.objectContaining({ method: 'PUT' }));
+    fetchMock.mockRestore();
+  });
+
   it('guards URL syntax and S3 bucket ownership', async () => {
     const legacy = new VercelObjectStore('https://blob.example.test');
     expect(legacy.ownsUrl('https://blob.example.test/assets/a.png')).toBe(true);
-    expect(legacy.ownsUrl('https://store-123.public.blob.vercel-storage.com/assets/a.png')).toBe(true);
-    expect(legacy.ownsUrl('https://other.example.test/assets/a.png')).toBe(true);
+    expect(legacy.ownsUrl('https://store-123.public.blob.vercel-storage.com/assets/a.png')).toBe(false);
+    expect(legacy.ownsUrl('https://other.example.test/assets/a.png')).toBe(false);
+    expect(legacy.ownsUrl('https://blob.example.test.evil/assets/a.png')).toBe(false);
+    expect(legacy.ownsUrl('https://user@blob.example.test/assets/a.png')).toBe(false);
     expect(legacy.ownsUrl('https://blob.example.test/assets/a.png?delete=all')).toBe(false);
 
     const target = new S3CompatibleObjectStore(createStorageConfig({
@@ -122,11 +134,12 @@ describe('portable storage contract', () => {
       accessKeyId: 'public-id',
       secretAccessKey: 'secret',
     }));
-    expect(target.ownsUrl('s3://sploot/assets/a.png')).toBe(true);
-    expect(target.ownsUrl('s3://other-bucket/assets/a.png')).toBe(false);
-    expect(target.ownsUrl('s3://sploot/assets/a.png?delete=all')).toBe(false);
+    expect(target.ownsUrl('https://objects.example.test/sploot/assets/a.png')).toBe(true);
+    expect(target.ownsUrl('s3://sploot/assets/a.png')).toBe(false);
+    expect(target.ownsUrl('https://objects.example.test/other-bucket/assets/a.png')).toBe(false);
+    expect(target.ownsUrl('https://objects.example.test/sploot/assets/a.png?delete=all')).toBe(false);
     const portable = new PortableObjectStore({ legacy, target, phase: 'target' });
-    await expect(portable.deleteUrl('s3://other-bucket/assets/a.png')).rejects.toThrow(/not owned/);
+    await expect(portable.deleteUrl('https://objects.example.test/other-bucket/assets/a.png')).rejects.toThrow(/not owned/);
   });
 
   it('reclaims an expired in-flight migration lease', async () => {

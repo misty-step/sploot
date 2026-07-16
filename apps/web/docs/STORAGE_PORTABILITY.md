@@ -57,3 +57,18 @@ clean provider soak, and deletion readback before any legacy retention change.
 Pending foundation PR #294 owns its migration/economic/CI work. This change
 does not copy those changes; rebase conflicts with that foundation must be
 resolved by the owner when this lane is integrated.
+
+
+## Delivery and authority preconditions
+
+Every persisted `blobUrl` and `thumbnailUrl` is a browser-fetchable HTTPS delivery URL. S3-compatible object identity (bucket/key/provider) is internal metadata; `s3://` values are never persisted. Target startup requires a validated HTTPS endpoint, credentials, config fingerprint, and manifest SHA.
+
+Run inventory with the schema-migrator/operator `DATABASE_URL` only:
+
+```sh
+STORAGE_PROVIDER=vercel pnpm --filter web storage:portability inventory --limit 100 --cursor <last-id>
+```
+
+Inventory reads each legacy original and thumbnail, computes bounded size/SHA-256, persists metadata, advances a durable cursor, and records failures. It exits non-zero on any parity failure; repair the source and resume from the recorded cursor.
+
+Before verify, set `STORAGE_CUTOVER_MANIFEST_SHA256` to the exact manifest digest. The CLI records provider fingerprint/manifest/phase in `storage_cutover_state`, refuses drift, and exits non-zero unless every journal row is verified (or rolled back). The restricted application role intentionally has no access to portability journal/state tables.

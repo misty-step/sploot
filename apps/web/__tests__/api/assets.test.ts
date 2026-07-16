@@ -369,15 +369,14 @@ describe("GET /api/assets", () => {
 });
 
 describe("POST /api/assets", () => {
-  it("preserves the stable enrollment denial from the legacy asset path", async () => {
-    mocks.requireUserIdWithSync.mockRejectedValue({ code: "enrollment_closed" });
+  it("disables the legacy metadata-only asset path", async () => {
 
     const response = await POST(
       new NextRequest("http://localhost:3000/api/assets", { method: "POST" }),
       { params: Promise.resolve({}) },
     );
 
-    expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({ code: "enrollment_closed" });
+    expect(response.status).toBe(410);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining("/api/upload") });
   });
 });

@@ -9,6 +9,10 @@ export interface ObjectMetadata {
   contentType?: string;
 }
 
+export interface StorageReplica { provider: string; key: string; url: string; }
+
+export interface StorageWrite extends StorageReplica { metadata: ObjectMetadata; replicas?: StorageReplica[]; }
+
 export interface StoredObject {
   key: string;
   url: string;
@@ -20,12 +24,13 @@ export type ObjectBody = Uint8Array | ArrayBuffer | Blob | AsyncIterable<Uint8Ar
 
 export interface ObjectStore {
   readonly provider: string;
-  put(key: string, body: ObjectBody, metadata: ObjectMetadata): Promise<{ provider: string; key: string; url: string; metadata: ObjectMetadata }>;
+  put(key: string, body: ObjectBody, metadata: ObjectMetadata): Promise<StorageWrite>;
   get(key: string): Promise<StoredObject>;
   delete(key: string): Promise<void>;
   list?(prefix: string, limit: number): Promise<Array<{ pathname: string; url: string }>>;
   ownsUrl?(url: string): boolean;
   deleteUrl?(url: string): Promise<void>;
+  keyFromUrl?(url: string): string | null;
 }
 
 export class ObjectNotFoundError extends Error {
@@ -105,16 +110,18 @@ export class PortableObjectStore {
     return this.phase === 'target' ? [this.target, this.options.legacy] : [this.options.legacy, this.target];
   }
 
-  async putVerified(key: string, body: ObjectBody, expected: ObjectMetadata): Promise<{ confirmed: true; key: string; url: string; providers: string[] }> {
+  async putVerified(key: string, body: ObjectBody, expected: ObjectMetadata): Promise<{ confirmed: true; key: string; url: string; providers: string[]; replicas: StorageReplica[] }> {
     const logicalKey = canonicalLogicalKey(key);
     const bytes = await bodyToBuffer(body, Math.min(this.maxBytes, Math.max(expected.size, 1)));
     const actual = actualMetadata(bytes, expected.contentType);
     assertMetadata(actual, expected);
     const written: Array<{ store: ObjectStore; key: string }> = [];
+    const replicas: StorageReplica[] = [];
     try {
       for (const provider of this.providers()) {
-        await provider.put(logicalKey, bytes, actual);
-        written.push({ store: provider, key: logicalKey });
+        const replica = await provider.put(logicalKey, bytes, actual);
+        written.push({ store: provider, key: replica.key });
+        replicas.push({ provider: replica.provider, key: replica.key, url: replica.url });
         const readback = await provider.get(logicalKey);
         const readbackBytes = await bodyToBuffer(readback.body, this.maxBytes);
         assertMetadata(actualMetadata(readbackBytes, actual.contentType), expected);
@@ -124,7 +131,7 @@ export class PortableObjectStore {
       throw error;
     }
     const primary = this.providers()[0];
-    return { confirmed: true, key: logicalKey, url: (await primary.get(logicalKey)).url, providers: this.providers().map(p => p.provider) };
+    return { confirmed: true, key: logicalKey, url: (await primary.get(logicalKey)).url, providers: this.providers().map(p => p.provider), replicas };
   }
 
   async get(key: string): Promise<StoredObject> {
@@ -147,20 +154,33 @@ export class PortableObjectStore {
   }
 
   async deleteUrl(url: string): Promise<void> {
-    for (const provider of [this.options.legacy, this.target].filter(Boolean) as ObjectStore[]) {
-      if (provider.ownsUrl?.(url) && provider.deleteUrl) {
-        await provider.deleteUrl(url);
-        return;
-      }
-    }
-    throw new Error('Storage URL is not owned by a configured provider');
+    const owned = [this.options.legacy, this.target].filter(Boolean) as ObjectStore[];
+    const owner = owned.find(provider => provider.ownsUrl?.(url));
+    if (!owner?.deleteUrl) throw new Error('Storage URL is not owned by a configured provider');
+    const key = (owner as ObjectStore & { keyFromUrl?: (value: string) => string | null }).keyFromUrl?.(url);
+    if (!key) return owner.deleteUrl(url);
+    const results = await Promise.allSettled(owned.map(provider => provider.delete(key)));
+    const failure = results.find(result => result.status === 'rejected') as PromiseRejectedResult | undefined;
+    if (failure) throw failure.reason;
+  }
+
+  async deleteReplicas(replicas: StorageReplica[]): Promise<void> {
+    const results = await Promise.allSettled(replicas.map(replica => {
+      const provider = [this.options.legacy, this.target].find(candidate => candidate?.provider === replica.provider);
+      if (!provider) throw new Error(`Storage provider is not configured: ${replica.provider}`);
+      return provider.delete(replica.key);
+    }));
+    const failure = results.find(result => result.status === 'rejected') as PromiseRejectedResult | undefined;
+    if (failure) throw failure.reason;
   }
 }
 
 export interface StorageWriter {
   readonly strict: boolean;
-  put(key: string, body: ObjectBody, metadata: ObjectMetadata): Promise<{ provider: string; key: string; url: string; metadata: ObjectMetadata }>;
+  put(key: string, body: ObjectBody, metadata: ObjectMetadata): Promise<StorageWrite>;
   deleteUrl(url: string): Promise<void>;
+  deleteReplicas?(replicas: StorageReplica[]): Promise<void>;
+  deleteKey?(provider: string, key: string): Promise<void>;
 }
 
 /**
@@ -184,9 +204,25 @@ export class ConfiguredStorageWriter implements StorageWriter {
   async put(key: string, body: ObjectBody, metadata: ObjectMetadata) {
     if (this.portable) {
       const result = await this.portable.putVerified(key, body, metadata);
-      return { provider: result.providers[0]!, key: result.key, url: result.url, metadata };
+      return { provider: result.providers[0]!, key: result.key, url: result.url, metadata, replicas: result.replicas };
     }
-    return this.legacy.put(key, body, metadata);
+    const result = await this.legacy.put(key, body, metadata);
+    return { ...result, replicas: [{ provider: result.provider, key: result.key, url: result.url }] };
+  }
+
+  async get(key: string): Promise<StoredObject> {
+    if (this.portable) return this.portable.get(key);
+    return this.legacy.get(key);
+  }
+
+  async deleteKey(_provider: string, key: string) {
+    if (this.portable) return this.portable.delete(key);
+    return this.legacy.delete(key);
+  }
+
+  async deleteReplicas(replicas: StorageReplica[]) {
+    if (this.portable) return this.portable.deleteReplicas(replicas);
+    return Promise.all(replicas.map(replica => this.legacy.delete(replica.url))).then(() => undefined);
   }
 
   async deleteUrl(url: string) {
@@ -242,20 +278,23 @@ export class VercelObjectStore implements ObjectStore {
   }
 
   ownsUrl(url: string): boolean {
+    return this.keyFromUrl(url) !== null;
+  }
+
+  keyFromUrl(url: string): string | null {
     try {
       const candidate = new URL(url);
       const base = new URL(this.baseUrl);
-      if (candidate.protocol !== 'https:' || candidate.search || candidate.hash) return false;
-      const basePath = candidate.origin === base.origin ? base.pathname.replace(/\/$/, '') : '';
+      if (candidate.protocol !== 'https:' || candidate.origin !== base.origin || candidate.search || candidate.hash || candidate.username || candidate.password) return null;
+      const basePath = base.pathname.replace(/\/$/, '');
       const prefix = basePath ? `${basePath}/` : '/';
       const logicalKey = candidate.pathname.startsWith(prefix) ? candidate.pathname.slice(prefix.length) : '';
       canonicalLogicalKey(logicalKey);
-      return logicalKey.length > 0;
+      return logicalKey || null;
     } catch {
-      return false;
+      return null;
     }
   }
-
   async deleteUrl(url: string) {
     if (!this.ownsUrl(url)) throw new Error('Storage URL is not owned by the configured Vercel provider');
     await del(url);
@@ -330,18 +369,20 @@ export class S3CompatibleObjectStore implements ObjectStore {
     if (!response.ok && response.status !== 404) throw new Error(`S3-compatible delete failed: ${response.status}`);
   }
 
-  private keyFromUrl(url: string): string | null {
-    const prefix = `s3://${this.config.bucket}/`;
-    if (!url.startsWith(prefix)) return null;
+  keyFromUrl(url: string): string | null {
     try {
-      return canonicalLogicalKey(url.slice(prefix.length));
-    } catch {
-      return null;
-    }
+      const candidate = new URL(url);
+      if (candidate.protocol !== this.endpoint.protocol || candidate.origin !== this.endpoint.origin || candidate.username || candidate.password || candidate.search || candidate.hash) return null;
+      const prefix = `${this.endpoint.pathname.replace(/\/$/, '')}/${encodeRfc3986(this.config.bucket)}/`;
+      if (!candidate.pathname.startsWith(prefix)) return null;
+      const key = decodeURIComponent(candidate.pathname.slice(prefix.length));
+      return canonicalLogicalKey(key);
+    } catch { return null; }
   }
 
   private objectUrl(key: string): string {
-    return `s3://${this.config.bucket}/${key}`;
+    const base = this.endpoint.toString().replace(/\/$/, '');
+    return `${base}/${encodeRfc3986(this.config.bucket)}/${key.split('/').map(encodeRfc3986).join('/')}`;
   }
 
   private async request(method: string, key: string, body?: Uint8Array, contentType?: string): Promise<Response> {

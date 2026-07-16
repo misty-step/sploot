@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { generateUniqueFilename } from '@/lib/blob';
 import { logger } from '@/lib/logger';
 import type { ProcessedImage } from '@/lib/image-processing';
-import { ConfiguredStorageWriter, type StorageWriter } from '@/lib/storage/object-store';
+import { ConfiguredStorageWriter, type StorageReplica, type StorageWriter } from '@/lib/storage/object-store';
+import { storageConfigFromEnv, storageConfigFingerprint } from '@/lib/storage/config';
 
 /**
  * Blob upload error with cleanup information
@@ -33,6 +34,7 @@ export interface BlobUploadResult {
   mainSha256: string;
   thumbnailSize: number | null;
   thumbnailSha256: string | null;
+  storageConfigFingerprint: string;
 }
 
 export interface BlobUploadRenditions {
@@ -64,12 +66,15 @@ export class BlobUploaderService {
   private addRandomSuffix: boolean;
   private maxRetries: number;
   private storage: StorageWriter;
+  private readonly configFingerprint: string;
 
   constructor(config?: BlobUploaderConfig) {
     this.access = config?.access ?? 'public';
     this.addRandomSuffix = config?.addRandomSuffix ?? false;
     this.maxRetries = config?.maxRetries ?? 2;
-    this.storage = new ConfiguredStorageWriter(undefined, this.addRandomSuffix);
+    const storageConfig = storageConfigFromEnv();
+    this.configFingerprint = storageConfigFingerprint(storageConfig);
+    this.storage = new ConfiguredStorageWriter(storageConfig, this.addRandomSuffix);
   }
 
   /**
@@ -104,6 +109,8 @@ export class BlobUploaderService {
     let thumbnailSize: number | null = null;
     let thumbnailSha256: string | null = null;
     let storageProvider = 'vercel';
+    let mainReplicas: StorageReplica[] = [];
+    let thumbnailReplicas: StorageReplica[] = [];
 
     try {
       // Upload main image
@@ -113,6 +120,7 @@ export class BlobUploaderService {
       );
 
       mainBlobUrl = mainBlob.url;
+      mainReplicas = mainBlob.replicas ?? [{ provider: mainBlob.provider, key: mainBlob.pathname, url: mainBlob.url }];
       mainPathname = mainBlob.pathname;
       storageProvider = mainBlob.provider;
       mainSize = mainBlob.metadata.size;
@@ -133,6 +141,7 @@ export class BlobUploaderService {
           );
 
           thumbnailBlobUrl = thumbnailBlob.url;
+          thumbnailReplicas = thumbnailBlob.replicas ?? [{ provider: thumbnailBlob.provider, key: thumbnailBlob.key, url: thumbnailBlob.url }];
           thumbnailPathname = thumbnailBlob.key;
           thumbnailSize = thumbnailBlob.metadata.size;
           thumbnailSha256 = thumbnailBlob.metadata.sha256;
@@ -162,6 +171,7 @@ export class BlobUploaderService {
         mainSha256,
         thumbnailSize,
         thumbnailSha256,
+        storageConfigFingerprint: this.configFingerprint,
       };
     } catch (error) {
       // Upload failed - clean up any uploaded blobs
@@ -171,7 +181,8 @@ export class BlobUploaderService {
         thumbnailUploaded: !!thumbnailBlobUrl,
       });
 
-      await this.cleanup(mainBlobUrl, thumbnailBlobUrl);
+      if (mainReplicas.length > 0 || thumbnailReplicas.length > 0) await this.cleanup(mainBlobUrl, thumbnailBlobUrl, mainReplicas, thumbnailReplicas);
+      else await this.cleanup(mainBlobUrl, thumbnailBlobUrl);
 
       throw new BlobUploadError(
         'Failed to upload to blob storage',
@@ -187,7 +198,7 @@ export class BlobUploaderService {
   private async uploadWithRetry(
     filename: string,
     buffer: Buffer
-  ): Promise<{ provider: string; url: string; pathname: string; metadata: ReturnType<typeof metadataFor> }> {
+  ): Promise<{ provider: string; url: string; pathname: string; metadata: ReturnType<typeof metadataFor>; replicas?: StorageReplica[] }> {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
@@ -200,6 +211,7 @@ export class BlobUploaderService {
           url: blob.url,
           pathname: blob.key,
           metadata,
+          replicas: blob.replicas,
         };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
@@ -229,16 +241,23 @@ export class BlobUploaderService {
    * Clean up uploaded blobs (used on failure)
    * Best-effort cleanup - logs errors but doesn't throw
    */
+  private async deleteReceipt(replicas: StorageReplica[], url: string): Promise<void> {
+    if (replicas.length > 0 && this.storage.deleteReplicas) return this.storage.deleteReplicas(replicas);
+    return this.storage.deleteUrl(url);
+  }
+
   async cleanup(
     mainBlobUrl: string | null,
-    thumbnailBlobUrl: string | null
+    thumbnailBlobUrl: string | null,
+    mainReplicas: StorageReplica[] = [],
+    thumbnailReplicas: StorageReplica[] = []
   ): Promise<void> {
     const cleanupErrors: string[] = [];
 
     // Delete main blob if uploaded
     if (mainBlobUrl) {
       try {
-        await this.storage.deleteUrl(mainBlobUrl);
+        await this.deleteReceipt(mainReplicas, mainBlobUrl);
         logger.info('Successfully cleaned up main blob', { url: mainBlobUrl });
       } catch (error) {
         const errorMsg = `Failed to delete main blob: ${error instanceof Error ? error.message : String(error)}`;
@@ -253,7 +272,7 @@ export class BlobUploaderService {
     // Delete thumbnail blob if uploaded
     if (thumbnailBlobUrl) {
       try {
-        await this.storage.deleteUrl(thumbnailBlobUrl);
+        await this.deleteReceipt(thumbnailReplicas, thumbnailBlobUrl);
         logger.info('Successfully cleaned up thumbnail blob', { url: thumbnailBlobUrl });
       } catch (error) {
         const errorMsg = `Failed to delete thumbnail: ${error instanceof Error ? error.message : String(error)}`;
