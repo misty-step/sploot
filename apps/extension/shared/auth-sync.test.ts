@@ -39,7 +39,7 @@ describe('popup auth sync', () => {
     expect(reloadPopup).not.toHaveBeenCalled()
   })
 
-  it('does not reload before the popup Clerk client hydrates', async () => {
+  it('converges once for a loaded stale signed-in popup', async () => {
     runtime.sendMessage.mockResolvedValue({
       state: { status: 'signed-in', userId: 'user_1', sessionId: 'session_1' },
     })
@@ -59,7 +59,57 @@ describe('popup auth sync', () => {
     )
     await new Promise(resolve => setTimeout(resolve, 0))
 
-    expect(reloadPopup).not.toHaveBeenCalled()
+    expect(reloadPopup).toHaveBeenCalledTimes(1)
+
+    installPopupAuthSync(
+      clerk,
+      runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
+      reloadPopup,
+      reloadGuardStorage,
+    )
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(reloadPopup).toHaveBeenCalledTimes(1)
+  })
+
+  it('reloads once when a stale local user conflicts with signed-out state', async () => {
+    const clerk = { user: { reload: vi.fn(async () => undefined) } }
+    const reloadPopup = vi.fn()
+    const storage = new Map<string, string>()
+    runtime.sendMessage.mockResolvedValue({ state: { status: 'signed-out' } })
+
+    installPopupAuthSync(
+      clerk,
+      runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
+      reloadPopup,
+      {
+        getItem: key => storage.get(key) ?? null,
+        setItem: (key, value) => { storage.set(key, value) },
+      },
+    )
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(reloadPopup).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to memory when session storage rejects access', async () => {
+    runtime.sendMessage.mockResolvedValue({
+      state: { status: 'signed-in', userId: 'user_throw', sessionId: 'session_throw' },
+    })
+    const clerk = { user: null }
+    const reloadPopup = vi.fn()
+    const throwingStorage = {
+      getItem: () => { throw new Error('storage unavailable') },
+      setItem: () => { throw new Error('storage unavailable') },
+    }
+
+    installPopupAuthSync(
+      clerk,
+      runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
+      reloadPopup,
+      throwingStorage,
+    )
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(reloadPopup).toHaveBeenCalledTimes(1)
   })
 
   it('refreshes an open popup from a worker state event without receiving a token', async () => {

@@ -13,7 +13,8 @@ import { IS_DEV_BUILD } from '../../shared/build-mode'
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
 const SIGN_IN_TIMEOUT_MS = 60000
 const E2E_AUTH_KEY = 'sploot:e2e-auth-authority'
-const AUTH_SYNC_RETRY_DELAYS_MS = [50, 100, 250, 500] as const
+const AUTH_SYNC_RETRY_DELAYS_MS = [50, 100, 250, 500, 1000, 2000, 5000, 10000, 15000, 15000] as const
+const AUTH_SYNC_INITIAL_RETRY_LIMIT = 4
 
 let cachedState: AuthState = { status: 'unknown' }
 const waiters = new Set<(state: AuthState) => void>()
@@ -170,7 +171,8 @@ function startAuthSyncWithRetry(): void {
 
   void startAuthSync().catch(error => {
     console.error('[Auth] Failed to initialize Clerk sync', error)
-    if (authSyncRetryAttempt >= AUTH_SYNC_RETRY_DELAYS_MS.length) {
+    const retryLimit = waiters.size > 0 ? AUTH_SYNC_RETRY_DELAYS_MS.length : AUTH_SYNC_INITIAL_RETRY_LIMIT
+    if (authSyncRetryAttempt >= retryLimit) {
       return
     }
     const delay = AUTH_SYNC_RETRY_DELAYS_MS[authSyncRetryAttempt++]
@@ -358,6 +360,11 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSign
       settled = true
       clearTimeout(timeoutId)
       waiters.delete(listener)
+      if (waiters.size === 0 && authSyncRetryTimer) {
+        clearTimeout(authSyncRetryTimer)
+        authSyncRetryTimer = undefined
+        authSyncRetryAttempt = 0
+      }
       signal?.removeEventListener('abort', abort)
       resolve(signedIn)
     }
@@ -385,6 +392,8 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSign
     }
 
     waiters.add(listener)
+    authSyncRetryAttempt = 0
+    startAuthSyncWithRetry()
   })
 }
 

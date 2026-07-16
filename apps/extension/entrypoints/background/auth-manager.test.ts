@@ -338,6 +338,31 @@ describe('auth-manager', () => {
     await expect(signInPromise).resolves.toBe(true)
   })
 
+  it('retries beyond the initial sync window during an active sign-in wait', async () => {
+    const clerk = {
+      session: null,
+      addListener: vi.fn(listener => {
+        clerkListeners.push(listener)
+        return () => undefined
+      }),
+    }
+    createClerkClient
+      .mockRejectedValueOnce(new Error('sync host unavailable 1'))
+      .mockRejectedValueOnce(new Error('sync host unavailable 2'))
+      .mockRejectedValueOnce(new Error('sync host unavailable 3'))
+      .mockRejectedValueOnce(new Error('sync host unavailable 4'))
+      .mockRejectedValueOnce(new Error('sync host unavailable 5'))
+      .mockResolvedValue(clerk)
+
+    const { promptUserSignIn, setupAuthBridge } = await importAuthManager()
+    setupAuthBridge()
+    const signInPromise = promptUserSignIn()
+    await vi.waitFor(() => expect(clerkListeners).toHaveLength(1), { timeout: 5000 })
+    clerkListeners[0]({ user: { id: 'late-user' }, session: { id: 'late-session', expireAt: null } })
+
+    await expect(signInPromise).resolves.toBe(true)
+  })
+
   it('resolves sign-in waiters when the persistent Clerk listener observes sign-in', async () => {
     const signedInState: AuthState = {
       status: 'signed-in',

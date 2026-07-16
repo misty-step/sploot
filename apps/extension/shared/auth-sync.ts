@@ -62,7 +62,7 @@ export function installPopupAuthSync(
 ): () => void {
   let disposed = false
 
-  const refresh = (state: AuthState, allowReload: boolean) => {
+  const refresh = (state: AuthState) => {
     if (disposed) {
       return
     }
@@ -81,9 +81,6 @@ export function installPopupAuthSync(
       return
     }
 
-    if (!allowReload) {
-      return
-    }
 
     // A reload is only a bootstrap fallback while Clerk hydrates from the
     // synced web session. Persist the guard so a remount cannot reload forever.
@@ -95,9 +92,18 @@ export function installPopupAuthSync(
       if (reloadGuardStorage.getItem(reloadKey)) {
         return
       }
+    } catch {
+      if (memoryReloadGuard.get(reloadKey)) {
+        return
+      }
+    }
+    try {
       reloadGuardStorage.setItem(reloadKey, '1')
     } catch {
-      return
+      if (memoryReloadGuard.get(reloadKey)) {
+        return
+      }
+      memoryReloadGuard.set(reloadKey, '1')
     }
     void Promise.resolve().then(reloadPopup).catch(error => {
       console.error('[Popup] Failed to reload auth state', error)
@@ -111,7 +117,7 @@ export function installPopupAuthSync(
 
     const candidate = message as { type?: unknown; payload?: unknown }
     if (candidate.type === AUTH_MESSAGES.STATE_CHANGED && shouldRefresh(candidate.payload)) {
-      refresh(candidate.payload, true)
+      refresh(candidate.payload)
     }
   }
 
@@ -125,7 +131,7 @@ export function installPopupAuthSync(
 
       const state = (response as { state?: unknown }).state
       if (shouldRefresh(state)) {
-        refresh(state, false)
+        refresh(state)
       }
     })
     .catch(error => {
