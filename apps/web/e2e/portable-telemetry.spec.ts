@@ -30,9 +30,26 @@ async function assertPortablePage(page: Page, path: string, baseURL: string | un
       // Browser-internal URLs are not network requests we can classify here.
     }
   };
-  const onRequestFailed = (request: { url(): string; failure(): { errorText?: string } | null }) => {
+  const onRequestFailed = (request: {
+    url(): string;
+    resourceType(): string;
+    failure(): { errorText?: string } | null;
+  }) => {
     const failure = request.failure();
-    failedRequests.push(request.url() + (failure?.errorText ? ' (' + failure.errorText + ')' : ''));
+    let parsed: URL | null = null;
+    try {
+      parsed = new URL(request.url());
+    } catch {
+      // Browser-internal URLs are not network requests we can classify here.
+    }
+    const isBenignRscPrefetchCancellation =
+      failure?.errorText === 'net::ERR_ABORTED' &&
+      request.resourceType() === 'fetch' &&
+      parsed?.origin === expectedOrigin &&
+      parsed?.searchParams.has('_rsc');
+    if (!isBenignRscPrefetchCancellation) {
+      failedRequests.push(request.url() + (failure?.errorText ? ' (' + failure.errorText + ')' : ''));
+    }
   };
   const onResponse = (response: { url(): string; status(): number }) => {
     if (response.status() >= 400) badResponses.push(response.status() + ' ' + response.url());
@@ -77,7 +94,7 @@ async function openAuthenticatedPage(browser: Browser, baseURL: string | undefin
   return { context, page: await context.newPage() };
 }
 
-test('production public pages stay provider-portable and console-clean', async ({ page, baseURL }) => {
+test('public truth pages stay provider-portable and console-clean', async ({ page, baseURL }) => {
   for (const path of PUBLIC_PAGES) await assertPortablePage(page, path, baseURL);
 });
 
