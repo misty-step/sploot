@@ -880,9 +880,7 @@ const VECTOR_SEARCH_CURSOR_VERSION = 3;
 const TEST_VECTOR_SEARCH_CURSOR_SECRET = 'sploot-test-only-vector-search-cursor-secret';
 
 function getVectorSearchCursorSecret(): string | null {
-  const configured = process.env.SEARCH_CURSOR_SECRET ||
-    process.env.CLERK_SECRET_KEY ||
-    process.env.SPLOOT_QA_AUTH_SECRET;
+  const configured = process.env.SEARCH_CURSOR_SECRET || process.env.CLERK_SECRET_KEY;
   if (configured) return configured;
   return process.env.NODE_ENV === 'test' ? TEST_VECTOR_SEARCH_CURSOR_SECRET : null;
 }

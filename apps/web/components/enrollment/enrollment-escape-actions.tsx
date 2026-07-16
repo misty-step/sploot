@@ -2,8 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useUser } from '@clerk/nextjs';
-import { useAuthActions } from '@/lib/auth/client';
+import { useAuthActions, useAuthUser } from '@/lib/auth/client';
 
 export function EnrollmentEscapeActions({ showSignOut = true }: { showSignOut?: boolean }) {
   return (
@@ -27,7 +26,7 @@ export function EnrollmentEscapeActions({ showSignOut = true }: { showSignOut?: 
 
 function SignedInSignOutEscape() {
   const { signOut } = useAuthActions();
-  const { isLoaded, isSignedIn } = useUser();
+  const { user } = useAuthUser();
   const router = useRouter();
 
   async function handleSignOut() {
@@ -35,7 +34,7 @@ function SignedInSignOutEscape() {
     router.push('/');
   }
 
-  if (!isLoaded || !isSignedIn) return null;
+  if (!user) return null;
 
   return (
     <button

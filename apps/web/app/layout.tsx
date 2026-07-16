@@ -117,19 +117,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <AuthProvider>
-      <EmbeddingStatusProvider>
-        <html lang="en" suppressHydrationWarning>
-          <head>
-            <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
-            <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
-            <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
-            <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#000000" />
-            <meta name="theme-color" content="#000000" />
-          </head>
-          <body
-            className={`${baloo.variable} ${bungee.variable} ${spaceMono.variable} font-sans antialiased`}
-          >
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
+        <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#000000" />
+        <meta name="theme-color" content="#000000" />
+      </head>
+      <body
+        className={`${baloo.variable} ${bungee.variable} ${spaceMono.variable} font-sans antialiased`}
+      >
+        <AuthProvider>
+          <EmbeddingStatusProvider>
             <ThemeProvider
               attribute="class"
               defaultTheme="system"
@@ -139,9 +139,9 @@ export default function RootLayout({
               {children}
               <Toaster />
             </ThemeProvider>
-          </body>
-        </html>
-      </EmbeddingStatusProvider>
-    </AuthProvider>
+          </EmbeddingStatusProvider>
+        </AuthProvider>
+      </body>
+    </html>
   );
 }

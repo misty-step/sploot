@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { resolve } from "node:path";
 import withPWA from "@ducanh2912/next-pwa";
 import {
   IMAGE_DEVICE_SIZES,
@@ -19,7 +20,19 @@ if (process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && !qaLocalDeployment) {
 }
 const qaLocalAuthBuild = process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && qaLocalDeployment;
 
+const qaClientModule = resolve(__dirname, qaLocalAuthBuild ? "lib/auth/qa-client.ts" : "lib/auth/qa-client-production.ts");
+
 const nextConfig: NextConfig = {
+  webpack(config) {
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      "@/lib/auth/qa-client": qaClientModule,
+      "@/lib/auth/qa-evidence": resolve(__dirname, qaLocalAuthBuild ? "lib/auth/qa-evidence.ts" : "lib/auth/qa-evidence-production.ts"),
+      "@/lib/auth/qa-request-auth": resolve(__dirname, qaLocalAuthBuild ? "lib/auth/qa-request-auth.ts" : "lib/auth/qa-request-auth-production.ts"),
+      "@/lib/auth/qa-server": resolve(__dirname, qaLocalAuthBuild ? "lib/auth/qa-server.ts" : "lib/auth/qa-server-production.ts"),
+    };
+    return config;
+  },
   // The evidence gate needs a self-contained artifact while the deployed production contract stays source-based.
   ...(process.env.SPLOOT_QA_AUTH_MODE === 'enabled' &&
     process.env.SPLOOT_QA_EVIDENCE_MODE === 'enabled' &&

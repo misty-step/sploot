@@ -1,6 +1,7 @@
 'use client';
 
 import { ClerkProvider, useClerk, useUser } from '@clerk/nextjs';
+import { getQaAuthState } from '@/lib/auth/qa-client';
 import React, { createContext, useContext } from 'react';
 
 interface AuthClientState {
@@ -14,9 +15,7 @@ interface AuthClientState {
 }
 
 const AuthClientContext = createContext<AuthClientState | null>(null);
-const qaClientAuthEnabled = process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE === 'enabled' &&
-  process.env.NEXT_PUBLIC_SPLOOT_QA_EVIDENCE_MODE === 'enabled' &&
-  process.env.NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID === 'sploot-gallery-qa-local';
+const qaClientAuthEnabled = process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true';
 
 function ClerkAuthBridge({ children }: { children: React.ReactNode }) {
   const { user } = useUser();
@@ -30,15 +29,7 @@ function ClerkAuthBridge({ children }: { children: React.ReactNode }) {
 }
 
 function QaAuthBridge({ children }: { children: React.ReactNode }) {
-  const user = {
-    firstName: 'QA',
-    username: 'qa-design-user',
-    emailAddresses: [{ emailAddress: 'qa-design-user@qa.local' }],
-  };
-  const signOut = async () => {
-    document.cookie = 'sploot_qa_auth=; Max-Age=0; Path=/';
-    window.location.assign('/');
-  };
+  const { user, signOut } = getQaAuthState();
 
   return (
     <AuthClientContext.Provider value={{ user, signOut }}>

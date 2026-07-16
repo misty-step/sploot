@@ -54,6 +54,7 @@ const env = {
   NEXT_PUBLIC_SPLOOT_QA_EVIDENCE_MODE: 'enabled',
   NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID: 'sploot-gallery-qa-local',
   SPLOOT_QA_AUTH_SECRET: secret,
+  SEARCH_CURSOR_SECRET: secret,
   PLAYWRIGHT_SERVER_MODE: 'production',
   PLAYWRIGHT_BASE_URL: baseURL,
   QA_EVIDENCE_LIFECYCLE_PATH: lifecyclePath,

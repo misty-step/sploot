@@ -22,7 +22,7 @@ const closedEnrollmentAppearance = {
 };
 
 export default async function SignInPage() {
-  const { isQaLocalAuthEnabled } = await import("@/lib/auth/qa-local");
+  const { isQaLocalAuthEnabled } = await import("@/lib/auth/qa-local-enabled");
   if (isQaLocalAuthEnabled()) {
     redirect('/api/qa-auth/login');
   }

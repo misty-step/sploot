@@ -8,6 +8,7 @@ import type {
 import { extractUploadToken, verifyUploadToken } from './upload-token';
 import { verifyBearerOrThrow } from './verify-bearer';
 import { isEnrollmentUnavailableError } from '@/lib/enrollment/enrollment-policy';
+import { resolveQaLocalRequestAuth } from '@/lib/auth/qa-request-auth';
 
 const DEFAULT_AUTH_POLICY: Required<
   Pick<AuthPolicy, 'allowClerk' | 'allowQaLocal' | 'allowUploadToken'>
@@ -26,16 +27,11 @@ export async function authenticateRequest(
     ...policy,
   };
   const env = resolvedPolicy.env ?? process.env;
-  const hasQaInput = Boolean(req.headers.get('x-sploot-qa-auth') || req.headers.get('cookie')?.split(';').some((part) => part.trim().startsWith('sploot_qa_auth=')));
-
-  if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' && resolvedPolicy.allowQaLocal && hasQaInput) {
-    const { getQaProofRequestContext, verifyQaLocalAuthHeaders } = await import('./qa-local');
-    const requestContext = getQaProofRequestContext(req.headers);
-    requestContext.host = requestHostname(req) || requestContext.host;
-    const qaResult = await verifyQaLocalAuthHeaders(req.headers, env, requestContext);
+  if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' && resolvedPolicy.allowQaLocal) {
+    const qaResult = await resolveQaLocalRequestAuth(req.headers, env, requestHostname(req) || undefined);
     // QA credentials are terminal input. A malformed, expired, disabled, or
     // otherwise forbidden QA credential must never fall through to Clerk.
-    return qaResult;
+    if (qaResult) return qaResult;
   }
 
   if (resolvedPolicy.allowUploadToken) {

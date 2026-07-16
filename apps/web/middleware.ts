@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse, type NextRequest } from 'next/server'
+import { verifyQaEvidence } from '@/lib/auth/qa-evidence'
 
 // Define protected routes that require authentication
 const isProtectedRoute = createRouteMatcher([
@@ -41,16 +42,6 @@ const clerkProtectedMiddleware = clerkMiddleware(async (auth, req) => {
   }
 
   if (isProtectedRoute(req)) {
-    const headers = req.headers ?? new Headers()
-    const { getQaProofRequestContext, verifyQaLocalAuthHeaders } = await import('@/lib/auth/qa-local')
-    const qaAuth = await verifyQaLocalAuthHeaders(headers, process.env, {
-      ...getQaProofRequestContext(headers),
-      host: req.nextUrl?.hostname ?? getQaProofRequestContext(headers).host,
-    })
-    if (qaAuth.status === 'authenticated') {
-      return
-    }
-
     await auth.protect({ unauthenticatedUrl: new URL('/sign-in', req.url).toString() })
   }
 })
@@ -67,11 +58,7 @@ const qaEvidenceMiddleware = async (req: NextRequest) => {
 
   if (isProtectedRoute(req)) {
     const headers = req.headers ?? new Headers()
-    const { getQaProofRequestContext, verifyQaLocalAuthHeaders } = await import('@/lib/auth/qa-local')
-    const qaAuth = await verifyQaLocalAuthHeaders(headers, process.env, {
-      ...getQaProofRequestContext(headers),
-      host: req.nextUrl?.hostname ?? getQaProofRequestContext(headers).host,
-    })
+    const qaAuth = await verifyQaEvidence(headers, req.nextUrl?.hostname)
     if (qaAuth.status !== 'authenticated') {
       return NextResponse.redirect(new URL('/sign-in', req.url))
     }
