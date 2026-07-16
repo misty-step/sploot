@@ -1,5 +1,6 @@
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import { connect as netConnect } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -172,6 +173,8 @@ async function pasteUrl(page: Page, url: string): Promise<void> {
 type PersistentAppProxy = {
   url: string;
   forwardedRequests: () => number;
+  tunneledConnections: () => number;
+  connectResponse: (authority: string) => Promise<string>;
   close: () => Promise<void>;
 };
 
@@ -184,6 +187,7 @@ async function startPersistentAppProxy(appBaseURL: string): Promise<PersistentAp
   const target = new URL(appBaseURL);
   const requestClient = target.protocol === 'https:' ? httpsRequest : httpRequest;
   let forwardedRequestCount = 0;
+  let tunneledConnectionCount = 0;
   const server: Server = createServer((request, response) => {
     if (!request.url) {
       response.statusCode = 400;
@@ -220,16 +224,46 @@ async function startPersistentAppProxy(appBaseURL: string): Promise<PersistentAp
     });
     request.pipe(upstream);
   });
-  server.on('connect', (_request, socket) => socket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n'));
+  server.on('connect', (request, socket, head) => {
+    if (request.url !== target.host) {
+      socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+      return;
+    }
+    const upstream = netConnect(Number(target.port) || (target.protocol === 'https:' ? 443 : 80), target.hostname, () => {
+      tunneledConnectionCount += 1;
+      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+      if (head.length) upstream.write(head);
+      upstream.pipe(socket);
+      socket.pipe(upstream);
+    });
+    upstream.once('error', () => socket.destroy());
+    socket.once('error', () => upstream.destroy());
+  });
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => resolve());
   });
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('persistent app proxy did not bind a port');
+  const proxyURL = `http://127.0.0.1:${address.port}`;
+  const connectResponse = (authority: string) => new Promise<string>((resolve, reject) => {
+    const socket = netConnect(address.port, '127.0.0.1');
+    let response = '';
+    socket.once('error', reject);
+    socket.on('data', (chunk) => {
+      response += chunk.toString();
+      if (response.includes('\r\n\r\n')) {
+        socket.destroy();
+        resolve(response);
+      }
+    });
+    socket.once('connect', () => socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`));
+  });
   return {
-    url: `http://127.0.0.1:${address.port}`,
+    url: proxyURL,
     forwardedRequests: () => forwardedRequestCount,
+    tunneledConnections: () => tunneledConnectionCount,
+    connectResponse,
     close: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
   };
 }
@@ -277,6 +311,9 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     await context.setOffline(false);
     await expect.poll(() => signedOut.evaluate(() => navigator.onLine), { timeout: 5_000 }).toBe(true);
     await openSignedOutApp(signedOut);
+    expect(appProxy.connectResponse(new URL(browserBaseURL).host)).toMatch(/^HTTP\/1\.1 200/);
+    expect(appProxy.connectResponse('not-the-app.test:80')).toMatch(/^HTTP\/1\.1 403/);
+    expect(appProxy.tunneledConnections()).toBeGreaterThan(0);
     expect(appProxy.forwardedRequests()).toBeGreaterThan(0);
     const accountATab = await context.newPage();
     const accountBTab = await context.newPage();
