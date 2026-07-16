@@ -12,7 +12,7 @@ rejected. Runtime S3 endpoints must be HTTPS. HTTP is accepted only when
 `NODE_ENV=test` and `STORAGE_ALLOW_HTTP_TEST_FIXTURE=true` are both explicit.
 
 The fingerprint includes only provider, endpoint, bucket, region, the
-non-secret config version, and the validated legacy base URL. It never includes
+non-secret config version, and the validated legacy and S3 public delivery bases. It never includes
 access keys, secret keys, or Blob tokens. Database rows store logical and
 provider/physical identity in `storage_*` columns; legacy URL columns remain
 read compatibility during the reversible transition and are not cutover
@@ -24,7 +24,9 @@ authority.
 pnpm --filter web storage:portability inventory --limit 1000 > manifest.json
 ```
 
-The command reads active database rows only. A manifest consumed by the
+The command reads active database rows only. `--limit` is a per-page batch
+size (1-100), not a total cap; the command exhaustively pages until the
+active set is complete and persists a cursor for bounded resume. A manifest consumed by the
 verifier is a JSON array of `{logicalKey, sourceKey, size, sha256,
 contentType}` entries. Generate or review it without Vercel credentials in the
 environment when possible.

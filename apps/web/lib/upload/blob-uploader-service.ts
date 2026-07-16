@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isValidMimeType, normalizeMimeType } from '@sploot/common';
 import { generateUniqueFilename } from '@/lib/blob';
 import { logger } from '@/lib/logger';
 import type { ProcessedImage } from '@/lib/image-processing';
@@ -85,9 +86,12 @@ export class BlobUploaderService {
     userId: string,
     originalFilename: string,
     mainBuffer: Buffer,
-    renditions?: BlobUploadRenditions | null
+    renditions?: BlobUploadRenditions | null,
+    mimeType?: string
   ): Promise<BlobUploadResult> {
-    const uniqueFilename = generateUniqueFilename(userId, originalFilename);
+    const contentType = normalizeMimeType(mimeType ?? '');
+    if (contentType && !isValidMimeType(contentType)) throw new BlobUploadError(`Invalid upload MIME type: ${contentType}`);
+    const uniqueFilename = contentType ? generateUniqueFilename(userId, originalFilename, contentType) : generateUniqueFilename(userId, originalFilename);
     const thumbnailFilename = withThumbnailSuffix(
       uniqueFilename,
       renditions?.thumbnail?.format ?? 'jpg'
@@ -116,7 +120,8 @@ export class BlobUploaderService {
       // Upload main image
       const mainBlob = await this.uploadWithRetry(
         uniqueFilename,
-        renditions?.main?.buffer ?? mainBuffer
+        renditions?.main?.buffer ?? mainBuffer,
+        contentType || undefined
       );
 
       mainBlobUrl = mainBlob.url;
@@ -137,7 +142,7 @@ export class BlobUploaderService {
           const thumbnailBlob = await this.storage.put(
             thumbnailFilename,
             renditions.thumbnail.buffer,
-            metadataFor(renditions.thumbnail.buffer, renditions.thumbnail.format),
+            metadataFor(renditions.thumbnail.buffer, thumbnailContentType(renditions.thumbnail.format)),
           );
 
           thumbnailBlobUrl = thumbnailBlob.url;
@@ -197,13 +202,14 @@ export class BlobUploaderService {
    */
   private async uploadWithRetry(
     filename: string,
-    buffer: Buffer
+    buffer: Buffer,
+    contentType?: string
   ): Promise<{ provider: string; url: string; pathname: string; metadata: ReturnType<typeof metadataFor>; replicas?: StorageReplica[] }> {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        const metadata = metadataFor(buffer);
+        const metadata = metadataFor(buffer, contentType);
         const blob = await this.storage.put(filename, buffer, metadata);
 
         return {
@@ -344,6 +350,13 @@ export function getBlobUploader(): BlobUploaderService {
   return defaultUploader;
 }
 
+function thumbnailContentType(format: string): string {
+  if (format === 'jpeg') return 'image/jpeg';
+  if (format === 'png') return 'image/png';
+  if (format === 'webp') return 'image/webp';
+  throw new Error(`Unsupported thumbnail format: ${format}`);
+}
+
 function withThumbnailSuffix(filename: string, format: string): string {
   const extension = format === 'jpeg' ? 'jpg' : format;
 
@@ -355,9 +368,10 @@ function withThumbnailSuffix(filename: string, format: string): string {
 }
 
 function metadataFor(buffer: Buffer, contentType?: string) {
+  const normalized = contentType ? normalizeMimeType(contentType) : undefined;
   return {
     size: buffer.byteLength,
     sha256: createHash('sha256').update(buffer).digest('hex'),
-    contentType,
+    contentType: normalized,
   };
 }

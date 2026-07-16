@@ -48,6 +48,7 @@ describe('portable storage contract', () => {
   it('fingerprints non-secret provider identity only', () => {
     const config = createStorageConfig({
       provider: 's3',
+      publicUrlBase: 'https://objects.example.test',
       endpoint: 'https://objects.example.test',
       bucket: 'sploot',
       region: 'auto',
@@ -69,6 +70,7 @@ describe('portable storage contract', () => {
     expect(
       createStorageConfig({
         provider: 's3',
+      publicUrlBase: 'https://objects.example.test',
         endpoint: 'http://objects.example.test',
         bucket: 'x',
         allowHttpTestFixture: true,
@@ -77,7 +79,7 @@ describe('portable storage contract', () => {
   });
 
   it('requires verified evidence for target phases and forbids unsafe skips', () => {
-    expect(() => createStorageConfig({ provider: 's3', phase: 'target', endpoint: 'https://objects.example.test', bucket: 'sploot' })).toThrow(/manifest SHA-256/);
+    expect(() => createStorageConfig({ provider: 's3', phase: 'target', endpoint: 'https://objects.example.test', publicUrlBase: 'https://objects.example.test', bucket: 'sploot' })).toThrow(/manifest SHA-256/);
     expect(() => assertCutoverTransition('legacy', 'target')).toThrow(/Unsafe/);
     expect(() => assertCutoverTransition('dual-write', 'target')).not.toThrow();
   });
@@ -108,14 +110,38 @@ describe('portable storage contract', () => {
     expect(provider.objects.has('assets/user_1/poison.png')).toBe(false);
   });
 
+  it('rejects expiring or credentialed delivery bases', () => {
+    expect(() => createStorageConfig({ provider: 's3', endpoint: 'https://objects.example.test', publicUrlBase: 'https://objects.example.test?X-Amz-Expires=60', bucket: 'sploot' })).toThrow(/stable HTTPS/);
+    expect(() => createStorageConfig({ provider: 's3', endpoint: 'https://objects.example.test', publicUrlBase: 'https://user:secret@cdn.example.test/assets', bucket: 'sploot' })).toThrow(/stable HTTPS/);
+    for (const base of ['https://cdn.example.test/base/../evil', 'https://cdn.example.test/base/%2e%2e/evil', 'https://cdn.example.test/base\\evil']) {
+      expect(() => createStorageConfig({ provider: 's3', endpoint: 'https://objects.example.test', publicUrlBase: base, bucket: 'sploot' })).toThrow(/path traversal|separators/);
+    }
+  });
+
   it('returns a fetchable HTTPS delivery URL for target writes', async () => {
-    const target = new S3CompatibleObjectStore(createStorageConfig({ provider: 's3', endpoint: 'https://objects.example.test', bucket: 'sploot', accessKeyId: 'public-id', secretAccessKey: 'secret' }));
+    const target = new S3CompatibleObjectStore(createStorageConfig({ provider: 's3', endpoint: 'https://objects.example.test', publicUrlBase: 'https://objects.example.test', bucket: 'sploot', accessKeyId: 'public-id', secretAccessKey: 'secret' }));
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(bytes, { status: 200, headers: { 'content-length': String(bytes.byteLength), 'content-type': 'image/png', 'x-amz-meta-sha256': metadata.sha256 } }));
     const result = await target.put('assets/a.png', bytes, metadata);
     expect(result.url).toBe('https://objects.example.test/sploot/assets/a.png');
     expect(result.url).not.toMatch(/^s3:/);
     expect(fetchMock).toHaveBeenCalledWith(expect.any(URL), expect.objectContaining({ method: 'PUT' }));
     fetchMock.mockRestore();
+  });
+
+  it('reads back the exact URL returned by a provider', async () => {
+    const calls: string[] = [];
+    const provider = {
+      provider: 'vercel',
+      async put() { return { provider: 'vercel', key: 'actual-key', url: 'https://actual.example.test/actual-key', metadata }; },
+      async get() { throw new Error('logical reconstruction must not be used'); },
+      async getUrl(url: string) { calls.push(url); return { key: 'actual-key', url, metadata, body: bytes }; },
+      async delete() {},
+      async deleteUrl(url: string) { calls.push('delete:' + url); },
+    };
+    const store = new PortableObjectStore({ legacy: provider, phase: 'legacy' });
+    const result = await store.putVerified('assets/a.png', bytes, metadata);
+    expect(result.url).toBe('https://actual.example.test/actual-key');
+    expect(calls).toEqual(['https://actual.example.test/actual-key']);
   });
 
   it('guards URL syntax and S3 bucket ownership', async () => {
@@ -129,6 +155,7 @@ describe('portable storage contract', () => {
 
     const target = new S3CompatibleObjectStore(createStorageConfig({
       provider: 's3',
+      publicUrlBase: 'https://objects.example.test',
       endpoint: 'https://objects.example.test',
       bucket: 'sploot',
       accessKeyId: 'public-id',

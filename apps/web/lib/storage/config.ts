@@ -12,6 +12,7 @@ export interface StorageConfig {
   provider: StorageProvider;
   phase: StoragePhase;
   endpoint: string;
+  publicUrlBase?: string;
   bucket: string;
   region: string;
   configVersion: string;
@@ -25,6 +26,7 @@ export interface StorageConfig {
 export type StorageConfigInput = Partial<StorageConfig> & {
   provider: StorageProvider;
   endpoint?: string;
+  publicUrlBase?: string;
   bucket?: string;
   region?: string;
   configVersion?: string;
@@ -52,6 +54,18 @@ export function canonicalLogicalKey(value: string): string {
   return value;
 }
 
+function validatePublicUrlBase(value: string): string {
+  if (typeof value !== 'string' || value.trim() === '') throw new Error('S3_PUBLIC_URL_BASE must be an absolute URL');
+  const rawPath = value.match(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*(.*)$/i)?.[1]?.split(/[?#]/, 1)[0] ?? '';
+  if (/\\|(?:^|\/)\.{1,2}(?:\/|$)|%2e|%2f|%5c/i.test(rawPath)) throw new Error('S3_PUBLIC_URL_BASE cannot contain path traversal or encoded path separators');
+  let parsed: URL;
+  try { parsed = new URL(value); } catch { throw new Error('S3_PUBLIC_URL_BASE must be an absolute URL'); }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.search || parsed.hash) throw new Error('S3_PUBLIC_URL_BASE must be a stable HTTPS URL without credentials, query, or hash data');
+  const decodedPath = decodeURIComponent(parsed.pathname);
+  if (decodedPath.split('/').some(component => component === '.' || component === '..') || decodedPath.includes('\\')) throw new Error('S3_PUBLIC_URL_BASE cannot contain path traversal');
+  return parsed.toString().replace(/\/$/, '');
+}
+
 function validateEndpoint(endpoint: string, allowHttpTestFixture: boolean): string {
   let parsed: URL;
   try {
@@ -73,6 +87,11 @@ export function createStorageConfig(input: StorageConfigInput): StorageConfig {
   const allowHttpTestFixture = input.allowHttpTestFixture ?? false;
   const endpoint = validateEndpoint(input.endpoint ?? 'https://invalid.example.test', allowHttpTestFixture);
   const legacyBaseUrl = validateEndpoint(input.legacyBaseUrl ?? 'https://your-blob-store.vercel-storage.com', false);
+  let publicUrlBase: string | undefined;
+  if (input.provider === 's3') {
+    if (!input.publicUrlBase) throw new Error('S3-compatible storage requires S3_PUBLIC_URL_BASE for stable delivery URLs');
+    publicUrlBase = validatePublicUrlBase(input.publicUrlBase);
+  }
   if (input.provider === 's3' && !input.bucket) throw new Error('S3-compatible storage requires a bucket');
   if (!input.bucket || !/^[A-Za-z0-9][A-Za-z0-9.-]{0,62}$/.test(input.bucket)) {
     throw new Error('Storage bucket identity is invalid');
@@ -87,6 +106,7 @@ export function createStorageConfig(input: StorageConfigInput): StorageConfig {
     provider: input.provider,
     phase: input.phase ?? 'legacy',
     endpoint,
+    publicUrlBase,
     bucket: input.bucket,
     region: input.region ?? 'auto',
     configVersion: input.configVersion ?? 'v1',
@@ -107,6 +127,7 @@ export function storageConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Stor
     provider,
     phase,
     endpoint: env.STORAGE_S3_ENDPOINT ?? 'https://objects.invalid.example.test',
+    publicUrlBase: env.S3_PUBLIC_URL_BASE,
     bucket: env.STORAGE_S3_BUCKET ?? 'sploot-portability-placeholder',
     region: env.STORAGE_S3_REGION,
     configVersion: env.STORAGE_CONFIG_VERSION,
@@ -127,6 +148,7 @@ export function storageConfigFingerprint(config: StorageConfig): string {
     region: config.region,
     configVersion: config.configVersion,
     legacyBaseUrl: config.legacyBaseUrl,
+    publicUrlBase: config.publicUrlBase,
   });
   return createHash('sha256').update(identity).digest('hex');
 }
