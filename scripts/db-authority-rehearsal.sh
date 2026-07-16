@@ -257,7 +257,8 @@ for _ in $(seq 1 60); do
   if health_json="$(curl --fail --silent --show-error "http://127.0.0.1:${health_port}/api/health" 2>/dev/null)"; then break; fi
   sleep 1
 done
-HEALTH_JSON="$health_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") process.exit(1)'
+if [[ -z "$health_json" ]]; then echo "health readiness never returned HTTP 200 on port $health_port" >&2; cat "/tmp/sploot-health-$PG_VERSION.log" >&2; exit 1; fi
+HEALTH_JSON="$health_json" node -e 'try { const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") { console.error("unexpected health payload:", process.env.HEALTH_JSON); process.exit(1); } } catch (error) { console.error("invalid health payload:", process.env.HEALTH_JSON, error); process.exit(1); }'
 kill "$health_pid"
 wait "$health_pid" 2>/dev/null || true
 trap - EXIT
@@ -279,6 +280,7 @@ for _ in $(seq 1 60); do
   if absent_json="$(curl --fail --silent --show-error "http://127.0.0.1:${absent_port}/api/health" 2>/dev/null)"; then break; fi
   sleep 1
 done
+if [[ -z "$absent_json" ]]; then echo "absent-flag health readiness never returned HTTP 200 on port $absent_port" >&2; cat "/tmp/sploot-health-absent-$PG_VERSION.log" >&2; exit 1; fi
 HEALTH_JSON="$absent_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") process.exit(1)'
 absent_live_json="$(curl --fail --silent --show-error "http://127.0.0.1:${absent_port}/api/health/live")"
 HEALTH_JSON="$absent_live_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="alive"||h.service!=="sploot-web") process.exit(1)'
@@ -310,6 +312,7 @@ for _ in $(seq 1 60); do
   if plain_json="$(curl --fail --silent --show-error "http://127.0.0.1:${plain_port}/api/health" 2>/dev/null)"; then break; fi
   sleep 1
 done
+if [[ -z "$plain_json" ]]; then echo "plain health readiness never returned HTTP 200 on port $plain_port" >&2; cat "/tmp/sploot-health-plain-$PG_VERSION.log" >&2; exit 1; fi
 HEALTH_JSON="$plain_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") process.exit(1)'
 plain_live_json="$(curl --fail --silent --show-error "http://127.0.0.1:${plain_port}/api/health/live")"
 HEALTH_JSON="$plain_live_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="alive"||h.service!=="sploot-web") process.exit(1)'

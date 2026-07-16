@@ -21,7 +21,7 @@ authority.
 ## Read-only inventory
 
 ```sh
-pnpm --filter web storage:portability inventory --limit 1000 > manifest.json
+pnpm --filter web storage:portability inventory --limit 100 > manifest.json
 ```
 
 The command reads active database rows only. `--limit` is a per-page batch

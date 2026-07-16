@@ -199,9 +199,11 @@ export async function rollbackPrismaMigrationBatch(
       const source = options.source.getSourceKey ? await options.source.getSourceKey(claim.sourceKey) : await options.source.get(claim.sourceKey);
       const sourceBytes = await bodyToBuffer(source.body, Math.max(claim.size, 1));
       assertClaimBytes(sourceBytes, claim);
+      assertClaimMime(source.metadata.contentType, claim.contentType);
       const target = await options.target.get(claim.logicalKey);
       const targetBytes = await bodyToBuffer(target.body, Math.max(claim.size, 1));
       assertClaimBytes(targetBytes, claim);
+      assertClaimMime(target.metadata.contentType, claim.contentType);
       await options.target.delete(claim.logicalKey);
       await options.target.get(claim.logicalKey).then(() => { throw new Error(`Rollback delete readback still exists for ${claim.logicalKey}`); }).catch(error => {
         if (!(error instanceof ObjectNotFoundError)) throw error;
@@ -212,6 +214,11 @@ export async function rollbackPrismaMigrationBatch(
     }
   }
   return storageMigrationReceipt(db);
+}
+
+function assertClaimMime(actual: string | undefined, expected: string | null) {
+  if (expected && actual && actual.toLowerCase().split(';')[0].trim() !== expected.toLowerCase().split(';')[0].trim()) throw new ObjectParityError(`Migration content type mismatch: expected ${expected}, got ${actual}`);
+  if (expected && !actual) throw new ObjectParityError(`Migration content type missing: expected ${expected}`);
 }
 
 function assertClaimBytes(bytes: Buffer, claim: Pick<DurableMigrationClaim, 'logicalKey' | 'size' | 'sha256'>) {

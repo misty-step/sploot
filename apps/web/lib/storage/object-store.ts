@@ -298,7 +298,7 @@ export class VercelObjectStore implements ObjectStore {
   }
 
   async getSourceKey(key: string): Promise<StoredObject> {
-    if (typeof key !== 'string' || key.length === 0 || key.length > 2048) throw new Error('Legacy storage source key is invalid');
+    if (typeof key !== 'string' || key.length === 0 || key.length > 2048 || key.includes('\\') || key.includes('\0') || key.split('/').some(segment => segment === '.' || segment === '..' || segment.length === 0)) throw new Error('Legacy storage source key is invalid');
     const encoded = key.split('/').map(segment => encodeURIComponent(segment)).join('/');
     return this.readUrl(`${this.baseUrl.replace(/\/$/, '')}/${encoded}`, key);
   }
