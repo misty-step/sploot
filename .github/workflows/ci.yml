@@ -254,6 +254,8 @@ jobs:
         run: pnpm --filter extension exec playwright install chromium
       - name: Exercise real popup owner isolation in Chromium
         run: xvfb-run -a pnpm --filter extension test:layout
+      - name: Exercise real update notice and current-version clearing in Chromium
+        run: xvfb-run -a pnpm --filter extension test:update-nag
       - name: Install native browser accelerator driver
         run: |
           sudo apt-get update

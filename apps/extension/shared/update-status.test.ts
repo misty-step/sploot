@@ -50,7 +50,7 @@ describe('update-status', () => {
   });
 
   it('stores an update returned by requestUpdateCheck at startup', async () => {
-    requestUpdateCheck.mockResolvedValue({ status: 'update', version: '1.2.0' });
+    requestUpdateCheck.mockResolvedValue({ status: 'update_available', version: '1.2.0' });
     setupUpdateStatus();
     await vi.waitFor(async () => expect(await getUpdateNotice()).toEqual({ version: '1.2.0', dismissed: false }));
     expect(requestUpdateCheck).toHaveBeenCalledTimes(1);

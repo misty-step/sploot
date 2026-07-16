@@ -10,12 +10,13 @@ export const UPDATE_MESSAGES = {
 const UPDATE_CHECK_TIMEOUT_MS = 3_000;
 const TEST_INSTALLED_VERSION_KEY = 'sploot:update-status:test-installed-version';
 
-type UpdateCheckResult = { status?: 'update' | 'no_update' | 'throttled'; version?: string };
+type UpdateCheckResult = { status?: 'update_available' | 'no_update' | 'throttled'; version?: string };
 type StoredUpdateStatus = { availableVersion: string; dismissedVersion: string | null };
 export type UpdateNotice = { version: string; dismissed: boolean };
 
 let setupComplete = false;
 let startupCheckStarted = false;
+let statusWriteQueue = Promise.resolve();
 
 function normalizeVersion(version: unknown): string | null {
   if (typeof version !== 'string') return null;
@@ -96,7 +97,17 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
+function serializeStatusWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const run = statusWriteQueue.then(operation, operation);
+  statusWriteQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
 async function applyAvailableVersion(version: unknown): Promise<boolean> {
+  return serializeStatusWrite(() => applyAvailableVersionUnsafe(version));
+}
+
+async function applyAvailableVersionUnsafe(version: unknown): Promise<boolean> {
   const normalized = normalizeVersion(version);
   const current = await installedVersion();
   if (!normalized || !current || !isNewerVersion(normalized, current)) return false;
@@ -110,14 +121,14 @@ async function applyAvailableVersion(version: unknown): Promise<boolean> {
 }
 
 async function clearIfNoUpdate(): Promise<void> {
-  await writeStoredStatus(null);
+  await serializeStatusWrite(() => writeStoredStatus(null));
 }
 
 export async function getUpdateNotice(): Promise<UpdateNotice | null> {
   const existing = await readStoredStatus();
   const current = await installedVersion();
   if (!existing || !current || !isNewerVersion(existing.availableVersion, current)) {
-    if (existing) await writeStoredStatus(null);
+    if (existing) await serializeStatusWrite(() => writeStoredStatus(null));
     return null;
   }
   return {
@@ -143,7 +154,7 @@ export async function dismissUpdate(version: string): Promise<void> {
   if (!normalized) return;
   const current = await getUpdateNotice();
   if (!current || current.version !== normalized) return;
-  await writeStoredStatus({ availableVersion: normalized, dismissedVersion: normalized });
+  await serializeStatusWrite(() => writeStoredStatus({ availableVersion: normalized, dismissedVersion: normalized }));
 }
 
 export async function openUpdatePage(): Promise<boolean> {
@@ -163,7 +174,7 @@ export function checkForUpdates(): void {
     void withTimeout(Promise.resolve(request), UPDATE_CHECK_TIMEOUT_MS)
       .then(async result => {
         const checked = result as UpdateCheckResult;
-        if (checked.status === 'update') await applyAvailableVersion(checked.version);
+        if (checked.status === 'update_available') await applyAvailableVersion(checked.version);
         else if (checked.status === 'no_update') await clearIfNoUpdate();
       })
       .catch(() => undefined);
@@ -206,4 +217,5 @@ export async function setInstalledVersionForTesting(version: string): Promise<bo
 export function resetUpdateCheckForTesting(): void {
   startupCheckStarted = false;
   setupComplete = false;
+  statusWriteQueue = Promise.resolve();
 }
