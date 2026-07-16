@@ -3,10 +3,16 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
+import { validateManifest } from './manifest-policy.mjs';
+import {
+  assertCandidateSha,
+  createReleaseProvenance,
+  validateOperatorEvidenceAt,
+} from './release-provenance.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
@@ -14,10 +20,28 @@ const zipPath = path.resolve(root, 'dist/extension-1.0.0-chrome.zip');
 const listingPath = path.resolve(root, 'STORE_LISTING.md');
 const screenshotDir = path.resolve(root, 'store-assets/screenshots');
 const promoDir = path.resolve(root, 'store-assets/promo');
+const buildMarkerPath = path.resolve(root, 'dist/release-build-provenance.json');
+const provenancePath = path.resolve(
+  process.env.RELEASE_PROVENANCE_PATH ?? 'dist/extension-1.0.0-chrome.provenance.json'
+);
+const operatorEvidencePath = path.resolve(
+  process.env.RELEASE_OPERATOR_EVIDENCE_PATH ?? 'dist/extension-1.0.0-chrome.operator-evidence.json'
+);
+const structuralOnly = process.env.RELEASE_STRUCTURAL_ONLY === 'true';
 
 const pass = [];
 const localBlockers = [];
 const externalBlockers = [];
+const reportPath = process.env.RELEASE_REPORT_PATH
+  ? path.resolve(process.env.RELEASE_REPORT_PATH)
+  : undefined;
+let releaseCandidateSha;
+let releaseArtifactSha256;
+
+async function checkedOutCandidateSha() {
+  const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root });
+  return stdout.trim();
+}
 
 function rel(filePath) {
   return path.relative(root, filePath);
@@ -77,18 +101,35 @@ async function validateZip() {
     return;
   }
 
-  if (existsSync(listingPath)) {
-    const listing = await readFile(listingPath, 'utf8');
-    const documentedSha = listing.match(/SHA256:\s*([a-f0-9]{64})/i)?.[1]?.toLowerCase();
-    const actualSha = await sha256File(zipPath);
-
-    if (!documentedSha) {
-      recordLocal('listing packet missing release zip SHA256');
-    } else if (documentedSha !== actualSha) {
-      recordLocal(`release zip SHA256 mismatch: listing has ${documentedSha}, actual is ${actualSha}`);
-    } else {
-      recordPass(`release zip SHA256 matches STORE_LISTING.md (${actualSha})`);
+  const actualSha = await sha256File(zipPath);
+  const candidateSha = await checkedOutCandidateSha();
+  releaseCandidateSha = candidateSha;
+  releaseArtifactSha256 = actualSha;
+  try {
+    assertCandidateSha(candidateSha, process.env.RELEASE_CANDIDATE_SHA);
+    if (!existsSync(buildMarkerPath)) {
+      throw new Error(`missing release build provenance: ${rel(buildMarkerPath)}`);
     }
+    const buildMarker = JSON.parse(await readFile(buildMarkerPath, 'utf8'));
+    if (buildMarker.candidateSha !== candidateSha) {
+      throw new Error(`release build candidate drift: marker has ${buildMarker.candidateSha}, checked out ${candidateSha}`);
+    }
+    if (buildMarker.artifact?.path !== rel(zipPath)) {
+      throw new Error(`release build artifact path drift: marker has ${buildMarker.artifact?.path}, expected ${rel(zipPath)}`);
+    }
+    if (buildMarker.artifact?.sha256 !== actualSha) {
+      throw new Error(`release build artifact drift: marker has ${buildMarker.artifact?.sha256}, actual is ${actualSha}`);
+    }
+    const provenance = createReleaseProvenance({
+      candidateSha,
+      artifactPath: rel(zipPath),
+      artifactSha256: actualSha,
+      version: '1.0.0',
+    });
+    await writeFile(provenancePath, `${JSON.stringify(provenance, null, 2)}\n`);
+    recordPass(`release provenance binds ${candidateSha} to ${actualSha}`);
+  } catch (error) {
+    recordLocal(error instanceof Error ? error.message : 'invalid release provenance');
   }
 
   const entries = await zipEntries(zipPath);
@@ -106,38 +147,11 @@ async function validateZip() {
   }
 
   const manifest = JSON.parse(await zipEntry(zipPath, 'manifest.json'));
-  const hostPermissions = new Set(manifest.host_permissions ?? []);
-  const permissions = new Set(manifest.permissions ?? []);
-  const requiredHosts = [
-    'https://www.sploot.app/*',
-    'https://sploot.app/*',
-    'https://clerk.sploot.app/*',
-  ];
-  const requiredPermissions = ['storage', 'tabs', 'contextMenus', 'notifications', 'cookies'];
-
   if (manifest.version !== '1.0.0') {
-    recordLocal(`release zip version is ${manifest.version ?? '<missing>'}, expected 1.0.0`);
+    recordLocal(`release zip version drift: expected 1.0.0, found ${manifest.version ?? 'missing'}`);
   }
-
-  for (const host of requiredHosts) {
-    if (!hostPermissions.has(host)) {
-      recordLocal(`release zip manifest missing host permission ${host}`);
-    }
-  }
-
-  for (const permission of requiredPermissions) {
-    if (!permissions.has(permission)) {
-      recordLocal(`release zip manifest missing permission ${permission}`);
-    }
-  }
-
-  const devHost = [...hostPermissions].find(host => {
-    const value = String(host);
-    return value.includes('localhost') || value.includes('clerk.accounts.dev');
-  });
-
-  if (devHost) {
-    recordLocal(`release zip manifest contains development host ${devHost}`);
+  for (const error of validateManifest(manifest, { production: true })) {
+    recordLocal(`release zip manifest ${error}`);
   }
 
   const javascriptBundle = (
@@ -229,6 +243,9 @@ async function validateListing() {
   }
 
   const listing = await readFile(listingPath, 'utf8');
+  if (!listing.includes('Canonical submission packet for Sploot extension version `1.0.0`.')) {
+    recordLocal('listing packet version does not match the release version 1.0.0');
+  }
   const requiredSnippets = [
     'https://www.sploot.app/support',
     'https://www.sploot.app/privacy',
@@ -242,22 +259,40 @@ async function validateListing() {
     }
   }
 
-  if (listing.includes('right-click upload and duplicate behavior are not release-proven')) {
-    recordExternal('authenticated right-click upload and duplicate behavior still need release proof');
-  }
-
-  if (listing.includes('no Chrome Web Store dashboard upload/review receipt has been captured')) {
-    recordExternal('Chrome Web Store dashboard upload/review receipt still needs capture');
-  }
-
-  if (/installed extension\s+source is stale/.test(listing)) {
-    recordExternal('Chrome is signed in but loaded from stale extension source; reload apps/extension/dist/chrome-mv3 before release QA');
-  }
-
   if (/Status: (not submitted|submitted for review)\./.test(listing)) {
     recordPass('listing packet records current Web Store submission status');
   } else {
     recordLocal('listing packet missing current Web Store submission status');
+  }
+}
+
+async function validateExternalEvidence() {
+  if (structuralOnly) {
+    recordPass('strict operator evidence gate intentionally not evaluated in structural mode');
+    return;
+  }
+
+  if (!existsSync(operatorEvidencePath)) {
+    recordExternal(`missing exact-provenance operator evidence: ${rel(operatorEvidencePath)}`);
+    return;
+  }
+
+  try {
+    const evidence = JSON.parse(await readFile(operatorEvidencePath, 'utf8'));
+    const errors = validateOperatorEvidenceAt(evidence, {
+      candidateSha: releaseCandidateSha,
+      artifactPath: rel(zipPath),
+      artifactSha256: releaseArtifactSha256,
+      version: '1.0.0',
+    }, { evidenceRoot: path.dirname(operatorEvidencePath) });
+    for (const error of errors) {
+      recordExternal(error);
+    }
+    if (errors.length === 0) {
+      recordPass('operator evidence binds exact source, ZIP, version, Chrome item, and Web Store receipt/install proof');
+    }
+  } catch (error) {
+    recordExternal(`invalid operator evidence: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -273,20 +308,44 @@ function printSection(title, items) {
   }
 }
 
-await validateZip();
-await validateImages(screenshotDir, [
-  { width: 1280, height: 800 },
-  { width: 640, height: 400 },
-], 'screenshot');
-await validateImages(promoDir, [
-  { width: 440, height: 280 },
-], 'small promo tile');
-await validateListing();
+try {
+  await validateZip();
+  await validateImages(screenshotDir, [
+    { width: 1280, height: 800 },
+    { width: 640, height: 400 },
+  ], 'screenshot');
+  await validateImages(promoDir, [
+    { width: 440, height: 280 },
+  ], 'small promo tile');
+  await validateListing();
+  await validateExternalEvidence();
+} catch (error) {
+  recordLocal(`release validator failed: ${error instanceof Error ? error.message : String(error)}`);
+}
 
 printSection('pass', pass);
 printSection('local blockers', localBlockers);
 printSection('external blockers', externalBlockers);
 
-if (localBlockers.length > 0 || externalBlockers.length > 0) {
-  process.exitCode = 1;
+const verdict = localBlockers.length > 0
+  ? 'local-validation-failed'
+  : externalBlockers.length > 0
+    ? (externalBlockers.length === 1 && externalBlockers[0].startsWith('missing exact-provenance operator evidence:')
+      ? 'external-evidence-missing'
+      : 'external-evidence-invalid')
+    : 'pass';
+
+if (reportPath) {
+  await writeFile(reportPath, `${JSON.stringify({
+    verdict,
+    pass,
+    localBlockers,
+    externalBlockers,
+    candidateSha: releaseCandidateSha,
+    artifactSha256: releaseArtifactSha256,
+  }, null, 2)}\n`);
+}
+
+if (verdict !== 'pass') {
+  process.exitCode = verdict === 'external-evidence-missing' ? 2 : 1;
 }

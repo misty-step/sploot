@@ -38,8 +38,8 @@ Sploot does not yet learn *your* taste or generate new memes — see
 ## 🧩 Browser extension
 
 Chrome extension (WXT) for one-click "Save to Sploot" from a right-click
-context menu. Published listing:
-[Chrome Web Store](https://chromewebstore.google.com/detail/sploot/fbhkflbcnllfogefckablkafjknmcfnd).
+context menu. The candidate in `apps/extension/dist/` is **not submitted or
+published** in the Chrome Web Store; no live listing URL or receipt is claimed.
 Source: [`apps/extension`](./apps/extension).
 
 ## 🛠️ For developers

@@ -7,7 +7,12 @@
  * notifications are suppressed.
  */
 
-import { getSplootAppUrl } from '../../shared/app-url';
+import {
+  getSplootAppUrl,
+  getTrustedSplootAppUrl,
+} from '../../shared/app-url';
+import { setSaveStatus } from '../../shared/save-status';
+import { runBestEffort } from '../../shared/best-effort';
 import { flashErrorBadge, flashSuccessBadge } from './badge';
 
 export interface ErrorNotificationInput {
@@ -17,29 +22,103 @@ export interface ErrorNotificationInput {
 
 const SUCCESS_DISMISS_MS = 5000;
 const ERROR_DISMISS_MS = 10000;
+const ACTIONS_STORAGE_KEY = 'sploot:notification-actions';
+const MAX_PERSISTED_ACTIONS = 32;
+
+interface NotificationAction {
+  notificationId: string;
+  url: string;
+}
 
 // Maps a live notification id to the URL its click should open. A single
 // onClicked listener (registered once via setupNotificationFeedback) reads this
 // — replacing the previous per-notification addListener, which leaked a listener
 // on every notification that auto-dismissed without ever being clicked.
 const notificationActions = new Map<string, string>();
+let actionWriteQueue = Promise.resolve();
+let clickListenerRegistered = false;
+
+async function loadPersistedActions(): Promise<NotificationAction[]> {
+  const result = await chrome.storage.local.get(ACTIONS_STORAGE_KEY);
+  const actions = result[ACTIONS_STORAGE_KEY];
+  if (!Array.isArray(actions)) {
+    return [];
+  }
+
+  return actions.flatMap((action): NotificationAction[] => {
+    if (
+      !action
+      || typeof action.notificationId !== 'string'
+      || typeof action.url !== 'string'
+    ) {
+      return [];
+    }
+    const url = getTrustedSplootAppUrl(action.url);
+    return url ? [{ notificationId: action.notificationId, url }] : [];
+  });
+}
+
+function enqueueActionWrite(write: () => Promise<void>): Promise<void> {
+  actionWriteQueue = actionWriteQueue.then(write, write);
+  return actionWriteQueue;
+}
+
+function rememberAction(notificationId: string, url: string): void {
+  const trustedUrl = getTrustedSplootAppUrl(url);
+  if (!trustedUrl) {
+    return;
+  }
+
+  notificationActions.set(notificationId, trustedUrl);
+  while (notificationActions.size > MAX_PERSISTED_ACTIONS) {
+    const oldest = notificationActions.keys().next().value;
+    if (oldest) {
+      notificationActions.delete(oldest);
+    }
+  }
+
+  runBestEffort('notification action persistence', () => enqueueActionWrite(async () => {
+    const actions = (await loadPersistedActions()).filter(action => action.notificationId !== notificationId);
+    actions.push({ notificationId, url: trustedUrl });
+    await chrome.storage.local.set({
+      [ACTIONS_STORAGE_KEY]: actions.slice(-MAX_PERSISTED_ACTIONS),
+    });
+  }));
+}
+
+async function forgetAction(notificationId: string): Promise<void> {
+  notificationActions.delete(notificationId);
+  await enqueueActionWrite(async () => {
+    const actions = (await loadPersistedActions()).filter(action => action.notificationId !== notificationId);
+    await chrome.storage.local.set({ [ACTIONS_STORAGE_KEY]: actions });
+  });
+}
 
 /**
  * Register the one notifications click handler. Call once at worker startup.
  */
 export function setupNotificationFeedback(): void {
+  if (clickListenerRegistered) {
+    return;
+  }
+
+  clickListenerRegistered = true;
   chrome.notifications.onClicked.addListener((notificationId) => {
-    const url = notificationActions.get(notificationId);
-    if (url) {
-      chrome.tabs.create({ url });
-    }
-    dismiss(notificationId);
+    runBestEffort('notification click handling', async () => {
+      const url = notificationActions.get(notificationId)
+        ?? (await loadPersistedActions()).find(action => action.notificationId === notificationId)?.url;
+      const trustedUrl = url ? getTrustedSplootAppUrl(url) : undefined;
+      if (trustedUrl) {
+        runBestEffort('tabs.create notification action', () => chrome.tabs.create({ url: trustedUrl }));
+      }
+      dismiss(notificationId);
+    });
   });
 }
 
 function dismiss(notificationId: string): void {
-  notificationActions.delete(notificationId);
-  chrome.notifications.clear(notificationId);
+  runBestEffort('notification action removal', () => forgetAction(notificationId));
+  runBestEffort('notifications.clear', () => chrome.notifications.clear(notificationId));
 }
 
 /**
@@ -55,19 +134,26 @@ export function showSuccessNotification(
 ): void {
   const notificationId = `success-${crypto.randomUUID()}`;
 
-  chrome.notifications.create(notificationId, {
+  runBestEffort('notifications.create success', () => chrome.notifications.create(notificationId, {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icon-128.png'), // Always use local icon
     title: options?.isDuplicate ? 'Already in Sploot' : 'Saved to Sploot',
     message: filename,
     priority: 1,
     isClickable: true,
+  }));
+
+  rememberAction(notificationId, getSplootAppUrl());
+  flashSuccessBadge();
+  // Persistent trace for the popup — survives DND-suppressed notifications.
+  setSaveStatus({
+    state: 'success',
+    filename,
+    isDuplicate: options?.isDuplicate ?? false,
+    at: Date.now(),
   });
 
-  notificationActions.set(notificationId, getSplootAppUrl());
-  flashSuccessBadge();
-
-  setTimeout(() => dismiss(notificationId), SUCCESS_DISMISS_MS);
+  setTimeout(() => runBestEffort('success notification timer', () => dismiss(notificationId)), SUCCESS_DISMISS_MS);
 }
 
 /**
@@ -107,21 +193,22 @@ export function showErrorNotification(error: string | ErrorNotificationInput): v
   const errorMessage = typeof error === 'string' ? error : error.message;
   const userMessage = toErrorNotificationMessage(errorMessage);
   const actionHref = typeof error === 'string' ? undefined : error.actionHref;
-  const actionUrl = actionHref ? getSplootAppUrl(actionHref) : undefined;
+  const actionUrl = actionHref ? getTrustedSplootAppUrl(actionHref) : undefined;
 
-  chrome.notifications.create(notificationId, {
+  runBestEffort('notifications.create error', () => chrome.notifications.create(notificationId, {
     type: 'basic',
     iconUrl: chrome.runtime.getURL('icon-128.png'),
     title: 'Save Failed',
     message: userMessage,
     priority: 2,
     isClickable: Boolean(actionUrl),
-  });
+  }));
 
   if (actionUrl) {
-    notificationActions.set(notificationId, actionUrl);
+    rememberAction(notificationId, actionUrl);
   }
   flashErrorBadge();
+  setSaveStatus({ state: 'error', message: userMessage, at: Date.now() });
 
-  setTimeout(() => dismiss(notificationId), ERROR_DISMISS_MS);
+  setTimeout(() => runBestEffort('error notification timer', () => dismiss(notificationId)), ERROR_DISMISS_MS);
 }

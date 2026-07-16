@@ -30,6 +30,22 @@ describe('getSplootAppUrl', () => {
     expect(getSplootSignInUrl()).toBe('http://localhost:3001/sign-in');
   });
 
+  it.each([
+    'https://evil.example/steal',
+    '//evil.example/steal',
+    'javascript:alert(1)',
+    'data:text/html,steal',
+  ])('rejects an action URL outside the configured Sploot origin: %s', async path => {
+    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_contract');
+    vi.stubEnv('VITE_CLERK_SYNC_HOST', 'http://localhost:3001');
+    vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:3001');
+
+    const { getSplootAppUrl, getTrustedSplootAppUrl } = await importAppUrl();
+
+    expect(getTrustedSplootAppUrl(path)).toBeUndefined();
+    expect(() => getSplootAppUrl(path)).toThrow('URL must use the configured Sploot origin');
+  });
+
   it('throws a diagnostic configuration error instead of silently routing to production', async () => {
     vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '');
     vi.stubEnv('VITE_CLERK_SYNC_HOST', '');

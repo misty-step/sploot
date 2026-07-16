@@ -2,9 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages';
 
 const createClerkClient = vi.hoisted(() => vi.fn());
+const buildMode = vi.hoisted(() => ({ dev: true }));
 
 vi.mock('@clerk/chrome-extension/background', () => ({
   createClerkClient,
+}));
+
+vi.mock('../../shared/build-mode', () => ({
+  get IS_DEV_BUILD() {
+    return buildMode.dev;
+  },
 }));
 
 interface ChromeMock {
@@ -35,6 +42,7 @@ async function importAuthManager() {
 
 beforeEach(() => {
   messageListeners = [];
+  buildMode.dev = true;
   chromeMock = {
     action: {
       openPopup: vi.fn(async () => undefined),
@@ -89,6 +97,75 @@ describe('auth-manager', () => {
         expiresAt: new Date('2026-05-18T12:00:00.000Z').getTime(),
       },
     });
+  });
+
+  it('returns an explicit user/account/session authority for durable owner fencing', async () => {
+    createClerkClient.mockResolvedValue({
+      session: {
+        id: 'session_authority',
+        user: { id: 'user_authority' },
+        getToken: vi.fn(),
+      },
+    });
+
+    const { getAuthAuthority } = await importAuthManager();
+
+    await expect(getAuthAuthority()).resolves.toEqual({
+      userId: 'user_authority',
+      accountId: 'user_authority',
+      sessionId: 'session_authority',
+    });
+  });
+
+  it('treats a new session for the same account as the same durable owner', async () => {
+    const { sameAccountAuthority } = await importAuthManager();
+
+    expect(sameAccountAuthority(
+      { userId: 'user-1', accountId: 'user-1', sessionId: 'session-2' },
+      { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' },
+    )).toBe(true);
+    expect(sameAccountAuthority(
+      { userId: 'user-1', sessionId: 'session-2' },
+      { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' },
+    )).toBe(true);
+    expect(sameAccountAuthority(
+      { userId: 'user-2', accountId: 'user-2', sessionId: 'session-1' },
+      { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' },
+    )).toBe(false);
+    expect(sameAccountAuthority(
+      { userId: 'user-1', accountId: 'org-a', sessionId: 'session-1' },
+      { userId: 'user-1', accountId: 'org-b', sessionId: 'session-1' },
+    )).toBe(false);
+    expect(sameAccountAuthority(null, { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' })).toBe(false);
+    expect(sameAccountAuthority({ userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' }, null)).toBe(false);
+  });
+
+  it('issues a live token for the same account under a new session and refuses other accounts', async () => {
+    const getToken = vi.fn(async () => 'fresh-token');
+    createClerkClient.mockResolvedValue({
+      session: {
+        id: 'session-new',
+        user: { id: 'user-1' },
+        getToken,
+      },
+    });
+
+    const { getAuthTokenForAuthority } = await importAuthManager();
+
+    await expect(getAuthTokenForAuthority({ userId: 'user-1', accountId: 'user-1', sessionId: 'session-old' }))
+      .resolves.toBe('fresh-token');
+    await expect(getAuthTokenForAuthority({ userId: 'user-2', accountId: 'user-2', sessionId: 'session-old' }))
+      .resolves.toBeNull();
+    expect(getToken).toHaveBeenCalledOnce();
+  });
+
+  it('surfaces auth transport failures from readAuthAuthority instead of reporting signed-out', async () => {
+    createClerkClient.mockRejectedValue(new Error('clerk transport down'));
+
+    const { readAuthAuthority, getAuthAuthority } = await importAuthManager();
+
+    await expect(readAuthAuthority()).rejects.toThrow('clerk transport down');
+    await expect(getAuthAuthority()).resolves.toBeNull();
   });
 
   it('returns null instead of requesting a token when there is no session', async () => {
@@ -164,5 +241,28 @@ describe('auth-manager', () => {
 
     await expect(waitPromise).resolves.toBe(true);
     expect(response).toEqual({ ok: true });
+  });
+
+  it('rejects diagnostics at the runtime message handler in production', async () => {
+    buildMode.dev = false;
+    const { setupAuthBridge } = await importAuthManager();
+    setupAuthBridge();
+    const response = vi.fn();
+
+    expect(messageListeners[0]({ type: AUTH_MESSAGES.RUN_DIAGNOSTICS }, {}, response)).toBe(false);
+    expect(response).not.toHaveBeenCalled();
+    expect(createClerkClient).not.toHaveBeenCalled();
+  });
+
+  it('keeps diagnostics available through the runtime message handler in development', async () => {
+    createClerkClient.mockResolvedValue({ session: null });
+    const { setupAuthBridge } = await importAuthManager();
+    setupAuthBridge();
+    const response = vi.fn();
+
+    expect(messageListeners[0]({ type: AUTH_MESSAGES.RUN_DIAGNOSTICS }, {}, response)).toBe(true);
+    await vi.waitFor(() => expect(response).toHaveBeenCalledWith({
+      snapshot: expect.objectContaining({ status: 'signed-out' }),
+    }));
   });
 });

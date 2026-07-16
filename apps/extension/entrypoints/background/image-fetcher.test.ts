@@ -40,6 +40,7 @@ describe('fetchImage', () => {
     expect(fetch).toHaveBeenCalledWith('https://example.com/image.jpg', {
       credentials: 'omit',
       cache: 'no-store',
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -62,5 +63,29 @@ describe('fetchImage', () => {
       'Image too large after compression'
     );
     expect(imageConstructor).not.toHaveBeenCalled();
+  });
+
+  it('surfaces the HTTP failure in a worker without Image instead of crashing the fallback', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('unavailable', {
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { 'content-type': 'text/plain' },
+    })));
+    // MV3 service workers have no DOM: Image is not a constructor there.
+    vi.stubGlobal('Image', undefined);
+
+    const { fetchImage } = await importImageFetcher();
+
+    await expect(fetchImage('https://example.com/broken.png')).rejects.toThrow('HTTP 503');
+  });
+
+  it('aborts and rejects a fetch that ignores AbortSignal', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)));
+    const { fetchImage } = await importImageFetcher();
+    const pending = fetchImage('https://example.com/hung.png');
+    vi.advanceTimersByTime(UPLOAD.timeout);
+    await expect(pending).rejects.toThrow('timed out');
+    vi.useRealTimers();
   });
 });

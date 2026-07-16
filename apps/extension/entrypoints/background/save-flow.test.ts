@@ -3,20 +3,28 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   isAuthenticated: vi.fn(),
   promptUserSignIn: vi.fn(),
+  getAuthAuthority: vi.fn(),
+  getAuthTokenForAuthority: vi.fn(),
+  sameAccountAuthority: vi.fn(),
   uploadImage: vi.fn(),
   showSuccessNotification: vi.fn(),
   showErrorNotification: vi.fn(),
+  setSaveStatus: vi.fn(),
 }));
 
 vi.mock('./auth-manager', () => ({
   isAuthenticated: mocks.isAuthenticated,
   promptUserSignIn: mocks.promptUserSignIn,
+  getAuthAuthority: mocks.getAuthAuthority,
+  getAuthTokenForAuthority: mocks.getAuthTokenForAuthority,
+  sameAccountAuthority: mocks.sameAccountAuthority,
 }));
 vi.mock('../../shared/api-client', () => ({ uploadImage: mocks.uploadImage }));
 vi.mock('./notifications', () => ({
   showSuccessNotification: mocks.showSuccessNotification,
   showErrorNotification: mocks.showErrorNotification,
 }));
+vi.mock('../../shared/save-status', () => ({ setSaveStatus: mocks.setSaveStatus }));
 
 import { saveToSploot } from './save-flow';
 
@@ -25,6 +33,13 @@ const produce = async () => ({ blob: new Blob(['x']), filename: 'meme.png' });
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.isAuthenticated.mockResolvedValue(true);
+  mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-1', sessionId: 'session-1' });
+  mocks.getAuthTokenForAuthority.mockResolvedValue('token');
+  mocks.sameAccountAuthority.mockImplementation((left, right) => Boolean(
+    left && right
+    && left.userId === right.userId
+    && (left.accountId ?? left.userId) === (right.accountId ?? right.userId),
+  ));
   mocks.uploadImage.mockResolvedValue({
     assetId: 'a1',
     blobUrl: 'b',
@@ -35,11 +50,22 @@ beforeEach(() => {
 
 describe('saveToSploot', () => {
   it('produces, uploads, and reports success when authenticated', async () => {
-    await saveToSploot(produce, 'saving');
+    const outcome = await saveToSploot(produce, 'image');
 
-    expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'meme.png');
+    expect(outcome.ok).toBe(true);
+    expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'meme.png', undefined, undefined);
     expect(mocks.showSuccessNotification).toHaveBeenCalledWith('meme.png', 't', { isDuplicate: false });
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
+  });
+
+  it('records live "saving" progress for the popup status strip', async () => {
+    await saveToSploot(produce, 'screenshot');
+
+    expect(mocks.setSaveStatus).toHaveBeenCalledWith({
+      state: 'saving',
+      label: 'Saving screenshot…',
+      at: expect.any(Number),
+    });
   });
 
   it('prompts sign-in and aborts (no produce, no upload) when sign-in fails', async () => {
@@ -47,12 +73,13 @@ describe('saveToSploot', () => {
     mocks.promptUserSignIn.mockResolvedValue(false);
     const producer = vi.fn(produce);
 
-    await saveToSploot(producer, 'the screenshot');
+    const outcome = await saveToSploot(producer, 'screenshot');
 
+    expect(outcome.ok).toBe(false);
     expect(producer).not.toHaveBeenCalled();
     expect(mocks.uploadImage).not.toHaveBeenCalled();
     expect(mocks.showErrorNotification).toHaveBeenCalledWith(
-      'Sign in on Sploot, then try the screenshot again.'
+      'Sign in on Sploot, then try saving the screenshot again.'
     );
   });
 
@@ -61,8 +88,9 @@ describe('saveToSploot', () => {
       throw new Error('Cannot capture chrome:// pages');
     };
 
-    await saveToSploot(producer, 'the screenshot');
+    const outcome = await saveToSploot(producer, 'screenshot');
 
+    expect(outcome.ok).toBe(false);
     expect(mocks.uploadImage).not.toHaveBeenCalled();
     expect(mocks.showErrorNotification).toHaveBeenCalledWith('Cannot capture chrome:// pages');
   });
@@ -71,11 +99,39 @@ describe('saveToSploot', () => {
     const err = Object.assign(new Error('Storage quota exceeded'), { actionHref: '/app/settings' });
     mocks.uploadImage.mockRejectedValue(err);
 
-    await saveToSploot(produce, 'saving');
+    const outcome = await saveToSploot(produce, 'image');
 
+    expect(outcome.ok).toBe(false);
     expect(mocks.showErrorNotification).toHaveBeenCalledWith({
       message: 'Storage quota exceeded',
       actionHref: '/app/settings',
     });
+  });
+
+  it('fences an owner-bound upload when a different account is active', async () => {
+    mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-2', sessionId: 'session-2' });
+    const outcome = await saveToSploot(produce, 'image', {
+      owner: { userId: 'user-1', sessionId: 'session-1' },
+    });
+
+    expect(outcome.ok).toBe(false);
+    expect(mocks.uploadImage).not.toHaveBeenCalled();
+    expect(mocks.showErrorNotification).toHaveBeenCalledWith(expect.stringContaining('original Sploot account'));
+  });
+
+  it('uploads an owner-bound save under a new session of the same account', async () => {
+    mocks.getAuthAuthority.mockResolvedValue({ userId: 'user-1', accountId: 'user-1', sessionId: 'session-2' });
+    const outcome = await saveToSploot(produce, 'image', {
+      owner: { userId: 'user-1', accountId: 'user-1', sessionId: 'session-1' },
+    });
+
+    expect(outcome.ok).toBe(true);
+    expect(mocks.uploadImage).toHaveBeenCalledWith(
+      expect.any(Blob),
+      'meme.png',
+      { getToken: expect.any(Function) },
+      undefined,
+    );
+    expect(mocks.showErrorNotification).not.toHaveBeenCalled();
   });
 });

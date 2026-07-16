@@ -46,6 +46,8 @@ if (!RAW_API_BASE_URL) {
 }
 
 export const CLERK_PUBLISHABLE_KEY = RAW_PUBLISHABLE_KEY;
+/** Only enabled by the real Chromium lifecycle harness; never set in release builds. */
+export const E2E_AUTH_MODE = import.meta.env.VITE_E2E_AUTH_MODE === 'true';
 export const CLERK_ENVIRONMENT = keyEnvironment === 'production' ? 'production' : 'development';
 export const CLERK_SYNC_HOST = parsedSyncHost?.origin ?? '';
 export const SPLOOT_API_BASE_URL = parsedApiBase?.origin ?? '';

@@ -23,7 +23,7 @@ console.log('[ApiClient] Initialized', {
 });
 
 export interface AuthTokenProvider {
-  getToken(): Promise<string | null>;
+  getToken(signal?: AbortSignal): Promise<string | null>;
 }
 
 const clerkAuthTokenProvider: AuthTokenProvider = {
@@ -48,9 +48,10 @@ export class SplootApiClient {
 
   async uploadImage(
     blob: Blob,
-    filename?: string
+    filename?: string,
+    signal?: AbortSignal,
   ): Promise<UploadResult> {
-    return uploadImageWithTokenProvider(this.authTokenProvider, blob, filename);
+    return uploadImageWithTokenProvider(this.authTokenProvider, blob, filename, signal);
   }
 }
 
@@ -121,20 +122,23 @@ async function parseErrorResponse(
  */
 export async function uploadImage(
   blob: Blob,
-  filename?: string
+  filename?: string,
+  authTokenProvider: AuthTokenProvider = clerkAuthTokenProvider,
+  signal?: AbortSignal,
 ): Promise<UploadResult> {
-  return uploadImageWithTokenProvider(clerkAuthTokenProvider, blob, filename);
+  return uploadImageWithTokenProvider(authTokenProvider, blob, filename, signal);
 }
 
 async function uploadImageWithTokenProvider(
   authTokenProvider: AuthTokenProvider,
   blob: Blob,
-  filename?: string
+  filename?: string,
+  signal?: AbortSignal,
 ): Promise<UploadResult> {
   assertExtensionConfig();
 
   // Get auth token
-  const token = await authTokenProvider.getToken();
+  const token = await authTokenProvider.getToken(signal);
   if (!token) {
     throw new Error('Authentication required');
   }
@@ -156,6 +160,12 @@ async function uploadImageWithTokenProvider(
 
   // Create abort controller for timeout
   const controller = new AbortController();
+  const abortUpload = () => controller.abort(signal?.reason);
+  if (signal?.aborted) {
+    abortUpload();
+  } else {
+    signal?.addEventListener('abort', abortUpload, { once: true });
+  }
   const timeoutId = setTimeout(() => controller.abort(), UPLOAD.timeout);
 
   try {
@@ -218,5 +228,8 @@ async function uploadImageWithTokenProvider(
     }
 
     throw new Error('Upload failed. Please try again.');
+  } finally {
+    clearTimeout(timeoutId);
+    signal?.removeEventListener('abort', abortUpload);
   }
 }

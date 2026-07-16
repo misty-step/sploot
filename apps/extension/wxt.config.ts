@@ -1,5 +1,6 @@
 import { defineConfig } from 'wxt';
 import { resolve } from 'path';
+import { normalizeHttpHostPermission } from './shared/host-permission';
 
 export default defineConfig({
   vite: () => ({
@@ -20,7 +21,12 @@ export default defineConfig({
     // Use: `WXT_MODE=production wxt build` for production builds
     // Default to development for safety
     const isProduction = process.env.WXT_MODE === 'production';
-    const includeCrxKey = !isProduction || process.env.INCLUDE_CRX_KEY === 'true';
+    const isManifestCheck = process.env.WXT_MODE === 'manifest-check';
+    const isReleaseLike = isProduction || isManifestCheck;
+    if (process.env.VITE_E2E_AUTH_MODE === 'true' && isReleaseLike) {
+      throw new Error('VITE_E2E_AUTH_MODE is test-only and cannot be used for production or manifest-check builds');
+    }
+    const includeCrxKey = isProduction && process.env.INCLUDE_CRX_KEY === 'true';
     const publishableKey = process.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ?? '';
 
     if (isProduction && !publishableKey.startsWith('pk_live_')) {
@@ -32,7 +38,7 @@ export default defineConfig({
     }
 
     // Determine Clerk frontend API domain based on environment
-    const clerkDomain = isProduction
+    const clerkDomain = isReleaseLike
       ? 'https://clerk.sploot.app/*' // Production: custom Clerk domain
       : 'https://tender-bison-73.clerk.accounts.dev/*'; // Development: standard Clerk domain
 
@@ -40,22 +46,22 @@ export default defineConfig({
     if (!rawApiHost) {
       throw new Error('VITE_API_BASE_URL is required for extension builds (e.g., https://sploot.app or http://localhost:3001)');
     }
-    const normalizedApiHost = rawApiHost.replace(/\/$/, '');
-    if (isProduction && normalizedApiHost !== 'https://www.sploot.app') {
+    const normalizedApiHost = new URL(rawApiHost).origin;
+    if (isReleaseLike && normalizedApiHost !== 'https://www.sploot.app') {
       throw new Error('Production extension builds must use VITE_API_BASE_URL=https://www.sploot.app');
     }
-    const apiHostPermission = `${normalizedApiHost}/*`;
+    const apiHostPermission = normalizeHttpHostPermission(rawApiHost, 'VITE_API_BASE_URL');
     const rawSyncHost = process.env.VITE_CLERK_SYNC_HOST;
     if (!rawSyncHost) {
       throw new Error('VITE_CLERK_SYNC_HOST is required for extension builds (e.g., https://clerk.sploot.app or http://localhost:3001)');
     }
-    const normalizedSyncHost = rawSyncHost.replace(/\/$/, '');
-    if (isProduction && normalizedSyncHost !== 'https://clerk.sploot.app') {
+    const normalizedSyncHost = new URL(rawSyncHost).origin;
+    if (isReleaseLike && normalizedSyncHost !== 'https://clerk.sploot.app') {
       throw new Error('Production extension builds must use VITE_CLERK_SYNC_HOST=https://clerk.sploot.app');
     }
-    const syncHostPermission = `${normalizedSyncHost}/*`;
+    const syncHostPermission = normalizeHttpHostPermission(rawSyncHost, 'VITE_CLERK_SYNC_HOST');
 
-    console.log(`[WXT Config] Building in ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'} mode`);
+    console.log(`[WXT Config] Building in ${isProduction ? 'PRODUCTION' : isManifestCheck ? 'MANIFEST CHECK' : 'DEVELOPMENT'} mode`);
     console.log(`[WXT Config] Clerk domain: ${clerkDomain}`);
     console.log(`[WXT Config] API host permission: ${apiHostPermission}`);
     console.log(`[WXT Config] Sync host permission: ${syncHostPermission}`);
@@ -70,9 +76,13 @@ export default defineConfig({
         48: 'icon-48.png',
         128: 'icon-128.png',
       },
-      permissions: ['storage', 'tabs', 'contextMenus', 'notifications', 'cookies'],
+      permissions: ['storage', 'tabs', 'activeTab', 'contextMenus', 'notifications', 'cookies', 'alarms'],
       host_permissions: Array.from(
         new Set([
+          // Keep capture access scoped to web pages. captureVisibleTab accepts
+          // the temporary activeTab grant from the popup action, so we do not
+          // need the broader <all_urls> host pattern (which also covers file:
+          // and ftp: URLs).
           '*://*/*',
           apiHostPermission,
           syncHostPermission,
@@ -89,6 +99,18 @@ export default defineConfig({
       ...(includeCrxKey ? { key: process.env.CRX_PUBLIC_KEY } : {}),
       action: {
         default_popup: 'popup.html',
+      },
+      // This reserved command invokes the same action as a toolbar click and
+      // grants the transient activeTab authority to the active web tab. The
+      // real screenshot request still travels through the normal background
+      // message path after that user action.
+      commands: {
+        _execute_action: {
+          suggested_key: {
+            default: 'Ctrl+Shift+Y',
+            mac: 'Command+Shift+Y',
+          },
+        },
       },
     };
   },

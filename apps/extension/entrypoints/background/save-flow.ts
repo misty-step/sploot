@@ -7,8 +7,16 @@
  * "produce the image" step differs between them, so it is passed in.
  */
 
-import { isAuthenticated, promptUserSignIn } from './auth-manager';
+import {
+  getAuthAuthority,
+  getAuthTokenForAuthority,
+  isAuthenticated,
+  promptUserSignIn,
+  sameAccountAuthority,
+  type AuthAuthority,
+} from './auth-manager';
 import { uploadImage } from '../../shared/api-client';
+import { setSaveStatus } from '../../shared/save-status';
 import { showSuccessNotification, showErrorNotification } from './notifications';
 
 export interface ProducedImage {
@@ -16,34 +24,68 @@ export interface ProducedImage {
   filename: string;
 }
 
+export interface SaveOptions {
+  /** Produce bytes before auth can open or focus another browser tab. */
+  prepareBeforeAuth?: boolean;
+  /** When present, upload is fenced to this stable Clerk account identity. */
+  owner?: AuthAuthority;
+  signal?: AbortSignal;
+}
+
+export type SaveOutcome =
+  | { ok: true; filename: string; isDuplicate: boolean }
+  | { ok: false; error: Error };
+
 /**
- * @param produce    yields the image to upload (fetch from a URL, capture a tab, …)
- * @param retryLabel verb phrase for the sign-in prompts, e.g. "saving" or
- *                   "the screenshot" — "Try {retryLabel} again after signing in."
+ * @param produce yields the image to upload (fetch from a URL, capture a tab, …)
+ * @param subject noun for user-facing copy, e.g. "image" or "screenshot" —
+ *                "Saving {subject}…", "try saving the {subject} again".
  */
 export async function saveToSploot(
   produce: () => Promise<ProducedImage>,
-  retryLabel: string
-): Promise<void> {
+  subject: string,
+  options: SaveOptions = {},
+): Promise<SaveOutcome> {
   try {
-    const authenticated = await isAuthenticated();
+    // Live progress for the popup's persistent status strip.
+    setSaveStatus({ state: 'saving', label: `Saving ${subject}…`, at: Date.now() });
+    const preparedImage = options.prepareBeforeAuth ? await produce() : undefined;
+
+    const authenticated = await isAuthenticated(options.signal);
     if (!authenticated) {
-      showErrorNotification(`Opening Sploot sign-in. Try ${retryLabel} again after signing in.`);
-      const signedIn = await promptUserSignIn();
+      showErrorNotification(`Opening Sploot sign-in. Try saving the ${subject} again after signing in.`);
+      const signedIn = await promptUserSignIn(options.signal);
       if (!signedIn) {
-        showErrorNotification(`Sign in on Sploot, then try ${retryLabel} again.`);
-        return;
+        const error = new Error(`Sign in on Sploot, then try saving the ${subject} again.`);
+        showErrorNotification(error.message);
+        return { ok: false, error };
       }
     }
 
-    const { blob, filename } = await produce();
-    const result = await uploadImage(blob, filename);
+    const { blob, filename } = preparedImage ?? await produce();
+    const owner = options.owner;
+    if (owner) {
+      const currentOwner = await getAuthAuthority(options.signal);
+      if (!sameAccountAuthority(currentOwner, owner)) {
+        throw new Error('The original Sploot account is no longer active. Sign in to that account to resume this save.');
+      }
+      const result = await uploadImage(blob, filename, {
+        getToken: signal => getAuthTokenForAuthority(owner, signal),
+      }, options.signal);
+      showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
+      return { ok: true, filename, isDuplicate: result.isDuplicate };
+    }
+
+    const result = await uploadImage(blob, filename, undefined, options.signal);
     showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
+    return { ok: true, filename, isDuplicate: result.isDuplicate };
   } catch (error) {
     if (error instanceof Error && 'actionHref' in error && typeof error.actionHref === 'string') {
       showErrorNotification({ message: error.message, actionHref: error.actionHref });
-      return;
+      return { ok: false, error };
     }
-    showErrorNotification(error instanceof Error ? error.message : 'Could not save to Sploot.');
+    const saveError = error instanceof Error ? error : new Error('Could not save to Sploot.');
+    showErrorNotification(saveError.message);
+    return { ok: false, error: saveError };
   }
 }

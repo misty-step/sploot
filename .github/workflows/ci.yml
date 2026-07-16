@@ -180,17 +180,96 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Validate production manifest policy before release build
+        run: pnpm --filter extension build:manifest-check && pnpm --filter extension manifest:check
+      - name: Build production extension release artifacts
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+        run: pnpm --filter extension zip:prod
+      - name: Validate candidate release structure and provenance
+        env:
+          RELEASE_CANDIDATE_SHA: ${{ github.sha }}
+          RELEASE_PROVENANCE_PATH: ${{ runner.temp }}/extension-release-provenance.json
+        run: pnpm --filter extension release:structural
+      - name: Assert strict release gate remains fail-closed without operator evidence
+        env:
+          RELEASE_CANDIDATE_SHA: ${{ github.sha }}
+          RELEASE_PROVENANCE_PATH: ${{ runner.temp }}/extension-release-provenance.json
+          RELEASE_REPORT_PATH: ${{ runner.temp }}/extension-release-report.json
+        run: |
+          set +e
+          pnpm --filter extension release:check
+          status=$?
+          set -e
+          test "$status" -eq 2
+          node --input-type=module -e 'import fs from "node:fs"; const report=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (report.verdict !== "external-evidence-missing" || report.localBlockers.length !== 0 || report.externalBlockers.length !== 1 || !report.externalBlockers[0].startsWith("missing exact-provenance operator evidence:")) { console.error(report); process.exit(1); }' "$RELEASE_REPORT_PATH"
+          echo 'strict release:check correctly failed closed with the exact external-evidence-missing verdict'
+      - name: Test manifest policy
+        run: pnpm --filter extension manifest:test
+      - name: Test release provenance validators
+        run: pnpm --filter extension release:test
       - name: Lint extension
         run: pnpm --filter extension lint
       - name: Test extension
         run: pnpm --filter extension test
-      - name: Build extension
-        run: pnpm --filter extension build
+      - name: Assert production artifact/provenance immediately before upload
+        env:
+          RELEASE_CANDIDATE_SHA: ${{ github.sha }}
+          RELEASE_PROVENANCE_PATH: ${{ runner.temp }}/extension-release-provenance.json
+        run: pnpm --filter extension exec node scripts/assert-release-artifact.mjs
       - uses: actions/upload-artifact@v7
         with:
           name: extension-dist
-          path: apps/extension/dist/
+          path: |
+            apps/extension/dist/
+            ${{ runner.temp }}/extension-release-provenance.json
           retention-days: 7
+      - name: Build real unpacked MV3 lifecycle harness
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: pk_test_ci_lifecycle
+          VITE_API_BASE_URL: http://127.0.0.1:3345
+          VITE_CLERK_SYNC_HOST: http://127.0.0.1:3345
+        run: pnpm --filter extension build:e2e
+      - name: Install real Chromium for MV3 acceptance
+        run: pnpm --filter extension exec playwright install chromium
+      - name: Exercise real popup owner isolation in Chromium
+        run: xvfb-run -a pnpm --filter extension test:layout
+      - name: Install native browser accelerator driver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xdotool
+      - name: Exercise real unpacked MV3 lifecycle in Chromium
+        run: xvfb-run -a pnpm --filter extension test:mv3
+      - name: Upload real MV3 browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: extension-mv3-browser-diagnostics
+          path: apps/extension/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  verify-extension-dist:
+    name: Verify uploaded extension artifact
+    needs: extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v7
+        with:
+          name: extension-dist
+          path: ${{ runner.temp }}/extension-dist
+      - name: Recompute transported ZIP and provenance binding
+        env:
+          RELEASE_ARTIFACT_ROOT: ${{ runner.temp }}/extension-dist
+          RELEASE_CANDIDATE_SHA: ${{ github.sha }}
+        run: pnpm --filter extension release:verify-uploaded
 
   db-authority:
     name: Restricted DB authority (pg${{ matrix.pg }})
@@ -305,15 +384,15 @@ jobs:
   merge-gate:
     name: merge-gate
     if: always()
-    needs: [secrets, lint, type-check, web-build, design, test, extension, db-authority]
+    needs: [secrets, lint, type-check, web-build, design, test, extension, verify-extension-dist, db-authority]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.db-authority.result }}")
+          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.verify-extension-dist.result }}" "${{ needs.db-authority.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" ]]; then
-              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }} db-authority=${{ needs.db-authority.result }}"
+              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }} verify-extension-dist=${{ needs.verify-extension-dist.result }} db-authority=${{ needs.db-authority.result }}"
               exit 1
             fi
           done

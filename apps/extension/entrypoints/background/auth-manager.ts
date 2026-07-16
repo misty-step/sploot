@@ -5,15 +5,58 @@ import {
   CLERK_ENVIRONMENT,
   CLERK_PUBLISHABLE_KEY,
   CLERK_SYNC_HOST,
+  E2E_AUTH_MODE,
 } from '../../shared/env'
 import { getSplootSignInUrl } from '../../shared/app-url'
+import { IS_DEV_BUILD } from '../../shared/build-mode'
+import { runBestEffort } from '../../shared/best-effort'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
 const SIGN_IN_TIMEOUT_MS = 60000
 const SIGN_IN_POLL_INTERVAL_MS = 1000
+const E2E_AUTH_KEY = 'sploot:e2e-auth-authority'
 
 let cachedState: AuthState = { status: 'unknown' }
 const waiters = new Set<(state: AuthState) => void>()
+
+/**
+ * The Clerk authority behind a durable save job.
+ *
+ * Durable ownership is the STABLE account identity (`userId` plus the account
+ * boundary `accountId`). `sessionId` records the credential that was live when
+ * the job was created — it is credential freshness only and never participates
+ * in ownership decisions: ordinary sign-out/re-auth mints a new session for the
+ * same account and must not orphan durable work.
+ */
+export interface AuthAuthority {
+  userId: string
+  /** Clerk's account boundary is currently the user; keep it explicit for future organizations. */
+  accountId?: string
+  sessionId: string
+}
+
+function sessionAuthority(session: { id?: string | null; user?: { id?: string | null } | null } | null | undefined): AuthAuthority | null {
+  const userId = session?.user?.id
+  const sessionId = session?.id
+  if (!userId || !sessionId) {
+    return null
+  }
+  return { userId, accountId: userId, sessionId }
+}
+
+/**
+ * Whether two authorities belong to the same stable account. This is the ONLY
+ * comparison durable ownership may use; session identity is deliberately
+ * ignored so a re-authenticated account keeps its queued work.
+ */
+export function sameAccountAuthority(left: AuthAuthority | null | undefined, right: AuthAuthority | null | undefined): boolean {
+  return Boolean(
+    left
+    && right
+    && left.userId === right.userId
+    && (left.accountId ?? left.userId) === (right.accountId ?? right.userId),
+  )
+}
 
 function notifyWaiters(state: AuthState) {
   for (const listener of waiters) {
@@ -36,10 +79,14 @@ async function createFreshClerkClient() {
   })
 }
 
-export async function isAuthenticated(): Promise<boolean> {
+export async function isAuthenticated(signal?: AbortSignal): Promise<boolean> {
   try {
-    const clerk = await createFreshClerkClient()
-    const hasSession = Boolean(clerk.session)
+    if (E2E_AUTH_MODE) {
+      return Boolean(await getE2eAuthority(signal));
+    }
+    const clerk = await withAbort(createFreshClerkClient(), signal)
+    const authority = sessionAuthority(clerk.session)
+    const hasSession = Boolean(authority)
 
     console.log('[Auth] isAuthenticated check', {
       hasSession,
@@ -49,8 +96,8 @@ export async function isAuthenticated(): Promise<boolean> {
     if (hasSession) {
       updateCachedState({
         status: 'signed-in',
-        userId: clerk.session?.user?.id,
-        sessionId: clerk.session?.id,
+        userId: authority?.userId,
+        sessionId: authority?.sessionId,
         expiresAt: clerk.session?.expireAt?.getTime(),
       })
     }
@@ -62,16 +109,20 @@ export async function isAuthenticated(): Promise<boolean> {
   }
 }
 
-export async function getAuthToken(): Promise<string | null> {
+export async function getAuthToken(signal?: AbortSignal): Promise<string | null> {
   try {
-    const clerk = await createFreshClerkClient()
+    if (E2E_AUTH_MODE) {
+      const authority = await getE2eAuthority(signal);
+      return authority ? `e2e-token-${authority.userId}-${authority.sessionId}` : null;
+    }
+    const clerk = await withAbort(createFreshClerkClient(), signal)
 
     if (!clerk.session) {
       console.warn('[Auth] No session available for token retrieval')
       return null
     }
 
-    const token = await clerk.session.getToken()
+    const token = await withAbort(clerk.session.getToken(), signal)
 
     console.log('[Auth] Token retrieved', {
       hasToken: Boolean(token),
@@ -94,7 +145,105 @@ export async function getAuthToken(): Promise<string | null> {
   }
 }
 
-export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS): Promise<boolean> {
+/**
+ * Read the current session authority, THROWING on auth transport failure.
+ *
+ * `null` means "verifiably signed out"; a thrown error means "could not
+ * determine" — callers that fence durable work must treat the two differently
+ * (a transient failure schedules a retry; it never masquerades as an owner
+ * change).
+ */
+export async function readAuthAuthority(signal?: AbortSignal): Promise<AuthAuthority | null> {
+  if (E2E_AUTH_MODE) {
+    return await getE2eAuthority(signal);
+  }
+  const clerk = await withAbort(createFreshClerkClient(), signal)
+  const authority = sessionAuthority(clerk.session)
+  if (authority) {
+    updateCachedState({
+      status: 'signed-in',
+      userId: authority.userId,
+      sessionId: authority.sessionId,
+      expiresAt: clerk.session?.expireAt?.getTime(),
+    })
+  } else {
+    updateCachedState({ status: 'signed-out' })
+  }
+  return authority
+}
+
+/** Lenient wrapper: read the current session authority, null on any failure. */
+export async function getAuthAuthority(signal?: AbortSignal): Promise<AuthAuthority | null> {
+  try {
+    return await readAuthAuthority(signal)
+  } catch (error) {
+    console.error('[Auth] Failed to read session authority', error)
+    return null
+  }
+}
+
+/**
+ * Obtain a token only while the durable job's stable ACCOUNT is still active.
+ * The token always comes from the LIVE session — session identity is
+ * credential freshness, so a re-authenticated same-account session is valid.
+ */
+export async function getAuthTokenForAuthority(expected: AuthAuthority, signal?: AbortSignal): Promise<string | null> {
+  try {
+    if (E2E_AUTH_MODE) {
+      const actual = await getE2eAuthority(signal);
+      return sameAccountAuthority(actual, expected) && actual
+        ? `e2e-token-${actual.userId}-${actual.sessionId}`
+        : null;
+    }
+    const clerk = await withAbort(createFreshClerkClient(), signal)
+    const actual = sessionAuthority(clerk.session)
+    if (!sameAccountAuthority(actual, expected) || !clerk.session) {
+      return null
+    }
+    return await withAbort(clerk.session.getToken(), signal)
+  } catch (error) {
+    console.error('[Auth] Failed to get owner-fenced token', error)
+    return null
+  }
+}
+
+async function getE2eAuthority(signal?: AbortSignal): Promise<AuthAuthority | null> {
+  const stored = await withAbort(chrome.storage.local.get(E2E_AUTH_KEY), signal);
+  const value = stored[E2E_AUTH_KEY];
+  if (!value || typeof value !== 'object') return null;
+  const authority = value as Partial<AuthAuthority>;
+  if (typeof authority.userId !== 'string' || typeof authority.sessionId !== 'string') return null;
+  return {
+    userId: authority.userId,
+    accountId: typeof authority.accountId === 'string' ? authority.accountId : authority.userId,
+    sessionId: authority.sessionId,
+  };
+}
+
+function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) {
+    return promise
+  }
+  if (signal.aborted) {
+    return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'))
+  }
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(new DOMException('The operation was aborted.', 'AbortError'))
+    signal.addEventListener('abort', abort, { once: true })
+    promise.then(
+      value => {
+        signal.removeEventListener('abort', abort)
+        resolve(value)
+      },
+      error => {
+        signal.removeEventListener('abort', abort)
+        reject(error)
+      },
+    )
+  })
+}
+
+export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSignal): Promise<boolean> {
   return new Promise(resolve => {
     let settled = false
     let intervalId: ReturnType<typeof setInterval> | undefined
@@ -110,12 +259,20 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS): Promise<boolean> 
         clearInterval(intervalId)
       }
       waiters.delete(listener)
+      signal?.removeEventListener('abort', abort)
       resolve(signedIn)
     }
+
+    const abort = () => finish(false)
 
     const timeoutId = setTimeout(() => {
       finish(false)
     }, timeoutMs)
+    if (signal?.aborted) {
+      abort()
+      return
+    }
+    signal?.addEventListener('abort', abort, { once: true })
 
     const listener = (state: AuthState) => {
       if (state.status === 'signed-in') {
@@ -135,13 +292,13 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS): Promise<boolean> 
 
     waiters.add(listener)
     intervalId = setInterval(() => {
-      void pollForSyncedSession()
+      runBestEffort('auth sign-in poll', pollForSyncedSession)
     }, SIGN_IN_POLL_INTERVAL_MS)
-    void pollForSyncedSession()
+    runBestEffort('auth initial sign-in poll', pollForSyncedSession)
   })
 }
 
-export async function promptUserSignIn(): Promise<boolean> {
+export async function promptUserSignIn(signal?: AbortSignal): Promise<boolean> {
   try {
     await chrome.tabs.create({ url: getSplootSignInUrl() })
   } catch (error) {
@@ -149,7 +306,7 @@ export async function promptUserSignIn(): Promise<boolean> {
     return false
   }
 
-  return await waitForSignIn()
+  return await waitForSignIn(SIGN_IN_TIMEOUT_MS, signal)
 }
 
 export interface AuthDiagnosticsSnapshot {
@@ -200,6 +357,9 @@ export function setupAuthBridge() {
     }
 
     if (message?.type === AUTH_MESSAGES.RUN_DIAGNOSTICS) {
+      if (!IS_DEV_BUILD) {
+        return false
+      }
       runAuthDiagnostics()
         .then(snapshot => sendResponse({ snapshot }))
         .catch(error => sendResponse({ error: error instanceof Error ? error.message : String(error) }))
