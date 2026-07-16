@@ -124,6 +124,22 @@ describe('provider-neutral analytics facade', () => {
     });
   });
 
+  it('allows only known database model and action timing identifiers', () => {
+    trackTiming('db:Asset:findMany', 45, true);
+    trackTiming('db:SecretToken:findMany', 45, true);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).payload.name).toBe('timing:db:Asset:findMany');
+  });
+
+  it('rejects arbitrary flow and timing identifiers before transport', () => {
+    trackFlow('secretToken123', 'step');
+    trackTiming('private:query:token', 45, true);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockLogInfo).not.toHaveBeenCalled();
+  });
+
   it('never lets telemetry transport failure break the caller or console cleanliness', async () => {
     fetchMock.mockRejectedValueOnce(new Error('network gone'));
 

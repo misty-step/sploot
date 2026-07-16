@@ -91,6 +91,30 @@ export function findClerkTelemetryMarkerGaps(files) {
     .map(([path, marker]) => ({ path, line: 1, rule: `missing Clerk telemetry marker ${marker}` }));
 }
 
+export function bundleFiles(directory) {
+  if (!directory) throw new Error('explicit --bundle-dir is missing a path');
+  if (!existsSync(directory) || !statSync(directory).isDirectory()) {
+    throw new Error(`explicit --bundle-dir does not exist: ${directory}`);
+  }
+
+  const files = [];
+  collectBundleFiles(directory, files);
+  if (files.length === 0) {
+    throw new Error(`explicit --bundle-dir contains no JavaScript artifacts: ${directory}`);
+  }
+  return files;
+}
+
+function collectBundleFiles(directory, files) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) collectBundleFiles(path, files);
+    else if (entry.isFile() && /\.js$/.test(entry.name)) {
+      files.push({ path: relative(process.cwd(), path), content: readFileSync(path, 'utf8') });
+    }
+  }
+}
+
 export function findBundleClerkTelemetryViolations(contents) {
   if (COMPILED_CLERK_DISABLED_MARKER.test(contents)) return [];
   return [{ rule: 'compiled Clerk telemetry disabled marker missing' }];
@@ -124,21 +148,22 @@ function repositoryFiles() {
     .map((path) => ({ path, content: readFileSync(path, 'utf8') }));
 }
 
-function bundleFiles(directory) {
-  if (!directory || !existsSync(directory)) return [];
-  const files = [];
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...bundleFiles(path));
-    else if (entry.isFile() && /\.js$/.test(entry.name)) files.push({ path: relative(process.cwd(), path), content: readFileSync(path, 'utf8') });
+function parseBundleDirectories(args) {
+  const directories = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] !== '--bundle-dir') continue;
+    const directory = args[index + 1];
+    if (!directory || directory.startsWith('--')) {
+      throw new Error('--bundle-dir requires a directory path');
+    }
+    directories.push(directory);
+    index += 1;
   }
-  return files;
+  return directories;
 }
 
 function main() {
-  const bundleDirs = process.argv
-    .flatMap((arg, index) => (arg === '--bundle-dir' ? [process.argv[index + 1]] : []))
-    .filter(Boolean);
+  const bundleDirs = parseBundleDirectories(process.argv.slice(2));
   const endpointIndex = process.argv.indexOf('--expect-endpoint');
   const expectedEndpoint = endpointIndex === -1 ? undefined : process.argv[endpointIndex + 1];
   const enabledIndex = process.argv.indexOf('--expect-enabled');

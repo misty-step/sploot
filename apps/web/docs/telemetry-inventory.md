@@ -36,7 +36,7 @@ pnpm telemetry:check -- --bundle-dir apps/web/.next/static --expect-endpoint /ci
 # server output and public assets: provider-residue scan
 pnpm telemetry:check -- --bundle-dir apps/web/.next/server --bundle-dir apps/web/public
 # extension dist: provider residue + Clerk-disabled falsifier
-pnpm telemetry:check -- --bundle-dir apps/extension/.output/chrome-mv3 --expect-clerk-disabled
+pnpm telemetry:check -- --bundle-dir apps/extension/dist/chrome-mv3 --expect-clerk-disabled
 ```
 
 the browser QA path must capture console and network traffic from a production

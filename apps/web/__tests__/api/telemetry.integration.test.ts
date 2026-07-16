@@ -510,6 +510,22 @@ describe('/api/telemetry', () => {
     ).toBe(false);
   });
 
+  it('rejects attacker-controlled flow and timing event names without logging them', async () => {
+    for (const name of ['flow:secretToken123:step', 'timing:private:query:token']) {
+      const response = await POST(
+        createMockRequest('POST', {
+          type: 'analytics',
+          payload: { name, properties: {}, timestamp: Date.now() },
+        }),
+        defaultContext,
+      );
+      expect(response.status).toBe(400);
+    }
+
+    expect(mockLogger.logInfo.mock.calls.some(([eventName]) => eventName === 'analytics:event')).toBe(false);
+    expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain('secretToken123');
+  });
+
   it('accepts declared flow and timing event families with bounded properties', async () => {
     const events = [
       {

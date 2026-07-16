@@ -54,6 +54,8 @@ export interface ObservabilityOptions {
   skipTiming?: boolean;
   skipLogging?: boolean;
   metadata?: Record<string, any>;
+  /** Include URL query parameters in request lifecycle metadata (default: true). */
+  includeQuery?: boolean;
 }
 
 interface RequestMetadata {
@@ -89,7 +91,7 @@ export function withObservability(
     const operation = resolveOperation(options.operation, req);
     const startTime = Date.now();
     const logger = withTraceId(traceId);
-    const query = extractQuery(req);
+    const query = options.includeQuery === false ? undefined : extractQuery(req);
     const metadata = createBaseMetadata(req, traceId, query, options.metadata);
     const shouldLog = options.skipLogging !== true;
     const perfMonitor = options.skipTiming ? null : getPerformanceMonitor();

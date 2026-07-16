@@ -336,15 +336,13 @@ function isAnalyticsPayload(value: unknown): value is AnalyticsPayload {
     tag_added: [],
     tag_removed: [],
   };
-  const requiredProperties = requiredByEvent[payload.name] ??
-    (/^(?:flow|timing):/.test(payload.name) ? [] : null);
+  const requiredProperties = requiredByEvent[payload.name] ?? [];
   // Free-form strings are not part of the analytics contract: every property
   // must be a finite number, a boolean, or a member of a bounded enum, so no
   // URL, token, or other attacker-chosen text can reach the logger or Canary.
   const spec = getAnalyticsPropertySpec(payload.name);
   if (!spec) return false;
   return entries.length <= 30 &&
-    requiredProperties !== null &&
     requiredProperties.every((key) => Object.prototype.hasOwnProperty.call(payload.properties, key)) &&
     entries.every(([key, property]) => {
       if (key.length > 80) return false;
@@ -457,4 +455,7 @@ function hasOnlyKeys(value: object, allowed: readonly string[]): boolean {
   return Object.keys(value).every((key) => allowed.includes(key));
 }
 
-export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'telemetry:ingest' });
+export const POST = withObservability(withAuthenticatedApi(postHandler), {
+  operation: 'telemetry:ingest',
+  includeQuery: false,
+});

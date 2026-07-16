@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 
 import {
   findBundleClerkTelemetryViolations,
   findBundleTelemetryViolations,
   findBundleTelemetryConfigurationViolations,
+  bundleFiles,
   findClerkTelemetryMarkerGaps,
   findInventoryDocumentationGaps,
   findTelemetryInventoryViolations,
@@ -33,6 +37,45 @@ test('requires every classified producer to retain its executable marker', () =>
   const missing = files.map((file) => ({ ...file }));
   missing[0].content = '';
   assert.equal(findInventoryDocumentationGaps(missing).length, 1);
+});
+
+test('explicit bundle directories fail closed when missing or empty', () => {
+  const root = mkdtempSync(join(tmpdir(), 'telemetry-inventory-'));
+  const missing = join(root, 'missing');
+  const empty = join(root, 'empty');
+  mkdirSync(empty);
+
+  assert.throws(() => bundleFiles(missing), /does not exist/);
+  assert.throws(() => bundleFiles(empty), /no JavaScript artifacts/);
+  assert.throws(
+    () => execFileSync(process.execPath, ['scripts/check-telemetry-inventory.mjs', '--bundle-dir', missing], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    }),
+    /explicit --bundle-dir does not exist/
+  );
+
+  rmSync(root, { recursive: true, force: true });
+});
+
+test('bundle scanner walks web static/server and extension service-worker artifacts', () => {
+  const root = mkdtempSync(join(tmpdir(), 'telemetry-inventory-'));
+  mkdirSync(join(root, 'web', 'static'), { recursive: true });
+  mkdirSync(join(root, 'web', 'server'), { recursive: true });
+  mkdirSync(join(root, 'extension'), { recursive: true });
+  writeFileSync(join(root, 'web', 'static', 'chunk.js'), 'fetch("/api/telemetry")');
+  writeFileSync(join(root, 'web', 'server', 'route.js'), 'logger.logInfo("route")');
+  writeFileSync(join(root, 'extension', 'service-worker.js'), 'chrome.runtime.onMessage.addListener(() => {})');
+
+  const files = bundleFiles(root);
+  assert.equal(files.length, 3);
+  assert.deepEqual(files.map(({ path: filePath }) => filePath).sort(), [
+    join(root, 'extension', 'service-worker.js'),
+    join(root, 'web', 'server', 'route.js'),
+    join(root, 'web', 'static', 'chunk.js'),
+  ].map((filePath) => relative(process.cwd(), filePath)).sort());
+
+  rmSync(root, { recursive: true, force: true });
 });
 
 test('bundle falsifier rejects provider requests', () => {
