@@ -2,9 +2,6 @@
 set -euo pipefail
 
 PG_VERSION="${1:?Postgres version is required}"
-
-
-set -euo pipefail
 export PGPASSWORD=test
 admin_url='postgresql://test:test@localhost:5432/sploot_upgrade?sslmode=disable'
 bootstrap_version="$(cat apps/web/prisma/stripe-ledger-bootstrap.version)"
