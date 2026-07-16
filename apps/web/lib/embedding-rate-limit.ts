@@ -47,6 +47,7 @@ export type EmbeddingDailyBudgetReason = 'daily_budget' | 'monthly_budget' | 'li
 
 export interface EmbeddingDailyBudgetReservation {
   dateKey: string;
+  monthKey: string;
 }
 
 export interface EmbeddingDailyBudgetResult {
@@ -432,7 +433,7 @@ export async function acquireEmbeddingDailyBudget(
         allowed: true,
         count: persistedCount,
         limit: EMBEDDING_DAILY_BUDGET,
-        reservation: { dateKey },
+        reservation: { dateKey, monthKey },
       };
     });
   } catch (error) {
@@ -560,7 +561,7 @@ export async function acquireEmbeddingAdmissionReservation(
         allowed: true,
         reservation: {
           lease,
-          dailyReservation: { dateKey: dailyDateKey },
+          dailyReservation: { dateKey: dailyDateKey, monthKey: getUtcMonthKey(nowMs) },
           counts: {
             userWindow: persistedUserWindow,
             globalWindow: persistedGlobalWindow,

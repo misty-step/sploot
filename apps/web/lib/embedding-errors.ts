@@ -25,6 +25,7 @@ export const EMBEDDING_OUTCOMES = [
   'user_concurrency',
   'global_concurrency',
   'daily_budget',
+  'monthly_budget',
   'limiter_unavailable',
   'embedding_configuration',
 ] as const;
