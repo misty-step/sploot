@@ -317,6 +317,24 @@ describe('auth-manager', () => {
     expect(chromeMock.tabs.remove).toHaveBeenCalledWith(80)
   })
 
+  it('ignores an in-flight sync completion after the last waiter aborts', async () => {
+    let resolveClient: ((client: unknown) => void) | undefined
+    const addListener = vi.fn(() => () => undefined)
+    createClerkClient.mockImplementation(() => new Promise(resolve => { resolveClient = resolve }))
+
+    const { promptUserSignIn, setupAuthBridge } = await importAuthManager()
+    setupAuthBridge()
+    const controller = new AbortController()
+    const signInPromise = promptUserSignIn(controller.signal)
+    await Promise.resolve()
+    controller.abort()
+    await expect(signInPromise).resolves.toBe(false)
+
+    resolveClient?.({ session: null, addListener })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(addListener).not.toHaveBeenCalled()
+  })
+
   it('retries Clerk sync initialization and observes a later web sign-in', async () => {
     const clerk = {
       session: null,

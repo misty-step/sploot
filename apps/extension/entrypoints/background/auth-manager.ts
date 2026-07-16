@@ -23,6 +23,7 @@ let removeClerkListener: (() => void) | undefined
 let bridgeListener: Parameters<typeof chrome.runtime.onMessage.addListener>[0] | undefined
 let authSyncRetryTimer: ReturnType<typeof setTimeout> | undefined
 let authSyncRetryAttempt = 0
+let authSyncGeneration = 0
 
 /**
  * The Clerk authority behind a durable save job.
@@ -147,12 +148,15 @@ async function getClerkClient() {
   return await clerkClientPromise
 }
 
-async function startAuthSync(): Promise<void> {
+async function startAuthSync(generation = authSyncGeneration): Promise<void> {
   if (E2E_AUTH_MODE || removeClerkListener) {
     return
   }
 
   const clerk = await getClerkClient()
+  if (generation !== authSyncGeneration && waiters.size === 0) {
+    return
+  }
   if (!clerk || typeof clerk.addListener !== 'function') {
     throw new Error('Clerk sync listener is unavailable')
   }
@@ -164,12 +168,15 @@ async function startAuthSync(): Promise<void> {
   updateCachedState(authStateFromResources(clerk))
 }
 
-function startAuthSyncWithRetry(): void {
-  if (E2E_AUTH_MODE || removeClerkListener || authSyncRetryTimer) {
+function startAuthSyncWithRetry(generation = authSyncGeneration): void {
+  if (E2E_AUTH_MODE || removeClerkListener || authSyncRetryTimer || generation !== authSyncGeneration) {
     return
   }
 
-  void startAuthSync().catch(error => {
+  void startAuthSync(generation).catch(error => {
+    if (generation !== authSyncGeneration) {
+      return
+    }
     console.error('[Auth] Failed to initialize Clerk sync', error)
     const retryLimit = waiters.size > 0 ? AUTH_SYNC_RETRY_DELAYS_MS.length : AUTH_SYNC_INITIAL_RETRY_LIMIT
     if (authSyncRetryAttempt >= retryLimit) {
@@ -178,7 +185,7 @@ function startAuthSyncWithRetry(): void {
     const delay = AUTH_SYNC_RETRY_DELAYS_MS[authSyncRetryAttempt++]
     authSyncRetryTimer = setTimeout(() => {
       authSyncRetryTimer = undefined
-      startAuthSyncWithRetry()
+      startAuthSyncWithRetry(generation)
     }, delay)
   })
 }
@@ -360,9 +367,12 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSign
       settled = true
       clearTimeout(timeoutId)
       waiters.delete(listener)
-      if (waiters.size === 0 && authSyncRetryTimer) {
-        clearTimeout(authSyncRetryTimer)
-        authSyncRetryTimer = undefined
+      if (waiters.size === 0) {
+        authSyncGeneration += 1
+        if (authSyncRetryTimer) {
+          clearTimeout(authSyncRetryTimer)
+          authSyncRetryTimer = undefined
+        }
         authSyncRetryAttempt = 0
       }
       signal?.removeEventListener('abort', abort)
@@ -391,9 +401,17 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSign
       return
     }
 
+    const hadActiveWaiter = waiters.size > 0
     waiters.add(listener)
-    authSyncRetryAttempt = 0
-    startAuthSyncWithRetry()
+    if (!hadActiveWaiter) {
+      authSyncGeneration += 1
+      if (authSyncRetryTimer) {
+        clearTimeout(authSyncRetryTimer)
+        authSyncRetryTimer = undefined
+      }
+      authSyncRetryAttempt = 0
+      startAuthSyncWithRetry(authSyncGeneration)
+    }
   })
 }
 
