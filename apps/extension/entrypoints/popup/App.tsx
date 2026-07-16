@@ -50,7 +50,6 @@ function App() {
       telemetry={{ disabled: true }}
       __experimental_syncHostListener
     >
-      <AuthStatusReporter />
       <AuthStateSync />
       <PopupContent>
         <SignedOut>
