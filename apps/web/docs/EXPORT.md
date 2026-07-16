@@ -138,5 +138,6 @@ know.
 | Object missing at the provider | Entry skipped, recorded in `failures`; the part still serves everything else. |
 | Clean retry of a previously failed part | That part's failure list is replaced wholesale — recovered objects clear their failure records. |
 | Export expired / canceled | `410` with `export_expired` / `export_unavailable`; start a new export. |
+| Asset permanently deleted | Active exports are canceled in the same transaction before the row is removed; later part/manifest requests return `410 export_unavailable` instead of claiming a complete historical snapshot. |
 | Per-export egress cap reached | `429 export_egress_exhausted`; start a new export (subject to the rolling window). |
 | Rolling 24h window cap reached | `429 export_egress_window_exhausted`; retryable — wait for the window to slide. |

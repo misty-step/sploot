@@ -7,8 +7,11 @@ import {
 import { prisma } from '@/lib/db';
 import { enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
 import { exportAdmissionErrorResponse } from '@/lib/export/export-http';
-import { streamExportManifest } from '@/lib/export/export-manifest';
-import { estimateManifestEgressBytes, manifestFileName } from '@/lib/export/export-policy';
+import {
+  estimateManifestEgressBytesForExport,
+  streamExportManifest,
+} from '@/lib/export/export-manifest';
+import { manifestFileName } from '@/lib/export/export-policy';
 import {
   accessExportForDownload,
   refundExportEgress,
@@ -62,7 +65,7 @@ async function getHandler(
     // budget, so its conservative reservation must fit before any byte
     // streams; the stream hard-caps at the reservation and a clean completion
     // settles the charge down to actual bytes (aborts stay charged).
-    const reserve = estimateManifestEgressBytes(row.totalAssets, row.partBoundaries.length);
+    const reserve = await estimateManifestEgressBytesForExport(row);
     const admission = await reserveExportEgress(row, reserve);
     if (admission.kind !== 'reserved') {
       return exportAdmissionErrorResponse(admission);

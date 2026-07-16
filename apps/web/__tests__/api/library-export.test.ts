@@ -228,9 +228,9 @@ import { GET as listGet, POST as createPost } from '@/app/api/library/export/rou
 import { DELETE as exportDelete, GET as statusGet } from '@/app/api/library/export/[exportId]/route';
 import { GET as partGet } from '@/app/api/library/export/[exportId]/parts/[partIndex]/route';
 import { GET as manifestGet } from '@/app/api/library/export/[exportId]/manifest/route';
+import { estimateManifestEgressBytesForExport } from '@/lib/export/export-manifest';
 import {
   EXPORT_TTL_MS,
-  estimateManifestEgressBytes,
   estimatePartEgressBytes,
   exportEgressAllowance,
   exportEgressWindowAllowance,
@@ -657,7 +657,7 @@ describe('egress bound — durable reservation admission', () => {
     const created = await createExport();
     const row = state.exports.get(created.id)!;
     const allowance = exportEgressAllowance(row.totalOriginalBytes);
-    const manifestReserve = estimateManifestEgressBytes(row.totalAssets, row.partBoundaries.length);
+    const manifestReserve = await estimateManifestEgressBytesForExport(row);
     // Headroom fits either request alone, but not both.
     row.egressBytes = allowance - partReserve(created) - manifestReserve + BigInt(1);
 
@@ -766,6 +766,26 @@ describe('GET /api/library/export/:exportId/manifest', () => {
       phash: 'abcd',
       tags: ['reaction'],
     });
+  });
+
+  it('reserves enough for user-controlled tag metadata', async () => {
+    const bytes = new Uint8Array([1, 2, 3]);
+    seedAsset('asset-a', USER, bytes);
+    const longTag = 'x'.repeat(300_000);
+    state.tags.push({ ownerUserId: USER, name: longTag, color: null });
+    state.assetTags.push({ assetId: 'asset-a', tagName: longTag });
+
+    const created = await createExport();
+    state.exports.get(created.id)!.servedParts = [0];
+    const response = await manifestGet(
+      request('/api/library/export/' + created.id + '/manifest'),
+      ctx({ exportId: created.id }),
+    );
+
+    expect(response.status).toBe(200);
+    const manifest = JSON.parse(await response.text());
+    expect(manifest.tags).toEqual([{ name: longTag, color: null }]);
+    expect(manifest.assets[0].tags).toEqual([longTag]);
   });
 
   it('never claims completeness for undownloaded parts or failed objects', async () => {

@@ -12,9 +12,8 @@ import {
   flattenFailures,
   isExportExpired,
   partFileName,
-  planExportParts,
+  createExportPartPlanner,
   snapshotAssetWhere,
-  type ExportEntrySeed,
   type ExportFailure,
   type ExportFailuresByPart,
   type ExportPartBoundary,
@@ -157,10 +156,16 @@ export function toExportView(row: ExportRowData, now: Date = new Date()): Librar
   };
 }
 
-async function collectSnapshotSeeds(userId: string, snapshotAt: Date): Promise<ExportEntrySeed[]> {
+async function planSnapshot(
+  userId: string,
+  snapshotAt: Date,
+): Promise<{ boundaries: ExportPartBoundary[]; totalAssets: number; totalOriginalBytes: bigint }> {
   const db = requireDb();
   const where = snapshotAssetWhere(userId, snapshotAt);
-  const seeds: ExportEntrySeed[] = [];
+  const planner = createExportPartPlanner();
+  const boundaries = planner.parts;
+  let totalAssets = 0;
+  let totalOriginalBytes = BigInt(0);
   let cursor: string | null = null;
 
   for (;;) {
@@ -170,12 +175,16 @@ async function collectSnapshotSeeds(userId: string, snapshotAt: Date): Promise<E
       take: EXPORT_SCAN_PAGE_SIZE,
       select: { id: true, size: true },
     });
-    seeds.push(...page);
+    for (const entry of page) {
+      planner.add(entry);
+      totalAssets += 1;
+      totalOriginalBytes += BigInt(entry.size);
+    }
     if (page.length < EXPORT_SCAN_PAGE_SIZE) break;
     cursor = page[page.length - 1].id;
   }
 
-  return seeds;
+  return { boundaries, totalAssets, totalOriginalBytes };
 }
 
 export async function createOrReuseExport(
@@ -193,9 +202,10 @@ export async function createOrReuseExport(
   }
 
   const snapshotAt = now;
-  const seeds = await collectSnapshotSeeds(userId, snapshotAt);
-  const boundaries = planExportParts(seeds);
-  const totalOriginalBytes = seeds.reduce((sum, seed) => sum + BigInt(seed.size), BigInt(0));
+  const { boundaries, totalAssets, totalOriginalBytes } = await planSnapshot(
+    userId,
+    snapshotAt,
+  );
 
   try {
     const created = await db.$transaction(async (tx) => {
@@ -217,7 +227,7 @@ export async function createOrReuseExport(
           snapshotAt,
           expiresAt: new Date(now.getTime() + EXPORT_TTL_MS),
           manifestVersion: EXPORT_MANIFEST_VERSION,
-          totalAssets: seeds.length,
+          totalAssets,
           totalOriginalBytes,
           partBoundaries: boundaries as unknown as Prisma.InputJsonValue,
           servedParts: [] as unknown as Prisma.InputJsonValue,

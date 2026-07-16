@@ -312,6 +312,7 @@ async function migrateOrphanedUser(
   await tx.storageQuotaReservation.updateMany({ where: { ownerUserId: oldUserId }, data: { ownerUserId: newUserId } });
   await tx.uploadToken.updateMany({ where: { userId: oldUserId }, data: { userId: newUserId } });
   await tx.embeddingRateLease.updateMany({ where: { userId: oldUserId }, data: { userId: newUserId } });
+  await tx.libraryExport.updateMany({ where: { ownerUserId: oldUserId }, data: { ownerUserId: newUserId } });
   await tx.userIdentity.updateMany({ where: { userId: oldUserId }, data: { userId: newUserId } });
 
   await tx.user.delete({ where: { id: oldUserId } });

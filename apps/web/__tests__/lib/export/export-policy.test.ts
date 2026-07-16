@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   EXPORT_EGRESS_WINDOW_FACTOR,
   EXPORT_EGRESS_WINDOW_MS,
-  EXPORT_MANIFEST_RESERVE_BASE_BYTES,
-  EXPORT_MANIFEST_RESERVE_PER_ASSET_BYTES,
   EXPORT_MANIFEST_VERSION,
   EXPORT_PART_MAX_BYTES,
   EXPORT_PART_RESERVE_BASE_BYTES,
@@ -11,7 +9,6 @@ import {
   EXPORT_TTL_MS,
   archivePathFor,
   computeCompleteness,
-  estimateManifestEgressBytes,
   estimatePartEgressBytes,
   exportEgressAllowance,
   exportEgressWindowAllowance,
@@ -151,17 +148,6 @@ describe('export policy', () => {
       expect(reserve > BigInt(boundary.bytes)).toBe(true);
       // Deterministic: same boundary, same reservation.
       expect(estimatePartEgressBytes(boundary)).toBe(reserve);
-    });
-
-    it('reserves a deterministic, conservative upper bound for the manifest', () => {
-      const reserve = estimateManifestEgressBytes(100, 2);
-      expect(reserve).toBe(
-        BigInt(EXPORT_MANIFEST_RESERVE_BASE_BYTES) +
-          BigInt(100 * EXPORT_MANIFEST_RESERVE_PER_ASSET_BYTES) +
-          BigInt(2 * 512),
-      );
-      // Even an empty library gets a positive reservation for the head.
-      expect(estimateManifestEgressBytes(0, 0) > BigInt(0)).toBe(true);
     });
 
     it('bounds tenant egress over a rolling window to a fixed multiple of one export allowance', () => {

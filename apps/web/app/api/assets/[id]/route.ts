@@ -211,6 +211,12 @@ async function deleteHandler(
         await acquireEnrollmentIdentityWriterLock(tx, userId);
         const asset = await tx.asset.findFirst({ where: { id, ownerUserId: userId } });
         if (!asset) return null;
+        // A permanent delete destroys snapshot membership. Cancel active
+        // exports under the same identity lock before tombstoning the asset.
+        await tx.libraryExport.updateMany({
+          where: { ownerUserId: userId, status: 'active' },
+          data: { status: 'canceled' },
+        });
         const fallback = [
           { provider: asset.storageProvider ?? 'vercel', key: asset.storageSourceKey ?? asset.storageKey ?? asset.pathname, url: asset.blobUrl },
           asset.thumbnailUrl ? { provider: asset.storageProvider ?? 'vercel', key: asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey ?? asset.thumbnailPath ?? asset.pathname, url: asset.thumbnailUrl } : null,

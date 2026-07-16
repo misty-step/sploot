@@ -41,13 +41,6 @@ export const EXPORT_EGRESS_SLACK_BYTES = 128 * 1024 * 1024;
 export const EXPORT_PART_RESERVE_ENTRY_OVERHEAD_BYTES = 1024;
 /** Fixed per-part zip framing overhead (end of central directory + margin). */
 export const EXPORT_PART_RESERVE_BASE_BYTES = 64 * 1024;
-/** Conservative per-asset manifest JSON footprint (fields + tags). */
-export const EXPORT_MANIFEST_RESERVE_PER_ASSET_BYTES = 2048;
-/** Fixed manifest overhead: head object, tag list, failures, margin. */
-export const EXPORT_MANIFEST_RESERVE_BASE_BYTES = 256 * 1024;
-/** Per-part footprint inside the manifest head. */
-export const EXPORT_MANIFEST_RESERVE_PER_PART_BYTES = 512;
-
 /**
  * Tenant-level rolling window bound: cycling sessions (force / cancel /
  * supersede / expiry) never mints fresh budget. Within any rolling window a
@@ -106,6 +99,45 @@ const MIME_EXTENSIONS: Record<string, string> = {
 const SAFE_ASSET_ID = /^[A-Za-z0-9_-]+$/;
 
 /**
+ * Incremental part planner shared by the in-memory unit helper and the
+ * paged snapshot scan. The planner only retains part boundaries, not assets.
+ */
+export interface ExportPartPlanner {
+  readonly parts: ExportPartBoundary[];
+  add(entry: ExportEntrySeed): void;
+}
+
+export function createExportPartPlanner(
+  maxPartBytes: number = EXPORT_PART_MAX_BYTES,
+): ExportPartPlanner {
+  const parts: ExportPartBoundary[] = [];
+  let current: ExportPartBoundary | null = null;
+  let previousId: string | null = null;
+
+  return {
+    parts,
+    add(entry) {
+      const startsNewPart =
+        current === null || (current.count > 0 && current.bytes + entry.size > maxPartBytes);
+
+      if (startsNewPart) {
+        current = {
+          index: parts.length,
+          afterId: previousId,
+          count: 0,
+          bytes: 0,
+        };
+        parts.push(current);
+      }
+
+      current!.count += 1;
+      current!.bytes += entry.size;
+      previousId = entry.id;
+    },
+  };
+}
+
+/**
  * Pack snapshot entries (already in ascending id order) into byte-bounded
  * parts. Deterministic: the same entry list always yields the same
  * boundaries, so parts can be re-streamed idempotently for retry/resume.
@@ -114,30 +146,9 @@ export function planExportParts(
   entries: Iterable<ExportEntrySeed>,
   maxPartBytes: number = EXPORT_PART_MAX_BYTES,
 ): ExportPartBoundary[] {
-  const parts: ExportPartBoundary[] = [];
-  let current: ExportPartBoundary | null = null;
-  let previousId: string | null = null;
-
-  for (const entry of entries) {
-    const startsNewPart =
-      current === null || (current.count > 0 && current.bytes + entry.size > maxPartBytes);
-
-    if (startsNewPart) {
-      current = {
-        index: parts.length,
-        afterId: previousId,
-        count: 0,
-        bytes: 0,
-      };
-      parts.push(current);
-    }
-
-    current!.count += 1;
-    current!.bytes += entry.size;
-    previousId = entry.id;
-  }
-
-  return parts;
+  const planner = createExportPartPlanner(maxPartBytes);
+  for (const entry of entries) planner.add(entry);
+  return planner.parts;
 }
 
 /**
@@ -221,19 +232,6 @@ export function estimatePartEgressBytes(boundary: ExportPartBoundary): bigint {
   );
 }
 
-/**
- * Deterministic conservative upper bound for streaming the manifest. The
- * per-asset constant dominates the serialized entry (fields, checksums,
- * timestamps, tags); the stream hard-caps at the total.
- */
-export function estimateManifestEgressBytes(totalAssets: number, partCount: number): bigint {
-  return (
-    BigInt(EXPORT_MANIFEST_RESERVE_BASE_BYTES) +
-    BigInt(totalAssets) * BigInt(EXPORT_MANIFEST_RESERVE_PER_ASSET_BYTES) +
-    BigInt(partCount) * BigInt(EXPORT_MANIFEST_RESERVE_PER_PART_BYTES)
-  );
-}
-
 export function isExportExpired(expiresAt: Date, now: Date = new Date()): boolean {
   return now.getTime() > expiresAt.getTime();
 }
@@ -242,10 +240,10 @@ export function isExportExpired(expiresAt: Date, now: Date = new Date()): boolea
  * Frozen snapshot membership: assets that existed at snapshot time and were
  * not already soft-deleted. Stable under concurrent uploads (createdAt >
  * snapshotAt excluded), soft-deletes (deletedAt > snapshotAt still
- * included), and restores (deletedAt back to null still included). Hard
- * purges only touch assets soft-deleted 30+ days — impossible inside the
- * 24h export TTL — so recomputing this predicate always yields the same
- * entry set for a given export.
+ * included), and restores (deletedAt back to null still included). Permanent
+ * asset deletes atomically cancel active exports before removing the row; the
+ * 30-day purge likewise cannot reach an active export. This keeps recomputation
+ * honest for the entire 24h capability lifetime.
  */
 export function snapshotAssetWhere(userId: string, snapshotAt: Date) {
   return {
