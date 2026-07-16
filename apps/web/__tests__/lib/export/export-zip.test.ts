@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { ExportObjectReader } from '@/lib/export/export-objects';
 import { streamExportPartZip, type ExportZipEntry } from '@/lib/export/export-zip';
 import type { ExportFailure } from '@/lib/export/export-policy';
+import { EXPORT_STREAM_CHUNK_BYTES } from '@/lib/export/export-backpressure';
 
 function sha256Hex(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -174,6 +175,47 @@ describe('streamExportPartZip', () => {
 
     await expect(collect(stream)).rejects.toThrow(/reservation/i);
     expect(completed).toBe(false);
+  });
+
+  it('bounds a huge provider chunk and zip finalization output', async () => {
+    const bytes = new Uint8Array(256 * 1024).fill(7);
+    const huge = entry('huge', bytes);
+    const many = Array.from({ length: 200 }, (_, index) => entry(
+      `small-${index}`,
+      new Uint8Array([index % 251]),
+    ));
+    const entries = [huge, ...many];
+    const stream = streamExportPartZip({
+      entries,
+      reader: async (url) => {
+        const value = url === huge.url ? bytes : new Uint8Array([1]);
+        return {
+          ok: true as const,
+          body: new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(value);
+              controller.close();
+            },
+          }),
+        };
+      },
+      maxBytes: BigInt(1024 * 1024),
+    });
+    const chunks: Uint8Array[] = [];
+    const reader = stream.getReader();
+    for (;;) {
+      const result = await reader.read();
+      if (result.done) break;
+      if (result.value) chunks.push(result.value);
+    }
+    expect(chunks.every((chunk) => chunk.byteLength <= EXPORT_STREAM_CHUNK_BYTES)).toBe(true);
+    const zipBytes = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0));
+    let offset = 0;
+    for (const chunk of chunks) {
+      zipBytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    expect(new Uint8Array(unzipSync(zipBytes)['assets/huge.png'])).toEqual(bytes);
   });
 
   it('streams normally when the reservation covers the real zip size', async () => {

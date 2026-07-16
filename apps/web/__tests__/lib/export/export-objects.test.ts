@@ -4,6 +4,7 @@ import {
   createExportObjectReader,
   openExportObject,
 } from '@/lib/export/export-objects';
+import { EXPORT_STREAM_CHUNK_BYTES } from '@/lib/export/export-backpressure';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -53,6 +54,26 @@ describe('export object reader', () => {
     if (result.ok) {
       const buffer = new Uint8Array(await new Response(result.body).arrayBuffer());
       expect(buffer).toEqual(bytes);
+    }
+  });
+
+  it('slices a single huge provider response chunk', async () => {
+    const bytes = new Uint8Array(256 * 1024).fill(9);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(bytes, { status: 200 })));
+    const opened = await openExportObject(
+      'https://abc.public.blob.vercel-storage.com/u/file.png',
+    );
+    expect(opened.ok).toBe(true);
+    if (opened.ok) {
+      const reader = opened.body.getReader();
+      const chunks: Uint8Array[] = [];
+      for (;;) {
+        const result = await reader.read();
+        if (result.done) break;
+        if (result.value) chunks.push(result.value);
+      }
+      expect(chunks.every((chunk) => chunk.byteLength <= EXPORT_STREAM_CHUNK_BYTES)).toBe(true);
+      expect(chunks.reduce((total, chunk) => total + chunk.byteLength, 0)).toBe(bytes.byteLength);
     }
   });
 

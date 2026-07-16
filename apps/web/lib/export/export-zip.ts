@@ -2,7 +2,11 @@ import { createHash } from 'node:crypto';
 import { Zip, ZipPassThrough } from 'fflate';
 import type { ExportObjectReader } from './export-objects';
 import type { ExportFailure } from './export-policy';
-import { EXPORT_BACKPRESSURE_TIMEOUT_MS, waitForExportCapacity } from './export-backpressure';
+import {
+  EXPORT_BACKPRESSURE_TIMEOUT_MS,
+  EXPORT_STREAM_CHUNK_BYTES,
+  waitForExportCapacity,
+} from './export-backpressure';
 
 /**
  * Streaming zip assembly for one export part.
@@ -68,19 +72,26 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
     let bytesStreamed = 0;
     let zipError: Error | null = null;
 
+    const enqueueZipOutput = (chunk: Uint8Array): void => {
+      for (let offset = 0; offset < chunk.byteLength; offset += EXPORT_STREAM_CHUNK_BYTES) {
+        const piece = chunk.subarray(offset, Math.min(offset + EXPORT_STREAM_CHUNK_BYTES, chunk.byteLength));
+        if (maxBytes !== undefined && BigInt(bytesStreamed + piece.length) > maxBytes) {
+          // Never hand out a byte past the admitted reservation.
+          zipError = new Error('export part would exceed its egress reservation');
+          return;
+        }
+        bytesStreamed += piece.length;
+        controller.enqueue(piece);
+      }
+    };
+
     const zip = new Zip((error, chunk) => {
       if (error) {
         zipError = error;
         return;
       }
       if (canceled || zipError || !chunk || chunk.length === 0) return;
-      if (maxBytes !== undefined && BigInt(bytesStreamed + chunk.length) > maxBytes) {
-        // Never hand out a byte past the admitted reservation.
-        zipError = new Error('export part would exceed its egress reservation');
-        return;
-      }
-      bytesStreamed += chunk.length;
-      controller.enqueue(chunk);
+      enqueueZipOutput(chunk);
     });
 
     const ensureOpen = (): boolean => {
@@ -136,8 +147,17 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
             if (done) break;
             if (!value || value.length === 0) continue;
             hash.update(value);
-            zipEntry.push(value, false);
-            if (zipError) throw zipError;
+            // fflate invokes its output callback synchronously. Slice provider
+            // chunks before each push so one arbitrary body read cannot enqueue
+            // an unbounded response chunk or bypass backpressure.
+            for (let offset = 0; offset < value.byteLength; offset += EXPORT_STREAM_CHUNK_BYTES) {
+              await waitForCapacity();
+              zipEntry.push(
+                value.subarray(offset, Math.min(offset + EXPORT_STREAM_CHUNK_BYTES, value.byteLength)),
+                false,
+              );
+              if (zipError) throw zipError;
+            }
           }
         } finally {
           activeObjectReader = null;
@@ -157,6 +177,9 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
         }
       }
 
+      // Finalization is bounded by the admitted entry count and fixed zip
+      // metadata; gate it so a stalled client fails before fflate flushes.
+      await waitForCapacity();
       zip.end();
       if (zipError) throw zipError;
       if (!ensureOpen()) return;

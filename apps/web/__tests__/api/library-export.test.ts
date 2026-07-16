@@ -830,23 +830,50 @@ describe('GET /api/library/export/:exportId/manifest', () => {
     await expect(downstream.read()).rejects.toThrow(/backpressure/i);
   });
 
-  it('fails closed when deletion wins between manifest count and scan', async () => {
+  it('fails closed when deletion wins before manifest scan', async () => {
     seedAsset('asset-a', USER, new Uint8Array([1, 2]));
     const created = await createExport();
     const row = state.exports.get(created.id)!;
     row.servedParts = [0];
-    const originalCount = fakePrisma.asset.count;
-    fakePrisma.asset.count = async (args: any) => {
-      const count = await originalCount(args);
-      row.status = 'canceled';
-      state.assets = [];
-      return count;
+    const originalFindFirst = fakePrisma.libraryExport.findFirst;
+    let lifecycleProbe = 0;
+    fakePrisma.libraryExport.findFirst = async (args: any) => {
+      const current = await originalFindFirst(args);
+      if (++lifecycleProbe === 1) {
+        row.status = 'canceled';
+        state.assets = [];
+      }
+      return current;
     };
     try {
       const stream = streamExportManifest({ row: row as any });
       await expect(new Response(stream).text()).rejects.toThrow(/unavailable/i);
     } finally {
-      fakePrisma.asset.count = originalCount;
+      fakePrisma.libraryExport.findFirst = originalFindFirst;
+    }
+  });
+
+  it('fails closed when deletion wins after the first manifest page', async () => {
+    seedAsset('asset-a', USER, new Uint8Array([1, 2]));
+    seedAsset('asset-b', USER, new Uint8Array([3, 4]));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+    row.servedParts = [0];
+    const originalFindMany = fakePrisma.asset.findMany;
+    let pageReads = 0;
+    fakePrisma.asset.findMany = async (args: any) => {
+      const page = await originalFindMany(args);
+      if (++pageReads === 1) {
+        row.status = 'canceled';
+        state.assets = [];
+      }
+      return page;
+    };
+    try {
+      const stream = streamExportManifest({ row: row as any });
+      await expect(new Response(stream).text()).rejects.toThrow(/unavailable/i);
+    } finally {
+      fakePrisma.asset.findMany = originalFindMany;
     }
   });
 

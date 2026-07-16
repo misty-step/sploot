@@ -78,18 +78,6 @@ record.
   "snapshotAt": "2026-07-15T12:00:00.000Z",
   "expiresAt": "2026-07-16T12:00:00.000Z",
 
-  // Explicit completeness — partial success never masquerades as complete.
-  "complete": false,
-  "incompleteReasons": ["parts_not_fully_downloaded", "objects_missing_or_failed"],
-
-  "totals": {
-    "assets": 1234,          // snapshot entry count
-    "originalBytes": 987654321,
-    "parts": 4,
-    "servedParts": 3,        // parts fully streamed at least once
-    "failedObjects": 1
-  },
-
   "parts": [
     { "index": 0, "file": "sploot-export-cm0…-part-001-of-004.zip",
       "assets": 400, "bytes": 260000000, "served": true }
@@ -117,7 +105,19 @@ record.
       "createdAt": "…", "updatedAt": "…",
       "tags": ["reaction"]
     }
-  ]
+  ],
+
+  // Final authoritative summary, emitted after the paged asset scan.
+  // Partial success never masquerades as complete.
+  "complete": false,
+  "incompleteReasons": ["parts_not_fully_downloaded", "objects_missing_or_failed"],
+  "totals": {
+    "assets": 1234,          // assets actually emitted above
+    "originalBytes": 987654321,
+    "parts": 4,
+    "servedParts": 3,        // parts fully streamed at least once
+    "failedObjects": 1
+  }
 }
 ```
 

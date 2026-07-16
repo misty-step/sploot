@@ -88,12 +88,6 @@ async function withManifestRead<T>(
   });
 }
 
-async function countLiveAssets(database: ManifestDatabase, row: ExportRowData): Promise<number> {
-  return withManifestRead(database, row, (db) =>
-    db.asset.count({ where: snapshotAssetWhere(row.ownerUserId, row.snapshotAt) }),
-  );
-}
-
 async function findManifestTags(
   database: ManifestDatabase,
   row: ExportRowData,
@@ -143,11 +137,8 @@ async function findManifestAssetTags(
   return rows;
 }
 
-function manifestHead(
+function manifestStaticHead(
   row: ExportRowData,
-  liveAssets: number,
-  complete: boolean,
-  reasons: string[],
   failures: ReturnType<typeof flattenFailures>,
 ) {
   const served = new Set(row.servedParts);
@@ -158,6 +149,25 @@ function manifestHead(
     generatedAt: new Date().toISOString(),
     snapshotAt: row.snapshotAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
+    parts: row.partBoundaries.map((part) => ({
+      index: part.index,
+      file: partFileName(row.id, part.index, row.partBoundaries.length),
+      assets: part.count,
+      bytes: part.bytes,
+      served: served.has(part.index),
+    })),
+    failures,
+  };
+}
+
+function manifestSummary(
+  row: ExportRowData,
+  liveAssets: number,
+  complete: boolean,
+  reasons: string[],
+  failures: ReturnType<typeof flattenFailures>,
+) {
+  return {
     complete,
     incompleteReasons: reasons,
     totals: {
@@ -168,14 +178,6 @@ function manifestHead(
       servedParts: row.servedParts.length,
       failedObjects: failures.length,
     },
-    parts: row.partBoundaries.map((part) => ({
-      index: part.index,
-      file: partFileName(row.id, part.index, row.partBoundaries.length),
-      assets: part.count,
-      bytes: part.bytes,
-      served: served.has(part.index),
-    })),
-    failures,
   };
 }
 
@@ -226,13 +228,7 @@ export async function estimateManifestEgressBytesForExport(
     row.failures,
   );
   const failures = flattenFailures(row.failures);
-  const liveAssets = await countLiveAssets(db, row);
-  const manifestComplete = complete && liveAssets >= row.totalAssets;
-  const manifestReasons = liveAssets < row.totalAssets
-    ? [...reasons, 'snapshot_membership_changed' as const]
-    : reasons;
-  const head = manifestHead(row, liveAssets, manifestComplete, manifestReasons, failures);
-  const headJson = JSON.stringify(head);
+  const headJson = JSON.stringify(manifestStaticHead(row, failures));
   let bytes = utf8Bytes(headJson.slice(0, -1) + ',"tags":[');
   let emittedTag = false;
   let tagCursor: string | null = null;
@@ -301,7 +297,17 @@ export async function estimateManifestEgressBytesForExport(
     cursor = page[page.length - 1].id;
   }
 
-  return bytes + utf8Bytes(']}') + BigInt(MANIFEST_RESERVATION_SLACK_BYTES);
+  const estimateReasons = streamedAssets < row.totalAssets
+    ? [...reasons, 'snapshot_membership_changed' as const]
+    : reasons;
+  const summary = manifestSummary(
+    row,
+    streamedAssets,
+    complete && streamedAssets >= row.totalAssets,
+    estimateReasons,
+    failures,
+  );
+  return bytes + utf8Bytes('],' + JSON.stringify(summary).slice(1)) + BigInt(MANIFEST_RESERVATION_SLACK_BYTES);
 }
 
 export function streamExportManifest(
@@ -345,14 +351,13 @@ export function streamExportManifest(
         row.failures,
       );
       const failures = flattenFailures(row.failures);
-      const liveAssets = await countLiveAssets(db, row);
-      const manifestComplete = complete && liveAssets >= row.totalAssets;
-      const manifestReasons = liveAssets < row.totalAssets
-        ? [...reasons, 'snapshot_membership_changed' as const]
-        : reasons;
-      const head = manifestHead(row, liveAssets, manifestComplete, manifestReasons, failures);
-      const headJson = JSON.stringify(head);
-      // Open the tags array by splicing into the serialized head object.
+      // Probe lifecycle before emitting any bytes; only assets actually
+      // emitted below become manifest totals.
+      await withManifestRead(db, row, async () => undefined);
+      const headJson = JSON.stringify(manifestStaticHead(row, failures));
+      // Completeness and live totals are emitted only after the asset pages.
+      // The streamed membership is the authoritative count; no pre-scan COUNT
+      // can race a hard delete between the header and the first page.
       await emit(headJson.slice(0, -1) + ',"tags":[');
 
       let emittedTag = false;
@@ -426,7 +431,23 @@ export function streamExportManifest(
         cursor = page[page.length - 1].id;
       }
 
-      await emit(']}');
+      if (!ensureOpen()) return;
+      // A delete can win after the final asset page. Reconcile status before
+      // the authoritative trailing summary so that stream errors, rather than
+      // claiming a complete manifest for a canceled snapshot.
+      await withManifestRead(db, row, async () => undefined);
+      const manifestLiveAssets = streamedAssets;
+      const manifestReasons = manifestLiveAssets < row.totalAssets
+        ? [...reasons, 'snapshot_membership_changed' as const]
+        : reasons;
+      const summary = manifestSummary(
+        row,
+        manifestLiveAssets,
+        complete && manifestLiveAssets >= row.totalAssets,
+        manifestReasons,
+        failures,
+      );
+      await emit('],' + JSON.stringify(summary).slice(1));
 
       if (!ensureOpen()) return;
       if (onComplete) {
