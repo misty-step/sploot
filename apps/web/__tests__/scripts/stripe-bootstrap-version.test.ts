@@ -155,33 +155,36 @@ describe('stripe ledger bootstrap version authority', () => {
 
   it('retains isolated pg15/pg16 execution of the final bootstrap contract', () => {
     const ci = readFileSync(resolve(repoRoot, '.github/workflows/ci.yml'), 'utf8');
+    const authorityScript = readFileSync(resolve(repoRoot, 'scripts/db-authority-rehearsal.sh'), 'utf8');
     expect(ci).toMatch(/pg:\s*\['15',\s*'16'\]/);
-    expect(ci).toMatch(/psql [^\n]*-f apps\/web\/prisma\/stripe-ledger-bootstrap-post\.sql/);
-    expect(ci).toContain('matrix.pg');
-    expect(ci).toContain('ON_ERROR_STOP=1');
-    expect(ci).toContain("EMBEDDING_INDEX_STATEMENT_TIMEOUT=5s");
-    expect(ci).toContain('DROP INDEX CONCURRENTLY');
-    expect(ci).toContain('20260715000000_add_embedding_resilience/migration.sql');
-    expect(ci).toContain('20260715020000_add_embedding_probe_lease_token/migration.sql');
-    expect(ci).toContain("PGOPTIONS='-c lock_timeout=5s -c statement_timeout=30s'");
-    expect(ci).toContain('migration_name" == 20260715*');
-    expect(ci).toContain('legacy-upgrade-event');
-    expect(ci).toContain(
-      'INSERT INTO public.assets (id, owner_user_id, blob_url, pathname, mime, size, checksum_sha256, "createdAt", "updatedAt")',
-    );
-    expect(ci).toContain(
-      'INSERT INTO public.asset_embeddings (asset_id, model_name, model_version, dim, status, "createdAt", "updatedAt")',
-    );
-    expect(ci).toContain(
-      '(alert_key, window_start, window_seconds, count, event_ids, created_at, updated_at)',
-    );
-    expect(ci).toContain(
-      'payload_version, payload, payload_bytes, created_at, updated_at)',
-    );
-    expect(ci).toContain('CREATE ROLE sploot_stripe_app SUPERUSER INHERIT');
-    expect(ci).toContain("test \"$role_converged\" = 't'");
-    expect(ci).toContain('marker_before_fault=');
-    expect(ci).toContain('test "$marker_after_fault" = "$marker_before_fault"');
+    expect(ci).toContain('run: bash scripts/db-authority-rehearsal.sh "\${{ matrix.pg }}"');
+    const dbAuthorityJob = ci.slice(ci.indexOf('  db-authority:'), ci.indexOf('  merge-gate:'));
+    expect(dbAuthorityJob).not.toContain('run: |');
+    expect(authorityScript).toContain('apps/web/prisma/stripe-ledger-bootstrap-post.sql');
+    expect(authorityScript).toContain('ON_ERROR_STOP=1');
+    expect(authorityScript).toContain('EMBEDDING_INDEX_STATEMENT_TIMEOUT=5s');
+    expect(authorityScript).toContain('DROP INDEX CONCURRENTLY');
+    expect(authorityScript).toContain('20260715000000_add_embedding_resilience/migration.sql');
+    expect(authorityScript).toContain('20260715020000_add_embedding_probe_lease_token/migration.sql');
+    expect(authorityScript).toContain("PGOPTIONS='-c lock_timeout=5s -c statement_timeout=30s'");
+    expect(authorityScript).toContain('migration_name" == 20260715*');
+    expect(authorityScript).toContain('legacy-upgrade-event');
+    expect(authorityScript).toContain('INSERT INTO public.assets (id, owner_user_id, blob_url, pathname, mime, size, checksum_sha256, "createdAt", "updatedAt")');
+    expect(authorityScript).toContain('INSERT INTO public.asset_embeddings (asset_id, model_name, model_version, dim, status, "createdAt", "updatedAt")');
+    expect(authorityScript).toContain('(alert_key, window_start, window_seconds, count, event_ids, created_at, updated_at)');
+    expect(authorityScript).toContain('payload_version, payload, payload_bytes, created_at, updated_at)');
+    expect(authorityScript).toContain('CREATE ROLE sploot_stripe_app SUPERUSER INHERIT');
+    expect(authorityScript).toContain('test "$role_converged" = \'t\'');
+    expect(authorityScript).toContain('marker_before_fault=');
+    expect(authorityScript).toContain('test "$marker_after_fault" = "$marker_before_fault"');
+  });
+
+  it('keeps CI inline shell blocks below the GitHub expression budget', () => {
+    const ci = readFileSync(resolve(repoRoot, '.github/workflows/ci.yml'), 'utf8');
+    const inlineRuns = [...ci.matchAll(/^\s+run: \|\n((?:^\s{10,}.*\n?)*)/gm)]
+      .map((match) => match[0].length);
+    expect(inlineRuns.length).toBeGreaterThan(0);
+    expect(Math.max(...inlineRuns)).toBeLessThan(20_000);
   });
 
   it('uses normalized exact catalog definitions and converged security state', () => {
@@ -207,9 +210,11 @@ describe('stripe ledger bootstrap version authority', () => {
 
   it('is consumed by CI from the version file, never hardcoded', () => {
     const ci = readFileSync(resolve(repoRoot, '.github/workflows/ci.yml'), 'utf8');
-    expect(ci).toContain('prisma/stripe-ledger-bootstrap.version');
-    expect(ci).not.toMatch(/ready:\d{14}/);
-    expect(ci).not.toMatch(/bootstrap_version=\d/);
+    const authorityScript = readFileSync(resolve(repoRoot, 'scripts/db-authority-rehearsal.sh'), 'utf8');
+    expect(ci).toContain('run: bash scripts/db-authority-rehearsal.sh');
+    expect(authorityScript).toContain('prisma/stripe-ledger-bootstrap.version');
+    expect(authorityScript).not.toMatch(/ready:\d{14}/);
+    expect(authorityScript).not.toMatch(/bootstrap_version=\d/);
   });
 
   it('does not hardcode the bootstrap version in runtime health', () => {
