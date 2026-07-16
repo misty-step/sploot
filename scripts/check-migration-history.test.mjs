@@ -1,13 +1,80 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { assertMigrationHistory, assertUniqueMigrationPrefixes, parseMigrationRows } from './check-migration-history.mjs';
+import {
+  assertMigrationHistory,
+  assertUniqueMigrationPrefixes,
+  checkDatabaseMigrationHistory,
+  MIGRATION_HISTORY_CONNECT_TIMEOUT_MS,
+  MIGRATION_HISTORY_QUERY_TIMEOUT_MS,
+  migrationHistoryClientConfig,
+  pgSslConfig,
+} from './check-migration-history.mjs';
 
-test('migration history parser handles empty and tab-separated rows', () => {
-  assert.deepEqual(parseMigrationRows(''), []);
-  assert.deepEqual(parseMigrationRows('old_name\tabc123\t2026-07-15 00:00:00+00\t\n'), [{
-    migrationName: 'old_name', checksum: 'abc123', finishedAt: '2026-07-15 00:00:00+00', rolledBackAt: null,
-  }]);
+test('sslmode maps deterministically onto the pg client and pauses on unknown modes', () => {
+  assert.equal(pgSslConfig('postgresql://u@host/db?sslmode=disable'), false);
+  assert.equal(pgSslConfig('postgresql://u@host/db'), false);
+  assert.deepEqual(pgSslConfig('postgresql://u@host/db?sslmode=require'), { rejectUnauthorized: false });
+  assert.deepEqual(pgSslConfig('postgresql://u@host/db?sslmode=verify-full'), { rejectUnauthorized: true });
+  assert.throws(() => pgSslConfig('postgresql://u@host/db?sslmode=mystery'), /unsupported sslmode/);
+});
+
+test('migration history client config bounds connect and query work', () => {
+  assert.deepEqual(migrationHistoryClientConfig('postgresql://u:p@host:6543/db?sslmode=require'), {
+    host: 'host',
+    port: 6543,
+    user: 'u',
+    password: 'p',
+    database: 'db',
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: MIGRATION_HISTORY_CONNECT_TIMEOUT_MS,
+    statement_timeout: MIGRATION_HISTORY_QUERY_TIMEOUT_MS,
+    query_timeout: MIGRATION_HISTORY_QUERY_TIMEOUT_MS,
+  });
+  assert.equal(MIGRATION_HISTORY_CONNECT_TIMEOUT_MS, 10_000);
+  assert.equal(MIGRATION_HISTORY_QUERY_TIMEOUT_MS, 30_000);
+});
+
+test('migration history fails closed on connect and query timeout errors', async () => {
+  let connectConfig;
+  let queryCalls = 0;
+  await assert.rejects(
+    checkDatabaseMigrationHistory('postgresql://u:p@host/db', {
+      createClient: (config) => {
+        connectConfig = config;
+        return {
+          connect: async () => { throw new Error('connect timeout'); },
+          query: async () => { queryCalls += 1; return { rows: [] }; },
+          end: async () => { throw new Error('end must not run after connect failure'); },
+        };
+      },
+    }),
+    /connect timeout/,
+  );
+  assert.equal(connectConfig.connectionTimeoutMillis, MIGRATION_HISTORY_CONNECT_TIMEOUT_MS);
+  assert.equal(queryCalls, 0);
+
+  let ended = 0;
+  queryCalls = 0;
+  await assert.rejects(
+    checkDatabaseMigrationHistory('postgresql://u:p@host/db', {
+      createClient: (config) => {
+        assert.equal(config.statement_timeout, MIGRATION_HISTORY_QUERY_TIMEOUT_MS);
+        assert.equal(config.query_timeout, MIGRATION_HISTORY_QUERY_TIMEOUT_MS);
+        return {
+          connect: async () => {},
+          query: async () => {
+            queryCalls += 1;
+            if (queryCalls === 1) return { rows: [{ ledger: 'public._prisma_migrations' }] };
+            throw new Error('statement timeout');
+          },
+          end: async () => { ended += 1; },
+        };
+      },
+    }),
+    /statement timeout/,
+  );
+  assert.equal(ended, 1);
 });
 
 test('migration history fails closed on modified, unknown, and safe compatibility records', () => {

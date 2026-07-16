@@ -61,7 +61,10 @@ pre-bootstrap commits `preparing`, the transactional post-bootstrap commits
 `failed`. If even the rollback fails, `migrate-deploy.mjs` writes a last-resort
 `failed` marker plus a durable failure report
 (`stripe-ledger-bootstrap-failure-report.json`, path overridable via
-`STRIPE_BOOTSTRAP_REPORT_PATH`). The single declared contract version lives in
+`STRIPE_BOOTSTRAP_REPORT_PATH`). The always-on migration-history gate uses the
+workspace `pg` client and needs no external binary; the privileged bootstrap
+phases shell out to `psql`, so activating billing requires proving `psql`
+exists in the PRE_DEPLOY image (it is not required before then). The single declared contract version lives in
 `apps/web/prisma/stripe-ledger-bootstrap.version`; every psql invocation of the
 pre/post scripts must pass it as the `bootstrap_version` variable (the helper
 and CI both read the file — an unset variable is a hard failure). Both fault
@@ -84,6 +87,30 @@ below `SPLOOT_ENROLLMENT_MAX_ACCOUNTS`; Postgres serializes the count and
 insert. `closed` pauses new accounts. Missing or malformed values fail closed
 in production. Existing users do not pass through this admission check, so
 reads, downloads/exports, and deletes remain available.
+
+## Platform routing health vs deep readiness
+
+DigitalOcean routes the web service on
+`services[name=web].health_check.http_path`, and that path MUST be the
+shallow process-liveness endpoint `/api/health/live` — never the deep
+DB-backed oracle `/api/health`. Incident 2026-07-15: production routed on
+`/api/health`, a database stall made it 503 at its 5s timeout, and
+DigitalOcean removed the only web instance from routing
+(`no_healthy_upstream`) until a scoped restart. Liveness has no database,
+provider, Clerk, Canary, or model dependency, so a dependency failure can
+never evict the process from routing.
+
+The repo-owned lifecycle enforces this: `deriveClosedStageSpec` installs
+`health_check.http_path=/api/health/live` (preserving other authored probe
+knobs), and every staged, GA, and rollback mutation is validated with
+`assertRoutedSpecBindings`. Only the one-time legacy pre-bind
+(`--bootstrap-bindings`) leaves an old runtime's probe untouched, because
+that runtime cannot serve the liveness route yet.
+
+`/api/health` remains the deep readiness oracle for operators, deployed
+verification, and diagnostics. It stays fail-closed (503 on database, schema,
+or required-bootstrap failure), shares one bounded database probe across
+concurrent requests, and never globally disconnects the shared Prisma client.
 
 ## Executable DigitalOcean lifecycle
 
@@ -195,7 +222,9 @@ pnpm --filter web probe:enrollment -- \
 the health contract requires database `up`, the embedding limiter `up`, the
 final claim-token columns/validated constraints/revival trigger `up`, and the
 share-slug cache `local`. a green process without that end-to-end response is
-not a verified deployment.
+not a verified deployment. the deployed smoke also asserts `/api/health/live`
+answers `alive` — the platform routing probe is explicitly shallow, and the
+deep `/api/health` contract above remains the readiness authority.
 
 ## rollback
 

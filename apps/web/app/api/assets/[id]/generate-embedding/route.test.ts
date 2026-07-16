@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   upsertAssetEmbedding: vi.fn(),
   createEmbeddingService: vi.fn(),
   acquireEmbeddingProcessing: vi.fn(),
+  markEmbeddingFailed: vi.fn(),
   resolveEmbeddingGateState: vi.fn(),
   deferEmbeddingAdmission: vi.fn(),
   recordEmbeddingConfigurationFailure: vi.fn(),
@@ -63,6 +64,7 @@ vi.mock('@/lib/embeddings', () => ({
 vi.mock('@/lib/embedding-guard', () => ({
   resolveEmbeddingGateState: mocks.resolveEmbeddingGateState,
   acquireEmbeddingProcessing: mocks.acquireEmbeddingProcessing,
+  markEmbeddingFailed: mocks.markEmbeddingFailed,
 }));
 
 vi.mock('@/lib/embedding-resilience', () => ({

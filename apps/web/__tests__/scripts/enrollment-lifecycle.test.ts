@@ -10,7 +10,9 @@ import {
   assertReadbackBinding,
   assertDeploymentContents,
   assertLegacyClosedSnapshot,
+  assertRoutedSpecBindings,
   assertSpecBindings,
+  LIVENESS_HEALTH_PATH,
   parseAppsGetResponse,
   parseAppsUpdateResponse,
   parseCreateDeploymentResponse,
@@ -40,6 +42,10 @@ services:
   source_dir: null
   build_command: pnpm install --frozen-lockfile && pnpm --filter web build
   run_command: pnpm --filter web exec node scripts/migrate-deploy.mjs && pnpm --filter web start
+  health_check:
+    http_path: /api/health
+    initial_delay_seconds: 20
+    period_seconds: 10
   envs:
   - key: SPLOOT_ENROLLMENT_MODE
     value: closed
@@ -151,6 +157,52 @@ describe('strict DigitalOcean response contracts', () => {
     const lifted = deriveGaLiftSpec(staged);
     expect((lifted.services.find((service: { name?: unknown }) => service.name === 'web') as { envs?: Array<{ key: string; value: string }> }).envs?.find((entry) => entry.key === 'SPLOOT_ENROLLMENT_MODE')?.value).toBe('ga');
     expect((lifted.services.find((service: { name?: unknown }) => service.name === 'web') as { github?: { deploy_on_push?: boolean } }).github?.deploy_on_push).toBe(false);
+  });
+
+  it('regression 2026-07-15: stages platform routing onto the shallow liveness endpoint, preserving other probe knobs', () => {
+    // Live incident shape: production routed the web service on the deep
+    // /api/health oracle; a database stall 503'd it and DigitalOcean removed
+    // the only instance from routing (no_healthy_upstream, 21:27-21:51 UTC).
+    const live = parseYaml(closedSpec);
+    expect(live.services[0].health_check.http_path).toBe('/api/health');
+    const staged = deriveClosedStageSpec(live, parseYaml(targetSpec));
+    const stagedWeb = staged.services.find((service: { name?: unknown }) => service.name === 'web');
+    expect(stagedWeb.health_check).toEqual({
+      http_path: LIVENESS_HEALTH_PATH,
+      initial_delay_seconds: 20,
+      period_seconds: 10,
+    });
+    const lifted = deriveGaLiftSpec(staged);
+    expect(lifted.services.find((service: { name?: unknown }) => service.name === 'web').health_check.http_path)
+      .toBe(LIVENESS_HEALTH_PATH);
+  });
+
+  it('installs the liveness routing probe when the live spec declares none', () => {
+    const live = parseYaml(closedSpec);
+    delete live.services[0].health_check;
+    const operator = parseYaml(targetSpec);
+    delete operator.services[0].health_check;
+    const staged = deriveClosedStageSpec(live, operator);
+    expect(staged.services.find((service: { name?: unknown }) => service.name === 'web').health_check)
+      .toEqual({ http_path: LIVENESS_HEALTH_PATH });
+  });
+
+  it('rejects staged, GA, and rollback specs that route on the deep readiness oracle or lack a probe', () => {
+    const context = { mode: 'closed', marker: 'production', changeId: 'change-test' };
+    const staged = deriveClosedStageSpec(parseYaml(closedSpec), parseYaml(targetSpec));
+    expect(() => assertRoutedSpecBindings(staged, context)).not.toThrow();
+
+    const deepRouted = structuredClone(staged);
+    deepRouted.services.find((service: { name?: unknown }) => service.name === 'web').health_check.http_path = '/api/health';
+    expect(() => assertRoutedSpecBindings(deepRouted, context)).toThrow(/health_check/);
+
+    const missingProbe = structuredClone(staged);
+    delete missingProbe.services.find((service: { name?: unknown }) => service.name === 'web').health_check;
+    expect(() => assertRoutedSpecBindings(missingProbe, context)).toThrow(/health_check/);
+
+    // The plain binding oracle stays available for the legacy pre-bind path,
+    // whose old runtime cannot serve the liveness route yet.
+    expect(() => assertSpecBindings(deepRouted, context)).not.toThrow();
   });
 
   it('materializes deploy_on_push=false when a repository source omits the field', () => {
@@ -467,6 +519,11 @@ if (args[1] === 'propose') {
   const updateSpec = expectedPhase === 'stage' ? state.stageSpec : expectedPhase === 'final' ? state.finalSpec : state.stageSpec;
   const suppliedSpec = JSON.parse(readFileSync(0, 'utf8'));
   if (!isDeepStrictEqual(suppliedSpec, withSecret(updateSpec))) process.exit(10);
+  // Regression 2026-07-15: every staged/GA/rollback mutation must route the
+  // web service on the shallow liveness endpoint, never the deep DB oracle.
+  // The legacy binding pre-bind deliberately leaves the old runtime's probe.
+  const suppliedWeb = suppliedSpec.services?.find((service) => service.name === 'web');
+  if (!state.bootstrapBindings && suppliedWeb?.health_check?.http_path !== '/api/health/live') process.exit(11);
   if (expectedPhase === 'stage' && state.bootstrapBindings === updateSources) process.exit(5);
   if (expectedPhase === 'final' && updateSources) process.exit(6);
   if (expectedPhase === 'rollback' && updateSources) process.exit(8);

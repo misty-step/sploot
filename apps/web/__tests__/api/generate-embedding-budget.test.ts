@@ -202,13 +202,60 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
       status: 'terminal_skip',
       reason: 'video_without_poster',
     });
-    expect(mocks.acquireEmbeddingProcessing).not.toHaveBeenCalled();
+    expect(mocks.acquireEmbeddingProcessing).toHaveBeenCalledOnce();
     expect(mocks.createEmbeddingService).not.toHaveBeenCalled();
     expect(mocks.getEmbeddingProviderCircuit).not.toHaveBeenCalled();
     expect(mocks.markEmbeddingTerminalSkipped).toHaveBeenCalledWith(
       'asset-video',
-      'Unsupported video without a poster thumbnail'
+      'Unsupported video without a poster thumbnail',
+      PROCESSING_CLAIM_TOKEN,
     );
+  });
+
+  it('releases the exact claim when terminal skip settlement fails', async () => {
+    mocks.findAsset.mockResolvedValue({
+      id: 'asset-video-failure',
+      blobUrl: 'https://blob.example/raw.webm',
+      checksumSha256: 'sha-256-video',
+      mime: 'video/webm',
+      thumbnailUrl: null,
+      embedding: null,
+    });
+    mocks.markEmbeddingTerminalSkipped.mockRejectedValueOnce(new Error('terminal write failed'));
+
+    const response = await POST(request('asset-video-failure'), {
+      params: Promise.resolve({ id: 'asset-video-failure' }),
+    });
+
+    expect(response.status).toBe(500);
+    expect(mocks.markEmbeddingFailed).toHaveBeenCalledWith(
+      'asset-video-failure',
+      'terminal write failed',
+      PROCESSING_CLAIM_TOKEN,
+    );
+  });
+
+  it('does not terminally settle unsupported video when its claim is lost', async () => {
+    mocks.findAsset.mockResolvedValue({
+      id: 'asset-video-race',
+      blobUrl: 'https://blob.example/raw.webm',
+      checksumSha256: 'sha-256-video',
+      mime: 'video/webm',
+      thumbnailUrl: null,
+      embedding: null,
+    });
+    mocks.acquireEmbeddingProcessing.mockResolvedValue({
+      acquired: false,
+      state: 'processing',
+    });
+
+    const response = await POST(request('asset-video-race'), {
+      params: Promise.resolve({ id: 'asset-video-race' }),
+    });
+
+    expect(response.status).toBe(422);
+    expect(mocks.acquireEmbeddingProcessing).toHaveBeenCalledOnce();
+    expect(mocks.markEmbeddingTerminalSkipped).not.toHaveBeenCalled();
   });
 
   it('does not read the provider circuit for ready, processing, or cooldown work', async () => {

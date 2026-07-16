@@ -1,11 +1,25 @@
 #!/usr/bin/env node
 
+// Immutable-history gate for the deploy-owned migration runner.
+//
+// Deliberately free of any external binary: the DigitalOcean PRE_DEPLOY image
+// only proves Node plus installed workspace dependencies, so the database
+// readback uses the workspace `pg` client (resolved from apps/web) rather
+// than shelling out to an unproven `psql`. Any connection, TLS, or query
+// failure rejects and pauses the deployment — fail closed, never fail open.
+
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const repoRoot = resolve(new URL('..', import.meta.url).pathname);
+const moduleUrl = new URL(import.meta.url);
+// Vitest may expose a non-file module URL; production Node uses file URLs.
+// Keep both paths portable without treating a Windows drive as a POSIX root.
+const repoRoot = moduleUrl.protocol === 'file:'
+  ? fileURLToPath(new URL('..', moduleUrl))
+  : resolve(moduleUrl.pathname, '..');
 const migrationRoot = resolve(repoRoot, 'apps/web/prisma/migrations');
 const compatibilityPath = resolve(repoRoot, 'apps/web/prisma/migration-history-compatibility.json');
 
@@ -17,18 +31,6 @@ export function currentMigrationChecksums(root = migrationRoot) {
       const sql = readFileSync(join(root, entry.name, 'migration.sql'));
       return [entry.name, createHash('sha256').update(sql).digest('hex')];
     }));
-}
-
-export function parseMigrationRows(output) {
-  return output.trim() === '' ? [] : output.trim().split('\n').map((line) => {
-    const [migrationName, checksum, finishedAt, rolledBackAt] = line.split('\t');
-    return {
-      migrationName,
-      checksum,
-      finishedAt: finishedAt || null,
-      rolledBackAt: rolledBackAt || null,
-    };
-  });
 }
 
 function migrationPrefix(name) {
@@ -118,37 +120,86 @@ export function assertMigrationHistory(rows, expected, compatibility = { approve
   }
 }
 
-function psqlEnv(rawUrl, env) {
+// Deterministic libpq-equivalent sslmode mapping. Unknown values pause the
+// deployment instead of guessing a weaker or stronger TLS posture.
+export function pgSslConfig(rawUrl) {
   const url = new URL(rawUrl);
+  const sslMode = url.searchParams.get('sslmode');
+  switch (sslMode) {
+    case null:
+    case 'disable':
+      return false;
+    case 'allow':
+    case 'prefer':
+    case 'require':
+      // libpq's require encrypts without certificate verification.
+      return { rejectUnauthorized: false };
+    case 'verify-ca':
+    case 'verify-full':
+      return { rejectUnauthorized: true };
+    default:
+      throw new Error(`[migration-history] unsupported sslmode ${sslMode}; deployment is paused`);
+  }
+}
+
+function requirePg() {
+  // Resolve pg from the web workspace, where it is a declared dependency.
+  const requireFromWeb = createRequire(pathToFileURL(join(repoRoot, 'apps/web/package.json')));
+  return requireFromWeb('pg');
+}
+
+export const MIGRATION_HISTORY_CONNECT_TIMEOUT_MS = 10_000;
+export const MIGRATION_HISTORY_QUERY_TIMEOUT_MS = 30_000;
+
+/** Build the bounded node-postgres configuration used by the pre-deploy gate. */
+export function migrationHistoryClientConfig(databaseUrl) {
+  if (!databaseUrl) throw new Error('[migration-history] database authority URL is required');
+  const url = new URL(databaseUrl);
   return {
-    ...env,
-    PGHOST: url.hostname,
-    PGPORT: url.port || '5432',
-    PGUSER: decodeURIComponent(url.username),
-    PGPASSWORD: decodeURIComponent(url.password),
-    PGDATABASE: decodeURIComponent(url.pathname.slice(1)),
-    ...(url.searchParams.get('sslmode') ? { PGSSLMODE: url.searchParams.get('sslmode') } : {}),
+    host: url.hostname,
+    port: url.port ? Number(url.port) : 5432,
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+    ssl: pgSslConfig(databaseUrl),
+    connectionTimeoutMillis: MIGRATION_HISTORY_CONNECT_TIMEOUT_MS,
+    statement_timeout: MIGRATION_HISTORY_QUERY_TIMEOUT_MS,
+    query_timeout: MIGRATION_HISTORY_QUERY_TIMEOUT_MS,
   };
 }
 
-export function checkDatabaseMigrationHistory(databaseUrl, env = process.env) {
-  if (!databaseUrl) throw new Error('[migration-history] database authority URL is required');
-  const options = { env: psqlEnv(databaseUrl, env), encoding: 'utf8' };
-  const exists = execFileSync('psql', ['--no-psqlrc', '-At', '-v', 'ON_ERROR_STOP=1', '-c', "SELECT to_regclass('public._prisma_migrations')"], options).trim();
-  if (!exists) return { status: 'empty', checked: 0 };
+export async function checkDatabaseMigrationHistory(databaseUrl, options = {}) {
+  const config = migrationHistoryClientConfig(databaseUrl);
+  const client = options.createClient
+    ? options.createClient(config)
+    : new (requirePg().Client)(config);
+  await client.connect();
+  try {
+    const existsResult = await client.query(
+      "SELECT to_regclass('public._prisma_migrations')::text AS ledger"
+    );
+    if (!existsResult.rows[0]?.ledger) return { status: 'empty', checked: 0 };
 
-  const rows = parseMigrationRows(execFileSync('psql', [
-    '--no-psqlrc', '-At', '-F', '\t', '-v', 'ON_ERROR_STOP=1', '-c',
-    'SELECT migration_name, checksum, finished_at, rolled_back_at FROM "_prisma_migrations" ORDER BY COALESCE(finished_at, started_at), migration_name',
-  ], options));
-  const compatibility = JSON.parse(readFileSync(compatibilityPath, 'utf8'));
-  const expected = currentMigrationChecksums();
-  assertUniqueMigrationPrefixes(expected, compatibility);
-  assertMigrationHistory(rows, expected, compatibility);
-  return { status: 'verified', checked: rows.length };
+    const historyResult = await client.query(
+      'SELECT migration_name, checksum, finished_at, rolled_back_at FROM "_prisma_migrations" ORDER BY COALESCE(finished_at, started_at), migration_name'
+    );
+    const rows = historyResult.rows.map((row) => ({
+      migrationName: row.migration_name,
+      checksum: row.checksum,
+      finishedAt: row.finished_at ?? null,
+      rolledBackAt: row.rolled_back_at ?? null,
+    }));
+    const compatibility = JSON.parse(readFileSync(compatibilityPath, 'utf8'));
+    const expected = currentMigrationChecksums();
+    assertUniqueMigrationPrefixes(expected, compatibility);
+    assertMigrationHistory(rows, expected, compatibility);
+    return { status: 'verified', checked: rows.length };
+  } finally {
+    await client.end();
+  }
 }
 
-if (process.argv[1] && new URL(`file://${process.argv[1]}`).pathname === new URL(import.meta.url).pathname) {
-  const result = checkDatabaseMigrationHistory(process.env.DATABASE_URL_DIRECT || process.env.DATABASE_URL);
+if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+  const result = await checkDatabaseMigrationHistory(process.env.DATABASE_URL_DIRECT || process.env.DATABASE_URL);
   console.log(`[migration-history] ${result.status}; checked=${result.checked}`);
 }

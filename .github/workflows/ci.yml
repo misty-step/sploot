@@ -583,6 +583,61 @@ jobs:
           kill "$health_pid"
           wait "$health_pid" 2>/dev/null || true
           trap - EXIT
+
+          # Flag-absent app-role readback: production runs without
+          # STRIPE_LEDGER_BOOTSTRAP_REQUIRED until billing activates, so the
+          # same restricted role must report healthy without referencing the
+          # marker, and the liveness routing probe must answer from the real
+          # Next server (incident 2026-07-15: platform routing must never
+          # depend on the deep DB oracle).
+          absent_port="$((3200 + ${{ matrix.pg }}))"
+          DATABASE_URL="$app_url" \
+          SPLOOT_DEPLOYMENT_ENV=test \
+          pnpm --filter web exec next dev --hostname 127.0.0.1 --port "$absent_port" >/tmp/sploot-health-absent-${{ matrix.pg }}.log 2>&1 &
+          absent_pid=$!
+          trap 'kill "$absent_pid" 2>/dev/null || true' EXIT
+          absent_json=''
+          for _ in $(seq 1 60); do
+            if absent_json="$(curl --fail --silent --show-error "http://127.0.0.1:${absent_port}/api/health" 2>/dev/null)"; then break; fi
+            sleep 1
+          done
+          HEALTH_JSON="$absent_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") process.exit(1)'
+          absent_live_json="$(curl --fail --silent --show-error "http://127.0.0.1:${absent_port}/api/health/live")"
+          HEALTH_JSON="$absent_live_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="alive"||h.service!=="sploot-web") process.exit(1)'
+          kill "$absent_pid"
+          wait "$absent_pid" 2>/dev/null || true
+          trap - EXIT
+
+          # Fresh/no-bootstrap production shape: flag absent AND no Stripe
+          # bootstrap anywhere. The deploy-owned runner (including the
+          # pg-client migration-history gate, which must need no psql binary)
+          # succeeds with only DATABASE_URL, and the real Next server reports
+          # deep health 200 without referencing the intentionally absent
+          # bootstrap marker.
+          plain_db='sploot_plain'
+          psql "$admin_url" -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${plain_db}"
+          plain_url="postgresql://test:test@localhost:5432/${plain_db}?sslmode=disable"
+          DATABASE_URL="$plain_url" pnpm --filter web exec node scripts/migrate-deploy.mjs
+          DATABASE_URL="$plain_url" node scripts/check-migration-history.mjs
+          plain_bootstrap="$(psql "$plain_url" -Atc "SELECT count(*) FROM pg_namespace WHERE nspname='sploot_bootstrap'")"
+          test "$plain_bootstrap" = '0'
+          plain_port="$((3300 + ${{ matrix.pg }}))"
+          DATABASE_URL="$plain_url" \
+          SPLOOT_DEPLOYMENT_ENV=test \
+          pnpm --filter web exec next dev --hostname 127.0.0.1 --port "$plain_port" >/tmp/sploot-health-plain-${{ matrix.pg }}.log 2>&1 &
+          plain_pid=$!
+          trap 'kill "$plain_pid" 2>/dev/null || true' EXIT
+          plain_json=''
+          for _ in $(seq 1 60); do
+            if plain_json="$(curl --fail --silent --show-error "http://127.0.0.1:${plain_port}/api/health" 2>/dev/null)"; then break; fi
+            sleep 1
+          done
+          HEALTH_JSON="$plain_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") process.exit(1)'
+          plain_live_json="$(curl --fail --silent --show-error "http://127.0.0.1:${plain_port}/api/health/live")"
+          HEALTH_JSON="$plain_live_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="alive"||h.service!=="sploot-web") process.exit(1)'
+          kill "$plain_pid"
+          wait "$plain_pid" 2>/dev/null || true
+          trap - EXIT
           legacy_owner="$(psql "$admin_url" -Atc "SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid='public.users'::regclass")"
           test "$legacy_owner" = 'sploot_stripe_schema_migrator'
           vector_owner="$(psql "$admin_url" -Atc "SELECT pg_get_userbyid(t.typowner) FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname='public' AND t.typname='vector'")"

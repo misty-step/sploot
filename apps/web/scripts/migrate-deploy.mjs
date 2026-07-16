@@ -97,7 +97,7 @@ function psqlEnvironment(rawUrl, env) {
   return childEnv;
 }
 
-export function runMigrateDeploy(env = process.env, options = {}) {
+export async function runMigrateDeploy(env = process.env, options = {}) {
   const pooled = env.DATABASE_URL;
   const bootstrapUrl = env.STRIPE_LEDGER_BOOTSTRAP_DATABASE_URL;
   const bootstrapRequired = env.STRIPE_LEDGER_BOOTSTRAP_REQUIRED === 'true';
@@ -123,7 +123,11 @@ export function runMigrateDeploy(env = process.env, options = {}) {
   try {
     if (bootstrapUrl) privileged(pre);
     stage = 'prisma-migrate';
-    checkDatabaseMigrationHistory(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl, env);
+    // Injectable so script-level fault tests need no live database; the
+    // default is the workspace pg-client readback (no psql binary needed in
+    // the PRE_DEPLOY image). Any history failure pauses the deployment.
+    const historyCheck = options.checkMigrationHistory ?? checkDatabaseMigrationHistory;
+    await historyCheck(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl);
     console.log('[migrate-deploy] running prisma migrate deploy...');
     const migrationEnv = {
       ...env,
@@ -180,7 +184,8 @@ function writeBootstrapFailureReport(env, { stage, rollbackError, markerError })
 }
 
 // Run only when invoked directly (`node scripts/migrate-deploy.mjs`), so that
-// importing this module from a test does not trigger a migration.
+// importing this module from a test does not trigger a migration. A rejected
+// top-level await exits non-zero, which fails the PRE_DEPLOY job closed.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runMigrateDeploy(process.env);
+  await runMigrateDeploy(process.env);
 }

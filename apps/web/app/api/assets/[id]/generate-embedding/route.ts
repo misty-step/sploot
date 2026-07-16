@@ -18,6 +18,7 @@ import {
 } from '@/lib/embedding-errors';
 import {
   acquireEmbeddingProcessing,
+  markEmbeddingFailed,
   markEmbeddingTerminalSkipped,
   resolveEmbeddingGateState,
 } from '@/lib/embedding-guard';
@@ -209,10 +210,27 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
       thumbnailUrl: asset.thumbnailUrl,
     });
     if (media.sourceKind === 'unsupported') {
-      await markEmbeddingTerminalSkipped(
-        asset.id,
-        'Unsupported video without a poster thumbnail'
-      );
+      const lock = await acquireEmbeddingProcessing(asset.id);
+      if (lock.acquired) {
+        const processingClaimToken = lock.processingClaimToken;
+        try {
+          await markEmbeddingTerminalSkipped(
+            asset.id,
+            'Unsupported video without a poster thumbnail',
+            processingClaimToken,
+          );
+        } catch (error) {
+          // Terminal settlement is a claim-owned write. If it fails after the
+          // claim is acquired, release that exact claim as ordinary failure
+          // handling would, so unsupported media cannot strand processing.
+          await markEmbeddingFailed(
+            asset.id,
+            error instanceof Error ? error.message : String(error),
+            processingClaimToken,
+          );
+          throw error;
+        }
+      }
       logger.logInfo('generate-embedding.terminal-skip', {
         assetId: id,
         reason: media.skipReason,

@@ -3,6 +3,11 @@ import { isDeepStrictEqual } from 'node:util';
 const PROVIDER_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const CHANGE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const WEB_SERVICE_NAME = 'web';
+// Platform routing must target the shallow process-liveness endpoint, never
+// the deep DB-backed readiness oracle (/api/health). Incident 2026-07-15:
+// routing the only web instance on deep health turned a database stall into
+// no_healthy_upstream for the whole origin.
+export const LIVENESS_HEALTH_PATH = '/api/health/live';
 const MIGRATION_JOB_NAME = 'web-pre-deploy-migrate';
 const MIGRATION_JOB_KIND = 'PRE_DEPLOY';
 const SERVICE_RUN_COMMAND = 'pnpm --filter web start';
@@ -238,6 +243,27 @@ export function assertSpecBindings(spec, { mode, marker, changeId }) {
   return effective;
 }
 
+/** Require the web service to route platform health on the liveness probe. */
+export function assertWebLivenessRouting(spec) {
+  const { web } = webEnvironment(spec);
+  const healthCheck = web.health_check;
+  if (!healthCheck || typeof healthCheck !== 'object' || Array.isArray(healthCheck) || healthCheck.http_path !== LIVENESS_HEALTH_PATH) {
+    throw new Error(`services[name=web].health_check.http_path must be ${LIVENESS_HEALTH_PATH}`);
+  }
+}
+
+/**
+ * Binding oracle for every containment-era mutation (closed stage, GA lift,
+ * rollback compensation): deployment identity bindings plus liveness routing.
+ * The plain assertSpecBindings remains for the legacy pre-bind path, whose
+ * old runtime cannot serve the liveness route yet.
+ */
+export function assertRoutedSpecBindings(spec, context) {
+  const effective = assertSpecBindings(spec, context);
+  assertWebLivenessRouting(spec);
+  return effective;
+}
+
 export function assertClosedSnapshot(spec, { marker }) {
   const { effective } = webEnvironment(spec);
   if (declaredString(effective, 'SPLOOT_ENROLLMENT_MODE') !== 'closed') throw new Error('active snapshot is not closed');
@@ -459,10 +485,20 @@ export function deriveClosedStageSpec(liveSpec, operatorSpec = liveSpec) {
     jobs.push(job);
   }
   web.run_command = SERVICE_RUN_COMMAND;
+  // Route platform health on the shallow liveness endpoint while preserving
+  // every other authored probe knob from the live snapshot.
+  const liveHealthCheck = web.health_check;
+  web.health_check = {
+    ...(liveHealthCheck && typeof liveHealthCheck === 'object' && !Array.isArray(liveHealthCheck) ? clone(liveHealthCheck) : {}),
+    http_path: LIVENESS_HEALTH_PATH,
+  };
   return next;
 }
 
 export function deriveGaLiftSpec(closedStageSpec) {
+  // GA derives from a staged closed spec; a stage that somehow lost the
+  // liveness routing must fail here rather than reach the provider.
+  assertWebLivenessRouting(closedStageSpec);
   return promoteClosedStageSpecToGa(closedStageSpec);
 }
 

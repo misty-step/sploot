@@ -14,6 +14,7 @@ import {
   assertDeploymentContents,
   assertLegacyClosedSnapshot,
   assertReadbackBinding,
+  assertRoutedSpecBindings,
   assertSpecBindings,
   createDeploymentProviderTransaction,
   deriveClosedStageSpec,
@@ -205,8 +206,11 @@ async function main() {
     });
   }
 
+  // Every containment-era mutation (stage, GA, rollback) must keep platform
+  // routing on the shallow liveness endpoint; only the legacy pre-bind path
+  // above may leave an old runtime's probe untouched.
   const stageSpec = deriveClosedStageSpec(current.spec, specDocument);
-  const stageValidate = assertSpecBindings;
+  const stageValidate = assertRoutedSpecBindings;
 
   async function applyWithCompensation({
     spec,
@@ -231,7 +235,7 @@ async function main() {
         expectedChangeId: phaseChangeId,
         expectedAppId: current.appId,
         updateSources,
-        validateSpec: expectedMode === 'closed' ? stageValidate : assertSpecBindings,
+        validateSpec: expectedMode === 'closed' ? stageValidate : assertRoutedSpecBindings,
         probeRuntime: true,
       });
     } catch (error) {
@@ -326,7 +330,7 @@ async function main() {
     rollbackSpec: stageSpec,
     rollbackCommit: stageReceipt.sourceCommitHash,
     rollbackChangeId: changeId,
-    rollbackValidate: assertSpecBindings,
+    rollbackValidate: assertRoutedSpecBindings,
     rollbackProbe: !legacyBootstrap,
     compensate: true,
   });

@@ -94,9 +94,35 @@ the route's `error` field, with optional diagnostic fields on some endpoints:
 
 ### Health Check
 
+#### GET /api/health/live
+
+Process-liveness probe dedicated to platform routing (DigitalOcean routes the
+web service on this path). It proves only that the Next process/deployment
+artifact is responding: no database, provider, Clerk, Canary, or model
+dependency, and no sensitive output. It must never be used as a readiness or
+dependency oracle.
+
+**Authentication:** Not required
+
+**Response (always `200` while the process is up):**
+
+```json
+{
+  "status": "alive",
+  "service": "sploot-web"
+}
+```
+
 #### GET /api/health
 
-Check API availability and system status.
+Deep readiness oracle: database connectivity, embedding limiter schema, and
+(when `STRIPE_LEDGER_BOOTSTRAP_REQUIRED=true`) the Stripe bootstrap marker.
+Fails closed with `503` when any dependency is degraded. Deployed
+verification and operators use this endpoint; platform routing deliberately
+does not (see `/api/health/live` above).
+
+Concurrent requests share one underlying bounded database probe; a request
+timeout never launches duplicate database work.
 
 **Authentication:** Not required
 

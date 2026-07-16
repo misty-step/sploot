@@ -1,12 +1,23 @@
-import { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 
 import pkg from '@/package.json';
 import { canaryConfigured, reportCanaryCheckIn } from '@/lib/canary-reporter';
-import { prisma } from '@/lib/db';
-import { logger } from '@/lib/observability-logger';
+import {
+  checkDatabaseReadiness,
+  type DatabaseHealth,
+} from '@/lib/health/database-readiness';
 import { withObservability } from '@/lib/with-observability';
-import economicsPolicy from '../../../../../economics/policy.json';
+
+/**
+ * Deep readiness oracle: database connectivity, embedding limiter schema, and
+ * (when required) the Stripe bootstrap marker. Fails closed with 503.
+ *
+ * This endpoint is deliberately NOT the platform routing probe. DigitalOcean
+ * routes the web service on the shallow /api/health/live liveness endpoint
+ * (incident 2026-07-15: routing on this deep oracle turned a database stall
+ * into no_healthy_upstream for the whole origin). Deployed verification and
+ * operators keep using this endpoint as the readiness authority.
+ */
 
 interface HealthDependencies {
   database: 'up' | 'down';
@@ -30,276 +41,7 @@ interface HealthStatus {
   error?: string;
 }
 
-interface DatabaseHealth {
-  success: boolean;
-  limiterSchema: boolean;
-  error?: string;
-  latency_ms?: number;
-  prisma_test: boolean;
-}
-
-interface LimiterSchemaRow {
-  limiter_buckets: string | null;
-  limiter_leases: string | null;
-  provider_circuits: string | null;
-  circuit_generation: string | null;
-  circuit_probe_until: string | null;
-  circuit_probe_generation: string | null;
-  circuit_probe_lease_token: string | null;
-  attempt_count: string | null;
-  next_attempt_at: string | null;
-  terminal_at: string | null;
-  processing_claim_token: string | null;
-  revive_count: string | null;
-  attempt_ceiling_constraint: boolean;
-  claim_token_constraint: boolean;
-  revive_constraint: boolean;
-  revival_trigger: boolean;
-  pending_index: string | null;
-  circuit_index: string | null;
-  bootstrap_phase: string | null;
-  bootstrap_version: string | null;
-  bootstrap_schema_version: string | null;
-}
-
 const TIMEOUT_MS = 5_000;
-
-function stripeBootstrapRequired(): boolean {
-  const configured = process.env.STRIPE_LEDGER_BOOTSTRAP_REQUIRED;
-  if (configured === undefined || configured === '' || configured === 'false') return false;
-  if (configured === 'true') return true;
-  throw new Error('STRIPE_LEDGER_BOOTSTRAP_REQUIRED must be true or false');
-}
-
-async function queryRuntimeSchema(): Promise<LimiterSchemaRow[]> {
-  return prisma.$queryRaw<LimiterSchemaRow[]>`
-    SELECT
-      to_regclass('public.embedding_rate_buckets')::text AS limiter_buckets,
-      to_regclass('public.embedding_rate_leases')::text AS limiter_leases,
-      to_regclass('public.embedding_provider_circuits')::text AS provider_circuits,
-      (
-        SELECT column_name FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
-          AND column_name = 'generation'
-      ) AS circuit_generation,
-      (
-        SELECT column_name FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
-          AND column_name = 'probe_until'
-      ) AS circuit_probe_until,
-      (
-        SELECT column_name FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
-          AND column_name = 'probe_generation'
-      ) AS circuit_probe_generation,
-      (
-        SELECT column_name FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
-          AND column_name = 'probe_lease_token'
-      ) AS circuit_probe_lease_token,
-      (
-        SELECT column_name FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
-          AND column_name = 'attempt_count'
-      ) AS attempt_count,
-      (
-        SELECT column_name FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
-          AND column_name = 'next_attempt_at'
-      ) AS next_attempt_at,
-      (
-        SELECT column_name FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
-          AND column_name = 'terminal_at'
-      ) AS terminal_at,
-      (
-        SELECT column_name FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
-          AND column_name = 'processing_claim_token'
-      ) AS processing_claim_token,
-      (
-        SELECT column_name FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
-          AND column_name = 'revive_count'
-      ) AS revive_count,
-      EXISTS (
-        SELECT 1 FROM pg_constraint c
-        JOIN pg_class t ON t.oid = c.conrelid
-        JOIN pg_namespace n ON n.oid = t.relnamespace
-        WHERE c.conname = 'embedding_attempt_count_ceiling'
-          AND t.relname = 'embedding_rate_buckets' AND n.nspname = 'public'
-          AND c.convalidated
-          AND pg_get_constraintdef(c.oid) LIKE ${`%count <= ${economicsPolicy.global.replicateDailyAttempts}%`}
-          AND pg_get_constraintdef(c.oid) LIKE ${`%count <= ${economicsPolicy.global.replicateMonthlyAttempts}%`}
-      ) AS attempt_ceiling_constraint,
-      EXISTS (
-        SELECT 1 FROM pg_constraint c
-        JOIN pg_class t ON t.oid = c.conrelid
-        JOIN pg_namespace n ON n.oid = t.relnamespace
-        WHERE c.conname = 'asset_embeddings_processing_claim_token_state'
-          AND t.relname = 'asset_embeddings' AND n.nspname = 'public'
-          AND c.convalidated
-      ) AS claim_token_constraint,
-      EXISTS (
-        SELECT 1 FROM pg_constraint c
-        JOIN pg_class t ON t.oid = c.conrelid
-        JOIN pg_namespace n ON n.oid = t.relnamespace
-        WHERE c.conname = 'asset_embeddings_revive_count_bounded'
-          AND t.relname = 'asset_embeddings' AND n.nspname = 'public'
-          AND c.convalidated
-      ) AS revive_constraint,
-      EXISTS (
-        SELECT 1 FROM pg_trigger tr
-        JOIN pg_class t ON t.oid = tr.tgrelid
-        JOIN pg_namespace n ON n.oid = t.relnamespace
-        WHERE tr.tgname = 'asset_embeddings_revival_budget'
-          AND t.relname = 'asset_embeddings' AND n.nspname = 'public'
-          AND NOT tr.tgisinternal
-      ) AS revival_trigger
-      ,to_regclass('public.asset_embeddings_pending_next_attempt_idx')::text AS pending_index
-      ,to_regclass('public.embedding_provider_circuits_open_until_idx')::text AS circuit_index
-      ,NULL::text AS bootstrap_phase
-      ,NULL::text AS bootstrap_version
-      ,NULL::text AS bootstrap_schema_version
-  `;
-}
-
-interface BootstrapMarkerRow {
-  bootstrap_phase: string | null;
-  bootstrap_version: string | null;
-  bootstrap_schema_version: string | null;
-}
-
-async function queryBootstrapMarker(): Promise<BootstrapMarkerRow[]> {
-  return prisma.$queryRaw<BootstrapMarkerRow[]>`
-    SELECT
-      marker.phase AS bootstrap_phase,
-      marker.version AS bootstrap_version,
-      (
-        SELECT rpad(split_part(migration_name, '_', 1), 14, '0')
-        FROM public._prisma_migrations
-        WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
-        ORDER BY migration_name DESC
-        LIMIT 1
-      ) AS bootstrap_schema_version
-    FROM sploot_bootstrap.stripe_ledger_bootstrap_state marker
-    WHERE marker.id = TRUE
-  `;
-}
-
-async function queryRequiredRuntimeSchema(bootstrapRequired: boolean): Promise<LimiterSchemaRow[]> {
-  const rows = await queryRuntimeSchema();
-  if (bootstrapRequired) {
-    const [marker] = await queryBootstrapMarker();
-    if (rows[0] && marker) Object.assign(rows[0], marker);
-  }
-  return rows;
-}
-
-function schemaIsReady(rows: LimiterSchemaRow[], bootstrapRequired: boolean): boolean {
-  const row = rows[0];
-  const bootstrapReady = !bootstrapRequired || Boolean(
-    row?.bootstrap_phase === 'ready' &&
-    row.bootstrap_version &&
-    row.bootstrap_version === row.bootstrap_schema_version,
-  );
-  return Boolean(
-    row?.limiter_buckets &&
-    row.limiter_leases &&
-    row.provider_circuits &&
-    row.circuit_generation &&
-    row.circuit_probe_until &&
-    row.circuit_probe_generation &&
-    row.circuit_probe_lease_token &&
-    row.attempt_count &&
-    row.next_attempt_at &&
-    row.terminal_at &&
-    row.processing_claim_token &&
-    row.revive_count &&
-    row.attempt_ceiling_constraint &&
-    row.claim_token_constraint &&
-    row.revive_constraint &&
-    row.revival_trigger &&
-    row.pending_index &&
-    row.circuit_index &&
-    bootstrapReady,
-  );
-}
-
-async function checkDatabase(): Promise<DatabaseHealth> {
-  const startedAt = Date.now();
-
-  if (!prisma) {
-    return {
-      success: false,
-      limiterSchema: false,
-      error: 'Prisma client not initialized',
-      prisma_test: false,
-    };
-  }
-
-  try {
-    const bootstrapRequired = stripeBootstrapRequired();
-    const rows = await queryRequiredRuntimeSchema(bootstrapRequired);
-    return {
-      success: true,
-      limiterSchema: schemaIsReady(rows, bootstrapRequired),
-      latency_ms: Date.now() - startedAt,
-      prisma_test: true,
-    };
-  } catch (error) {
-    const databaseError = error as Error;
-    const isStaleConnection =
-      databaseError instanceof Prisma.PrismaClientKnownRequestError &&
-      (databaseError.message.includes('Server has closed the connection') ||
-        databaseError.message.includes('Connection terminated unexpectedly') ||
-        databaseError.message.includes('connection has been closed') ||
-        databaseError.code === 'P1002' ||
-        databaseError.code === 'P1008');
-
-    if (!isStaleConnection) {
-      logger.logError('health-check-database-failed', databaseError);
-      return {
-        success: false,
-        limiterSchema: false,
-        error: databaseError.message,
-        latency_ms: Date.now() - startedAt,
-        prisma_test: false,
-      };
-    }
-
-    logger.logInfo('health-check-db-reconnecting', {
-      reason: 'stale_connection',
-      error: databaseError.message,
-      errorCode: databaseError.code,
-    });
-
-    try {
-      await prisma.$disconnect();
-      await prisma.$connect();
-      const bootstrapRequired = stripeBootstrapRequired();
-      const rows = await queryRequiredRuntimeSchema(bootstrapRequired);
-      const latencyMs = Date.now() - startedAt;
-      logger.logInfo('health-check-db-reconnect-success', { latency_ms: latencyMs });
-      return {
-        success: true,
-        limiterSchema: schemaIsReady(rows, bootstrapRequired),
-        latency_ms: latencyMs,
-        prisma_test: true,
-      };
-    } catch (reconnectError) {
-      const reconnect = reconnectError as Error;
-      logger.logError('health-check-db-reconnect-failed', reconnect);
-      return {
-        success: false,
-        limiterSchema: false,
-        error: `Reconnect failed: ${reconnect.message}`,
-        latency_ms: Date.now() - startedAt,
-        prisma_test: false,
-      };
-    }
-  }
-}
 
 function dependenciesFor(database: DatabaseHealth): HealthDependencies {
   return {
@@ -330,7 +72,10 @@ async function getHandler(_request: NextRequest) {
   });
 
   try {
-    const database = await Promise.race([checkDatabase(), timeout]);
+    // The readiness probe is single-flight and bounded in the lib: this
+    // request-level race only limits how long THIS response waits. A timeout
+    // here never spawns duplicate database work.
+    const database = await Promise.race([checkDatabaseReadiness(), timeout]);
     if (timeoutId) clearTimeout(timeoutId);
 
     const dependencies = dependenciesFor(database);

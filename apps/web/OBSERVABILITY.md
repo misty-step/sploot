@@ -21,12 +21,15 @@ not expose an unauthenticated analytics ingest surface.
 runtime proof:
 
 ```bash
+curl -fsS https://www.sploot.app/api/health/live | jq
 curl -fsS https://www.sploot.app/api/health | jq
 curl -fsS https://www.sploot.app/api/health/services | jq
 DEPLOYMENT_URL=https://www.sploot.app pnpm validate:deployment
 ```
 
-`/api/health` must report database `up`, embedding limiter `up`, share-slug
-cache `local`, and whether Canary is configured. raw request logs live in the
-DigitalOcean component runtime; Canary is the agent-facing error and check-in
-surface.
+`/api/health/live` is the shallow process-liveness probe DigitalOcean routes
+on; it must stay `alive` even while dependencies are degraded. `/api/health`
+is the deep readiness oracle and must report database `up`, embedding limiter
+`up`, share-slug cache `local`, and whether Canary is configured. raw request
+logs live in the DigitalOcean component runtime; Canary is the agent-facing
+error and check-in surface.

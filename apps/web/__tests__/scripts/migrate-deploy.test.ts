@@ -32,24 +32,44 @@ describe('runMigrateDeploy', () => {
     {},
     { NODE_ENV: 'production' },
     { DEPLOYMENT_ENV: 'production' },
-  ])('fails closed without DATABASE_URL regardless of runtime metadata: %o', env => {
-    expect(() => runMigrateDeploy(env)).toThrow('DATABASE_URL is required');
+  ])('fails closed without DATABASE_URL regardless of runtime metadata: %o', async env => {
+    await expect(runMigrateDeploy(env)).rejects.toThrow('DATABASE_URL is required');
   });
 });
 
 describe('privileged production migration contract', () => {
-  it('fails closed before touching Prisma when bootstrap authority or DATABASE_URL is absent', () => {
-    expect(() => runMigrateDeploy({ STRIPE_LEDGER_BOOTSTRAP_REQUIRED: 'true' })).toThrow(/DATABASE_URL.*required/i);
-    expect(() => runMigrateDeploy({ DATABASE_URL: 'postgresql://db/app', STRIPE_LEDGER_BOOTSTRAP_REQUIRED: 'true' })).toThrow(/privileged Stripe ledger bootstrap authority/i);
-    expect(() => runMigrateDeploy({ DATABASE_URL: 'postgresql://db/app', STRIPE_LEDGER_BOOTSTRAP_DATABASE_URL: 'postgresql://admin/db', STRIPE_LEDGER_BOOTSTRAP_REQUIRED: 'true' })).toThrow(/schema migration authority/i);
+  it('fails closed before touching Prisma when bootstrap authority or DATABASE_URL is absent', async () => {
+    await expect(runMigrateDeploy({ STRIPE_LEDGER_BOOTSTRAP_REQUIRED: 'true' })).rejects.toThrow(/DATABASE_URL.*required/i);
+    await expect(runMigrateDeploy({ DATABASE_URL: 'postgresql://db/app', STRIPE_LEDGER_BOOTSTRAP_REQUIRED: 'true' })).rejects.toThrow(/privileged Stripe ledger bootstrap authority/i);
+    await expect(runMigrateDeploy({ DATABASE_URL: 'postgresql://db/app', STRIPE_LEDGER_BOOTSTRAP_DATABASE_URL: 'postgresql://admin/db', STRIPE_LEDGER_BOOTSTRAP_REQUIRED: 'true' })).rejects.toThrow(/schema migration authority/i);
   });
 
-  it('requires explicit privileged bootstrap authority and refuses to fall back to the runtime app URL', () => {
-    expect(() => runMigrateDeploy({
+  it('requires explicit privileged bootstrap authority and refuses to fall back to the runtime app URL', async () => {
+    await expect(runMigrateDeploy({
       DATABASE_URL: 'postgresql://app-role:secret@db.example.com/app',
       STRIPE_LEDGER_BOOTSTRAP_REQUIRED: 'true',
       STRIPE_LEDGER_BOOTSTRAP_DATABASE_URL: 'postgresql://bootstrap:secret@db.example.com/app',
-    })).toThrow(/schema migration authority/i);
+    })).rejects.toThrow(/schema migration authority/i);
+  });
+});
+
+describe('migration-history gate runtime dependencies', () => {
+  it('keeps the history gate free of external binaries (the PRE_DEPLOY image only proves Node + workspace deps)', () => {
+    const source = readFileSync(join(process.cwd(), '../../scripts/check-migration-history.mjs'), 'utf8');
+    expect(source).not.toContain('child_process');
+    expect(source).not.toContain('execFileSync');
+    expect(source).not.toContain('spawnSync');
+    expect(source).toContain("requireFromWeb('pg')");
+  });
+
+  it('maps libpq sslmode deterministically and pauses on unknown modes', async () => {
+    // @ts-expect-error — .mjs script without type declarations.
+    const { pgSslConfig } = await import('../../../../scripts/check-migration-history.mjs');
+    expect(pgSslConfig('postgresql://u@host/db?sslmode=disable')).toBe(false);
+    expect(pgSslConfig('postgresql://u@host/db')).toBe(false);
+    expect(pgSslConfig('postgresql://u@host/db?sslmode=require')).toEqual({ rejectUnauthorized: false });
+    expect(pgSslConfig('postgresql://u@host/db?sslmode=verify-full')).toEqual({ rejectUnauthorized: true });
+    expect(() => pgSslConfig('postgresql://u@host/db?sslmode=mystery')).toThrow(/unsupported sslmode/);
   });
 });
 
@@ -239,16 +259,25 @@ describe('bootstrap failure handling with injected faults', () => {
     };
     const readLog = () => (existsSync(log) ? readFileSync(log, 'utf8') : '');
     const readReport = () => (existsSync(report) ? JSON.parse(readFileSync(report, 'utf8')) : null);
-    return { env, readLog, readReport };
+    const historyCalls: string[] = [];
+    const runOptions = {
+      // The default history gate opens a real pg connection; script-level
+      // fault tests inject a recorder so no live database is needed here.
+      checkMigrationHistory: async (url: string) => {
+        historyCalls.push(url);
+        return { status: 'verified', checked: 0 };
+      },
+    };
+    return { env, readLog, readReport, historyCalls, runOptions };
   }
 
   afterEach(() => {
     for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
   });
 
-  it('runs pre -> prisma migrate -> post with the declared version and writes no failure report', () => {
+  it('runs pre -> prisma migrate -> post with the declared version and writes no failure report', async () => {
     const harness = makeHarness();
-    runMigrateDeploy(harness.env);
+    await runMigrateDeploy(harness.env, harness.runOptions);
     const log = harness.readLog();
     const order = ['stripe-ledger-bootstrap-pre.sql', 'prisma migrate deploy', 'stripe-ledger-bootstrap-post.sql'].map((needle) => log.indexOf(needle));
     expect(order.every((index) => index >= 0)).toBe(true);
@@ -260,9 +289,28 @@ describe('bootstrap failure handling with injected faults', () => {
     expect(harness.readReport()).toBeNull();
   });
 
-  it('rolls back and writes a durable failure report when the post-bootstrap fails', () => {
+  it('gives the history gate the direct migration authority, not the pooled runtime URL', async () => {
+    const harness = makeHarness();
+    await runMigrateDeploy(harness.env, harness.runOptions);
+    expect(harness.historyCalls).toEqual(['postgresql://migrator:secret@db.example.test/app']);
+  });
+
+  it('pauses the deployment and rolls back when the immutable-history gate rejects', async () => {
+    const harness = makeHarness();
+    await expect(runMigrateDeploy(harness.env, {
+      checkMigrationHistory: async () => {
+        throw new Error('[migration-history] checksum mismatch for applied migration x; immutable history is paused');
+      },
+    })).rejects.toThrow('immutable history is paused');
+    const log = harness.readLog();
+    expect(log).not.toContain('prisma migrate deploy');
+    expect(log).toContain('stripe-ledger-bootstrap-rollback.sql');
+    expect(harness.readReport()).toMatchObject({ stage: 'prisma-migrate', rollback: { status: 'completed' } });
+  });
+
+  it('rolls back and writes a durable failure report when the post-bootstrap fails', async () => {
     const harness = makeHarness({ failOn: ['stripe-ledger-bootstrap-post.sql'] });
-    expect(() => runMigrateDeploy(harness.env)).toThrow();
+    await expect(runMigrateDeploy(harness.env, harness.runOptions)).rejects.toThrow();
     const log = harness.readLog();
     expect(log).toContain('stripe-ledger-bootstrap-rollback.sql');
     const report = harness.readReport();
@@ -271,9 +319,9 @@ describe('bootstrap failure handling with injected faults', () => {
     expect(report.expectedDatabaseState).toMatch(/phase = failed/);
   });
 
-  it('preserves an independently durable failed state when the rollback script itself fails', () => {
+  it('preserves an independently durable failed state when the rollback script itself fails', async () => {
     const harness = makeHarness({ failOn: ['stripe-ledger-bootstrap-post.sql', 'stripe-ledger-bootstrap-rollback.sql'] });
-    expect(() => runMigrateDeploy(harness.env)).toThrow();
+    await expect(runMigrateDeploy(harness.env, harness.runOptions)).rejects.toThrow();
     const log = harness.readLog();
     // The last-resort marker write goes through psql --command with the
     // durable failed-state upsert.
@@ -283,18 +331,19 @@ describe('bootstrap failure handling with injected faults', () => {
     expect(report).toMatchObject({ stage: 'post-bootstrap', rollback: { status: 'failed' }, lastResortMarker: { status: 'completed' } });
   });
 
-  it('protects the pre-bootstrap inside the same failure path', () => {
+  it('protects the pre-bootstrap inside the same failure path', async () => {
     const harness = makeHarness({ failOn: ['stripe-ledger-bootstrap-pre.sql'] });
-    expect(() => runMigrateDeploy(harness.env)).toThrow();
+    await expect(runMigrateDeploy(harness.env, harness.runOptions)).rejects.toThrow();
     const log = harness.readLog();
     expect(log).not.toContain('prisma migrate deploy');
     expect(log).toContain('stripe-ledger-bootstrap-rollback.sql');
     expect(harness.readReport()).toMatchObject({ stage: 'pre-bootstrap', rollback: { status: 'completed' } });
+    expect(harness.historyCalls).toEqual([]);
   });
 
-  it('reports a failed prisma migration and still rolls back the bootstrap', () => {
+  it('reports a failed prisma migration and still rolls back the bootstrap', async () => {
     const harness = makeHarness({ prismaFail: true });
-    expect(() => runMigrateDeploy(harness.env)).toThrow();
+    await expect(runMigrateDeploy(harness.env, harness.runOptions)).rejects.toThrow();
     const log = harness.readLog();
     expect(log).toContain('stripe-ledger-bootstrap-pre.sql');
     expect(log).toContain('stripe-ledger-bootstrap-rollback.sql');

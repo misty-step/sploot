@@ -154,6 +154,27 @@ async function readExtensionArtifact() {
   };
 }
 
+await record('production liveness (platform routing probe)', async () => {
+  // DigitalOcean routes the web service on this shallow endpoint; it must
+  // answer from the Next process with no dependency coupling. Deep readiness
+  // stays the next check below.
+  const { response, json } = await fetchJson(`${baseUrl}/api/health/live`, {
+    headers: { accept: 'application/json' },
+  });
+
+  if (response.status !== 200) {
+    throw new Error(`expected HTTP 200, got ${response.status}`);
+  }
+  if (json?.status !== 'alive') {
+    throw new Error(`expected status alive, got ${json?.status}`);
+  }
+  if (json?.service !== 'sploot-web') {
+    throw new Error(`expected service sploot-web, got ${json?.service}`);
+  }
+
+  return { status: json.status, service: json.service };
+});
+
 await record('production health', async () => {
   const { response, json } = await fetchJson(`${baseUrl}/api/health`, {
     headers: { accept: 'application/json' },

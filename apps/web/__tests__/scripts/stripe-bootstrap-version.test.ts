@@ -213,11 +213,16 @@ describe('stripe ledger bootstrap version authority', () => {
   });
 
   it('does not hardcode the bootstrap version in runtime health', () => {
+    // Deep health's database logic lives in the readiness lib; the route file
+    // stays free of raw SQL and bootstrap flags.
+    const readinessLib = readFileSync(resolve(webRoot, 'lib/health/database-readiness.ts'), 'utf8');
+    expect(readinessLib).not.toContain(version);
+    expect(readinessLib).toContain('FROM public._prisma_migrations');
+    expect(readinessLib).toContain("rpad(split_part(migration_name, '_', 1), 14, '0')");
+    expect(readinessLib).toContain('STRIPE_LEDGER_BOOTSTRAP_REQUIRED');
     const healthRoute = readFileSync(resolve(webRoot, 'app/api/health/route.ts'), 'utf8');
     expect(healthRoute).not.toContain(version);
-    expect(healthRoute).toContain('FROM public._prisma_migrations');
-    expect(healthRoute).toContain("rpad(split_part(migration_name, '_', 1), 14, '0')");
-    expect(healthRoute).toContain('STRIPE_LEDGER_BOOTSTRAP_REQUIRED');
+    expect(healthRoute).not.toContain('$queryRaw');
   });
 
   it('keeps the inert legacy-owner migration path self-contained before privileged activation', () => {
