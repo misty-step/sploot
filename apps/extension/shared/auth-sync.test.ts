@@ -91,7 +91,7 @@ describe('popup auth sync', () => {
     expect(reloadPopup).toHaveBeenCalledTimes(1)
   })
 
-  it('falls back to memory when session storage rejects access', async () => {
+  it('fails safe across remounts when session storage rejects access', async () => {
     runtime.sendMessage.mockResolvedValue({
       state: { status: 'signed-in', userId: 'user_throw', sessionId: 'session_throw' },
     })
@@ -109,16 +109,31 @@ describe('popup auth sync', () => {
       throwingStorage,
     )
     await new Promise(resolve => setTimeout(resolve, 0))
-    expect(reloadPopup).toHaveBeenCalledTimes(1)
+    expect(reloadPopup).not.toHaveBeenCalled()
+
+    installPopupAuthSync(
+      clerk,
+      runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
+      reloadPopup,
+      throwingStorage,
+    )
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(reloadPopup).not.toHaveBeenCalled()
   })
 
   it('refreshes an open popup from a worker state event without receiving a token', async () => {
     const clerk = { user: null }
     const reloadPopup = vi.fn()
+    const storage = new Map<string, string>()
+    const reloadGuardStorage = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => { storage.set(key, value) },
+    }
     installPopupAuthSync(
       clerk,
       runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
       reloadPopup,
+      reloadGuardStorage,
     )
     await new Promise(resolve => setTimeout(resolve, 0))
     reloadPopup.mockClear()

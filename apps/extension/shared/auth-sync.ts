@@ -22,16 +22,11 @@ interface ReloadGuardStorage {
   setItem(key: string, value: string): void
 }
 
-const memoryReloadGuard = new Map<string, string>()
-
-function getReloadGuardStorage(): ReloadGuardStorage {
+function getReloadGuardStorage(): ReloadGuardStorage | null {
   try {
     return window.sessionStorage
   } catch {
-    return {
-      getItem: key => memoryReloadGuard.get(key) ?? null,
-      setItem: (key, value) => { memoryReloadGuard.set(key, value) },
-    }
+    return null
   }
 }
 
@@ -92,18 +87,10 @@ export function installPopupAuthSync(
       if (reloadGuardStorage.getItem(reloadKey)) {
         return
       }
-    } catch {
-      if (memoryReloadGuard.get(reloadKey)) {
-        return
-      }
-    }
-    try {
       reloadGuardStorage.setItem(reloadKey, '1')
     } catch {
-      if (memoryReloadGuard.get(reloadKey)) {
-        return
-      }
-      memoryReloadGuard.set(reloadKey, '1')
+      // Never hard-reload without a persistent guard that survives remounts.
+      return
     }
     void Promise.resolve().then(reloadPopup).catch(error => {
       console.error('[Popup] Failed to reload auth state', error)
