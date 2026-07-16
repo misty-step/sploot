@@ -111,7 +111,7 @@ async function getHandler(
     if (admission.kind !== 'reserved') return exportAdmissionErrorResponse(admission);
     if (!entries) throw new Error('reserved export part has no entries');
     const postAdmission = await accessExportForDownload(principal.userId, row.id);
-    if (postAdmission.kind !== 'ok') {
+    if (postAdmission.kind !== 'ok' || postAdmission.row.status === 'complete') {
       const code = postAdmission.kind === 'gone' ? postAdmission.code : 'export_unavailable';
       return NextResponse.json({ error: 'This export is no longer available.', code, retryable: false }, { status: 410 });
     }
