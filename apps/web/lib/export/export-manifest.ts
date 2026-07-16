@@ -145,12 +145,6 @@ function manifestStaticHead(row: ExportRowData) {
     generatedAt: new Date().toISOString(),
     snapshotAt: row.snapshotAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
-    parts: row.partBoundaries.map((part) => ({
-      index: part.index,
-      file: partFileName(row.id, part.index, row.partBoundaries.length),
-      assets: part.count,
-      bytes: part.bytes,
-    })),
   };
 }
 
