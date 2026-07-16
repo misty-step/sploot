@@ -124,17 +124,33 @@ async function clearIfNoUpdate(): Promise<void> {
   await serializeStatusWrite(() => writeStoredStatus(null));
 }
 
-export async function getUpdateNotice(): Promise<UpdateNotice | null> {
+async function getUpdateNoticeUnsafe(): Promise<UpdateNotice | null> {
   const existing = await readStoredStatus();
   const current = await installedVersion();
   if (!existing || !current || !isNewerVersion(existing.availableVersion, current)) {
-    if (existing) await serializeStatusWrite(() => writeStoredStatus(null));
+    if (existing) await writeStoredStatus(null);
     return null;
   }
   return {
     version: existing.availableVersion,
     dismissed: existing.dismissedVersion === existing.availableVersion,
   };
+}
+
+async function dismissUpdateUnsafe(version: string): Promise<void> {
+  const normalized = normalizeVersion(version);
+  if (!normalized) return;
+  const current = await getUpdateNoticeUnsafe();
+  if (!current || current.version !== normalized) return;
+  await writeStoredStatus({ availableVersion: normalized, dismissedVersion: normalized });
+}
+
+export async function getUpdateNotice(): Promise<UpdateNotice | null> {
+  return serializeStatusWrite(getUpdateNoticeUnsafe);
+}
+
+export async function dismissUpdate(version: string): Promise<void> {
+  await serializeStatusWrite(() => dismissUpdateUnsafe(version));
 }
 
 export function onUpdateStatusChanged(callback: () => void): () => void {
@@ -147,14 +163,6 @@ export function onUpdateStatusChanged(callback: () => void): () => void {
   } catch {
     return () => undefined;
   }
-}
-
-export async function dismissUpdate(version: string): Promise<void> {
-  const normalized = normalizeVersion(version);
-  if (!normalized) return;
-  const current = await getUpdateNotice();
-  if (!current || current.version !== normalized) return;
-  await serializeStatusWrite(() => writeStoredStatus({ availableVersion: normalized, dismissedVersion: normalized }));
 }
 
 export async function openUpdatePage(): Promise<boolean> {

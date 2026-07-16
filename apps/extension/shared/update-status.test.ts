@@ -94,6 +94,46 @@ describe('update-status', () => {
     expect(stored[UPDATE_STATUS_STORAGE_KEY]).toBeUndefined();
   });
 
+  it('preserves a newer event while stale popup reconciliation is pending', async () => {
+    requestUpdateCheck.mockReturnValue(new Promise(() => undefined));
+    stored[UPDATE_STATUS_STORAGE_KEY] = { availableVersion: '0.9.0', dismissedVersion: null };
+    let releaseRead!: () => void;
+    const readGate = new Promise<void>(resolve => { releaseRead = resolve; });
+    const get = vi.fn(async (key: string) => {
+      if (key === UPDATE_STATUS_STORAGE_KEY) await readGate;
+      return { [key]: stored[key] };
+    });
+    Object.assign(chrome.storage.local, { get });
+    setupUpdateStatus();
+
+    const staleReconciliation = getUpdateNotice();
+    await vi.waitFor(() => expect(get).toHaveBeenCalled());
+    updateListener?.({ version: '1.2.0' });
+    releaseRead();
+    await staleReconciliation;
+    await vi.waitFor(async () => expect(await getUpdateNotice()).toEqual({ version: '1.2.0', dismissed: false }));
+  });
+
+  it('preserves a newer event while dismissal is pending', async () => {
+    requestUpdateCheck.mockReturnValue(new Promise(() => undefined));
+    stored[UPDATE_STATUS_STORAGE_KEY] = { availableVersion: '1.1.0', dismissedVersion: null };
+    let releaseRead!: () => void;
+    const readGate = new Promise<void>(resolve => { releaseRead = resolve; });
+    const get = vi.fn(async (key: string) => {
+      if (key === UPDATE_STATUS_STORAGE_KEY) await readGate;
+      return { [key]: stored[key] };
+    });
+    Object.assign(chrome.storage.local, { get });
+    setupUpdateStatus();
+
+    const dismissal = dismissUpdate('1.1.0');
+    await vi.waitFor(() => expect(get).toHaveBeenCalled());
+    updateListener?.({ version: '1.2.0' });
+    releaseRead();
+    await dismissal;
+    await vi.waitFor(async () => expect(await getUpdateNotice()).toEqual({ version: '1.2.0', dismissed: false }));
+  });
+
   it('opens the existing Chrome extensions update path', async () => {
     expect(await openUpdatePage()).toBe(true);
     expect(chrome.tabs.create).toHaveBeenCalledWith({ url: 'chrome://extensions' });
