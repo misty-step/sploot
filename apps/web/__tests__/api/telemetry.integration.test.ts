@@ -662,7 +662,7 @@ describe('/api/telemetry', () => {
   });
 
   describe('adversarial payload bounds', () => {
-    const URL_WITH_TOKEN = 'https://evil.example/cb?token=sk_live_abcdef123456';
+    const URL_WITH_TOKEN = 'https://evil.example/cb?token=leaked-bearer-credential-123456';
 
     it('rejects a URL string smuggled into a numeric analytics property', async () => {
       const request = createMockRequest('POST', {
