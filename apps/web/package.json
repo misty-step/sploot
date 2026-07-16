@@ -40,8 +40,6 @@
     "generate-assets": "pnpm run generate-icons && pnpm run generate-og",
     "benchmark": "ts-node scripts/benchmark.ts",
     "benchmark:large": "ts-node scripts/benchmark.ts 10000",
-    "gc:blobs": "tsx scripts/garbage-collect-blobs.ts",
-    "gc:blobs:delete": "tsx scripts/garbage-collect-blobs.ts --delete",
     "validate:deployment": "bash scripts/validate-deployment.sh",
     "smoke:deployed": "node scripts/smoke-deployed.mjs",
     "validate:env": "tsx scripts/validate-env.ts",

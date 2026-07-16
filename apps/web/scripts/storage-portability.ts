@@ -73,25 +73,29 @@ async function inventory(limit: number, cursor?: string) {
   let failures = 0;
   let nextCursor = cursor;
   while (true) {
-    const assets = await prisma.asset.findMany({ where: { deletedAt: null, ...(nextCursor ? { id: { gt: nextCursor } } : {}) }, orderBy: { id: 'asc' }, take: limit, select: { id: true, storageKey: true, pathname: true, thumbnailStorageKey: true, thumbnailPath: true, thumbnailUrl: true, mime: true } });
+    const assets = await prisma.asset.findMany({ where: { deletedAt: null, ...(nextCursor ? { id: { gt: nextCursor } } : {}) }, orderBy: { id: 'asc' }, take: limit, select: { id: true, storageKey: true, storageSourceKey: true, pathname: true, thumbnailStorageKey: true, thumbnailStorageSourceKey: true, thumbnailPath: true, thumbnailUrl: true, mime: true } });
     if (assets.length === 0) break;
     for (const asset of assets) {
       try {
-        const sourceKey = asset.storageKey ?? asset.pathname;
+        const sourceKey = asset.storageSourceKey ?? asset.storageKey ?? asset.pathname;
         const original = await source.getSourceKey(sourceKey);
         const bytes = await bodyToBuffer(original.body, 512 * 1024 * 1024);
         const sha256 = createHash('sha256').update(bytes).digest('hex');
         const logicalKey = inventoryLogicalKey(asset.id, sourceKey, 'original');
-        await prisma.asset.update({ where: { id: asset.id }, data: { storageProvider: 'vercel', storageKey: sourceKey, storageConfigFingerprint: fingerprint, storageSize: bytes.byteLength, storageSha256: sha256 } });
-        manifest.push({ logicalKey, sourceKey, size: bytes.byteLength, sha256, contentType: renditionMime(sourceKey, bytes, original.metadata.contentType, asset.mime) });
-        const thumbnailKey = asset.thumbnailStorageKey ?? asset.thumbnailPath;
+        await prisma.asset.update({ where: { id: asset.id }, data: { storageProvider: 'vercel', storageKey: logicalKey, storageSourceKey: sourceKey, storageConfigFingerprint: fingerprint, storageSize: bytes.byteLength, storageSha256: sha256 } });
+        const originalEntry = { logicalKey, sourceKey, size: bytes.byteLength, sha256, contentType: renditionMime(sourceKey, bytes, original.metadata.contentType, asset.mime) };
+        manifest.push(originalEntry);
+        await seedMigrationManifest(prisma, [originalEntry], { source: 'vercel', target: 's3' });
+        const thumbnailKey = asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey ?? asset.thumbnailPath;
         if (thumbnailKey && (asset.thumbnailUrl || asset.thumbnailStorageKey)) {
           const thumbnail = await source.getSourceKey(thumbnailKey);
           const thumbBytes = await bodyToBuffer(thumbnail.body, 512 * 1024 * 1024);
           const thumbSha = createHash('sha256').update(thumbBytes).digest('hex');
           const thumbLogicalKey = inventoryLogicalKey(asset.id, thumbnailKey, 'thumbnail');
-          await prisma.asset.update({ where: { id: asset.id }, data: { thumbnailStorageKey: thumbnailKey, thumbnailStorageSize: thumbBytes.byteLength, thumbnailStorageSha256: thumbSha } });
-          manifest.push({ logicalKey: thumbLogicalKey, sourceKey: thumbnailKey, size: thumbBytes.byteLength, sha256: thumbSha, contentType: renditionMime(thumbnailKey, thumbBytes, thumbnail.metadata.contentType) });
+          await prisma.asset.update({ where: { id: asset.id }, data: { thumbnailStorageKey: thumbLogicalKey, thumbnailStorageSourceKey: thumbnailKey, thumbnailStorageSize: thumbBytes.byteLength, thumbnailStorageSha256: thumbSha } });
+          const thumbnailEntry = { logicalKey: thumbLogicalKey, sourceKey: thumbnailKey, size: thumbBytes.byteLength, sha256: thumbSha, contentType: renditionMime(thumbnailKey, thumbBytes, thumbnail.metadata.contentType) };
+          manifest.push(thumbnailEntry);
+          await seedMigrationManifest(prisma, [thumbnailEntry], { source: 'vercel', target: 's3' });
         }
         nextCursor = asset.id;
         await prisma.storageInventoryState.upsert({ where: { id: INVENTORY_ID }, update: { cursor: asset.id, providerFingerprint: fingerprint, lastError: null }, create: { id: INVENTORY_ID, cursor: asset.id, providerFingerprint: fingerprint, updatedAt: new Date() } });
@@ -107,7 +111,8 @@ async function inventory(limit: number, cursor?: string) {
     if (assets.length < limit) break;
   }
   if (failures > 0) throw new Error('Inventory parity failed for ' + failures + ' asset(s); resume from the recorded cursor after repairing source objects');
-  process.stdout.write(JSON.stringify(manifest) + '\n');
+  const durableManifest = await prisma.storageMigrationEntry.findMany({ orderBy: { logicalKey: 'asc' }, select: { logicalKey: true, sourceKey: true, size: true, sha256: true, contentType: true } });
+  process.stdout.write(JSON.stringify(durableManifest) + '\n');
 }
 async function ensureCutoverState(config: StorageConfig, digest: string, phase: 'dual-write' | 'rollback'): Promise<void> {
   const fingerprint = storageConfigFingerprint(config);

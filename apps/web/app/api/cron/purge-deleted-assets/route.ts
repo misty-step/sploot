@@ -83,7 +83,9 @@ async function getHandler(request: NextRequest) {
         pathname: true,
         storageProvider: true,
         storageKey: true,
+        storageSourceKey: true,
         thumbnailStorageKey: true,
+        thumbnailStorageSourceKey: true,
         deletedAt: true,
         ownerUserId: true,
       },
@@ -112,11 +114,12 @@ async function getHandler(request: NextRequest) {
         });
 
         // Delete every provider replica before removing the database row.
-        const keys = [asset.storageKey, asset.thumbnailStorageKey].filter((key): key is string => Boolean(key));
-        const fallbackUrls = [
-          !asset.storageKey ? asset.blobUrl : null,
-          !asset.thumbnailStorageKey ? asset.thumbnailUrl : null,
-        ].filter((url): url is string => Boolean(url));
+        const legacyProvider = asset.storageProvider === 'vercel';
+        const keys = legacyProvider ? [] : [asset.storageKey, asset.thumbnailStorageKey].filter((key): key is string => Boolean(key));
+        const fallbackUrls = (legacyProvider
+          ? [asset.blobUrl, asset.thumbnailUrl]
+          : [!asset.storageKey ? asset.blobUrl : null, !asset.thumbnailStorageKey ? asset.thumbnailUrl : null]
+        ).filter((url): url is string => Boolean(url));
         if (storage.deleteKey) {
           await Promise.all(keys.map(async (key) => {
             await storage.deleteKey!(asset.storageProvider, key);

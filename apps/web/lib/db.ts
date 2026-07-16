@@ -392,7 +392,9 @@ export interface ExistingAssetMetadata {
   createdAt: Date;
   storageProvider?: string;
   storageKey?: string | null;
+  storageSourceKey?: string | null;
   thumbnailStorageKey?: string | null;
+  thumbnailStorageSourceKey?: string | null;
   hasEmbedding?: boolean;
 }
 
@@ -447,7 +449,9 @@ export async function assetExists(
         createdAt: true,
         storageProvider: true,
         storageKey: true,
+        storageSourceKey: true,
         thumbnailStorageKey: true,
+        thumbnailStorageSourceKey: true,
         // Include embedding check if requested
         ...(options?.includeEmbedding && {
           embedding: {
@@ -478,7 +482,9 @@ export async function assetExists(
       createdAt: asset.createdAt,
       storageProvider: asset.storageProvider,
       storageKey: asset.storageKey,
+      storageSourceKey: asset.storageSourceKey,
       thumbnailStorageKey: asset.thumbnailStorageKey,
+      thumbnailStorageSourceKey: asset.thumbnailStorageSourceKey,
     };
 
     // Add embedding status if requested
@@ -516,7 +522,9 @@ export async function findOrCreateAsset(
     size: number;
     storageProvider?: string;
     storageKey?: string | null;
+    storageSourceKey?: string | null;
     thumbnailStorageKey?: string | null;
+    thumbnailStorageSourceKey?: string | null;
     storageConfigFingerprint?: string | null;
   }
 ): Promise<ExistingAssetMetadata> {
@@ -552,7 +560,9 @@ export async function findOrCreateAsset(
           checksumSha256: assetData.checksumSha256,
           ...(assetData.storageProvider ? { storageProvider: assetData.storageProvider } : {}),
           ...(assetData.storageKey !== undefined ? { storageKey: assetData.storageKey } : {}),
+          ...(assetData.storageSourceKey !== undefined ? { storageSourceKey: assetData.storageSourceKey } : {}),
           ...(assetData.thumbnailStorageKey !== undefined ? { thumbnailStorageKey: assetData.thumbnailStorageKey } : {}),
+          ...(assetData.thumbnailStorageSourceKey !== undefined ? { thumbnailStorageSourceKey: assetData.thumbnailStorageSourceKey } : {}),
           ...(assetData.storageConfigFingerprint !== undefined ? { storageConfigFingerprint: assetData.storageConfigFingerprint } : {}),
           favorite: false,
         },
@@ -570,7 +580,9 @@ export async function findOrCreateAsset(
           createdAt: true,
           storageProvider: true,
           storageKey: true,
+          storageSourceKey: true,
           thumbnailStorageKey: true,
+          thumbnailStorageSourceKey: true,
         },
       });
 
@@ -588,7 +600,9 @@ export async function findOrCreateAsset(
         createdAt: newAsset.createdAt,
         storageProvider: newAsset.storageProvider,
         storageKey: newAsset.storageKey,
+        storageSourceKey: newAsset.storageSourceKey,
         thumbnailStorageKey: newAsset.thumbnailStorageKey,
+        thumbnailStorageSourceKey: newAsset.thumbnailStorageSourceKey,
       };
     } catch (error) {
       // Handle unique constraint violation (another request created it)

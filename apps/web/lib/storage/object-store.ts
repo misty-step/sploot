@@ -207,12 +207,8 @@ export class ConfiguredStorageWriter implements StorageWriter {
     this.strict = !!this.portable;
   }
 
-  private cutoverValidatedAt = 0;
-
   private async assertRuntimeCutoverState(): Promise<void> {
     if (this.config.phase === 'legacy') return;
-    const now = Date.now();
-    if (now - this.cutoverValidatedAt < 5_000) return;
     if (!this.config.manifestSha256) throw new Error('Storage runtime requires STORAGE_CUTOVER_MANIFEST_SHA256');
     const { prisma } = await import('@/lib/db');
     const state = await prisma.storageCutoverState.findUnique({ where: { id: 'default' } });
@@ -221,7 +217,6 @@ export class ConfiguredStorageWriter implements StorageWriter {
     if (state.phase !== this.config.phase || state.providerFingerprint !== fingerprint || state.manifestSha256 !== this.config.manifestSha256) {
       throw new Error('Storage cutover state does not match runtime provider configuration and manifest');
     }
-    this.cutoverValidatedAt = now;
   }
 
   async put(key: string, body: ObjectBody, metadata: ObjectMetadata) {
