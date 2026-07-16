@@ -88,6 +88,9 @@ describe('update-status', () => {
 
   it('keeps popup update ownership in the worker', async () => {
     const popup = await fs.readFile(new URL('../entrypoints/popup/App.tsx', import.meta.url), 'utf8');
+    expect(popup).toContain('requestUpdateNotice');
+    expect(popup).toContain('requestDismissUpdate');
+    expect(popup).not.toMatch(/\b(getUpdateNotice|dismissUpdate)\b/);
     expect(popup).not.toMatch(/chrome\.storage\.local\.(set|remove)/);
   });
 

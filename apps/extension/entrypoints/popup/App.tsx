@@ -18,6 +18,10 @@ import { getSaveStatus, onSaveStatusChanged, type SaveStatus } from '../../share
 import { E2E_AUTH_MODE, EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
 import { getSplootAppUrl, getSplootEnrollmentUrl, getSplootSignInUrl } from '../../shared/app-url'
 import { runBestEffort } from '../../shared/best-effort'
+<<<<<<< HEAD
+=======
+import { requestDismissUpdate, requestUpdateNotice, onUpdateStatusChanged, openUpdatePage, type UpdateNotice } from '../../shared/update-status'
+>>>>>>> 175a579d (test(extension): cover popup dismissal persistence)
 import { performContextMenuSaveAction, requestContextMenuSaveQueue } from './queue-recovery'
 import { loadPublicEnrollmentState } from '../../shared/enrollment-state'
 import './style.css'
@@ -172,7 +176,7 @@ function UpdateNoticePanel() {
   useEffect(() => {
     let cancelled = false
     const refresh = () => {
-      void getUpdateNotice().then(next => {
+      void requestUpdateNotice().then(next => {
         if (!cancelled) setNotice(next && !next.dismissed ? next : null)
       })
     }
@@ -187,7 +191,7 @@ function UpdateNoticePanel() {
   if (!notice) return null
 
   const handleDismiss = () => {
-    void dismissUpdate(notice.version).then(() => setNotice(null))
+    void requestDismissUpdate(notice.version).then(() => setNotice(null))
   }
 
   const handleUpdate = () => {
