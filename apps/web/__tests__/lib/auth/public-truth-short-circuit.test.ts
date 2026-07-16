@@ -54,6 +54,17 @@ describe('public-truth signed-out auth short-circuit', () => {
     expect(mocks.auth).not.toHaveBeenCalled();
   });
 
+  it('getAuth returns signed-out terminal auth without calling Clerk when QA input is absent', async () => {
+    process.env.SPLOOT_DEPLOYMENT_ENV = 'development';
+    process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD = 'true';
+
+    const result = await getAuth();
+
+    expect(result.userId).toBeNull();
+    expect(result.sessionId).toBeNull();
+    expect(mocks.auth).not.toHaveBeenCalled();
+  });
+
   it('getAuthWithUser returns skipped sync without calling Clerk in a compiled public-truth build', async () => {
     process.env.NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E = 'true';
     process.env.SPLOOT_DEPLOYMENT_ENV = 'evidence';
@@ -68,5 +79,17 @@ describe('public-truth signed-out auth short-circuit', () => {
     expect(mocks.currentUser).not.toHaveBeenCalled();
     expect(mocks.syncUser).not.toHaveBeenCalled();
     expect(mocks.logError).not.toHaveBeenCalled();
+  });
+
+  it('getAuthWithUser returns skipped terminal auth without calling Clerk when QA input is absent', async () => {
+    process.env.SPLOOT_DEPLOYMENT_ENV = 'development';
+    process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD = 'true';
+
+    const result = await getAuthWithUser();
+
+    expect(result.userId).toBeNull();
+    expect(result.sessionId).toBeNull();
+    expect(result.syncStatus).toBe('skipped');
+    expect(mocks.auth).not.toHaveBeenCalled();
   });
 });

@@ -48,8 +48,7 @@ export async function getAuth(): Promise<AuthResult> {
   // of the shipped bundle. The production public-truth guard proves it.
   if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
     const { getQaLocalAuthResult } = await import('./qa-local-server');
-    const qaAuth = await getQaLocalAuthResult();
-    if (qaAuth) return qaAuth;
+    return getQaLocalAuthResult();
   }
   const clerk = await import('@clerk/nextjs/server');
   let auth: Awaited<ReturnType<typeof clerk.auth>>;
@@ -82,8 +81,7 @@ export async function getAuthWithUser(): Promise<AuthWithUserResult> {
   // dev/test qa builds and is proven absent from production bundles.
   if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
     const { getQaLocalAuthWithUserResult } = await import('./qa-local-server');
-    const qaAuth = await getQaLocalAuthWithUserResult();
-    if (qaAuth) return qaAuth;
+    return getQaLocalAuthWithUserResult();
   }
   const clerk = await import('@clerk/nextjs/server');
   const { logger } = await import('../observability-logger');
