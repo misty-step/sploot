@@ -502,18 +502,18 @@ button.debug:hover {
   --sploot-radius-pill: 999px;
   --sploot-shadow: 0 5px 0 var(--sploot-shadow-color);
   --sploot-on-blue: #ffffff;
-  --sploot-public-link: #075985;
+  --sploot-public-link: var(--sploot-blue);
   --bg-primary: var(--sploot-paper);
   --bg-secondary: var(--sploot-paper-warm);
   --bg-tertiary: var(--sploot-panel);
   --text-primary: var(--sploot-ink);
-  --text-secondary: #3e3766;
-  --text-tertiary: #5e5680;
+  --text-secondary: var(--sploot-ink);
+  --text-tertiary: var(--sploot-purple);
   --border-primary: var(--sploot-ink);
   --border-secondary: var(--sploot-blue);
   --accent-primary: var(--sploot-blue);
-  --accent-hover: #075985;
-  --accent-subtle: #e8f5ff;
+  --accent-hover: var(--sploot-blue);
+  --accent-subtle: var(--sploot-paper-warm);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -535,20 +535,20 @@ button.debug:hover {
     --bg-secondary: var(--sploot-paper-warm);
     --bg-tertiary: var(--sploot-panel);
     --text-primary: var(--sploot-ink);
-    --text-secondary: #f0e6d6;
-    --text-tertiary: #d3c6b5;
+    --text-secondary: var(--sploot-ink);
+    --text-tertiary: var(--sploot-cyan);
     --border-primary: var(--sploot-ink);
     --border-secondary: var(--sploot-cyan);
     --accent-primary: var(--sploot-blue);
     --accent-hover: var(--sploot-cyan);
-    --accent-subtle: #3a316d;
+    --accent-subtle: var(--sploot-panel);
   }
 }
 
 body {
   color: var(--text-primary);
   background-color: var(--bg-primary);
-  background-image: radial-gradient(rgba(255, 255, 255, 0.25) 2px, transparent 2.6px);
+  background-image: radial-gradient(var(--sploot-dot) 2px, transparent 2.6px);
   background-size: 26px 26px;
 }
 
