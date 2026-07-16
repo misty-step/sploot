@@ -27,6 +27,12 @@ interface ChromeMock {
       removeListener: ReturnType<typeof vi.fn>;
     };
   };
+  cookies: {
+    onChanged: {
+      addListener: ReturnType<typeof vi.fn>;
+      removeListener: ReturnType<typeof vi.fn>;
+    };
+  };
   tabs: {
     create: ReturnType<typeof vi.fn>;
     get: ReturnType<typeof vi.fn>;
@@ -37,6 +43,7 @@ interface ChromeMock {
 let messageListeners: Array<(message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => boolean>;
 let chromeMock: ChromeMock;
 let clerkListeners: Array<(resources: unknown) => void>;
+let cookieListeners: Array<(changeInfo: chrome.cookies.CookieChangeInfo) => void>;
 
 async function importAuthManager() {
   vi.resetModules();
@@ -64,6 +71,14 @@ beforeEach(() => {
         removeListener: vi.fn(),
       },
     },
+    cookies: {
+      onChanged: {
+        addListener: vi.fn(listener => {
+          cookieListeners.push(listener);
+        }),
+        removeListener: vi.fn(),
+      },
+    },
     tabs: {
       create: vi.fn(),
       get: vi.fn(),
@@ -74,6 +89,7 @@ beforeEach(() => {
   vi.stubGlobal('chrome', chromeMock);
   createClerkClient.mockReset();
   clerkListeners = [];
+  cookieListeners = [];
 });
 
 describe('auth-manager', () => {
@@ -461,6 +477,138 @@ describe('auth-manager', () => {
 
     await expect(signInPromise).resolves.toBe(true)
   })
+
+  it('queues a cookie event during service-worker Clerk startup', async () => {
+    let resolveClient: ((client: unknown) => void) | undefined;
+    const signedInSession = { id: 'race-session', user: { id: 'race-user' }, expireAt: null };
+    const clerk = {
+      session: null as typeof signedInSession | null,
+      __internal_reloadInitialResources: vi.fn(async () => {
+        clerk.session = signedInSession;
+        clerkListeners[0]({ user: signedInSession.user, session: signedInSession });
+      }),
+      addListener: vi.fn((listener: (resources: unknown) => void) => {
+        clerkListeners.push(listener);
+        return () => undefined;
+      }),
+    };
+    createClerkClient.mockImplementation(() => new Promise(resolve => { resolveClient = resolve; }));
+
+    const { setupAuthBridge, waitForSignIn } = await importAuthManager();
+    setupAuthBridge();
+    // The worker registers the Chrome event synchronously, before Clerk awaits.
+    expect(cookieListeners).toHaveLength(1);
+    const waiter = waitForSignIn(1000);
+    cookieListeners[0]({
+      cause: 'explicit', removed: false, cookie: { domain: 'clerk.sploot.test' },
+    } as chrome.cookies.CookieChangeInfo);
+
+    resolveClient?.(clerk);
+    await expect(waiter).resolves.toBe(true);
+    expect(clerk.__internal_reloadInitialResources).toHaveBeenCalledOnce();
+    expect(cookieListeners).toHaveLength(1);
+  });
+
+  it('refreshes one Clerk authority from a scoped cookie event without a window', async () => {
+    const signedInSession = {
+      id: 'cookie-session',
+      user: { id: 'cookie-user' },
+      expireAt: null,
+      getToken: vi.fn(),
+    };
+    const reload = vi.fn(async () => {
+      clerk.session = signedInSession;
+      clerkListeners[0]({ user: signedInSession.user, session: signedInSession });
+    });
+    const clerk: {
+      session: typeof signedInSession | null;
+      __internal_reloadInitialResources: typeof reload;
+      addListener: ReturnType<typeof vi.fn>;
+    } = {
+      session: null,
+      __internal_reloadInitialResources: reload,
+      addListener: vi.fn(listener => {
+        clerkListeners.push(listener);
+        return () => undefined;
+      }),
+    };
+    createClerkClient.mockResolvedValue(clerk);
+
+    const { setupAuthBridge, waitForSignIn } = await importAuthManager();
+    setupAuthBridge();
+    await vi.waitFor(() => expect(cookieListeners).toHaveLength(1));
+    const waiter = waitForSignIn(1000);
+
+    cookieListeners[0]({
+      cause: 'explicit',
+      removed: false,
+      cookie: {
+        domain: '.clerk.sploot.test',
+        expirationDate: undefined,
+        hostOnly: false,
+        httpOnly: true,
+        name: '__clerk_db_jwt',
+        path: '/',
+        sameSite: 'no_restriction',
+        secure: true,
+        session: false,
+        storeId: '0',
+        value: 'opaque-cookie-value',
+      },
+    });
+
+    await expect(waiter).resolves.toBe(true);
+    expect(reload).toHaveBeenCalledOnce();
+    expect(createClerkClient).toHaveBeenCalledWith(expect.objectContaining({
+      syncHost: 'https://clerk.sploot.test',
+      __experimental_syncHostListener: false,
+    }));
+    expect(clerk.addListener).toHaveBeenCalledOnce();
+    expect(cookieListeners).toHaveLength(1);
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
+      type: AUTH_MESSAGES.STATE_CHANGED,
+      payload: {
+        status: 'signed-in',
+        userId: 'cookie-user',
+        sessionId: 'cookie-session',
+        expiresAt: null,
+      },
+    });
+    expect(JSON.stringify(chromeMock.runtime.sendMessage.mock.calls)).not.toContain('opaque-cookie-value');
+  });
+
+  it('ignores foreign cookie domains and serializes matching refreshes', async () => {
+    let resolveReload: (() => void) | undefined;
+    const clerk = {
+      session: null as { id: string; user: { id: string }; expireAt: null } | null,
+      __internal_reloadInitialResources: vi.fn(() => new Promise<void>(resolve => { resolveReload = resolve; })),
+      addListener: vi.fn((listener: (resources: unknown) => void) => {
+        clerkListeners.push(listener);
+        return () => undefined;
+      }),
+    };
+    createClerkClient.mockResolvedValue(clerk);
+    const { setupAuthBridge } = await importAuthManager();
+    setupAuthBridge();
+    await vi.waitFor(() => expect(cookieListeners).toHaveLength(1));
+
+    cookieListeners[0]({
+      cause: 'explicit', removed: false, cookie: { domain: 'foreign.test' },
+    } as chrome.cookies.CookieChangeInfo);
+    await Promise.resolve();
+    expect(clerk.__internal_reloadInitialResources).not.toHaveBeenCalled();
+
+    cookieListeners[0]({
+      cause: 'explicit', removed: false, cookie: { domain: 'clerk.sploot.test' },
+    } as chrome.cookies.CookieChangeInfo);
+    cookieListeners[0]({
+      cause: 'explicit', removed: false, cookie: { domain: '.clerk.sploot.test' },
+    } as chrome.cookies.CookieChangeInfo);
+    await vi.waitFor(() => expect(clerk.__internal_reloadInitialResources).toHaveBeenCalledOnce());
+    expect(resolveReload).toBeDefined();
+    resolveReload?.();
+    await vi.waitFor(() => expect(clerk.__internal_reloadInitialResources).toHaveBeenCalledTimes(2));
+  });
 
   it('resolves sign-in waiters when the persistent Clerk listener observes sign-in', async () => {
     const signedInState: AuthState = {

@@ -26,6 +26,8 @@ let authSyncRetryAttempt = 0
 let authSyncGeneration = 0
 let authSyncInFlightGeneration: number | undefined
 let authSyncInFlightPromise: Promise<void> | undefined
+let authCookieListener: ((changeInfo: chrome.cookies.CookieChangeInfo) => void) | undefined
+let authCookieRefreshPromise: Promise<void> | undefined
 
 /**
  * The Clerk authority behind a durable save job.
@@ -124,13 +126,74 @@ function updateCachedState(next: AuthState) {
   }
 }
 
+function normalizeCookieDomain(domain: string): string {
+  return domain.trim().replace(/^\.+/, '').toLowerCase()
+}
+
+function isClerkSyncCookieChange(changeInfo: chrome.cookies.CookieChangeInfo): boolean {
+  if (!changeInfo?.cookie?.domain || !CLERK_SYNC_HOST) {
+    return false
+  }
+
+  try {
+    const syncDomain = normalizeCookieDomain(new URL(CLERK_SYNC_HOST).hostname)
+    return syncDomain.length > 0 && normalizeCookieDomain(changeInfo.cookie.domain) === syncDomain
+  } catch {
+    return false
+  }
+}
+
+async function refreshAuthFromCookie(): Promise<void> {
+  const clerk = await getClerkClient()
+  await clerk.__internal_reloadInitialResources()
+  updateCachedState(authStateFromResources(clerk))
+}
+
+function queueAuthCookieRefresh(): void {
+  const previous = authCookieRefreshPromise ?? Promise.resolve()
+  const next = previous
+    .then(async () => {
+      await startAuthSync()
+      await refreshAuthFromCookie()
+    })
+    .catch(error => {
+      console.error('[Auth] Failed to refresh Clerk from cookie change', error)
+    })
+
+  const cleanup = next.finally(() => {
+    if (authCookieRefreshPromise === cleanup) {
+      authCookieRefreshPromise = undefined
+    }
+  })
+  authCookieRefreshPromise = cleanup
+}
+
+function installAuthCookieListener(): void {
+  if (E2E_AUTH_MODE || authCookieListener) {
+    return
+  }
+
+  const onChanged = chrome.cookies?.onChanged
+  if (!onChanged || typeof onChanged.addListener !== 'function') {
+    throw new Error('Chrome cookie change listener is unavailable')
+  }
+
+  const listener = (changeInfo: chrome.cookies.CookieChangeInfo) => {
+    if (isClerkSyncCookieChange(changeInfo)) {
+      queueAuthCookieRefresh()
+    }
+  }
+
+  onChanged.addListener(listener)
+  authCookieListener = listener
+}
 
 async function getClerkClient() {
   assertExtensionConfig()
   clerkClientPromise ??= Promise.resolve(createClerkClient({
     publishableKey: PUBLISHABLE_KEY,
     syncHost: CLERK_SYNC_HOST,
-    __experimental_syncHostListener: true,
+    __experimental_syncHostListener: false,
   })).catch(error => {
     clerkClientPromise = undefined
     throw error
@@ -517,5 +580,6 @@ export function setupAuthBridge() {
   }
 
   chrome.runtime.onMessage.addListener(bridgeListener)
+  installAuthCookieListener()
   startAuthSyncWithRetry()
 }
