@@ -5,6 +5,7 @@ import { estimateManifestEgressBytesForExport } from './export-manifest';
 import {
   EXPORT_EGRESS_WINDOW_MS,
   EXPORT_MAX_FAILURES_PER_PART,
+  EXPORT_MAX_FAILURES_TOTAL,
   EXPORT_MANIFEST_VERSION,
   EXPORT_SCAN_PAGE_SIZE,
   EXPORT_TTL_MS,
@@ -114,7 +115,12 @@ export function normalizeExportRow(row: Record<string, unknown>): ExportRowData 
     row.failures && typeof row.failures === 'object' && !Array.isArray(row.failures)
       ? (row.failures as ExportFailuresByPart)
       : {};
-  if (Object.values(failures).some((items) => !Array.isArray(items) || items.length > EXPORT_MAX_FAILURES_PER_PART)) {
+  const failureTotal = Object.values(failures).reduce((total, items) => {
+    if (!Array.isArray(items)) throw new Error('library export has invalid failure metadata');
+    if (items.length > EXPORT_MAX_FAILURES_PER_PART) throw new Error('library export has oversized failure metadata');
+    return total + items.length;
+  }, 0);
+  if (failureTotal > EXPORT_MAX_FAILURES_TOTAL) {
     throw new Error('library export has oversized failure metadata');
   }
 
@@ -558,6 +564,11 @@ export async function recordPartOutcome(
     const row = await tx.libraryExport.findFirst({ where: { id: exportId } });
     if (!row) return;
     await acquireEnrollmentIdentityWriterLock(tx, row.ownerUserId);
+    const existingFailures = row.failures && typeof row.failures === 'object' && !Array.isArray(row.failures) ? row.failures as Record<string, unknown[]> : {};
+    const existingFailureTotal = Object.values(existingFailures).reduce((total, items) => total + (Array.isArray(items) ? items.length : 0), 0);
+    if (existingFailureTotal + failures.length > EXPORT_MAX_FAILURES_TOTAL) {
+      throw new Error('library export has too many total failures');
+    }
     await tx.$executeRaw`
       UPDATE "library_exports"
       SET

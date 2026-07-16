@@ -24,6 +24,7 @@ export const EXPORT_PART_MAX_ENTRIES = 10_000;
 /** Hard upper bound on persisted boundary JSON and manifest part metadata. */
 export const EXPORT_MAX_PARTS = 10_000;
 export const EXPORT_MAX_FAILURES_PER_PART = EXPORT_PART_MAX_ENTRIES;
+export const EXPORT_MAX_FAILURES_TOTAL = 10_000;
 
 /**
  * Egress cost bound: an export may stream at most
