@@ -139,8 +139,8 @@ describe('context menu save', () => {
 
     await onClicked({ menuItemId: 'save-to-sploot', srcUrl: 'https://x.test/cat.png' }, { title: 'Cat' });
 
-    expect(mocks.isAuthenticated).toHaveBeenCalled();
-    expect(mocks.showSuccessNotification).toHaveBeenCalledWith('cat.png', 't', { isDuplicate: true });
+    await vi.waitFor(() => expect(mocks.isAuthenticated).toHaveBeenCalled());
+    await vi.waitFor(() => expect(mocks.showSuccessNotification).toHaveBeenCalledWith('cat.png', 't', { isDuplicate: true }));
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
   });
 
