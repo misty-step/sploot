@@ -18,10 +18,7 @@ import { getSaveStatus, onSaveStatusChanged, type SaveStatus } from '../../share
 import { E2E_AUTH_MODE, EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
 import { getSplootAppUrl, getSplootEnrollmentUrl, getSplootSignInUrl } from '../../shared/app-url'
 import { runBestEffort } from '../../shared/best-effort'
-<<<<<<< HEAD
-=======
 import { requestDismissUpdate, requestUpdateNotice, onUpdateStatusChanged, openUpdatePage, type UpdateNotice } from '../../shared/update-status'
->>>>>>> 175a579d (test(extension): cover popup dismissal persistence)
 import { performContextMenuSaveAction, requestContextMenuSaveQueue } from './queue-recovery'
 import { loadPublicEnrollmentState } from '../../shared/enrollment-state'
 import './style.css'
