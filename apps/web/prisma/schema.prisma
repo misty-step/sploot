@@ -249,6 +249,7 @@ model LibraryExport {
   createdAt          DateTime @default(now()) @map("created_at")
   manifestFinalizedAt DateTime? @map("manifest_finalized_at")
   manifestFinalizedSummary Json? @map("manifest_finalized_summary")
+  manifestFinalizedArtifact String? @db.Text @map("manifest_finalized_artifact")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   owner User @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)

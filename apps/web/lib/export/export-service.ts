@@ -57,6 +57,7 @@ export interface ExportRowData {
   updatedAt: Date;
   manifestFinalizedAt: Date | null;
   manifestFinalizedSummary: Record<string, unknown> | null;
+  manifestFinalizedArtifact: string | null;
 }
 
 export interface LibraryExportView {
@@ -142,6 +143,7 @@ export function normalizeExportRow(row: Record<string, unknown>): ExportRowData 
     updatedAt: row.updatedAt as Date,
     manifestFinalizedAt: (row.manifestFinalizedAt as Date | null | undefined) ?? null,
     manifestFinalizedSummary: (row.manifestFinalizedSummary as Record<string, unknown> | null | undefined) ?? null,
+    manifestFinalizedArtifact: typeof row.manifestFinalizedArtifact === 'string' ? row.manifestFinalizedArtifact : null,
   };
 }
 
@@ -244,7 +246,7 @@ export function monitorExportLifecycle(
         where: { id: exportId, ownerUserId },
         select: { status: true, expiresAt: true },
       });
-      if (!current || current.status !== 'active' || isExportExpired(current.expiresAt as Date)) {
+      if (!current || (current.status !== 'active' && current.status !== 'complete') || isExportExpired(current.expiresAt as Date)) {
         controller.abort();
       }
     } catch {
@@ -564,9 +566,12 @@ export async function recordPartOutcome(
     const row = await tx.libraryExport.findFirst({ where: { id: exportId } });
     if (!row) return;
     await acquireEnrollmentIdentityWriterLock(tx, row.ownerUserId);
-    const existingFailures = row.failures && typeof row.failures === 'object' && !Array.isArray(row.failures) ? row.failures as Record<string, unknown[]> : {};
-    const existingFailureTotal = Object.values(existingFailures).reduce((total, items) => total + (Array.isArray(items) ? items.length : 0), 0);
-    if (existingFailureTotal + failures.length > EXPORT_MAX_FAILURES_TOTAL) {
+    const locked = await tx.libraryExport.findFirst({ where: { id: exportId } });
+    if (!locked || locked.status !== 'active') return;
+    const lockedFailures = locked.failures && typeof locked.failures === 'object' && !Array.isArray(locked.failures) ? locked.failures as Record<string, unknown[]> : {};
+    const currentPartFailures = Array.isArray(lockedFailures[partKey]) ? lockedFailures[partKey].length : 0;
+    const existingFailureTotal = Object.values(lockedFailures).reduce((total, items) => total + (Array.isArray(items) ? items.length : 0), 0);
+    if (existingFailureTotal - currentPartFailures + failures.length > EXPORT_MAX_FAILURES_TOTAL) {
       throw new Error('library export has too many total failures');
     }
     await tx.$executeRaw`

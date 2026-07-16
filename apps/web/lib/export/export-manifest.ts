@@ -203,6 +203,7 @@ function manifestAssetEntry(
 
 /** Covers small metadata changes between the admission scan and stream scan. */
 const MANIFEST_RESERVATION_SLACK_BYTES = 4 * 1024;
+const MANIFEST_FINALIZED_ARTIFACT_MAX_BYTES = 4 * 1024 * 1024;
 
 const manifestEncoder = new TextEncoder();
 function utf8Bytes(value: string): bigint {
@@ -328,6 +329,9 @@ export function streamExportManifest(
   async function run(controller: ReadableStreamDefaultController<Uint8Array>): Promise<void> {
     const db = requireDb();
     let bytesStreamed = 0;
+    const artifactChunks: Uint8Array[] = [];
+    let artifactBytes = 0;
+    let artifactOverflow = false;
 
     const emit = async (text: string): Promise<void> => {
       await waitForExportCapacity(() => controller.desiredSize, () => canceled, backpressureTimeoutMs);
@@ -338,10 +342,25 @@ export function streamExportManifest(
         throw new Error('export manifest would exceed its egress reservation');
       }
       bytesStreamed += chunk.length;
+      if (!artifactOverflow) {
+        if (artifactBytes + chunk.length <= MANIFEST_FINALIZED_ARTIFACT_MAX_BYTES) {
+          artifactChunks.push(chunk.slice());
+          artifactBytes += chunk.length;
+        } else {
+          artifactOverflow = true;
+          artifactChunks.length = 0;
+        }
+      }
       controller.enqueue(chunk);
     };
 
     try {
+      if (row.status === 'complete' && row.manifestFinalizedArtifact) {
+        await emit(row.manifestFinalizedArtifact);
+        if (onComplete) await onComplete(bytesStreamed);
+        controller.close();
+        return;
+      }
       // Probe lifecycle before emitting any bytes; only assets actually
       // emitted below become manifest totals.
       await withManifestRead(db, row, async () => undefined);
@@ -435,11 +454,8 @@ export function streamExportManifest(
         backpressureTimeoutMs,
         () => abort(),
       );
-      const terminalSummary = await withManifestRead(db, row, async (tx, finalRow) => {
+      const terminalResult = await withManifestRead(db, row, async (tx, finalRow) => {
         if (!ensureOpen()) return null;
-        if (finalRow.status === 'complete' && finalRow.manifestFinalizedSummary) {
-          return finalRow.manifestFinalizedSummary;
-        }
         const finalFailures = flattenFailures(finalRow.failures);
         const finalCompleteness = computeCompleteness(
           finalRow.partBoundaries.length,
@@ -457,15 +473,28 @@ export function streamExportManifest(
           manifestReasons,
           finalFailures,
         );
-        const claimed = await tx.libraryExport.updateMany({
-          where: { id: finalRow.id, ownerUserId: finalRow.ownerUserId, status: 'active', manifestFinalizedAt: null },
-          data: { status: 'complete', manifestFinalizedAt: new Date(), manifestFinalizedSummary: summary as unknown as Prisma.InputJsonValue },
-        });
-        if (claimed.count !== 1) throw new Error('export completion fence was lost');
-        return summary;
+        const summaryChunk = encoder.encode('],' + JSON.stringify(summary).slice(1));
+        let artifact: string | null = null;
+        if (!artifactOverflow && artifactBytes + summaryChunk.length <= MANIFEST_FINALIZED_ARTIFACT_MAX_BYTES) {
+          const all = new Uint8Array(artifactBytes + summaryChunk.length);
+          let offset = 0;
+          for (const part of artifactChunks) { all.set(part, offset); offset += part.length; }
+          all.set(summaryChunk, offset);
+          artifact = new TextDecoder().decode(all);
+        }
+        const canFinalize = summary.complete === true;
+        if (canFinalize) {
+          const claimed = await tx.libraryExport.updateMany({
+            where: { id: finalRow.id, ownerUserId: finalRow.ownerUserId, status: 'active', manifestFinalizedAt: null },
+            data: { status: 'complete', manifestFinalizedAt: new Date(), manifestFinalizedSummary: summary as unknown as Prisma.InputJsonValue, manifestFinalizedArtifact: artifact },
+          });
+          if (claimed.count !== 1) throw new Error('export completion fence was lost');
+        }
+        return { summary, artifact: canFinalize ? artifact : null, summaryChunk };
       });
-      if (!terminalSummary) return;
-      const summaryChunk = encoder.encode('],' + JSON.stringify(terminalSummary).slice(1));
+      if (!terminalResult) return;
+      const terminalSummary = terminalResult.summary;      if (!terminalSummary) return;
+      const summaryChunk = terminalResult.summaryChunk;
       if (maxBytes !== undefined && BigInt(bytesStreamed + summaryChunk.length) > maxBytes) {
         throw new Error('export manifest would exceed its egress reservation');
       }

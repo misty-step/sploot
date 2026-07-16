@@ -762,6 +762,36 @@ describe('egress bound — durable reservation admission', () => {
 });
 
 describe('GET /api/library/export/:exportId/manifest', () => {
+  it('keeps incomplete manifests active until parts finish, then finalizes', async () => {
+    seedAsset('asset-early', USER, new Uint8Array([1, 2]));
+    const created = await createExport();
+    const early = await manifestGet(request('/api/library/export/' + created.id + '/manifest'), ctx({ exportId: created.id }));
+    expect(early.status).toBe(200);
+    expect(JSON.parse(await early.text()).complete).toBe(false);
+    expect(state.exports.get(created.id)!.status).toBe('active');
+    const part = await partGet(request('/api/library/export/' + created.id + '/parts/0'), ctx({ exportId: created.id, partIndex: '0' }));
+    expect(part.status).toBe(200);
+    await part.arrayBuffer();
+    state.exports.get(created.id)!.servedParts = [0];
+    const final = await manifestGet(request('/api/library/export/' + created.id + '/manifest'), ctx({ exportId: created.id }));
+    expect(final.status).toBe(200);
+    expect(JSON.parse(await final.text()).complete).toBe(true);
+    expect(state.exports.get(created.id)!.status).toBe('complete');
+  });
+
+  it('replays a finalized manifest byte-for-byte after mutable metadata changes', async () => {
+    seedAsset('asset-replay', USER, new Uint8Array([1, 2]), { favorite: true });
+    state.tags.push({ ownerUserId: USER, name: 'before', color: null });
+    const created = await createExport();
+    state.exports.get(created.id)!.servedParts = [0];
+    const first = await manifestGet(request('/api/library/export/' + created.id + '/manifest'), ctx({ exportId: created.id }));
+    const bytes = new Uint8Array(await first.arrayBuffer());
+    state.tags[0].name = 'after';
+    state.assets[0].favorite = false;
+    const second = await manifestGet(request('/api/library/export/' + created.id + '/manifest'), ctx({ exportId: created.id }));
+    expect(new Uint8Array(await second.arrayBuffer())).toEqual(bytes);
+  });
+
   it('streams a versioned manifest with complete portable metadata', async () => {
     const a = new Uint8Array([1, 2, 3, 4]);
     seedAsset('asset-a', USER, a, { favorite: true, phash: 'abcd' });
