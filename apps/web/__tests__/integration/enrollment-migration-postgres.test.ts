@@ -23,6 +23,9 @@ async function cleanup(): Promise<void> {
   await prisma.searchLog.deleteMany({
     where: { userId: { in: [oldUserId, newUserId, ...concurrentNewUserIds] } },
   });
+  await prisma.libraryExport.deleteMany({
+    where: { ownerUserId: { in: [oldUserId, newUserId, ...concurrentNewUserIds] } },
+  });
   await prisma.embeddingRateLease.deleteMany({
     where: { userId: { in: [oldUserId, newUserId, ...concurrentNewUserIds] } },
   });
@@ -59,6 +62,17 @@ async function seedOrphan(): Promise<void> {
     },
   });
   await prisma.assetTag.create({ data: { assetId: asset.id, tagId: tag.id } });
+  await prisma.libraryExport.create({
+    data: {
+      ownerUserId: oldUserId,
+      snapshotAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+      manifestVersion: '1.0',
+      totalAssets: 1,
+      totalOriginalBytes: BigInt(10),
+      partBoundaries: [{ index: 0, afterId: null, count: 1, bytes: 10 }],
+    },
+  });
   await prisma.searchLog.create({
     data: { userId: oldUserId, query: 'migration', resultCount: 1, queryTime: 1 },
   });
@@ -110,6 +124,8 @@ describeWithDatabase('identity-backed orphan enrollment migration', () => {
     expect(await prisma.storageQuotaReservation.count({ where: { ownerUserId: newUserId } })).toBe(1);
     expect(await prisma.uploadToken.count({ where: { userId: newUserId } })).toBe(1);
     expect(await prisma.embeddingRateLease.count({ where: { userId: newUserId } })).toBe(1);
+    expect(await prisma.libraryExport.count({ where: { ownerUserId: oldUserId } })).toBe(0);
+    expect(await prisma.libraryExport.count({ where: { ownerUserId: newUserId } })).toBe(1);
     expect(await prisma.userIdentity.count({ where: { userId: newUserId, provider: 'clerk' } })).toBe(2);
     expect(await prisma.userIdentity.findUnique({
       where: { unique_provider_subject: { provider: 'clerk', providerSubject: newUserId } },

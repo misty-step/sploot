@@ -508,6 +508,32 @@ export async function refundExportEgress(exportId: string, refundBytes: bigint):
   }
 }
 
+/**
+ * Unwind a reservation that was admitted but fenced out before any response
+ * bytes existed. Unlike clean-stream settlement, this must also work after a
+ * cancellation/supersede or expiry wins the post-admission fence. The caller
+ * supplies the exact reservation it just admitted. If the row was already
+ * cascade-deleted, its charge is gone with it; any surviving row with an
+ * insufficient charge is an error so a failed unwind cannot masquerade as a
+ * successful no-byte response.
+ */
+export async function refundExportEgressReservation(
+  exportId: string,
+  reservationBytes: bigint,
+): Promise<void> {
+  if (reservationBytes <= BigInt(0)) return;
+  const db = requireDb();
+  const refunded = await db.libraryExport.updateMany({
+    where: { id: exportId, egressBytes: { gte: reservationBytes } },
+    data: { egressBytes: { decrement: reservationBytes } },
+  });
+  if (refunded.count !== 1) {
+    const existing = await db.libraryExport.findFirst({ where: { id: exportId }, select: { id: true } });
+    if (!existing) return;
+    throw new Error('export admission refund failed');
+  }
+}
+
 /** Resolve the concrete asset entries for one part of the frozen snapshot. */
 export async function entriesForPart(
   row: ExportRowData,

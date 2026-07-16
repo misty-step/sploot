@@ -17,6 +17,7 @@ import {
   entriesForPart,
   recordPartOutcome,
   refundExportEgress,
+  refundExportEgressReservation,
   reserveExportEgress,
   monitorExportLifecycle,
 } from '@/lib/export/export-service';
@@ -112,6 +113,10 @@ async function getHandler(
     if (!entries) throw new Error('reserved export part has no entries');
     const postAdmission = await accessExportForDownload(principal.userId, row.id);
     if (postAdmission.kind !== 'ok' || postAdmission.row.status === 'complete') {
+      // This request was admitted but fenced out before constructing a
+      // response stream. Refund the reservation; client aborts and
+      // bookkeeping failures remain charged in onComplete's path.
+      await refundExportEgressReservation(row.id, reserve);
       const code = postAdmission.kind === 'gone' ? postAdmission.code : 'export_unavailable';
       return NextResponse.json({ error: 'This export is no longer available.', code, retryable: false }, { status: 410 });
     }

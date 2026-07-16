@@ -15,6 +15,7 @@ import { manifestFileName } from '@/lib/export/export-policy';
 import {
   accessExportForDownload,
   refundExportEgress,
+  refundExportEgressReservation,
   reserveExportEgress,
   monitorExportLifecycle,
 } from '@/lib/export/export-service';
@@ -82,6 +83,10 @@ async function getHandler(
     }
     const postAdmission = await accessExportForDownload(principal.userId, row.id);
     if (postAdmission.kind !== 'ok') {
+      // The reservation was admitted before the lifecycle fence raced away.
+      // No response bytes exist, so unwind exactly that pre-byte charge;
+      // aborts and bookkeeping failures still use the normal charged path.
+      await refundExportEgressReservation(row.id, reserve);
       const code = postAdmission.kind === 'gone' ? postAdmission.code : 'export_unavailable';
       return NextResponse.json({ error: 'This export is no longer available.', code, retryable: false }, { status: 410 });
     }

@@ -485,6 +485,12 @@ export function streamExportManifest(
         }
         const canFinalize = summary.complete === true && artifact !== null;
         if (canFinalize) {
+          // Check the admitted stream bound before claiming completion. A
+          // late bound failure must leave the row active and retryable;
+          // otherwise the row would be complete without replayable bytes.
+          if (maxBytes !== undefined && BigInt(bytesStreamed + summaryChunk.length) > maxBytes) {
+            throw new Error('export manifest would exceed its egress reservation');
+          }
           const claimed = await tx.libraryExport.updateMany({
             where: { id: finalRow.id, ownerUserId: finalRow.ownerUserId, status: 'active', manifestFinalizedAt: null },
             data: { status: 'complete', manifestFinalizedAt: new Date(), manifestFinalizedSummary: summary as unknown as Prisma.InputJsonValue, manifestFinalizedArtifact: artifact },

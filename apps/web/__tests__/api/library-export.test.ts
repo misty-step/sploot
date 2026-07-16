@@ -28,6 +28,9 @@ interface FakeExportRow {
   manifestMetadataBytes: bigint;
   createdAt: Date;
   updatedAt: Date;
+  manifestFinalizedAt: Date | null;
+  manifestFinalizedSummary: Record<string, unknown> | null;
+  manifestFinalizedArtifact: string | null;
 }
 
 interface FakeAsset {
@@ -132,6 +135,9 @@ const fakePrisma = vi.hoisted(() => {
           manifestMetadataBytes: BigInt(0),
           createdAt: new Date(),
           updatedAt: new Date(),
+          manifestFinalizedAt: null,
+          manifestFinalizedSummary: null,
+          manifestFinalizedArtifact: null,
           ...data,
         };
         state.exports.set(row.id, row);
@@ -649,6 +655,27 @@ describe('egress bound — durable reservation admission', () => {
     expect(row.servedParts).toEqual([]);
   });
 
+  it('refunds a part reservation when the post-admission fence denies before bytes', async () => {
+    seedAsset('asset-post-admission-part', USER, new Uint8Array([1, 2, 3]));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+    const originalUpdateMany = fakePrisma.libraryExport.updateMany;
+    fakePrisma.libraryExport.updateMany = async (args: any) => {
+      const result = await originalUpdateMany(args);
+      if (args.data?.egressBytes?.increment && row.status === 'active') row.status = 'canceled';
+      return result;
+    };
+    try {
+      const response = await getPart(created);
+      expect(response.status).toBe(410);
+      expect((await response.json()).code).toBe('export_unavailable');
+      expect(row.egressBytes).toBe(BigInt(0));
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+    } finally {
+      fakePrisma.libraryExport.updateMany = originalUpdateMany;
+    }
+  });
+
   it('admits exactly to the boundary and refuses one byte beyond it', async () => {
     seedAsset('asset-a', USER, new Uint8Array(100).fill(1));
     const created = await createExport();
@@ -777,6 +804,96 @@ describe('GET /api/library/export/:exportId/manifest', () => {
     expect(final.status).toBe(200);
     expect(JSON.parse(await final.text()).complete).toBe(true);
     expect(state.exports.get(created.id)!.status).toBe('complete');
+  });
+
+  it('rejects a manifest at the durable replay boundary before response bytes', async () => {
+    seedAsset('asset-too-large', USER, new Uint8Array([1]));
+    const created = await createExport();
+    // Keep every tag individually valid while making the aggregate manifest
+    // exceed the durable replay bound.
+    const hugeTags = Array.from({ length: 140_000 }, (_, index) => ({
+      ownerUserId: USER,
+      name: `tag-${String(index).padStart(6, '0')}-${'x'.repeat(110)}`,
+      color: null,
+    }));
+    state.tags = hugeTags;
+    state.assetTags.push({ assetId: 'asset-too-large', tagName: hugeTags[0].name });
+    const response = await manifestGet(request('/api/library/export/' + created.id + '/manifest'), ctx({ exportId: created.id }));
+    expect(response.status).toBe(413);
+    expect(await response.text()).not.toContain('sploot-library-export');
+    expect(state.exports.get(created.id)!.status).toBe('active');
+    expect(state.exports.get(created.id)!.egressBytes).toBe(BigInt(0));
+  });
+
+  it('keeps the export active and omits terminal summary when artifact persistence fails', async () => {
+    seedAsset('asset-persist-fail', USER, new Uint8Array([1]));
+    const created = await createExport();
+    state.exports.get(created.id)!.servedParts = [0];
+    const originalUpdateMany = fakePrisma.libraryExport.updateMany;
+    fakePrisma.libraryExport.updateMany = async (args: any) => {
+      if (args.data?.status === 'complete') throw new Error('artifact persistence failed');
+      return originalUpdateMany(args);
+    };
+    try {
+      const stream = streamExportManifest({ row: state.exports.get(created.id)! as any });
+      await expect(new Response(stream).text()).rejects.toThrow(/artifact persistence/i);
+      expect(state.exports.get(created.id)!.status).toBe('active');
+      expect(state.exports.get(created.id)!.manifestFinalizedSummary).toBeNull();
+    } finally {
+      fakePrisma.libraryExport.updateMany = originalUpdateMany;
+    }
+
+    const retry = new Response(streamExportManifest({ row: state.exports.get(created.id)! as any }));
+    const retryBody = await retry.text();
+    expect(JSON.parse(retryBody).complete).toBe(true);
+    expect(state.exports.get(created.id)!.status).toBe('complete');
+    expect(state.exports.get(created.id)!.manifestFinalizedArtifact).toBe(retryBody);
+  });
+
+  it('rejects a final manifest bound before claiming completion', async () => {
+    seedAsset('asset-bound-fail', USER, new Uint8Array([1]));
+    const created = await createExport();
+    state.exports.get(created.id)!.servedParts = [0];
+    const first = new Response(streamExportManifest({ row: state.exports.get(created.id)! as any }));
+    const fullBody = await first.text();
+    const row = state.exports.get(created.id)!;
+    row.status = 'active';
+    row.manifestFinalizedAt = null;
+    row.manifestFinalizedSummary = null;
+    row.manifestFinalizedArtifact = null;
+    const retry = new Response(streamExportManifest({
+      row: row as any,
+      maxBytes: BigInt(new TextEncoder().encode(fullBody).byteLength - 1),
+    }));
+    await expect(retry.arrayBuffer()).rejects.toThrow(/reservation/);
+    expect(row.status).toBe('active');
+    expect(row.manifestFinalizedAt).toBeNull();
+    expect(row.manifestFinalizedSummary).toBeNull();
+    expect(row.manifestFinalizedArtifact).toBeNull();
+  });
+
+  it('refunds a manifest reservation when the post-admission fence denies before bytes', async () => {
+    seedAsset('asset-post-admission-manifest', USER, new Uint8Array([1, 2, 3]));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+    const originalUpdateMany = fakePrisma.libraryExport.updateMany;
+    fakePrisma.libraryExport.updateMany = async (args: any) => {
+      const result = await originalUpdateMany(args);
+      if (args.data?.egressBytes?.increment && row.status === 'active') row.status = 'canceled';
+      return result;
+    };
+    try {
+      const response = await manifestGet(
+        request('/api/library/export/' + created.id + '/manifest'),
+        ctx({ exportId: created.id }),
+      );
+      expect(response.status).toBe(410);
+      expect((await response.json()).code).toBe('export_unavailable');
+      expect(row.egressBytes).toBe(BigInt(0));
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+    } finally {
+      fakePrisma.libraryExport.updateMany = originalUpdateMany;
+    }
   });
 
   it('replays a finalized manifest byte-for-byte after mutable metadata changes', async () => {
