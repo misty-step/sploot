@@ -29,6 +29,19 @@ export async function claimMigrationEntries(
   const limit = Math.min(Math.max(Math.trunc(options.limit), 1), 100);
   const leaseSeconds = Math.min(Math.max(Math.trunc(options.leaseSeconds ?? 60), 1), 3600);
   const maxAttempts = Math.min(Math.max(Math.trunc(options.maxAttempts ?? 3), 1), 10);
+  await db.storageMigrationEntry.updateMany({
+    where: {
+      status: 'copying',
+      attempts: { gte: maxAttempts },
+      leaseExpiresAt: { lte: new Date() },
+    },
+    data: {
+      status: 'failed',
+      workerId: null,
+      leaseExpiresAt: null,
+      lastError: 'Migration lease expired after maximum attempts',
+    },
+  });
   return db.$queryRaw<DurableMigrationClaim[]>(Prisma.sql`
     WITH candidates AS (
       SELECT id
@@ -36,6 +49,7 @@ export async function claimMigrationEntries(
       WHERE (
         "status" = 'pending'
         OR ("status" = 'failed' AND "attempts" < ${maxAttempts})
+        OR ("status" = 'copying' AND "attempts" < ${maxAttempts})
       )
       AND ("lease_expires_at" IS NULL OR "lease_expires_at" <= NOW())
       ORDER BY "logical_key" ASC
@@ -163,7 +177,10 @@ export async function rollbackPrismaMigrationBatch(
   const claims = await db.$queryRaw<DurableMigrationClaim[]>(Prisma.sql`
     WITH candidates AS (
       SELECT id FROM "storage_migration_entries"
-      WHERE "status" = 'verified'
+      WHERE (
+        "status" = 'verified'
+        OR ("status" = 'copying' AND "lease_expires_at" <= NOW())
+      )
         AND ("lease_expires_at" IS NULL OR "lease_expires_at" <= NOW())
       ORDER BY "logical_key" ASC LIMIT ${Math.min(Math.max(Math.trunc(options.limit ?? 100), 1), 100)}
       FOR UPDATE SKIP LOCKED

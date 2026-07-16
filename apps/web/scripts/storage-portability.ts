@@ -92,7 +92,14 @@ async function run(command: 'verify' | 'rollback', args: string[]) {
       if (!active) break;
     }
   } else {
-    while ((await storageMigrationReceipt(prisma)).entries.some(entry => entry.status === 'verified')) {
+    while (true) {
+      const receipt = await storageMigrationReceipt(prisma);
+      const now = Date.now();
+      const ready = receipt.entries.some(entry => (
+        entry.status === 'verified'
+        || (entry.status === 'copying' && entry.leaseExpiresAt !== null && entry.leaseExpiresAt.getTime() <= now)
+      ));
+      if (!ready) break;
       await rollbackPrismaMigrationBatch(prisma, { source, target, workerId, limit: MAX_BATCH });
     }
   }

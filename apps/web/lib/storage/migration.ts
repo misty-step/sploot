@@ -93,7 +93,22 @@ export class MigrationVerifier {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_BATCH) throw new Error(`Migration batch must be 1-${MAX_BATCH}`);
     const now = Date.now();
     const leaseMs = this.options.leaseMs ?? 60_000;
-    return this.entries.filter(entry => (entry.status === status || (status === 'pending' && entry.status === 'failed' && entry.attempts < (this.options.maxAttempts ?? 3))) && (!entry.lease || entry.lease.expiresAt <= now)).slice(0, limit).map(entry => {
+    const maxAttempts = this.options.maxAttempts ?? 3;
+    if (status === 'pending') {
+      for (const entry of this.entries) {
+        if (entry.status === 'copying' && entry.lease && entry.lease.expiresAt <= now && entry.attempts >= maxAttempts) {
+          entry.status = 'failed';
+          entry.lease = undefined;
+          entry.error = 'Migration lease expired after maximum attempts';
+        }
+      }
+    }
+    return this.entries.filter(entry => (
+      entry.status === status
+      || (status === 'pending' && entry.status === 'failed' && entry.attempts < maxAttempts)
+      || (status === 'verified' && entry.status === 'copying' && !!entry.lease && entry.lease.expiresAt <= now)
+      || (status === 'pending' && entry.status === 'copying' && entry.attempts < maxAttempts && !!entry.lease && entry.lease.expiresAt <= now)
+    ) && (!entry.lease || entry.lease.expiresAt <= now)).slice(0, limit).map(entry => {
       entry.status = status === 'verified' ? 'copying' : entry.attempts > 0 ? 'retried' : 'copying';
       entry.attempts += 1;
       entry.lease = { workerId, expiresAt: now + leaseMs };
