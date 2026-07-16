@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import ReactDOM from 'react-dom/client'
 import {
   ClerkProvider,
@@ -38,7 +38,7 @@ function App() {
   }
 
   if (E2E_AUTH_MODE) {
-    return <E2EPopup />
+    return <PopupContent><E2EAuthPanel /></PopupContent>
   }
 
   return (
@@ -48,40 +48,24 @@ function App() {
       __experimental_syncHostListener
     >
       <AuthStatusReporter />
-      <div className="popup-frame">
-        <div className="popup-container">
-          <header>
-            <h1>
-              <img
-                src={chrome.runtime.getURL('icon-128.png')}
-                alt="Sploot"
-                className="logo-icon"
-              />
-              Sploot
-            </h1>
-          </header>
-          <main>
-            <SignedOut>
-              <SignedOutPanel />
-            </SignedOut>
-            <SignedIn>
-              <SignedInPanel />
-            </SignedIn>
-            <LastSaveStrip />
-          </main>
-        </div>
-      </div>
+      <PopupContent>
+        <SignedOut>
+          <SignedOutPanel />
+        </SignedOut>
+        <SignedIn>
+          <SignedInPanel />
+        </SignedIn>
+      </PopupContent>
     </ClerkProvider>
   )
 }
 
 /**
- * Test-only popup authority. It reads the same durable storage authority as
- * the real background auth manager; queue listing/actions still cross the
- * normal runtime message boundary. Production builds reject this mode in
- * wxt.config.ts, so it cannot become a Clerk substitute in the store artifact.
+ * Test-only auth state. The E2E build uses this durable authority instead of
+ * Clerk, but it still renders the exact PopupContent used by production,
+ * including the update notice and message-driven actions.
  */
-function E2EPopup() {
+function E2EAuthPanel() {
   const [authority, setAuthority] = useState<E2EAuthority | null>(null)
 
   useEffect(() => {
@@ -109,26 +93,42 @@ function E2EPopup() {
     return () => chrome.storage.onChanged.removeListener(readAuthority)
   }, [])
 
+  return authority ? (
+    <div className="signed-in-panel">
+      <p>Signed in as <strong>{authority.userId}</strong></p>
+      <div className="actions">
+        <button onClick={() => void requestVisibleTabCapture()}>Screenshot this tab</button>
+      </div>
+    </div>
+  ) : <SignedOutPanel />
+}
+
+function PopupContent({ children }: { children: ReactNode }) {
+  return (
+    <PopupShell>
+      {children}
+      <LastSaveStrip />
+    </PopupShell>
+  )
+}
+
+function PopupShell({ children }: { children: ReactNode }) {
   return (
     <div className="popup-frame">
       <div className="popup-container">
         <header>
           <h1>
-            <img src={chrome.runtime.getURL('icon-128.png')} alt="Sploot" className="logo-icon" />
+            <img
+              src={chrome.runtime.getURL('icon-128.png')}
+              alt="Sploot"
+              className="logo-icon"
+            />
             Sploot
           </h1>
         </header>
         <main>
           <UpdateNoticePanel />
-          {authority ? (
-            <div className="signed-in-panel">
-              <p>Signed in as <strong>{authority.userId}</strong></p>
-              <div className="actions">
-                <button onClick={() => void requestVisibleTabCapture()}>Screenshot this tab</button>
-              </div>
-            </div>
-          ) : <SignedOutPanel />}
-          <LastSaveStrip />
+          {children}
         </main>
       </div>
     </div>
