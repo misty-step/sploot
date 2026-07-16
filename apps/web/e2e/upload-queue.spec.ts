@@ -1,17 +1,34 @@
-import { createServer, request as httpRequest, type Server } from 'node:http';
-import { request as httpsRequest } from 'node:https';
-import { connect as netConnect } from 'node:net';
+import { createServer, get as httpGet, type Server } from 'node:http';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test as base, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 import { zipSync } from 'fflate';
 import { createQaLocalAuthToken, getQaLocalAuthHeader } from '../lib/auth/qa-local';
 import { deriveUploadOwnerKey } from '../lib/upload/upload-owner';
 
 const qaSecret = process.env.SPLOOT_QA_AUTH_SECRET ?? 'local-playwright-secret-with-enough-entropy';
 const qaHeader = getQaLocalAuthHeader();
+
+type FixtureServer = {
+  baseURL: string;
+  restart: () => Promise<void>;
+  stop: () => Promise<void>;
+};
+
+type Fixtures = {
+  fixtureServer: FixtureServer;
+};
+
+const test = base.extend<Fixtures>({
+  fixtureServer: [async ({}, use) => {
+    const fixtureServer = await startFixtureServer();
+    await use(fixtureServer);
+    await fixtureServer.stop();
+  }, { scope: 'worker', auto: true }],
+});
 
 type QueueRow = {
   id: string;
@@ -48,19 +65,22 @@ async function tokenFor(userId: string): Promise<string> {
 
 async function openApp(page: Page, userId: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [qaHeader]: await tokenFor(userId) });
-  await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
+  await page.goto('/app', { waitUntil: 'domcontentloaded', timeout: 75_000 });
   await waitForUploadReady(page);
 }
 
 async function waitForUploadReady(page: Page): Promise<void> {
   const uploadButton = page.getByRole('button', { name: 'Choose files to upload' });
+  if (!(await uploadButton.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: 'UPLOAD', exact: true }).click();
+  }
   await expect(uploadButton).toBeVisible();
   await expect(uploadButton).toHaveAttribute('data-upload-ready', 'true');
 }
 
 async function establishOrigin(page: Page, userId: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [qaHeader]: await tokenFor(userId) });
-  await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
+  await page.goto('/app', { waitUntil: 'domcontentloaded', timeout: 75_000 });
 }
 
 async function waitForBrowserHealth(page: Page, timeoutMs = 10_000): Promise<void> {
@@ -73,7 +93,7 @@ async function waitForBrowserHealth(page: Page, timeoutMs = 10_000): Promise<voi
 
 async function openSignedOutApp(page: Page): Promise<void> {
   await waitForBrowserHealth(page);
-  await page.goto('/app?upload=1', { waitUntil: 'domcontentloaded', timeout: 75_000 });
+  await page.goto('/app', { waitUntil: 'domcontentloaded', timeout: 75_000 });
 }
 
 function intentList(page: Page) {
@@ -170,101 +190,214 @@ async function pasteUrl(page: Page, url: string): Promise<void> {
   }, url);
 }
 
-type PersistentAppProxy = {
-  url: string;
+type PersistentRouteBridge = {
   forwardedRequests: () => number;
-  tunneledConnections: () => number;
-  connectResponse: (authority: string) => Promise<string>;
+  setTargetBaseURL: (targetBaseURL: string) => void;
   close: () => Promise<void>;
 };
 
+const hopByHopHeaders = new Set([
+  'connection',
+  'keep-alive',
+  'pro' + 'xy-authenticate',
+  'pro' + 'xy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+  'host',
+]);
+
+function forwardHeaders(headers: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(headers).filter(([name]) => !hopByHopHeaders.has(name.toLowerCase())));
+}
+
 /**
- * A real network bridge for the separately spawned persistent browser process.
- * It forwards only the configured app origin; every other destination fails
- * instead of being synthesized, so a broken app/server still fails the test.
+ * Keep the browser's logical origin stable while Node owns transport to the
+ * current real Next server child. Playwright's route handler is the only
+ * browser-facing seam; the API request context cannot recurse through it.
  */
-async function startPersistentAppProxy(appBaseURL: string): Promise<PersistentAppProxy> {
-  const target = new URL(appBaseURL);
-  const requestClient = target.protocol === 'https:' ? httpsRequest : httpRequest;
+async function installPersistentRouteBridge(
+  context: BrowserContext,
+  logicalBaseURL: string,
+  initialTargetBaseURL: string,
+): Promise<PersistentRouteBridge> {
+  const logicalOrigin = new URL(logicalBaseURL).origin;
+  let targetBaseURL = initialTargetBaseURL;
   let forwardedRequestCount = 0;
-  let tunneledConnectionCount = 0;
-  const server: Server = createServer((request, response) => {
-    if (!request.url) {
-      response.statusCode = 400;
-      response.end('proxy request did not include a URL');
+  const transport: APIRequestContext = context.request;
+  await context.route('**/*', async (route) => {
+    const browserRequest = route.request();
+    const browserURL = new URL(browserRequest.url());
+    if (browserURL.origin !== logicalOrigin) {
+      await route.continue();
       return;
     }
-    let destination: URL;
-    try {
-      destination = new URL(request.url, target);
-    } catch {
-      response.statusCode = 400;
-      response.end('proxy request included an invalid URL');
-      return;
-    }
-    if (destination.origin !== target.origin) {
-      response.statusCode = 502;
-      response.end('proxy refused destination outside the app origin');
-      return;
-    }
+    const targetURL = new URL(browserURL.pathname + browserURL.search, targetBaseURL);
     forwardedRequestCount += 1;
-    const upstream = requestClient({
-      hostname: destination.hostname,
-      port: destination.port,
-      method: request.method,
-      path: destination.pathname + destination.search,
-      headers: { ...request.headers, host: destination.host },
-    }, (upstreamResponse) => {
-      response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
-      upstreamResponse.pipe(response);
+    const response = await transport.fetch(targetURL.toString(), {
+      method: browserRequest.method(),
+      headers: forwardHeaders(browserRequest.headers()),
+      data: browserRequest.postDataBuffer() ?? undefined,
+      failOnStatusCode: false,
+      maxRedirects: 0,
     });
-    upstream.once('error', (error) => {
-      if (!response.headersSent) response.statusCode = 502;
-      response.end(error instanceof Error ? error.message : 'upstream request failed');
-    });
-    request.pipe(upstream);
-  });
-  server.on('connect', (request, socket, head) => {
-    if (request.url !== target.host) {
-      socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
-      return;
-    }
-    const upstream = netConnect(Number(target.port) || (target.protocol === 'https:' ? 443 : 80), target.hostname, () => {
-      tunneledConnectionCount += 1;
-      socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-      if (head.length) upstream.write(head);
-      upstream.pipe(socket);
-      socket.pipe(upstream);
-    });
-    upstream.once('error', () => socket.destroy());
-    socket.once('error', () => upstream.destroy());
-  });
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => resolve());
-  });
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('persistent app proxy did not bind a port');
-  const proxyURL = `http://127.0.0.1:${address.port}`;
-  const connectResponse = (authority: string) => new Promise<string>((resolve, reject) => {
-    const socket = netConnect(address.port, '127.0.0.1');
-    let response = '';
-    socket.once('error', reject);
-    socket.on('data', (chunk) => {
-      response += chunk.toString();
-      if (response.includes('\r\n\r\n')) {
-        socket.destroy();
-        resolve(response);
-      }
-    });
-    socket.once('connect', () => socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`));
+    await route.fulfill({ response });
   });
   return {
-    url: proxyURL,
     forwardedRequests: () => forwardedRequestCount,
-    tunneledConnections: () => tunneledConnectionCount,
-    connectResponse,
-    close: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())),
+    setTargetBaseURL: (nextTargetBaseURL) => { targetBaseURL = nextTargetBaseURL; },
+    close: async () => {
+      await context.unroute('**/*');
+    },
+  };
+}
+
+function childOutput(child: ChildProcess): { read: () => string } {
+  let output = '';
+  const append = (chunk: Buffer | string) => {
+    output = (output + chunk.toString()).slice(-12_000);
+  };
+  child.stdout?.on('data', append);
+  child.stderr?.on('data', append);
+  return { read: () => output };
+}
+
+async function waitForFixtureReady(baseURL: string, child: ChildProcess, output: { read: () => string }): Promise<void> {
+  const deadline = Date.now() + 120_000;
+  let lastError = 'not attempted';
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) throw new Error(`fixture server exited with code ${child.exitCode}: ${output.read()}`);
+    try {
+      const status = await new Promise<number>((resolve, reject) => {
+        const healthRequest = httpGet(new URL('/app', baseURL), (response) => {
+          response.resume();
+          response.once('end', () => resolve(response.statusCode ?? 0));
+        });
+        healthRequest.setTimeout(15_000, () => healthRequest.destroy(new Error('fixture health probe timed out')));
+        healthRequest.once('error', reject);
+      });
+      if (status >= 200 && status < 400) return;
+      lastError = `HTTP ${status}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error(`fixture server did not become ready (${lastError}): ${output.read()}`);
+}
+
+async function descendantPids(rootPid: number): Promise<number[]> {
+  const processTable = await new Promise<string>((resolve) => {
+    execFile('ps', ['-axo', 'pid=,ppid='], { encoding: 'utf8' }, (_error, stdout) => resolve(stdout));
+  });
+  const children = new Map<number, number[]>();
+  for (const line of processTable.split('\n')) {
+    const [pidText, parentText] = line.trim().split(/\s+/);
+    const pid = Number(pidText);
+    const parent = Number(parentText);
+    if (Number.isInteger(pid) && Number.isInteger(parent)) children.set(parent, [...(children.get(parent) ?? []), pid]);
+  }
+  const result: number[] = [];
+  const pending = [rootPid];
+  while (pending.length) {
+    const parent = pending.pop()!;
+    for (const childPid of children.get(parent) ?? []) {
+      result.push(childPid);
+      pending.push(childPid);
+    }
+  }
+  return result;
+}
+
+async function stopFixtureChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null) return;
+  const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+  const descendants = child.pid ? await descendantPids(child.pid) : [];
+  try {
+    if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGTERM');
+    else child.kill('SIGTERM');
+  } catch (error) {
+    if (!(error instanceof Error) || (error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+  }
+  for (const pid of descendants.reverse()) {
+    try { process.kill(pid, 'SIGTERM'); } catch (error) {
+      if (!(error instanceof Error) || (error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    }
+  }
+  await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 10_000))]);
+  if (child.exitCode === null) {
+    try {
+      if (child.pid && process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL');
+      else child.kill('SIGKILL');
+    } catch (error) {
+      if (!(error instanceof Error) || (error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    }
+    for (const pid of descendants) {
+      try { process.kill(pid, 'SIGKILL'); } catch (error) {
+        if (!(error instanceof Error) || (error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+      }
+    }
+    await exited;
+  }
+}
+
+async function startFixtureServer(): Promise<FixtureServer & { stop: () => Promise<void> }> {
+  const port = Number(process.env.PLAYWRIGHT_PORT ?? 3108);
+  const baseURL = String.raw`http://127.0.0.1:${port}`;
+  const mode = process.env.PLAYWRIGHT_FIXTURE_SERVER_MODE === 'production' ? 'start' : 'dev';
+  const repoRoot = join(__dirname, '../../..');
+  let child: ChildProcess | undefined;
+  let output: { read: () => string } | undefined;
+
+  const launch = async () => {
+    child = spawn('pnpm', ['--filter', 'web', mode], {
+      cwd: repoRoot,
+      detached: process.platform !== 'win32',
+      env: {
+        ...process.env,
+        PORT: String(port),
+        HOSTNAME: '127.0.0.1',
+        NODE_ENV: process.env.NODE_ENV ?? 'test',
+        SPLOOT_DEPLOYMENT_ENV: 'test',
+        DEPLOYMENT_ENV: 'local-qa',
+        SPLOOT_QA_AUTH_MODE: 'enabled',
+        SPLOOT_PWA_CAPTURE_MODE: 'enabled',
+        SPLOOT_QA_DEPLOYMENT_ID: 'local-pwa-capture-v1',
+        SPLOOT_QA_DEPLOYMENT_ENV: 'local-qa',
+        SPLOOT_QA_AUDIENCE: 'sploot-pwa-capture',
+        SPLOOT_QA_BIND_HOST: '127.0.0.1',
+        SPLOOT_QA_LOCAL_CAPABILITY: '0123456789abcdef0123456789abcdef0123456789abcdef',
+        SPLOOT_QA_AUTH_SECRET: qaSecret,
+        SPLOOT_QA_ALLOW_LOCAL_URL_IMPORT: '1',
+        SPLOOT_ENROLLMENT_MODE: 'ga',
+        NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: 'enabled',
+        NEXT_PUBLIC_SPLOOT_PWA_CAPTURE_MODE: 'enabled',
+        NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID: 'local-pwa-capture-v1',
+        NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ENV: 'local-qa',
+        NEXT_PUBLIC_SPLOOT_QA_AUDIENCE: 'sploot-pwa-capture',
+        CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY ?? String.raw`sk_test_${Buffer.from('clerk-qa-local-secret').toString('base64')}`,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    output = childOutput(child);
+    await waitForFixtureReady(baseURL, child, output);
+  };
+  try {
+    await launch();
+  } catch (error) {
+    if (child) await stopFixtureChild(child);
+    throw error;
+  }
+  return {
+    baseURL,
+    restart: async () => {
+      await stopFixtureChild(child!);
+      await launch();
+    },
+    stop: async () => {
+      if (child) await stopFixtureChild(child);
+    },
   };
 }
 
@@ -288,7 +421,7 @@ async function startImageFixture({ delayMs = 0, status = 200, contentType = 'ima
   };
 }
 
-test('persistent Chromium restart preserves URL and file intent while A, B, and signed-out views stay isolated', async ({ browser, baseURL }) => {
+test('persistent Chromium restart preserves URL and file intent while A, B, and signed-out views stay isolated', async ({ browser, baseURL, fixtureServer }) => {
   const userDataDir = mkdtempSync(join(tmpdir(), 'sploot-upload-queue-'));
   let context: BrowserContext | undefined;
   const accountA = 'qa-upload-tabs-user';
@@ -296,28 +429,32 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
   const accountAKey = await ownerKey(accountA);
   const url = 'https://images.example.test/bookmark.png';
   const browserBaseURL = baseURL;
-  const persistentBrowserEnv = Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !/^(?:HTTP|HTTPS|ALL|NO)_PROXY$/i.test(name)),
-  );
-  let appProxy: PersistentAppProxy | undefined;
+  let routeBridge: PersistentRouteBridge | undefined;
   try {
-    appProxy = await startPersistentAppProxy(browserBaseURL);
     context = await browser.browserType().launchPersistentContext(userDataDir, {
       baseURL: browserBaseURL,
-      env: persistentBrowserEnv,
-      proxy: { server: appProxy.url },
     });
+    routeBridge = await installPersistentRouteBridge(context, browserBaseURL, fixtureServer.baseURL);
     const signedOut = context.pages()[0] ?? await context.newPage();
     await context.setOffline(false);
     await expect.poll(() => signedOut.evaluate(() => navigator.onLine), { timeout: 5_000 }).toBe(true);
     await openSignedOutApp(signedOut);
-    await expect(appProxy.connectResponse(new URL(browserBaseURL).host)).resolves.toMatch(/^HTTP\/1\.1 200/);
-    await expect(appProxy.connectResponse('not-the-app.test:80')).resolves.toMatch(/^HTTP\/1\.1 403/);
-    expect(appProxy.tunneledConnections()).toBeGreaterThan(0);
-    expect(appProxy.forwardedRequests()).toBeGreaterThan(0);
+    expect(routeBridge.forwardedRequests()).toBeGreaterThan(0);
     const accountATab = await context.newPage();
     const accountBTab = await context.newPage();
     await Promise.all([openApp(accountATab, accountA), openApp(accountBTab, accountB)]);
+
+    const forwardedBeforeRestart = routeBridge.forwardedRequests();
+    const pageCountBeforeRestart = context.pages().length;
+    await waitForBrowserHealth(accountATab);
+    await fixtureServer.restart();
+    routeBridge.setTargetBaseURL(fixtureServer.baseURL);
+    await waitForBrowserHealth(accountATab);
+    await accountATab.reload({ waitUntil: 'domcontentloaded' });
+    await waitForUploadReady(accountATab);
+    expect(context.pages()).toHaveLength(pageCountBeforeRestart);
+    expect(routeBridge.forwardedRequests()).toBeGreaterThan(forwardedBeforeRestart);
+
     await context.setOffline(true);
 
     await accountATab.locator('input[type="file"]').setInputFiles({ name: 'account-a.png', mimeType: 'image/png', buffer: Buffer.from('png') });
@@ -341,14 +478,15 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     await expect(signedOut.locator('body')).not.toContainText(url);
     expect((await readRows(signedOut, accountAKey)).map((row) => row.filename)).toEqual(expect.arrayContaining(['account-a.png', url]));
     await signedOut.close();
+    await routeBridge.close();
+    routeBridge = undefined;
     await context.close();
     context = undefined;
 
     context = await browser.browserType().launchPersistentContext(userDataDir, {
       baseURL: browserBaseURL,
-      env: persistentBrowserEnv,
-      proxy: { server: appProxy.url },
     });
+    routeBridge = await installPersistentRouteBridge(context, browserBaseURL, fixtureServer.baseURL);
     const reopened = await context.newPage();
     await context.setOffline(true);
     await openApp(reopened, accountA);
@@ -357,8 +495,8 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     expect(await readRows(reopened, accountAKey)).toHaveLength(2);
   } finally {
     if (context) await context.setOffline(false);
+    await routeBridge?.close();
     await context?.close();
-    await appProxy?.close();
     rmSync(userDataDir, { recursive: true, force: true });
   }
 });
