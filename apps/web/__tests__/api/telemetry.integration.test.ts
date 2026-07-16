@@ -1,7 +1,31 @@
 import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { POST } from '@/app/api/telemetry/route';
-import { createMockRequest } from '../utils/test-helpers';
+import { __resetTelemetryRateLimitForTests } from '@/lib/telemetry-rate-limit';
+import { createMockRequest as buildMockRequest } from '../utils/test-helpers';
+
+// The route enforces its byte cap on the web stream itself; the shared mock's
+// NextRequest does not expose a web-standard body in this environment, so
+// give each request a real ReadableStream carrying the exact JSON bytes.
+const createMockRequest = (
+  method: string,
+  body?: unknown,
+  headers?: Record<string, string>
+) => {
+  const request = buildMockRequest(method, body, headers);
+  if (body !== undefined) {
+    const bytes = new TextEncoder().encode(JSON.stringify(body));
+    Object.defineProperty(request, 'body', {
+      value: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      }),
+    });
+  }
+  return request;
+};
 import { logger } from '@/lib/observability-logger';
 import {
   postBlobLoadFailure,
@@ -47,6 +71,7 @@ const AUTH_USER = {
 describe('/api/telemetry', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetTelemetryRateLimitForTests();
     authMock.authenticateRequest.mockResolvedValue({
       status: 'authenticated',
       principal: {
@@ -634,6 +659,133 @@ describe('/api/telemetry', () => {
 
     // Verify logInfo was called (at least once from wrapper, once from handler)
     expect(logInfoCallCount).toBeGreaterThanOrEqual(2);
+  });
+
+  describe('adversarial payload bounds', () => {
+    const URL_WITH_TOKEN = 'https://evil.example/cb?token=sk_live_abcdef123456';
+
+    it('rejects a URL string smuggled into a numeric analytics property', async () => {
+      const request = createMockRequest('POST', {
+        type: 'analytics',
+        payload: {
+          name: 'search_result_clicked',
+          properties: { position: URL_WITH_TOKEN, score: 0.9 },
+          timestamp: Date.now(),
+        },
+      });
+
+      const response = await POST(request, defaultContext);
+
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain(URL_WITH_TOKEN);
+    });
+
+    it('rejects an upload_failed reason outside the bounded enum', async () => {
+      const request = createMockRequest('POST', {
+        type: 'analytics',
+        payload: {
+          name: 'upload_failed',
+          properties: { reason: URL_WITH_TOKEN, size: 100 },
+          timestamp: Date.now(),
+        },
+      });
+
+      const response = await POST(request, defaultContext);
+
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain(URL_WITH_TOKEN);
+    });
+
+    it('rejects a boolean-typed timing property delivered as a string', async () => {
+      const request = createMockRequest('POST', {
+        type: 'analytics',
+        payload: {
+          name: 'timing:search',
+          properties: { duration: 12, success: 'true' },
+          timestamp: Date.now(),
+        },
+      });
+
+      const response = await POST(request, defaultContext);
+
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects a non-finite numeric analytics property', async () => {
+      const request = createMockRequest('POST', {
+        type: 'analytics',
+        payload: {
+          name: 'search_result_clicked',
+          properties: { position: Number.NaN, score: 0.9 },
+          timestamp: Date.now(),
+        },
+      });
+
+      const response = await POST(request, defaultContext);
+
+      expect(response.status).toBe(400);
+    });
+
+    it('returns 413 for a body over the telemetry byte cap', async () => {
+      const request = createMockRequest('POST', {
+        type: 'analytics',
+        payload: {
+          name: 'x'.repeat(20_000),
+          properties: {},
+          timestamp: Date.now(),
+        },
+      });
+
+      const response = await POST(request, defaultContext);
+      const body = await response.json();
+
+      expect(response.status).toBe(413);
+      expect(body).toEqual({ success: false, message: 'payload too large' });
+      expect(mockLogger.logInfo.mock.calls.some(([name]) => name === 'analytics:event')).toBe(false);
+    });
+
+    it('returns 413 for an oversized declared content-length without reading the body', async () => {
+      const request = createMockRequest('POST', undefined, {
+        'content-length': String(1_000_000),
+      });
+
+      const response = await POST(request, defaultContext);
+
+      expect(response.status).toBe(413);
+    });
+
+    it('rate limits a user after 60 requests in one window and isolates other users', async () => {
+      const payload = () => ({
+        type: 'usage' as const,
+        payload: { action: 'blob_load_failure', count: 1, timestamp: Date.now() },
+      });
+
+      for (let i = 0; i < 60; i += 1) {
+        const okResponse = await POST(createMockRequest('POST', payload()), defaultContext);
+        expect(okResponse.status).toBe(200);
+      }
+
+      const limited = await POST(createMockRequest('POST', payload()), defaultContext);
+      const limitedBody = await limited.json();
+      expect(limited.status).toBe(429);
+      expect(limitedBody).toEqual({ success: false, message: 'rate limited' });
+
+      authMock.authenticateRequest.mockResolvedValue({
+        status: 'authenticated',
+        principal: {
+          userId: 'user_other',
+          provider: 'qa-local',
+          providerSubject: 'user_other',
+          source: 'qa-local',
+          credentialKind: 'qa-local',
+        },
+        syncStatus: 'success',
+      });
+      authMock.userFindUnique.mockResolvedValue({ id: 'user_other' });
+
+      const otherUser = await POST(createMockRequest('POST', payload()), defaultContext);
+      expect(otherUser.status).toBe(200);
+    });
   });
 
   it('swallows unexpected handler errors and returns success', async () => {

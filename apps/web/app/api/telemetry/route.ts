@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAnalyticsPropertyAllowlist } from '@/lib/analytics';
+import { getAnalyticsPropertyAllowlist, getAnalyticsPropertySpec } from '@/lib/analytics';
+import { consumeTelemetryRateLimit } from '@/lib/telemetry-rate-limit';
 import { logger } from '@/lib/observability-logger';
 import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
@@ -29,11 +30,23 @@ const MAX_TELEMETRY_KEY_LENGTH = 80;
 const MAX_TELEMETRY_STRING_LENGTH = 2_000;
 const MAX_ERROR_IDENTIFIER_LENGTH = 120;
 const SAFE_ERROR_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
-const UPLOAD_FAILURE_REASONS = new Set(['unknown', 'network', 'offline', 'validation', 'duplicate']);
+const MAX_TELEMETRY_BODY_BYTES = 16_384;
 
-async function postHandler(request: NextRequest, _context: unknown, _auth: AuthenticatedApiContext): Promise<NextResponse> {
+// Telemetry is a best-effort, authenticated, same-origin channel. The
+// explicit rejection paths below (429/413/400) bound abuse; anything else
+// stays a 200 so a telemetry hiccup never turns into product breakage.
+async function postHandler(request: NextRequest, _context: unknown, auth: AuthenticatedApiContext): Promise<NextResponse> {
   try {
-    const body = await safeJson(request);
+    if (!consumeTelemetryRateLimit(auth.principal.userId)) {
+      return respond({ success: false, message: 'rate limited' }, 429);
+    }
+
+    const rawBody = await readBoundedTelemetryBody(request);
+    if (rawBody === null) {
+      return respond({ success: false, message: 'payload too large' }, 413);
+    }
+
+    const body = parseTelemetryJson(rawBody);
     if (!body) {
       return respond({ success: false, message: 'invalid json' }, 400);
     }
@@ -48,6 +61,51 @@ async function postHandler(request: NextRequest, _context: unknown, _auth: Authe
   } catch (error) {
     logger.logError('telemetry:unhandled', error);
     return respond({ success: true }, 200);
+  }
+}
+
+// Mirrors the bounded-read discipline of the Stripe webhook route: reject on
+// declared oversize before reading, and cancel mid-stream the moment the cap
+// is crossed. Returns null when the payload exceeds MAX_TELEMETRY_BODY_BYTES.
+async function readBoundedTelemetryBody(request: NextRequest): Promise<Uint8Array | null> {
+  const declaredLength = request.headers.get('content-length');
+  if (declaredLength !== null) {
+    const length = Number(declaredLength);
+    if (!Number.isSafeInteger(length) || length < 0 || length > MAX_TELEMETRY_BODY_BYTES) {
+      return null;
+    }
+  }
+
+  if (!request.body) return new Uint8Array();
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_TELEMETRY_BODY_BYTES) {
+      await reader.cancel('telemetry body limit exceeded');
+      return null;
+    }
+    chunks.push(value);
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+function parseTelemetryJson(rawBody: Uint8Array): unknown | null {
+  try {
+    return JSON.parse(new TextDecoder().decode(rawBody));
+  } catch {
+    return null;
   }
 }
 
@@ -213,14 +271,6 @@ function sanitizePerformanceTags(
   return sanitized as PerformancePayload['tags'];
 }
 
-async function safeJson(request: NextRequest): Promise<unknown | null> {
-  try {
-    return await request.json();
-  } catch {
-    return null;
-  }
-}
-
 function respond(body: TelemetryResponse, status: number): NextResponse<TelemetryResponse> {
   return NextResponse.json(body, { status });
 }
@@ -288,20 +338,22 @@ function isAnalyticsPayload(value: unknown): value is AnalyticsPayload {
   };
   const requiredProperties = requiredByEvent[payload.name] ??
     (/^(?:flow|timing):/.test(payload.name) ? [] : null);
+  // Free-form strings are not part of the analytics contract: every property
+  // must be a finite number, a boolean, or a member of a bounded enum, so no
+  // URL, token, or other attacker-chosen text can reach the logger or Canary.
+  const spec = getAnalyticsPropertySpec(payload.name);
+  if (!spec) return false;
   return entries.length <= 30 &&
     requiredProperties !== null &&
     requiredProperties.every((key) => Object.prototype.hasOwnProperty.call(payload.properties, key)) &&
     entries.every(([key, property]) => {
-    if (
-      !allowlist.includes(key) ||
-      key.length > 80 ||
-      !['string', 'number', 'boolean'].includes(typeof property)
-    ) {
-      return false;
-    }
-    if (typeof property === 'string' && property.length > 2_000) return false;
-    return payload.name !== 'upload_failed' || key !== 'reason' || UPLOAD_FAILURE_REASONS.has(property as string);
-  });
+      if (key.length > 80) return false;
+      const expected = spec[key];
+      if (expected === undefined) return false;
+      if (expected === 'number') return typeof property === 'number' && Number.isFinite(property);
+      if (expected === 'boolean') return typeof property === 'boolean';
+      return typeof property === 'string' && expected.includes(property);
+    });
 }
 
 function isErrorPayload(value: unknown): value is ErrorPayload {

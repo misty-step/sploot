@@ -3,10 +3,13 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
+  findBundleClerkTelemetryViolations,
   findBundleTelemetryViolations,
   findBundleTelemetryConfigurationViolations,
+  findClerkTelemetryMarkerGaps,
   findInventoryDocumentationGaps,
   findTelemetryInventoryViolations,
+  CLERK_TELEMETRY_MARKERS,
   TELEMETRY_PRODUCER_INVENTORY,
 } from './check-telemetry-inventory.mjs';
 
@@ -58,4 +61,25 @@ test('bundle falsifier proves the selected telemetry configuration was compiled'
     ).length,
     2
   );
+});
+
+test('requires every Clerk surface to keep its telemetry-disabled marker', () => {
+  const files = CLERK_TELEMETRY_MARKERS.map(([path, marker]) => ({ path, content: marker }));
+  assert.deepEqual(findClerkTelemetryMarkerGaps(files), []);
+
+  const stripped = files.map((file) => ({ ...file }));
+  stripped[0].content = '<ClerkProvider>{children}</ClerkProvider>';
+  assert.equal(findClerkTelemetryMarkerGaps(stripped).length, 1);
+});
+
+test('compiled Clerk falsifier requires the disabled marker in bundle output', () => {
+  // Accepted compiled forms: pretty, minified boolean, quoted property key.
+  assert.deepEqual(findBundleClerkTelemetryViolations('a({telemetry:{disabled:true},b:1})'), []);
+  assert.deepEqual(findBundleClerkTelemetryViolations('a({telemetry:{disabled:!0},b:1})'), []);
+  assert.deepEqual(findBundleClerkTelemetryViolations('a({"telemetry":{"disabled":!0}})'), []);
+
+  // A build where the prop was removed must fail.
+  assert.equal(findBundleClerkTelemetryViolations('a({publishableKey:"pk_live_x"})').length, 1);
+  // An explicitly enabled collector must fail too.
+  assert.equal(findBundleClerkTelemetryViolations('a({telemetry:{disabled:!1}})').length, 1);
 });

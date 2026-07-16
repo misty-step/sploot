@@ -7,7 +7,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Keep Clerk mounted for every artifact, including deterministic signed-out
   // public proof. The fixture cookie prevents a network handshake; it never
   // substitutes for Clerk and protected middleware remains the security gate.
-  return <ClerkProvider>{children}</ClerkProvider>;
+  return <ClerkProvider telemetry={{ disabled: true }}>{children}</ClerkProvider>;
 }
 
 export function useAuthUser() {

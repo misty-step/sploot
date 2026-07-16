@@ -37,6 +37,21 @@ const POLICY_FILES = new Set([
   'scripts/check-telemetry-inventory.test.mjs',
 ]);
 
+// Clerk SDK telemetry must stay disabled at every surface that has a typed
+// option, and the one surface without a typed option (the extension
+// background client) must keep its documented no-knob rationale. Removing
+// either literal fails the source gate.
+export const CLERK_TELEMETRY_MARKERS = [
+  ['apps/web/lib/auth/client.tsx', 'telemetry={{ disabled: true }}'],
+  ['apps/extension/entrypoints/popup/App.tsx', 'telemetry={{ disabled: true }}'],
+  ['apps/extension/entrypoints/background/auth-manager.ts', 'no telemetry option'],
+];
+
+// How the literal telemetry={{ disabled: true }} provider prop survives
+// minification in compiled artifacts (verified against real .next/static and
+// WXT dist output): property may be quoted and true may become !0.
+const COMPILED_CLERK_DISABLED_MARKER = /["']?telemetry["']?\s*:\s*\{\s*["']?disabled["']?\s*:\s*(?:true|!0)\b/;
+
 export function findTelemetryInventoryViolations(files) {
   const violations = [];
   for (const { path, content } of files) {
@@ -67,6 +82,18 @@ export function findInventoryDocumentationGaps(files) {
   return TELEMETRY_PRODUCER_INVENTORY
     .filter(([path, marker]) => !byPath.has(path) || !byPath.get(path).includes(marker))
     .map(([path, marker]) => ({ path, line: 1, rule: `missing inventory marker ${marker}` }));
+}
+
+export function findClerkTelemetryMarkerGaps(files) {
+  const byPath = new Map(files.map((file) => [file.path, file.content]));
+  return CLERK_TELEMETRY_MARKERS
+    .filter(([path, marker]) => !byPath.has(path) || !byPath.get(path).includes(marker))
+    .map(([path, marker]) => ({ path, line: 1, rule: `missing Clerk telemetry marker ${marker}` }));
+}
+
+export function findBundleClerkTelemetryViolations(contents) {
+  if (COMPILED_CLERK_DISABLED_MARKER.test(contents)) return [];
+  return [{ rule: 'compiled Clerk telemetry disabled marker missing' }];
 }
 
 export function findBundleTelemetryViolations(contents) {
@@ -109,23 +136,31 @@ function bundleFiles(directory) {
 }
 
 function main() {
-  const bundleIndex = process.argv.indexOf('--bundle-dir');
-  const bundleDir = bundleIndex === -1 ? undefined : process.argv[bundleIndex + 1];
+  const bundleDirs = process.argv
+    .flatMap((arg, index) => (arg === '--bundle-dir' ? [process.argv[index + 1]] : []))
+    .filter(Boolean);
   const endpointIndex = process.argv.indexOf('--expect-endpoint');
   const expectedEndpoint = endpointIndex === -1 ? undefined : process.argv[endpointIndex + 1];
   const enabledIndex = process.argv.indexOf('--expect-enabled');
   const expectedEnabled = enabledIndex === -1 ? undefined : process.argv[enabledIndex + 1] !== 'false';
+  const expectClerkDisabled = process.argv.includes('--expect-clerk-disabled');
   const files = repositoryFiles();
-  const bundles = bundleFiles(bundleDir);
+  const bundles = bundleDirs.flatMap((dir) => bundleFiles(dir));
+  const combinedBundle = bundles.map(({ content }) => content).join('\n');
+  const bundleLabel = bundleDirs.join(',');
   const violations = [
     ...findTelemetryInventoryViolations(files),
     ...findInventoryDocumentationGaps(files),
+    ...findClerkTelemetryMarkerGaps(files),
     ...bundles.flatMap(({ path, content }) => findBundleTelemetryViolations(content).map((violation) => ({ ...violation, path }))),
     ...(expectedEndpoint && expectedEnabled !== undefined
       ? findBundleTelemetryConfigurationViolations(
-        bundles.map(({ content }) => content).join('\n'),
+        combinedBundle,
         { endpoint: expectedEndpoint, enabled: expectedEnabled },
-      ).map((violation) => ({ ...violation, path: bundleDir }))
+      ).map((violation) => ({ ...violation, path: bundleLabel }))
+      : []),
+    ...(expectClerkDisabled
+      ? findBundleClerkTelemetryViolations(combinedBundle).map((violation) => ({ ...violation, path: bundleLabel }))
       : []),
   ];
   if (violations.length) {

@@ -24,6 +24,36 @@ interface CoreWebVitalsMetric extends PerformanceMetric {
 }
 
 /**
+ * Explicit app-side sampling policy for observer-driven metrics.
+ *
+ * PerformanceObserver streams entries continuously (multiple LCP candidates
+ * per load, a layout-shift entry per shift). Without a bound, each entry
+ * becomes a telemetry POST. Observer-driven metrics therefore emit at most
+ * once per metric name per page load; the server's per-user rate limit and
+ * body cap bound whatever remains.
+ */
+export const PERFORMANCE_TELEMETRY_SAMPLING = Object.freeze({
+  maxEmitsPerMetricPerPageLoad: 1,
+});
+
+const emittedObserverMetrics = new Set<PerformanceMetricName>();
+const installedObservers = new Set<PerformanceMetricName>();
+const observerTeardowns: Array<() => void> = [];
+
+function emitObserverMetricOnce(metric: PerformanceMetric): void {
+  if (emittedObserverMetrics.has(metric.name)) return;
+  emittedObserverMetrics.add(metric.name);
+  trackMetric(metric);
+}
+
+export function __resetPerformanceSamplingForTests(): void {
+  for (const teardown of observerTeardowns.splice(0)) teardown();
+  emittedObserverMetrics.clear();
+  installedObservers.clear();
+}
+
+
+/**
  * Track a performance metric
  * Logs to console in development and sends to telemetry in production
  */
@@ -147,12 +177,19 @@ export function trackImageGridCLS(clsValue: number): void {
   }
 }
 
+function trackImageGridCLSOnce(clsValue: number): void {
+  if (emittedObserverMetrics.has('image_grid_cls')) return;
+  emittedObserverMetrics.add('image_grid_cls');
+  trackImageGridCLS(clsValue);
+}
+
 /**
  * Track First Contentful Paint (FCP)
  * Measures time to first content render
  */
 export function trackFCP(): void {
   if (typeof window === 'undefined' || !window.performance) return;
+  if (installedObservers.has('first_contentful_paint')) return;
 
   // Use PerformanceObserver for accurate FCP measurement
   if ('PerformanceObserver' in window) {
@@ -160,7 +197,7 @@ export function trackFCP(): void {
       const observer = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
           if (entry.name === 'first-contentful-paint') {
-            trackMetric({
+            emitObserverMetricOnce({
               name: 'first_contentful_paint',
               value: entry.startTime,
               unit: 'ms',
@@ -174,6 +211,8 @@ export function trackFCP(): void {
       });
 
       observer.observe({ type: 'paint', buffered: true });
+      installedObservers.add('first_contentful_paint');
+      observerTeardowns.push(() => observer.disconnect());
     } catch (error) {
       // PerformanceObserver not supported
     }
@@ -186,24 +225,49 @@ export function trackFCP(): void {
  */
 export function trackLCP(): void {
   if (typeof window === 'undefined' || !window.performance) return;
+  if (installedObservers.has('largest_contentful_paint')) return;
 
   if ('PerformanceObserver' in window) {
     try {
+      // LCP candidates stream until the page is backgrounded; emitting each
+      // one floods the sink. Track the latest candidate and report the final
+      // value exactly once when the page is hidden.
+      let latestValue = 0;
+
       const observer = new PerformanceObserver((list) => {
         const entries = list.getEntries();
         const lastEntry = entries[entries.length - 1] as any;
+        if (lastEntry) {
+          latestValue = lastEntry.renderTime || lastEntry.loadTime || latestValue;
+        }
+      });
 
-        trackMetric({
+      const emitFinal = () => {
+        observer.disconnect();
+        if (latestValue <= 0) return;
+        emitObserverMetricOnce({
           name: 'largest_contentful_paint',
-          value: lastEntry.renderTime || lastEntry.loadTime,
+          value: latestValue,
           unit: 'ms',
           tags: {
-            rating: lastEntry.renderTime < 2500 ? 'good' : lastEntry.renderTime < 4000 ? 'needs-improvement' : 'poor',
+            rating: latestValue < 2500 ? 'good' : latestValue < 4000 ? 'needs-improvement' : 'poor',
           },
         });
+      };
+
+      const onVisibilityHidden = () => {
+        if (document.visibilityState === 'hidden') emitFinal();
+      };
+      window.addEventListener('pagehide', emitFinal);
+      document.addEventListener('visibilitychange', onVisibilityHidden);
+      observerTeardowns.push(() => {
+        window.removeEventListener('pagehide', emitFinal);
+        document.removeEventListener('visibilitychange', onVisibilityHidden);
+        observer.disconnect();
       });
 
       observer.observe({ type: 'largest-contentful-paint', buffered: true });
+      installedObservers.add('largest_contentful_paint');
     } catch (error) {
       // PerformanceObserver not supported
     }
@@ -219,8 +283,13 @@ export function setupCLSTracking(targetElement?: Element): void {
     return;
   }
 
+  // Grid remounts re-invoke this setup; a module-level singleton keeps one
+  // observer and one pagehide listener per page load instead of stacking them.
+  if (installedObservers.has('image_grid_cls')) {
+    return;
+  }
+
   let clsValue = 0;
-  let clsEntries: PerformanceEntry[] = [];
 
   try {
     const observer = new PerformanceObserver((list) => {
@@ -228,23 +297,24 @@ export function setupCLSTracking(targetElement?: Element): void {
         // Only count layout shifts without recent user input
         if (!(entry as any).hadRecentInput) {
           clsValue += (entry as any).value;
-          clsEntries.push(entry);
         }
-      }
-
-      // Track CLS every 5 seconds (throttled)
-      if (clsEntries.length > 0 && clsEntries.length % 10 === 0) {
-        trackImageGridCLS(clsValue);
       }
     });
 
     observer.observe({ type: 'layout-shift', buffered: true });
+    installedObservers.add('image_grid_cls');
 
-    // Track final CLS on page unload
-    window.addEventListener('pagehide', () => {
+    // Accumulate silently and report the final CLS exactly once when the
+    // page is hidden; per-shift emission floods the telemetry sink.
+    const onPageHide = () => {
+      observer.disconnect();
       if (clsValue > 0) {
-        trackImageGridCLS(clsValue);
+        trackImageGridCLSOnce(clsValue);
       }
+    };
+    window.addEventListener('pagehide', onPageHide);
+    observerTeardowns.push(() => {
+      window.removeEventListener('pagehide', onPageHide);
       observer.disconnect();
     });
   } catch (error) {

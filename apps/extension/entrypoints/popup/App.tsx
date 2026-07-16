@@ -45,6 +45,7 @@ function App() {
     <ClerkProvider
       publishableKey={PUBLISHABLE_KEY}
       syncHost={CLERK_SYNC_HOST}
+      telemetry={{ disabled: true }}
       __experimental_syncHostListener
     >
       <AuthStatusReporter />

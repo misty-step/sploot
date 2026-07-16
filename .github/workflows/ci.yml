@@ -88,7 +88,9 @@ jobs:
           NEXT_PUBLIC_TELEMETRY_ENDPOINT: /ci-telemetry-sink
         run: pnpm deployment:build
       - name: Scan compiled telemetry configuration
-        run: pnpm telemetry:check -- --bundle-dir apps/web/.next/static --expect-endpoint /ci-telemetry-sink --expect-enabled false
+        run: pnpm telemetry:check -- --bundle-dir apps/web/.next/static --expect-endpoint /ci-telemetry-sink --expect-enabled false --expect-clerk-disabled
+      - name: Scan server output and public assets for provider residue
+        run: pnpm telemetry:check -- --bundle-dir apps/web/.next/server --bundle-dir apps/web/public
 
   design:
     name: Design
@@ -237,6 +239,8 @@ jobs:
         env:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
         run: pnpm --filter extension zip:prod
+      - name: Scan compiled extension for provider residue and Clerk telemetry
+        run: pnpm telemetry:check -- --bundle-dir apps/extension/dist/chrome-mv3 --expect-clerk-disabled
       - name: Validate candidate release structure and provenance
         env:
           RELEASE_CANDIDATE_SHA: ${{ github.sha }}

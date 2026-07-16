@@ -58,11 +58,42 @@ const ANALYTICS_EVENT_PROPERTY_ALLOWLIST = {
   tag_removed: [],
 } as const satisfies AnalyticsPropertyAllowlist;
 
+// Every allowlisted analytics property is a number, boolean, or bounded enum.
+// Free-form strings are not part of the analytics contract: this spec is the
+// single source the client sanitizer and the /api/telemetry validator share.
+export type AnalyticsPropertyType = 'number' | 'boolean' | readonly string[];
+
+const ANALYTICS_PROPERTY_TYPES = {
+  count: 'number',
+  totalSize: 'number',
+  size: 'number',
+  duration: 'number',
+  latency: 'number',
+  queryLength: 'number',
+  position: 'number',
+  score: 'number',
+  hasFilters: 'boolean',
+  hadTags: 'boolean',
+  success: 'boolean',
+  reason: ['unknown', 'network', 'offline', 'validation', 'duplicate'],
+} as const satisfies Record<string, AnalyticsPropertyType>;
+
+
 const FLOW_EVENT_NAME = /^flow:[a-z][a-z0-9_-]{0,39}:[a-z][a-z0-9_-]{0,39}$/;
 const TIMING_EVENT_NAME = /^timing:[a-z][a-z0-9:_-]{0,99}$/i;
 const FLOW_PROPERTY_ALLOWLIST = ['count', 'totalSize', 'size', 'hasFilters'] as const;
 const TIMING_PROPERTY_ALLOWLIST = ['duration', 'success', 'size', 'count'] as const;
 const UPLOAD_FAILURE_REASONS = new Set(['unknown', 'network', 'offline', 'validation', 'duplicate']);
+
+export function getAnalyticsPropertySpec(
+  name: string
+): Record<string, AnalyticsPropertyType> | null {
+  const allowlist = getAnalyticsPropertyAllowlist(name);
+  if (!allowlist) return null;
+  return Object.fromEntries(
+    allowlist.map((key) => [key, ANALYTICS_PROPERTY_TYPES[key as keyof typeof ANALYTICS_PROPERTY_TYPES]])
+  );
+}
 
 export function getAnalyticsPropertyAllowlist(name: string): readonly string[] | null {
   const declared = Object.prototype.hasOwnProperty.call(
@@ -163,12 +194,18 @@ function sanitizeEventProperties(
       continue;
     }
 
-    sanitized[key] = isPrimitive(value) ? value : '[OBJECT]';
+    const expected = ANALYTICS_PROPERTY_TYPES[key as keyof typeof ANALYTICS_PROPERTY_TYPES];
+    if (expected === 'number') {
+      if (typeof value === 'number' && Number.isFinite(value)) sanitized[key] = value;
+      continue;
+    }
+    if (expected === 'boolean') {
+      if (typeof value === 'boolean') sanitized[key] = value;
+      continue;
+    }
+    if (typeof value === 'string' && (expected as readonly string[]).includes(value)) sanitized[key] = value;
   }
 
   return sanitized;
 }
 
-function isPrimitive(value: unknown): value is string | number | boolean {
-  return ['string', 'number', 'boolean'].includes(typeof value);
-}

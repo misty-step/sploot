@@ -72,6 +72,10 @@ function updateCachedState(next: AuthState) {
 
 async function createFreshClerkClient() {
   assertExtensionConfig()
+  // CreateClerkClientOptions exposes no telemetry option and the SDK loads
+  // Clerk internally with fixed options, so there is no typed disable knob
+  // here. Clerk's telemetry collector no-ops for production publishable keys
+  // (instanceType gate); the ClerkProvider surfaces disable it explicitly.
   return await createClerkClient({
     publishableKey: PUBLISHABLE_KEY,
     syncHost: CLERK_SYNC_HOST,

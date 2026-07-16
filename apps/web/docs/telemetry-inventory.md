@@ -19,6 +19,9 @@ and never part of the product control flow.
 | `/api/analytics/usage` | authenticated usage reporting | intentional Postgres aggregate query; not a browser telemetry sink and not removed |
 | retired browser Analytics/Speed Insights adapters and `/_vercel/*` | provider-only adapters | deliberate removal; no package, source, or production bundle may contain them |
 | asset IDs, filenames, storage keys, URLs, pathnames, raw error text, arbitrary metadata | unsafe telemetry fields | deliberate removal from the browser contract and server sink |
+| web `ClerkProvider` (`lib/auth/client.tsx`) | third-party SDK telemetry | disabled via the typed `telemetry={{ disabled: true }}` option; source and compiled markers enforced |
+| extension popup `ClerkProvider` (`entrypoints/popup/App.tsx`) | third-party SDK telemetry | disabled via the typed `telemetry={{ disabled: true }}` option; source and compiled markers enforced |
+| extension background Clerk client (`entrypoints/background/auth-manager.ts`) | third-party SDK telemetry | no typed option exists on `CreateClerkClientOptions`; Clerk's collector no-ops for production publishable keys (instanceType gate); rationale comment enforced by the source gate |
 
 the executable inventory is `scripts/check-telemetry-inventory.mjs`. it checks
 the classified source markers, package/source provider residue, and (when
@@ -28,7 +31,12 @@ provider and bundle falsifiers live:
 ```bash
 pnpm telemetry:test
 pnpm telemetry:check
-pnpm telemetry:check -- --bundle-dir apps/web/.next
+# web build: sink config + Clerk-disabled falsifiers over client chunks
+pnpm telemetry:check -- --bundle-dir apps/web/.next/static --expect-endpoint /ci-telemetry-sink --expect-enabled false --expect-clerk-disabled
+# server output and public assets: provider-residue scan
+pnpm telemetry:check -- --bundle-dir apps/web/.next/server --bundle-dir apps/web/public
+# extension dist: provider residue + Clerk-disabled falsifier
+pnpm telemetry:check -- --bundle-dir apps/extension/.output/chrome-mv3 --expect-clerk-disabled
 ```
 
 the browser QA path must capture console and network traffic from a production
@@ -39,3 +47,11 @@ readback remain external proof; local build output cannot claim them.
 
 qa authentication remains the signed `qa-local` contract. `x-forwarded-for` is
 not an authority and is not accepted as a fallback.
+
+## volume and retention
+
+server acceptance is bounded: 16 KiB body cap and a per-user 60/min fixed
+window at `/api/telemetry`; observer-driven browser metrics emit at most once
+per metric per page load. forwarded telemetry lands in DigitalOcean structured
+logs and Canary, whose retention/TTL are provider-managed — the app has no
+deletion authority over forwarded telemetry and the docs do not claim one.
