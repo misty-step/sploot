@@ -170,7 +170,7 @@ export async function ingestImage({
     });
 
     // Step 6: Upload to blob storage
-    const uploadResult = await uploader.upload(userId, file.name, fileBuffer, processedImages);
+    const uploadResult = await uploader.upload(userId, file.name, fileBuffer, processedImages, file.type);
 
     logger.info('Blobs uploaded', {
       userId,

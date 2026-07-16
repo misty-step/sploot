@@ -26,11 +26,14 @@ export interface UploadResult {
  */
 export function generateUniqueFilename(
   userId: string,
-  originalFilename: string
+  originalFilename: string,
+  contentType?: string
 ): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 9);
-  const extension = originalFilename.split('.').pop()?.toLowerCase() || 'jpg';
+  const extensionByMime: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'video/mp4': 'mp4', 'video/webm': 'webm' };
+  const normalizedMime = contentType?.toLowerCase().split(';')[0].trim();
+  const extension = extensionByMime[normalizedMime ?? ''] ?? 'jpg';
   return `${userId}/${timestamp}-${random}.${extension}`;
 }
 

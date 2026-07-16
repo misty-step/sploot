@@ -153,7 +153,7 @@ export async function runPrismaMigrationBatch(
         assertClaimBytes(bytes, claim);
       } catch (error) {
         if (!(error instanceof ObjectNotFoundError) && !(error instanceof ObjectParityError)) throw error;
-        const source = await options.source.get(claim.sourceKey);
+        const source = options.source.getSourceKey ? await options.source.getSourceKey(claim.sourceKey) : await options.source.get(claim.sourceKey);
         bytes = await bodyToBuffer(source.body, Math.max(claim.size, 1));
         assertClaimBytes(bytes, claim);
         await options.target.put(claim.logicalKey, bytes, { size: claim.size, sha256: claim.sha256, contentType: claim.contentType ?? undefined });

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createHmac } from 'node:crypto';
 import { del, list as listVercel, put } from '@vercel/blob';
-import { canonicalLogicalKey, createStorageConfig, storageConfigFromEnv, type StorageConfig, type StoragePhase } from './config';
+import { canonicalLogicalKey, createStorageConfig, storageConfigFingerprint, storageConfigFromEnv, type StorageConfig, type StoragePhase } from './config';
 
 export interface ObjectMetadata {
   size: number;
@@ -26,6 +26,8 @@ export interface ObjectStore {
   readonly provider: string;
   put(key: string, body: ObjectBody, metadata: ObjectMetadata): Promise<StorageWrite>;
   get(key: string): Promise<StoredObject>;
+  getUrl?(url: string): Promise<StoredObject>;
+  getSourceKey?(key: string): Promise<StoredObject>;
   delete(key: string): Promise<void>;
   list?(prefix: string, limit: number): Promise<Array<{ pathname: string; url: string }>>;
   ownsUrl?(url: string): boolean;
@@ -90,6 +92,9 @@ function actualMetadata(bytes: Buffer, contentType?: string): ObjectMetadata {
 function assertMetadata(actual: ObjectMetadata, expected: ObjectMetadata): void {
   if (actual.size !== expected.size) throw new ObjectParityError(`Object size mismatch: expected ${expected.size}, got ${actual.size}`);
   if (actual.sha256 !== expected.sha256) throw new ObjectParityError(`Object SHA-256 mismatch: expected ${expected.sha256}, got ${actual.sha256}`);
+  if (expected.contentType && actual.contentType?.toLowerCase().split(';')[0].trim() !== expected.contentType.toLowerCase().split(';')[0].trim()) {
+    throw new ObjectParityError(`Object content type mismatch: expected ${expected.contentType}, got ${actual.contentType ?? 'missing'}`);
+  }
 }
 
 export class PortableObjectStore {
@@ -115,23 +120,24 @@ export class PortableObjectStore {
     const bytes = await bodyToBuffer(body, Math.min(this.maxBytes, Math.max(expected.size, 1)));
     const actual = actualMetadata(bytes, expected.contentType);
     assertMetadata(actual, expected);
-    const written: Array<{ store: ObjectStore; key: string }> = [];
+    const written: Array<{ store: ObjectStore; replica: StorageReplica }> = [];
     const replicas: StorageReplica[] = [];
     try {
       for (const provider of this.providers()) {
         const replica = await provider.put(logicalKey, bytes, actual);
-        written.push({ store: provider, key: replica.key });
-        replicas.push({ provider: replica.provider, key: replica.key, url: replica.url });
-        const readback = await provider.get(logicalKey);
+        const storedReplica = { provider: replica.provider, key: replica.key, url: replica.url };
+        written.push({ store: provider, replica: storedReplica });
+        replicas.push(storedReplica);
+        const readback = provider.getUrl ? await provider.getUrl(replica.url) : await provider.get(logicalKey);
         const readbackBytes = await bodyToBuffer(readback.body, this.maxBytes);
-        assertMetadata(actualMetadata(readbackBytes, actual.contentType), expected);
+        assertMetadata(actualMetadata(readbackBytes, readback.metadata.contentType), expected);
       }
     } catch (error) {
-      await Promise.allSettled(written.map(({ store, key: writtenKey }) => store.delete(writtenKey)));
+      await Promise.allSettled(written.map(({ store, replica }) => (store.getUrl && store.deleteUrl) ? store.deleteUrl(replica.url) : store.delete(replica.key)));
       throw error;
     }
     const primary = this.providers()[0];
-    return { confirmed: true, key: logicalKey, url: (await primary.get(logicalKey)).url, providers: this.providers().map(p => p.provider), replicas };
+    return { confirmed: true, key: logicalKey, url: replicas[0]!.url, providers: this.providers().map(p => p.provider), replicas };
   }
 
   async get(key: string): Promise<StoredObject> {
@@ -159,7 +165,7 @@ export class PortableObjectStore {
     if (!owner?.deleteUrl) throw new Error('Storage URL is not owned by a configured provider');
     const key = (owner as ObjectStore & { keyFromUrl?: (value: string) => string | null }).keyFromUrl?.(url);
     if (!key) return owner.deleteUrl(url);
-    const results = await Promise.allSettled(owned.map(provider => provider.delete(key)));
+    const results = await Promise.allSettled(owned.map(provider => provider === owner && provider.deleteUrl ? provider.deleteUrl(url) : provider.delete(key)));
     const failure = results.find(result => result.status === 'rejected') as PromiseRejectedResult | undefined;
     if (failure) throw failure.reason;
   }
@@ -168,7 +174,7 @@ export class PortableObjectStore {
     const results = await Promise.allSettled(replicas.map(replica => {
       const provider = [this.options.legacy, this.target].find(candidate => candidate?.provider === replica.provider);
       if (!provider) throw new Error(`Storage provider is not configured: ${replica.provider}`);
-      return provider.delete(replica.key);
+      return provider.deleteUrl ? provider.deleteUrl(replica.url) : provider.delete(replica.key);
     }));
     const failure = results.find(result => result.status === 'rejected') as PromiseRejectedResult | undefined;
     if (failure) throw failure.reason;
@@ -193,7 +199,7 @@ export class ConfiguredStorageWriter implements StorageWriter {
   private readonly portable?: PortableObjectStore;
   readonly strict: boolean;
 
-  constructor(config: StorageConfig = storageConfigFromEnv(), legacyAddRandomSuffix = false) {
+  constructor(private readonly config: StorageConfig = storageConfigFromEnv(), legacyAddRandomSuffix = false) {
     this.legacy = new VercelObjectStore(config.legacyBaseUrl, legacyAddRandomSuffix);
     if (config.phase !== 'legacy' || config.provider !== 'vercel') {
       this.portable = createDefaultObjectStore(config);
@@ -201,7 +207,25 @@ export class ConfiguredStorageWriter implements StorageWriter {
     this.strict = !!this.portable;
   }
 
+  private cutoverValidatedAt = 0;
+
+  private async assertRuntimeCutoverState(): Promise<void> {
+    if (this.config.phase === 'legacy') return;
+    const now = Date.now();
+    if (now - this.cutoverValidatedAt < 5_000) return;
+    if (!this.config.manifestSha256) throw new Error('Storage runtime requires STORAGE_CUTOVER_MANIFEST_SHA256');
+    const { prisma } = await import('@/lib/db');
+    const state = await prisma.storageCutoverState.findUnique({ where: { id: 'default' } });
+    const fingerprint = storageConfigFingerprint(this.config);
+    if (!state) throw new Error('Storage cutover state is absent; refusing non-legacy storage operation');
+    if (state.phase !== this.config.phase || state.providerFingerprint !== fingerprint || state.manifestSha256 !== this.config.manifestSha256) {
+      throw new Error('Storage cutover state does not match runtime provider configuration and manifest');
+    }
+    this.cutoverValidatedAt = now;
+  }
+
   async put(key: string, body: ObjectBody, metadata: ObjectMetadata) {
+    await this.assertRuntimeCutoverState();
     if (this.portable) {
       const result = await this.portable.putVerified(key, body, metadata);
       return { provider: result.providers[0]!, key: result.key, url: result.url, metadata, replicas: result.replicas };
@@ -211,21 +235,25 @@ export class ConfiguredStorageWriter implements StorageWriter {
   }
 
   async get(key: string): Promise<StoredObject> {
+    await this.assertRuntimeCutoverState();
     if (this.portable) return this.portable.get(key);
     return this.legacy.get(key);
   }
 
   async deleteKey(_provider: string, key: string) {
+    await this.assertRuntimeCutoverState();
     if (this.portable) return this.portable.delete(key);
     return this.legacy.delete(key);
   }
 
   async deleteReplicas(replicas: StorageReplica[]) {
+    await this.assertRuntimeCutoverState();
     if (this.portable) return this.portable.deleteReplicas(replicas);
     return Promise.all(replicas.map(replica => this.legacy.delete(replica.url))).then(() => undefined);
   }
 
   async deleteUrl(url: string) {
+    await this.assertRuntimeCutoverState();
     if (this.portable) return this.portable.deleteUrl(url);
     return this.legacy.delete(url);
   }
@@ -271,12 +299,27 @@ export class VercelObjectStore implements ObjectStore {
 
   async get(key: string): Promise<StoredObject> {
     const logicalKey = canonicalLogicalKey(key);
-    const response = await fetch(`${this.baseUrl.replace(/\/$/, '')}/${logicalKey}`);
-    if (response.status === 404) throw new ObjectNotFoundError(logicalKey);
-    if (!response.ok || !response.body) throw new Error(`Vercel Blob read failed: ${response.status}`);
-    return { key: logicalKey, url: response.url, metadata: { size: Number(response.headers.get('content-length') ?? 0), sha256: response.headers.get('x-amz-meta-sha256') ?? '' }, body: response.body };
+    return this.readUrl(`${this.baseUrl.replace(/\/$/, '')}/${logicalKey}`, logicalKey);
   }
 
+  async getSourceKey(key: string): Promise<StoredObject> {
+    if (typeof key !== 'string' || key.length === 0 || key.length > 2048) throw new Error('Legacy storage source key is invalid');
+    const encoded = key.split('/').map(segment => encodeURIComponent(segment)).join('/');
+    return this.readUrl(`${this.baseUrl.replace(/\/$/, '')}/${encoded}`, key);
+  }
+
+  async getUrl(url: string): Promise<StoredObject> {
+    const logicalKey = this.keyFromUrl(url);
+    if (!logicalKey) throw new Error('Storage URL is not owned by the configured Vercel provider');
+    return this.readUrl(url, logicalKey);
+  }
+
+  private async readUrl(url: string, logicalKey: string): Promise<StoredObject> {
+    const response = await fetch(url);
+    if (response.status === 404) throw new ObjectNotFoundError(logicalKey);
+    if (!response.ok || !response.body) throw new Error(`Vercel Blob read failed: ${response.status}`);
+    return { key: logicalKey, url: response.url, metadata: { size: Number(response.headers.get('content-length') ?? 0), sha256: response.headers.get('x-amz-meta-sha256') ?? '', contentType: response.headers.get('content-type') ?? undefined }, body: response.body };
+  }
   ownsUrl(url: string): boolean {
     return this.keyFromUrl(url) !== null;
   }
@@ -315,12 +358,15 @@ export class VercelObjectStore implements ObjectStore {
 export class S3CompatibleObjectStore implements ObjectStore {
   readonly provider = 's3';
   private readonly endpoint: URL;
+  private readonly publicUrlBase: URL;
 
   constructor(private readonly config: StorageConfig) {
     if (config.provider !== 's3' || !config.accessKeyId || !config.secretAccessKey) {
       throw new Error('S3-compatible storage requires explicit non-empty credentials');
     }
     this.endpoint = new URL(config.endpoint);
+    if (!config.publicUrlBase) throw new Error('S3-compatible storage requires a stable public delivery base');
+    this.publicUrlBase = new URL(config.publicUrlBase);
     if (this.endpoint.protocol !== 'https:' && !(config.allowHttpTestFixture && process.env.NODE_ENV === 'test')) {
       throw new Error('S3-compatible runtime endpoint must use HTTPS');
     }
@@ -372,22 +418,23 @@ export class S3CompatibleObjectStore implements ObjectStore {
   keyFromUrl(url: string): string | null {
     try {
       const candidate = new URL(url);
-      if (candidate.protocol !== this.endpoint.protocol || candidate.origin !== this.endpoint.origin || candidate.username || candidate.password || candidate.search || candidate.hash) return null;
-      const prefix = `${this.endpoint.pathname.replace(/\/$/, '')}/${encodeRfc3986(this.config.bucket)}/`;
+      if (candidate.protocol !== 'https:' || candidate.origin !== this.publicUrlBase.origin || candidate.username || candidate.password || candidate.search || candidate.hash) return null;
+      const prefix = `${this.publicUrlBase.pathname.replace(/\/$/, '')}/${encodeRfc3986(this.config.bucket)}/`;
       if (!candidate.pathname.startsWith(prefix)) return null;
-      const key = decodeURIComponent(candidate.pathname.slice(prefix.length));
-      return canonicalLogicalKey(key);
+      return canonicalLogicalKey(decodeURIComponent(candidate.pathname.slice(prefix.length)));
     } catch { return null; }
   }
 
   private objectUrl(key: string): string {
-    const base = this.endpoint.toString().replace(/\/$/, '');
+    const base = this.publicUrlBase.toString().replace(/\/$/, '');
     return `${base}/${encodeRfc3986(this.config.bucket)}/${key.split('/').map(encodeRfc3986).join('/')}`;
   }
 
   private async request(method: string, key: string, body?: Uint8Array, contentType?: string): Promise<Response> {
     const encodedKey = key.split('/').map(encodeRfc3986).join('/');
-    const url = new URL(`${this.endpoint.toString().replace(/\/$/, '')}/${encodeRfc3986(this.config.bucket)}/${encodedKey}`);
+    const endpointBase = this.endpoint.toString().replace(/\/$/, '');
+    const requestPath = `${this.endpoint.pathname.replace(/\/$/, '')}/${encodeRfc3986(this.config.bucket)}/${encodedKey}`;
+    const url = new URL(`${endpointBase}/${encodeRfc3986(this.config.bucket)}/${encodedKey}`);
     const payloadHash = body ? sha256Hex(body) : 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
     const now = new Date();
     const amzDate = now.toISOString().replace(/[-:]|\.\d{3}/g, '');
@@ -401,7 +448,7 @@ export class S3CompatibleObjectStore implements ObjectStore {
     if (contentType) headers['content-type'] = contentType;
     const signedHeaders = Object.keys(headers).sort().join(';');
     const canonicalHeaders = Object.keys(headers).sort().map(name => `${name}:${headers[name]!.trim()}\n`).join('');
-    const canonicalRequest = [method, `/${encodeRfc3986(this.config.bucket)}/${encodedKey}`, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
+    const canonicalRequest = [method, requestPath, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
     const scope = `${date}/${this.config.region}/s3/aws4_request`;
     const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256Hex(Buffer.from(canonicalRequest))].join('\n');
     const signingKey = hmac(hmac(hmac(hmac(Buffer.from(`AWS4${this.config.secretAccessKey}`), date), this.config.region), 's3'), 'aws4_request');
