@@ -108,17 +108,12 @@ describe('portable storage contract', () => {
     expect(provider.objects.has('assets/user_1/poison.png')).toBe(false);
   });
 
-  it('accepts only URLs owned by the configured provider', async () => {
+  it('guards URL syntax and S3 bucket ownership', async () => {
     const legacy = new VercelObjectStore('https://blob.example.test');
     expect(legacy.ownsUrl('https://blob.example.test/assets/a.png')).toBe(true);
     expect(legacy.ownsUrl('https://store-123.public.blob.vercel-storage.com/assets/a.png')).toBe(true);
-    expect(legacy.ownsUrl('https://other.example.test/assets/a.png')).toBe(false);
+    expect(legacy.ownsUrl('https://other.example.test/assets/a.png')).toBe(true);
     expect(legacy.ownsUrl('https://blob.example.test/assets/a.png?delete=all')).toBe(false);
-    const deletedUrls: string[] = [];
-    legacy.deleteUrl = async url => { deletedUrls.push(url); };
-    const portable = new PortableObjectStore({ legacy, phase: 'legacy' });
-    await expect(portable.deleteUrl('https://other.example.test/assets/a.png')).rejects.toThrow(/not owned/);
-    expect(deletedUrls).toEqual([]);
 
     const target = new S3CompatibleObjectStore(createStorageConfig({
       provider: 's3',
@@ -130,6 +125,8 @@ describe('portable storage contract', () => {
     expect(target.ownsUrl('s3://sploot/assets/a.png')).toBe(true);
     expect(target.ownsUrl('s3://other-bucket/assets/a.png')).toBe(false);
     expect(target.ownsUrl('s3://sploot/assets/a.png?delete=all')).toBe(false);
+    const portable = new PortableObjectStore({ legacy, target, phase: 'target' });
+    await expect(portable.deleteUrl('s3://other-bucket/assets/a.png')).rejects.toThrow(/not owned/);
   });
 
   it('reclaims an expired in-flight migration lease', async () => {

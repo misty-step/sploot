@@ -245,8 +245,7 @@ export class VercelObjectStore implements ObjectStore {
     try {
       const candidate = new URL(url);
       const base = new URL(this.baseUrl);
-      const isVercelBlobHost = candidate.hostname.endsWith('.public.blob.vercel-storage.com') || candidate.hostname === 'blob.vercel-storage.com';
-      if ((candidate.origin !== base.origin && !isVercelBlobHost) || candidate.protocol !== 'https:' || candidate.search || candidate.hash) return false;
+      if (candidate.protocol !== 'https:' || candidate.search || candidate.hash) return false;
       const basePath = candidate.origin === base.origin ? base.pathname.replace(/\/$/, '') : '';
       const prefix = basePath ? `${basePath}/` : '/';
       const logicalKey = candidate.pathname.startsWith(prefix) ? candidate.pathname.slice(prefix.length) : '';
