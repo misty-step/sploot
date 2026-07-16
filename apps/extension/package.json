@@ -29,7 +29,9 @@
     "lint": "tsc --noEmit --pretty false",
     "generate:crx-key": "bash scripts/generate-crx-key.sh",
     "generate:icons": "node scripts/generate-icons.js",
-    "setup:clerk": "bash scripts/configure-clerk.sh"
+    "setup:clerk": "bash scripts/configure-clerk.sh",
+    "test:update-nag": "playwright test --config playwright.config.ts playwright/update-nag.e2e.ts",
+    "assert:update-nag-artifact": "node scripts/assert-update-nag-artifact.mjs"
   },
   "keywords": [],
   "author": "",

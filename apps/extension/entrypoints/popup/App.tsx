@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import ReactDOM from 'react-dom/client'
 import {
   ClerkProvider,
@@ -18,6 +18,7 @@ import { getSaveStatus, onSaveStatusChanged, type SaveStatus } from '../../share
 import { E2E_AUTH_MODE, EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
 import { getSplootAppUrl, getSplootEnrollmentUrl, getSplootSignInUrl } from '../../shared/app-url'
 import { runBestEffort } from '../../shared/best-effort'
+import { requestDismissUpdate, requestUpdateNotice, onUpdateStatusChanged, openUpdatePage, type UpdateNotice } from '../../shared/update-status'
 import { performContextMenuSaveAction, requestContextMenuSaveQueue } from './queue-recovery'
 import { loadPublicEnrollmentState } from '../../shared/enrollment-state'
 import './style.css'
@@ -37,7 +38,7 @@ function App() {
   }
 
   if (E2E_AUTH_MODE) {
-    return <E2EPopup />
+    return <PopupContent><E2EAuthPanel /></PopupContent>
   }
 
   return (
@@ -47,40 +48,24 @@ function App() {
       __experimental_syncHostListener
     >
       <AuthStatusReporter />
-      <div className="popup-frame">
-        <div className="popup-container">
-          <header>
-            <h1>
-              <img
-                src={chrome.runtime.getURL('icon-128.png')}
-                alt="Sploot"
-                className="logo-icon"
-              />
-              Sploot
-            </h1>
-          </header>
-          <main>
-            <SignedOut>
-              <SignedOutPanel />
-            </SignedOut>
-            <SignedIn>
-              <SignedInPanel />
-            </SignedIn>
-            <LastSaveStrip />
-          </main>
-        </div>
-      </div>
+      <PopupContent>
+        <SignedOut>
+          <SignedOutPanel />
+        </SignedOut>
+        <SignedIn>
+          <SignedInPanel />
+        </SignedIn>
+      </PopupContent>
     </ClerkProvider>
   )
 }
 
 /**
- * Test-only popup authority. It reads the same durable storage authority as
- * the real background auth manager; queue listing/actions still cross the
- * normal runtime message boundary. Production builds reject this mode in
- * wxt.config.ts, so it cannot become a Clerk substitute in the store artifact.
+ * Test-only auth state. The E2E build uses this durable authority instead of
+ * Clerk, but it still renders the exact PopupContent used by production,
+ * including the update notice and message-driven actions.
  */
-function E2EPopup() {
+function E2EAuthPanel() {
   const [authority, setAuthority] = useState<E2EAuthority | null>(null)
 
   useEffect(() => {
@@ -108,25 +93,42 @@ function E2EPopup() {
     return () => chrome.storage.onChanged.removeListener(readAuthority)
   }, [])
 
+  return authority ? (
+    <div className="signed-in-panel">
+      <p>Signed in as <strong>{authority.userId}</strong></p>
+      <div className="actions">
+        <button onClick={() => void requestVisibleTabCapture()}>Screenshot this tab</button>
+      </div>
+    </div>
+  ) : <SignedOutPanel />
+}
+
+function PopupContent({ children }: { children: ReactNode }) {
+  return (
+    <PopupShell>
+      {children}
+      <LastSaveStrip />
+    </PopupShell>
+  )
+}
+
+function PopupShell({ children }: { children: ReactNode }) {
   return (
     <div className="popup-frame">
       <div className="popup-container">
         <header>
           <h1>
-            <img src={chrome.runtime.getURL('icon-128.png')} alt="Sploot" className="logo-icon" />
+            <img
+              src={chrome.runtime.getURL('icon-128.png')}
+              alt="Sploot"
+              className="logo-icon"
+            />
             Sploot
           </h1>
         </header>
         <main>
-          {authority ? (
-            <div className="signed-in-panel">
-              <p>Signed in as <strong>{authority.userId}</strong></p>
-              <div className="actions">
-                <button onClick={() => void requestVisibleTabCapture()}>Screenshot this tab</button>
-              </div>
-            </div>
-          ) : <SignedOutPanel />}
-          <LastSaveStrip />
+          <UpdateNoticePanel />
+          {children}
         </main>
       </div>
     </div>
@@ -164,6 +166,49 @@ const SIGNED_OUT_COPY: Record<'checking' | 'unreachable' | 'unknown' | 'paused' 
     body: 'Use the full Sploot sign-in page, then return here to save images from the web.',
   },
 }
+
+function UpdateNoticePanel() {
+  const [notice, setNotice] = useState<UpdateNotice | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const refresh = () => {
+      void requestUpdateNotice().then(next => {
+        if (!cancelled) setNotice(next && !next.dismissed ? next : null)
+      })
+    }
+    refresh()
+    const unsubscribe = onUpdateStatusChanged(refresh)
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [])
+
+  if (!notice) return null
+
+  const handleDismiss = () => {
+    void requestDismissUpdate(notice.version).then(() => setNotice(null))
+  }
+
+  const handleUpdate = () => {
+    void openUpdatePage()
+  }
+
+  return (
+    <section className="update-notice" role="status" aria-live="polite">
+      <div className="update-notice-copy">
+        <strong>Update available</strong>
+        <span>Sploot {notice.version} is ready.</span>
+      </div>
+      <div className="update-notice-actions">
+        <button onClick={handleUpdate}>Update</button>
+        <button className="secondary" onClick={handleDismiss} aria-label={'Dismiss Sploot update ' + notice.version}>Dismiss</button>
+      </div>
+    </section>
+  )
+}
+
 
 function SignedOutPanel() {
   const [enrollmentState, setEnrollmentState] = useState<SignedOutEnrollment>({ status: 'checking' })
