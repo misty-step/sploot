@@ -1,6 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const port = Number(process.env.PLAYWRIGHT_PORT ?? 3108);
+const selectedProject = process.env.PLAYWRIGHT_PROJECT ?? process.argv.find((arg) => arg.startsWith('--project='))?.slice('--project='.length);
+const isQueueProject = selectedProject === 'queue';
+const isAuthProject = selectedProject === 'auth';
+const port = isQueueProject
+  ? Number(process.env.PLAYWRIGHT_QUEUE_PORT ?? 3138)
+  : isAuthProject
+    ? Number(process.env.PLAYWRIGHT_AUTH_PORT ?? 3139)
+    : Number(process.env.PLAYWRIGHT_PORT ?? 3108);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;
 const qaSecret = process.env.SPLOOT_QA_AUTH_SECRET ?? 'local-playwright-secret-with-enough-entropy';
 
@@ -24,11 +31,25 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'chromium',
+      name: 'public-truth',
+      testMatch: /public-truth\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'queue',
+      testMatch: /upload-queue\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'auth',
+      testMatch: /auth\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
+  // The queue fixture owns its production child and must not be raced by a
+  // Playwright-managed public-truth server. Public-truth retains this
+  // webServer so its artifact stays independently testable.
+  webServer: isQueueProject || isAuthProject || process.env.PLAYWRIGHT_EXTERNAL_SERVER ? undefined : {
     command: 'pnpm e2e:public-truth:serve',
     url: baseURL,
     reuseExistingServer: false,

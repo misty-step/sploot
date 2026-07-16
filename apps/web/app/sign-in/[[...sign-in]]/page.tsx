@@ -23,6 +23,23 @@ const closedEnrollmentAppearance = {
 export default async function SignInPage() {
   const { state: enrollmentState } = await readPublicEnrollmentState({ prisma });
   const enrollmentOpen = enrollmentState.status === 'open';
+  const qaLocalCaptureBuild = process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' &&
+    process.env.NEXT_PUBLIC_SPLOOT_PWA_CAPTURE_MODE === 'enabled';
+
+  if (qaLocalCaptureBuild) {
+    return (
+      <ConsoleDoor>
+        <div data-testid="qa-local-signed-out-door" className="flex flex-col gap-5">
+          <EnrollmentNotice state={enrollmentState} compact />
+          <div className="rounded border-2 border-foreground p-5">
+            <h1 className="font-display text-2xl">Sign in unavailable in local QA capture</h1>
+            <p className="mt-2">This deterministic browser proof is signed out; no account session is created.</p>
+            <a className="mt-4 inline-flex min-h-11 items-center underline" href="/">return to landing</a>
+          </div>
+        </div>
+      </ConsoleDoor>
+    );
+  }
 
   return (
     <ConsoleDoor>

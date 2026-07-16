@@ -11,6 +11,10 @@ import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
 import {
+  runIdempotentUpload,
+  UploadIdempotencyInProgressError,
+} from '@/lib/upload/upload-idempotency';
+import {
   assertEnrolledUser,
   enrollmentDeniedResponse,
   enrollmentUnavailableResponse,
@@ -65,13 +69,19 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     // remote fetch. ingestImage repeats this boundary before Blob/embedding work.
     await assertEnrolledUser(userId, prisma);
 
-    const fetched = await fetchRemoteImage(validation.url);
-    if (!fetched.ok) {
-      logger.info('URL import fetch rejected', { userId, reason: fetched.reason });
-      return NextResponse.json({ success: false, error: fetched.reason }, { status: 422 });
-    }
+    const idempotencyKey = req.headers.get('Idempotency-Key')?.trim();
+    const executeImport = async () => {
+      const fetched = await fetchRemoteImage(validation.url);
+      if (!fetched.ok) {
+        logger.info('URL import fetch rejected', { userId, reason: fetched.reason });
+        return { kind: 'invalid' as const, error: { userMessage: fetched.reason, statusCode: 422 } };
+      }
+      return ingestImage({ userId, file: fetched.file });
+    };
 
-    const result = await ingestImage({ userId, file: fetched.file });
+    const result = idempotencyKey
+      ? await runIdempotentUpload(userId, idempotencyKey, executeImport)
+      : await executeImport();
 
     if (result.kind === 'invalid') {
       return NextResponse.json(
@@ -102,6 +112,12 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof UploadIdempotencyInProgressError) {
+      return NextResponse.json(
+        { success: false, code: 'UPLOAD_IN_PROGRESS', retryable: true },
+        { status: 409, headers: { 'Retry-After': '2' } },
+      );
+    }
     if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
     // Typed embedding outcomes keep their Retry-After contract below; only
     // genuine enrollment failures take the duck-typed enrollment path.

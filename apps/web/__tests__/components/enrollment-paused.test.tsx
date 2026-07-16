@@ -6,10 +6,11 @@ import {
   EnrollmentUnavailable,
 } from '@/components/enrollment/enrollment-paused';
 
-const { signOut, useUser } = vi.hoisted(() => ({ signOut: vi.fn(), useUser: vi.fn() }));
+const { signOut, useAuthUser, useUser } = vi.hoisted(() => ({ signOut: vi.fn(), useAuthUser: vi.fn(), useUser: vi.fn() }));
 vi.mock('@clerk/nextjs', () => ({ useUser }));
 vi.mock('@/lib/auth/client', () => ({
   useAuthActions: () => ({ signOut }),
+  useAuthUser,
 }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -18,6 +19,7 @@ vi.mock('next/navigation', () => ({
 describe('enrollment terminal states', () => {
   it.each([EnrollmentPaused, EnrollmentUnavailable, EnrollmentIdentityConflict])('keeps signed-out escapes truthful', (Component) => {
     useUser.mockReturnValue({ isLoaded: true, isSignedIn: false });
+    useAuthUser.mockReturnValue({ user: null });
     render(<Component />);
 
     expect(screen.getByRole('link', { name: 'Return home' })).toHaveAttribute('href', '/');
@@ -28,6 +30,7 @@ describe('enrollment terminal states', () => {
 
   it('shows sign out only after Clerk confirms an existing session', () => {
     useUser.mockReturnValue({ isLoaded: true, isSignedIn: true });
+    useAuthUser.mockReturnValue({ user: { id: 'existing-user' } });
     render(<EnrollmentPaused />);
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
   });
