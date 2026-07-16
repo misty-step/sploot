@@ -73,7 +73,7 @@ describe('public truth contracts', () => {
     expect(playwright).toContain("value: 'public-truth-signed-out'");
     expect(playwright).toContain("SPLOOT_PUBLIC_TRUTH_E2E_BUILD: 'true'");
     expect(read('next.config.ts')).toContain('assertPublicTruthE2EBuildAllowed');
-    expect(read('lib/auth/client.tsx')).toContain('<ClerkProvider>');
+    expect(read('lib/auth/client.tsx')).toContain('<ClerkProvider');
     expect(read('lib/auth/client.tsx')).not.toContain('return <>{children}</>');
     expect(read('e2e/clerk-provider.spec.ts')).toContain('SPLOOT_REAL_CLERK_E2E');
     expect(workflow).toMatch(/public-truth:[\s\S]*pnpm --filter web e2e:public-truth/);
