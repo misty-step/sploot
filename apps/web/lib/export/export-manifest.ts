@@ -10,7 +10,7 @@ import {
   partFileName,
   snapshotAssetWhere,
 } from './export-policy';
-import type { ExportRowData } from './export-service';
+import { normalizeExportRow, type ExportRowData } from './export-service';
 import { EXPORT_BACKPRESSURE_TIMEOUT_MS, waitForExportCapacity } from './export-backpressure';
 
 /**
@@ -71,10 +71,10 @@ function requireDb(database?: ManifestDatabase): ManifestDatabase {
 async function withManifestRead<T>(
   database: ManifestDatabase,
   row: ExportRowData,
-  read: (database: ManifestDatabase) => Promise<T>,
+  read: (database: ManifestDatabase, current: ExportRowData) => Promise<T>,
 ): Promise<T> {
   if (!('$transaction' in database) || typeof database.$transaction !== 'function') {
-    return read(database);
+    return read(database, row);
   }
   return database.$transaction(async (tx) => {
     await acquireEnrollmentIdentityWriterLock(tx, row.ownerUserId);
@@ -84,7 +84,47 @@ async function withManifestRead<T>(
     if (!current || current.status !== 'active') {
       throw new Error('export became unavailable during manifest read');
     }
-    return read(tx);
+    return read(tx, normalizeExportRow(current as unknown as Record<string, unknown>));
+  });
+}
+
+async function withManifestFinalization<T>(
+  database: ManifestDatabase,
+  row: ExportRowData,
+  read: (database: ManifestDatabase, current: ExportRowData) => Promise<T>,
+): Promise<T> {
+  if (!('$transaction' in database) || typeof database.$transaction !== 'function') {
+    return read(database, row);
+  }
+  return database.$transaction(async (tx) => {
+    await acquireEnrollmentIdentityWriterLock(tx, row.ownerUserId);
+    const current = await tx.libraryExport.findFirst({
+      where: { id: row.id, ownerUserId: row.ownerUserId },
+    });
+    if (!current || current.status !== 'active') {
+      throw new Error('export became unavailable during manifest finalization');
+    }
+    const claimed = await tx.libraryExport.updateMany({
+      where: { id: row.id, ownerUserId: row.ownerUserId, status: 'active' },
+      data: { status: 'finalizing' },
+    });
+    if (claimed.count !== 1) {
+      throw new Error('export became unavailable during manifest finalization');
+    }
+    const finalRow = await tx.libraryExport.findFirst({
+      where: { id: row.id, ownerUserId: row.ownerUserId },
+    });
+    if (!finalRow || finalRow.status !== 'finalizing') {
+      throw new Error('export finalization fence was lost');
+    }
+    return read(tx, normalizeExportRow(finalRow as unknown as Record<string, unknown>));
+  });
+}
+
+async function releaseManifestFinalization(database: ManifestDatabase, row: ExportRowData): Promise<void> {
+  await database.libraryExport.updateMany({
+    where: { id: row.id, ownerUserId: row.ownerUserId, status: 'finalizing' },
+    data: { status: 'active' },
   });
 }
 
@@ -137,11 +177,7 @@ async function findManifestAssetTags(
   return rows;
 }
 
-function manifestStaticHead(
-  row: ExportRowData,
-  failures: ReturnType<typeof flattenFailures>,
-) {
-  const served = new Set(row.servedParts);
+function manifestStaticHead(row: ExportRowData) {
   return {
     manifest: 'sploot-library-export',
     manifestVersion: row.manifestVersion,
@@ -154,9 +190,7 @@ function manifestStaticHead(
       file: partFileName(row.id, part.index, row.partBoundaries.length),
       assets: part.count,
       bytes: part.bytes,
-      served: served.has(part.index),
     })),
-    failures,
   };
 }
 
@@ -178,6 +212,14 @@ function manifestSummary(
       servedParts: row.servedParts.length,
       failedObjects: failures.length,
     },
+    failures,
+    parts: row.partBoundaries.map((part) => ({
+      index: part.index,
+      file: partFileName(row.id, part.index, row.partBoundaries.length),
+      assets: part.count,
+      bytes: part.bytes,
+      served: new Set(row.servedParts).has(part.index),
+    })),
   };
 }
 
@@ -228,7 +270,7 @@ export async function estimateManifestEgressBytesForExport(
     row.failures,
   );
   const failures = flattenFailures(row.failures);
-  const headJson = JSON.stringify(manifestStaticHead(row, failures));
+  const headJson = JSON.stringify(manifestStaticHead(row));
   let bytes = utf8Bytes(headJson.slice(0, -1) + ',"tags":[');
   let emittedTag = false;
   let tagCursor: string | null = null;
@@ -318,6 +360,7 @@ export function streamExportManifest(
   let canceled = false;
   let clientCanceled = false;
   let terminalError: Error | null = null;
+  let finalizationHeld = false;
   const abort = () => {
     canceled = true;
     if (!clientCanceled && !terminalError) terminalError = new Error('export became unavailable during stream');
@@ -345,16 +388,10 @@ export function streamExportManifest(
     };
 
     try {
-      const { complete, reasons } = computeCompleteness(
-        row.partBoundaries.length,
-        row.servedParts,
-        row.failures,
-      );
-      const failures = flattenFailures(row.failures);
       // Probe lifecycle before emitting any bytes; only assets actually
       // emitted below become manifest totals.
       await withManifestRead(db, row, async () => undefined);
-      const headJson = JSON.stringify(manifestStaticHead(row, failures));
+      const headJson = JSON.stringify(manifestStaticHead(row));
       // Completeness and live totals are emitted only after the asset pages.
       // The streamed membership is the authoritative count; no pre-scan COUNT
       // can race a hard delete between the header and the first page.
@@ -435,23 +472,50 @@ export function streamExportManifest(
       // A delete can win after the final asset page. Reconcile status before
       // the authoritative trailing summary so that stream errors, rather than
       // claiming a complete manifest for a canceled snapshot.
-      await withManifestRead(db, row, async () => undefined);
-      const manifestLiveAssets = streamedAssets;
-      const manifestReasons = manifestLiveAssets < row.totalAssets
-        ? [...reasons, 'snapshot_membership_changed' as const]
-        : reasons;
-      const summary = manifestSummary(
-        row,
-        manifestLiveAssets,
-        complete && manifestLiveAssets >= row.totalAssets,
-        manifestReasons,
-        failures,
+      // Wait outside the database transaction. Once capacity exists, the
+      // identity-locked read and terminal enqueue are synchronous, so cancel
+      // cannot commit between the final status fence and summary bytes.
+      await waitForExportCapacity(
+        () => controller.desiredSize,
+        () => canceled,
+        backpressureTimeoutMs,
+        () => abort(),
       );
-      await emit('],' + JSON.stringify(summary).slice(1));
+      await withManifestFinalization(db, row, async (_db, finalRow) => {
+        finalizationHeld = true;
+        if (!ensureOpen()) return;
+        const finalFailures = flattenFailures(finalRow.failures);
+        const finalCompleteness = computeCompleteness(
+          finalRow.partBoundaries.length,
+          finalRow.servedParts,
+          finalRow.failures,
+        );
+        const manifestLiveAssets = streamedAssets;
+        const manifestReasons = manifestLiveAssets < finalRow.totalAssets
+          ? [...finalCompleteness.reasons, 'snapshot_membership_changed' as const]
+          : finalCompleteness.reasons;
+        const summary = manifestSummary(
+          finalRow,
+          manifestLiveAssets,
+          finalCompleteness.complete && manifestLiveAssets >= finalRow.totalAssets,
+          manifestReasons,
+          finalFailures,
+        );
+        const chunk = encoder.encode('],' + JSON.stringify(summary).slice(1));
+        if (maxBytes !== undefined && BigInt(bytesStreamed + chunk.length) > maxBytes) {
+          throw new Error('export manifest would exceed its egress reservation');
+        }
+        bytesStreamed += chunk.length;
+        controller.enqueue(chunk);
+      });
 
       if (!ensureOpen()) return;
       if (onComplete) {
         await onComplete(bytesStreamed);
+      }
+      if (finalizationHeld) {
+        await releaseManifestFinalization(db, row);
+        finalizationHeld = false;
       }
       controller.close();
     } catch (error) {
@@ -459,6 +523,9 @@ export function streamExportManifest(
         controller.error(error);
       }
     } finally {
+      if (finalizationHeld) {
+        await releaseManifestFinalization(db, row).catch(() => undefined);
+      }
       onFinish?.();
       signal?.removeEventListener('abort', abort);
     }

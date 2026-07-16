@@ -57,24 +57,28 @@ describe('export object reader', () => {
     }
   });
 
-  it('slices a single huge provider response chunk', async () => {
+  it('rejects an oversized provider response chunk without retaining it', async () => {
+    let fetchSignal: AbortSignal | undefined;
     const bytes = new Uint8Array(256 * 1024).fill(9);
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(bytes, { status: 200 })));
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+      cancel() {},
+    });
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      fetchSignal = init.signal as AbortSignal;
+      return new Response(body, { status: 200 });
+    }));
     const opened = await openExportObject(
       'https://abc.public.blob.vercel-storage.com/u/file.png',
     );
     expect(opened.ok).toBe(true);
     if (opened.ok) {
-      const reader = opened.body.getReader();
-      const chunks: Uint8Array[] = [];
-      for (;;) {
-        const result = await reader.read();
-        if (result.done) break;
-        if (result.value) chunks.push(result.value);
-      }
-      expect(chunks.every((chunk) => chunk.byteLength <= EXPORT_STREAM_CHUNK_BYTES)).toBe(true);
-      expect(chunks.reduce((total, chunk) => total + chunk.byteLength, 0)).toBe(bytes.byteLength);
+      await expect(opened.body.getReader().read()).rejects.toThrow(/bounded ingress/i);
     }
+    expect(fetchSignal?.aborted).toBe(true);
   });
 
   it('rejects an off-allowlist redirect without fetching the destination', async () => {

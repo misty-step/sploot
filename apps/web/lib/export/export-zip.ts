@@ -5,6 +5,7 @@ import type { ExportFailure } from './export-policy';
 import {
   EXPORT_BACKPRESSURE_TIMEOUT_MS,
   EXPORT_STREAM_CHUNK_BYTES,
+  EXPORT_STREAM_OUTPUT_QUEUE_BYTES,
   waitForExportCapacity,
 } from './export-backpressure';
 
@@ -72,14 +73,31 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
     let bytesStreamed = 0;
     let zipError: Error | null = null;
 
+    const pendingOutput: Uint8Array[] = [];
+    let pendingOutputBytes = 0;
     const enqueueZipOutput = (chunk: Uint8Array): void => {
       for (let offset = 0; offset < chunk.byteLength; offset += EXPORT_STREAM_CHUNK_BYTES) {
         const piece = chunk.subarray(offset, Math.min(offset + EXPORT_STREAM_CHUNK_BYTES, chunk.byteLength));
-        if (maxBytes !== undefined && BigInt(bytesStreamed + piece.length) > maxBytes) {
-          // Never hand out a byte past the admitted reservation.
+        if (pendingOutputBytes + piece.length > EXPORT_STREAM_OUTPUT_QUEUE_BYTES) {
+          zipError = new Error('export zip output queue exceeded');
+          abort();
+          return;
+        }
+        if (maxBytes !== undefined && BigInt(bytesStreamed + pendingOutputBytes + piece.length) > maxBytes) {
           zipError = new Error('export part would exceed its egress reservation');
           return;
         }
+        pendingOutput.push(piece);
+        pendingOutputBytes += piece.length;
+      }
+    };
+
+    const drainZipOutput = async (): Promise<void> => {
+      while (pendingOutput.length > 0) {
+        await waitForCapacity();
+        if (!ensureOpen()) return;
+        const piece = pendingOutput.shift()!;
+        pendingOutputBytes -= piece.length;
         bytesStreamed += piece.length;
         controller.enqueue(piece);
       }
@@ -157,6 +175,7 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
                 false,
               );
               if (zipError) throw zipError;
+              await drainZipOutput();
             }
           }
         } finally {
@@ -165,8 +184,10 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
           objectReader.releaseLock();
         }
 
+        await waitForCapacity();
         zipEntry.push(new Uint8Array(0), true);
         if (zipError) throw zipError;
+        await drainZipOutput();
 
         if (hash.digest('hex') !== entry.sha256) {
           failures.push({
@@ -182,6 +203,7 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
       await waitForCapacity();
       zip.end();
       if (zipError) throw zipError;
+      await drainZipOutput();
       if (!ensureOpen()) return;
 
       if (onComplete) {

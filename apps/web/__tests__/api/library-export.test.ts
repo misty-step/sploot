@@ -103,6 +103,8 @@ const fakePrisma = vi.hoisted(() => {
         const rows = [...state.exports.values()].filter((row) => {
           if (where.ownerUserId && row.ownerUserId !== where.ownerUserId) return false;
           if (where.status?.not && row.status === where.status.not) return false;
+          if (where.status?.in && !where.status.in.includes(row.status)) return false;
+          if (where.status?.notIn && where.status.notIn.includes(row.status)) return false;
           return true;
         }).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(skip, take ? skip + take : undefined);
         return rows.map((row) => select ? { id: row.id } : { ...row });
@@ -111,7 +113,9 @@ const fakePrisma = vi.hoisted(() => {
         for (const row of state.exports.values()) {
           if (where.id && row.id !== where.id) continue;
           if (where.ownerUserId && row.ownerUserId !== where.ownerUserId) continue;
-          if (where.status && row.status !== where.status) continue;
+          if (where.status && typeof where.status === 'string' && row.status !== where.status) continue;
+          if (where.status?.in && !where.status.in.includes(row.status)) continue;
+          if (where.status?.notIn && where.status.notIn.includes(row.status)) continue;
           return { ...row };
         }
         return null;
@@ -152,7 +156,9 @@ const fakePrisma = vi.hoisted(() => {
         for (const row of state.exports.values()) {
           if (where.id && row.id !== where.id) continue;
           if (where.ownerUserId && row.ownerUserId !== where.ownerUserId) continue;
-          if (where.status && row.status !== where.status) continue;
+          if (where.status && typeof where.status === 'string' && row.status !== where.status) continue;
+          if (where.status?.in && !where.status.in.includes(row.status)) continue;
+          if (where.status?.notIn && where.status.notIn.includes(row.status)) continue;
           if (where.expiresAt?.gt !== undefined && !(row.expiresAt > where.expiresAt.gt)) continue;
           if (where.egressBytes?.lte !== undefined && !(row.egressBytes <= where.egressBytes.lte))
             continue;

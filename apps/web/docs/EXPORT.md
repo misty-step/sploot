@@ -78,30 +78,19 @@ record.
   "snapshotAt": "2026-07-15T12:00:00.000Z",
   "expiresAt": "2026-07-16T12:00:00.000Z",
 
-  "parts": [
-    { "index": 0, "file": "sploot-export-cm0…-part-001-of-004.zip",
-      "assets": 400, "bytes": 260000000, "served": true }
-  ],
-
-  // Objects that could not be exported, by asset. Reasons:
-  // object_missing | object_fetch_failed | object_url_rejected | checksum_mismatch
-  "failures": [
-    { "assetId": "ck…", "archivePath": "assets/ck….png", "reason": "object_missing" }
-  ],
-
   "tags": [ { "name": "reaction", "color": "#ff00ff" } ],
 
   "assets": [
     {
       "id": "ck…",
-      "archivePath": "assets/ck….png",   // where the bytes live inside the parts
-      "part": 0,                          // which part carries them (null if no parts)
+      "archivePath": "assets/ck….png",
+      "part": 0,
       "mime": "image/png",
       "bytes": 123456,
-      "sha256": "…",                     // verify your download against this
+      "sha256": "…",
       "width": 800, "height": 600,
       "favorite": true,
-      "phash": "…",                      // perceptual hash, may be null
+      "phash": "…",
       "createdAt": "…", "updatedAt": "…",
       "tags": ["reaction"]
     }
@@ -112,14 +101,22 @@ record.
   "complete": false,
   "incompleteReasons": ["parts_not_fully_downloaded", "objects_missing_or_failed"],
   "totals": {
-    "assets": 1234,          // assets actually emitted above
+    "assets": 1234,
+    "snapshotAssets": 1234,
     "originalBytes": 987654321,
     "parts": 4,
-    "servedParts": 3,        // parts fully streamed at least once
+    "servedParts": 3,
     "failedObjects": 1
-  }
+  },
+  "failures": [
+    { "assetId": "ck…", "archivePath": "assets/ck….png", "reason": "object_missing" }
+  ],
+  "parts": [
+    { "index": 0, "file": "sploot-export-cm0…-part-001-of-004.zip",
+      "assets": 400, "bytes": 260000000, "served": true }
+  ]
 }
-```
+``````
 
 Portability notes:
 

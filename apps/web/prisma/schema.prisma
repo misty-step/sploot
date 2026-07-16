@@ -235,7 +235,7 @@ model AssetTag {
 model LibraryExport {
   id                 String   @id @default(cuid())
   ownerUserId        String   @map("owner_user_id")
-  status             String   @default("active") // active | superseded | canceled
+  status             String   @default("active") // active | finalizing | superseded | canceled
   snapshotAt         DateTime @map("snapshot_at")
   expiresAt          DateTime @map("expires_at")
   manifestVersion    String   @map("manifest_version")

@@ -35,7 +35,7 @@ import type { ExportZipEntry } from './export-zip';
  * the loser adopts the winner's row.
  */
 
-export type LibraryExportStatus = 'active' | 'superseded' | 'canceled';
+export type LibraryExportStatus = 'active' | 'finalizing' | 'superseded' | 'canceled';
 
 export interface ExportRowData {
   id: string;
@@ -256,7 +256,7 @@ export async function createOrReuseExport(
   const now = new Date();
 
   const active = await db.libraryExport.findFirst({
-    where: { ownerUserId: userId, status: 'active' },
+    where: { ownerUserId: userId, status: { in: ['active', 'finalizing'] } },
   });
   if (active && !options.force && !isExportExpired(active.expiresAt as Date, now)) {
     return { export: toExportView(normalizeExportRow(active)), reused: true };
@@ -266,7 +266,7 @@ export async function createOrReuseExport(
     const result = await db.$transaction(async (tx) => {
       await acquireEnrollmentIdentityWriterLock(tx, userId);
       const lockedActive = await tx.libraryExport.findFirst({
-        where: { ownerUserId: userId, status: 'active' },
+        where: { ownerUserId: userId, status: { in: ['active', 'finalizing'] } },
       });
       if (lockedActive && !options.force && !isExportExpired(lockedActive.expiresAt as Date, now)) {
         return { row: lockedActive, reused: true };
@@ -287,11 +287,11 @@ export async function createOrReuseExport(
         },
       });
       await tx.libraryExport.updateMany({
-        where: { ownerUserId: userId, status: 'active' },
+        where: { ownerUserId: userId, status: { in: ['active', 'finalizing'] } },
         data: { status: 'superseded' },
       });
       const inactiveToDelete = await tx.libraryExport.findMany({
-        where: { ownerUserId: userId, status: { not: 'active' } },
+        where: { ownerUserId: userId, status: { notIn: ['active', 'finalizing'] } },
         orderBy: { updatedAt: 'desc' },
         skip: EXPORT_MAX_RETAINED_ROWS_PER_USER - 1,
         select: { id: true },
@@ -334,7 +334,7 @@ export async function createOrReuseExport(
   } catch (error: unknown) {
     if ((error as { code?: string })?.code === 'P2002') {
       const winner = await db.libraryExport.findFirst({
-        where: { ownerUserId: userId, status: 'active' },
+        where: { ownerUserId: userId, status: { in: ['active', 'finalizing'] } },
       });
       if (winner) return { export: toExportView(normalizeExportRow(winner)), reused: true };
     }
@@ -345,7 +345,7 @@ export async function createOrReuseExport(
 export async function getActiveExport(userId: string): Promise<LibraryExportView | null> {
   const db = requireDb();
   const row = await db.libraryExport.findFirst({
-    where: { ownerUserId: userId, status: 'active' },
+    where: { ownerUserId: userId, status: { in: ['active', 'finalizing'] } },
   });
   return row ? toExportView(normalizeExportRow(row)) : null;
 }
@@ -363,12 +363,15 @@ export async function getOwnedExport(
 }
 
 export async function cancelExport(userId: string, exportId: string): Promise<boolean> {
-  const db = requireDb();
-  const result = await db.libraryExport.updateMany({
-    where: { id: exportId, ownerUserId: userId, status: 'active' },
-    data: { status: 'canceled' },
+  const db = requirePrismaDb();
+  return db.$transaction(async (tx) => {
+    await acquireEnrollmentIdentityWriterLock(tx, userId);
+    const result = await tx.libraryExport.updateMany({
+      where: { id: exportId, ownerUserId: userId, status: 'active' },
+      data: { status: 'canceled' },
+    });
+    return result.count > 0;
   });
-  return result.count > 0;
 }
 
 export type ExportAccess =
@@ -383,6 +386,8 @@ export async function accessExportForDownload(
 ): Promise<ExportAccess> {
   const row = await getOwnedExport(userId, exportId);
   if (!row) return { kind: 'not_found' };
+  // A manifest terminal fence briefly excludes concurrent download admission;
+  // the in-flight response owns the identity lock/state transition.
   if (row.status !== 'active') return { kind: 'gone', code: 'export_unavailable' };
   if (isExportExpired(row.expiresAt)) return { kind: 'gone', code: 'export_expired' };
   return { kind: 'ok', row };
@@ -470,7 +475,7 @@ export async function refundExportEgress(exportId: string, refundBytes: bigint):
   if (refundBytes <= BigInt(0)) return;
   const db = requireDb();
   await db.libraryExport.updateMany({
-    where: { id: exportId, status: 'active', expiresAt: { gt: new Date() }, egressBytes: { gte: refundBytes } },
+    where: { id: exportId, status: { in: ['active', 'finalizing'] }, expiresAt: { gt: new Date() }, egressBytes: { gte: refundBytes } },
     data: { egressBytes: { decrement: refundBytes } },
   });
 }

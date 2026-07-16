@@ -2,6 +2,8 @@ export const EXPORT_BACKPRESSURE_TIMEOUT_MS = 60_000;
 export const EXPORT_BACKPRESSURE_POLL_MS = 5;
 /** Maximum bytes accepted from a provider or emitted per stream enqueue. */
 export const EXPORT_STREAM_CHUNK_BYTES = 64 * 1024;
+/** Maximum fflate output retained while waiting for the response sink. */
+export const EXPORT_STREAM_OUTPUT_QUEUE_BYTES = EXPORT_STREAM_CHUNK_BYTES * 64;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

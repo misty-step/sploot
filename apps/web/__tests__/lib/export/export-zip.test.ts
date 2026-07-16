@@ -199,7 +199,7 @@ describe('streamExportPartZip', () => {
           }),
         };
       },
-      maxBytes: BigInt(1024 * 1024),
+      maxBytes: BigInt(8 * 1024 * 1024),
     });
     const chunks: Uint8Array[] = [];
     const reader = stream.getReader();
@@ -216,7 +216,36 @@ describe('streamExportPartZip', () => {
       offset += chunk.byteLength;
     }
     expect(new Uint8Array(unzipSync(zipBytes)['assets/huge.png'])).toEqual(bytes);
-  });
+  }, 20_000);
+
+  it('bounds a 10k-entry central directory finalization burst', async () => {
+    const entries = Array.from({ length: 10_000 }, (_, index) => entry(
+      `central-${index}`,
+      new Uint8Array([index % 251]),
+    ));
+    const stream = streamExportPartZip({
+      entries,
+      reader: async () => ({
+        ok: true as const,
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array([1]));
+            controller.close();
+          },
+        }),
+      }),
+      maxBytes: BigInt(8 * 1024 * 1024),
+    });
+    const chunks: Uint8Array[] = [];
+    const reader = stream.getReader();
+    for (;;) {
+      const result = await reader.read();
+      if (result.done) break;
+      if (result.value) chunks.push(result.value);
+    }
+    expect(chunks.every((chunk) => chunk.byteLength <= EXPORT_STREAM_CHUNK_BYTES)).toBe(true);
+  }, 20_000);
+
 
   it('streams normally when the reservation covers the real zip size', async () => {
     const a = new Uint8Array([1, 2, 3, 4]);

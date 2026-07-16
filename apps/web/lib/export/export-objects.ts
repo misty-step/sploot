@@ -97,8 +97,6 @@ function streamProviderBody(
 ): ReadableStream<Uint8Array> {
   const reader = body.getReader();
   let finished = false;
-  let pending: Uint8Array | null = null;
-  let pendingOffset = 0;
   const cleanup = () => {
     if (finished) return;
     finished = true;
@@ -112,16 +110,6 @@ function streamProviderBody(
   return new ReadableStream<Uint8Array>({
     async pull(streamController) {
       try {
-        if (pending) {
-          const end = Math.min(pendingOffset + EXPORT_STREAM_CHUNK_BYTES, pending.byteLength);
-          streamController.enqueue(pending.subarray(pendingOffset, end));
-          pendingOffset = end;
-          if (pendingOffset >= pending.byteLength) {
-            pending = null;
-            pendingOffset = 0;
-          }
-          return;
-        }
         const result = await readWithIdleTimeout(
           reader.read(),
           readIdleTimeoutMs,
@@ -132,15 +120,14 @@ function streamProviderBody(
           streamController.close();
         }
         else if (result.value && result.value.byteLength > 0) {
-          pending = result.value;
-          pendingOffset = 0;
-          const end = Math.min(EXPORT_STREAM_CHUNK_BYTES, pending.byteLength);
-          streamController.enqueue(pending.subarray(0, end));
-          pendingOffset = end;
-          if (pendingOffset >= pending.byteLength) {
-            pending = null;
-            pendingOffset = 0;
+          if (result.value.byteLength > EXPORT_STREAM_CHUNK_BYTES) {
+            controller.abort();
+            await reader.cancel().catch(() => undefined);
+            cleanup();
+            streamController.error(new Error('export provider chunk exceeded bounded ingress'));
+            return;
           }
+          streamController.enqueue(result.value);
         }
       } catch (error) {
         controller.abort();
