@@ -3,6 +3,7 @@ import { prisma } from '../db';
 import { isUnauthorizedAuthError } from './api';
 import { getUserSyncCircuitBreaker } from '../circuit-breaker';
 import { isCompiledPublicTruthE2EBuild } from '@/lib/public-truth-e2e';
+import { getQaLocalAuthResult, getQaLocalAuthWithUserResult } from '@/lib/auth/qa-server';
 import {
   EnrollmentDeniedError,
   EnrollmentIdentityConflictError,
@@ -47,7 +48,6 @@ export async function getAuth(): Promise<AuthResult> {
   // the qa-local seam (and every qa-local marker) is dead-code-eliminated out
   // of the shipped bundle. The production public-truth guard proves it.
   if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
-    const { getQaLocalAuthResult } = await import('./qa-local-server');
     const qaAuth = await getQaLocalAuthResult();
     if (qaAuth) return qaAuth;
   }
@@ -81,7 +81,6 @@ export async function getAuthWithUser(): Promise<AuthWithUserResult> {
   // Same compile-time omission as getAuth: qa-local exists only in explicit
   // dev/test qa builds and is proven absent from production bundles.
   if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
-    const { getQaLocalAuthWithUserResult } = await import('./qa-local-server');
     const qaAuth = await getQaLocalAuthWithUserResult();
     if (qaAuth) return qaAuth;
   }
