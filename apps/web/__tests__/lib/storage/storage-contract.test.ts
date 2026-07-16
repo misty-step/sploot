@@ -8,7 +8,10 @@ import {
 } from '@/lib/storage/config';
 import {
   InMemoryObjectStore,
+  ObjectNotFoundError,
   PortableObjectStore,
+  S3CompatibleObjectStore,
+  VercelObjectStore,
   type ObjectMetadata,
 } from '@/lib/storage/object-store';
 import {
@@ -102,6 +105,74 @@ describe('portable storage contract', () => {
     const provider = new MutatingStore('legacy');
     const store = new PortableObjectStore({ legacy: provider, phase: 'legacy' });
     await expect(store.putVerified('assets/user_1/poison.png', bytes, metadata)).rejects.toThrow(/SHA-256/);
+    expect(provider.objects.has('assets/user_1/poison.png')).toBe(false);
+  });
+
+  it('accepts only URLs owned by the configured provider', async () => {
+    const legacy = new VercelObjectStore('https://blob.example.test');
+    expect(legacy.ownsUrl('https://blob.example.test/assets/a.png')).toBe(true);
+    expect(legacy.ownsUrl('https://store-123.public.blob.vercel-storage.com/assets/a.png')).toBe(true);
+    expect(legacy.ownsUrl('https://other.example.test/assets/a.png')).toBe(false);
+    expect(legacy.ownsUrl('https://blob.example.test/assets/a.png?delete=all')).toBe(false);
+    const deletedUrls: string[] = [];
+    legacy.deleteUrl = async url => { deletedUrls.push(url); };
+    const portable = new PortableObjectStore({ legacy, phase: 'legacy' });
+    await expect(portable.deleteUrl('https://other.example.test/assets/a.png')).rejects.toThrow(/not owned/);
+    expect(deletedUrls).toEqual([]);
+
+    const target = new S3CompatibleObjectStore(createStorageConfig({
+      provider: 's3',
+      endpoint: 'https://objects.example.test',
+      bucket: 'sploot',
+      accessKeyId: 'public-id',
+      secretAccessKey: 'secret',
+    }));
+    expect(target.ownsUrl('s3://sploot/assets/a.png')).toBe(true);
+    expect(target.ownsUrl('s3://other-bucket/assets/a.png')).toBe(false);
+    expect(target.ownsUrl('s3://sploot/assets/a.png?delete=all')).toBe(false);
+  });
+
+  it('reclaims an expired in-flight migration lease', async () => {
+    const source = new InMemoryObjectStore('legacy');
+    let signalStarted: (() => void) | undefined;
+    const started = new Promise<void>(resolve => { signalStarted = resolve; });
+    let releaseFirst: (() => void) | undefined;
+    const release = new Promise<void>(resolve => { releaseFirst = resolve; });
+    const target = new (class extends InMemoryObjectStore {
+      private reads = 0;
+
+      constructor() {
+        super('s3');
+      }
+
+      override async get(key: string) {
+        this.reads += 1;
+        if (this.reads === 1) {
+          signalStarted?.();
+          await release;
+          throw new ObjectNotFoundError(key);
+        }
+        return super.get(key);
+      }
+    })();
+    await source.put('assets/retry.png', bytes, metadata);
+    const verifier = new MigrationVerifier({
+      source,
+      target,
+      manifest: [{ logicalKey: 'assets/retry.png', sourceKey: 'assets/retry.png', size: metadata.size, sha256: metadata.sha256 }],
+      maxAttempts: 2,
+      leaseMs: 5,
+    });
+
+    const firstRun = verifier.runBatch({ limit: 1, workerId: 'worker-a' });
+    await started;
+    await new Promise(resolve => setTimeout(resolve, 25));
+    const secondRun = verifier.runBatch({ limit: 1, workerId: 'worker-b' });
+    await secondRun;
+    releaseFirst?.();
+    await firstRun;
+
+    expect((await verifier.receipt()).entries[0]).toMatchObject({ status: 'verified', attempts: 2 });
   });
 
   it('resumes bounded copies idempotently and rolls back only verified targets', async () => {

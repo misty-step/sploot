@@ -69,7 +69,7 @@ export async function uploadToBlob(
  * @throws Error if deletion fails
  */
 export async function deleteFromBlob(url: string): Promise<void> {
-  await new VercelObjectStore().delete(url);
+  await new VercelObjectStore().deleteUrl(url);
 }
 
 /**

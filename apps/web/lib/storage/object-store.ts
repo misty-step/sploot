@@ -24,6 +24,8 @@ export interface ObjectStore {
   get(key: string): Promise<StoredObject>;
   delete(key: string): Promise<void>;
   list?(prefix: string, limit: number): Promise<Array<{ pathname: string; url: string }>>;
+  ownsUrl?(url: string): boolean;
+  deleteUrl?(url: string): Promise<void>;
 }
 
 export class ObjectNotFoundError extends Error {
@@ -112,10 +114,10 @@ export class PortableObjectStore {
     try {
       for (const provider of this.providers()) {
         await provider.put(logicalKey, bytes, actual);
+        written.push({ store: provider, key: logicalKey });
         const readback = await provider.get(logicalKey);
         const readbackBytes = await bodyToBuffer(readback.body, this.maxBytes);
         assertMetadata(actualMetadata(readbackBytes, actual.contentType), expected);
-        written.push({ store: provider, key: logicalKey });
       }
     } catch (error) {
       await Promise.allSettled(written.map(({ store, key: writtenKey }) => store.delete(writtenKey)));
@@ -146,9 +148,8 @@ export class PortableObjectStore {
 
   async deleteUrl(url: string): Promise<void> {
     for (const provider of [this.options.legacy, this.target].filter(Boolean) as ObjectStore[]) {
-      if (url.startsWith(provider.provider === 'vercel' ? 'https://' : 's3://')) {
-        const key = provider.provider === 's3' ? url.replace(/^s3:\/\/[^/]+\//, '') : url;
-        await provider.delete(key);
+      if (provider.ownsUrl?.(url) && provider.deleteUrl) {
+        await provider.deleteUrl(url);
         return;
       }
     }
@@ -240,7 +241,31 @@ export class VercelObjectStore implements ObjectStore {
     return { key: logicalKey, url: response.url, metadata: { size: Number(response.headers.get('content-length') ?? 0), sha256: response.headers.get('x-amz-meta-sha256') ?? '' }, body: response.body };
   }
 
-  async delete(key: string) { await del(key.startsWith('http') ? key : `${this.baseUrl.replace(/\/$/, '')}/${canonicalLogicalKey(key)}`); }
+  ownsUrl(url: string): boolean {
+    try {
+      const candidate = new URL(url);
+      const base = new URL(this.baseUrl);
+      const isVercelBlobHost = candidate.hostname.endsWith('.public.blob.vercel-storage.com') || candidate.hostname === 'blob.vercel-storage.com';
+      if ((candidate.origin !== base.origin && !isVercelBlobHost) || candidate.protocol !== 'https:' || candidate.search || candidate.hash) return false;
+      const basePath = candidate.origin === base.origin ? base.pathname.replace(/\/$/, '') : '';
+      const prefix = basePath ? `${basePath}/` : '/';
+      const logicalKey = candidate.pathname.startsWith(prefix) ? candidate.pathname.slice(prefix.length) : '';
+      canonicalLogicalKey(logicalKey);
+      return logicalKey.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async deleteUrl(url: string) {
+    if (!this.ownsUrl(url)) throw new Error('Storage URL is not owned by the configured Vercel provider');
+    await del(url);
+  }
+
+  async delete(key: string) {
+    if (key.startsWith('http://') || key.startsWith('https://')) return this.deleteUrl(key);
+    await del(`${this.baseUrl.replace(/\/$/, '')}/${canonicalLogicalKey(key)}`);
+  }
 
   async list(prefix: string, limit: number) {
     const canonicalPrefix = prefix.endsWith('/') ? `${canonicalLogicalKey(prefix.slice(0, -1))}/` : canonicalLogicalKey(prefix);
@@ -290,10 +315,30 @@ export class S3CompatibleObjectStore implements ObjectStore {
     };
   }
 
+  ownsUrl(url: string): boolean {
+    return this.keyFromUrl(url) !== null;
+  }
+
+  async deleteUrl(url: string) {
+    const key = this.keyFromUrl(url);
+    if (!key) throw new Error('Storage URL is not owned by the configured S3 provider');
+    await this.delete(key);
+  }
+
   async delete(key: string) {
     const logicalKey = canonicalLogicalKey(key);
     const response = await this.request('DELETE', logicalKey);
     if (!response.ok && response.status !== 404) throw new Error(`S3-compatible delete failed: ${response.status}`);
+  }
+
+  private keyFromUrl(url: string): string | null {
+    const prefix = `s3://${this.config.bucket}/`;
+    if (!url.startsWith(prefix)) return null;
+    try {
+      return canonicalLogicalKey(url.slice(prefix.length));
+    } catch {
+      return null;
+    }
   }
 
   private objectUrl(key: string): string {
