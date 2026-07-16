@@ -1,3 +1,4 @@
+import { isValidAssetId } from '@sploot/common';
 /**
  * Deterministic policy for complete-library exports (Powder card sploot-057).
  *
@@ -20,6 +21,8 @@ export const EXPORT_TTL_MS = 24 * 60 * 60 * 1000;
 export const EXPORT_PART_MAX_BYTES = 256 * 1024 * 1024;
 /** Keep zip central directories and per-part admission bounded for tiny assets. */
 export const EXPORT_PART_MAX_ENTRIES = 10_000;
+/** Hard upper bound on persisted boundary JSON and manifest part metadata. */
+export const EXPORT_MAX_PARTS = 10_000;
 
 /**
  * Egress cost bound: an export may stream at most
@@ -82,6 +85,19 @@ export interface ExportPartBoundary {
   bytes: number;
 }
 
+export function validateExportPartBoundaries(value: unknown): value is ExportPartBoundary[] {
+  if (!Array.isArray(value) || value.length > EXPORT_MAX_PARTS) return false;
+  return value.every((part, index) => {
+    if (!part || typeof part !== 'object') return false;
+    const candidate = part as Record<string, unknown>;
+    return candidate.index === index &&
+      (candidate.afterId === null || isValidAssetId(candidate.afterId)) &&
+      Number.isSafeInteger(candidate.count) && Number(candidate.count) > 0 &&
+      Number.isSafeInteger(candidate.bytes) && Number(candidate.bytes) >= 0 &&
+      Number(candidate.count) <= EXPORT_PART_MAX_ENTRIES;
+  });
+}
+
 export interface ExportEntrySeed {
   id: string;
   size: number;
@@ -123,12 +139,18 @@ export function createExportPartPlanner(
   return {
     parts,
     add(entry) {
+      if (!isValidAssetId(entry.id) || !Number.isSafeInteger(entry.size) || entry.size < 0) {
+        throw new Error('export planner received invalid asset metadata');
+      }
       const startsNewPart =
         current === null ||
         (current.count > 0 &&
           (current.bytes + entry.size > maxPartBytes || current.count >= maxPartEntries));
 
       if (startsNewPart) {
+        if (parts.length >= EXPORT_MAX_PARTS) {
+          throw new Error('export exceeds maximum part count');
+        }
         current = {
           index: parts.length,
           afterId: previousId,
@@ -166,7 +188,7 @@ export function planExportParts(
  * paths inside the archive.
  */
 export function archivePathFor(assetId: string, mime: string): string {
-  if (!SAFE_ASSET_ID.test(assetId)) {
+  if (!isValidAssetId(assetId) || !SAFE_ASSET_ID.test(assetId)) {
     throw new Error(`unsafe asset id for archive path: ${JSON.stringify(assetId)}`);
   }
   const extension = MIME_EXTENSIONS[mime] ?? 'bin';

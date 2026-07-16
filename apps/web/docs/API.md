@@ -686,7 +686,7 @@ Update asset metadata (favorite status, tags).
 **Parameters:**
 
 - `favorite` (boolean, optional): Set favorite status
-- `tags` (array, optional): Array of tag strings
+- `tags` (array, optional): Up to 256 tag strings; each name is at most 128 characters
 
 **Success Response (200):**
 
@@ -738,7 +738,7 @@ List tags attached to an asset you own.
 
 #### POST /api/assets/{id}/tags
 
-Attach existing or new tags to an asset you own.
+Attach existing or new tags to an asset you own. The request accepts at most 256 tag IDs and 256 tag names; each name is at most 128 characters and each asset may have at most 256 tags.
 
 **Authentication:** Required
 
@@ -824,7 +824,7 @@ session and snapshots fresh. At most one active session per user.
     "failures": [],
     "complete": false,
     "incompleteReasons": ["parts_not_fully_downloaded"],
-    "egress": { "usedBytes": 0, "allowanceBytes": 3097222171, "windowAllowanceBytes": 6194444342 },
+    "egress": { "usedBytes": 0, "allowanceBytes": 3108583235, "windowAllowanceBytes": 6217166470 },
     "downloads": {
       "status": "/api/library/export/cm0…",
       "manifest": "/api/library/export/cm0…/manifest",
@@ -855,6 +855,8 @@ Returns `{"canceled": true|false}`.
 Stream one zip part (`application/zip`, attachment). Idempotent: re-request
 the same part to retry an interrupted download. A part is marked served only
 after its final byte was streamed.
+
+Egress allowance is `3 × (totalOriginalBytes + 3,072 × totalAssets + measuredManifestMetadataBytes) + 128 MB`; the rolling 24-hour tenant allowance is twice that amount. The example above assumes 987,654,321 original bytes, 1,234 assets, and 10,000 measured UTF-8 manifest/tag metadata bytes.
 
 Egress is reservation-admitted: a conservative bound for the whole response
 is charged atomically before any byte streams, settled down to actual bytes
@@ -894,7 +896,7 @@ List tags for the authenticated user.
 
 #### POST /api/tags
 
-Create a tag for the authenticated user.
+Create a tag for the authenticated user. Names are at most 128 characters, colors are at most 32 characters, and each user may own at most 10,000 tags.
 
 **Authentication:** Required
 
@@ -908,7 +910,7 @@ Create a tag for the authenticated user.
 
 #### PATCH /api/tags/{tagId}
 
-Update an existing user-owned tag.
+Update an existing user-owned tag. Names are at most 128 characters and colors are at most 32 characters.
 
 **Authentication:** Required
 

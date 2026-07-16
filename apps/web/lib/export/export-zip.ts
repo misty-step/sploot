@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { Zip, ZipPassThrough } from 'fflate';
 import type { ExportObjectReader } from './export-objects';
 import type { ExportFailure } from './export-policy';
+import { EXPORT_BACKPRESSURE_TIMEOUT_MS, waitForExportCapacity } from './export-backpressure';
 
 /**
  * Streaming zip assembly for one export part.
@@ -42,20 +43,25 @@ export interface StreamExportPartZipOptions {
   reader: ExportObjectReader;
   /** Hard byte cap (the admitted egress reservation); exceeding it errors the stream. */
   maxBytes?: bigint;
+  backpressureTimeoutMs?: number;
+  signal?: AbortSignal;
   onComplete?: (outcome: ExportPartOutcome) => void | Promise<void>;
-}
-
-const BACKPRESSURE_POLL_MS = 5;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  onFinish?: () => void;
 }
 
 export function streamExportPartZip(options: StreamExportPartZipOptions): ReadableStream<Uint8Array> {
-  const { entries, reader, maxBytes, onComplete } = options;
+  const { entries, reader, maxBytes, backpressureTimeoutMs = EXPORT_BACKPRESSURE_TIMEOUT_MS, signal, onComplete, onFinish } = options;
   let canceled = false;
+  let clientCanceled = false;
+  let terminalError: Error | null = null;
   let activeRequestController: AbortController | null = null;
   let activeObjectReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  const abort = () => {
+    canceled = true;
+    if (!clientCanceled && !terminalError) terminalError = new Error('export became unavailable during stream');
+    activeRequestController?.abort();
+    void activeObjectReader?.cancel();
+  };
 
   async function run(controller: ReadableStreamDefaultController<Uint8Array>): Promise<void> {
     const failures: ExportFailure[] = [];
@@ -77,25 +83,33 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
       controller.enqueue(chunk);
     });
 
+    const ensureOpen = (): boolean => {
+      if (!canceled) return true;
+      if (terminalError) throw terminalError;
+      return false;
+    };
+
     async function waitForCapacity(): Promise<void> {
-      while (
-        !canceled &&
-        controller.desiredSize !== null &&
-        controller.desiredSize <= 0
-      ) {
-        await sleep(BACKPRESSURE_POLL_MS);
-      }
+      await waitForExportCapacity(
+        () => controller.desiredSize,
+        () => canceled,
+        backpressureTimeoutMs,
+        () => {
+          activeRequestController?.abort();
+          void activeObjectReader?.cancel();
+        },
+      );
     }
 
     try {
       for (const entry of entries) {
-        if (canceled) return;
+        if (!ensureOpen()) return;
 
         const requestController = new AbortController();
         activeRequestController = requestController;
         const opened = await reader(entry.url, requestController.signal);
         activeRequestController = null;
-        if (canceled) {
+        if (!ensureOpen()) {
           if (opened.ok) await opened.body.cancel();
           return;
         }
@@ -116,7 +130,7 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
         activeObjectReader = objectReader;
         try {
           for (;;) {
-            if (canceled) return;
+            if (!ensureOpen()) return;
             await waitForCapacity();
             const { done, value } = await objectReader.read();
             if (done) break;
@@ -145,26 +159,32 @@ export function streamExportPartZip(options: StreamExportPartZipOptions): Readab
 
       zip.end();
       if (zipError) throw zipError;
-      if (canceled) return;
+      if (!ensureOpen()) return;
 
       if (onComplete) {
         await onComplete({ failures, bytesStreamed });
       }
+      if (!ensureOpen()) return;
       controller.close();
     } catch (error) {
-      if (!canceled) {
+      if (!clientCanceled) {
         controller.error(error);
       }
+    } finally {
+      onFinish?.();
+      signal?.removeEventListener('abort', abort);
     }
   }
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
+      if (signal?.aborted) abort();
+      else signal?.addEventListener('abort', abort, { once: true });
       void run(controller);
     },
     async cancel() {
-      canceled = true;
-      activeRequestController?.abort();
+      clientCanceled = true;
+      abort();
       await activeObjectReader?.cancel().catch(() => undefined);
     },
   });

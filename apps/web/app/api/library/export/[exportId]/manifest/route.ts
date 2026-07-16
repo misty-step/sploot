@@ -5,7 +5,7 @@ import {
   type AuthenticatedApiContext,
 } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
-import { enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
+import { acquireEnrollmentIdentityWriterLock, enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
 import { exportAdmissionErrorResponse } from '@/lib/export/export-http';
 import {
   estimateManifestEgressBytesForExport,
@@ -16,6 +16,7 @@ import {
   accessExportForDownload,
   refundExportEgress,
   reserveExportEgress,
+  monitorExportLifecycle,
 } from '@/lib/export/export-service';
 import type { RouteContext } from '@/lib/with-observability';
 import { withObservability } from '@/lib/with-observability';
@@ -65,15 +66,27 @@ async function getHandler(
     // budget, so its conservative reservation must fit before any byte
     // streams; the stream hard-caps at the reservation and a clean completion
     // settles the charge down to actual bytes (aborts stay charged).
-    const reserve = await estimateManifestEgressBytesForExport(row);
-    const admission = await reserveExportEgress(row, reserve);
+    const { reserve, admission } = await prisma.$transaction(async (tx) => {
+      await acquireEnrollmentIdentityWriterLock(tx, row.ownerUserId);
+      const reserve = await estimateManifestEgressBytesForExport(row, tx);
+      const admission = await reserveExportEgress(row, reserve, new Date(), tx);
+      return { reserve, admission };
+    }, { maxWait: 120_000, timeout: 120_000 });
     if (admission.kind !== 'reserved') {
       return exportAdmissionErrorResponse(admission);
     }
+    const postAdmission = await accessExportForDownload(principal.userId, row.id);
+    if (postAdmission.kind !== 'ok') {
+      const code = postAdmission.kind === 'gone' ? postAdmission.code : 'export_unavailable';
+      return NextResponse.json({ error: 'This export is no longer available.', code, retryable: false }, { status: 410 });
+    }
+    const lifecycle = monitorExportLifecycle(row.ownerUserId, row.id);
 
     const stream = streamExportManifest({
       row,
       maxBytes: reserve,
+      signal: lifecycle.signal,
+      onFinish: lifecycle.stop,
       onComplete: async (bytesStreamed) => {
         try {
           await refundExportEgress(row.id, reserve - BigInt(bytesStreamed));

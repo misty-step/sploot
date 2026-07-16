@@ -7,12 +7,6 @@
  * never learn provider details, and no signed provider URLs reach the client.
  */
 
-import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
-import { resolve, sep } from 'node:path';
-import { Readable } from 'node:stream';
-import { isQaLocalAuthEnabled } from '@/lib/auth/qa-local';
-import { QA_SEED_BLOB_HOST } from '@/lib/qa/qa-image-loader';
 
 export type ExportObjectFailureReason =
   | 'object_missing'
@@ -56,21 +50,6 @@ export function isAllowedExportObjectUrl(rawUrl: string): boolean {
   return url.protocol === 'https:' && ALLOWED_OBJECT_HOST.test(url.hostname);
 }
 
-/** QA-only mapping onto public/; active only in qa-local mode and path guarded. */
-export function resolveQaSeedObjectPath(
-  url: string,
-  env: Record<string, string | undefined> = process.env,
-): string | null {
-  if (env.NODE_ENV === 'production' || !isQaLocalAuthEnabled(env)) return null;
-  const qaPrefix = QA_SEED_BLOB_HOST + '/';
-  if (!url.startsWith(qaPrefix)) return null;
-  const relativePath = url.slice(qaPrefix.length);
-  const root = resolve(process.cwd(), 'public');
-  const full = resolve(root, relativePath);
-  if (!full.startsWith(root + sep)) return null;
-  return full;
-}
-
 function cancelBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
   if (!body) return Promise.resolve();
   return body.cancel().catch(() => undefined);
@@ -112,8 +91,20 @@ function streamProviderBody(
   body: ReadableStream<Uint8Array>,
   controller: AbortController,
   readIdleTimeoutMs: number,
+  unlinkAbort: () => void,
 ): ReadableStream<Uint8Array> {
   const reader = body.getReader();
+  let finished = false;
+  const cleanup = () => {
+    if (finished) return;
+    finished = true;
+    controller.signal.removeEventListener('abort', onAbort);
+    unlinkAbort();
+  };
+  const onAbort = () => {
+    void reader.cancel(controller.signal.reason).catch(() => undefined);
+  };
+  controller.signal.addEventListener('abort', onAbort, { once: true });
   return new ReadableStream<Uint8Array>({
     async pull(streamController) {
       try {
@@ -122,17 +113,22 @@ function streamProviderBody(
           readIdleTimeoutMs,
           () => controller.abort(),
         );
-        if (result.done) streamController.close();
+        if (result.done) {
+          cleanup();
+          streamController.close();
+        }
         else if (result.value) streamController.enqueue(result.value);
       } catch (error) {
         controller.abort();
         await reader.cancel().catch(() => undefined);
+        cleanup();
         streamController.error(error);
       }
     },
     async cancel(reason) {
       controller.abort(reason);
       await reader.cancel(reason).catch(() => undefined);
+      cleanup();
     },
   });
 }
@@ -166,6 +162,7 @@ export function createExportObjectReader(
     const unlinkAbort = linkAbortSignal(externalSignal, controller);
     let currentUrl = url;
     let redirects = 0;
+    let handedOff = false;
 
     try {
       for (;;) {
@@ -205,13 +202,14 @@ export function createExportObjectReader(
           return { ok: false, reason: 'object_fetch_failed' };
         }
 
+        handedOff = true;
         return {
           ok: true,
-          body: streamProviderBody(response.body, controller, readIdleTimeoutMs),
+          body: streamProviderBody(response.body, controller, readIdleTimeoutMs, unlinkAbort),
         };
       }
     } finally {
-      unlinkAbort();
+      if (!handedOff) unlinkAbort();
     }
   };
 }

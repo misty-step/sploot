@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isValidTagColor, isValidTagName } from '@sploot/common';
 import { requireUserIdWithSync } from '@/lib/auth/server';
 import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma } from '@/lib/db';
@@ -27,6 +28,13 @@ async function patchHandler(
     }
     const userId = await requireUserIdWithSync();
     const { name, color } = await req.json();
+
+    if (name !== undefined && !isValidTagName(name)) {
+      return NextResponse.json({ error: 'Tag name is invalid or too long' }, { status: 400 });
+    }
+    if (color !== undefined && !isValidTagColor(color)) {
+      return NextResponse.json({ error: 'Tag color is too long' }, { status: 400 });
+    }
 
     if ( !prisma) {
       return enrollmentUnavailableResponse();

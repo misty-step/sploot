@@ -3,9 +3,7 @@ import {
   isAllowedExportObjectUrl,
   createExportObjectReader,
   openExportObject,
-  resolveQaSeedObjectPath,
 } from '@/lib/export/export-objects';
-import { QA_SEED_BLOB_HOST } from '@/lib/qa/qa-image-loader';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -161,38 +159,6 @@ describe('export object reader', () => {
     }
     expect(signal?.aborted).toBe(true);
     expect(canceled).toBe(true);
-  });
-
-  describe('resolveQaSeedObjectPath (QA seed mapping)', () => {
-    const qaEnv = {
-      NODE_ENV: 'test',
-      SPLOOT_QA_AUTH_MODE: 'enabled',
-      SPLOOT_DEPLOYMENT_ENV: 'test',
-    };
-
-    it('maps QA seed URLs onto public/ only when qa-local mode is active', () => {
-      const url = `${QA_SEED_BLOB_HOST}/qa-blob-seed/meme.png`;
-      const mapped = resolveQaSeedObjectPath(url, qaEnv);
-      expect(mapped).toContain('/public/');
-      expect(mapped!.endsWith('qa-blob-seed/meme.png')).toBe(true);
-
-      expect(resolveQaSeedObjectPath(url, { NODE_ENV: 'test' })).toBeNull();
-      expect(
-        resolveQaSeedObjectPath(url, { ...qaEnv, NODE_ENV: 'production' }),
-      ).toBeNull();
-    });
-
-    it('never maps non-QA hosts and never escapes public/', () => {
-      expect(
-        resolveQaSeedObjectPath('https://abc.public.blob.vercel-storage.com/u/a.png', qaEnv),
-      ).toBeNull();
-      expect(
-        resolveQaSeedObjectPath(`${QA_SEED_BLOB_HOST}/../../etc/passwd`, qaEnv),
-      ).toBeNull();
-      expect(
-        resolveQaSeedObjectPath(`${QA_SEED_BLOB_HOST}/qa-blob-seed/../../secret.env`, qaEnv),
-      ).toBeNull();
-    });
   });
 
   it('reports a missing object distinctly from a fetch failure', async () => {

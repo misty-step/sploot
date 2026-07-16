@@ -208,6 +208,18 @@ describe('streamExportPartZip', () => {
     expect(canceled).toBe(true);
   });
 
+  it('fails closed when a client never drains backpressure', async () => {
+    const only = entry('slow-client', new Uint8Array([1, 2, 3]));
+    const stream = streamExportPartZip({
+      entries: [only],
+      reader: readerFor({ [only.url]: new Uint8Array([1, 2, 3]) }),
+      backpressureTimeoutMs: 10,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const downstream = stream.getReader();
+    await expect(downstream.read()).rejects.toThrow(/backpressure/i);
+  });
+
   it('produces an empty-but-valid zip when every object is unavailable', async () => {
     const only = entry('gone', new Uint8Array([1]));
     const reader = readerFor({ [only.url]: 'error' });

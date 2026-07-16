@@ -43,3 +43,23 @@ ALTER TABLE "library_exports"
     ADD CONSTRAINT "library_exports_owner_user_id_fkey"
     FOREIGN KEY ("owner_user_id") REFERENCES "users"("id")
     ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Source validation is authoritative; these NOT VALID checks reject new oversized
+-- rows without making this migration fail on legacy data that predates the bounds.
+ALTER TABLE "assets"
+  ADD CONSTRAINT "assets_id_length_check" CHECK (char_length("id") <= 128) NOT VALID;
+ALTER TABLE "tags"
+  ADD CONSTRAINT "tags_name_length_check" CHECK (char_length("name") <= 128) NOT VALID,
+  ADD CONSTRAINT "tags_color_length_check" CHECK ("color" IS NULL OR char_length("color") <= 32) NOT VALID;
+ALTER TABLE "library_exports"
+  ADD CONSTRAINT "library_exports_total_assets_check" CHECK ("total_assets" >= 0) NOT VALID,
+  ADD CONSTRAINT "library_exports_part_boundaries_json_check" CHECK (
+    CASE WHEN jsonb_typeof("part_boundaries") = 'array'
+      THEN jsonb_array_length("part_boundaries") <= 10000
+      ELSE false END
+  ) NOT VALID,
+  ADD CONSTRAINT "library_exports_served_parts_json_check" CHECK (
+    CASE WHEN jsonb_typeof("served_parts") = 'array'
+      THEN jsonb_array_length("served_parts") <= 10000
+      ELSE false END
+  ) NOT VALID;

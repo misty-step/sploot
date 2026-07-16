@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { TAG, isValidTagColor, isValidTagName } from '@sploot/common';
 import { requireUserIdWithSync } from '@/lib/auth/server';
 import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
 import { prisma } from '@/lib/db';
@@ -13,6 +14,7 @@ import { enrollmentResponseForError, withEnrollmentIdentityWriter } from '@/lib/
 async function getHandler(req: NextRequest) {
   try {
     const userId = await requireUserIdWithSync();
+
 
     if ( !prisma) {
       return enrollmentUnavailableResponse();
@@ -68,11 +70,15 @@ async function postHandler(req: NextRequest) {
     const userId = await requireUserIdWithSync();
     const { name, color } = await req.json();
 
-    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+    if (!isValidTagName(name)) {
       return NextResponse.json(
         { error: 'Tag name is required' },
         { status: 400 }
       );
+    }
+
+    if (!isValidTagColor(color ?? null)) {
+      return NextResponse.json({ error: 'Tag color is too long' }, { status: 400 });
     }
 
     if ( !prisma) {
@@ -84,10 +90,16 @@ async function postHandler(req: NextRequest) {
         where: { ownerUserId: userId, name: name.trim().toLowerCase() },
       });
       if (existingTag) return null;
+      const tagCount = await tx.tag.count({ where: { ownerUserId: userId } });
+      if (tagCount >= TAG.maxPerUser) return 'limit' as const;
       return tx.tag.create({
         data: { ownerUserId: userId, name: name.trim().toLowerCase(), color: color || null },
       });
     });
+
+    if (tag === 'limit') {
+      return NextResponse.json({ error: 'Tag limit reached' }, { status: 400 });
+    }
 
     if (!tag) {
       return NextResponse.json(

@@ -17,7 +17,8 @@ rules the endpoints enforce.
   the predicate `createdAt <= snapshotAt AND (deletedAt IS NULL OR deletedAt >
   snapshotAt)` — no asset is duplicated or lost across parts.
 - **Bounded, resumable parts.** Media is delivered as zip parts of at most
-  256 MB (always ≥ 1 asset). Parts are pure functions of the snapshot: an
+  256 MB and 10,000 entries (always ≥ 1 asset), with at most 10,000 parts
+  per export. Parts are pure functions of the snapshot: an
   interrupted or corrupted download is retried by requesting the same part
   again. A part counts as *served* only when the server streamed its final
   byte.
@@ -31,7 +32,8 @@ rules the endpoints enforce.
 - **Cost bound.** Egress is admitted by *reservation*, not counted after the
   fact. Before the first byte of a part or the manifest streams, a
   conservative upper bound for the whole response is atomically charged
-  against the export's budget (`3 × totalOriginalBytes + 128 MB`); if it
+  against the export's budget (`3 × (totalOriginalBytes + 3,072 × totalAssets + measuredManifestMetadataBytes) + 128 MB`); the metadata term includes measured
+UTF-8 manifest/tag framing and keeps tiny-asset exports bounded; if it
   doesn't fit, the request is refused (`429 export_egress_exhausted`) and no
   bytes stream. A cleanly completed download settles its charge down to the
   bytes actually streamed; an aborted or interrupted download keeps the full
@@ -41,10 +43,18 @@ rules the endpoints enforce.
 - **Tenant window bound.** Restarting sessions (force / cancel / expiry)
   never mints fresh budget: across a rolling 24-hour window, all of a user's
   export sessions may collectively egress at most `2 ×` one export allowance
-  (`6 × totalOriginalBytes + 256 MB`). Beyond that:
+  (`6 × (totalOriginalBytes + 3,072 × totalAssets + measuredManifestMetadataBytes) + 256 MB`). Beyond that:
   `429 export_egress_window_exhausted` (retryable — the window slides, so a
   full export is always possible again; data is never held hostage and there
   is no billing gate).
+- **Bounded streaming.** Producers await downstream capacity; a stalled consumer
+  is failed closed after 60 seconds, while a slow consumer that makes progress
+  continues. Provider headers and read-idle waits are separately capped at 60
+  seconds, and cancellation aborts the active provider body.
+- **Input bounds.** Tag names are at most 128 characters, colors at most 32,
+  users may own 10,000 tags, and an asset may have 256 tags. Asset IDs are at
+  most 128 characters. Requests over these bounds are rejected before database
+  work.
 - **Always available.** Export never checks storage quota, billing state, or
   upload runtime gates. Over-limit, delinquent, and canceled accounts export
   normally (VISION.md: no data hostage-taking).

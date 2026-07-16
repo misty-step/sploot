@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { TAG, isValidAssetId, isValidTagName } from '@sploot/common';
 import { unstable_rethrow } from 'next/navigation';
 import { requireUserIdWithSync } from '@/lib/auth/server';
 import { isUnauthorizedAuthError, unauthorizedResponse } from '@/lib/auth/api';
@@ -7,6 +8,9 @@ import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
 import { logError } from '@/lib/observability-logger';
 import { enrollmentResponseForError, enrollmentUnavailableResponse, withEnrollmentIdentityWriter } from '@/lib/enrollment/enrollment-policy';
+
+class TagLimitError extends Error {}
+
 
 /**
  * GET /api/assets/[id]/tags - Get tags for a specific asset
@@ -25,6 +29,9 @@ async function getHandler(
         { error: 'Asset not found' },
         { status: 404 }
       );
+    }
+    if (!isValidAssetId(id)) {
+      return NextResponse.json({ error: 'Invalid asset id' }, { status: 400 });
     }
 
     if (!prisma) return enrollmentUnavailableResponse();
@@ -94,7 +101,16 @@ async function postHandler(
         { status: 404 }
       );
     }
+    if (!isValidAssetId(id)) {
+      return NextResponse.json({ error: 'Invalid asset id' }, { status: 400 });
+    }
     const { tagIds, tagNames } = await req.json();
+    if (tagIds !== undefined && (!Array.isArray(tagIds) || tagIds.length > TAG.maxRequestItems || tagIds.some((value) => !isValidAssetId(value)))) {
+      return NextResponse.json({ error: 'Tag IDs are invalid or too many' }, { status: 400 });
+    }
+    if (tagNames !== undefined && (!Array.isArray(tagNames) || tagNames.length > TAG.maxRequestItems || tagNames.some((value) => !isValidTagName(value)))) {
+      return NextResponse.json({ error: 'Tag names are invalid or too many' }, { status: 400 });
+    }
 
     if (!prisma) return enrollmentUnavailableResponse();
 
@@ -104,6 +120,8 @@ async function postHandler(
       });
       if (!ownedAsset) return null;
       const added = [];
+      let associationCount = await tx.assetTag.count({ where: { assetId: id } });
+      let userTagCount = await tx.tag.count({ where: { ownerUserId: userId } });
 
     // Handle tag IDs
     if (tagIds && Array.isArray(tagIds)) {
@@ -128,6 +146,7 @@ async function postHandler(
           });
 
           if (!existingAssociation) {
+            if (associationCount >= TAG.maxPerAsset) throw new TagLimitError('tag limit reached');
             await tx.assetTag.create({
               data: {
                 assetId: id,
@@ -135,6 +154,7 @@ async function postHandler(
               },
             });
             added.push(tag);
+            associationCount += 1;
           }
         }
       }
@@ -154,12 +174,14 @@ async function postHandler(
         });
 
         if (!tag) {
+          if (userTagCount >= TAG.maxPerUser) throw new TagLimitError('tag limit reached');
           tag = await tx.tag.create({
             data: {
               ownerUserId: userId,
               name: normalizedName,
             },
           });
+          userTagCount += 1;
         }
 
         // Check if association already exists
@@ -173,6 +195,7 @@ async function postHandler(
         });
 
         if (!existingAssociation) {
+          if (associationCount >= TAG.maxPerAsset) throw new TagLimitError('tag limit reached');
           await tx.assetTag.create({
             data: {
               assetId: id,
@@ -180,24 +203,29 @@ async function postHandler(
             },
           });
           added.push(tag);
+          associationCount += 1;
         }
       }
     }
 
-      return added;
+      return { kind: 'ok' as const, added };
     });
 
     if (!addedTags) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
+    if (addedTags.kind !== 'ok') return NextResponse.json({ error: 'Tag limit reached' }, { status: 400 });
 
     return NextResponse.json({
       success: true,
-      addedTags: addedTags.map(tag => ({
+      addedTags: addedTags.added.map(tag => ({
         id: tag.id,
         name: tag.name,
         color: tag.color,
       })),
     });
   } catch (error) {
+    if (error instanceof TagLimitError) {
+      return NextResponse.json({ error: 'Tag limit reached' }, { status: 400 });
+    }
     const enrollmentResponse = enrollmentResponseForError(error);
     if (enrollmentResponse) return enrollmentResponse;
     if (isUnauthorizedAuthError(error)) {
@@ -231,9 +259,12 @@ async function deleteHandler(
         { status: 404 }
       );
     }
+    if (!isValidAssetId(id)) {
+      return NextResponse.json({ error: 'Invalid asset id' }, { status: 400 });
+    }
     const { tagIds } = await req.json();
 
-    if (!tagIds || !Array.isArray(tagIds) || tagIds.length === 0) {
+    if (!tagIds || !Array.isArray(tagIds) || tagIds.length === 0 || tagIds.length > TAG.maxRequestItems || tagIds.some((value) => !isValidAssetId(value))) {
       return NextResponse.json(
         { error: 'Tag IDs are required' },
         { status: 400 }

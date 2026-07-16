@@ -18,6 +18,7 @@ import {
   recordPartOutcome,
   refundExportEgress,
   reserveExportEgress,
+  monitorExportLifecycle,
 } from '@/lib/export/export-service';
 import { streamExportPartZip } from '@/lib/export/export-zip';
 import type { RouteContext } from '@/lib/with-observability';
@@ -106,10 +107,18 @@ async function getHandler(
     }
     if (admission.kind !== 'reserved') return exportAdmissionErrorResponse(admission);
     if (!entries) throw new Error('reserved export part has no entries');
+    const postAdmission = await accessExportForDownload(principal.userId, row.id);
+    if (postAdmission.kind !== 'ok') {
+      const code = postAdmission.kind === 'gone' ? postAdmission.code : 'export_unavailable';
+      return NextResponse.json({ error: 'This export is no longer available.', code, retryable: false }, { status: 410 });
+    }
+    const lifecycle = monitorExportLifecycle(row.ownerUserId, row.id);
     const stream = streamExportPartZip({
       entries,
       reader: openExportObject,
       maxBytes: reserve,
+      signal: lifecycle.signal,
+      onFinish: lifecycle.stop,
       onComplete: async ({ failures, bytesStreamed }) => {
         try {
           await recordPartOutcome(row.id, partIndex, failures);

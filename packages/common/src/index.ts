@@ -21,6 +21,11 @@ export {
   isImageMimeType,
   isAnimatedImageMimeType,
   isStaticImageMimeType,
+  TAG,
+  ASSET,
+  isValidTagName,
+  isValidTagColor,
+  isValidAssetId,
 } from './constants';
 
 export {

@@ -16,6 +16,7 @@ import {
   partFileName,
   createExportPartPlanner,
   snapshotAssetWhere,
+  validateExportPartBoundaries,
   type ExportFailure,
   type ExportFailuresByPart,
   type ExportPartBoundary,
@@ -75,6 +76,9 @@ export interface LibraryExportView {
 const EXPORT_ROW_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 /** Active plus bounded inactive history; force-create cannot grow rows forever. */
 const EXPORT_MAX_RETAINED_ROWS_PER_USER = 32;
+/** Planning/manifest admission is bounded but may scan a large library. */
+const EXPORT_PLANNING_TRANSACTION_TIMEOUT_MS = 120_000;
+const EXPORT_LIFECYCLE_POLL_MS = 1_000;
 
 type ExportDatabase = NonNullable<typeof prisma> | Prisma.TransactionClient;
 
@@ -94,9 +98,15 @@ export function normalizeExportRow(row: Record<string, unknown>): ExportRowData 
   const partBoundaries = Array.isArray(row.partBoundaries)
     ? (row.partBoundaries as ExportPartBoundary[])
     : [];
+  if (!validateExportPartBoundaries(row.partBoundaries)) {
+    throw new Error('library export has invalid or oversized part boundaries');
+  }
   const servedParts = Array.isArray(row.servedParts)
-    ? (row.servedParts as unknown[]).filter((value): value is number => typeof value === 'number')
+    ? (row.servedParts as unknown[]).filter((value): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
     : [];
+  if (servedParts.length > row.partBoundaries.length) {
+    throw new Error('library export has oversized served-parts metadata');
+  }
   const failures =
     row.failures && typeof row.failures === 'object' && !Array.isArray(row.failures)
       ? (row.failures as ExportFailuresByPart)
@@ -198,6 +208,46 @@ async function planSnapshot(
   return { boundaries, totalAssets, totalOriginalBytes };
 }
 
+
+export interface ExportLifecycleMonitor {
+  signal: AbortSignal;
+  stop: () => void;
+}
+
+/** Polls terminal state without holding a DB transaction across streaming. */
+export function monitorExportLifecycle(
+  ownerUserId: string,
+  exportId: string,
+  intervalMs: number = EXPORT_LIFECYCLE_POLL_MS,
+): ExportLifecycleMonitor {
+  const db = requirePrismaDb();
+  const controller = new AbortController();
+  let stopped = false;
+  const check = async () => {
+    if (stopped || controller.signal.aborted) return;
+    try {
+      const current = await db.libraryExport.findFirst({
+        where: { id: exportId, ownerUserId },
+        select: { status: true, expiresAt: true },
+      });
+      if (!current || current.status !== 'active' || isExportExpired(current.expiresAt as Date)) {
+        controller.abort();
+      }
+    } catch {
+      // Fail closed if lifecycle cannot be verified during an active stream.
+      controller.abort();
+    }
+  };
+  void check();
+  const timer = setInterval(() => void check(), Math.max(10, intervalMs));
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(timer);
+  };
+  return { signal: controller.signal, stop };
+}
+
 export async function createOrReuseExport(
   userId: string,
   options: { force?: boolean } = {},
@@ -276,7 +326,7 @@ export async function createOrReuseExport(
       });
       const finalized = await tx.libraryExport.findFirst({ where: { id: row.id } });
       return { row: finalized ?? row, reused: false };
-    });
+    }, { maxWait: EXPORT_PLANNING_TRANSACTION_TIMEOUT_MS, timeout: EXPORT_PLANNING_TRANSACTION_TIMEOUT_MS });
     return {
       export: toExportView(normalizeExportRow(result.row)),
       reused: result.reused,
@@ -420,7 +470,7 @@ export async function refundExportEgress(exportId: string, refundBytes: bigint):
   if (refundBytes <= BigInt(0)) return;
   const db = requireDb();
   await db.libraryExport.updateMany({
-    where: { id: exportId, egressBytes: { gte: refundBytes } },
+    where: { id: exportId, status: 'active', expiresAt: { gt: new Date() }, egressBytes: { gte: refundBytes } },
     data: { egressBytes: { decrement: refundBytes } },
   });
 }
@@ -486,5 +536,7 @@ export async function recordPartOutcome(
       "failures" = jsonb_set("failures", ARRAY[${partKey}], ${failuresJson}::jsonb, true),
       "updated_at" = NOW()
     WHERE "id" = ${exportId}
+      AND "status" = 'active'
+      AND "expires_at" > NOW()
   `;
 }

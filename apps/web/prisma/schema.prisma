@@ -100,7 +100,7 @@ model StorageQuotaReservation {
 
 // Asset model - represents uploaded images
 model Asset {
-  id             String    @id @default(cuid())
+  id             String    @id @default(cuid()) // max 128 chars (migration CHECK)
   ownerUserId    String    @map("owner_user_id")
   blobUrl        String    @map("blob_url") // Validated via CHECK constraint: https://[a-z0-9-]+.public.blob.vercel-storage.com/*
   thumbnailUrl   String?   @map("thumbnail_url") // URL for 256px thumbnail. Validated via CHECK constraint if set
@@ -196,8 +196,8 @@ model EmbeddingProviderCircuit {
 model Tag {
   id          String   @id @default(cuid())
   ownerUserId String   @map("owner_user_id")
-  name        String
-  color       String? // Hex color for UI
+  name        String // max 128 chars (migration CHECK)
+  color       String? // max 32 chars (migration CHECK) // Hex color for UI
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -241,7 +241,7 @@ model LibraryExport {
   manifestVersion    String   @map("manifest_version")
   totalAssets        Int      @map("total_assets")
   totalOriginalBytes BigInt   @map("total_original_bytes")
-  partBoundaries     Json     @map("part_boundaries") // [{index, afterId, count, bytes}]
+  partBoundaries     Json     @map("part_boundaries") // bounded array: max 10,000 [{index, afterId, count, bytes}]
   servedParts        Json     @default("[]") @map("served_parts") // number[]
   failures           Json     @default("{}") // {"<partIndex>": [{assetId, archivePath, reason}]}
   egressBytes        BigInt   @default(0) @map("egress_bytes")

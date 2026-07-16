@@ -1,5 +1,7 @@
 import type { Prisma } from '@prisma/client';
+import { isValidTagColor, isValidTagName } from '@sploot/common';
 import { prisma } from '@/lib/db';
+import { acquireEnrollmentIdentityWriterLock } from '@/lib/enrollment/enrollment-policy';
 import {
   EXPORT_SCAN_PAGE_SIZE,
   archivePathFor,
@@ -9,6 +11,7 @@ import {
   snapshotAssetWhere,
 } from './export-policy';
 import type { ExportRowData } from './export-service';
+import { EXPORT_BACKPRESSURE_TIMEOUT_MS, waitForExportCapacity } from './export-backpressure';
 
 /**
  * Streamed generation of the versioned export manifest (schema documented
@@ -26,7 +29,10 @@ export interface StreamExportManifestOptions {
   row: ExportRowData;
   /** Hard byte cap (the admitted egress reservation); exceeding it errors the stream. */
   maxBytes?: bigint;
+  backpressureTimeoutMs?: number;
+  signal?: AbortSignal;
   onComplete?: (bytesStreamed: number) => void | Promise<void>;
+  onFinish?: () => void;
 }
 
 interface ManifestAssetRow {
@@ -60,6 +66,81 @@ function requireDb(database?: ManifestDatabase): ManifestDatabase {
     throw new Error('library export requires a configured database');
   }
   return prisma;
+}
+
+async function withManifestRead<T>(
+  database: ManifestDatabase,
+  row: ExportRowData,
+  read: (database: ManifestDatabase) => Promise<T>,
+): Promise<T> {
+  if (!('$transaction' in database) || typeof database.$transaction !== 'function') {
+    return read(database);
+  }
+  return database.$transaction(async (tx) => {
+    await acquireEnrollmentIdentityWriterLock(tx, row.ownerUserId);
+    const current = await tx.libraryExport.findFirst({
+      where: { id: row.id, ownerUserId: row.ownerUserId },
+    });
+    if (!current || current.status !== 'active') {
+      throw new Error('export became unavailable during manifest read');
+    }
+    return read(tx);
+  });
+}
+
+async function countLiveAssets(database: ManifestDatabase, row: ExportRowData): Promise<number> {
+  return withManifestRead(database, row, (db) =>
+    db.asset.count({ where: snapshotAssetWhere(row.ownerUserId, row.snapshotAt) }),
+  );
+}
+
+async function findManifestTags(
+  database: ManifestDatabase,
+  row: ExportRowData,
+  where: Prisma.TagWhereInput,
+): Promise<ManifestTagRow[]> {
+  const tags = await withManifestRead(database, row, (db) =>
+    db.tag.findMany({ where, orderBy: { name: 'asc' }, take: EXPORT_SCAN_PAGE_SIZE, select: { name: true, color: true } }),
+  );
+  if (tags.some((tag) => !isValidTagName(tag.name) || !isValidTagColor(tag.color))) {
+    throw new Error('export contains invalid tag metadata');
+  }
+  return tags;
+}
+
+async function findManifestAssets(
+  database: ManifestDatabase,
+  row: ExportRowData,
+  where: Prisma.AssetWhereInput,
+): Promise<ManifestAssetRow[]> {
+  return withManifestRead(database, row, (db) =>
+    db.asset.findMany({
+      where,
+      orderBy: { id: 'asc' },
+      take: EXPORT_SCAN_PAGE_SIZE,
+      select: {
+        id: true, mime: true, size: true, checksumSha256: true, width: true, height: true,
+        favorite: true, phash: true, createdAt: true, updatedAt: true,
+      },
+    }),
+  );
+}
+
+async function findManifestAssetTags(
+  database: ManifestDatabase,
+  row: ExportRowData,
+  assetIds: string[],
+): Promise<ManifestAssetTagRow[]> {
+  const rows = await withManifestRead(database, row, (db) =>
+    db.assetTag.findMany({
+      where: { assetId: { in: assetIds } },
+      select: { assetId: true, tag: { select: { name: true } } },
+    }),
+  );
+  if (rows.some((row) => !isValidTagName(row.tag.name))) {
+    throw new Error('export contains invalid asset tag metadata');
+  }
+  return rows;
 }
 
 function manifestHead(
@@ -145,9 +226,7 @@ export async function estimateManifestEgressBytesForExport(
     row.failures,
   );
   const failures = flattenFailures(row.failures);
-  const liveAssets = await db.asset.count({
-    where: snapshotAssetWhere(row.ownerUserId, row.snapshotAt),
-  });
+  const liveAssets = await countLiveAssets(db, row);
   const manifestComplete = complete && liveAssets >= row.totalAssets;
   const manifestReasons = liveAssets < row.totalAssets
     ? [...reasons, 'snapshot_membership_changed' as const]
@@ -159,18 +238,10 @@ export async function estimateManifestEgressBytesForExport(
   let tagCursor: string | null = null;
 
   for (;;) {
-    const tagScope = {
+    const page: ManifestTagRow[] = await findManifestTags(db, row, {
       ownerUserId: row.ownerUserId,
       assets: { some: { asset: snapshotAssetWhere(row.ownerUserId, row.snapshotAt) } },
-    };
-    const page: ManifestTagRow[] = await db.tag.findMany({
-      where:
-        tagCursor === null
-          ? tagScope
-          : { ...tagScope, name: { gt: tagCursor } },
-      orderBy: { name: 'asc' },
-      take: EXPORT_SCAN_PAGE_SIZE,
-      select: { name: true, color: true },
+      ...(tagCursor === null ? {} : { name: { gt: tagCursor } }),
     });
     if (page.length === 0) break;
     for (const tag of page) {
@@ -195,29 +266,18 @@ export async function estimateManifestEgressBytesForExport(
   let streamedAssets = 0;
   let partIndex = 0;
   for (;;) {
-    const page: ManifestAssetRow[] = await db.asset.findMany({
-      where: cursor === null ? where : { ...where, id: { gt: cursor } },
-      orderBy: { id: 'asc' },
-      take: EXPORT_SCAN_PAGE_SIZE,
-      select: {
-        id: true,
-        mime: true,
-        size: true,
-        checksumSha256: true,
-        width: true,
-        height: true,
-        favorite: true,
-        phash: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    const page: ManifestAssetRow[] = await findManifestAssets(
+        db,
+        row,
+        cursor === null ? where : { ...where, id: { gt: cursor } },
+      );
     if (page.length === 0) break;
 
-    const tagRows: ManifestAssetTagRow[] = await db.assetTag.findMany({
-      where: { assetId: { in: page.map((asset) => asset.id) } },
-      select: { assetId: true, tag: { select: { name: true } } },
-    });
+    const tagRows: ManifestAssetTagRow[] = await findManifestAssetTags(
+      db,
+      row,
+      page.map((asset) => asset.id),
+    );
     const tagsByAsset = new Map<string, string[]>();
     for (const tagRow of tagRows) {
       const list = tagsByAsset.get(tagRow.assetId) ?? [];
@@ -247,16 +307,28 @@ export async function estimateManifestEgressBytesForExport(
 export function streamExportManifest(
   options: StreamExportManifestOptions,
 ): ReadableStream<Uint8Array> {
-  const { row, maxBytes, onComplete } = options;
+  const { row, maxBytes, backpressureTimeoutMs = EXPORT_BACKPRESSURE_TIMEOUT_MS, signal, onComplete, onFinish } = options;
   const encoder = new TextEncoder();
   let canceled = false;
+  let clientCanceled = false;
+  let terminalError: Error | null = null;
+  const abort = () => {
+    canceled = true;
+    if (!clientCanceled && !terminalError) terminalError = new Error('export became unavailable during stream');
+  };
+  const ensureOpen = (): boolean => {
+    if (!canceled) return true;
+    if (terminalError) throw terminalError;
+    return false;
+  };
 
   async function run(controller: ReadableStreamDefaultController<Uint8Array>): Promise<void> {
     const db = requireDb();
     let bytesStreamed = 0;
 
-    const emit = (text: string) => {
-      if (canceled) return;
+    const emit = async (text: string): Promise<void> => {
+      await waitForExportCapacity(() => controller.desiredSize, () => canceled, backpressureTimeoutMs);
+      if (!ensureOpen()) return;
       const chunk = encoder.encode(text);
       if (maxBytes !== undefined && BigInt(bytesStreamed + chunk.length) > maxBytes) {
         // Never hand out a byte past the admitted reservation.
@@ -273,9 +345,7 @@ export function streamExportManifest(
         row.failures,
       );
       const failures = flattenFailures(row.failures);
-      const liveAssets = await db.asset.count({
-        where: snapshotAssetWhere(row.ownerUserId, row.snapshotAt),
-      });
+      const liveAssets = await countLiveAssets(db, row);
       const manifestComplete = complete && liveAssets >= row.totalAssets;
       const manifestReasons = liveAssets < row.totalAssets
         ? [...reasons, 'snapshot_membership_changed' as const]
@@ -283,28 +353,20 @@ export function streamExportManifest(
       const head = manifestHead(row, liveAssets, manifestComplete, manifestReasons, failures);
       const headJson = JSON.stringify(head);
       // Open the tags array by splicing into the serialized head object.
-      emit(headJson.slice(0, -1) + ',"tags":[');
+      await emit(headJson.slice(0, -1) + ',"tags":[');
 
       let emittedTag = false;
       let tagCursor: string | null = null;
       for (;;) {
-        if (canceled) return;
-        const tagScope = {
-          ownerUserId: row.ownerUserId,
-          assets: { some: { asset: snapshotAssetWhere(row.ownerUserId, row.snapshotAt) } },
-        };
-        const page: ManifestTagRow[] = await db.tag.findMany({
-          where:
-            tagCursor === null
-              ? tagScope
-              : { ...tagScope, name: { gt: tagCursor } },
-          orderBy: { name: 'asc' },
-          take: EXPORT_SCAN_PAGE_SIZE,
-          select: { name: true, color: true },
-        });
+        if (!ensureOpen()) return;
+        const page: ManifestTagRow[] = await findManifestTags(db, row, {
+      ownerUserId: row.ownerUserId,
+      assets: { some: { asset: snapshotAssetWhere(row.ownerUserId, row.snapshotAt) } },
+      ...(tagCursor === null ? {} : { name: { gt: tagCursor } }),
+    });
         if (page.length === 0) break;
         for (const tag of page) {
-          emit((emittedTag ? ',' : '') + JSON.stringify(tag));
+          await emit((emittedTag ? ',' : '') + JSON.stringify(tag));
           emittedTag = true;
         }
         const nextCursor = page[page.length - 1].name;
@@ -312,7 +374,7 @@ export function streamExportManifest(
         tagCursor = nextCursor;
       }
 
-      emit('],"assets":[');
+      await emit('],"assets":[');
 
       const where = snapshotAssetWhere(row.ownerUserId, row.snapshotAt);
       // Part membership follows the same ascending-id order the planner used.
@@ -328,31 +390,19 @@ export function streamExportManifest(
       let partIndex = 0;
 
       for (;;) {
-        if (canceled) return;
-        const page: ManifestAssetRow[] = await db.asset.findMany({
-          where: cursor === null ? where : { ...where, id: { gt: cursor } },
-          orderBy: { id: 'asc' },
-          take: EXPORT_SCAN_PAGE_SIZE,
-          select: {
-            id: true,
-            mime: true,
-            size: true,
-            checksumSha256: true,
-            width: true,
-            height: true,
-            favorite: true,
-            phash: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        });
+        if (!ensureOpen()) return;
+        const page: ManifestAssetRow[] = await findManifestAssets(
+        db,
+        row,
+        cursor === null ? where : { ...where, id: { gt: cursor } },
+      );
         if (page.length === 0) break;
 
-        const tagRows: Array<{ assetId: string; tag: { name: string } }> =
-          await db.assetTag.findMany({
-            where: { assetId: { in: page.map((asset) => asset.id) } },
-            select: { assetId: true, tag: { select: { name: true } } },
-          });
+        const tagRows = await findManifestAssetTags(
+          db,
+          row,
+          page.map((asset) => asset.id),
+        );
         const tagsByAsset = new Map<string, string[]>();
         for (const tagRow of tagRows) {
           const list = tagsByAsset.get(tagRow.assetId) ?? [];
@@ -368,7 +418,7 @@ export function streamExportManifest(
             partIndex += 1;
           }
           const entry = manifestAssetEntry(row, asset, tagsByAsset, partIndex);
-          emit(`${streamedAssets > 0 ? ',' : ''}${JSON.stringify(entry)}`);
+          await emit(`${streamedAssets > 0 ? ',' : ''}${JSON.stringify(entry)}`);
           streamedAssets += 1;
         }
 
@@ -376,26 +426,32 @@ export function streamExportManifest(
         cursor = page[page.length - 1].id;
       }
 
-      emit(']}');
+      await emit(']}');
 
-      if (canceled) return;
+      if (!ensureOpen()) return;
       if (onComplete) {
         await onComplete(bytesStreamed);
       }
       controller.close();
     } catch (error) {
-      if (!canceled) {
+      if (!clientCanceled) {
         controller.error(error);
       }
+    } finally {
+      onFinish?.();
+      signal?.removeEventListener('abort', abort);
     }
   }
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
+      if (signal?.aborted) abort();
+      else signal?.addEventListener('abort', abort, { once: true });
       void run(controller);
     },
     cancel() {
-      canceled = true;
+      clientCanceled = true;
+      abort();
     },
   });
 }

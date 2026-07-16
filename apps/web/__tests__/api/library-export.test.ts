@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { unzipSync } from 'fflate';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { TAG } from '@sploot/common';
 
 /**
  * Route-level tests for the complete-library export surface.
@@ -240,7 +241,7 @@ import { GET as listGet, POST as createPost } from '@/app/api/library/export/rou
 import { DELETE as exportDelete, GET as statusGet } from '@/app/api/library/export/[exportId]/route';
 import { GET as partGet } from '@/app/api/library/export/[exportId]/parts/[partIndex]/route';
 import { GET as manifestGet } from '@/app/api/library/export/[exportId]/manifest/route';
-import { estimateManifestEgressBytesForExport } from '@/lib/export/export-manifest';
+import { estimateManifestEgressBytesForExport, streamExportManifest } from '@/lib/export/export-manifest';
 import {
   EXPORT_TTL_MS,
   estimatePartEgressBytes,
@@ -802,7 +803,7 @@ describe('GET /api/library/export/:exportId/manifest', () => {
   it('reserves enough for user-controlled tag metadata', async () => {
     const bytes = new Uint8Array([1, 2, 3]);
     seedAsset('asset-a', USER, bytes);
-    const longTag = 'x'.repeat(300_000);
+    const longTag = 'x'.repeat(TAG.maxNameLength);
     state.tags.push({ ownerUserId: USER, name: longTag, color: null });
     state.assetTags.push({ assetId: 'asset-a', tagName: longTag });
 
@@ -817,6 +818,36 @@ describe('GET /api/library/export/:exportId/manifest', () => {
     const manifest = JSON.parse(await response.text());
     expect(manifest.tags).toEqual([{ name: longTag, color: null }]);
     expect(manifest.assets[0].tags).toEqual([longTag]);
+  });
+
+  it('fails closed when a client never drains manifest backpressure', async () => {
+    seedAsset('asset-slow-manifest', USER, new Uint8Array([1, 2]));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+    const stream = streamExportManifest({ row: row as any, backpressureTimeoutMs: 10 });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const downstream = stream.getReader();
+    await expect(downstream.read()).rejects.toThrow(/backpressure/i);
+  });
+
+  it('fails closed when deletion wins between manifest count and scan', async () => {
+    seedAsset('asset-a', USER, new Uint8Array([1, 2]));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+    row.servedParts = [0];
+    const originalCount = fakePrisma.asset.count;
+    fakePrisma.asset.count = async (args: any) => {
+      const count = await originalCount(args);
+      row.status = 'canceled';
+      state.assets = [];
+      return count;
+    };
+    try {
+      const stream = streamExportManifest({ row: row as any });
+      await expect(new Response(stream).text()).rejects.toThrow(/unavailable/i);
+    } finally {
+      fakePrisma.asset.count = originalCount;
+    }
   });
 
   it('reports live membership separately when a planned asset disappears', async () => {
