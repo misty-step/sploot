@@ -35,7 +35,7 @@ import type { ExportZipEntry } from './export-zip';
  * the loser adopts the winner's row.
  */
 
-export type LibraryExportStatus = 'active' | 'finalizing' | 'superseded' | 'canceled';
+export type LibraryExportStatus = 'active' | 'superseded' | 'canceled';
 
 export interface ExportRowData {
   id: string;
@@ -256,7 +256,7 @@ export async function createOrReuseExport(
   const now = new Date();
 
   const active = await db.libraryExport.findFirst({
-    where: { ownerUserId: userId, status: { in: ['active', 'finalizing'] } },
+    where: { ownerUserId: userId, status: 'active' },
   });
   if (active && !options.force && !isExportExpired(active.expiresAt as Date, now)) {
     return { export: toExportView(normalizeExportRow(active)), reused: true };
@@ -266,7 +266,7 @@ export async function createOrReuseExport(
     const result = await db.$transaction(async (tx) => {
       await acquireEnrollmentIdentityWriterLock(tx, userId);
       const lockedActive = await tx.libraryExport.findFirst({
-        where: { ownerUserId: userId, status: { in: ['active', 'finalizing'] } },
+        where: { ownerUserId: userId, status: 'active' },
       });
       if (lockedActive && !options.force && !isExportExpired(lockedActive.expiresAt as Date, now)) {
         return { row: lockedActive, reused: true };
@@ -287,11 +287,11 @@ export async function createOrReuseExport(
         },
       });
       await tx.libraryExport.updateMany({
-        where: { ownerUserId: userId, status: { in: ['active', 'finalizing'] } },
+        where: { ownerUserId: userId, status: 'active' },
         data: { status: 'superseded' },
       });
       const inactiveToDelete = await tx.libraryExport.findMany({
-        where: { ownerUserId: userId, status: { notIn: ['active', 'finalizing'] } },
+        where: { ownerUserId: userId, status: { not: 'active' } },
         orderBy: { updatedAt: 'desc' },
         skip: EXPORT_MAX_RETAINED_ROWS_PER_USER - 1,
         select: { id: true },
@@ -334,7 +334,7 @@ export async function createOrReuseExport(
   } catch (error: unknown) {
     if ((error as { code?: string })?.code === 'P2002') {
       const winner = await db.libraryExport.findFirst({
-        where: { ownerUserId: userId, status: { in: ['active', 'finalizing'] } },
+        where: { ownerUserId: userId, status: 'active' },
       });
       if (winner) return { export: toExportView(normalizeExportRow(winner)), reused: true };
     }
@@ -345,7 +345,7 @@ export async function createOrReuseExport(
 export async function getActiveExport(userId: string): Promise<LibraryExportView | null> {
   const db = requireDb();
   const row = await db.libraryExport.findFirst({
-    where: { ownerUserId: userId, status: { in: ['active', 'finalizing'] } },
+    where: { ownerUserId: userId, status: 'active' },
   });
   return row ? toExportView(normalizeExportRow(row)) : null;
 }
@@ -386,8 +386,6 @@ export async function accessExportForDownload(
 ): Promise<ExportAccess> {
   const row = await getOwnedExport(userId, exportId);
   if (!row) return { kind: 'not_found' };
-  // A manifest terminal fence briefly excludes concurrent download admission;
-  // the in-flight response owns the identity lock/state transition.
   if (row.status !== 'active') return { kind: 'gone', code: 'export_unavailable' };
   if (isExportExpired(row.expiresAt)) return { kind: 'gone', code: 'export_expired' };
   return { kind: 'ok', row };
@@ -475,7 +473,7 @@ export async function refundExportEgress(exportId: string, refundBytes: bigint):
   if (refundBytes <= BigInt(0)) return;
   const db = requireDb();
   await db.libraryExport.updateMany({
-    where: { id: exportId, status: { in: ['active', 'finalizing'] }, expiresAt: { gt: new Date() }, egressBytes: { gte: refundBytes } },
+    where: { id: exportId, status: 'active', expiresAt: { gt: new Date() }, egressBytes: { gte: refundBytes } },
     data: { egressBytes: { decrement: refundBytes } },
   });
 }
@@ -531,17 +529,22 @@ export async function recordPartOutcome(
   const failuresJson = JSON.stringify(failures);
   const partKey = String(partIndex);
 
-  await db.$executeRaw`
-    UPDATE "library_exports"
-    SET
-      "served_parts" = CASE
-        WHEN "served_parts" @> ${indexJson}::jsonb THEN "served_parts"
-        ELSE "served_parts" || ${indexJson}::jsonb
-      END,
-      "failures" = jsonb_set("failures", ARRAY[${partKey}], ${failuresJson}::jsonb, true),
-      "updated_at" = NOW()
-    WHERE "id" = ${exportId}
-      AND "status" = 'active'
-      AND "expires_at" > NOW()
-  `;
+  await db.$transaction(async (tx) => {
+    const row = await tx.libraryExport.findFirst({ where: { id: exportId } });
+    if (!row) return;
+    await acquireEnrollmentIdentityWriterLock(tx, row.ownerUserId);
+    await tx.$executeRaw`
+      UPDATE "library_exports"
+      SET
+        "served_parts" = CASE
+          WHEN "served_parts" @> ${indexJson}::jsonb THEN "served_parts"
+          ELSE "served_parts" || ${indexJson}::jsonb
+        END,
+        "failures" = jsonb_set("failures", ARRAY[${partKey}], ${failuresJson}::jsonb, true),
+        "updated_at" = NOW()
+      WHERE "id" = ${exportId}
+        AND "status" = 'active'
+        AND "expires_at" > NOW()
+    `;
+  });
 }

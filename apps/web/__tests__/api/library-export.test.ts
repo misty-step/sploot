@@ -103,8 +103,6 @@ const fakePrisma = vi.hoisted(() => {
         const rows = [...state.exports.values()].filter((row) => {
           if (where.ownerUserId && row.ownerUserId !== where.ownerUserId) return false;
           if (where.status?.not && row.status === where.status.not) return false;
-          if (where.status?.in && !where.status.in.includes(row.status)) return false;
-          if (where.status?.notIn && where.status.notIn.includes(row.status)) return false;
           return true;
         }).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(skip, take ? skip + take : undefined);
         return rows.map((row) => select ? { id: row.id } : { ...row });
@@ -113,9 +111,7 @@ const fakePrisma = vi.hoisted(() => {
         for (const row of state.exports.values()) {
           if (where.id && row.id !== where.id) continue;
           if (where.ownerUserId && row.ownerUserId !== where.ownerUserId) continue;
-          if (where.status && typeof where.status === 'string' && row.status !== where.status) continue;
-          if (where.status?.in && !where.status.in.includes(row.status)) continue;
-          if (where.status?.notIn && where.status.notIn.includes(row.status)) continue;
+          if (where.status && row.status !== where.status) continue;
           return { ...row };
         }
         return null;
@@ -248,7 +244,6 @@ import { DELETE as exportDelete, GET as statusGet } from '@/app/api/library/expo
 import { GET as partGet } from '@/app/api/library/export/[exportId]/parts/[partIndex]/route';
 import { GET as manifestGet } from '@/app/api/library/export/[exportId]/manifest/route';
 import { estimateManifestEgressBytesForExport, streamExportManifest } from '@/lib/export/export-manifest';
-import { cancelExport } from '@/lib/export/export-service';
 import {
   EXPORT_TTL_MS,
   estimatePartEgressBytes,
@@ -881,31 +876,6 @@ describe('GET /api/library/export/:exportId/manifest', () => {
       await expect(new Response(stream).text()).rejects.toThrow(/unavailable/i);
     } finally {
       fakePrisma.asset.findMany = originalFindMany;
-    }
-  });
-
-  it('fences cancellation after terminal summary enqueue', async () => {
-    seedAsset('asset-fence', USER, new Uint8Array([1, 2]));
-    const created = await createExport();
-    const row = state.exports.get(created.id)!;
-    row.servedParts = [0];
-    const originalUpdateMany = fakePrisma.libraryExport.updateMany;
-    let cancelResult: boolean | undefined;
-    fakePrisma.libraryExport.updateMany = async (args: any) => {
-      const result = await originalUpdateMany(args);
-      if (args.data?.status === 'finalizing') {
-        cancelResult = await cancelExport(USER, created.id);
-      }
-      return result;
-    };
-    try {
-      const response = await new Response(streamExportManifest({ row: row as any })).text();
-      const manifest = JSON.parse(response);
-      expect(manifest.complete).toBe(true);
-      expect(cancelResult).toBe(false);
-      expect(row.status).toBe('active');
-    } finally {
-      fakePrisma.libraryExport.updateMany = originalUpdateMany;
     }
   });
 

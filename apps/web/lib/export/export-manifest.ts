@@ -88,46 +88,6 @@ async function withManifestRead<T>(
   });
 }
 
-async function withManifestFinalization<T>(
-  database: ManifestDatabase,
-  row: ExportRowData,
-  read: (database: ManifestDatabase, current: ExportRowData) => Promise<T>,
-): Promise<T> {
-  if (!('$transaction' in database) || typeof database.$transaction !== 'function') {
-    return read(database, row);
-  }
-  return database.$transaction(async (tx) => {
-    await acquireEnrollmentIdentityWriterLock(tx, row.ownerUserId);
-    const current = await tx.libraryExport.findFirst({
-      where: { id: row.id, ownerUserId: row.ownerUserId },
-    });
-    if (!current || current.status !== 'active') {
-      throw new Error('export became unavailable during manifest finalization');
-    }
-    const claimed = await tx.libraryExport.updateMany({
-      where: { id: row.id, ownerUserId: row.ownerUserId, status: 'active' },
-      data: { status: 'finalizing' },
-    });
-    if (claimed.count !== 1) {
-      throw new Error('export became unavailable during manifest finalization');
-    }
-    const finalRow = await tx.libraryExport.findFirst({
-      where: { id: row.id, ownerUserId: row.ownerUserId },
-    });
-    if (!finalRow || finalRow.status !== 'finalizing') {
-      throw new Error('export finalization fence was lost');
-    }
-    return read(tx, normalizeExportRow(finalRow as unknown as Record<string, unknown>));
-  });
-}
-
-async function releaseManifestFinalization(database: ManifestDatabase, row: ExportRowData): Promise<void> {
-  await database.libraryExport.updateMany({
-    where: { id: row.id, ownerUserId: row.ownerUserId, status: 'finalizing' },
-    data: { status: 'active' },
-  });
-}
-
 async function findManifestTags(
   database: ManifestDatabase,
   row: ExportRowData,
@@ -360,7 +320,6 @@ export function streamExportManifest(
   let canceled = false;
   let clientCanceled = false;
   let terminalError: Error | null = null;
-  let finalizationHeld = false;
   const abort = () => {
     canceled = true;
     if (!clientCanceled && !terminalError) terminalError = new Error('export became unavailable during stream');
@@ -481,8 +440,7 @@ export function streamExportManifest(
         backpressureTimeoutMs,
         () => abort(),
       );
-      await withManifestFinalization(db, row, async (_db, finalRow) => {
-        finalizationHeld = true;
+      await withManifestRead(db, row, async (_db, finalRow) => {
         if (!ensureOpen()) return;
         const finalFailures = flattenFailures(finalRow.failures);
         const finalCompleteness = computeCompleteness(
@@ -513,19 +471,12 @@ export function streamExportManifest(
       if (onComplete) {
         await onComplete(bytesStreamed);
       }
-      if (finalizationHeld) {
-        await releaseManifestFinalization(db, row);
-        finalizationHeld = false;
-      }
       controller.close();
     } catch (error) {
       if (!clientCanceled) {
         controller.error(error);
       }
     } finally {
-      if (finalizationHeld) {
-        await releaseManifestFinalization(db, row).catch(() => undefined);
-      }
       onFinish?.();
       signal?.removeEventListener('abort', abort);
     }
