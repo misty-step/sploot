@@ -92,9 +92,14 @@ test('migration history fails closed on modified, unknown, and safe compatibilit
   assert.throws(() => assertMigrationHistory(
     [{ migrationName: 'known', checksum: 'right', finishedAt: null, rolledBackAt: null }], { known: 'right' },
   ), /unfinished.*deployment is paused/);
+  assert.doesNotThrow(() => assertMigrationHistory([
+    { migrationName: 'known', checksum: 'old-failed-attempt', finishedAt: null, rolledBackAt: 'resolved' },
+    { migrationName: 'known', checksum: 'right', finishedAt: 'done', rolledBackAt: null },
+    { migrationName: 'known', checksum: 'older-failed-attempt', finishedAt: null, rolledBackAt: 'resolved' },
+  ], { known: 'right' }));
   assert.throws(() => assertMigrationHistory(
     [{ migrationName: 'known', checksum: 'right', finishedAt: 'done', rolledBackAt: 'rolled back' }], { known: 'right' },
-  ), /rolled-back.*deployment is paused/);
+  ), /finished and rolled-back.*deployment is paused/);
 });
 
 test('migration history rejects duplicate and reordered finished rows', () => {
