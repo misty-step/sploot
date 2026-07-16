@@ -107,7 +107,9 @@ model Asset {
   thumbnailPath  String?   @map("thumbnail_path") // Path for thumbnail in blob storage
   storageProvider          String  @default("vercel") @map("storage_provider")
   storageKey               String? @map("storage_key")
+  storageSourceKey         String? @map("storage_source_key")
   thumbnailStorageKey      String? @map("thumbnail_storage_key")
+  thumbnailStorageSourceKey String? @map("thumbnail_storage_source_key")
   storageConfigFingerprint String? @map("storage_config_fingerprint")
   storageSize              Int?    @map("storage_size")
   storageSha256            String? @map("storage_sha256")

@@ -73,4 +73,4 @@ STORAGE_PROVIDER=vercel pnpm --filter web storage:portability inventory --limit 
 
 Inventory reads each legacy original and thumbnail, computes bounded size/SHA-256, persists metadata, advances a durable cursor, and records failures. It exits non-zero on any parity failure; repair the source and resume from the recorded cursor.
 
-Before verify, set `STORAGE_CUTOVER_MANIFEST_SHA256` to the exact manifest digest. The CLI records provider fingerprint/manifest/phase in `storage_cutover_state`, refuses drift, and exits non-zero unless every journal row is verified (or rolled back). The restricted application role intentionally has no access to portability journal/state tables.
+Before verify, set `STORAGE_CUTOVER_MANIFEST_SHA256` to the exact manifest digest. The CLI records provider fingerprint/manifest/phase in `storage_cutover_state`, refuses drift, and exits non-zero unless every journal row is verified (or rolled back). The restricted application role has SELECT access only to `storage_cutover_state` for runtime fail-closed checks; it intentionally has no access to journal, migration-entry, or inventory tables.

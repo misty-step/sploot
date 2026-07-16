@@ -450,6 +450,14 @@ TO sploot_stripe_app;
 -- applied schema version. The runtime remains unable to mutate Prisma's ledger.
 GRANT SELECT ON TABLE public._prisma_migrations TO sploot_stripe_app;
 
+-- Runtime cutover validation may read only the durable state row; journal,
+-- inventory, and migration-entry tables remain denied to the app role.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_app') THEN
+    GRANT SELECT ON TABLE public.storage_cutover_state TO sploot_stripe_app;
+  END IF;
+END $$;
+
 -- Strip PUBLIC EXECUTE from every SECURITY DEFINER function and from trigger
 -- functions, then re-grant only the exact runtime or migration-authority
 -- contract.

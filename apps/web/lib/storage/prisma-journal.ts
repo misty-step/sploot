@@ -196,7 +196,7 @@ export async function rollbackPrismaMigrationBatch(
   `);
   for (const claim of claims) {
     try {
-      const source = await options.source.get(claim.sourceKey);
+      const source = options.source.getSourceKey ? await options.source.getSourceKey(claim.sourceKey) : await options.source.get(claim.sourceKey);
       const sourceBytes = await bodyToBuffer(source.body, Math.max(claim.size, 1));
       assertClaimBytes(sourceBytes, claim);
       const target = await options.target.get(claim.logicalKey);

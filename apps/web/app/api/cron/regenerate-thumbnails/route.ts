@@ -33,6 +33,10 @@ const ASPECT_TOLERANCE = 0.02;
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 
+async function recordThumbnailCleanupFailure(assetId: string, error: string): Promise<void> {
+  await prisma.$executeRawUnsafe(`INSERT INTO "storage_inventory_failures" ("asset_id", "kind", "error", "attempts", "updated_at") VALUES ($1, 'thumbnail-delete', $2, 1, NOW()) ON CONFLICT ("asset_id", "kind") DO UPDATE SET "error" = EXCLUDED."error", "attempts" = "storage_inventory_failures"."attempts" + 1, "updated_at" = NOW()`, assetId, error);
+}
+
 const SUPPORTED_THUMBNAIL_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
 
 type OutputFormat = 'jpeg' | 'webp' | 'png';
@@ -90,8 +94,11 @@ async function getHandler(request: NextRequest) {
       blobUrl: true,
       thumbnailUrl: true,
       pathname: true,
+      storageProvider: true,
       storageKey: true,
+      storageSourceKey: true,
       thumbnailStorageKey: true,
+      thumbnailStorageSourceKey: true,
       thumbnailPath: true,
       mime: true,
       width: true,
@@ -113,7 +120,8 @@ async function getHandler(request: NextRequest) {
 
       let thumbBuffer: Buffer | null = null;
       try {
-        const thumbnail = await storage.get(asset.thumbnailStorageKey ?? asset.thumbnailPath ?? asset.thumbnailUrl!);
+        const thumbnailKey = asset.storageProvider === 'vercel' ? (asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey ?? asset.thumbnailPath) : (asset.thumbnailStorageKey ?? asset.thumbnailPath);
+        const thumbnail = await storage.get(thumbnailKey ?? asset.thumbnailUrl!);
         thumbBuffer = await bodyToBuffer(thumbnail.body, 512 * 1024 * 1024);
       } catch (error) {
         if (!(error instanceof ObjectNotFoundError)) throw error;
@@ -129,29 +137,39 @@ async function getHandler(request: NextRequest) {
       }
 
       // Legacy crop confirmed — regenerate from the original through the configured reader.
-      const original = await storage.get(asset.storageKey ?? asset.pathname);
+      const originalKey = asset.storageProvider === 'vercel' ? (asset.storageSourceKey ?? asset.storageKey ?? asset.pathname) : (asset.storageKey ?? asset.pathname);
+      const original = await storage.get(originalKey);
       const originalBuffer = await bodyToBuffer(original.body, 512 * 1024 * 1024);
       const format = formatForMime(asset.mime);
       const newThumb = await generateThumbnail(originalBuffer, format);
       const key = thumbPathname(asset.pathname, format) + '-' + randomUUID();
       const metadata = { size: newThumb.byteLength, sha256: createHash('sha256').update(newThumb).digest('hex'), contentType: 'image/' + (format === 'jpeg' ? 'jpeg' : format) };
       const blob = await storage.put(key, newThumb, metadata);
-
       const oldThumbUrl = asset.thumbnailUrl!;
-      await prisma.asset.update({
-        where: { id: asset.id },
-        data: {
-          thumbnailUrl: blob.url,
-          thumbnailPath: blob.key,
-          thumbnailStorageKey: blob.key,
-          thumbnailStorageSize: blob.metadata.size,
-          thumbnailStorageSha256: blob.metadata.sha256,
-          storageConfigFingerprint: configFingerprint,
-        },
-      });
-
-      await storage.deleteUrl(oldThumbUrl);
-          regenerated++;
+      try {
+        await prisma.asset.update({
+          where: { id: asset.id },
+          data: {
+            thumbnailUrl: blob.url,
+            thumbnailPath: blob.key,
+            thumbnailStorageKey: blob.key,
+            thumbnailStorageSourceKey: null,
+            thumbnailStorageSize: blob.metadata.size,
+            thumbnailStorageSha256: blob.metadata.sha256,
+            storageConfigFingerprint: configFingerprint,
+          },
+        });
+      } catch (error) {
+        await storage.deleteReplicas?.(blob.replicas ?? [{ provider: blob.provider, key: blob.key, url: blob.url }]);
+        throw error;
+      }
+      try {
+        await storage.deleteUrl(oldThumbUrl);
+      } catch (error) {
+        await recordThumbnailCleanupFailure(asset.id, error instanceof Error ? error.message : String(error));
+        throw error;
+      }
+      regenerated++;
     } catch (error) {
       failed++;
       failures.push({

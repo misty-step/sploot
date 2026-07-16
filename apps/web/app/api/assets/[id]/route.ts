@@ -209,12 +209,16 @@ async function deleteHandler(
       if (!existingAsset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
       const storage = new ConfiguredStorageWriter();
       const keys = [
-        existingAsset.storageKey ? { provider: existingAsset.storageProvider, key: existingAsset.storageKey } : null,
-        existingAsset.thumbnailStorageKey ? { provider: existingAsset.storageProvider, key: existingAsset.thumbnailStorageKey } : null,
+        existingAsset.storageProvider === 'vercel'
+          ? null
+          : (existingAsset.storageKey ? { provider: existingAsset.storageProvider, key: existingAsset.storageKey } : null),
+        existingAsset.storageProvider === 'vercel'
+          ? null
+          : (existingAsset.thumbnailStorageKey ? { provider: existingAsset.storageProvider, key: existingAsset.thumbnailStorageKey } : null),
       ].filter((entry): entry is { provider: string; key: string } => Boolean(entry));
       const fallbackUrls = [
-        !existingAsset.storageKey ? existingAsset.blobUrl : null,
-        !existingAsset.thumbnailStorageKey ? existingAsset.thumbnailUrl : null,
+        (existingAsset.storageProvider === 'vercel' || !existingAsset.storageKey) ? existingAsset.blobUrl : null,
+        (existingAsset.storageProvider === 'vercel' || !existingAsset.thumbnailStorageKey) ? existingAsset.thumbnailUrl : null,
       ].filter((url): url is string => Boolean(url));
       if (storage.deleteKey) await Promise.all(keys.map(entry => storage.deleteKey!(entry.provider, entry.key)));
       await Promise.all(fallbackUrls.map(url => storage.deleteUrl(url)));
