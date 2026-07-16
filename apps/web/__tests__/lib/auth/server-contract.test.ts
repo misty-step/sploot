@@ -28,6 +28,9 @@ import { EnrollmentUnavailableError } from '@/lib/enrollment/enrollment-policy';
 
 describe('shared Clerk sync contract', () => {
   beforeEach(() => {
+    // This file exercises the Clerk contract directly; keep the global QA-build
+    // fixture from routing the call into the terminal signed-out seam.
+    vi.stubEnv('NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD', 'false');
     vi.clearAllMocks();
     mocks.auth.mockResolvedValue({
       userId: 'clerk-subject',
