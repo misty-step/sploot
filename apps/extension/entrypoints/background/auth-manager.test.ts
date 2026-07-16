@@ -134,6 +134,42 @@ describe('auth-manager', () => {
     });
   });
 
+  it('reuses the listener-owned Clerk client for signed-out queue recovery after worker startup', async () => {
+    const listenerClient = {
+      session: null,
+      addListener: vi.fn((listener: (resources: unknown) => void) => {
+        clerkListeners.push(listener);
+        return () => undefined;
+      }),
+    };
+    const overwrittenClient = {
+      session: {
+        id: 'overwritten-session',
+        user: { id: 'overwritten-user' },
+        expireAt: null,
+      },
+      addListener: vi.fn(),
+    };
+    let latestClient: typeof listenerClient | typeof overwrittenClient | undefined;
+    createClerkClient.mockImplementation(async () => {
+      latestClient = createClerkClient.mock.calls.length === 1 ? listenerClient : overwrittenClient;
+      return latestClient;
+    });
+
+    const { getAuthAuthority, getAuthTokenForAuthority, setupAuthBridge } = await importAuthManager();
+    setupAuthBridge();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    // Context-menu startup recovery reads authority immediately after the
+    // bridge starts. A second create would overwrite Clerk's module-global
+    // client and detach the listener that owns the signed-in transition.
+    await expect(getAuthAuthority()).resolves.toBeNull();
+    await expect(getAuthTokenForAuthority({ userId: 'overwritten-user', sessionId: 'overwritten-session' })).resolves.toBeNull();
+    expect(createClerkClient).toHaveBeenCalledTimes(1);
+    expect(latestClient).toBe(listenerClient);
+    expect(clerkListeners).toHaveLength(1);
+  });
+
   it('treats a new session for the same account as the same durable owner', async () => {
     const { sameAccountAuthority } = await importAuthManager();
 

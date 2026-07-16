@@ -124,18 +124,6 @@ function updateCachedState(next: AuthState) {
   }
 }
 
-async function createFreshClerkClient() {
-  assertExtensionConfig()
-  // CreateClerkClientOptions exposes no telemetry option and the SDK loads
-  // Clerk internally with fixed options, so there is no typed disable knob
-  // here. Clerk's telemetry collector no-ops for production publishable keys
-  // (instanceType gate); the ClerkProvider surfaces disable it explicitly.
-  return await createClerkClient({
-    publishableKey: PUBLISHABLE_KEY,
-    syncHost: CLERK_SYNC_HOST,
-    __experimental_syncHostListener: true,
-  })
-}
 
 async function getClerkClient() {
   assertExtensionConfig()
@@ -286,7 +274,7 @@ export async function readAuthAuthority(signal?: AbortSignal): Promise<AuthAutho
   if (E2E_AUTH_MODE) {
     return await getE2eAuthority(signal);
   }
-  const clerk = await withAbort(createFreshClerkClient(), signal)
+  const clerk = await withAbort(getClerkClient(), signal)
   const authority = sessionAuthority(clerk.session)
   if (authority) {
     updateCachedState({
@@ -324,7 +312,7 @@ export async function getAuthTokenForAuthority(expected: AuthAuthority, signal?:
         ? `e2e-token-${actual.userId}-${actual.sessionId}`
         : null;
     }
-    const clerk = await withAbort(createFreshClerkClient(), signal)
+    const clerk = await withAbort(getClerkClient(), signal)
     const actual = sessionAuthority(clerk.session)
     if (!sameAccountAuthority(actual, expected) || !clerk.session) {
       return null
@@ -491,7 +479,7 @@ export async function runAuthDiagnostics(): Promise<AuthDiagnosticsSnapshot> {
   }
 
   try {
-    const clerk = await createFreshClerkClient()
+    const clerk = await getClerkClient()
     snapshot.status = clerk.session ? 'signed-in' : 'signed-out'
     snapshot.userId = clerk.session?.user?.id
     snapshot.sessionId = clerk.session?.id
