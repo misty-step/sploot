@@ -155,6 +155,24 @@ test('dev MV3 seam shows update notice, opens update path, and clears after inst
     await popup.close();
     popup = await openMv3Popup(context, extensionId, testInfo, step);
     worker = await stopAndRestartServiceWorker(context, popup, worker, testInfo, step);
+    const redelivered = await sendMv3Message<{ ok: boolean }>(
+      popup,
+      { type: SET_AVAILABLE, version: '1.1.0' },
+      context,
+      testInfo,
+      step,
+      're-deliver dismissed version after worker restart',
+    );
+    expect(redelivered).toEqual({ ok: true });
+    const dismissedAfterRestart = await sendMv3Message<{ version: string; dismissed: boolean } | null>(
+      popup,
+      { type: 'sploot:update-status:get-status' },
+      context,
+      testInfo,
+      step,
+      'read persisted dismissal after worker restart',
+    );
+    expect(dismissedAfterRestart).toEqual({ version: '1.1.0', dismissed: true });
     await popup.close();
     popup = await openMv3Popup(context, extensionId, testInfo, step);
     await expect(popup.getByText('Update available')).toHaveCount(0);

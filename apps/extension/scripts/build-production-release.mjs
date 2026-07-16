@@ -26,6 +26,7 @@ const { stdout: beforeBuildSha } = await execFileAsync('git', ['rev-parse', 'HEA
 await rm(zipPath, { force: true });
 await rm(markerPath, { force: true });
 await execFileAsync('wxt', ['zip'], { cwd: root, env: process.env, stdio: 'inherit' });
+await execFileAsync(process.execPath, ['scripts/assert-update-nag-artifact.mjs'], { cwd: root, env: process.env, stdio: 'inherit' });
 
 const { stdout: afterBuildSha } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root });
 if (beforeBuildSha.trim() !== afterBuildSha.trim()) {

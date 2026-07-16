@@ -81,6 +81,7 @@ describe('update-status', () => {
   it('survives service-worker setup restart with persisted dismissal', async () => {
     await setUpdateAvailableForTesting('1.2.0');
     await dismissUpdate('1.2.0');
+    requestUpdateCheck.mockReturnValue(new Promise(() => undefined));
     resetUpdateCheckForTesting();
     setupUpdateStatus();
     expect(await getUpdateNotice()).toEqual({ version: '1.2.0', dismissed: true });
