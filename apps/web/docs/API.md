@@ -66,6 +66,10 @@ Protected product API route inventory:
 - `/api/analytics/usage`, `/api/telemetry`
 - `/api/cache/stats`, `/api/embeddings/text`, `/api/embeddings/image`, `/api/sse/embedding-updates`
 
+`GET /api/analytics/usage` returns upload-count telemetry and a sustained-rate
+signal. It intentionally does not return spend or an estimated dollar amount:
+the application has no billed-dollar authority for observed upload cost.
+
 ## Response Format
 
 successful responses are endpoint-specific json objects. error responses use
@@ -90,9 +94,35 @@ the route's `error` field, with optional diagnostic fields on some endpoints:
 
 ### Health Check
 
+#### GET /api/health/live
+
+Process-liveness probe dedicated to platform routing (DigitalOcean routes the
+web service on this path). It proves only that the Next process/deployment
+artifact is responding: no database, provider, Clerk, Canary, or model
+dependency, and no sensitive output. It must never be used as a readiness or
+dependency oracle.
+
+**Authentication:** Not required
+
+**Response (always `200` while the process is up):**
+
+```json
+{
+  "status": "alive",
+  "service": "sploot-web"
+}
+```
+
 #### GET /api/health
 
-Check API availability and system status.
+Deep readiness oracle: database connectivity, embedding limiter schema, and
+(when `STRIPE_LEDGER_BOOTSTRAP_REQUIRED=true`) the Stripe bootstrap marker.
+Fails closed with `503` when any dependency is degraded. Deployed
+verification and operators use this endpoint; platform routing deliberately
+does not (see `/api/health/live` above).
+
+Concurrent requests share one underlying bounded database probe; a request
+timeout never launches duplicate database work.
 
 **Authentication:** Not required
 
@@ -386,8 +416,10 @@ token; every other route returns `401` for one. Dedupe, quota, and the
 
 #### POST /api/assets
 
-Create a new asset record after successful blob upload. Automatically starts
-embedding generation when Replicate is configured.
+Create a new asset record after successful blob upload. Schedules embedding
+generation through the shared durable admission boundary when embeddings are
+enabled; the response may report `processing` while the scheduler persists
+retryable, user-local, and terminal outcomes for cron recovery.
 
 **Authentication:** Required
 
@@ -876,7 +908,9 @@ Check embedding generation status for up to 50 assets.
 
 Manually trigger embedding generation for an asset.
 
-Embedding generation is guarded by `SPLOOT_EMBEDDINGS_ENABLED=false`; when disabled this route returns `503` with `code: "embeddings_disabled"` before calling Replicate. The cron embedding processor uses the same gate.
+Embedding generation is guarded by `SPLOOT_EMBEDDINGS_ENABLED=false`; when disabled this route returns `503` with `code: "embeddings_disabled"` before calling Replicate. Ready, processing, cooldown, and unsupported-media responses are resolved before the provider circuit is read, so a circuit-table outage cannot hide no-work state. A durable provider circuit returns `503` with `status: "provider_backoff"` and `Retry-After`; an actual provider `429` returns `429` with `status: "provider_rate_limited"` and is counted as an asset attempt. Provider timeout and 5xx outcomes return typed `503` with `Retry-After` and are counted as asset attempts. Deterministic provider-client initialization failures return a non-retryable `503` with `X-Sploot-Embedding-Outcome: embedding_configuration`, are claim-fenced into terminal configuration state, and do not consume the asset attempt budget; they carry no `Retry-After`. User/global rate and daily-budget denials return typed `429` responses with `Retry-After`; an unavailable limiter returns typed `503`. An asset-local cooldown returns `429` with `status: "cooldown"`. Every embedding `429` has a finite `Retry-After`: missing or malformed provider metadata defaults to 30 seconds, and a valid provider value is preserved as a lower bound rather than shortened locally; daily- and monthly-budget responses point truthfully to their UTC reset. The cron embedding processor uses the same gate and circuit and includes per-item failure taxonomy in partial responses.
+
+This route is also the only recovery path for a terminal asset (one that has exhausted its three-attempt budget; cron never rediscovers terminal rows). Within fifteen minutes of the terminal failure the route returns `429` with `status: "terminal_quarantine"` and a truthful `Retry-After`. After the quarantine, an owner request may atomically revive the row — resetting the attempt budget and passing through the full circuit/rate/daily admission boundary — and a successful revive-and-generate response includes `"revived": true`. An asset receives at most one revival over its lifetime. If that fresh three-attempt cycle re-poisons the row, requests remain quarantined for fifteen minutes and then return `422` with `status: "terminal_failure"` and `reason: "revival_exhausted"`; a database trigger preserves this cap across runtime rollback.
 
 **Authentication:** Required
 
@@ -900,8 +934,13 @@ Embedding generation is guarded by `SPLOOT_EMBEDDINGS_ENABLED=false`; when disab
 
 ```json
 {
-  "message": "Embedding generation started",
-  "assetId": "550e8400-e29b-41d4-a716-446655440000"
+  "success": true,
+  "message": "Embedding generated successfully",
+  "embedding": {
+    "modelName": "…",
+    "dimension": 768,
+    "processingTime": 123
+  }
 }
 ```
 
@@ -963,7 +1002,10 @@ Generate embeddings for an image URL (primarily for testing).
 ```
 
 `assetId` is optional. when provided, the route verifies ownership and stores
-the generated embedding.
+the generated embedding. If a concurrent worker has already claimed or stored
+the asset embedding, the claim-fenced write returns `409` with
+`Embedding state changed; retry the request` instead of reporting a false
+success.
 
 ---
 

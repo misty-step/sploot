@@ -17,6 +17,12 @@ import {
   isEnrollmentDeniedError,
   isEnrollmentUnavailableError,
 } from '@/lib/enrollment/enrollment-policy';
+import {
+  EmbeddingError,
+  embeddingConfigurationHeaders,
+  embeddingRetryHeaders,
+  reportEmbeddingConfigurationErrorOnce,
+} from '@/lib/embedding-errors';
 
 /**
  * URL import endpoint: POST { url } fetches a remote image server-side and
@@ -97,10 +103,35 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     );
   } catch (error) {
     if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
-    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
+    // Typed embedding outcomes keep their Retry-After contract below; only
+    // genuine enrollment failures take the duck-typed enrollment path.
+    if (isEnrollmentUnavailableError(error) && !(error instanceof EmbeddingError)) {
+      return enrollmentUnavailableResponse();
+    }
 
     if (error instanceof StorageQuotaExceededError) {
       return NextResponse.json(storageQuotaError(error.snapshot), { status: 403 });
+    }
+
+    if (error instanceof EmbeddingError) {
+      const isConfiguration = 'reason' in error && error.reason === 'embedding_configuration';
+      if (isConfiguration) {
+        await reportEmbeddingConfigurationErrorOnce(error, 'upload:url:embedding-configuration');
+      }
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+          reason: 'reason' in error ? error.reason : undefined,
+          retryAfter: error.retryAfterSec,
+        },
+        {
+          status: error.statusCode || 503,
+          headers: isConfiguration
+            ? embeddingConfigurationHeaders(error)
+            : embeddingRetryHeaders(error),
+        }
+      );
     }
 
     logger.error('URL import failed', {

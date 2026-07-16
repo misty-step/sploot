@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "scenarios": [
+    {
+      "id": "free", "label": "Cardless Free — full allowance", "priceUsd": 0,
+      "sourceTrashStorageGb": 0.5, "uploads": 100, "uniqueTextQueries": 100,
+      "blobDeliveryGb": 1, "edgeRequests": 10000, "blobSimpleOps": 5000, "blobAdvancedOps": 250,
+      "databaseStorageGb": 0.005, "neonHistoryGb": 0.005, "neonCuHours": 0.02,
+      "neonTransferGb": 0.02, "appEgressGib": 0.01, "jobInvocations": 1, "jobSecondsPerInvocation": 1,
+      "canaryAllocationUsd": 0.02, "clerkMru": 1
+    },
+    {
+      "id": "collector", "label": "Collector — 10 GB", "priceUsd": 13,
+      "sourceTrashStorageGb": 10, "uploads": 600, "uniqueTextQueries": 900,
+      "blobDeliveryGb": 10, "edgeRequests": 50000, "blobSimpleOps": 30000, "blobAdvancedOps": 1500,
+      "databaseStorageGb": 0.1, "neonHistoryGb": 0.1, "neonCuHours": 0.5,
+      "neonTransferGb": 0.25, "appEgressGib": 0.1, "jobInvocations": 10, "jobSecondsPerInvocation": 60,
+      "canaryAllocationUsd": 0.1, "clerkMru": 1
+    },
+    {
+      "id": "archive", "label": "Archive — 100 GB", "priceUsd": 49,
+      "sourceTrashStorageGb": 100, "uploads": 2000, "uniqueTextQueries": 2000,
+      "blobDeliveryGb": 40, "edgeRequests": 250000, "blobSimpleOps": 100000, "blobAdvancedOps": 6000,
+      "databaseStorageGb": 1, "neonHistoryGb": 1, "neonCuHours": 5,
+      "neonTransferGb": 3, "appEgressGib": 1, "jobInvocations": 60, "jobSecondsPerInvocation": 60,
+      "canaryAllocationUsd": 0.5, "clerkMru": 1
+    },
+    {
+      "id": "abusive", "label": "Abusive novel-query and upload storm", "priceUsd": 0,
+      "sourceTrashStorageGb": 0.5, "uploads": 10000, "uniqueTextQueries": 50000,
+      "blobDeliveryGb": 1, "edgeRequests": 1000000, "blobSimpleOps": 200000, "blobAdvancedOps": 25000,
+      "databaseStorageGb": 0.1, "neonHistoryGb": 0.1, "neonCuHours": 10,
+      "neonTransferGb": 2, "appEgressGib": 2, "jobInvocations": 300, "jobSecondsPerInvocation": 3600,
+      "canaryAllocationUsd": 1, "clerkMru": 1
+    },
+    {
+      "id": "viral-share", "label": "Viral public share / crawler month", "priceUsd": 0,
+      "sourceTrashStorageGb": 0.5, "uploads": 1, "uniqueTextQueries": 0,
+      "blobDeliveryGb": 1000, "edgeRequests": 50000000, "blobSimpleOps": 1000, "blobAdvancedOps": 5,
+      "databaseStorageGb": 0.005, "neonHistoryGb": 0.005, "neonCuHours": 20,
+      "neonTransferGb": 10, "appEgressGib": 10, "jobInvocations": 0, "jobSecondsPerInvocation": 0,
+      "canaryAllocationUsd": 1, "clerkMru": 1
+    }
+  ]
+}

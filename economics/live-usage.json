@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-07-15T13:53:21Z",
+  "storage": {
+    "blobObjects": 6461,
+    "blobBytes": 532395408,
+    "databaseSourceBytesLive": 499266304,
+    "databaseSourceBytesDeleted": 18827,
+    "liveAssets": 3232,
+    "deletedAssets": 1,
+    "liveThumbnails": 3113,
+    "reconciliation": "The displayed gap is derived from Blob bytes minus live-plus-deleted Postgres source bytes; the residual may include thumbnails or unreferenced objects. Vercel Blob billing remains account-wide and unattributed at store level."
+  },
+  "database": {
+    "databaseBytes": 42016768,
+    "users": 10,
+    "readyEmbeddings": 3088,
+    "failedEmbeddings": 130,
+    "processingEmbeddings": 14,
+    "pendingEmbeddings": 1,
+    "searches30d": 9,
+    "textCacheRows": 12
+  },
+  "inference": {
+    "latestPredictionSample": {
+      "size": 100,
+      "from": "2026-07-15T05:21:10Z",
+      "to": "2026-07-15T06:46:24Z",
+      "failed": 95,
+      "canceled": 1,
+      "succeeded": 4,
+      "model": "krthr/clip-embeddings",
+      "modelVersion": "1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4"
+    },
+    "reconciliation": "This is operational usage, not a bill. Public-model failed predictions are documented as unbilled, while canceled/time-based work may bill; exact Replicate dollars are unavailable to the API authority."
+  },
+  "digitalOcean": {
+    "webInstance": "apps-s-1vcpu-2gb",
+    "webInstances": 1,
+    "scheduledSmallJobs": 4,
+    "embeddingJobSchedule": "three calls over about ten minutes every fifteen minutes",
+    "embeddingJobEstimatedMonthlyUsd": 3.33,
+    "invoicePreviewUsd": 41.69,
+    "monthToDateUsageUsd": 45.84,
+    "namedVarianceUsd": 4.15,
+    "varianceExplanation": "The latest redacted account readback is $45.84 month-to-date versus a $41.69 invoice preview, a named $4.15 cadence/account-wide variance. Preview and balance endpoints update on different cadences and cover the entire account, which hosts multiple apps. DigitalOcean exposes no per-app accrued-transfer or invoice-preview allocation, so Sploot's exact July line item is not inferable from this authority."
+  },
+  "vercel": {
+    "periodStart": "2026-07-01",
+    "periodEnd": "2026-07-15",
+    "projectEffectiveUsageUsd": 1.6836573508,
+    "allowanceAbsorbedUsd": null,
+    "billedAfterAllowanceUsd": null,
+    "categories": [
+      {"name": "build CPU", "effectiveUsageUsd": 0.778009},
+      {"name": "analytics", "effectiveUsageUsd": 0.45915},
+      {"name": "observability", "effectiveUsageUsd": 0.222658},
+      {"name": "provisioned memory", "effectiveUsageUsd": 0.067224},
+      {"name": "active CPU", "effectiveUsageUsd": 0.064374},
+      {"name": "origin transfer", "effectiveUsageUsd": 0.044212},
+      {"name": "invocations", "effectiveUsageUsd": 0.039175}
+    ],
+    "subCentRemainderUsd": 0.0088553508,
+    "reconciliation": "Sploot project effective usage for the current period is attributed by project. The remaining categories are each below $0.01 and are retained as an aggregate sub-cent remainder; the provider readback describes usage as almost entirely absorbed by allowance and billed usage as almost $0, but does not provide exact post-allowance dollars.",
+    "blobAttribution": "Vercel Blob remains account-wide and unattributed at store level."
+  },
+  "telemetry": {
+    "errors30d": 5917,
+    "errorGroupsReturned": 50,
+    "reconciliation": "Canary is a self-hosted shared DigitalOcean component. This is event usage, not a separate vendor bill; the model allocates fixed component cost instead of inventing a per-event price."
+  },
+  "github": {
+    "repositoryVisibility": "public",
+    "activeCacheCount": 16,
+    "activeCacheBytes": 6835929239,
+    "reconciliation": "6.37 GiB is below the separate 10 GiB per-repository cache allowance; standard public-repository runners are free."
+  },
+  "unknowns": [
+    {
+      "name": "Vercel Blob billed operations and transfer attribution for the current cycle",
+      "value": null,
+      "impact": "Blob object bytes are exact, but Vercel Blob billing is account-wide and unattributed at store level; invoice reconciliation cannot distinguish Sploot reads, writes, edge requests, and origin misses."
+    },
+    {
+      "name": "Neon production plan, CU-hours, history bytes, and transfer",
+      "value": null,
+      "impact": "Database bytes are exact; the model prices GA on Launch rates and varies CU-hours rather than assuming the Free allowance."
+    },
+    {
+      "name": "Replicate billed dollars",
+      "value": null,
+      "impact": "Prediction status and runtime are readable, but the API does not expose invoice charges. Model-page typical cost and retry sensitivity are used."
+    },
+    {
+      "name": "Clerk dashboard plan and MRU",
+      "value": null,
+      "impact": "Postgres has 10 users, which is not the same billing measure as MRU. Hobby is the explicit current assumption."
+    },
+    {
+      "name": "Sploot-only DigitalOcean invoice allocation",
+      "value": null,
+      "impact": "The account-level invoice preview includes unrelated apps; the app spec still proves Sploot's $25 service and prorated jobs."
+    }
+  ]
+}

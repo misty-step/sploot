@@ -45,7 +45,7 @@ Current API route test coverage is **31.8%** (7/22 routes tested). High-priority
 
 **Low Priority** (advanced features):
 - `/api/search/advanced` - Advanced search (0% coverage)
-- `/api/analytics/usage` - Usage analytics (0% coverage)
+- `/api/analytics/usage` - Usage analytics (telemetry-only response and no-spend contract covered by `__tests__/api/analytics-usage.test.ts`)
 
 ## Test Quality Metrics
 

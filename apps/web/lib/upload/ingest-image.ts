@@ -28,6 +28,7 @@ import { assertEnrolledUser } from '@/lib/enrollment/enrollment-policy';
 export interface IngestedAsset {
   id: string;
   blobUrl: string;
+  thumbnailUrl?: string | null;
   pathname: string;
   filename: string;
   mimeType: string;
@@ -52,7 +53,7 @@ export interface IngestImageOptions {
   /**
    * Set false when the caller writes a precomputed vector itself (e.g. the
    * starter-pile seed): skips embedding scheduling entirely so no Replicate
-   * call, rate-limit lease, or daily-budget slot is spent on the asset.
+   * call, rate-limit lease, or daily attempt-ceiling slot is spent on the asset.
    */
   scheduleEmbeddings?: boolean;
 }
@@ -121,6 +122,8 @@ export async function ingestImage({
       await scheduler.scheduleEmbedding({
         assetId: deduplicationResult.existingAsset.id,
         blobUrl: deduplicationResult.existingAsset.blobUrl,
+        mime: deduplicationResult.existingAsset.mime,
+        thumbnailUrl: deduplicationResult.existingAsset.thumbnailUrl ?? null,
         checksum: deduplicationResult.checksum,
         mode: syncEmbeddings ? 'sync' : 'async',
         ownerUserId: userId,
@@ -132,6 +135,7 @@ export async function ingestImage({
       asset: {
         id: deduplicationResult.existingAsset.id,
         blobUrl: deduplicationResult.existingAsset.blobUrl,
+        thumbnailUrl: deduplicationResult.existingAsset.thumbnailUrl ?? null,
         pathname: deduplicationResult.existingAsset.pathname,
         filename: file.name,
         mimeType: deduplicationResult.existingAsset.mime,
@@ -209,6 +213,8 @@ export async function ingestImage({
         await scheduler.scheduleEmbedding({
           assetId: recordResult.asset.id,
           blobUrl: uploadResult.thumbnailUrl ?? uploadResult.mainUrl,
+          mime: file.type,
+          thumbnailUrl: uploadResult.thumbnailUrl,
           checksum: deduplicationResult.checksum,
           mode: syncEmbeddings ? 'sync' : 'async',
           ownerUserId: userId,
@@ -220,6 +226,7 @@ export async function ingestImage({
         asset: {
           id: recordResult.asset.id,
           blobUrl: uploadResult.mainUrl,
+          thumbnailUrl: uploadResult.thumbnailUrl,
           pathname: uploadResult.mainPathname,
           filename: file.name,
           mimeType: file.type,
@@ -264,6 +271,7 @@ export async function ingestImage({
             asset: {
               id: existingAsset.id,
               blobUrl: existingAsset.blobUrl,
+              thumbnailUrl: existingAsset.thumbnailUrl ?? null,
               pathname: existingAsset.pathname,
               filename: file.name,
               mimeType: existingAsset.mime,

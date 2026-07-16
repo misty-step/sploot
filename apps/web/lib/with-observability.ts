@@ -12,6 +12,7 @@ import {
   isEnrollmentUnavailableError,
   isEnrollmentIdentityConflictError,
 } from './enrollment/enrollment-policy';
+import { isEmbeddingOutcome } from './embedding-errors';
 
 /**
  * Next.js route handler signature extended with optional context param.
@@ -67,7 +68,7 @@ interface RequestMetadata {
 
 const TRACE_ID_LENGTH = 12;
 const DEFAULT_ROUTE_CONTEXT: RouteContext = Object.freeze({ params: Promise.resolve({}) });
-
+const CANARY_OWNER_HEADER = 'X-Sploot-Canary-Owner';
 /**
  * Wrap a Next.js route handler with logging, timing, and trace enrichment.
  *
@@ -108,6 +109,9 @@ export function withObservability(
       const response = perfMonitor
         ? await perfMonitor.measureAsync(operation, () => callRouteHandler(handler, req, handlerContext))
         : await callRouteHandler(handler, req, handlerContext);
+      if (!response) {
+        throw new Error('Route handler returned no response');
+      }
       const duration = Date.now() - startTime;
       const statusCode = response.status;
       const success = statusCode >= 200 && statusCode < 400;
@@ -121,7 +125,22 @@ export function withObservability(
             success,
           });
 
-          if (statusCode >= 500) {
+          const embeddingOutcome = response.headers?.get('X-Sploot-Embedding-Outcome');
+          const canaryOwner = response.headers?.get(CANARY_OWNER_HEADER);
+          if (
+            statusCode >= 500 &&
+            embeddingOutcome &&
+            isEmbeddingOutcome(embeddingOutcome)
+          ) {
+            logger.logInfo('request:typed-embedding-outcome', {
+              ...metadata,
+              operation,
+              statusCode,
+              duration,
+              success,
+              reason: embeddingOutcome,
+            });
+          } else if (statusCode >= 500 && canaryOwner !== 'route') {
             logger.logError(
               'request:server-error-status',
               new Error(`Request completed with HTTP ${statusCode}`),

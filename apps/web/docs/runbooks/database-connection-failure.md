@@ -3,11 +3,16 @@
 ## detect
 
 ```bash
-curl -fsS https://www.sploot.app/api/health | jq
+curl -fsS https://www.sploot.app/api/health/live | jq   # process liveness (routing probe)
+curl -fsS https://www.sploot.app/api/health | jq        # deep readiness oracle
 ```
 
-- `dependencies.database=down` means Postgres is unreachable or Prisma could
-  not reconnect;
+- `/api/health/live` returning `alive` while `/api/health` is `503` means the
+  process is healthy and a dependency (usually the database) is degraded —
+  platform routing stays up by design (incident 2026-07-15: routing on the
+  deep oracle produced `no_healthy_upstream` during a database stall);
+- `dependencies.database=down` means Postgres is unreachable or the bounded
+  health probe could not complete;
 - `dependencies.database=up` with `embedding_limiter=down` means migration
   `20260710000000_add_embedding_rate_limits` is missing;
 - `diagnostics.database_url_configured=false` means the runtime lacks

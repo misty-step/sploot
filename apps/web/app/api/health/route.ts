@@ -1,11 +1,23 @@
-import { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 
 import pkg from '@/package.json';
 import { canaryConfigured, reportCanaryCheckIn } from '@/lib/canary-reporter';
-import { prisma } from '@/lib/db';
-import { logger } from '@/lib/observability-logger';
+import {
+  checkDatabaseReadiness,
+  type DatabaseHealth,
+} from '@/lib/health/database-readiness';
 import { withObservability } from '@/lib/with-observability';
+
+/**
+ * Deep readiness oracle: database connectivity, embedding limiter schema, and
+ * (when required) the Stripe bootstrap marker. Fails closed with 503.
+ *
+ * This endpoint is deliberately NOT the platform routing probe. DigitalOcean
+ * routes the web service on the shallow /api/health/live liveness endpoint
+ * (incident 2026-07-15: routing on this deep oracle turned a database stall
+ * into no_healthy_upstream for the whole origin). Deployed verification and
+ * operators keep using this endpoint as the readiness authority.
+ */
 
 interface HealthDependencies {
   database: 'up' | 'down';
@@ -29,105 +41,7 @@ interface HealthStatus {
   error?: string;
 }
 
-interface DatabaseHealth {
-  success: boolean;
-  limiterSchema: boolean;
-  error?: string;
-  latency_ms?: number;
-  prisma_test: boolean;
-}
-
-interface LimiterSchemaRow {
-  limiter_buckets: string | null;
-  limiter_leases: string | null;
-}
-
 const TIMEOUT_MS = 5_000;
-
-async function queryRuntimeSchema(): Promise<LimiterSchemaRow[]> {
-  return prisma.$queryRaw<LimiterSchemaRow[]>`
-    SELECT
-      to_regclass('public.embedding_rate_buckets')::text AS limiter_buckets,
-      to_regclass('public.embedding_rate_leases')::text AS limiter_leases
-  `;
-}
-
-function schemaIsReady(rows: LimiterSchemaRow[]): boolean {
-  return Boolean(rows[0]?.limiter_buckets && rows[0]?.limiter_leases);
-}
-
-async function checkDatabase(): Promise<DatabaseHealth> {
-  const startedAt = Date.now();
-
-  if (!prisma) {
-    return {
-      success: false,
-      limiterSchema: false,
-      error: 'Prisma client not initialized',
-      prisma_test: false,
-    };
-  }
-
-  try {
-    const rows = await queryRuntimeSchema();
-    return {
-      success: true,
-      limiterSchema: schemaIsReady(rows),
-      latency_ms: Date.now() - startedAt,
-      prisma_test: true,
-    };
-  } catch (error) {
-    const databaseError = error as Error;
-    const isStaleConnection =
-      databaseError instanceof Prisma.PrismaClientKnownRequestError &&
-      (databaseError.message.includes('Server has closed the connection') ||
-        databaseError.message.includes('Connection terminated unexpectedly') ||
-        databaseError.message.includes('connection has been closed') ||
-        databaseError.code === 'P1002' ||
-        databaseError.code === 'P1008');
-
-    if (!isStaleConnection) {
-      logger.logError('health-check-database-failed', databaseError);
-      return {
-        success: false,
-        limiterSchema: false,
-        error: databaseError.message,
-        latency_ms: Date.now() - startedAt,
-        prisma_test: false,
-      };
-    }
-
-    logger.logInfo('health-check-db-reconnecting', {
-      reason: 'stale_connection',
-      error: databaseError.message,
-      errorCode: databaseError.code,
-    });
-
-    try {
-      await prisma.$disconnect();
-      await prisma.$connect();
-      const rows = await queryRuntimeSchema();
-      const latencyMs = Date.now() - startedAt;
-      logger.logInfo('health-check-db-reconnect-success', { latency_ms: latencyMs });
-      return {
-        success: true,
-        limiterSchema: schemaIsReady(rows),
-        latency_ms: latencyMs,
-        prisma_test: true,
-      };
-    } catch (reconnectError) {
-      const reconnect = reconnectError as Error;
-      logger.logError('health-check-db-reconnect-failed', reconnect);
-      return {
-        success: false,
-        limiterSchema: false,
-        error: `Reconnect failed: ${reconnect.message}`,
-        latency_ms: Date.now() - startedAt,
-        prisma_test: false,
-      };
-    }
-  }
-}
 
 function dependenciesFor(database: DatabaseHealth): HealthDependencies {
   return {
@@ -158,7 +72,10 @@ async function getHandler(_request: NextRequest) {
   });
 
   try {
-    const database = await Promise.race([checkDatabase(), timeout]);
+    // The readiness probe is single-flight and bounded in the lib: this
+    // request-level race only limits how long THIS response waits. A timeout
+    // here never spawns duplicate database work.
+    const database = await Promise.race([checkDatabaseReadiness(), timeout]);
     if (timeoutId) clearTimeout(timeoutId);
 
     const dependencies = dependenciesFor(database);

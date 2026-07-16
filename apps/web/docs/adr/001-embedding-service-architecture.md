@@ -152,6 +152,13 @@ class ReplicateEmbeddingService implements EmbeddingService {
 
 ## Implementation Strategy
 
+The snippets below are historical phase sketches, not live construction APIs.
+Current production callers use `createEmbeddingService(userId)` from
+`apps/web/lib/embeddings.ts`; that module owns the durable cache, admission,
+provider attempt, output validation, retry classification, and circuit lease.
+The only direct Replicate calls outside that boundary are the explicitly
+offline, non-production fixture-maintenance scripts documented in ADR-011.
+
 ### Phase 1: MVP with Replicate SigLIP
 ```typescript
 // Immediate implementation

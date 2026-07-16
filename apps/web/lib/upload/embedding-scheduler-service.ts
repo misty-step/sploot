@@ -1,4 +1,5 @@
 import { after } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma, upsertAssetEmbedding } from '@/lib/db';
 import {
   createEmbeddingService,
@@ -6,23 +7,51 @@ import {
   EmbeddingError,
 } from '@/lib/embeddings';
 import {
+  EmbeddingProviderCircuitOpenError,
+} from '@/lib/embedding-errors';
+import {
   acquireEmbeddingProcessing,
+  markEmbeddingTerminalSkipped,
   resolveEmbeddingGateState,
 } from '@/lib/embedding-guard';
+import {
+  resolveEmbeddingMediaSource,
+  type EmbeddingMediaSkipReason,
+} from '@/lib/embedding-media';
+import {
+  deferEmbeddingAdmission,
+  normalizeEmbeddingConfigurationError,
+  recordEmbeddingConfigurationFailure,
+  type EmbeddingAttemptFailure,
+  type EmbeddingAdmissionReason,
+  getEmbeddingAdmissionReason,
+  isEmbeddingAdmissionFailure,
+  recordEmbeddingAttemptFailure,
+} from '@/lib/embedding-resilience';
 import { getRuntimeGate } from '@/lib/runtime-gates';
 import { logger } from '@/lib/logger';
 
 /**
  * Embedding scheduling error
  */
-export class EmbeddingScheduleError extends Error {
+export class EmbeddingScheduleError extends EmbeddingError {
+  readonly reason?: string;
+
   constructor(
     message: string,
     public retryable: boolean = false,
-    public cause?: Error
+    public cause?: Error,
+    statusCode?: number,
+    retryAfterSec?: number,
   ) {
-    super(message);
+    super(
+      message,
+      statusCode ?? (cause instanceof EmbeddingError ? cause.statusCode : 500),
+      retryable,
+      retryAfterSec ?? (cause instanceof EmbeddingError ? cause.retryAfterSec : undefined),
+    );
     this.name = 'EmbeddingScheduleError';
+    this.reason = (cause as { reason?: string } | undefined)?.reason;
   }
 }
 
@@ -37,6 +66,8 @@ export type EmbeddingScheduleMode = 'sync' | 'async';
 export interface EmbeddingScheduleParams {
   assetId: string;
   blobUrl: string;
+  mime: string;
+  thumbnailUrl?: string | null;
   checksum: string;
   mode: EmbeddingScheduleMode;
   /** Asset owner, for the per-user embedding rate limit lease. */
@@ -50,7 +81,7 @@ export interface EmbeddingScheduleResult {
   scheduled: boolean;
   mode: EmbeddingScheduleMode;
   assetId: string;
-  reason?: 'embeddings_disabled';
+  reason?: 'embeddings_disabled' | EmbeddingMediaSkipReason;
 }
 
 /**
@@ -76,7 +107,12 @@ export class EmbeddingSchedulerService {
   async scheduleEmbedding(
     params: EmbeddingScheduleParams
   ): Promise<EmbeddingScheduleResult> {
-    const { assetId, blobUrl, checksum, mode, ownerUserId } = params;
+    const { assetId, blobUrl, checksum, mode, ownerUserId, mime, thumbnailUrl } = params;
+    const media = resolveEmbeddingMediaSource({
+      mime,
+      blobUrl,
+      thumbnailUrl,
+    });
 
     logger.info('Scheduling embedding generation', {
       assetId,
@@ -93,10 +129,36 @@ export class EmbeddingSchedulerService {
       return { scheduled: false, mode, assetId, reason: 'embeddings_disabled' };
     }
 
+    if (media.sourceKind === 'unsupported') {
+      const lock = await acquireEmbeddingProcessing(assetId);
+      if (lock.acquired) {
+        await markEmbeddingTerminalSkipped(
+          assetId,
+          'Unsupported video without a poster thumbnail',
+          lock.processingClaimToken,
+        );
+      }
+      logger.warn('Embedding generation terminal-skipped', {
+        assetId,
+        reason: media.skipReason,
+      });
+      return { scheduled: false, mode, assetId, reason: media.skipReason };
+    }
+
     if (mode === 'sync') {
       // Synchronous mode: generate embedding immediately
       try {
-        await this.generateEmbedding(assetId, blobUrl, checksum, ownerUserId);
+        const generated = await this.generateEmbedding(
+          assetId,
+          blobUrl,
+          checksum,
+          ownerUserId,
+          mime,
+          thumbnailUrl
+        );
+        if (!generated) {
+          return { scheduled: false, mode: 'sync', assetId, reason: media.skipReason };
+        }
         logger.info('Embedding generated synchronously', { assetId });
         return { scheduled: true, mode: 'sync', assetId };
       } catch (error) {
@@ -119,7 +181,14 @@ export class EmbeddingSchedulerService {
       // Asynchronous mode: schedule with Next.js after()
       after(async () => {
         try {
-          await this.generateEmbedding(assetId, blobUrl, checksum, ownerUserId);
+          await this.generateEmbedding(
+            assetId,
+            blobUrl,
+            checksum,
+            ownerUserId,
+            mime,
+            thumbnailUrl
+          );
           logger.info('Embedding generated asynchronously', { assetId });
         } catch (error) {
           logger.error('Async embedding generation failed', {
@@ -145,8 +214,10 @@ export class EmbeddingSchedulerService {
     assetId: string,
     blobUrl: string,
     checksum: string,
-    ownerUserId: string
-  ): Promise<void> {
+    ownerUserId: string,
+    mime: string,
+    thumbnailUrl?: string | null
+  ): Promise<boolean> {
     logger.debug('Starting embedding generation', { assetId });
 
     // Skip if database not available
@@ -154,7 +225,7 @@ export class EmbeddingSchedulerService {
       logger.warn('Database not available, skipping embedding generation', {
         assetId,
       });
-      return;
+      return false;
     }
 
     // Check if embedding already exists
@@ -168,21 +239,38 @@ export class EmbeddingSchedulerService {
         logger.info('Embedding already exists, skipping generation', {
           assetId,
         });
-        return;
+        return true;
       }
       if (gateState.state === 'processing') {
         logger.info('Embedding already processing, skipping generation', {
           assetId,
         });
-        return;
+        return true;
       }
       if (gateState.state === 'cooldown') {
         logger.info('Embedding in cooldown, skipping generation', {
           assetId,
           retryAfterMs: gateState.retryAfterMs,
         });
-        return;
+        return true;
       }
+    }
+
+    const media = resolveEmbeddingMediaSource({
+      mime,
+      blobUrl,
+      thumbnailUrl,
+    });
+    if (media.sourceKind === 'unsupported') {
+      await markEmbeddingTerminalSkipped(
+        assetId,
+        'Unsupported video without a poster thumbnail'
+      );
+      logger.warn('Embedding generation terminal-skipped', {
+        assetId,
+        reason: media.skipReason,
+      });
+      return false;
     }
 
     // The provider service owns the durable concurrency/rate/daily admission
@@ -194,7 +282,7 @@ export class EmbeddingSchedulerService {
         state: lock.state,
         retryAfterMs: lock.retryAfterMs,
       });
-      return;
+      return true;
     }
 
     // Initialize embedding service
@@ -202,45 +290,96 @@ export class EmbeddingSchedulerService {
     try {
       embeddingService = createEmbeddingService(ownerUserId);
     } catch (error) {
-      logger.error('Failed to initialize embedding service', {
+      // Configuration failures are reported by the shared typed policy below;
+      // this local diagnostic must not become a second Canary owner.
+      logger.info('Failed to initialize embedding service', {
         assetId,
         error: error instanceof Error ? error.message : String(error),
       });
 
-      // Mark as failed in database
-      await this.markEmbeddingFailed(
+      const configurationError = normalizeEmbeddingConfigurationError(error);
+      const deferred = await recordEmbeddingConfigurationFailure(
         assetId,
-        'Failed to initialize embedding service'
+        configurationError,
+        lock.processingClaimToken,
       );
+      if (!deferred) {
+        logger.warn('Embedding initialization deferral was fenced or unavailable', {
+          assetId,
+        });
+      }
       throw new EmbeddingScheduleError(
-        'Failed to initialize embedding service',
+        `Embedding generation blocked: ${configurationError.message}`,
         false,
-        error instanceof Error ? error : undefined
+        configurationError,
       );
     }
 
     // Generate image embedding
     try {
       logger.debug('Calling embedding service', { assetId });
-      const result = await embeddingService.embedImage(blobUrl, checksum);
+      const result = await embeddingService.embedImage(media.sourceUrl, checksum);
 
       // Store embedding in database
-      await upsertAssetEmbedding({
+      const embedding = await upsertAssetEmbedding({
         assetId,
         modelName: result.model,
         modelVersion: result.model,
         dim: result.dimension,
         embedding: result.embedding,
-      });
+      }, lock.processingClaimToken);
+
+      if (!embedding) {
+        logger.warn('Embedding write fenced by a newer processing claim', {
+          assetId,
+        });
+        return false;
+      }
 
       logger.info('Embedding stored successfully', {
         assetId,
         model: result.model,
         dimension: result.dimension,
       });
+      return true;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error';
+
+      if (error instanceof EmbeddingProviderCircuitOpenError) {
+        await this.deferAdmissionOrFallback(
+          assetId,
+          errorMessage,
+          'provider_circuit_open',
+          error.retryAfterSec,
+          lock.processingClaimToken,
+        );
+        throw new EmbeddingScheduleError(
+          `Embedding generation deferred: ${errorMessage}`,
+          true,
+          error
+        );
+      }
+
+      if (isEmbeddingAdmissionFailure(error)) {
+        const retryAfterSec =
+          error instanceof EmbeddingAdmissionError
+            ? error.retryAfterSec
+            : undefined;
+        const reason = getEmbeddingAdmissionReason(error) ?? 'limiter_unavailable';
+        await this.deferAdmissionOrFallback(
+          assetId,
+          errorMessage,
+          reason,
+          retryAfterSec,
+          lock.processingClaimToken,
+        );
+        throw new EmbeddingScheduleError(
+          `Embedding generation deferred: ${errorMessage}`,
+          true,
+          error instanceof Error ? error : undefined
+        );
+      }
 
       if (error instanceof EmbeddingError && error.retryable) {
         logger.warn('Embedding generation deferred for retry', {
@@ -254,7 +393,12 @@ export class EmbeddingSchedulerService {
               ? error.retryAfterSec
               : undefined,
         });
-        await this.markEmbeddingPending(assetId, errorMessage);
+        await this.recordAttemptFailureOrFallback(
+          assetId,
+          errorMessage,
+          true,
+          lock.processingClaimToken,
+        );
         throw new EmbeddingScheduleError(
           `Embedding generation deferred: ${errorMessage}`,
           true,
@@ -275,8 +419,15 @@ export class EmbeddingSchedulerService {
         });
       }
 
-      // Mark as failed in database
-      await this.markEmbeddingFailed(assetId, errorMessage);
+      // Keep non-retryable assets bounded too. The durable attempt counter is
+      // the poison oracle; the legacy failed write is only a compatibility
+      // fallback for clients that predate the resilience migration.
+      await this.recordAttemptFailureOrFallback(
+        assetId,
+        errorMessage,
+        false,
+        lock.processingClaimToken,
+      );
 
       // Re-throw for sync mode error handling
       throw new EmbeddingScheduleError(
@@ -287,10 +438,75 @@ export class EmbeddingSchedulerService {
     }
   }
 
+  private async recordAttemptFailureOrFallback(
+    assetId: string,
+    errorMessage: string,
+    pendingFallback: boolean,
+    expectedProcessingClaimToken?: string,
+  ): Promise<EmbeddingAttemptFailure | null> {
+    if (prisma && typeof prisma.$queryRaw === 'function') {
+      return recordEmbeddingAttemptFailure(
+        assetId,
+        errorMessage,
+        expectedProcessingClaimToken,
+      );
+    }
+
+    if (pendingFallback) {
+      await this.markEmbeddingPending(
+        assetId,
+        errorMessage,
+        expectedProcessingClaimToken,
+      );
+    } else {
+      await this.markEmbeddingFailed(
+        assetId,
+        errorMessage,
+        expectedProcessingClaimToken,
+      );
+    }
+    return null;
+  }
+
+  private async deferAdmissionOrFallback(
+    assetId: string,
+    errorMessage: string,
+    reason: EmbeddingAdmissionReason | 'provider_circuit_open',
+    retryAfterSec?: number,
+    expectedProcessingClaimToken?: string,
+  ): Promise<void> {
+    try {
+      await deferEmbeddingAdmission(
+        assetId,
+        errorMessage,
+        reason,
+        retryAfterSec,
+        expectedProcessingClaimToken,
+      );
+      return;
+    } catch (deferError) {
+      logger.error('Failed to defer admission-denied embedding', {
+        assetId,
+        error:
+          deferError instanceof Error ? deferError.message : String(deferError),
+      });
+    }
+
+    // Compatibility fallback is reserved for a failed durable deferral. A
+    // successful migration-backed update must not be followed by a redundant
+    // legacy write that can race or erase retry metadata.
+    await this.markEmbeddingPending(
+      assetId,
+      errorMessage,
+      expectedProcessingClaimToken,
+    );
+  }
+
   /** Keep an acquired placeholder eligible for cron or explicit retry. */
   private async markEmbeddingPending(
     assetId: string,
-    errorMessage: string
+    errorMessage: string,
+    expectedProcessingClaimToken?: string,
   ): Promise<void> {
     try {
       if (!prisma) {
@@ -300,21 +516,23 @@ export class EmbeddingSchedulerService {
         return;
       }
 
-      await prisma.assetEmbedding.upsert({
-        where: { assetId },
-        create: {
-          assetId,
-          modelName: 'pending',
-          modelVersion: 'pending',
-          dim: 0,
-          status: 'pending',
-          error: errorMessage,
-        },
-        update: {
-          status: 'pending',
-          error: errorMessage,
-        },
-      });
+      if (expectedProcessingClaimToken) {
+        await prisma.$executeRaw(Prisma.sql`
+          UPDATE "asset_embeddings"
+          SET "status" = 'pending',
+              "error" = ${errorMessage},
+              "processing_claim_token" = NULL
+          WHERE "asset_id" = ${assetId}
+            AND "status" = 'processing'
+            AND "processing_claim_token" = ${expectedProcessingClaimToken}
+            AND "image_embedding" IS NULL
+            AND ("dim" IS NULL OR "dim" = 0)
+            AND "terminal_at" IS NULL
+        `);
+      } else {
+        logger.warn('Refusing unfenced embedding deferral', { assetId, errorMessage });
+        return;
+      }
 
       logger.debug('Deferred embedding for retry', { assetId });
     } catch (updateError) {
@@ -334,7 +552,8 @@ export class EmbeddingSchedulerService {
    */
   private async markEmbeddingFailed(
     assetId: string,
-    errorMessage: string
+    errorMessage: string,
+    expectedProcessingClaimToken?: string,
   ): Promise<void> {
     try {
       if (!prisma) {
@@ -344,21 +563,23 @@ export class EmbeddingSchedulerService {
         return;
       }
 
-      await prisma.assetEmbedding.upsert({
-        where: { assetId },
-        create: {
-          assetId,
-          modelName: 'unknown',
-          modelVersion: 'unknown',
-          dim: 0,
-          status: 'failed',
-          error: errorMessage,
-        },
-        update: {
-          status: 'failed',
-          error: errorMessage,
-        },
-      });
+      if (expectedProcessingClaimToken) {
+        await prisma.$executeRaw(Prisma.sql`
+          UPDATE "asset_embeddings"
+          SET "status" = 'failed',
+              "error" = ${errorMessage},
+              "processing_claim_token" = NULL
+          WHERE "asset_id" = ${assetId}
+            AND "status" = 'processing'
+            AND "processing_claim_token" = ${expectedProcessingClaimToken}
+            AND "image_embedding" IS NULL
+            AND ("dim" IS NULL OR "dim" = 0)
+            AND "terminal_at" IS NULL
+        `);
+      } else {
+        logger.warn('Refusing unfenced embedding failure write', { assetId, errorMessage });
+        return;
+      }
 
       logger.debug('Marked embedding as failed', { assetId });
     } catch (updateError) {

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { CLIP_MODEL, createEmbeddingService } from '@/lib/embeddings';
+import { EmbeddingConfigurationError, EmbeddingError } from '@/lib/embedding-errors';
 import { getCacheService } from '@/lib/cache';
 import { prisma } from '@/lib/db';
 import { getRuntimeGate } from '@/lib/runtime-gates';
@@ -77,9 +78,18 @@ export interface AutomaticPilesResult {
   piles: SemanticPile[];
 }
 
-export class PileEmbeddingUnavailableError extends Error {
-  constructor(message: string, public code = 'pile_anchor_embeddings_unavailable') {
-    super(message);
+export class PileEmbeddingUnavailableError extends EmbeddingError {
+  readonly reason?: string;
+
+  constructor(
+    message: string,
+    public code = 'pile_anchor_embeddings_unavailable',
+    cause?: EmbeddingError,
+  ) {
+    super(message, cause?.statusCode ?? 503, true, cause?.retryAfterSec ?? 30);
+    this.reason = cause && 'reason' in cause && typeof cause.reason === 'string'
+      ? cause.reason
+      : 'provider_unavailable';
     this.name = 'PileEmbeddingUnavailableError';
   }
 }
@@ -314,6 +324,14 @@ async function loadAnchorEmbeddings(
   try {
     embeddingService = createEmbeddingService(userId);
   } catch (error) {
+    if (error instanceof EmbeddingConfigurationError) throw error;
+    if (error instanceof EmbeddingError) {
+      throw new PileEmbeddingUnavailableError(
+        error.message,
+        'pile_anchor_embeddings_unavailable',
+        error,
+      );
+    }
     throw new PileEmbeddingUnavailableError(
       error instanceof Error ? error.message : 'Pile anchor embeddings are unavailable'
     );
@@ -332,6 +350,14 @@ async function loadAnchorEmbeddings(
         });
       }
     } catch (error) {
+      if (error instanceof EmbeddingConfigurationError) throw error;
+      if (error instanceof EmbeddingError) {
+        throw new PileEmbeddingUnavailableError(
+          error.message,
+          'pile_anchor_embeddings_unavailable',
+          error,
+        );
+      }
       throw new PileEmbeddingUnavailableError(
         error instanceof Error ? error.message : 'Pile anchor embedding failed'
       );

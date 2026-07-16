@@ -48,17 +48,17 @@ export function canaryConfigured(): boolean {
   return getCanaryConfig() !== null;
 }
 
-export async function reportCanaryError(input: CanaryReportInput): Promise<void> {
+export async function reportCanaryError(input: CanaryReportInput): Promise<boolean> {
   const config = getCanaryConfig();
   if (!config) {
-    return;
+    return false;
   }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
 
   try {
-    await fetch(`${config.endpoint}/api/v1/errors`, {
+    const response = await fetch(`${config.endpoint}/api/v1/errors`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
@@ -81,8 +81,10 @@ export async function reportCanaryError(input: CanaryReportInput): Promise<void>
       }),
       signal: controller.signal,
     });
+    return response.ok;
   } catch {
     // Canary must never affect the user flow or primary logging path.
+    return false;
   } finally {
     clearTimeout(timeout);
   }

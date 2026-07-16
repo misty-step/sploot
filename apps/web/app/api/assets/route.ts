@@ -5,12 +5,11 @@ import {
   isValidMimeType,
   isValidFileSize,
 } from "@sploot/common";
-import { createEmbeddingService, EmbeddingError, type EmbeddingService } from "@/lib/embeddings";
 import crypto from "crypto";
 import { getCacheService } from "@/lib/cache";
 import { getAuthWithUser, requireUserIdWithSync } from "@/lib/auth/server";
 import { isUnauthorizedAuthError, unauthorizedResponse } from "@/lib/auth/api";
-import { prisma, upsertAssetEmbedding } from "@/lib/db";
+import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import logger from "@/lib/logger";
 import { logError } from "@/lib/observability-logger";
@@ -19,6 +18,14 @@ import { withObservability } from "@/lib/with-observability";
 import { logger as observabilityLogger } from "@/lib/observability-logger";
 import { getDbFingerprint } from "@/lib/db-fingerprint";
 import { getRuntimeGate, runtimeGateResponse } from "@/lib/runtime-gates";
+import {
+  EmbeddingScheduleError,
+  EmbeddingSchedulerService,
+} from "@/lib/upload/embedding-scheduler-service";
+import {
+  embeddingConfigurationHeaders,
+  reportEmbeddingConfigurationErrorOnce,
+} from "@/lib/embedding-errors";
 import {
   releaseStorageQuotaReservation,
   reserveUploadBytes,
@@ -36,7 +43,6 @@ import {
   enrollmentUnavailableResponse,
   enrollmentResponseForError,
   withEnrollmentIdentityWriter,
-  EnrollmentUnavailableError,
 } from "@/lib/enrollment/enrollment-policy";
 
 // Shuffle seed range: 0-1000000 for user-friendly integer values
@@ -244,6 +250,7 @@ async function postHandler(req: NextRequest) {
       pathname,
       filename,
       mimeType,
+      thumbnailUrl,
       size,
       checksum,
       width,
@@ -294,6 +301,7 @@ async function postHandler(req: NextRequest) {
         asset: {
           id: existingAsset.id,
           blobUrl: existingAsset.blobUrl,
+          thumbnailUrl: existingAsset.thumbnailUrl,
           pathname: existingAsset.pathname,
           filename:
             existingAsset.pathname.split("/").pop() || existingAsset.pathname,
@@ -318,6 +326,7 @@ async function postHandler(req: NextRequest) {
         blobUrl,
         pathname,
         mime: mimeType,
+        thumbnailUrl: typeof thumbnailUrl === "string" ? thumbnailUrl : null,
         size,
         checksumSha256,
         width: width || null,
@@ -339,29 +348,17 @@ async function postHandler(req: NextRequest) {
       embeddingStatus = "unavailable";
       embeddingError = embeddingGate.message;
     } else {
-      try {
-        const embeddingService = createEmbeddingService(userId);
-
-        // Start embedding generation in background
-        generateEmbeddingAsync(
-          asset.id,
-          blobUrl,
-          checksumSha256,
-          embeddingService,
-        ).catch((error) => {
-          // Failed to generate embedding
-        });
-
-        embeddingStatus = "processing";
-      } catch (error) {
-        // Embedding service not configured - continue without embeddings
-        // Embedding service not available
-        embeddingStatus = "unavailable";
-        embeddingError =
-          error instanceof EmbeddingError
-            ? error.message
-            : "Embedding service not configured";
-      }
+      const scheduled = await new EmbeddingSchedulerService().scheduleEmbedding({
+        assetId: asset.id,
+        blobUrl,
+        mime: mimeType,
+        thumbnailUrl: asset.thumbnailUrl,
+        checksum: checksumSha256,
+        mode: "async",
+        ownerUserId: userId,
+      });
+      embeddingStatus = scheduled.scheduled ? "processing" : "unavailable";
+      embeddingError = scheduled.reason;
     }
 
     // Invalidate cache after creating new asset
@@ -374,6 +371,7 @@ async function postHandler(req: NextRequest) {
       asset: {
         id: asset.id,
         blobUrl: asset.blobUrl,
+        thumbnailUrl: asset.thumbnailUrl,
         pathname: asset.pathname,
         filename: asset.pathname,
         mime: asset.mime,
@@ -406,6 +404,29 @@ async function postHandler(req: NextRequest) {
       return NextResponse.json(storageQuotaError(error.snapshot), {
         status: 403,
       });
+    }
+
+    if (
+      error instanceof EmbeddingScheduleError
+      && error.reason === "embedding_configuration"
+    ) {
+      await reportEmbeddingConfigurationErrorOnce(
+        error,
+        "assets:embedding-configuration",
+        { requestId },
+      );
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+          reason: "embedding_configuration",
+          retryable: false,
+        },
+        {
+          status: 503,
+          headers: embeddingConfigurationHeaders(error),
+        },
+      );
     }
 
     unstable_rethrow(error);
@@ -743,39 +764,3 @@ export const POST = withObservability(postHandler, {
 });
 
 export const GET = withObservability(getHandler, { operation: "assets:list" });
-
-// Async function to generate embeddings without blocking the upload
-async function generateEmbeddingAsync(
-  assetId: string,
-  imageUrl: string,
-  checksum: string,
-  embeddingService: EmbeddingService,
-): Promise<void> {
-  if (!prisma) {
-    throw new EnrollmentUnavailableError();
-  }
-
-  try {
-    // Generate the embedding
-    const result = await embeddingService.embedImage(imageUrl, checksum);
-
-    // Check if embedding already exists
-    const existingEmbedding = await prisma.assetEmbedding.findUnique({
-      where: { assetId },
-    });
-
-    await upsertAssetEmbedding({
-      assetId,
-      modelName: result.model,
-      modelVersion: result.model,
-      dim: result.dimension,
-      embedding: result.embedding,
-    });
-
-    // Successfully generated embedding
-  } catch (error) {
-    // Failed to generate embedding
-    // Could update a status field in the asset table to mark embedding as failed
-    // For now, we just log the error
-  }
-}

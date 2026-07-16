@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { prisma } from '@/lib/db';
 
 export const EMBEDDING_PROCESSING_TTL_MS = 10 * 60 * 1000;
@@ -8,6 +9,7 @@ export type EmbeddingGateState =
   | 'ready'
   | 'processing'
   | 'cooldown'
+  | 'terminal'
   | 'available'
   | 'unavailable';
 
@@ -17,10 +19,13 @@ export interface EmbeddingGateResult {
   retryAfterMs?: number;
   updatedAt?: Date | null;
   completedAt?: Date | null;
+  nextAttemptAt?: Date | null;
+  terminalAt?: Date | null;
 }
 
 export interface EmbeddingLockResult extends EmbeddingGateResult {
   acquired: boolean;
+  processingClaimToken?: string;
 }
 
 export interface EmbeddingStateRow {
@@ -28,6 +33,8 @@ export interface EmbeddingStateRow {
   updatedAt?: Date | null;
   completedAt?: Date | null;
   dim?: number | null;
+  nextAttemptAt?: Date | null;
+  terminalAt?: Date | null;
 }
 
 export function resolveEmbeddingGateState(
@@ -42,9 +49,15 @@ export function resolveEmbeddingGateState(
   const updatedAt = row.updatedAt ?? null;
   const completedAt = row.completedAt ?? null;
   const dim = row.dim ?? null;
+  const nextAttemptAt = row.nextAttemptAt ?? null;
+  const terminalAt = row.terminalAt ?? null;
 
   if ((status === 'ready' && completedAt) || (dim && dim > 0)) {
     return { state: 'ready', status, updatedAt, completedAt };
+  }
+
+  if (terminalAt) {
+    return { state: 'terminal', status, updatedAt, completedAt, terminalAt };
   }
 
   if (status === 'processing' && updatedAt) {
@@ -71,6 +84,16 @@ export function resolveEmbeddingGateState(
     }
   }
 
+  if (nextAttemptAt && nextAttemptAt > now) {
+    return {
+      state: 'cooldown',
+      status,
+      updatedAt,
+      retryAfterMs: nextAttemptAt.getTime() - now.getTime(),
+      nextAttemptAt,
+    };
+  }
+
   return { state: 'available', status, updatedAt, completedAt };
 }
 
@@ -88,6 +111,8 @@ export async function getEmbeddingGateState(
       updatedAt: true,
       completedAt: true,
       dim: true,
+      nextAttemptAt: true,
+      terminalAt: true,
     },
   });
 
@@ -95,27 +120,32 @@ export async function getEmbeddingGateState(
 }
 
 export async function acquireEmbeddingProcessing(
-  assetId: string
+  assetId: string,
+  nowMs: number = Date.now()
 ): Promise<EmbeddingLockResult> {
   if (!prisma) {
     return { state: 'unavailable', acquired: false };
   }
 
-  const now = new Date();
+  const now = new Date(nowMs);
+  const processingClaimToken = randomUUID();
   const processingStaleBefore = new Date(now.getTime() - EMBEDDING_PROCESSING_TTL_MS);
   const failedCooldownBefore = new Date(now.getTime() - EMBEDDING_FAILED_COOLDOWN_MS);
 
   const updated = await prisma.$queryRaw<
-    Array<{ status: string | null; updatedAt: Date; completedAt: Date | null }>
+    Array<{ status: string | null; updatedAt: Date; completedAt: Date | null; processingClaimToken: string }>
   >(Prisma.sql`
     UPDATE "asset_embeddings"
     SET
       "status" = 'processing',
       "error" = NULL,
-      "updatedAt" = NOW()
+      "processing_claim_token" = ${processingClaimToken},
+      "updatedAt" = ${now}
     WHERE "asset_id" = ${assetId}
       AND "image_embedding" IS NULL
       AND ("dim" IS NULL OR "dim" = 0)
+      AND "terminal_at" IS NULL
+      AND ("next_attempt_at" IS NULL OR "next_attempt_at" <= ${now})
       AND (
         "status" IS NULL
         OR "status" = 'pending'
@@ -123,7 +153,8 @@ export async function acquireEmbeddingProcessing(
         OR ("status" = 'processing' AND "updatedAt" < ${processingStaleBefore})
         OR ("status" = 'ready' AND "completedAt" IS NULL)
       )
-    RETURNING "status", "updatedAt", "completedAt";
+    RETURNING "status", "updatedAt", "completedAt",
+      "processing_claim_token" AS "processingClaimToken";
   `);
 
   if (updated.length > 0) {
@@ -133,11 +164,12 @@ export async function acquireEmbeddingProcessing(
       status: updated[0].status,
       updatedAt: updated[0].updatedAt,
       completedAt: updated[0].completedAt,
+      processingClaimToken: updated[0].processingClaimToken,
     };
   }
 
   const inserted = await prisma.$queryRaw<
-    Array<{ status: string | null; updatedAt: Date; completedAt: Date | null }>
+    Array<{ status: string | null; updatedAt: Date; completedAt: Date | null; processingClaimToken: string }>
   >(Prisma.sql`
     INSERT INTO "asset_embeddings" (
       "asset_id",
@@ -145,6 +177,7 @@ export async function acquireEmbeddingProcessing(
       "model_version",
       "dim",
       "status",
+      "processing_claim_token",
       "createdAt",
       "updatedAt"
     ) VALUES (
@@ -153,11 +186,13 @@ export async function acquireEmbeddingProcessing(
       'pending',
       0,
       'processing',
-      NOW(),
-      NOW()
+      ${processingClaimToken},
+      ${now},
+      ${now}
     )
     ON CONFLICT ("asset_id") DO NOTHING
-    RETURNING "status", "updatedAt", "completedAt";
+    RETURNING "status", "updatedAt", "completedAt",
+      "processing_claim_token" AS "processingClaimToken";
   `);
 
   if (inserted.length > 0) {
@@ -167,6 +202,7 @@ export async function acquireEmbeddingProcessing(
       status: inserted[0].status,
       updatedAt: inserted[0].updatedAt,
       completedAt: inserted[0].completedAt,
+      processingClaimToken: inserted[0].processingClaimToken,
     };
   }
 
@@ -179,25 +215,83 @@ export async function acquireEmbeddingProcessing(
 
 export async function markEmbeddingFailed(
   assetId: string,
-  errorMessage: string
+  errorMessage: string,
+  expectedProcessingClaimToken?: string,
 ): Promise<void> {
   if (!prisma) {
     return;
   }
 
-  await prisma.assetEmbedding.upsert({
-    where: { assetId },
-    create: {
-      assetId,
-      modelName: 'unknown',
-      modelVersion: 'unknown',
-      dim: 0,
-      status: 'failed',
-      error: errorMessage,
-    },
-    update: {
-      status: 'failed',
-      error: errorMessage,
-    },
-  });
+  if (expectedProcessingClaimToken) {
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE "asset_embeddings"
+      SET "status" = 'failed',
+          "error" = ${errorMessage},
+          "processing_claim_token" = NULL,
+          "updatedAt" = NOW()
+      WHERE "asset_id" = ${assetId}
+        AND "status" = 'processing'
+        AND "processing_claim_token" = ${expectedProcessingClaimToken}
+        AND "image_embedding" IS NULL
+        AND ("dim" IS NULL OR "dim" = 0)
+        AND "terminal_at" IS NULL
+    `);
+    return;
+  }
+
+  // A writer without a claim token is legacy/unfenced. It may create the
+  // compatibility row, but it must never settle an existing row whose newer
+  // processing generation it cannot identify.
+  await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO "asset_embeddings" (
+      "asset_id", "model_name", "model_version", "dim", "status", "error",
+      "createdAt", "updatedAt"
+    ) VALUES (
+      ${assetId}, 'unknown', 'unknown', 0, 'failed', ${errorMessage}, NOW(), NOW()
+    )
+    ON CONFLICT ("asset_id") DO NOTHING
+  `);
+}
+
+export async function markEmbeddingTerminalSkipped(
+  assetId: string,
+  errorMessage: string,
+  expectedProcessingClaimToken?: string,
+): Promise<void> {
+  if (!prisma) {
+    return;
+  }
+
+  if (expectedProcessingClaimToken) {
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE "asset_embeddings"
+      SET "model_name" = 'unsupported-media',
+          "model_version" = 'unsupported-media',
+          "dim" = 0,
+          "status" = 'failed',
+          "error" = ${errorMessage},
+          "next_attempt_at" = NULL,
+          "terminal_at" = NOW(),
+          "processing_claim_token" = NULL,
+          "updatedAt" = NOW()
+      WHERE "asset_id" = ${assetId}
+        AND "status" = 'processing'
+        AND "processing_claim_token" = ${expectedProcessingClaimToken}
+        AND "image_embedding" IS NULL
+        AND ("dim" IS NULL OR "dim" = 0)
+        AND "terminal_at" IS NULL
+    `);
+    return;
+  }
+
+  await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO "asset_embeddings" (
+      "asset_id", "model_name", "model_version", "dim", "status", "error",
+      "terminal_at", "createdAt", "updatedAt"
+    ) VALUES (
+      ${assetId}, 'unsupported-media', 'unsupported-media', 0, 'failed',
+      ${errorMessage}, NOW(), NOW(), NOW()
+    )
+    ON CONFLICT ("asset_id") DO NOTHING
+  `);
 }

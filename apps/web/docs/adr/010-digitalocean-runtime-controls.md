@@ -9,13 +9,14 @@ Vercel KV remained in three active paths even though production had no KV or
 Upstash configuration:
 
 - per-user and global embedding concurrency limits;
-- per-minute and per-day embedding spend limits;
+- per-minute and per-day embedding attempt/provider-rate limits;
 - share-slug cache warming.
 
 the health route treated the missing KV service as `up`, so the response could
 claim a dependency was healthy when no dependency existed. embedding controls
 cannot become process-local: a restart or second process must not reset the
-daily Replicate spend ceiling or permit more concurrent paid work.
+daily Replicate attempt ceiling or permit more concurrent provider work. These
+controls do not reserve, reconcile, or enforce provider dollars.
 
 ## decision
 
@@ -23,11 +24,11 @@ daily Replicate spend ceiling or permit more concurrent paid work.
    database. one transaction-scoped advisory lock serializes the small critical
    section that checks limits and records a lease. leases expire after three
    minutes, so a crashed worker cannot consume capacity forever.
-2. keep the daily budget in the same expiring bucket table. the limiter fails
+2. keep the daily/monthly attempt ceilings in the same expiring bucket table. the limiter fails
    closed when Postgres or its schema is unavailable. admission lives inside
    the private Replicate service, after its durable cache lookup: every paid
    text or image cache miss must acquire the same user/global rate and
-   concurrency lease plus one daily-budget slot. one admission maps to exactly
+   concurrency lease plus one daily-attempt-ceiling slot. one admission maps to exactly
    one provider prediction attempt: Replicate runs in polling mode, a timeout
    aborts and cancels that prediction, and the lease remains held until the
    provider call settles. any caller-level retry must acquire a new admission.
@@ -54,23 +55,38 @@ daily Replicate spend ceiling or permit more concurrent paid work.
 
 the migration is additive: it creates `embedding_rate_buckets` and
 `embedding_rate_leases` plus expiry indexes, without rewriting existing rows.
-DigitalOcean applies Prisma migrations in the singleton
+DigitalOcean applies the repo-owned migration runner in the singleton
 `web-pre-deploy-migrate` `PRE_DEPLOY` job before replacing the web service. The
-service run command is start-only (`pnpm --filter web start`), so restarts and
-replicas cannot rerun migrations. GitHub CI migrates only its pgvector test
-database and never receives the production Neon connection string.
+runner applies Prisma migrations, then builds the pending-attempt index through
+an autocommit `CREATE INDEX CONCURRENTLY` because the pinned Prisma 6.19.3
+engine wraps migration SQL in a transaction. The service run command is
+start-only (`pnpm --filter web start`), so restarts and replicas cannot rerun
+migrations. GitHub CI migrates only its pgvector test database and never
+receives the production Neon connection string.
 
-rolling the application back leaves both tables inert and preserves all user
-data. the previous build fails embedding generation closed when its absent KV
-backend is reached; it does not permit unbounded spend. share-slug resolution
-still falls through to Postgres. forward recovery is therefore preferred, while
-a long rollback would require restoring the previous KV service configuration.
+rolling the application back leaves both tables and the additive
+`embedding_attempt_count_ceiling` constraint in place and preserves all user
+data. The database rejects a daily counter above 2,272 or a monthly counter above
+68,181, so a former runtime with a higher daily limit fails closed at the
+current configured attempt ceiling. This is an attempt-count constraint
+derived from the provider-rate model, not durable provider-dollar enforcement.
+Because former runtimes do not maintain the monthly counter, operators must set
+`SPLOOT_EMBEDDINGS_ENABLED=false` and verify the disabled route response before
+a deliberate or extended rollback; it stays disabled until the current
+admission runtime and its DB proof are restored. The additive attempt-count
+constraint is installed `NOT VALID` and validated in the following migration,
+with a five-second transaction-local `lock_timeout`, so the old runtime
+remains fail-closed without retaining an ACCESS EXCLUSIVE lock through the
+validation scan. A lock timeout is a failed deployment phase, not permission
+to skip validation.
+Share-slug
+resolution still falls through to Postgres. Forward recovery is preferred.
 
 ## proof
 
 - a DB-backed integration suite exercises concurrent acquisitions, lease
-  release, expired-lease recovery, window limits, UTC daily rollover, and the
-  fail-closed schema contract;
+  release, expired-lease recovery, window limits, UTC daily/monthly rollover,
+  and direct over-ceiling writes against the fail-closed schema contract;
 - provider-boundary tests prove paid text and image cache misses acquire and
   release admission, budget/limiter failures never call Replicate, and cache
   hits spend no capacity. timeout coverage proves one prediction is aborted in

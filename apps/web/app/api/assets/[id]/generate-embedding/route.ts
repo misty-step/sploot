@@ -7,10 +7,30 @@ import {
   EmbeddingError,
 } from '@/lib/embeddings';
 import {
+  embeddingConfigurationHeaders,
+  embeddingRetryHeaders,
+  embeddingRetryAfterHeader,
+  EmbeddingProviderCircuitOpenError,
+  EmbeddingProviderRateLimitError,
+  EmbeddingProviderUnavailableError,
+  EmbeddingConfigurationError,
+  reportEmbeddingConfigurationErrorOnce,
+} from '@/lib/embedding-errors';
+import {
   acquireEmbeddingProcessing,
   markEmbeddingFailed,
+  markEmbeddingTerminalSkipped,
   resolveEmbeddingGateState,
 } from '@/lib/embedding-guard';
+import {
+  deferEmbeddingAdmission,
+  recordEmbeddingConfigurationFailure,
+  getEmbeddingAdmissionReason,
+  getEmbeddingProviderCircuit,
+  isEmbeddingAdmissionFailure,
+  recordEmbeddingAttemptFailure,
+  reviveTerminalEmbedding,
+} from '@/lib/embedding-resilience';
 import { broadcastEmbeddingUpdate } from '@/lib/sse-broadcaster';
 import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
@@ -25,25 +45,10 @@ import {
   isEnrollmentDeniedError,
   isEnrollmentUnavailableError,
 } from '@/lib/enrollment/enrollment-policy';
+import { resolveEmbeddingMediaSource } from '@/lib/embedding-media';
 
 // Request deduplication: Track in-flight requests
 const inFlightRequests = new Map<string, Promise<any>>();
-
-// Circuit breaker state
-let circuitBreakerState: {
-  isOpen: boolean;
-  failureCount: number;
-  lastFailureTime: number;
-  resetTime: number;
-} = {
-  isOpen: false,
-  failureCount: 0,
-  lastFailureTime: 0,
-  resetTime: 0,
-};
-
-const CIRCUIT_BREAKER_THRESHOLD = 3; // Open after 3 consecutive failures
-const CIRCUIT_BREAKER_TIMEOUT = 30000; // 30 seconds timeout
 
 // Performance metrics tracking
 const performanceMetrics: {
@@ -88,27 +93,6 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
       return runtimeGateResponse(embeddingGate);
     }
 
-    // Check circuit breaker
-    if (circuitBreakerState.isOpen) {
-      if (Date.now() < circuitBreakerState.resetTime) {
-        logger.logInfo('generate-embedding.circuit-open', { assetId: id });
-        return NextResponse.json(
-          {
-            error: 'Service temporarily unavailable',
-            retryAfter: Math.ceil(
-              (circuitBreakerState.resetTime - Date.now()) / 1000
-            ),
-          },
-          { status: 503 }
-        );
-      } else {
-        // Reset circuit breaker after timeout
-        logger.logInfo('generate-embedding.circuit-reset');
-        circuitBreakerState.isOpen = false;
-        circuitBreakerState.failureCount = 0;
-      }
-    }
-
     // Check for in-flight request (deduplication)
     const requestKey = `${userId}-${id}`;
     const existingRequest = inFlightRequests.get(requestKey);
@@ -127,7 +111,12 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
         ownerUserId: userId,
         deletedAt: null,
       },
-      include: {
+      select: {
+        id: true,
+        blobUrl: true,
+        checksumSha256: true,
+        mime: true,
+        thumbnailUrl: true,
         embedding: {
           select: {
             modelName: true,
@@ -136,6 +125,8 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
             status: true,
             updatedAt: true,
             completedAt: true,
+            nextAttemptAt: true,
+            terminalAt: true,
           },
         },
       },
@@ -208,15 +199,112 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
         },
         {
           status: 429,
-          headers: retryAfterSec
-            ? { 'Retry-After': retryAfterSec.toString() }
-            : undefined,
+          headers: embeddingRetryAfterHeader(retryAfterSec),
         }
       );
     }
 
+    const media = resolveEmbeddingMediaSource({
+      mime: asset.mime,
+      blobUrl: asset.blobUrl,
+      thumbnailUrl: asset.thumbnailUrl,
+    });
+    if (media.sourceKind === 'unsupported') {
+      const lock = await acquireEmbeddingProcessing(asset.id);
+      if (lock.acquired) {
+        const processingClaimToken = lock.processingClaimToken;
+        try {
+          await markEmbeddingTerminalSkipped(
+            asset.id,
+            'Unsupported video without a poster thumbnail',
+            processingClaimToken,
+          );
+        } catch (error) {
+          // Terminal settlement is a claim-owned write. If it fails after the
+          // claim is acquired, release that exact claim as ordinary failure
+          // handling would, so unsupported media cannot strand processing.
+          await markEmbeddingFailed(
+            asset.id,
+            error instanceof Error ? error.message : String(error),
+            processingClaimToken,
+          );
+          throw error;
+        }
+      }
+      logger.logInfo('generate-embedding.terminal-skip', {
+        assetId: id,
+        reason: media.skipReason,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          status: 'terminal_skip',
+          error: 'Unsupported video without a poster thumbnail',
+          reason: media.skipReason,
+        },
+        {
+          status: 422,
+        }
+      );
+    }
+
+    // Terminal rows stay excluded from cron discovery and the claim
+    // predicate; this owner-authorized request is their one recovery path.
+    // A quarantine-expired revive re-arms the bounded attempt budget and then
+    // proceeds through the ordinary circuit/lease/admission boundary below.
+    let revivedFromTerminal = false;
+    if (gateState.state === 'terminal') {
+      const revive = await reviveTerminalEmbedding(asset.id);
+      if (!revive.revived && revive.reason === 'quarantine') {
+        logger.logInfo('generate-embedding.terminal-quarantine', {
+          assetId: id,
+          retryAfterSec: revive.retryAfterSec,
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            status: 'terminal_quarantine',
+            error: 'Embedding retries exhausted recently, retry later',
+            retryAfter: revive.retryAfterSec,
+          },
+          {
+            status: 429,
+            headers: embeddingRetryAfterHeader(revive.retryAfterSec),
+          }
+        );
+      }
+      if (!revive.revived && revive.reason === 'revival_exhausted') {
+        logger.logInfo('generate-embedding.terminal-revival-exhausted', {
+          assetId: id,
+          reviveCount: revive.reviveCount,
+        });
+        return NextResponse.json(
+          {
+            success: false,
+            status: 'terminal_failure',
+            reason: 'revival_exhausted',
+            error: 'Embedding recovery attempts exhausted for this asset',
+          },
+          { status: 422 }
+        );
+      }
+      if (!revive.revived) {
+        // 'not_terminal' means we lost a race with a concurrent revive or the
+        // row changed; the claim below arbitrates the current state.
+        // 'store_unavailable' also falls through and fails closed at the lock.
+        logger.logInfo('generate-embedding.terminal-revive-skipped', {
+          assetId: id,
+          reason: revive.reason,
+        });
+      } else {
+        revivedFromTerminal = true;
+      }
+    }
+
     // Create a new promise for this embedding generation
     const embeddingPromise = (async (): Promise<EmbeddingResponse> => {
+      let processingClaimToken: string | undefined;
+      let providerInitializationDeferred = false;
       try {
         const lock = await acquireEmbeddingProcessing(asset.id);
         if (!lock.acquired) {
@@ -272,9 +360,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
           if (lock.state === 'cooldown') {
             return {
               status: 429,
-              headers: retryAfterSec
-                ? { 'Retry-After': retryAfterSec.toString() }
-                : undefined,
+              headers: embeddingRetryAfterHeader(retryAfterSec),
               body: {
                 success: false,
                 status: 'cooldown',
@@ -292,21 +378,41 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
             },
           };
         }
+        processingClaimToken = lock.processingClaimToken;
 
         logger.logInfo('generate-embedding.lock-acquired', { assetId: id });
 
-        // Generate embedding
+        // Read provider state only after all no-work outcomes and the durable
+        // asset claim have been resolved. A circuit outage must not hide a
+        // ready, processing, cooldown, or unsupported-media response.
+        const providerCircuit = await getEmbeddingProviderCircuit();
+        if (providerCircuit.open) {
+          throw new EmbeddingProviderCircuitOpenError(providerCircuit.retryAfterSec);
+        }
+
+        // Client construction happens before any provider attempt. Missing
+        // configuration is therefore deferred without consuming the asset's
+        // retry budget; failures from embedImage remain real provider
+        // attempts and are handled by the ordinary failure path below.
         let embeddingService;
         try {
           embeddingService = createEmbeddingService(userId);
         } catch (error) {
-          // Failed to initialize embedding service
-          throw new Error('Embedding service not configured');
+          if (error instanceof EmbeddingConfigurationError) {
+            providerInitializationDeferred = true;
+            await reportEmbeddingConfigurationErrorOnce(error, 'generate-embedding:configuration');
+            await recordEmbeddingConfigurationFailure(
+              asset.id,
+              error,
+              processingClaimToken,
+            );
+          }
+          throw error;
         }
 
         const apiStartTime = Date.now();
         const result = await embeddingService.embedImage(
-          asset.blobUrl,
+          media.sourceUrl,
           asset.checksumSha256
         );
         const apiTime = Date.now() - apiStartTime;
@@ -323,7 +429,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
           modelVersion: result.model,
           dim: result.dimension,
           embedding: result.embedding,
-        });
+        }, processingClaimToken);
         const dbTime = Date.now() - dbStartTime;
         logger.logInfo('generate-embedding.db-duration', {
           assetId: id,
@@ -334,8 +440,6 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
           throw new Error('Failed to persist embedding record');
         }
 
-        // Success - reset circuit breaker failure count
-        circuitBreakerState.failureCount = 0;
         performanceMetrics.successCount++;
         const totalProcessingTime = Date.now() - startTime;
         performanceMetrics.totalProcessingTime += totalProcessingTime;
@@ -374,6 +478,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
           body: {
             success: true,
             message: 'Embedding generated successfully',
+            ...(revivedFromTerminal ? { revived: true } : {}),
             embedding: {
               modelName: embedding.modelName,
               dimension: embedding.dim,
@@ -385,31 +490,35 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
-        try {
-          await markEmbeddingFailed(asset.id, errorMessage);
-        } catch (markError) {
-          logger.logError('generate-embedding:mark-failed', markError, {
-            assetId: id,
-          });
-        }
+        performanceMetrics.failureCount++;
 
-        // Handle failure for circuit breaker
-        const isRateLimitError = error instanceof EmbeddingAdmissionError;
-        if (!isRateLimitError) {
-          circuitBreakerState.failureCount++;
-          circuitBreakerState.lastFailureTime = Date.now();
-          performanceMetrics.failureCount++;
-
-          if (circuitBreakerState.failureCount >= CIRCUIT_BREAKER_THRESHOLD) {
-            circuitBreakerState.isOpen = true;
-            circuitBreakerState.resetTime =
-              Date.now() + CIRCUIT_BREAKER_TIMEOUT;
-            logger.logError(
-              'generate-embedding.circuit-open',
-              error instanceof Error ? error : new Error(String(error)),
-              { assetId: id, failureCount: circuitBreakerState.failureCount }
-            );
-          }
+        if (error instanceof EmbeddingProviderCircuitOpenError) {
+          await deferEmbeddingAdmission(
+            asset.id,
+            errorMessage,
+            'provider_circuit_open',
+            error.retryAfterSec,
+            processingClaimToken,
+          );
+        } else if (isEmbeddingAdmissionFailure(error)) {
+          await deferEmbeddingAdmission(
+            asset.id,
+            errorMessage,
+            getEmbeddingAdmissionReason(error) ?? 'limiter_unavailable',
+            error.retryAfterSec,
+            processingClaimToken,
+          );
+        } else if (
+          !providerInitializationDeferred &&
+          processingClaimToken &&
+          prisma &&
+          typeof prisma.$queryRaw === 'function'
+        ) {
+          await recordEmbeddingAttemptFailure(
+            asset.id,
+            errorMessage,
+            processingClaimToken,
+          );
         }
 
         throw error;
@@ -438,13 +547,66 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
     unstable_rethrow(error);
 
     if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
-    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
+    // EmbeddingAdmissionError(limiter_unavailable) carries the shared
+    // enrollment_unavailable code but keeps its typed 503 + Retry-After
+    // contract below; only genuine enrollment failures take this path.
+    if (isEnrollmentUnavailableError(error) && !(error instanceof EmbeddingAdmissionError)) {
+      return enrollmentUnavailableResponse();
+    }
     const processingTime = Date.now() - startTime;
-    logger.logError('generate-embedding:failed', error as Error, {
-      processingTimeMs: processingTime,
-    });
+    const isTypedEmbeddingOutcome =
+      error instanceof EmbeddingAdmissionError ||
+      error instanceof EmbeddingProviderCircuitOpenError ||
+      error instanceof EmbeddingProviderRateLimitError ||
+      error instanceof EmbeddingProviderUnavailableError ||
+      error instanceof EmbeddingConfigurationError;
+    if (isTypedEmbeddingOutcome) {
+      logger.logInfo('generate-embedding:typed-failure', {
+        processingTimeMs: processingTime,
+        statusCode: error.statusCode,
+        reason: 'reason' in error ? error.reason : undefined,
+      });
+    } else if (error instanceof EmbeddingError && (error.statusCode ?? 0) >= 500) {
+      logger.logError('generate-embedding:failed', error, {
+        processingTimeMs: processingTime,
+      });
+    } else {
+      // The route owns the generic Canary report and marks the response so the
+      // observability wrapper stays out of the generic 5xx path.
+      logger.logError('generate-embedding:failed', error as Error, {
+        processingTimeMs: processingTime,
+      });
+    }
 
     // Error generating embedding
+    if (
+      error instanceof EmbeddingProviderCircuitOpenError ||
+      error instanceof EmbeddingProviderRateLimitError ||
+      error instanceof EmbeddingProviderUnavailableError
+      || error instanceof EmbeddingConfigurationError
+    ) {
+      const retryAfterSec = error.retryAfterSec;
+      return NextResponse.json(
+        {
+          success: false,
+          status: error instanceof EmbeddingProviderCircuitOpenError
+            ? 'provider_backoff'
+            : error instanceof EmbeddingProviderRateLimitError
+              ? 'provider_rate_limited'
+              : 'provider_unavailable',
+          error: error.message,
+          reason: error.reason,
+          retryAfter: retryAfterSec,
+        },
+        {
+          status: error.statusCode || 503,
+          headers: error instanceof EmbeddingConfigurationError
+            ? embeddingConfigurationHeaders(error)
+            : embeddingRetryHeaders(error),
+        }
+      );
+    }
+
     if (error instanceof EmbeddingAdmissionError) {
       const retryAfterSec = error.retryAfterSec;
       return NextResponse.json(
@@ -458,9 +620,7 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
         },
         {
           status: error.statusCode || 503,
-          headers: retryAfterSec
-            ? { 'Retry-After': retryAfterSec.toString() }
-            : undefined,
+          headers: embeddingRetryHeaders(error),
         }
       );
     }
@@ -468,7 +628,9 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
     if (error instanceof EmbeddingError) {
       return NextResponse.json(
         { error: error.message },
-        { status: error.statusCode || 500 }
+        {
+          status: error.statusCode || 500,
+        }
       );
     }
 

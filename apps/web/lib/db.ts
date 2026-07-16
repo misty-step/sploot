@@ -685,7 +685,8 @@ export interface AssetEmbeddingRecord {
  * Insert or update an asset embedding using raw SQL to support pgvector writes.
  */
 export async function upsertAssetEmbedding(
-  data: AssetEmbeddingWriteArgs
+  data: AssetEmbeddingWriteArgs,
+  expectedProcessingClaimToken?: string,
 ): Promise<AssetEmbeddingRecord | null> {
   const { assetId, modelName, modelVersion, dim, embedding } = data;
   const vectorSql = embeddingVectorSql(embedding, 'asset embedding');
@@ -703,6 +704,47 @@ export async function upsertAssetEmbedding(
   }
 
   try {
+    // A paid worker must only settle the exact processing claim it acquired.
+    // Once a crashed claim is reclaimed, its stale worker can still finish at
+    // the provider; fencing by a unique claim token prevents that
+    // late result from overwriting the newer owner's state.
+    if (expectedProcessingClaimToken) {
+      const rows = await prisma.$queryRaw<Array<AssetEmbeddingRecord>>(Prisma.sql`
+        UPDATE "asset_embeddings"
+        SET "model_name" = ${modelName},
+            "model_version" = ${modelVersion},
+            "dim" = ${dim},
+            "image_embedding" = ${vectorSql},
+            "status" = 'ready',
+            "error" = NULL,
+            "attempt_count" = 0,
+            "next_attempt_at" = NULL,
+            "terminal_at" = NULL,
+            "processing_claim_token" = NULL,
+            "completedAt" = NOW(),
+            "updatedAt" = NOW()
+        WHERE "asset_id" = ${assetId}
+          AND "status" = 'processing'
+          AND "processing_claim_token" = ${expectedProcessingClaimToken}
+          AND "image_embedding" IS NULL
+          AND ("dim" IS NULL OR "dim" = 0)
+          AND "terminal_at" IS NULL
+        RETURNING
+          "asset_id" AS "assetId",
+          "model_name" AS "modelName",
+          "model_version" AS "modelVersion",
+          "dim",
+          "createdAt",
+          "updatedAt";
+      `);
+      return rows[0] ?? null;
+    }
+
+    // An un-tokened writer cannot prove which processing generation it owns.
+    // It may seed a brand-new row, but must never update an existing row: an
+    // old worker can finish after its claim was reclaimed by a newer worker.
+    // Token-aware current writers take the update path above and clear only
+    // their matching token atomically.
     const rows = await prisma.$queryRaw<Array<AssetEmbeddingRecord>>(Prisma.sql`
       INSERT INTO "asset_embeddings" (
         "asset_id",
@@ -727,15 +769,7 @@ export async function upsertAssetEmbedding(
         NOW(),
         NOW()
       )
-      ON CONFLICT ("asset_id") DO UPDATE SET
-        "model_name" = EXCLUDED."model_name",
-        "model_version" = EXCLUDED."model_version",
-        "dim" = EXCLUDED."dim",
-        "image_embedding" = EXCLUDED."image_embedding",
-        "status" = 'ready',
-        "error" = NULL,
-        "completedAt" = NOW(),
-        "updatedAt" = NOW()
+      ON CONFLICT ("asset_id") DO NOTHING
       RETURNING
         "asset_id" AS "assetId",
         "model_name" AS "modelName",

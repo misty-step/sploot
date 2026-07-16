@@ -152,7 +152,7 @@ describeWithDatabase('Stripe webhook route with real verifier and Postgres ledge
     expect(await admin.stripeCancellationEvent.count({ where: { eventId } })).toBe(0);
   });
 
-  it('reuses one bounded issuer pool across sequential webhook requests', async () => {
+  it('reuses one bounded issuer pool across concurrent production-shaped webhook requests', async () => {
     const { POST } = await import('@/app/api/webhooks/stripe/route');
     const countIssuerConnections = async () => {
       const rows = await admin.$queryRaw<Array<{ count: bigint }>>`
@@ -165,7 +165,7 @@ describeWithDatabase('Stripe webhook route with real verifier and Postgres ledge
     const baseline = await countIssuerConnections();
     const created = Math.floor(Date.now() / 1000);
 
-    for (let index = 0; index < 20; index += 1) {
+    const requests = Array.from({ length: 20 }, (_, index) => {
       const eventId = `evt_route_pool_${randomUUID().slice(0, 12)}`;
       const rawBody = JSON.stringify({
         id: eventId,
@@ -175,7 +175,10 @@ describeWithDatabase('Stripe webhook route with real verifier and Postgres ledge
         account: null,
         data: { object: { id: `in_${eventId}`, object: 'invoice' } },
       });
-      const response = await POST(webhookRequest(rawBody, stripeSignature(rawBody, created)), { params: Promise.resolve({}) });
+      return POST(webhookRequest(rawBody, stripeSignature(rawBody, created + index)), { params: Promise.resolve({}) });
+    });
+    const responses = await Promise.all(requests);
+    for (const response of responses) {
       expect(response.status).toBe(200);
     }
 

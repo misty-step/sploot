@@ -28,7 +28,9 @@ What the spike proved, all agent-only:
   pages with zero real secrets; image 460 MB.
 - **`release_command` is the real thing.** `fly deploy` ran
   `prisma migrate deploy` in a throwaway machine with the app's own
-  `DATABASE_URL`, before traffic cutover — applying all 9 migrations atomically.
+  `DATABASE_URL`, before traffic cutover — applying all committed migrations
+  atomically, including separately committed online constraint-validation
+  phases.
   This is exactly the loop Vercel structurally can't do.
 - **pgvector search works on the substrate.** The app's exact cosine query
   (`image_embedding <=> …::vector`) ranks correctly on the deployed stack.

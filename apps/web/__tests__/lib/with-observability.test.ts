@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { NextRequest, NextResponse } from 'next/server';
+import {
+  EmbeddingConfigurationError,
+  embeddingConfigurationHeaders,
+  embeddingRetryHeaders,
+  reportEmbeddingConfigurationErrorOnce,
+} from '@/lib/embedding-errors';
 
 interface LoggerRecord {
   traceId: string;
@@ -143,6 +149,21 @@ describe('withObservability', () => {
     expect(record?.logger.logError).not.toHaveBeenCalled();
   });
 
+  it('reports an explicit route contract error when a handler returns no response', async () => {
+    const handler = vi.fn(async () => undefined as never);
+    const wrapped = withObservability(handler);
+
+    await expect(
+      wrapped(createRequest('https://sploot.dev/api/gremlin'), defaultContext)
+    ).rejects.toThrow('Route handler returned no response');
+
+    expect(loggerRecords[0]?.logger.logError).toHaveBeenCalledWith(
+      'request:error',
+      expect.objectContaining({ message: 'Route handler returned no response' }),
+      expect.objectContaining({ success: false }),
+    );
+  });
+
   it('honors custom operation override', async () => {
     nanoidMock.mockReturnValueOnce('trace-override');
 
@@ -205,6 +226,106 @@ describe('withObservability', () => {
       })
     );
   });
+
+  it('classifies typed embedding 503 responses without a duplicate Canary error', async () => {
+    const handler = vi.fn(async () => ({
+      status: 503,
+      headers: new Headers({
+        'Retry-After': '30',
+        'X-Sploot-Embedding-Outcome': 'provider_circuit_open',
+      }),
+    }) as unknown as NextResponse);
+
+    const wrapped = withObservability(handler);
+    await wrapped(createRequest('https://sploot.dev/api/embedding'), defaultContext);
+
+    const record = loggerRecords[0];
+    expect(record?.logger.logInfo).toHaveBeenCalledWith(
+      'request:typed-embedding-outcome',
+      expect.objectContaining({
+        statusCode: 503,
+        reason: 'provider_circuit_open',
+      }),
+    );
+    expect(record?.logger.logError).not.toHaveBeenCalled();
+  });
+
+  it('keeps deterministic configuration terminal, non-retryable, and route-owned', async () => {
+    process.env.CANARY_ENDPOINT = 'https://canary.example.test';
+    process.env.CANARY_API_KEY = 'test-canary-key';
+    process.env.CANARY_ENABLE_IN_TEST = '1';
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const error = new EmbeddingConfigurationError('missing provider configuration');
+    const unownedHeaders = new Headers(embeddingRetryHeaders(error));
+    expect(unownedHeaders.get('X-Sploot-Canary-Owner')).toBeNull();
+    await expect(reportEmbeddingConfigurationErrorOnce(error, 'test:configuration')).resolves.toBe(true);
+    const headers = new Headers(embeddingConfigurationHeaders(error));
+    expect(headers.get('Retry-After')).toBeNull();
+    expect(headers.get('X-Sploot-Embedding-Outcome')).toBe('embedding_configuration');
+    expect(headers.get('X-Sploot-Canary-Owner')).toBe('route');
+
+    const handler = vi.fn(async () => ({
+      status: 503,
+      headers,
+    }) as unknown as NextResponse);
+    const wrapped = withObservability(handler);
+    await wrapped(createRequest('https://sploot.dev/api/embedding'), defaultContext);
+    const record = loggerRecords[0];
+    expect(record?.logger.logInfo).toHaveBeenCalledWith(
+      'request:typed-embedding-outcome',
+      expect.objectContaining({ reason: 'embedding_configuration' }),
+    );
+    expect(record?.logger.logError).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    delete process.env.CANARY_ENDPOINT;
+    delete process.env.CANARY_API_KEY;
+    delete process.env.CANARY_ENABLE_IN_TEST;
+  });
+
+  it('honors a route-owned generic 500 marker without emitting a wrapper Canary report', async () => {
+    const handler = vi.fn(async () => ({
+      status: 500,
+      headers: new Headers({
+        'X-Sploot-Canary-Owner': 'route',
+      }),
+    }) as unknown as NextResponse);
+
+    const wrapped = withObservability(handler);
+    await wrapped(createRequest('https://sploot.dev/api/owned-error'), defaultContext);
+
+    const record = loggerRecords[0];
+    expect(record?.logger.logError).not.toHaveBeenCalledWith(
+      'request:server-error-status',
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it.each(['provider_rate_limit', 'provider_unavailable', 'global_rate'])(
+    'classifies typed %s outcomes without generic 5xx logging',
+    async (outcome) => {
+      const handler = vi.fn(async () => ({
+        status: 503,
+        headers: new Headers({
+          'Retry-After': '30',
+          'X-Sploot-Embedding-Outcome': outcome,
+        }),
+      }) as unknown as NextResponse);
+
+      const wrapped = withObservability(handler);
+      await wrapped(createRequest('https://sploot.dev/api/embedding'), defaultContext);
+
+      const record = loggerRecords[0];
+      expect(record?.logger.logInfo).toHaveBeenCalledWith(
+        'request:typed-embedding-outcome',
+        expect.objectContaining({ reason: outcome, statusCode: 503 }),
+      );
+      expect(record?.logger.logError).not.toHaveBeenCalled();
+    },
+  );
 
   it('logs errors, invokes unstable_rethrow, and rethrows', async () => {
     const boom = new Error('sploot meltdown');

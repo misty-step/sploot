@@ -14,11 +14,12 @@
  * The embeddings are COMMITTED so the eval itself (scripts/eval-search.ts) is
  * fully deterministic and needs no Replicate token — in CI or anywhere else.
  * Re-run this script only to regenerate the library (new model, new
- * templates, edited queries). Requires REPLICATE_API_TOKEN.
+ * templates, edited queries). Requires REPLICATE_API_TOKEN and the explicit
+ * non-production exception `SPLOOT_EMBEDDING_MAINTENANCE_MODE=offline`.
  *
  * Usage (from apps/web):
- *   pnpm eval:fixtures                 # rebuild both fixture files
- *   pnpm eval:fixtures --queries-only  # re-embed queries only (edited source)
+ *   SPLOOT_EMBEDDING_MAINTENANCE_MODE=offline pnpm eval:fixtures
+ *   SPLOOT_EMBEDDING_MAINTENANCE_MODE=offline pnpm eval:fixtures --queries-only
  */
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -31,6 +32,17 @@ const FIXTURES_DIR = join(EVAL_DIR, 'fixtures');
 const IMGFLIP_API = 'https://api.imgflip.com/get_memes';
 const CONCURRENCY = 6;
 const ROUND = 1e6; // 6 decimal places keeps files small; cosine ranking is unaffected
+
+function assertOfflineMaintenanceMode(): void {
+  if (
+    process.env.NODE_ENV === 'production' ||
+    process.env.SPLOOT_EMBEDDING_MAINTENANCE_MODE !== 'offline'
+  ) {
+    throw new Error(
+      'Fixture embedding requires a non-production process and explicit SPLOOT_EMBEDDING_MAINTENANCE_MODE=offline.'
+    );
+  }
+}
 
 interface ImgflipMeme {
   id: string;
@@ -90,6 +102,7 @@ async function mapLimit<T, R>(
 }
 
 async function main() {
+  assertOfflineMaintenanceMode();
   const queriesOnly = process.argv.includes('--queries-only');
   const token = process.env.REPLICATE_API_TOKEN;
   if (!token) {

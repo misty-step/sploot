@@ -22,6 +22,7 @@ import { execFileSync, execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { checkDatabaseMigrationHistory } from '../../../scripts/check-migration-history.mjs';
 
 export function deriveDirectUrl(raw) {
   const url = new URL(raw);
@@ -51,6 +52,14 @@ export function readBootstrapVersion(root = repoRoot) {
     throw new Error('[migrate-deploy] stripe-ledger-bootstrap.version must contain the single 14-digit declared contract version');
   }
   return version;
+}
+
+function applyOnlineEmbeddingIndex(databaseUrl, env) {
+  const helper = resolve(repoRoot, 'apps/web/scripts/apply-online-embedding-index.mjs');
+  execFileSync(process.execPath, [helper], {
+    stdio: 'inherit',
+    env: { ...env, DATABASE_URL: databaseUrl },
+  });
 }
 
 // Last-resort durable failed state, independent of the rollback script.
@@ -88,7 +97,7 @@ function psqlEnvironment(rawUrl, env) {
   return childEnv;
 }
 
-export function runMigrateDeploy(env = process.env) {
+export async function runMigrateDeploy(env = process.env, options = {}) {
   const pooled = env.DATABASE_URL;
   const bootstrapUrl = env.STRIPE_LEDGER_BOOTSTRAP_DATABASE_URL;
   const bootstrapRequired = env.STRIPE_LEDGER_BOOTSTRAP_REQUIRED === 'true';
@@ -114,8 +123,22 @@ export function runMigrateDeploy(env = process.env) {
   try {
     if (bootstrapUrl) privileged(pre);
     stage = 'prisma-migrate';
+    // Injectable so script-level fault tests need no live database; the
+    // default is the workspace pg-client readback (no psql binary needed in
+    // the PRE_DEPLOY image). Any history failure pauses the deployment.
+    const historyCheck = options.checkMigrationHistory ?? checkDatabaseMigrationHistory;
+    await historyCheck(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl);
     console.log('[migrate-deploy] running prisma migrate deploy...');
-    execSync('prisma migrate deploy', { stdio: 'inherit', env: { ...env, DATABASE_URL: migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl } });
+    const migrationEnv = {
+      ...env,
+      DATABASE_URL: migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl,
+      PGOPTIONS: [env.PGOPTIONS, '-c lock_timeout=5s', '-c statement_timeout=30s'].filter(Boolean).join(' '),
+    };
+    execSync('prisma migrate deploy', { stdio: 'inherit', env: migrationEnv });
+    if (options.applyOnlineIndex ?? (env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test')) {
+      stage = 'online-embedding-index';
+      applyOnlineEmbeddingIndex(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl, env);
+    }
     stage = 'post-bootstrap';
     if (bootstrapUrl) privileged(post);
   } catch (error) {
@@ -161,7 +184,8 @@ function writeBootstrapFailureReport(env, { stage, rollbackError, markerError })
 }
 
 // Run only when invoked directly (`node scripts/migrate-deploy.mjs`), so that
-// importing this module from a test does not trigger a migration.
+// importing this module from a test does not trigger a migration. A rejected
+// top-level await exits non-zero, which fails the PRE_DEPLOY job closed.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runMigrateDeploy(process.env);
+  await runMigrateDeploy(process.env);
 }

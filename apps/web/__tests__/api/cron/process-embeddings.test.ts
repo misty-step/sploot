@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GET } from '@/app/api/cron/process-embeddings/route';
 import { NextRequest } from 'next/server';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
+import {
+  EmbeddingProviderCircuitOpenError,
+  EmbeddingProviderRateLimitError,
+} from '@/lib/embedding-errors';
 
 // Mock next/headers
 const mockHeaders = vi.fn();
@@ -14,9 +18,21 @@ const mockPrisma = {
   asset: {
     findMany: vi.fn(),
   },
+  assetEmbedding: {
+    upsert: vi.fn(),
+  },
 };
 
 const mockUpsertAssetEmbedding = vi.fn();
+const mockAcquireEmbeddingProcessing = vi.fn();
+const mockGetEmbeddingProviderCircuit = vi.fn();
+const mockRecordEmbeddingAdmissionFailure = vi.fn();
+const mockDeferEmbeddingAdmission = vi.fn();
+const mockRecordEmbeddingConfigurationFailure = vi.fn();
+const mockRecordEmbeddingAttemptFailure = vi.fn();
+const mockResetEmbeddingProviderCircuit = vi.fn();
+const mockMarkEmbeddingTerminalSkipped = vi.fn();
+const PROCESSING_CLAIM_TOKEN = 'cron-processing-claim';
 let mockDatabaseAvailable = true;
 
 vi.mock('@/lib/db', () => ({
@@ -26,7 +42,42 @@ vi.mock('@/lib/db', () => ({
   get databaseAvailable() {
     return mockDatabaseAvailable;
   },
-  upsertAssetEmbedding: () => mockUpsertAssetEmbedding(),
+  upsertAssetEmbedding: (...args: unknown[]) => mockUpsertAssetEmbedding(...args),
+}));
+
+vi.mock('@/lib/embedding-guard', () => ({
+  EMBEDDING_PROCESSING_TTL_MS: 10 * 60 * 1000,
+  acquireEmbeddingProcessing: () => mockAcquireEmbeddingProcessing(),
+  markEmbeddingTerminalSkipped: (...args: unknown[]) =>
+    mockMarkEmbeddingTerminalSkipped(...args),
+}));
+
+vi.mock('@/lib/embedding-resilience', () => ({
+  getEmbeddingAdmissionReason: (error: unknown) =>
+    error && typeof error === 'object' && 'reason' in error && typeof error.reason === 'string'
+      ? error.reason
+      : 'provider_rate_limit',
+  isGlobalEmbeddingAdmissionReason: (reason: string) =>
+    ['global_rate', 'global_concurrency', 'daily_budget', 'limiter_unavailable', 'provider_rate_limit'].includes(reason),
+  getEmbeddingProviderCircuit: () => mockGetEmbeddingProviderCircuit(),
+  recordEmbeddingAdmissionFailure: (...args: unknown[]) =>
+    mockRecordEmbeddingAdmissionFailure(...args),
+  deferEmbeddingAdmission: (...args: unknown[]) =>
+    mockDeferEmbeddingAdmission(...args),
+  normalizeEmbeddingConfigurationError: (error: unknown) => ({
+    name: 'EmbeddingConfigurationError',
+    message: error instanceof Error ? error.message : 'Embedding service initialization failed',
+    reason: 'embedding_configuration',
+    statusCode: 503,
+    retryable: false,
+  }),
+  recordEmbeddingConfigurationFailure: (...args: unknown[]) =>
+    mockRecordEmbeddingConfigurationFailure(...args),
+  recordEmbeddingAttemptFailure: (...args: unknown[]) =>
+    mockRecordEmbeddingAttemptFailure(...args),
+  resetEmbeddingProviderCircuit: () => mockResetEmbeddingProviderCircuit(),
+  isEmbeddingAdmissionFailure: (error: unknown) =>
+    error instanceof Error && error.name === 'EmbeddingAdmissionError',
 }));
 
 // Mock lib/embeddings
@@ -57,6 +108,26 @@ describe('/api/cron/process-embeddings', () => {
 
     // Reset all mocks
     vi.clearAllMocks();
+
+    mockGetEmbeddingProviderCircuit.mockResolvedValue({
+      available: true,
+      open: false,
+    });
+    mockAcquireEmbeddingProcessing.mockResolvedValue({
+      acquired: true,
+      state: 'processing',
+      processingClaimToken: PROCESSING_CLAIM_TOKEN,
+    });
+    mockRecordEmbeddingAdmissionFailure.mockResolvedValue({
+      available: true,
+      open: true,
+      retryAfterSec: 30,
+    });
+    mockRecordEmbeddingAttemptFailure.mockResolvedValue({
+      attemptCount: 1,
+      terminal: false,
+      nextAttemptAt: new Date(),
+    });
 
     // Default mock: return valid headers
     mockHeaders.mockReturnValue({
@@ -148,6 +219,8 @@ describe('/api/cron/process-embeddings', () => {
       const data = await response.json();
 
       expect(response.status).toBe(200);
+      expect(data.outcome).toBe('no_work');
+      expect(data.status).toBe('idle');
       expect(data.message).toBe('No assets need processing');
       expect(data.stats.totalProcessed).toBe(0);
       expect(data.stats.successCount).toBe(0);
@@ -165,7 +238,17 @@ describe('/api/cron/process-embeddings', () => {
       expect(callArgs.where.OR).toEqual(
         expect.arrayContaining([
           { embedding: null },
-          { embedding: { is: { status: 'pending' } } },
+          {
+            embedding: {
+              is: {
+                status: 'pending',
+                OR: [
+                  { nextAttemptAt: null },
+                  { nextAttemptAt: { lte: expect.any(Date) } },
+                ],
+              },
+            },
+          },
           {
             embedding: {
               is: {
@@ -249,6 +332,53 @@ describe('/api/cron/process-embeddings', () => {
       expect(mockUpsertAssetEmbedding).toHaveBeenCalledTimes(2);
     });
 
+    it('uses the poster thumbnail for video assets and terminal-skips video without one', async () => {
+      const posterAsset = {
+        id: 'video-asset',
+        blobUrl: 'https://blob.vercel-storage.com/raw.mp4',
+        thumbnailUrl: 'https://blob.vercel-storage.com/poster.jpg',
+        mime: 'video/mp4',
+        checksumSha256: 'checksum-video',
+        ownerUserId: 'user-1',
+        createdAt: hoursAgo(2),
+      };
+
+      mockPrisma.asset.findMany.mockResolvedValue([posterAsset]);
+
+      const response = await GET({} as NextRequest);
+      const data = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(data.stats.successCount).toBe(1);
+      expect(mockEmbedImage).toHaveBeenCalledWith(
+        'https://blob.vercel-storage.com/poster.jpg',
+        'checksum-video'
+      );
+
+      mockEmbedImage.mockReset();
+      mockPrisma.asset.findMany.mockResolvedValue([
+        {
+          ...posterAsset,
+          id: 'video-skip',
+          thumbnailUrl: null,
+          checksumSha256: 'checksum-skip',
+        },
+      ]);
+      mockPrisma.assetEmbedding.upsert.mockResolvedValue({});
+
+      const skipResponse = await GET({} as NextRequest);
+      const skipData = await skipResponse.json();
+
+      expect(skipResponse.status).toBe(207);
+      expect(skipData.stats.skippedCount).toBe(1);
+      expect(mockEmbedImage).not.toHaveBeenCalled();
+      expect(mockMarkEmbeddingTerminalSkipped).toHaveBeenCalledWith(
+        'video-skip',
+        'Unsupported video without a poster thumbnail',
+        PROCESSING_CLAIM_TOKEN,
+      );
+    });
+
     it('should call upsertAssetEmbedding with correct parameters', async () => {
       const mockAssets = [
         {
@@ -295,6 +425,7 @@ describe('/api/cron/process-embeddings', () => {
       expect(data.stats.errors[0]).toEqual({
         assetId: 'asset-fail',
         error: 'Embedding generation failed',
+        taxonomy: 'Error',
       });
 
       consoleErrorSpy.mockRestore();
@@ -344,6 +475,245 @@ describe('/api/cron/process-embeddings', () => {
       expect(mockEmbedImage).toHaveBeenCalledTimes(2);
 
       consoleErrorSpy.mockRestore();
+    });
+
+    it('should stop admitting work while the durable provider circuit is open', async () => {
+      mockGetEmbeddingProviderCircuit.mockResolvedValue({
+        available: true,
+        open: true,
+        retryAfterSec: 42,
+        reason: 'global_rate',
+      });
+
+      const response = await GET({} as NextRequest);
+      const data = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(data.outcome).toBe('backoff');
+      expect(data.status).toBe('provider_backoff');
+      expect(response.headers.get('Retry-After')).toBe('42');
+      expect(data.message).toBe('Embedding provider backoff active');
+      expect(data.retryAfterSec).toBe(42);
+      expect(data.stats).toMatchObject({
+        totalProcessed: 0,
+        successCount: 0,
+        failureCount: 0,
+      });
+      expect(mockPrisma.asset.findMany).not.toHaveBeenCalled();
+      expect(mockEmbedImage).not.toHaveBeenCalled();
+    });
+
+    it('defers circuit-open initialization without consuming an asset attempt', async () => {
+      mockPrisma.asset.findMany.mockResolvedValue([
+        {
+          id: 'asset-init-circuit-open',
+          blobUrl: 'https://blob.vercel-storage.com/init-circuit-open.jpg',
+          checksumSha256: 'checksum-init-circuit-open',
+          ownerUserId: 'user-1',
+          createdAt: hoursAgo(2),
+        },
+      ]);
+      mockCreateEmbeddingService.mockImplementation(() => {
+        throw new EmbeddingProviderCircuitOpenError(42);
+      });
+
+      const response = await GET({} as NextRequest);
+      const data = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(response.headers.get('Retry-After')).toBe('42');
+      expect(data.stats).toMatchObject({
+        totalProcessed: 1,
+        successCount: 0,
+        failureCount: 0,
+        deferredCount: 1,
+      });
+      expect(mockDeferEmbeddingAdmission).toHaveBeenCalledWith(
+        'asset-init-circuit-open',
+        'Embedding provider temporarily unavailable',
+        'provider_circuit_open',
+        42,
+        PROCESSING_CLAIM_TOKEN,
+      );
+      expect(mockRecordEmbeddingAttemptFailure).not.toHaveBeenCalled();
+      expect(mockEmbedImage).not.toHaveBeenCalled();
+    });
+
+    it('should persist admission backoff and stop the current batch after a throttle', async () => {
+      const admissionError = new Error('Embedding generation is rate limited');
+      admissionError.name = 'EmbeddingAdmissionError';
+      Object.assign(admissionError, { reason: 'global_rate', retryAfterSec: 30 });
+
+      mockPrisma.asset.findMany.mockResolvedValue([
+        {
+          id: 'asset-throttled',
+          blobUrl: 'https://blob.vercel-storage.com/throttled.jpg',
+          checksumSha256: 'checksum-throttled',
+          ownerUserId: 'user-1',
+          createdAt: hoursAgo(2),
+        },
+        {
+          id: 'asset-not-admitted',
+          blobUrl: 'https://blob.vercel-storage.com/not-admitted.jpg',
+          checksumSha256: 'checksum-not-admitted',
+          ownerUserId: 'user-1',
+          createdAt: hoursAgo(3),
+        },
+      ]);
+      mockEmbedImage.mockRejectedValueOnce(admissionError);
+
+      const response = await GET({} as NextRequest);
+      const data = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(data.outcome).toBe('backoff');
+      expect(data.status).toBe('provider_backoff');
+      expect(response.headers.get('Retry-After')).toBe('30');
+      expect(data.stats).toMatchObject({
+        totalProcessed: 1,
+        successCount: 0,
+        failureCount: 1,
+      });
+      expect(mockEmbedImage).toHaveBeenCalledOnce();
+      expect(mockDeferEmbeddingAdmission).toHaveBeenCalledWith(
+        'asset-throttled',
+        admissionError.message,
+        'global_rate',
+        30,
+        PROCESSING_CLAIM_TOKEN,
+      );
+    });
+
+    it('defers only the user-local admission failure and continues other users', async () => {
+      const admissionError = new Error('user is rate limited');
+      admissionError.name = 'EmbeddingAdmissionError';
+      Object.assign(admissionError, { reason: 'user_rate', retryAfterSec: 60 });
+
+      mockPrisma.asset.findMany.mockResolvedValue([
+        {
+          id: 'asset-user-limited',
+          blobUrl: 'https://blob.vercel-storage.com/limited.jpg',
+          checksumSha256: 'checksum-limited',
+          ownerUserId: 'user-1',
+          createdAt: hoursAgo(2),
+        },
+        {
+          id: 'asset-other-user',
+          blobUrl: 'https://blob.vercel-storage.com/healthy.jpg',
+          checksumSha256: 'checksum-healthy',
+          ownerUserId: 'user-2',
+          createdAt: hoursAgo(3),
+        },
+      ]);
+      mockEmbedImage
+        .mockRejectedValueOnce(admissionError)
+        .mockResolvedValueOnce({
+          embedding: Array(EMBEDDING_DIMENSION).fill(0.2),
+          model: 'siglip-large',
+          dimension: EMBEDDING_DIMENSION,
+          processingTime: 100,
+        });
+
+      const response = await GET({} as NextRequest);
+      const data = await response.json();
+
+      expect(response.status).toBe(207);
+      expect(response.headers.get('Retry-After')).toBe('60');
+      expect(data.outcome).toBe('partial');
+      expect(data.status).toBe('partial');
+      expect(data.retryAfterSec).toBe(60);
+      expect(data.stats).toMatchObject({
+        totalProcessed: 2,
+        successCount: 1,
+        failureCount: 1,
+        deferredCount: 1,
+      });
+      expect(mockRecordEmbeddingAdmissionFailure).not.toHaveBeenCalled();
+      expect(mockDeferEmbeddingAdmission).toHaveBeenCalledWith(
+        'asset-user-limited',
+        admissionError.message,
+        'user_rate',
+        60,
+        PROCESSING_CLAIM_TOKEN,
+      );
+      expect(mockEmbedImage).toHaveBeenCalledTimes(2);
+    });
+
+    it('counts a real provider 429 as an asset attempt before returning shared backoff', async () => {
+      mockPrisma.asset.findMany.mockResolvedValue([
+        {
+          id: 'asset-provider-429',
+          blobUrl: 'https://blob.vercel-storage.com/provider-429.jpg',
+          checksumSha256: 'checksum-provider-429',
+          ownerUserId: 'user-1',
+          createdAt: hoursAgo(2),
+        },
+      ]);
+      mockEmbedImage.mockRejectedValueOnce(new EmbeddingProviderRateLimitError(12));
+
+      const response = await GET({} as NextRequest);
+      const data = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(data.outcome).toBe('backoff');
+      expect(response.headers.get('Retry-After')).toBe('12');
+      expect(mockRecordEmbeddingAttemptFailure).toHaveBeenCalledWith(
+        'asset-provider-429',
+        'Embedding provider rate limited',
+        PROCESSING_CLAIM_TOKEN,
+      );
+      expect(data.stats.errors[0]).toMatchObject({
+        assetId: 'asset-provider-429',
+        taxonomy: 'provider_rate_limit',
+        statusCode: 429,
+        retryAfterSec: 12,
+      });
+      expect(mockDeferEmbeddingAdmission).not.toHaveBeenCalled();
+    });
+
+    it('should bound poison failures while continuing with a healthy asset', async () => {
+      const mockAssets = [
+        {
+          id: 'asset-poison',
+          blobUrl: 'https://blob.vercel-storage.com/poison.jpg',
+          checksumSha256: 'checksum-poison',
+          ownerUserId: 'user-1',
+          createdAt: hoursAgo(3),
+        },
+        {
+          id: 'asset-healthy',
+          blobUrl: 'https://blob.vercel-storage.com/healthy.jpg',
+          checksumSha256: 'checksum-healthy',
+          ownerUserId: 'user-1',
+          createdAt: hoursAgo(2),
+        },
+      ];
+      mockPrisma.asset.findMany.mockResolvedValue(mockAssets);
+      mockEmbedImage
+        .mockRejectedValueOnce(new Error('Unable to identify image file'))
+        .mockResolvedValueOnce({
+          embedding: Array(EMBEDDING_DIMENSION).fill(0.2),
+          model: 'siglip-large',
+          dimension: EMBEDDING_DIMENSION,
+          processingTime: 100,
+        });
+
+      const response = await GET({} as NextRequest);
+      const data = await response.json();
+
+      expect(data.stats).toMatchObject({
+        totalProcessed: 2,
+        successCount: 1,
+        failureCount: 1,
+      });
+      expect(data.outcome).toBe('partial');
+      expect(mockRecordEmbeddingAttemptFailure).toHaveBeenCalledWith(
+        'asset-poison',
+        'Unable to identify image file',
+        PROCESSING_CLAIM_TOKEN,
+      );
+      expect(mockEmbedImage).toHaveBeenCalledTimes(2);
+      expect(mockUpsertAssetEmbedding).toHaveBeenCalledTimes(1);
     });
 
     it('should handle upsert failure', async () => {
@@ -400,7 +770,23 @@ describe('/api/cron/process-embeddings', () => {
       const data = await response.json();
 
       expect(response.status).toBe(503);
-      expect(data.error).toBe('Embedding service not configured');
+      expect(data.outcome).toBe('configuration_error');
+      expect(data.status).toBe('configuration_error');
+      expect(data.stats.errors[0]).toMatchObject({
+        assetId: 'asset-1',
+        taxonomy: 'embedding_configuration',
+        statusCode: 503,
+      });
+      expect(response.headers.get('Retry-After')).toBeNull();
+      expect(response.headers.get('X-Sploot-Embedding-Outcome')).toBe(
+        'embedding_configuration',
+      );
+      expect(mockRecordEmbeddingConfigurationFailure).toHaveBeenCalledWith(
+        'asset-1',
+        expect.objectContaining({ reason: 'embedding_configuration', retryable: false }),
+        PROCESSING_CLAIM_TOKEN,
+      );
+      expect(mockRecordEmbeddingAttemptFailure).not.toHaveBeenCalled();
 
       // Assets should have been found first
       expect(mockPrisma.asset.findMany).toHaveBeenCalled();

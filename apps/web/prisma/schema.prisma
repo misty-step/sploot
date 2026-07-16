@@ -141,7 +141,12 @@ model AssetEmbedding {
   // Must match packages/common/src/embeddings.ts EMBEDDING_DIMENSION.
   imageEmbedding  Unsupported("vector(768)")? @map("image_embedding")
   status          String?                @default("pending") // pending, processing, ready, failed
+  processingClaimToken String?           @map("processing_claim_token")
   error           String? // Error message if failed
+  attemptCount    Int                    @default(0) @map("attempt_count")
+  reviveCount     Int                    @default(0) @map("revive_count")
+  nextAttemptAt   DateTime?              @map("next_attempt_at")
+  terminalAt      DateTime?              @map("terminal_at") // Set when bounded retries are exhausted
   completedAt     DateTime?              @map("completedAt") // When embedding was completed
   embeddingVector Unsupported("vector")? @map("embeddingVector") // Alternative vector column
   createdAt       DateTime               @default(now())
@@ -154,6 +159,25 @@ model AssetEmbedding {
   @@index([modelName, modelVersion])
   @@index([status, createdAt])
   @@map("asset_embeddings")
+}
+
+// Durable provider admission backoff shared by cron and explicit retries.
+model EmbeddingProviderCircuit {
+  key            String    @id
+  failureCount   Int       @default(0) @map("failure_count")
+  generation     Int       @default(0)
+  openUntil      DateTime? @map("open_until")
+  probeUntil     DateTime? @map("probe_until")
+  probeGeneration Int?     @map("probe_generation")
+  probeLeaseToken String?  @map("probe_lease_token")
+  lastReason     String?   @map("last_reason")
+  lastFailureAt  DateTime? @map("last_failure_at")
+  lastAlertedAt  DateTime? @map("last_alerted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@index([openUntil], map: "embedding_provider_circuits_open_until_idx")
+  @@map("embedding_provider_circuits")
 }
 
 // Tag model - user-defined tags for organization
@@ -221,8 +245,9 @@ model TextEmbeddingCache {
   @@map("text_embedding_cache")
 }
 
-// Durable counters for embedding minute windows and the UTC daily spend
-// ceiling. Expired rows are pruned while holding the limiter advisory lock.
+// Durable counters for embedding minute windows and UTC daily/monthly attempt
+// ceilings derived from the provider-rate model. These are not dollar ledgers.
+// Expired rows are pruned while holding the limiter advisory lock.
 model EmbeddingRateBucket {
   key       String   @id
   count     Int

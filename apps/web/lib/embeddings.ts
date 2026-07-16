@@ -1,15 +1,35 @@
 import Replicate from 'replicate';
+import { EMBEDDING_DIMENSION } from '@sploot/common';
 import { getCacheService } from './cache';
 import { getRuntimeGate } from './runtime-gates';
 import {
-  acquireEmbeddingDailyBudget,
-  acquireEmbeddingRateLimit,
+  acquireEmbeddingAdmissionReservation,
+  refundEmbeddingAdmissionCapacity,
   releaseEmbeddingRateLimit,
-  type EmbeddingDailyBudgetReason,
   type EmbeddingRateLimitLease,
-  type EmbeddingRateLimitReason,
 } from './embedding-rate-limit';
-import { ENROLLMENT_UNAVAILABLE_CODE } from './enrollment/enrollment-policy';
+import {
+  EmbeddingAdmissionError,
+  type EmbeddingAdmissionReason,
+} from './embedding-admission';
+import {
+  attachEmbeddingProviderLease,
+  getEmbeddingProviderLease,
+  EmbeddingError,
+  EmbeddingProviderCircuitOpenError,
+  EmbeddingProviderRateLimitError,
+  EmbeddingProviderUnavailableError,
+  EmbeddingConfigurationError,
+} from './embedding-errors';
+import {
+  acquireEmbeddingProviderAdmission,
+  getEmbeddingProviderCircuit,
+  isCircuitOpeningAdmissionReason,
+  recordEmbeddingAdmissionFailure,
+  recordEmbeddingProviderFailure,
+  recordEmbeddingProviderSuccess,
+  type EmbeddingProviderCircuitLease,
+} from './embedding-resilience';
 
 // Updated to working CLIP model (SigLIP model was deprecated)
 export const CLIP_MODEL =
@@ -30,6 +50,24 @@ interface EmbeddingServiceConfig {
   timeout?: number;
 }
 
+interface ReplicateResponseEnvelope {
+  status?: unknown;
+  statusCode?: unknown;
+  headers?: unknown;
+}
+
+interface ReplicateErrorEnvelope extends ReplicateResponseEnvelope {
+  response?: ReplicateResponseEnvelope;
+  retryAfter?: unknown;
+  retryAfterSec?: unknown;
+}
+
+function asReplicateErrorEnvelope(error: unknown): ReplicateErrorEnvelope {
+  return error && typeof error === 'object'
+    ? (error as ReplicateErrorEnvelope)
+    : {};
+}
+
 export interface EmbeddingService {
   embedText(query: string): Promise<EmbeddingResult>;
   embedImage(imageUrl: string, checksum?: string): Promise<EmbeddingResult>;
@@ -38,39 +76,15 @@ export interface EmbeddingService {
   ): Promise<EmbeddingResult[]>;
 }
 
-export class EmbeddingError extends Error {
-  constructor(
-    message: string,
-    public statusCode?: number,
-    public retryable: boolean = false
-  ) {
-    super(message);
-    this.name = 'EmbeddingError';
-  }
-}
-
-export type EmbeddingAdmissionReason =
-  | EmbeddingRateLimitReason
-  | EmbeddingDailyBudgetReason;
-
-export class EmbeddingAdmissionError extends EmbeddingError {
-  readonly code: 'enrollment_unavailable' | undefined;
-  constructor(
-    public reason: EmbeddingAdmissionReason,
-    public retryAfterSec?: number
-  ) {
-    const unavailable = reason === 'limiter_unavailable';
-    super(
-      unavailable
-        ? 'Embedding admission is temporarily unavailable'
-        : 'Embedding generation is rate limited',
-      unavailable ? 503 : 429,
-      true
-    );
-    this.code = unavailable ? ENROLLMENT_UNAVAILABLE_CODE : undefined;
-    this.name = 'EmbeddingAdmissionError';
-  }
-}
+export { EmbeddingAdmissionError } from './embedding-admission';
+export type { EmbeddingAdmissionReason } from './embedding-admission';
+export {
+  EmbeddingError,
+  EmbeddingProviderCircuitOpenError,
+  EmbeddingProviderRateLimitError,
+  EmbeddingProviderUnavailableError,
+  EmbeddingConfigurationError,
+} from './embedding-errors';
 
 /**
  * Service for generating embeddings using Replicate's SigLIP model.
@@ -108,7 +122,7 @@ class ReplicateEmbeddingService implements EmbeddingService {
     }
 
     try {
-      const result = await this.withPaidAdmission(() =>
+      const admitted = await this.withPaidAdmission(() =>
         this.withTimeout(
           (signal) =>
             this.replicate.run(
@@ -120,22 +134,13 @@ class ReplicateEmbeddingService implements EmbeddingService {
                 wait: { mode: 'poll' },
                 signal,
               }
-            ),
+          ),
           `Embedding text: ${query.substring(0, 50)}...`
-        )
+        ).then((result) => this.validateProviderOutput(result, 'text'))
       );
+      const embedding = admitted.value;
 
-      const embedding = Array.isArray(result)
-        ? result
-        : (result as any).embedding;
-
-      if (!embedding || !Array.isArray(embedding)) {
-        throw new EmbeddingError(
-          'Invalid embedding response from model',
-          502,
-          false
-        );
-      }
+      await recordEmbeddingProviderSuccess(admitted.lease);
 
       // Cache the result
       await cache.setTextEmbedding(query, embedding, this.model);
@@ -147,7 +152,30 @@ class ReplicateEmbeddingService implements EmbeddingService {
         processingTime: Date.now() - startTime,
       };
     } catch (error) {
-      throw this.normalizeError(error, 'text');
+      const normalized = this.normalizeError(error, 'text');
+      if (
+        normalized instanceof EmbeddingAdmissionError &&
+        isCircuitOpeningAdmissionReason(normalized.reason)
+      ) {
+        await recordEmbeddingAdmissionFailure(
+          normalized.reason,
+          normalized.retryAfterSec
+        );
+      }
+      if (
+        normalized instanceof EmbeddingProviderRateLimitError ||
+        normalized instanceof EmbeddingProviderUnavailableError
+      ) {
+        const lease = getEmbeddingProviderLease(normalized);
+        if (lease) {
+          await recordEmbeddingProviderFailure(
+            lease,
+            normalized.reason,
+            normalized.retryAfterSec
+          );
+        }
+      }
+      throw normalized;
     }
   }
 
@@ -177,7 +205,7 @@ class ReplicateEmbeddingService implements EmbeddingService {
     }
 
     try {
-      const result = await this.withPaidAdmission(() =>
+      const admitted = await this.withPaidAdmission(() =>
         this.withTimeout(
           (signal) =>
             this.replicate.run(
@@ -189,22 +217,13 @@ class ReplicateEmbeddingService implements EmbeddingService {
                 wait: { mode: 'poll' },
                 signal,
               }
-            ),
+          ),
           `Embedding image from: ${imageUrl.substring(0, 50)}...`
-        )
+        ).then((result) => this.validateProviderOutput(result, 'image'))
       );
+      const embedding = admitted.value;
 
-      const embedding = Array.isArray(result)
-        ? result
-        : (result as any).embedding;
-
-      if (!embedding || !Array.isArray(embedding)) {
-        throw new EmbeddingError(
-          'Invalid embedding response from model',
-          502,
-          false
-        );
-      }
+      await recordEmbeddingProviderSuccess(admitted.lease);
 
       // Cache the result
       if (checksum) {
@@ -218,7 +237,30 @@ class ReplicateEmbeddingService implements EmbeddingService {
         processingTime: Date.now() - startTime,
       };
     } catch (error) {
-      throw this.normalizeError(error, 'image');
+      const normalized = this.normalizeError(error, 'image');
+      if (
+        normalized instanceof EmbeddingAdmissionError &&
+        isCircuitOpeningAdmissionReason(normalized.reason)
+      ) {
+        await recordEmbeddingAdmissionFailure(
+          normalized.reason,
+          normalized.retryAfterSec
+        );
+      }
+      if (
+        normalized instanceof EmbeddingProviderRateLimitError ||
+        normalized instanceof EmbeddingProviderUnavailableError
+      ) {
+        const lease = getEmbeddingProviderLease(normalized);
+        if (lease) {
+          await recordEmbeddingProviderFailure(
+            lease,
+            normalized.reason,
+            normalized.retryAfterSec
+          );
+        }
+      }
+      throw normalized;
     }
   }
 
@@ -238,33 +280,88 @@ class ReplicateEmbeddingService implements EmbeddingService {
     return results;
   }
 
-  private async withPaidAdmission<T>(operation: () => Promise<T>): Promise<T> {
-    const rateLimit = await acquireEmbeddingRateLimit(this.userId);
-    if (!rateLimit.allowed) {
+  private async withPaidAdmission<T>(
+    operation: () => Promise<T>
+  ): Promise<{ value: T; lease: EmbeddingProviderCircuitLease }> {
+    // Read the shared circuit before taking any local/minute/daily capacity.
+    // A recovery probe is acquired only after those denials have passed, so a
+    // user/global/daily denial cannot strand a probe lease.
+    const providerCircuit = await getEmbeddingProviderCircuit();
+    if (!providerCircuit.available) {
       throw new EmbeddingAdmissionError(
-        rateLimit.reason ?? 'limiter_unavailable',
-        rateLimit.retryAfterSec
+        'limiter_unavailable',
+        providerCircuit.retryAfterSec
       );
     }
-
-    const lease: EmbeddingRateLimitLease | null = rateLimit.lease ?? null;
-    if (!lease) {
-      throw new EmbeddingAdmissionError('limiter_unavailable', 30);
+    if (providerCircuit.open) {
+      throw new EmbeddingProviderCircuitOpenError(providerCircuit.retryAfterSec);
     }
 
+    let reservedLease: EmbeddingRateLimitLease | undefined;
+    let reservationRefundRequired = false;
     try {
-      const dailyBudget = await acquireEmbeddingDailyBudget();
-      if (!dailyBudget.allowed) {
+      const admissionReservation = await acquireEmbeddingAdmissionReservation(this.userId);
+      if (!admissionReservation.allowed || !admissionReservation.reservation) {
         throw new EmbeddingAdmissionError(
-          dailyBudget.reason ?? 'limiter_unavailable',
-          dailyBudget.retryAfterSec
+          admissionReservation.reason ?? 'limiter_unavailable',
+          admissionReservation.retryAfterSec
         );
       }
 
-      return await operation();
+      const { lease, dailyReservation } = admissionReservation.reservation;
+      reservedLease = lease;
+      const providerAdmission = await acquireEmbeddingProviderAdmission();
+      if (!providerAdmission.allowed || !providerAdmission.lease) {
+        // The circuit can open after the paid reservation commits. Refund the
+        // exact minute/day/month reservation that was actually persisted.
+        reservationRefundRequired = true;
+        await refundEmbeddingAdmissionCapacity(lease, dailyReservation);
+        reservationRefundRequired = false;
+        if (providerAdmission.reason === 'provider_rate_limit') {
+          throw new EmbeddingProviderCircuitOpenError(
+            providerAdmission.retryAfterSec
+          );
+        }
+        throw new EmbeddingAdmissionError(
+          'limiter_unavailable',
+          providerAdmission.retryAfterSec
+        );
+      }
+
+      try {
+        return {
+          value: await operation(),
+          lease: providerAdmission.lease,
+        };
+      } catch (error) {
+        attachEmbeddingProviderLease(error, providerAdmission.lease);
+        throw error;
+      }
     } finally {
-      await releaseEmbeddingRateLimit(lease);
+      if (!reservationRefundRequired) {
+        await releaseEmbeddingRateLimit(reservedLease);
+      }
     }
+  }
+
+  private validateProviderOutput(result: unknown, context: string): number[] {
+    const embedding = Array.isArray(result)
+      ? result
+      : result && typeof result === 'object' && 'embedding' in result
+        ? (result as { embedding?: unknown }).embedding
+        : undefined;
+
+    if (
+      !Array.isArray(embedding) ||
+      embedding.length !== EMBEDDING_DIMENSION ||
+      embedding.some((value) => typeof value !== 'number' || !Number.isFinite(value))
+    ) {
+      throw new EmbeddingProviderUnavailableError(
+        `Invalid ${context} embedding response from model`,
+      );
+    }
+
+    return embedding;
   }
 
   private async withTimeout<T>(
@@ -277,10 +374,8 @@ class ReplicateEmbeddingService implements EmbeddingService {
       return operation(controller.signal);
     }
 
-    const timeoutError = new EmbeddingError(
+    const timeoutError = new EmbeddingProviderUnavailableError(
       `${context} timed out after ${this.timeout}ms`,
-      504,
-      true
     );
     let timedOut = false;
     const timeoutId = setTimeout(() => {
@@ -304,15 +399,59 @@ class ReplicateEmbeddingService implements EmbeddingService {
     }
   }
 
-  private normalizeError(error: unknown, context: string): EmbeddingError {
+  private normalizeError(
+    error: unknown,
+    context: string
+  ): EmbeddingError {
+    if (error instanceof EmbeddingAdmissionError) {
+      return error;
+    }
+
+    if (error instanceof EmbeddingProviderRateLimitError || error instanceof EmbeddingProviderUnavailableError) {
+      return error;
+    }
+
     if (error instanceof EmbeddingError) {
       return error;
     }
 
-    const message = error instanceof Error ? error.message : String(error);
-    const status = (error as any)?.status ?? (error as any)?.statusCode;
+    // Replicate's ApiError keeps the HTTP response under `response`; retain
+    // that provider contract here so real 429/5xx outcomes do not fall
+    // through to the generic unavailable path.
+    const envelope = asReplicateErrorEnvelope(error);
+    const response = envelope.response;
+    const status =
+      envelope.status ??
+      envelope.statusCode ??
+      response?.status ??
+      response?.statusCode;
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof status === 'number'
+          ? `provider returned HTTP ${status}`
+          : String(error);
 
     if (typeof status === 'number') {
+      if (status === 429) {
+        const rateLimited = new EmbeddingProviderRateLimitError(
+          this.retryAfterSeconds(error)
+        );
+        const lease = getEmbeddingProviderLease(error);
+        if (lease) attachEmbeddingProviderLease(rateLimited, lease);
+        return rateLimited;
+      }
+
+      if (status >= 500) {
+        const unavailable = new EmbeddingProviderUnavailableError(
+          `Embedding ${context} failed: ${message}`,
+          this.retryAfterSeconds(error),
+        );
+        const lease = getEmbeddingProviderLease(error);
+        if (lease) attachEmbeddingProviderLease(unavailable, lease);
+        return unavailable;
+      }
+
       if (status >= 400 && status < 500 && status !== 429) {
         return new EmbeddingError(
           `Embedding ${context} failed: ${message}`,
@@ -329,18 +468,58 @@ class ReplicateEmbeddingService implements EmbeddingService {
     }
 
     if (message.toLowerCase().includes('timeout')) {
-      return new EmbeddingError(
+      const unavailable = new EmbeddingProviderUnavailableError(
         `Embedding ${context} timed out: ${message}`,
-        504,
-        true
       );
+      const lease = getEmbeddingProviderLease(error);
+      if (lease) attachEmbeddingProviderLease(unavailable, lease);
+      return unavailable;
     }
 
-    return new EmbeddingError(
+    const unavailable = new EmbeddingProviderUnavailableError(
       `Embedding ${context} failed: ${message}`,
-      500,
-      true
     );
+    const lease = getEmbeddingProviderLease(error);
+    if (lease) attachEmbeddingProviderLease(unavailable, lease);
+    return unavailable;
+  }
+
+  private retryAfterSeconds(error: unknown): number | undefined {
+    const response = (error as { response?: { headers?: unknown } })?.response;
+    const value = (error as { retryAfterSec?: unknown })?.retryAfterSec;
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+    const retryAfter = (error as { retryAfter?: unknown })?.retryAfter;
+    if (typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter > 0) {
+      return retryAfter;
+    }
+    const headers = response?.headers as
+      | { get?: (name: string) => unknown; [key: string]: unknown }
+      | undefined;
+    const responseRetryAfter = typeof headers?.get === 'function'
+      ? headers.get('retry-after')
+      : headers?.['retry-after'] ?? headers?.['Retry-After'];
+    const retryAfterText = typeof responseRetryAfter === 'string'
+      ? responseRetryAfter.trim()
+      : undefined;
+    const parsedResponseRetryAfter = retryAfterText === undefined
+      ? responseRetryAfter
+      : Number(retryAfterText);
+    if (
+      typeof parsedResponseRetryAfter === 'number' &&
+      Number.isFinite(parsedResponseRetryAfter) &&
+      parsedResponseRetryAfter > 0
+    ) {
+      return parsedResponseRetryAfter;
+    }
+    if (retryAfterText) {
+      const retryAtMs = Date.parse(retryAfterText);
+      if (Number.isFinite(retryAtMs) && retryAtMs > Date.now()) {
+        return Math.max(1, Math.ceil((retryAtMs - Date.now()) / 1000));
+      }
+    }
+    return undefined;
   }
 }
 
@@ -351,13 +530,13 @@ class ReplicateEmbeddingService implements EmbeddingService {
 export function createEmbeddingService(userId: string): EmbeddingService {
   const embeddingGate = getRuntimeGate('embeddings');
   if (!embeddingGate.enabled) {
-    throw new EmbeddingError(embeddingGate.message, 503, true);
+    throw new EmbeddingConfigurationError(embeddingGate.message);
   }
 
   const apiToken = process.env.REPLICATE_API_TOKEN;
 
   if (!apiToken || apiToken === 'your_replicate_token_here') {
-    throw new EmbeddingError('Replicate API token not configured');
+    throw new EmbeddingConfigurationError('Replicate API token not configured');
   }
 
   if (!userId) {

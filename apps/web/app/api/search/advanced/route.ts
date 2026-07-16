@@ -4,6 +4,12 @@ import { unstable_rethrow } from 'next/navigation';
 import { Prisma } from '@prisma/client';
 import { prisma, logSearch } from '@/lib/db';
 import { createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
+import {
+  EmbeddingConfigurationError,
+  embeddingConfigurationHeaders,
+  embeddingRetryHeaders,
+  reportEmbeddingConfigurationErrorOnce,
+} from '@/lib/embedding-errors';
 import { getCacheService } from '@/lib/cache';
 import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
@@ -100,14 +106,18 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
       return runtimeGateResponse(embeddingGate);
     }
 
-    // Initialize embedding service
+    // Typed provider configuration failures flow to the shared
+    // EmbeddingError HTTP mapping below; metadata fallback would hide a
+    // provider-unavailable outcome as a successful semantic search.
     let embeddingService;
     try {
       embeddingService = createEmbeddingService(userId);
     } catch (error) {
-      // Failed to initialize embedding service
+      if (error instanceof EmbeddingError) throw error;
 
-      // Fallback to metadata-only search when embeddings unavailable
+      // Preserve the legacy metadata fallback only for an untyped internal
+      // initialization error. Real provider/admission errors stay typed and
+      // reach the shared 429/503 mapping below.
       const assets = await performMetadataSearch(userId, query, filters, limit, offset);
 
       return NextResponse.json({
@@ -321,8 +331,15 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     unstable_rethrow(error);
 
     if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
-    if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
+    // Typed embedding outcomes keep their Retry-After contract below; only
+    // genuine enrollment failures take the duck-typed enrollment path.
+    if (isEnrollmentUnavailableError(error) && !(error instanceof EmbeddingError)) {
+      return enrollmentUnavailableResponse();
+    }
     if (isEnrollmentIdentityConflictError(error)) return enrollmentIdentityConflictResponse();
+    if (error instanceof EmbeddingConfigurationError) {
+      await reportEmbeddingConfigurationErrorOnce(error, 'advanced-search:configuration');
+    }
     // Error performing advanced search
 
     if (error instanceof EmbeddingError) {
@@ -334,7 +351,12 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
           query: query || '',
           pagination: { total: 0, limit: limit || 30, offset: offset || 0, hasMore: false },
         },
-        { status: error.statusCode || 500 }
+        {
+          status: error.statusCode || 500,
+          headers: error instanceof EmbeddingConfigurationError
+            ? embeddingConfigurationHeaders(error)
+            : embeddingRetryHeaders(error),
+        }
       );
     }
 

@@ -32,6 +32,11 @@ BEGIN
      OR to_regclass('public.stripe_cancellation_maintenance_tokens') IS NULL THEN
     RAISE EXCEPTION 'Stripe ledger migrations are incomplete';
   END IF;
+  -- The embedding resilience migrations must precede this authority contract:
+  -- the runtime app role is granted DML on the provider circuit below.
+  IF to_regclass('public.embedding_provider_circuits') IS NULL THEN
+    RAISE EXCEPTION 'Embedding resilience migrations are incomplete';
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'stripe_cancellation_maintenance_tokens' AND column_name = 'legal_minimum_since')
      OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'stripe_cancellation_maintenance_tokens' AND column_name = 'subject_kind')
      OR NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'stripe_cancellation_maintenance_tokens' AND column_name = 'subject_id')
@@ -61,6 +66,10 @@ ALTER TABLE public.stripe_cancellation_deliveries OWNER TO sploot_stripe_ledger_
 ALTER TABLE public.stripe_cancellation_maintenance OWNER TO sploot_stripe_ledger_owner;
 ALTER TABLE public.stripe_cancellation_maintenance_tokens OWNER TO sploot_stripe_ledger_owner;
 ALTER TABLE sploot_bootstrap.stripe_ledger_bootstrap_state OWNER TO sploot_stripe_ledger_owner;
+REVOKE ALL ON SCHEMA sploot_bootstrap FROM PUBLIC;
+REVOKE ALL ON TABLE sploot_bootstrap.stripe_ledger_bootstrap_state FROM PUBLIC, sploot_stripe_app;
+GRANT USAGE ON SCHEMA sploot_bootstrap TO sploot_stripe_app;
+GRANT SELECT ON TABLE sploot_bootstrap.stripe_ledger_bootstrap_state TO sploot_stripe_app;
 
 -- Deliberate mid-install failure hook for rollback/recovery proof. Enabled by
 -- running the script under PGOPTIONS="-c sploot.stripe_bootstrap_fault=post".
@@ -317,7 +326,7 @@ END
 $$;
 
 CREATE OR REPLACE FUNCTION public.sploot_stripe_ledger_append_only()
-RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog, public AS $$
+RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public AS $$
 BEGIN
   IF current_user = 'sploot_stripe_ledger_owner' AND pg_catalog.current_setting('sploot.ledger_fenced_mutation', true) IN ('purge:v1', 'purge-provenance:v1') THEN
     IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
@@ -340,9 +349,9 @@ ALTER FUNCTION public.sploot_stripe_ledger_append_only() OWNER TO sploot_stripe_
 DROP TRIGGER IF EXISTS stripe_cancellation_events_append_only ON public.stripe_cancellation_events;
 DROP TRIGGER IF EXISTS stripe_cancellation_audit_append_only ON public.stripe_cancellation_audit;
 DROP TRIGGER IF EXISTS stripe_cancellation_maintenance_append_only ON public.stripe_cancellation_maintenance;
-CREATE TRIGGER stripe_cancellation_events_append_only BEFORE UPDATE OR DELETE ON public.stripe_cancellation_events FOR EACH ROW EXECUTE FUNCTION public.sploot_stripe_ledger_append_only();
-CREATE TRIGGER stripe_cancellation_audit_append_only BEFORE UPDATE OR DELETE ON public.stripe_cancellation_audit FOR EACH ROW EXECUTE FUNCTION public.sploot_stripe_ledger_append_only();
-CREATE TRIGGER stripe_cancellation_maintenance_append_only BEFORE UPDATE OR DELETE ON public.stripe_cancellation_maintenance FOR EACH ROW EXECUTE FUNCTION public.sploot_stripe_ledger_append_only();
+CREATE TRIGGER stripe_cancellation_events_append_only BEFORE DELETE OR UPDATE ON public.stripe_cancellation_events FOR EACH ROW EXECUTE FUNCTION public.sploot_stripe_ledger_append_only();
+CREATE TRIGGER stripe_cancellation_audit_append_only BEFORE DELETE OR UPDATE ON public.stripe_cancellation_audit FOR EACH ROW EXECUTE FUNCTION public.sploot_stripe_ledger_append_only();
+CREATE TRIGGER stripe_cancellation_maintenance_append_only BEFORE DELETE OR UPDATE ON public.stripe_cancellation_maintenance FOR EACH ROW EXECUTE FUNCTION public.sploot_stripe_ledger_append_only();
 ALTER TABLE public.stripe_cancellation_events ENABLE ALWAYS TRIGGER stripe_cancellation_events_append_only;
 ALTER TABLE public.stripe_cancellation_audit ENABLE ALWAYS TRIGGER stripe_cancellation_audit_append_only;
 ALTER TABLE public.stripe_cancellation_maintenance ENABLE ALWAYS TRIGGER stripe_cancellation_maintenance_append_only;
@@ -435,19 +444,36 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.user_storage_quotas, public.storage_quota_reservations,
   public.assets, public.asset_embeddings, public.tags, public.asset_tags,
   public.search_logs, public.text_embedding_cache, public.embedding_rate_buckets,
-  public.embedding_rate_leases
+  public.embedding_rate_leases, public.embedding_provider_circuits
 TO sploot_stripe_app;
+-- Health may inspect migration names to bind the ready marker to the newest
+-- applied schema version. The runtime remains unable to mutate Prisma's ledger.
+GRANT SELECT ON TABLE public._prisma_migrations TO sploot_stripe_app;
 
--- Strip PUBLIC EXECUTE from every SECURITY DEFINER function, then re-grant
--- only the exact role contract.
+-- Strip PUBLIC EXECUTE from every SECURITY DEFINER function and from trigger
+-- functions, then re-grant only the exact runtime or migration-authority
+-- contract.
 DO $$
 DECLARE fn RECORD;
 BEGIN
-  FOR fn IN SELECT p.oid::regprocedure AS signature FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prosecdef LOOP
+  FOR fn IN
+    SELECT p.oid::regprocedure AS signature
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND (p.prosecdef OR p.proname IN (
+        'sploot_stripe_ledger_append_only',
+        'enforce_asset_embedding_revival_budget'
+      ))
+  LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, sploot_stripe_app, sploot_stripe_schema_migrator, sploot_stripe_ledger_issuer, sploot_stripe_ledger_consumer, sploot_stripe_ledger_maintenance', fn.signature);
   END LOOP;
 END
 $$;
+
+-- The schema migrator must be able to recreate its own trigger during an
+-- idempotent migration replay. Runtime roles and PUBLIC retain no direct call.
+GRANT EXECUTE ON FUNCTION public.enforce_asset_embedding_revival_budget() TO sploot_stripe_schema_migrator;
 
 GRANT EXECUTE ON FUNCTION public.sploot_append_stripe_event(TEXT,TEXT,INTEGER,BOOLEAN,TEXT,TEXT,TEXT,INTEGER,JSONB,TEXT,TEXT,BYTEA,BYTEA,TEXT,TEXT) TO sploot_stripe_ledger_issuer;
 GRANT EXECUTE ON FUNCTION public.sploot_record_stripe_cancellation(TEXT,TEXT,INTEGER,BOOLEAN,TEXT,TEXT,TEXT,INTEGER,JSONB,TEXT,TEXT,BYTEA,BYTEA,TEXT,TEXT,TEXT,INTEGER,INTEGER,INTEGER) TO sploot_stripe_ledger_issuer;
@@ -459,6 +485,274 @@ GRANT EXECUTE ON FUNCTION public.sploot_stripe_delivery_health(TEXT) TO sploot_s
 GRANT EXECUTE ON FUNCTION public.sploot_issue_stripe_maintenance_token(TEXT,INTEGER,TEXT,TEXT,TEXT,TEXT,TEXT,TIMESTAMP(3),TIMESTAMP(3),TIMESTAMP(3),TIMESTAMP(3),TIMESTAMP(3)) TO sploot_stripe_ledger_issuer;
 GRANT EXECUTE ON FUNCTION public.sploot_purge_stripe_audit(TEXT,INTEGER,TEXT,TEXT,TEXT,TEXT,TIMESTAMP(3),TIMESTAMP(3),TIMESTAMP(3)) TO sploot_stripe_ledger_maintenance;
 GRANT EXECUTE ON FUNCTION public.sploot_purge_stripe_raw_provenance(TEXT,INTEGER,TEXT,TEXT,TEXT,TEXT,TIMESTAMP(3),TIMESTAMP(3),TIMESTAMP(3)) TO sploot_stripe_ledger_maintenance;
+
+-- Verify the catalog contract after grants are applied. The deployment
+-- verifier performs the corresponding normalized body comparison; this SQL
+-- gate independently refuses wrong signatures, owners, SECURITY DEFINER
+-- posture, search_path, or a leaked PUBLIC/app EXECUTE grant.
+DO $$
+DECLARE bad RECORD;
+BEGIN
+  SELECT * INTO bad
+  FROM (VALUES
+    ('sploot_append_stripe_event', 'p_event_id text, p_event_type text, p_created_epoch integer, p_livemode boolean, p_account_id text, p_object_id text, p_object_type text, p_signature_timestamp integer, p_raw_payload jsonb, p_payload_digest text, p_raw_body_digest text, p_raw_body_ciphertext bytea, p_raw_body_nonce bytea, p_raw_body_key_id text, p_signature_header_digest text', TRUE),
+    ('sploot_record_stripe_cancellation', 'p_event_id text, p_event_type text, p_created_epoch integer, p_livemode boolean, p_account_id text, p_object_id text, p_object_type text, p_signature_timestamp integer, p_raw_payload jsonb, p_payload_digest text, p_raw_body_digest text, p_raw_body_ciphertext bytea, p_raw_body_nonce bytea, p_raw_body_key_id text, p_signature_header_digest text, p_reason text, p_max_cancellations integer, p_window_seconds integer, p_now integer', TRUE),
+    ('sploot_append_stripe_audit', 'p_event_id text, p_alert_key text, p_action text, p_provenance_digest text, p_details jsonb', TRUE),
+    ('sploot_stripe_claim_deliveries', 'p_alert_key text, p_now integer, p_lease_seconds integer, p_claim_token text', TRUE),
+    ('sploot_stripe_drain_deliveries', 'p_now integer, p_lease_seconds integer, p_claim_token text', TRUE),
+    ('sploot_stripe_complete_delivery', 'p_delivery_key text, p_alert_key text, p_adapter text, p_replay_key text, p_payload_digest text, p_payload_version text, p_claim_token text, p_generation integer, p_succeeded boolean, p_error text, p_now integer', TRUE),
+    ('sploot_replay_stripe_dead_letter', 'p_replay_key text, p_now integer', TRUE),
+    ('sploot_stripe_delivery_health', 'p_alert_key text', TRUE),
+    ('sploot_issue_stripe_maintenance_token', 'p_token_digest text, p_generation integer, p_actor text, p_purpose text, p_subject_kind text, p_subject_id text, p_time_basis text, p_range_start timestamp without time zone, p_range_end timestamp without time zone, p_legal_minimum_since timestamp without time zone, p_issued_at timestamp without time zone, p_expires_at timestamp without time zone', TRUE),
+    ('sploot_stripe_ledger_append_only', '', FALSE),
+    ('sploot_purge_stripe_audit', 'p_token text, p_generation integer, p_actor text, p_purpose text, p_subject_kind text, p_subject_id text, p_range_start timestamp without time zone, p_range_end timestamp without time zone, p_legal_minimum_since timestamp without time zone', TRUE),
+    ('sploot_purge_stripe_raw_provenance', 'p_token text, p_generation integer, p_actor text, p_purpose text, p_subject_kind text, p_subject_id text, p_range_start timestamp without time zone, p_range_end timestamp without time zone, p_legal_minimum_since timestamp without time zone', TRUE)
+  ) AS expected(name, arguments, security_definer)
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = expected.name
+      AND pg_get_function_identity_arguments(p.oid) = expected.arguments
+      AND pg_get_userbyid(p.proowner) = 'sploot_stripe_ledger_owner'
+      AND p.prosecdef = expected.security_definer
+      AND (expected.security_definer = FALSE OR p.proconfig @> ARRAY['search_path=pg_catalog, public'])
+  )
+  LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'final Stripe function signature/security contract is incomplete: % (%)', bad.name, bad.arguments;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN (
+        'sploot_append_stripe_event', 'sploot_record_stripe_cancellation',
+        'sploot_append_stripe_audit', 'sploot_stripe_claim_deliveries',
+        'sploot_stripe_drain_deliveries', 'sploot_stripe_complete_delivery',
+        'sploot_replay_stripe_dead_letter', 'sploot_stripe_delivery_health',
+        'sploot_issue_stripe_maintenance_token', 'sploot_stripe_ledger_append_only',
+        'sploot_purge_stripe_audit', 'sploot_purge_stripe_raw_provenance'
+      )
+      AND (has_function_privilege('sploot_stripe_app', p.oid, 'EXECUTE')
+        OR EXISTS (
+          SELECT 1 FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
+          WHERE acl.grantee = 0 AND acl.privilege_type = 'EXECUTE'
+        ))
+  ) THEN
+    RAISE EXCEPTION 'final Stripe function grant contract leaks PUBLIC or app EXECUTE';
+  END IF;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM (VALUES
+      ('asset_embeddings', 'attempt_count', 'integer', TRUE, '0'),
+      ('asset_embeddings', 'next_attempt_at', 'timestamp(3) without time zone', FALSE, NULL),
+      ('asset_embeddings', 'terminal_at', 'timestamp(3) without time zone', FALSE, NULL),
+      ('asset_embeddings', 'processing_claim_token', 'text', FALSE, NULL),
+      ('asset_embeddings', 'revive_count', 'integer', TRUE, '0'),
+      ('asset_embeddings', 'image_embedding', 'vector(768)', FALSE, NULL),
+      ('embedding_provider_circuits', 'generation', 'integer', TRUE, '0'),
+      ('embedding_provider_circuits', 'probe_until', 'timestamp(3) without time zone', FALSE, NULL),
+      ('embedding_provider_circuits', 'probe_generation', 'integer', FALSE, NULL),
+      ('embedding_provider_circuits', 'probe_lease_token', 'text', FALSE, NULL)
+    ) AS expected(table_name, column_name, type_name, not_null, column_default)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM pg_catalog.pg_class table_catalog
+      JOIN pg_catalog.pg_namespace namespace_catalog ON namespace_catalog.oid = table_catalog.relnamespace
+      JOIN pg_catalog.pg_attribute attribute_catalog ON attribute_catalog.attrelid = table_catalog.oid
+      LEFT JOIN pg_catalog.pg_attrdef default_catalog
+        ON default_catalog.adrelid = attribute_catalog.attrelid
+       AND default_catalog.adnum = attribute_catalog.attnum
+      WHERE namespace_catalog.nspname = 'public'
+        AND table_catalog.relname = expected.table_name
+        AND attribute_catalog.attname = expected.column_name
+        AND pg_catalog.format_type(attribute_catalog.atttypid, attribute_catalog.atttypmod) = expected.type_name
+        AND attribute_catalog.attnotnull = expected.not_null
+        AND pg_catalog.pg_get_expr(default_catalog.adbin, default_catalog.adrelid) IS NOT DISTINCT FROM expected.column_default
+        AND attribute_catalog.attnum > 0
+        AND NOT attribute_catalog.attisdropped
+    )
+  ) THEN
+    RAISE EXCEPTION 'final embedding column type/default/nullability contract is incomplete';
+  END IF;
+END;
+$$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM (VALUES
+      -- pg_get_triggerdef emits multi-event triggers in catalog bit order,
+      -- independent of the order used by CREATE TRIGGER.
+      ('stripe_cancellation_events_append_only', 'create trigger stripe_cancellation_events_append_only before delete or update on stripe_cancellation_events for each row execute function sploot_stripe_ledger_append_only()', 'A', 'sploot_stripe_ledger_owner'),
+      ('stripe_cancellation_audit_append_only', 'create trigger stripe_cancellation_audit_append_only before delete or update on stripe_cancellation_audit for each row execute function sploot_stripe_ledger_append_only()', 'A', 'sploot_stripe_ledger_owner'),
+      ('stripe_cancellation_maintenance_append_only', 'create trigger stripe_cancellation_maintenance_append_only before delete or update on stripe_cancellation_maintenance for each row execute function sploot_stripe_ledger_append_only()', 'A', 'sploot_stripe_ledger_owner'),
+      ('asset_embeddings_revival_budget', 'create trigger asset_embeddings_revival_budget before update on asset_embeddings for each row execute function enforce_asset_embedding_revival_budget()', 'O', 'sploot_stripe_schema_migrator')
+    ) AS expected(trigger_name, definition, enabled, function_owner)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM pg_catalog.pg_trigger trigger_catalog
+      JOIN pg_catalog.pg_class table_catalog ON table_catalog.oid = trigger_catalog.tgrelid
+      JOIN pg_catalog.pg_namespace namespace_catalog ON namespace_catalog.oid = table_catalog.relnamespace
+      JOIN pg_catalog.pg_proc function_catalog ON function_catalog.oid = trigger_catalog.tgfoid
+      WHERE namespace_catalog.nspname = 'public'
+        AND trigger_catalog.tgname = expected.trigger_name
+        AND NOT trigger_catalog.tgisinternal
+        AND trigger_catalog.tgenabled = expected.enabled
+        AND pg_catalog.pg_get_userbyid(function_catalog.proowner) = expected.function_owner
+        AND replace(replace(regexp_replace(lower(pg_catalog.pg_get_triggerdef(trigger_catalog.oid)), '\s+', '', 'g'), '"', ''), 'public.', '')
+            = replace(replace(regexp_replace(expected.definition, '\s+', '', 'g'), '"', ''), 'public.', '')
+    )
+  ) THEN
+    RAISE EXCEPTION 'final trigger definition/owner contract is incomplete';
+  END IF;
+END;
+$$;
+
+-- The bootstrap contract is not ready unless the final embedding resilience
+-- schema is present. This closes the old false-green path that checked only
+-- the early limiter tables/circuit breaker.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'asset_embeddings'
+      AND column_name = 'processing_claim_token'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'asset_embeddings'
+      AND column_name = 'revive_count'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE c.conname = 'asset_embeddings_processing_claim_token_state'
+      AND t.relname = 'asset_embeddings'
+      AND n.nspname = 'public'
+      AND c.convalidated
+      AND regexp_replace(regexp_replace(lower(pg_get_constraintdef(c.oid)), '\s+', '', 'g'), '::[a-z_][a-z0-9_]*(\([0-9]+\))?', '', 'g')
+          = 'check(((processing_claim_tokenisnull)or(status=''processing'')))'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE c.conname = 'asset_embeddings_revive_count_bounded'
+      AND t.relname = 'asset_embeddings'
+      AND n.nspname = 'public'
+      AND c.convalidated
+      AND regexp_replace(regexp_replace(lower(pg_get_constraintdef(c.oid)), '\s+', '', 'g'), '::[a-z_][a-z0-9_]*(\([0-9]+\))?', '', 'g')
+          = 'check(((revive_count>=0)and(revive_count<=1)))'
+  ) OR NOT EXISTS (
+    SELECT 1
+    FROM pg_trigger tr
+    JOIN pg_class t ON t.oid = tr.tgrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    JOIN pg_proc fn ON fn.oid = tr.tgfoid
+    WHERE tr.tgname = 'asset_embeddings_revival_budget'
+      AND t.relname = 'asset_embeddings'
+      AND n.nspname = 'public'
+      AND NOT tr.tgisinternal
+      AND pg_get_userbyid(fn.proowner) = 'sploot_stripe_schema_migrator'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
+      AND column_name = 'attempt_count'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
+      AND column_name = 'next_attempt_at'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'asset_embeddings'
+      AND column_name = 'terminal_at'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
+      AND column_name = 'generation'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
+      AND column_name = 'probe_until'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
+      AND column_name = 'probe_generation'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'embedding_provider_circuits'
+      AND column_name = 'probe_lease_token'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE c.conname = 'embedding_attempt_count_ceiling'
+      AND t.relname = 'embedding_rate_buckets'
+      AND n.nspname = 'public'
+      AND c.convalidated
+      AND regexp_replace(regexp_replace(lower(pg_get_constraintdef(c.oid)), '\s+', '', 'g'), '::[a-z_][a-z0-9_]*(\([0-9]+\))?', '', 'g')
+          = 'check((((key!~~''embedding:daily:%'')or(count<=2272))and((key!~~''embedding:monthly:%'')or(count<=68181))))'
+  ) OR to_regclass('public.asset_embeddings_pending_next_attempt_idx') IS NULL
+    OR to_regclass('public.embedding_provider_circuits_open_until_idx') IS NULL
+    OR NOT EXISTS (
+      SELECT 1
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_index i ON i.indexrelid = c.oid
+      WHERE n.nspname = 'public'
+        AND c.relname = 'asset_embeddings_pending_next_attempt_idx'
+        AND pg_get_userbyid(c.relowner) = 'sploot_stripe_schema_migrator'
+        AND regexp_replace(regexp_replace(lower(pg_get_indexdef(i.indexrelid)), '\s+', '', 'g'), '["]', '', 'g')
+            = 'createindexasset_embeddings_pending_next_attempt_idxonpublic.asset_embeddingsusingbtree(status,next_attempt_at,createdat)where((status=''pending''::text)and(terminal_atisnull))'
+    ) OR NOT EXISTS (
+      SELECT 1
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_index i ON i.indexrelid = c.oid
+      WHERE n.nspname = 'public'
+        AND c.relname = 'embedding_provider_circuits_open_until_idx'
+        AND pg_get_userbyid(c.relowner) = 'sploot_stripe_schema_migrator'
+        AND regexp_replace(regexp_replace(lower(pg_get_indexdef(i.indexrelid)), '\s+', '', 'g'), '["]', '', 'g')
+            = 'createindexembedding_provider_circuits_open_until_idxonpublic.embedding_provider_circuitsusingbtree(open_until)'
+    ) OR (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public'
+            AND c.relname = ANY (ARRAY[
+              'stripe_cancellation_events', 'stripe_cancellation_audit',
+              'stripe_cancellation_alerts', 'stripe_cancellation_deliveries',
+              'stripe_cancellation_maintenance', 'stripe_cancellation_maintenance_tokens'
+            ])
+            AND pg_get_userbyid(c.relowner) = 'sploot_stripe_ledger_owner') <> 6
+    OR (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = 'public'
+            AND p.proname = ANY (ARRAY[
+              'sploot_append_stripe_event', 'sploot_record_stripe_cancellation',
+              'sploot_append_stripe_audit', 'sploot_stripe_claim_deliveries',
+              'sploot_stripe_drain_deliveries', 'sploot_stripe_complete_delivery',
+              'sploot_replay_stripe_dead_letter', 'sploot_stripe_delivery_health',
+              'sploot_issue_stripe_maintenance_token', 'sploot_stripe_ledger_append_only',
+              'sploot_purge_stripe_audit', 'sploot_purge_stripe_raw_provenance'
+            ])
+            AND pg_get_userbyid(p.proowner) = 'sploot_stripe_ledger_owner') <> 12
+  THEN
+    RAISE EXCEPTION 'final embedding claim-token schema contract is incomplete';
+  END IF;
+END;
+$$;
 
 UPDATE sploot_bootstrap.stripe_ledger_bootstrap_state
 SET phase = 'ready', version = current_setting('sploot.bootstrap_version'), updated_at = CURRENT_TIMESTAMP,

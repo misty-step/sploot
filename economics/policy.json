@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "rateFreshnessDays": 30,
+  "liveUsageFreshnessHours": 48,
+  "enrollmentMode": "CLOSED",
+  "freeFullAllowanceAccounts": 75,
+  "targetPolicy": {
+    "freeSourceStorageGb": 0.5,
+    "freeDeliveryGb": 1,
+    "freeFullAllowanceAccounts": 75,
+    "admissionImplementation": "unimplemented; enrollment remains CLOSED"
+  },
+  "planBudgetSemantics": "monthlyInfrastructureUsd is a target direct-variable ceiling in unrounded USD for each scenario's high-sensitivity full allowance; it is not a currently enforced provider-dollar cap.",
+  "sensitivity": {
+    "low": {"renditionMultiplier": 1.05, "originMissRatio": 0.05, "inferenceAttemptMultiplier": 1, "databaseComputeMultiplier": 0.75, "stripeVariableSurcharge": 0},
+    "base": {"renditionMultiplier": 1.1, "originMissRatio": 0.15, "inferenceAttemptMultiplier": 1.05, "databaseComputeMultiplier": 1, "stripeVariableSurcharge": 0.015},
+    "high": {"renditionMultiplier": 1.2, "originMissRatio": 0.3, "inferenceAttemptMultiplier": 1.2, "databaseComputeMultiplier": 1.5, "stripeVariableSurcharge": 0.025}
+  },
+  "planBudgets": {
+    "free": {"monthlyInfrastructureUsd": 0.4, "dailyInferenceUsd": 0.00858, "monthlyInferenceUsd": 0.17512, "dailyInferenceAttempts": 39, "monthlyInferenceAttempts": 796},
+    "collector": {"monthlyInfrastructureUsd": 3, "dailyInferenceUsd": 0.06556, "monthlyInferenceUsd": 1.31384, "dailyInferenceAttempts": 298, "monthlyInferenceAttempts": 5972},
+    "archive": {"monthlyInfrastructureUsd": 13, "dailyInferenceUsd": 0.2189, "monthlyInferenceUsd": 3.50394, "dailyInferenceAttempts": 995, "monthlyInferenceAttempts": 15927}
+  },
+  "global": {
+    "preGaDailyVariableUsd": 0.75,
+    "preGaMonthlyVariableUsd": 25,
+    "replicateDailyUsd": 0.49984,
+    "replicateDailyAttempts": 2272,
+    "replicateMonthlyUsd": 14.99982,
+    "replicateMonthlyAttempts": 68181,
+    "paidMonthlyFormula": "25 + 2.75 * collectorSubscriptions + 12.50 * archiveSubscriptions",
+    "paidDailyFormula": "paidMonthlyBudget / 30"
+  },
+  "providerHardCaps": [
+    {"provider": "Application admission", "amountUsd": 25, "period": "calendar month", "action": "deny new provider work before Blob, Replicate, or public delivery", "enforcementStatus": "attempt_only", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Modeled dollar reservation and reconciliation are a later implementation; enrollment is CLOSED."},
+    {"provider": "Replicate", "amountUsd": 15, "period": "calendar month", "action": "deny the target paid-attempt budget before provider work", "enforcementStatus": "attempt_only", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Runtime has attempt counters only; provider billed-dollar readback is unavailable."},
+    {"provider": "Vercel Blob/CDN", "amountUsd": null, "period": "current billing cycle", "action": "operator spend action plus application byte/request admission", "enforcementStatus": "unverified", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Blob billing is account-wide and unattributed at store level."},
+    {"provider": "Neon", "amountUsd": null, "period": "current billing cycle", "action": "provider plan controls plus application query/work admission", "enforcementStatus": "unverified", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Production plan, history, compute, and transfer readbacks are unavailable."},
+    {"provider": "DigitalOcean", "amountUsd": null, "period": "current billing cycle", "action": "fixed component sizing, bounded jobs, and team billing alert", "enforcementStatus": "unverified", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Account-wide readback cannot allocate Sploot-only accrued charges."},
+    {"provider": "Clerk", "amountUsd": null, "period": "monthly retained-user period", "action": "closed enrollment until plan and MRU authority are verified", "enforcementStatus": "unverified", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Dashboard plan and MRU readback are unavailable."},
+    {"provider": "Stripe", "amountUsd": null, "period": "billing period", "action": "allowlisted price, idempotent webhook, and fail-closed entitlement", "enforcementStatus": "unverified", "evidenceStatus": "unverified", "evidence": null, "lastVerifiedAt": null, "evidenceNote": "Provider receipts and paid-admission ledger are not part of this card."}
+  ]
+}
