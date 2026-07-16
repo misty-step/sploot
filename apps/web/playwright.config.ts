@@ -10,6 +10,7 @@ const authProjectSelected = commandArgs.some((arg, index) =>
 const webServerCommand = authProjectSelected
   ? 'pnpm --filter web build && PORT=' + port + ' pnpm --filter web start --hostname 0.0.0.0'
   : 'pnpm e2e:public-truth:serve';
+const webServerUrl = authProjectSelected ? baseURL + '/api/health/live' : baseURL;
 
 export default defineConfig({
   testDir: './e2e',
@@ -40,7 +41,7 @@ export default defineConfig({
   ],
   webServer: {
     command: webServerCommand,
-    url: baseURL,
+    url: webServerUrl,
     reuseExistingServer: false,
     timeout: 120_000,
     env: {

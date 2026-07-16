@@ -23,6 +23,8 @@ describe('telemetry Playwright project contract', () => {
     expect(playwright).toContain("name: 'auth'");
     expect(playwright).toContain("arg === '--project=auth'");
     expect(playwright).toContain("pnpm --filter web build && PORT=' + port + ' pnpm --filter web start --hostname 0.0.0.0");
+    expect(playwright).toContain("const webServerUrl = authProjectSelected ? baseURL + '/api/health/live' : baseURL;");
+    expect(playwright).toContain('url: webServerUrl');
     expect(playwright).toContain("SPLOOT_PUBLIC_TRUTH_E2E_BUILD: authProjectSelected ? 'false' : 'true'");
     expect(playwright).toContain("NEXT_PUBLIC_TELEMETRY_ENDPOINT: '/api/telemetry'");
     expect(workflow).toContain('pnpm --filter web e2e:auth -- e2e/portable-telemetry.spec.ts');
