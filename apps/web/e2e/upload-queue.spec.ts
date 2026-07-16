@@ -311,8 +311,8 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     await context.setOffline(false);
     await expect.poll(() => signedOut.evaluate(() => navigator.onLine), { timeout: 5_000 }).toBe(true);
     await openSignedOutApp(signedOut);
-    expect(appProxy.connectResponse(new URL(browserBaseURL).host)).toMatch(/^HTTP\/1\.1 200/);
-    expect(appProxy.connectResponse('not-the-app.test:80')).toMatch(/^HTTP\/1\.1 403/);
+    await expect(appProxy.connectResponse(new URL(browserBaseURL).host)).resolves.toMatch(/^HTTP\/1\.1 200/);
+    await expect(appProxy.connectResponse('not-the-app.test:80')).resolves.toMatch(/^HTTP\/1\.1 403/);
     expect(appProxy.tunneledConnections()).toBeGreaterThan(0);
     expect(appProxy.forwardedRequests()).toBeGreaterThan(0);
     const accountATab = await context.newPage();
