@@ -116,7 +116,7 @@ record.
       "assets": 400, "bytes": 260000000, "served": true }
   ]
 }
-``````
+```
 
 Portability notes:
 
