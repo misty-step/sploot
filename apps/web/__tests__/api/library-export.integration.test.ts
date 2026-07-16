@@ -168,6 +168,24 @@ describe.skipIf(!dbAvailable)('library export persistence (DB)', () => {
     expect(row!.egressBytes).toBe(BigInt(0));
   });
 
+  it('serializes concurrent failure cap updates after re-reading under the identity lock', async () => {
+    const { export: created } = await createOrReuseExport(OWNER);
+    const failure = (part: number, index: number) => ({ assetId: `failure-${part}-${index}`, archivePath: `assets/failure-${part}-${index}.png`, reason: 'object_missing' });
+    await prisma!.libraryExport.update({
+      where: { id: created.id },
+      data: { failures: { '0': Array.from({ length: 8_000 }, (_, index) => failure(0, index)) } },
+    });
+    const outcomes = await Promise.allSettled([
+      recordPartOutcome(created.id, 1, Array.from({ length: 2_000 }, (_, index) => failure(1, index))),
+      recordPartOutcome(created.id, 2, Array.from({ length: 2_000 }, (_, index) => failure(2, index))),
+    ]);
+    expect(outcomes.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(outcomes.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    const row = (await getOwnedExport(OWNER, created.id))!;
+    const total = Object.values(row.failures).reduce((sum, items) => sum + items.length, 0);
+    expect(total).toBeLessThanOrEqual(10_000);
+  });
+
   describe('egress reservation under production-shaped concurrency', () => {
     it('concurrent reservations serialize on the row and never collectively exceed the allowance', async () => {
       const { export: created } = await createOrReuseExport(OWNER);
