@@ -1,3 +1,6 @@
+import { IS_DEV_BUILD } from './build-mode';
+import { E2E_AUTH_MODE } from './env';
+
 export const UPDATE_STATUS_STORAGE_KEY = 'sploot:update-status';
 export const UPDATE_MESSAGES = {
   TEST_SET_AVAILABLE: 'sploot:update-status:test-set-available',
@@ -5,6 +8,7 @@ export const UPDATE_MESSAGES = {
 } as const;
 
 const UPDATE_CHECK_TIMEOUT_MS = 3_000;
+const TEST_INSTALLED_VERSION_KEY = 'sploot:update-status:test-installed-version';
 
 type UpdateCheckResult = { status?: 'update' | 'no_update' | 'throttled'; version?: string };
 type StoredUpdateStatus = { availableVersion: string; dismissedVersion: string | null };
@@ -12,7 +16,6 @@ export type UpdateNotice = { version: string; dismissed: boolean };
 
 let setupComplete = false;
 let startupCheckStarted = false;
-let testInstalledVersion: string | null = null;
 
 function normalizeVersion(version: unknown): string | null {
   if (typeof version !== 'string') return null;
@@ -36,8 +39,16 @@ export function isNewerVersion(candidate: string, installed: string): boolean {
   return false;
 }
 
-function installedVersion(): string | null {
-  if (testInstalledVersion) return testInstalledVersion;
+async function installedVersion(): Promise<string | null> {
+  if (IS_DEV_BUILD || E2E_AUTH_MODE) {
+    try {
+      const stored = await chrome.storage.local.get(TEST_INSTALLED_VERSION_KEY);
+      const testVersion = normalizeVersion(stored[TEST_INSTALLED_VERSION_KEY]);
+      if (testVersion) return testVersion;
+    } catch {
+      // Fall through to the manifest when the development-only seam is absent.
+    }
+  }
   try {
     return normalizeVersion(chrome.runtime.getManifest().version);
   } catch {
@@ -87,7 +98,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 
 async function applyAvailableVersion(version: unknown): Promise<boolean> {
   const normalized = normalizeVersion(version);
-  const current = installedVersion();
+  const current = await installedVersion();
   if (!normalized || !current || !isNewerVersion(normalized, current)) return false;
   const existing = await readStoredStatus();
   if (existing && isNewerVersion(existing.availableVersion, normalized)) return false;
@@ -104,7 +115,7 @@ async function clearIfNoUpdate(): Promise<void> {
 
 export async function getUpdateNotice(): Promise<UpdateNotice | null> {
   const existing = await readStoredStatus();
-  const current = installedVersion();
+  const current = await installedVersion();
   if (!existing || !current || !isNewerVersion(existing.availableVersion, current)) {
     if (existing) await writeStoredStatus(null);
     return null;
@@ -180,16 +191,19 @@ export async function setUpdateAvailableForTesting(version: string): Promise<boo
 }
 
 /** Development-only browser QA seam for simulating an installed update. */
-export function setInstalledVersionForTesting(version: string): boolean {
+export async function setInstalledVersionForTesting(version: string): Promise<boolean> {
   const normalized = normalizeVersion(version);
   if (!normalized) return false;
-  testInstalledVersion = normalized;
-  return true;
+  try {
+    await chrome.storage.local.set({ [TEST_INSTALLED_VERSION_KEY]: normalized });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Test isolation only; never used by the extension runtime. */
 export function resetUpdateCheckForTesting(): void {
   startupCheckStarted = false;
   setupComplete = false;
-  testInstalledVersion = null;
 }

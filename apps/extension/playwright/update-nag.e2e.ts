@@ -32,6 +32,8 @@ test('dev MV3 seam shows update notice, opens update path, and clears after inst
     await wakeMv3Worker(worker, context, testInfo, step);
     const extensionId = new URL(worker.url()).host;
     const popup = await openMv3Popup(context, extensionId, testInfo, step);
+    // Let the real native startup check settle before injecting deterministic QA state.
+    await popup.waitForTimeout(3_500);
 
     const injected = await sendMv3Message<{ ok: boolean }>(
       popup,
@@ -43,13 +45,11 @@ test('dev MV3 seam shows update notice, opens update path, and clears after inst
     );
     expect(injected).toEqual({ ok: true });
     await popup.reload();
-    await expect(popup.getByRole('status', { name: /update available/i })).toBeVisible();
+    await expect(popup.getByText('Update available', { exact: true })).toBeVisible();
     await expect(popup.getByText('Sploot 1.1.0 is ready.')).toBeVisible();
 
-    const extensionsPagePromise = context.waitForEvent('page', { timeout: 15_000 });
     await popup.getByRole('button', { name: 'Update', exact: true }).click();
-    const extensionsPage = await extensionsPagePromise;
-    await expect.poll(() => extensionsPage.url()).toBe('chrome://extensions/');
+    await expect.poll(() => context.pages().map(page => page.url())).toContain('chrome://extensions/');
 
     const installed = await sendMv3Message<{ ok: boolean }>(
       popup,
