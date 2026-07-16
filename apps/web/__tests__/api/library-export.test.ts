@@ -248,6 +248,7 @@ import { DELETE as exportDelete, GET as statusGet } from '@/app/api/library/expo
 import { GET as partGet } from '@/app/api/library/export/[exportId]/parts/[partIndex]/route';
 import { GET as manifestGet } from '@/app/api/library/export/[exportId]/manifest/route';
 import { estimateManifestEgressBytesForExport, streamExportManifest } from '@/lib/export/export-manifest';
+import { cancelExport } from '@/lib/export/export-service';
 import {
   EXPORT_TTL_MS,
   estimatePartEgressBytes,
@@ -880,6 +881,31 @@ describe('GET /api/library/export/:exportId/manifest', () => {
       await expect(new Response(stream).text()).rejects.toThrow(/unavailable/i);
     } finally {
       fakePrisma.asset.findMany = originalFindMany;
+    }
+  });
+
+  it('fences cancellation after terminal summary enqueue', async () => {
+    seedAsset('asset-fence', USER, new Uint8Array([1, 2]));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+    row.servedParts = [0];
+    const originalUpdateMany = fakePrisma.libraryExport.updateMany;
+    let cancelResult: boolean | undefined;
+    fakePrisma.libraryExport.updateMany = async (args: any) => {
+      const result = await originalUpdateMany(args);
+      if (args.data?.status === 'finalizing') {
+        cancelResult = await cancelExport(USER, created.id);
+      }
+      return result;
+    };
+    try {
+      const response = await new Response(streamExportManifest({ row: row as any })).text();
+      const manifest = JSON.parse(response);
+      expect(manifest.complete).toBe(true);
+      expect(cancelResult).toBe(false);
+      expect(row.status).toBe('active');
+    } finally {
+      fakePrisma.libraryExport.updateMany = originalUpdateMany;
     }
   });
 
