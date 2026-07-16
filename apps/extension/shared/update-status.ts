@@ -58,19 +58,15 @@ async function installedVersion(): Promise<string | null> {
 }
 
 async function readStoredStatus(): Promise<StoredUpdateStatus | null> {
-  try {
-    const stored = await chrome.storage.local.get(UPDATE_STATUS_STORAGE_KEY);
-    const value = stored[UPDATE_STATUS_STORAGE_KEY];
-    if (!value || typeof value !== 'object') return null;
-    const candidate = value as Partial<StoredUpdateStatus>;
-    const availableVersion = normalizeVersion(candidate.availableVersion);
-    const dismissedVersion = candidate.dismissedVersion === null
-      ? null
-      : normalizeVersion(candidate.dismissedVersion);
-    return availableVersion ? { availableVersion, dismissedVersion } : null;
-  } catch {
-    return null;
-  }
+  const stored = await chrome.storage.local.get(UPDATE_STATUS_STORAGE_KEY);
+  const value = stored[UPDATE_STATUS_STORAGE_KEY];
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Partial<StoredUpdateStatus>;
+  const availableVersion = normalizeVersion(candidate.availableVersion);
+  const dismissedVersion = candidate.dismissedVersion === null
+    ? null
+    : normalizeVersion(candidate.dismissedVersion);
+  return availableVersion ? { availableVersion, dismissedVersion } : null;
 }
 
 async function writeStoredStatus(status: StoredUpdateStatus | null): Promise<void> {
@@ -125,7 +121,12 @@ async function clearIfNoUpdate(): Promise<void> {
 }
 
 async function getUpdateNoticeUnsafe(): Promise<UpdateNotice | null> {
-  const existing = await readStoredStatus();
+  let existing: StoredUpdateStatus | null;
+  try {
+    existing = await readStoredStatus();
+  } catch {
+    return null;
+  }
   const current = await installedVersion();
   if (!existing || !current || !isNewerVersion(existing.availableVersion, current)) {
     if (existing) await writeStoredStatus(null);

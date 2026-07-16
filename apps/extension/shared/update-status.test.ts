@@ -94,6 +94,30 @@ describe('update-status', () => {
     expect(stored[UPDATE_STATUS_STORAGE_KEY]).toBeUndefined();
   });
 
+  it('does not mutate when native update storage reads reject', async () => {
+    requestUpdateCheck.mockResolvedValue({ status: 'update_available', version: '1.2.0' });
+    Object.assign(chrome.storage.local, { get: vi.fn().mockRejectedValue(new Error('storage down')) });
+    setupUpdateStatus();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    expect(chrome.storage.local.remove).not.toHaveBeenCalled();
+  });
+
+  it('does not remove stale state when popup reconciliation reads reject', async () => {
+    Object.assign(chrome.storage.local, { get: vi.fn().mockRejectedValue(new Error('storage down')) });
+    expect(await getUpdateNotice()).toBeNull();
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    expect(chrome.storage.local.remove).not.toHaveBeenCalled();
+  });
+
+  it('does not rewrite dismissal when dismissal reads reject', async () => {
+    Object.assign(chrome.storage.local, { get: vi.fn().mockRejectedValue(new Error('storage down')) });
+    await dismissUpdate('1.1.0');
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    expect(chrome.storage.local.remove).not.toHaveBeenCalled();
+  });
+
   it('preserves a newer event while stale popup reconciliation is pending', async () => {
     requestUpdateCheck.mockReturnValue(new Promise(() => undefined));
     stored[UPDATE_STATUS_STORAGE_KEY] = { availableVersion: '0.9.0', dismissedVersion: null };
