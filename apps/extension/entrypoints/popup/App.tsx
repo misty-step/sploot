@@ -12,7 +12,7 @@ import {
 } from '@clerk/chrome-extension'
 import type { SplootEnrollmentPublicState } from '@sploot/common'
 import { installPopupAuthSync } from '../../shared/auth-sync'
-import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
+import { AUTH_MESSAGES } from '../../shared/auth-messages'
 import { IS_DEV_BUILD } from '../../shared/build-mode'
 import { requestVisibleTabCapture } from '../../shared/capture-messages'
 import { CONTEXT_MENU_SAVE_MESSAGES, type ContextMenuSaveJobSummary } from '../../shared/context-menu-save-messages'

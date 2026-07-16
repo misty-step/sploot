@@ -24,6 +24,8 @@ let bridgeListener: Parameters<typeof chrome.runtime.onMessage.addListener>[0] |
 let authSyncRetryTimer: ReturnType<typeof setTimeout> | undefined
 let authSyncRetryAttempt = 0
 let authSyncGeneration = 0
+let authSyncInFlightGeneration: number | undefined
+let authSyncInFlightPromise: Promise<void> | undefined
 
 /**
  * The Clerk authority behind a durable save job.
@@ -148,13 +150,13 @@ async function getClerkClient() {
   return await clerkClientPromise
 }
 
-async function startAuthSync(generation = authSyncGeneration): Promise<void> {
+async function startAuthSyncImplementation(generation: number): Promise<void> {
   if (E2E_AUTH_MODE || removeClerkListener) {
     return
   }
 
   const clerk = await getClerkClient()
-  if (generation !== authSyncGeneration && waiters.size === 0) {
+  if (generation !== authSyncGeneration) {
     return
   }
   if (!clerk || typeof clerk.addListener !== 'function') {
@@ -166,6 +168,22 @@ async function startAuthSync(generation = authSyncGeneration): Promise<void> {
   removeClerkListener = typeof removeListener === 'function' ? removeListener : () => undefined
   authSyncRetryAttempt = 0
   updateCachedState(authStateFromResources(clerk))
+}
+
+function startAuthSync(generation = authSyncGeneration): Promise<void> {
+  if (authSyncInFlightGeneration === generation && authSyncInFlightPromise) {
+    return authSyncInFlightPromise
+  }
+
+  const promise = startAuthSyncImplementation(generation)
+  authSyncInFlightGeneration = generation
+  authSyncInFlightPromise = promise.finally(() => {
+    if (authSyncInFlightGeneration === generation) {
+      authSyncInFlightGeneration = undefined
+      authSyncInFlightPromise = undefined
+    }
+  })
+  return authSyncInFlightPromise
 }
 
 function startAuthSyncWithRetry(generation = authSyncGeneration): void {

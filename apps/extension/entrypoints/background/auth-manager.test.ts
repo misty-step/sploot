@@ -335,6 +335,51 @@ describe('auth-manager', () => {
     expect(addListener).not.toHaveBeenCalled()
   })
 
+  it('installs only the current generation listener after overlapping init', async () => {
+    let resolveClient: ((client: unknown) => void) | undefined
+    const addListener = vi.fn(listener => {
+      clerkListeners.push(listener)
+      return () => undefined
+    })
+    createClerkClient.mockImplementation(() => new Promise(resolve => { resolveClient = resolve }))
+
+    const { promptUserSignIn, setupAuthBridge } = await importAuthManager()
+    setupAuthBridge()
+    const signInPromise = promptUserSignIn()
+    await Promise.resolve()
+    resolveClient?.({ session: null, addListener })
+    await vi.waitFor(() => expect(addListener).toHaveBeenCalledTimes(1))
+    clerkListeners[0]({ user: { id: 'current-user' }, session: { id: 'current-session', expireAt: null } })
+
+    await expect(signInPromise).resolves.toBe(true)
+    expect(addListener).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores stale init after abort before a new waiter starts', async () => {
+    let resolveClient: ((client: unknown) => void) | undefined
+    const addListener = vi.fn(listener => {
+      clerkListeners.push(listener)
+      return () => undefined
+    })
+    createClerkClient.mockImplementation(() => new Promise(resolve => { resolveClient = resolve }))
+
+    const { promptUserSignIn, setupAuthBridge } = await importAuthManager()
+    setupAuthBridge()
+    const firstController = new AbortController()
+    const first = promptUserSignIn(firstController.signal)
+    await Promise.resolve()
+    firstController.abort()
+    await expect(first).resolves.toBe(false)
+
+    const second = promptUserSignIn()
+    resolveClient?.({ session: null, addListener })
+    await vi.waitFor(() => expect(addListener).toHaveBeenCalledTimes(1))
+    clerkListeners[0]({ user: { id: 'current-user' }, session: { id: 'current-session', expireAt: null } })
+
+    await expect(second).resolves.toBe(true)
+    expect(addListener).toHaveBeenCalledTimes(1)
+  })
+
   it('retries Clerk sync initialization and observes a later web sign-in', async () => {
     const clerk = {
       session: null,
