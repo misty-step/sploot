@@ -75,7 +75,6 @@ export async function createQaLocalProxyProof(
   const payload = base64UrlEncode(JSON.stringify({ host, remoteAddress }));
   return `${payload}.${await signPayload(payload, secret)}`;
 }
-}
 
 export function getQaProofRequestContext(headers: Headers): QaProofRequestContext {
   const rawHost = headers.get('host') ?? '';
@@ -84,7 +83,6 @@ export function getQaProofRequestContext(headers: Headers): QaProofRequestContex
     : rawHost.split(':')[0];
   return {
     host,
-    remoteAddress: headers.get(QA_LOCAL_REMOTE_ADDRESS_HEADER) ?? undefined,
     proxyProof: headers.get(QA_LOCAL_PROXY_PROOF_HEADER) ?? undefined,
   };
 }

@@ -91,20 +91,25 @@ const publicTruthSignedOutMiddleware = (req: NextRequest) => {
   return NextResponse.next()
 }
 
-const isPublicTruthSignedOutBuild =
-  process.env.NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E === 'true' &&
-  (process.env.SPLOOT_DEPLOYMENT_ENV === 'test' || process.env.SPLOOT_DEPLOYMENT_ENV === 'evidence')
+function isPublicTruthSignedOutBuild() {
+  return process.env.NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E === 'true' &&
+    (process.env.SPLOOT_DEPLOYMENT_ENV === 'test' || process.env.SPLOOT_DEPLOYMENT_ENV === 'evidence')
+}
 
-const isQaLocalEvidenceBuild = process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' ||
-  (process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && process.env.SPLOOT_QA_EVIDENCE_MODE === 'enabled' && process.env.DEPLOYMENT_ENV === 'qa-local')
+function isQaLocalEvidenceBuild() {
+  if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'false') return false
+  return process.env.SPLOOT_QA_AUTH_MODE === 'enabled' &&
+    process.env.SPLOOT_QA_EVIDENCE_MODE === 'enabled' &&
+    process.env.DEPLOYMENT_ENV === 'qa-local'
+}
 
 export default function middleware(...args: any[]) {
   // Next invokes the compiled middleware with (request, event); the mocked
   // Clerk adapter in unit tests invokes the callback with (auth, request).
   // Select the request by shape so the QA seam never reads the event as a URL.
   const req = args[0]?.nextUrl ? args[0] : args[1] ?? args[0]
-  if (isPublicTruthSignedOutBuild) return publicTruthSignedOutMiddleware(req)
-  return isQaLocalEvidenceBuild
+  if (isPublicTruthSignedOutBuild()) return publicTruthSignedOutMiddleware(req)
+  return isQaLocalEvidenceBuild()
     ? qaEvidenceMiddleware(req)
     : (clerkProtectedMiddleware as unknown as (...middlewareArgs: unknown[]) => unknown)(...args)
 }
