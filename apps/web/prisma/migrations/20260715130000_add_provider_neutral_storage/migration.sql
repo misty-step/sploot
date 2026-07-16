@@ -1,5 +1,6 @@
 -- Provider-neutral identity is authoritative for future writes. Legacy URLs
 -- remain readable during shadow/cutover/rollback and are not provider policy.
+BEGIN;
 ALTER TABLE "assets"
   ADD COLUMN "storage_provider" TEXT NOT NULL DEFAULT 'vercel',
   ADD COLUMN "storage_key" TEXT,
@@ -53,3 +54,4 @@ CREATE TABLE "storage_cutover_state" (
 
 COMMENT ON COLUMN "assets"."storage_provider" IS 'Provider identity, never a credential or public URL authority';
 COMMENT ON COLUMN "assets"."storage_key" IS 'Canonical provider-neutral logical key';
+COMMIT;
