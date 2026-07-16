@@ -3,8 +3,9 @@ import { E2E_AUTH_MODE } from './env';
 
 export const UPDATE_STATUS_STORAGE_KEY = 'sploot:update-status';
 export const UPDATE_MESSAGES = {
-  TEST_SET_AVAILABLE: 'sploot:update-status:test-set-available',
-  TEST_SET_INSTALLED: 'sploot:update-status:test-set-installed',
+  GET_STATUS: 'sploot:update-status:get-status',
+  DISMISS: 'sploot:update-status:dismiss',
+  REQUEST_CHECK: 'sploot:update-status:request-check',
 } as const;
 
 const UPDATE_CHECK_TIMEOUT_MS = 3_000;
@@ -17,6 +18,7 @@ export type UpdateNotice = { version: string; dismissed: boolean };
 let setupComplete = false;
 let startupCheckStarted = false;
 let statusWriteQueue = Promise.resolve();
+let statusGeneration = 0;
 
 function normalizeVersion(version: unknown): string | null {
   if (typeof version !== 'string') return null;
@@ -113,11 +115,21 @@ async function applyAvailableVersionUnsafe(version: unknown): Promise<boolean> {
     availableVersion: normalized,
     dismissedVersion: existing?.dismissedVersion === normalized ? normalized : null,
   });
+  statusGeneration += 1;
   return true;
 }
 
-async function clearIfNoUpdate(): Promise<void> {
-  await serializeStatusWrite(() => writeStoredStatus(null));
+async function clearIfNoUpdate(expectedGeneration: number): Promise<void> {
+  await serializeStatusWrite(async () => {
+    if (statusGeneration !== expectedGeneration) return;
+    let existing: StoredUpdateStatus | null;
+    try {
+      existing = await readStoredStatus();
+    } catch {
+      return;
+    }
+    if (existing) await writeStoredStatus(null);
+  });
 }
 
 async function getUpdateNoticeUnsafe(): Promise<UpdateNotice | null> {
@@ -144,6 +156,23 @@ async function dismissUpdateUnsafe(version: string): Promise<void> {
   const current = await getUpdateNoticeUnsafe();
   if (!current || current.version !== normalized) return;
   await writeStoredStatus({ availableVersion: normalized, dismissedVersion: normalized });
+}
+
+export async function requestUpdateNotice(): Promise<UpdateNotice | null> {
+  try {
+    return await chrome.runtime.sendMessage({ type: UPDATE_MESSAGES.GET_STATUS });
+  } catch {
+    return null;
+  }
+}
+
+export async function requestDismissUpdate(version: string): Promise<boolean> {
+  try {
+    const result = await chrome.runtime.sendMessage({ type: UPDATE_MESSAGES.DISMISS, version });
+    return result?.ok === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function getUpdateNotice(): Promise<UpdateNotice | null> {
@@ -178,13 +207,14 @@ export async function openUpdatePage(): Promise<boolean> {
 export function checkForUpdates(): void {
   if (startupCheckStarted) return;
   startupCheckStarted = true;
+  const generationAtRequest = statusGeneration;
   try {
     const request = chrome.runtime.requestUpdateCheck();
     void withTimeout(Promise.resolve(request), UPDATE_CHECK_TIMEOUT_MS)
       .then(async result => {
         const checked = result as UpdateCheckResult;
         if (checked.status === 'update_available') await applyAvailableVersion(checked.version);
-        else if (checked.status === 'no_update') await clearIfNoUpdate();
+        else if (checked.status === 'no_update') await clearIfNoUpdate(generationAtRequest);
       })
       .catch(() => undefined);
   } catch {
@@ -196,6 +226,23 @@ export function setupUpdateStatus(): void {
   if (setupComplete) return;
   setupComplete = true;
   try {
+    chrome.runtime.onMessage?.addListener((message, sender, sendResponse) => {
+      if (sender?.id !== chrome.runtime.id) return undefined;
+      if (message?.type === UPDATE_MESSAGES.GET_STATUS) {
+        void getUpdateNotice().then(status => sendResponse(status));
+        return true;
+      }
+      if (message?.type === UPDATE_MESSAGES.DISMISS && typeof message.version === 'string') {
+        void dismissUpdate(message.version).then(() => sendResponse({ ok: true }));
+        return true;
+      }
+      if (message?.type === UPDATE_MESSAGES.REQUEST_CHECK) {
+        checkForUpdates();
+        sendResponse({ ok: true });
+        return false;
+      }
+      return undefined;
+    });
     chrome.runtime.onUpdateAvailable?.addListener(event => {
       void applyAvailableVersion(event?.version).catch(() => undefined);
     });
@@ -227,4 +274,5 @@ export function resetUpdateCheckForTesting(): void {
   startupCheckStarted = false;
   setupComplete = false;
   statusWriteQueue = Promise.resolve();
+  statusGeneration = 0;
 }

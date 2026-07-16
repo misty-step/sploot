@@ -1,6 +1,10 @@
+import * as fs from 'node:fs/promises';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  UPDATE_MESSAGES,
   UPDATE_STATUS_STORAGE_KEY,
+  requestDismissUpdate,
+  requestUpdateNotice,
   checkForUpdates,
   dismissUpdate,
   getUpdateNotice,
@@ -8,6 +12,7 @@ import {
   openUpdatePage,
   resetUpdateCheckForTesting,
   setupUpdateStatus,
+  setUpdateAvailableForTesting,
 } from './update-status';
 
 type Listener = (event: { version: string }) => void;
@@ -16,17 +21,22 @@ let stored: Record<string, unknown>;
 let updateListener: Listener | undefined;
 let manifestVersion: string;
 let requestUpdateCheck: ReturnType<typeof vi.fn>;
+let messageListener: ((message: any, sender: any, sendResponse: (value: any) => void) => boolean | undefined) | undefined;
 
 beforeEach(() => {
   stored = {};
   updateListener = undefined;
   manifestVersion = '1.0.0';
   requestUpdateCheck = vi.fn().mockResolvedValue({ status: 'no_update' });
+  messageListener = undefined;
   vi.stubGlobal('chrome', {
     runtime: {
+      id: 'test-extension',
       getManifest: () => ({ version: manifestVersion }),
       requestUpdateCheck,
       onUpdateAvailable: { addListener: vi.fn((listener: Listener) => { updateListener = listener; }) },
+      onMessage: { addListener: vi.fn((listener: typeof messageListener) => { messageListener = listener; }) },
+      sendMessage: vi.fn(),
     },
     storage: {
       local: {
@@ -42,6 +52,45 @@ beforeEach(() => {
 });
 
 describe('update-status', () => {
+  it('routes popup status and dismissal helpers through typed worker messages', async () => {
+    const sendMessage = chrome.runtime.sendMessage as ReturnType<typeof vi.fn>;
+    sendMessage.mockResolvedValueOnce({ version: '1.2.0', dismissed: false }).mockResolvedValueOnce({ ok: true });
+    expect(await requestUpdateNotice()).toEqual({ version: '1.2.0', dismissed: false });
+    expect(await requestDismissUpdate('1.2.0')).toBe(true);
+    expect(sendMessage).toHaveBeenNthCalledWith(1, { type: UPDATE_MESSAGES.GET_STATUS });
+    expect(sendMessage).toHaveBeenNthCalledWith(2, { type: UPDATE_MESSAGES.DISMISS, version: '1.2.0' });
+  });
+
+  it('fails closed when popup worker requests reject', async () => {
+    const sendMessage = chrome.runtime.sendMessage as ReturnType<typeof vi.fn>;
+    sendMessage.mockRejectedValue(new Error('worker unavailable'));
+    expect(await requestUpdateNotice()).toBeNull();
+    expect(await requestDismissUpdate('1.2.0')).toBe(false);
+  });
+
+  it('registers a same-extension message boundary and ignores malformed messages', async () => {
+    setupUpdateStatus();
+    const sendResponse = vi.fn();
+    expect(messageListener?.({ type: 'unknown' }, { id: 'test-extension' }, sendResponse)).toBeUndefined();
+    expect(messageListener?.({ type: UPDATE_MESSAGES.GET_STATUS }, { id: 'other-extension' }, sendResponse)).toBeUndefined();
+    expect(messageListener?.({ type: UPDATE_MESSAGES.DISMISS }, { id: 'test-extension' }, sendResponse)).toBeUndefined();
+    expect(messageListener?.({ type: UPDATE_MESSAGES.REQUEST_CHECK }, { id: 'test-extension' }, sendResponse)).toBe(false);
+    expect(sendResponse).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('survives service-worker setup restart with persisted dismissal', async () => {
+    await setUpdateAvailableForTesting('1.2.0');
+    await dismissUpdate('1.2.0');
+    resetUpdateCheckForTesting();
+    setupUpdateStatus();
+    expect(await getUpdateNotice()).toEqual({ version: '1.2.0', dismissed: true });
+  });
+
+  it('keeps popup update ownership in the worker', async () => {
+    const popup = await fs.readFile(new URL('../entrypoints/popup/App.tsx', import.meta.url), 'utf8');
+    expect(popup).not.toMatch(/chrome\.storage\.local\.(set|remove)/);
+  });
+
   it('compares Chrome versions without treating equal/current versions as updates', () => {
     expect(isNewerVersion('1.0.1', '1.0.0')).toBe(true);
     expect(isNewerVersion('1.0.0.0', '1.0.0')).toBe(false);
