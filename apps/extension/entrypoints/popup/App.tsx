@@ -5,6 +5,7 @@ import {
   SignedIn,
   SignedOut,
   SignOutButton,
+  useAuth,
   useClerk,
   useSession,
   useUser,
@@ -483,11 +484,15 @@ function SaveStatusStrip({ status }: { status: SaveStatus }) {
 }
 
 function AuthStateSync() {
+  const { isLoaded } = useAuth()
   const clerk = useClerk()
 
   useEffect(() => {
+    if (!isLoaded) {
+      return
+    }
     return installPopupAuthSync(clerk)
-  }, [clerk])
+  }, [clerk, isLoaded])
 
   return null
 }

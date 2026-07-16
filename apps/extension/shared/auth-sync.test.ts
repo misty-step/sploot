@@ -39,6 +39,29 @@ describe('popup auth sync', () => {
     expect(reloadPopup).not.toHaveBeenCalled()
   })
 
+  it('does not reload before the popup Clerk client hydrates', async () => {
+    runtime.sendMessage.mockResolvedValue({
+      state: { status: 'signed-in', userId: 'user_1', sessionId: 'session_1' },
+    })
+    const clerk = { user: null }
+    const reloadPopup = vi.fn()
+    const storage = new Map<string, string>()
+    const reloadGuardStorage = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => { storage.set(key, value) },
+    }
+
+    installPopupAuthSync(
+      clerk,
+      runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
+      reloadPopup,
+      reloadGuardStorage,
+    )
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(reloadPopup).not.toHaveBeenCalled()
+  })
+
   it('refreshes an open popup from a worker state event without receiving a token', async () => {
     const clerk = { user: null }
     const reloadPopup = vi.fn()

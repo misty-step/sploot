@@ -13,12 +13,15 @@ import { IS_DEV_BUILD } from '../../shared/build-mode'
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
 const SIGN_IN_TIMEOUT_MS = 60000
 const E2E_AUTH_KEY = 'sploot:e2e-auth-authority'
+const AUTH_SYNC_RETRY_DELAYS_MS = [50, 100, 250, 500] as const
 
 let cachedState: AuthState = { status: 'unknown' }
 const waiters = new Set<(state: AuthState) => void>()
 let clerkClientPromise: ReturnType<typeof createClerkClient> | undefined
 let removeClerkListener: (() => void) | undefined
 let bridgeListener: Parameters<typeof chrome.runtime.onMessage.addListener>[0] | undefined
+let authSyncRetryTimer: ReturnType<typeof setTimeout> | undefined
+let authSyncRetryAttempt = 0
 
 /**
  * The Clerk authority behind a durable save job.
@@ -149,10 +152,33 @@ async function startAuthSync(): Promise<void> {
   }
 
   const clerk = await getClerkClient()
-  removeClerkListener = clerk.addListener(resources => {
+  if (!clerk || typeof clerk.addListener !== 'function') {
+    throw new Error('Clerk sync listener is unavailable')
+  }
+  const removeListener = clerk.addListener(resources => {
     updateCachedState(authStateFromResources(resources))
   })
+  removeClerkListener = typeof removeListener === 'function' ? removeListener : () => undefined
+  authSyncRetryAttempt = 0
   updateCachedState(authStateFromResources(clerk))
+}
+
+function startAuthSyncWithRetry(): void {
+  if (E2E_AUTH_MODE || removeClerkListener || authSyncRetryTimer) {
+    return
+  }
+
+  void startAuthSync().catch(error => {
+    console.error('[Auth] Failed to initialize Clerk sync', error)
+    if (authSyncRetryAttempt >= AUTH_SYNC_RETRY_DELAYS_MS.length) {
+      return
+    }
+    const delay = AUTH_SYNC_RETRY_DELAYS_MS[authSyncRetryAttempt++]
+    authSyncRetryTimer = setTimeout(() => {
+      authSyncRetryTimer = undefined
+      startAuthSyncWithRetry()
+    }, delay)
+  })
 }
 
 export async function isAuthenticated(signal?: AbortSignal): Promise<boolean> {
@@ -322,6 +348,7 @@ function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSignal): Promise<boolean> {
   return new Promise(resolve => {
     let settled = false
+    let listener: (state: AuthState) => void
 
     const finish = (signedIn: boolean) => {
       if (settled) {
@@ -346,7 +373,7 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSign
     }
     signal?.addEventListener('abort', abort, { once: true })
 
-    const listener = (state: AuthState) => {
+    listener = (state: AuthState) => {
       if (state.status === 'signed-in') {
         finish(true)
       }
@@ -361,19 +388,41 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSign
   })
 }
 
-export async function promptUserSignIn(signal?: AbortSignal): Promise<boolean> {
+async function closeOwnedSignInTab(tabId: number | undefined, signInUrl: string): Promise<void> {
+  if (tabId === undefined) {
+    return
+  }
+
   try {
-    await chrome.tabs.create({ url: getSplootSignInUrl() })
+    const tab = await chrome.tabs.get(tabId)
+    if (tab.url === signInUrl) {
+      await chrome.tabs.remove(tabId)
+    }
+  } catch {
+    // The tab may have been closed or navigated away while auth completed.
+  }
+}
+
+export async function promptUserSignIn(signal?: AbortSignal): Promise<boolean> {
+  const signInUrl = getSplootSignInUrl()
+  let tabId: number | undefined
+  try {
+    const tab = await chrome.tabs.create({ url: signInUrl })
+    tabId = tab?.id
   } catch (error) {
     console.warn('[Auth] Unable to open Sploot sign-in tab', error)
     return false
   }
 
-  if (await isAuthenticated(signal)) {
-    return true
-  }
+  try {
+    if (await isAuthenticated(signal)) {
+      return true
+    }
 
-  return await waitForSignIn(SIGN_IN_TIMEOUT_MS, signal)
+    return await waitForSignIn(SIGN_IN_TIMEOUT_MS, signal)
+  } finally {
+    await closeOwnedSignInTab(tabId, signInUrl)
+  }
 }
 
 export interface AuthDiagnosticsSnapshot {
@@ -435,7 +484,5 @@ export function setupAuthBridge() {
   }
 
   chrome.runtime.onMessage.addListener(bridgeListener)
-  void startAuthSync().catch(error => {
-    console.error('[Auth] Failed to initialize Clerk sync', error)
-  })
+  startAuthSyncWithRetry()
 }

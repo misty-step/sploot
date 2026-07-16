@@ -17,6 +17,24 @@ interface ClerkRefreshClient {
   user?: { reload(): Promise<unknown> } | null
 }
 
+interface ReloadGuardStorage {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+}
+
+const memoryReloadGuard = new Map<string, string>()
+
+function getReloadGuardStorage(): ReloadGuardStorage {
+  try {
+    return window.sessionStorage
+  } catch {
+    return {
+      getItem: key => memoryReloadGuard.get(key) ?? null,
+      setItem: (key, value) => { memoryReloadGuard.set(key, value) },
+    }
+  }
+}
+
 function isAuthState(value: unknown): value is AuthState {
   if (!value || typeof value !== 'object') {
     return false
@@ -40,10 +58,11 @@ export function installPopupAuthSync(
   clerk: ClerkRefreshClient,
   runtime: AuthSyncRuntime = chrome.runtime,
   reloadPopup: () => void = () => window.location.reload(),
+  reloadGuardStorage: ReloadGuardStorage | null = getReloadGuardStorage(),
 ): () => void {
   let disposed = false
 
-  const refresh = (state: AuthState) => {
+  const refresh = (state: AuthState, allowReload: boolean) => {
     if (disposed) {
       return
     }
@@ -55,11 +74,33 @@ export function installPopupAuthSync(
       return
     }
 
-    const refreshPromise = state.status === 'signed-in' && clerk.user
-      ? clerk.user.reload()
-      : Promise.resolve().then(reloadPopup)
-    void refreshPromise.catch(error => {
-      console.error('[Popup] Failed to refresh auth state', error)
+    if (state.status === 'signed-in' && clerk.user) {
+      void clerk.user.reload().catch(error => {
+        console.error('[Popup] Failed to refresh auth state', error)
+      })
+      return
+    }
+
+    if (!allowReload) {
+      return
+    }
+
+    // A reload is only a bootstrap fallback while Clerk hydrates from the
+    // synced web session. Persist the guard so a remount cannot reload forever.
+    if (!reloadGuardStorage) {
+      return
+    }
+    const reloadKey = `sploot-auth-refresh:${state.status}:${state.sessionId ?? state.userId ?? 'none'}`
+    try {
+      if (reloadGuardStorage.getItem(reloadKey)) {
+        return
+      }
+      reloadGuardStorage.setItem(reloadKey, '1')
+    } catch {
+      return
+    }
+    void Promise.resolve().then(reloadPopup).catch(error => {
+      console.error('[Popup] Failed to reload auth state', error)
     })
   }
 
@@ -70,7 +111,7 @@ export function installPopupAuthSync(
 
     const candidate = message as { type?: unknown; payload?: unknown }
     if (candidate.type === AUTH_MESSAGES.STATE_CHANGED && shouldRefresh(candidate.payload)) {
-      refresh(candidate.payload)
+      refresh(candidate.payload, true)
     }
   }
 
@@ -84,7 +125,7 @@ export function installPopupAuthSync(
 
       const state = (response as { state?: unknown }).state
       if (shouldRefresh(state)) {
-        refresh(state)
+        refresh(state, false)
       }
     })
     .catch(error => {

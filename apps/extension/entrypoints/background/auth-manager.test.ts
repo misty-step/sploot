@@ -29,6 +29,8 @@ interface ChromeMock {
   };
   tabs: {
     create: ReturnType<typeof vi.fn>;
+    get: ReturnType<typeof vi.fn>;
+    remove: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -64,6 +66,8 @@ beforeEach(() => {
     },
     tabs: {
       create: vi.fn(),
+      get: vi.fn(),
+      remove: vi.fn(),
     },
   };
 
@@ -236,6 +240,103 @@ describe('auth-manager', () => {
     expect(chromeMock.tabs.create).toHaveBeenCalledWith({ url: 'https://sploot.test/sign-in' });
     expect(chromeMock.action.openPopup).not.toHaveBeenCalled();
   });
+
+  it('closes its owned sign-in tab after successful auth', async () => {
+    createClerkClient.mockResolvedValue({
+      session: null,
+      addListener: vi.fn(listener => {
+        clerkListeners.push(listener)
+        return () => undefined
+      }),
+    })
+    chromeMock.tabs.create.mockResolvedValue({ id: 77 })
+    chromeMock.tabs.get.mockResolvedValue({ id: 77, url: 'https://sploot.test/sign-in' })
+
+    const { promptUserSignIn, setupAuthBridge } = await importAuthManager()
+    setupAuthBridge()
+    const signInPromise = promptUserSignIn()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    clerkListeners[0]({ user: { id: 'user_tab' }, session: { id: 'session_tab', expireAt: null } })
+
+    await expect(signInPromise).resolves.toBe(true)
+    expect(chromeMock.tabs.remove).toHaveBeenCalledWith(77)
+  })
+
+  it('does not close a sign-in tab after the user navigates it away', async () => {
+    createClerkClient.mockResolvedValue({
+      session: null,
+      addListener: vi.fn(listener => {
+        clerkListeners.push(listener)
+        return () => undefined
+      }),
+    })
+    chromeMock.tabs.create.mockResolvedValue({ id: 78 })
+    chromeMock.tabs.get.mockResolvedValue({ id: 78, url: 'https://sploot.test/library' })
+
+    const { promptUserSignIn, setupAuthBridge } = await importAuthManager()
+    setupAuthBridge()
+    const signInPromise = promptUserSignIn()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    clerkListeners[0]({ user: { id: 'user_tab' }, session: { id: 'session_tab', expireAt: null } })
+
+    await expect(signInPromise).resolves.toBe(true)
+    expect(chromeMock.tabs.remove).not.toHaveBeenCalled()
+  })
+
+  it('closes its owned sign-in tab after the wait aborts', async () => {
+    createClerkClient.mockResolvedValue({ session: null, addListener: vi.fn() })
+    chromeMock.tabs.create.mockResolvedValue({ id: 79 })
+    chromeMock.tabs.get.mockResolvedValue({ id: 79, url: 'https://sploot.test/sign-in' })
+    vi.useFakeTimers()
+    try {
+      const { promptUserSignIn } = await importAuthManager()
+      const signInPromise = promptUserSignIn()
+      await Promise.resolve()
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(60000)
+      await expect(signInPromise).resolves.toBe(false)
+      expect(chromeMock.tabs.remove).toHaveBeenCalledWith(79)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('closes its owned sign-in tab when the wait aborts', async () => {
+    createClerkClient.mockResolvedValue({ session: null, addListener: vi.fn() })
+    chromeMock.tabs.create.mockResolvedValue({ id: 80 })
+    chromeMock.tabs.get.mockResolvedValue({ id: 80, url: 'https://sploot.test/sign-in' })
+
+    const { promptUserSignIn } = await importAuthManager()
+    const controller = new AbortController()
+    const signInPromise = promptUserSignIn(controller.signal)
+    await Promise.resolve()
+    await Promise.resolve()
+    controller.abort()
+
+    await expect(signInPromise).resolves.toBe(false)
+    expect(chromeMock.tabs.remove).toHaveBeenCalledWith(80)
+  })
+
+  it('retries Clerk sync initialization and observes a later web sign-in', async () => {
+    const clerk = {
+      session: null,
+      addListener: vi.fn(listener => {
+        clerkListeners.push(listener)
+        return () => undefined
+      }),
+    }
+    createClerkClient
+      .mockRejectedValueOnce(new Error('sync host unavailable'))
+      .mockResolvedValue(clerk)
+
+    const { promptUserSignIn, setupAuthBridge } = await importAuthManager()
+    setupAuthBridge()
+    const signInPromise = promptUserSignIn()
+    await vi.waitFor(() => expect(clerkListeners).toHaveLength(1), { timeout: 1000 })
+    clerkListeners[0]({ user: { id: 'retry-user' }, session: { id: 'retry-session', expireAt: null } })
+
+    await expect(signInPromise).resolves.toBe(true)
+  })
 
   it('resolves sign-in waiters when the persistent Clerk listener observes sign-in', async () => {
     const signedInState: AuthState = {
