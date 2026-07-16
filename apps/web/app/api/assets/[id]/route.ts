@@ -9,6 +9,7 @@ import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api'
 import type { RouteContext } from '@/lib/with-observability';
 import { acquireEnrollmentIdentityWriterLock, enrollmentResponseForError, enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
 import { ConfiguredStorageWriter } from '@/lib/storage/object-store';
+import { replicasForPermanentDelete } from '@/lib/storage/permanent-delete';
 
 async function getHandler(
   req: NextRequest,
@@ -210,22 +211,37 @@ async function deleteHandler(
         await acquireEnrollmentIdentityWriterLock(tx, userId);
         const asset = await tx.asset.findFirst({ where: { id, ownerUserId: userId } });
         if (!asset) return null;
-        const replicas = await tx.$queryRawUnsafe<Array<{ provider: string; key: string; url: string }>>('SELECT provider, logical_key AS key, delivery_url AS url FROM asset_storage_replicas WHERE asset_id=$1 AND active=true', id);
+        const rows = await tx.$queryRawUnsafe<Array<{ provider: string; source_key: string | null; logical_key: string; delivery_url: string; active: boolean }>>(
+          'SELECT provider, source_key, logical_key, delivery_url, active FROM asset_storage_replicas WHERE asset_id=$1',
+          id,
+        );
         const fallback = [
-          { provider: asset.storageProvider, key: asset.storageKey ?? asset.pathname, url: asset.blobUrl },
-          asset.thumbnailUrl ? { provider: asset.storageProvider, key: asset.thumbnailStorageKey ?? asset.thumbnailPath ?? asset.pathname, url: asset.thumbnailUrl } : null,
+          { provider: asset.storageProvider, key: asset.storageSourceKey ?? asset.storageKey ?? asset.pathname, url: asset.blobUrl },
+          asset.thumbnailUrl ? { provider: asset.storageProvider, key: asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey ?? asset.thumbnailPath ?? asset.pathname, url: asset.thumbnailUrl } : null,
         ].filter((entry): entry is { provider: string; key: string; url: string } => Boolean(entry));
-        const all = replicas.length ? replicas : fallback;
+        const replicas = replicasForPermanentDelete(rows, fallback);
         await tx.asset.update({ where: { id }, data: { deletedAt: new Date() } });
-        for (const replica of all) await tx.$executeRawUnsafe("INSERT INTO storage_cleanup_outbox (id, asset_id, provider, key, url, action, status, updated_at) VALUES (gen_random_uuid()::text,$1,$2,$3,$4,$5,'pending',NOW())", id, replica.provider, replica.key, replica.url, 'permanent-delete');
-        return { shareSlug: asset.shareSlug, replicas: all };
+        for (const replica of replicas) {
+          await tx.$executeRawUnsafe(
+            "INSERT INTO storage_cleanup_outbox (id, asset_id, provider, key, url, action, status, updated_at) VALUES (md5(concat_ws(chr(0), $1, $2, $3, $4, $5)), $1, $2, $3, $4, $5, 'pending', NOW()) ON CONFLICT (id) DO NOTHING",
+            id, replica.provider, replica.key, replica.url, 'permanent-delete',
+          );
+        }
+        return { shareSlug: asset.shareSlug, replicas };
       });
       if (!tombstone) return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
       try {
+        let deletionError: unknown;
         for (const replica of tombstone.replicas) {
-          if (storage.deleteKey && replica.provider !== 'vercel') await storage.deleteKey(replica.provider, replica.key);
-          else await storage.deleteUrl(replica.url);
+          try {
+            if (storage.deleteReplica) await storage.deleteReplica(replica);
+            else if (storage.deleteKey) await storage.deleteKey(replica.provider, replica.key);
+            else await storage.deleteUrl(replica.url);
+          } catch (error) {
+            deletionError ??= error;
+          }
         }
+        if (deletionError) throw deletionError;
         await prisma.$transaction(async (tx) => {
           await acquireEnrollmentIdentityWriterLock(tx, userId);
           const locked = await tx.asset.findFirst({ where: { id, ownerUserId: userId, deletedAt: { not: null } } });
@@ -240,7 +256,6 @@ async function deleteHandler(
       await invalidateDeletedAssetCaches(tombstone.shareSlug);
       return NextResponse.json({ message: 'Asset permanently deleted' });
     }
-
     const result = await prisma.$transaction(async (tx) => {
       await acquireEnrollmentIdentityWriterLock(tx, userId);
       const existingAsset = await tx.asset.findFirst({ where: { id, ownerUserId: userId } });

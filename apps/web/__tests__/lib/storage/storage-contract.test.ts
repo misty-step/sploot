@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
+import { del } from '@vercel/blob';
+
+vi.mock('@vercel/blob', () => ({ del: vi.fn(), put: vi.fn(), list: vi.fn() }));
 import {
   canonicalLogicalKey,
   createStorageConfig,
@@ -14,6 +17,7 @@ import {
   VercelObjectStore,
   type ObjectMetadata,
 } from '@/lib/storage/object-store';
+import { replicasForPermanentDelete } from '@/lib/storage/permanent-delete';
 import {
   MigrationVerifier,
   type MigrationManifestEntry,
@@ -152,6 +156,11 @@ describe('portable storage contract', () => {
     expect(legacy.ownsUrl('https://blob.example.test.evil/assets/a.png')).toBe(false);
     expect(legacy.ownsUrl('https://user@blob.example.test/assets/a.png')).toBe(false);
     expect(legacy.ownsUrl('https://blob.example.test/assets/a.png?delete=all')).toBe(false);
+    expect(legacy.ownsUrl('https://blob.example.test/assets/%2e%2e/secret.png')).toBe(false);
+    expect(legacy.ownsUrl('https://blob.example.test/assets/%2fsecret.png')).toBe(false);
+    const scopedLegacy = new VercelObjectStore('https://blob.example.test/base');
+    expect(scopedLegacy.ownsUrl('https://blob.example.test/base/file.png')).toBe(true);
+    expect(scopedLegacy.ownsUrl('https://blob.example.test/base2/file.png')).toBe(false);
 
     const target = new S3CompatibleObjectStore(createStorageConfig({
       provider: 's3',
@@ -167,6 +176,25 @@ describe('portable storage contract', () => {
     expect(target.ownsUrl('https://objects.example.test/sploot/assets/a.png?delete=all')).toBe(false);
     const portable = new PortableObjectStore({ legacy, target, phase: 'target' });
     await expect(portable.deleteUrl('https://objects.example.test/other-bucket/assets/a.png')).rejects.toThrow(/not owned/);
+  });
+
+  it('deletes every active and inactive replica using provider-accurate keys', () => {
+    const replicas = replicasForPermanentDelete([
+      { provider: 'vercel', source_key: 'uploads/file%20name.png', logical_key: 'legacy/asset/original-deadbeef', delivery_url: 'https://blob.example.test/uploads/file%20name.png', active: false },
+      { provider: 's3', source_key: 'uploads/file%20name.png', logical_key: 'assets/asset-1/original.png', delivery_url: 'https://objects.example.test/sploot/assets/asset-1/original.png', active: true },
+      { provider: 'vercel', source_key: 'uploads/file%20name.png', logical_key: 'legacy/asset/original-deadbeef', delivery_url: 'https://blob.example.test/uploads/file%20name.png', active: false },
+    ], []);
+    expect(replicas).toEqual([
+      { provider: 'vercel', key: 'uploads/file%20name.png', url: 'https://blob.example.test/uploads/file%20name.png' },
+      { provider: 's3', key: 'assets/asset-1/original.png', url: 'https://objects.example.test/sploot/assets/asset-1/original.png' },
+    ]);
+  });
+
+  it('accepts an encoded raw Vercel URL for provider-local deletion', async () => {
+    const legacy = new VercelObjectStore('https://blob.example.test/base');
+    vi.mocked(del).mockResolvedValue(undefined);
+    await legacy.deleteUrl('https://blob.example.test/base/uploads/file%20name.png');
+    expect(del).toHaveBeenCalledWith('https://blob.example.test/base/uploads/file%20name.png');
   });
 
   it('reclaims an expired in-flight migration lease', async () => {

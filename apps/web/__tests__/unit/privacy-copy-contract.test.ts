@@ -81,6 +81,12 @@ describe('privacy copy contract', () => {
         schedule: '0 4 * * *',
       })
     );
+    expect(schedules).toContainEqual(
+      expect.objectContaining({
+        path: '/api/cron/process-storage-cleanup',
+        schedule: '*/5 * * * *',
+      })
+    );
 
   });
 });
