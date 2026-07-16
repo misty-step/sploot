@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { SplootEnrollmentPublicState } from '@sploot/common';
 import { Button } from '@/components/ui/button';
 import { StickerTab } from '@/components/sploot';
 
@@ -35,7 +36,7 @@ const FEATURES: Array<{
  * hero demoed — semantic search, one flat pile, and bangers. Toybox grammar:
  * rounded ink-shelled toy cards with drop-height elevation that lift on hover.
  */
-export function LandingStory() {
+export function LandingStory({ enrollmentState }: { enrollmentState: SplootEnrollmentPublicState }) {
   return (
     <section className="bg-sploot-workbench px-5 py-20 text-sploot-ink sm:px-8">
       <div className="mx-auto flex max-w-5xl flex-col gap-10">
@@ -74,9 +75,11 @@ export function LandingStory() {
               your library is private — only you can see your pile.
             </p>
           </div>
-          <Button asChild variant="ink" size="lg">
-            <Link href="/sign-up">claim your library</Link>
-          </Button>
+          {enrollmentState.status === 'open' ? (
+            <Button asChild variant="ink" size="lg">
+              <Link href="/sign-up">claim your library</Link>
+            </Button>
+          ) : null}
         </div>
       </div>
     </section>

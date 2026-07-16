@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Prisma, type PrismaClient } from '@prisma/client';
+import type { SplootEnrollmentPublicState } from '@sploot/common';
+import { isPublicTruthE2EBuild } from '@/lib/public-truth-e2e';
 
 export const ENROLLMENT_DENIAL_CODE = 'enrollment_closed' as const;
 export const ENROLLMENT_UNAVAILABLE_CODE = 'enrollment_unavailable' as const;
@@ -117,7 +119,7 @@ export function getEnrollmentStatus(
     return invalidStatus(deploymentMarker ? 'invalid_deployment_marker' : 'missing_deployment_marker');
   }
 
-  if (env.NODE_ENV === 'production' && !isDeployedEnvironment) {
+  if (env.NODE_ENV === 'production' && !isDeployedEnvironment && !isPublicTruthE2EBuild(env)) {
     return invalidStatus('invalid_deployment_marker');
   }
 
@@ -211,6 +213,70 @@ export function getEnrollmentStatus(
   }
 
   return invalidStatus(rawMode ? 'invalid_mode' : 'missing');
+}
+
+export interface PublicEnrollmentRead {
+  state: SplootEnrollmentPublicState;
+  available: boolean;
+}
+
+/**
+ * The sole server authority for public enrollment state. A valid open/capped
+ * configuration still needs a live account-count query before it can render
+ * open; closed and invalid states are safe without touching the database.
+ *
+ * A database that cannot answer is reported as the distinct 'unknown' state,
+ * never mislabeled as an ordinary policy pause: sign-up stays fail-closed
+ * either way, but the public claim remains truthful.
+ */
+export async function readPublicEnrollmentState({
+  env = process.env,
+  prisma,
+}: {
+  env?: Record<string, string | undefined>;
+  prisma: Pick<PrismaClient, 'user'> | null | undefined;
+}): Promise<PublicEnrollmentRead> {
+  const status = getEnrollmentStatus(env);
+  const pausedState: SplootEnrollmentPublicState = {
+    status: 'paused',
+    mode: status.mode,
+    configuration: status.configuration,
+  };
+  const unknownState: SplootEnrollmentPublicState = {
+    status: 'unknown',
+    mode: status.mode,
+    configuration: status.configuration,
+  };
+
+  if (status.configuration === 'invalid') {
+    return { state: pausedState, available: false };
+  }
+
+  if (status.mode === 'closed') {
+    return { state: pausedState, available: true };
+  }
+
+  if (!prisma) {
+    return { state: unknownState, available: false };
+  }
+
+  try {
+    const accountCount = await prisma.user.count();
+    const acceptingNewAccounts = status.mode === 'ga' || (
+      status.maxAccounts !== null && accountCount < status.maxAccounts
+    );
+
+    return {
+      state: {
+        status: acceptingNewAccounts ? 'open' : 'paused',
+        mode: status.mode,
+        configuration: status.configuration,
+      },
+      available: true,
+    };
+  } catch {
+    return { state: unknownState, available: false };
+  }
 }
 
 export function getEnrollmentReadback(

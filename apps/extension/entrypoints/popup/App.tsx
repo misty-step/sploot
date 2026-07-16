@@ -9,15 +9,17 @@ import {
   useSession,
   useUser,
 } from '@clerk/chrome-extension'
+import type { SplootEnrollmentPublicState } from '@sploot/common'
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
 import { IS_DEV_BUILD } from '../../shared/build-mode'
 import { requestVisibleTabCapture } from '../../shared/capture-messages'
 import { CONTEXT_MENU_SAVE_MESSAGES, type ContextMenuSaveJobSummary } from '../../shared/context-menu-save-messages'
 import { getSaveStatus, onSaveStatusChanged, type SaveStatus } from '../../shared/save-status'
 import { E2E_AUTH_MODE, EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
-import { getSplootAppUrl, getSplootSignInUrl } from '../../shared/app-url'
+import { getSplootAppUrl, getSplootEnrollmentUrl, getSplootSignInUrl } from '../../shared/app-url'
 import { runBestEffort } from '../../shared/best-effort'
 import { performContextMenuSaveAction, requestContextMenuSaveQueue } from './queue-recovery'
+import { loadPublicEnrollmentState } from '../../shared/enrollment-state'
 import './style.css'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
@@ -131,16 +133,62 @@ function E2EPopup() {
   )
 }
 
+/**
+ * The truthful signed-out states, kept distinct: before the readback resolves
+ * the popup only claims it is checking; a failed or database-unavailable
+ * readback is reported as unknown, never mislabeled as an ordinary policy
+ * pause. Every state keeps existing-user sign-in available and none promises
+ * immediate account creation.
+ */
+type SignedOutEnrollment = SplootEnrollmentPublicState | { status: 'checking' } | { status: 'unreachable' }
+
+const SIGNED_OUT_COPY: Record<'checking' | 'unreachable' | 'unknown' | 'paused' | 'open', { heading: string; body: string }> = {
+  checking: {
+    heading: 'sign in on sploot',
+    body: 'Checking new-account availability… Existing users can sign in now, then return here to save images from the web.',
+  },
+  unreachable: {
+    heading: 'enrollment status unavailable',
+    body: 'Sploot could not confirm new-account availability. Existing users can still sign in, then return here to save images from the web.',
+  },
+  unknown: {
+    heading: 'enrollment status unavailable',
+    body: 'Sploot cannot confirm new-account availability right now, so sign-up stays closed until it can. Existing users can still sign in, then return here to save images from the web.',
+  },
+  paused: {
+    heading: 'new enrollment is paused',
+    body: 'New accounts are not being accepted right now. Existing users can still sign in, then return here to save images from the web.',
+  },
+  open: {
+    heading: 'sign in on sploot',
+    body: 'Use the full Sploot sign-in page, then return here to save images from the web.',
+  },
+}
+
 function SignedOutPanel() {
+  const [enrollmentState, setEnrollmentState] = useState<SignedOutEnrollment>({ status: 'checking' })
+
+  useEffect(() => {
+    loadPublicEnrollmentState(getSplootEnrollmentUrl())
+      .then(state => {
+        setEnrollmentState(state ?? { status: 'unreachable' })
+      })
+      .catch(() => {
+        setEnrollmentState({ status: 'unreachable' })
+      })
+  }, [])
+
   const handleSignIn = () => {
     runBestEffort('tabs.create sign-in', () => chrome.tabs.create({ url: getSplootSignInUrl() }))
   }
 
+  const copy = SIGNED_OUT_COPY[enrollmentState.status]
+
   return (
     <div className="auth-panel">
       <div className="auth-header">
-        <h2>Sign in on Sploot</h2>
-        <p>Use the full Sploot sign-in page, then return here to save images from the web.</p>
+        <h2>{copy.heading}</h2>
+        <p>{copy.body}</p>
       </div>
       <div className="actions">
         <button onClick={handleSignIn}>Sign In</button>

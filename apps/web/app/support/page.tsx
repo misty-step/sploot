@@ -1,21 +1,24 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { EnrollmentNotice } from "@/components/enrollment/enrollment-notice";
+import { PublicPageHeader } from "@/components/public-page-header";
+import { prisma } from "@/lib/db";
+import { readPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
 
 export const metadata: Metadata = {
   title: "Support - Sploot",
   description: "Get help with Sploot meme library and Chrome extension",
 };
 
-export default function Support() {
+export const dynamic = "force-dynamic";
+
+export default async function Support() {
+  const { state: enrollmentState } = await readPublicEnrollmentState({ prisma });
+
   return (
     <main className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-6 py-12">
-        <Link
-          href="/"
-          className="text-muted-foreground hover:text-foreground transition-colors mb-8 inline-block"
-        >
-          ← Back to Sploot
-        </Link>
+      <PublicPageHeader current="/support" />
+      <div className="mx-auto max-w-3xl px-6 py-12">
 
         <h1
           className="text-4xl md:text-5xl mb-8 tracking-wide"
@@ -25,6 +28,8 @@ export default function Support() {
         </h1>
 
         <div className="space-y-8">
+          <EnrollmentNotice state={enrollmentState} />
+
           <section>
             <h2 className="text-xl font-semibold mb-4">Getting Started</h2>
             <div className="space-y-4 text-muted-foreground">
@@ -33,10 +38,10 @@ export default function Support() {
               </p>
               <p>
                 New here? The{" "}
-                <Link href="/help" className="text-accent-cyan hover:underline">
+                <Link href="/help" className="sploot-public-link">
                   Getting Started guide
                 </Link>{" "}
-                walks through signing up, every way to save a meme
+                walks through the available ways to save a meme
                 (extension, iPhone shortcut, PWA share, paste/upload), and
                 how your data works.
               </p>
@@ -49,7 +54,13 @@ export default function Support() {
               <h3 className="font-medium">How to save images</h3>
               <ol className="list-decimal pl-6 space-y-2 text-muted-foreground">
                 <li>Install the Sploot extension from the Chrome Web Store</li>
-                <li>Sign in with your Sploot account (or create one at sploot.app)</li>
+                <li>
+                  {/* The enrollment notice above is the single paused/unknown
+                      statement on this page; this step only routes sign-in. */}
+                  {enrollmentState.status === 'open'
+                    ? 'Enrollment is open; new users can sign up at sploot.app'
+                    : 'Sign in at sploot.app with your existing account (see the enrollment status above)'}
+                </li>
                 <li>Right-click any image on any website</li>
                 <li>Select &quot;Save to Sploot&quot; from the menu</li>
                 <li>You&apos;ll see a notification confirming the save</li>
@@ -97,7 +108,7 @@ export default function Support() {
             <h2 className="text-xl font-semibold mb-4">Contact Us</h2>
             <p className="text-muted-foreground">
               For additional help or to report issues, email us at{" "}
-              <a href="mailto:support@sploot.app" className="text-accent-cyan hover:underline">
+              <a href="mailto:support@sploot.app" className="sploot-public-link">
                 support@sploot.app
               </a>
             </p>
@@ -107,14 +118,14 @@ export default function Support() {
             <h2 className="text-xl font-semibold mb-4">Links</h2>
             <ul className="space-y-2">
               <li>
-                <Link href="/privacy" className="text-accent-cyan hover:underline">
+                <Link href="/privacy" className="sploot-public-link">
                   Privacy Policy
                 </Link>
               </li>
               <li>
                 <a
                   href="https://github.com/sploot-app/sploot"
-                  className="text-accent-cyan hover:underline"
+                  className="sploot-public-link"
                   target="_blank"
                   rel="noopener noreferrer"
                 >

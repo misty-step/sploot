@@ -129,6 +129,21 @@ describe('context menu save', () => {
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
   });
 
+  it('keeps an authenticated duplicate save successful and reports duplicate truth', async () => {
+    mocks.uploadImage.mockResolvedValueOnce({
+      assetId: 'existing-a1',
+      blobUrl: 'b',
+      thumbnailUrl: 't',
+      isDuplicate: true,
+    });
+
+    await onClicked({ menuItemId: 'save-to-sploot', srcUrl: 'https://x.test/cat.png' }, { title: 'Cat' });
+
+    await vi.waitFor(() => expect(mocks.isAuthenticated).toHaveBeenCalled());
+    await vi.waitFor(() => expect(mocks.showSuccessNotification).toHaveBeenCalledWith('cat.png', 't', { isDuplicate: true }));
+    expect(mocks.showErrorNotification).not.toHaveBeenCalled();
+  });
+
   it('shows an error and never uploads when there is no image URL', async () => {
     await onClicked({ menuItemId: 'save-to-sploot', srcUrl: undefined }, undefined);
 

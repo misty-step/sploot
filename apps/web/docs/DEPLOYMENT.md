@@ -78,8 +78,13 @@ The App Platform spec must bind `SPLOOT_DEPLOYMENT_APP_ID` to `${APP_ID}` and
 `SPLOOT_DEPLOYMENT_COMMIT` to `${_self.COMMIT_HASH}`. Set
 `SPLOOT_DEPLOYMENT_CHANGE_ID` to a nonempty immutable operator-generated
 change ID. DigitalOcean assigns the provider deployment ID after the update;
-record it in the proof packet, never in the spec. Runtime health must echo the
-resolved app ID, change ID, commit, marker, and enrollment mode.
+record it in the proof packet, never in the public health contract. The public
+enrollment endpoint intentionally returns only `configuration`, `mode`, and
+`status`; use the authenticated admin readback and provider receipt for
+deployment identity and diagnostics. `status: "unknown"` (HTTP 503) is the
+distinct database-unavailable read under a valid GA/capped configuration —
+fail-closed for sign-up but never mislabeled as an ordinary policy pause;
+`closed` mode never touches the database and always reports `paused`.
 
 `SPLOOT_ENROLLMENT_MODE` is the server-owned pre-GA containment boundary. In
 `capped` mode, new `users` rows are admitted only while the aggregate count is
@@ -120,9 +125,9 @@ dry-run by default. It rejects a capped-first lifecycle, requires a structured
 App spec with exact bindings, snapshots and proves the active closed
 deployment, then performs one DigitalOcean spec update (which itself creates
 the deployment), observes the single provider deployment, waits for it, and
-uses the exact HTTPS health endpoint as runtime authority. The probe checks
-`mode`, `gaLifted`, `acceptingNewAccounts`, app ID, change ID, marker, and
-resolved commit. If any step after mutation fails, it restores the snapshotted
+uses the exact HTTPS public enrollment endpoint as runtime mode/status
+authority. Provider receipts and the authenticated operator readback retain
+deployment identity, capacity, and resolved commit diagnostics. If any step after mutation fails, it restores the snapshotted
 closed spec through the same one-update path only when the source was not
 updated and the exact provider identity receipt is still available. A source
 update or lost provider identity produces a redacted operator-recovery packet;
@@ -213,10 +218,7 @@ Enrollment proof must target the exact active deployment URL:
 
 ```bash
 pnpm --filter web probe:enrollment -- \
-  --url "$EXACT_DEPLOYMENT_URL" --expect-mode closed \
-  --expect-app-id "$DO_APP_ID" --expect-change-id "$CHANGE_ID" \
-  --expect-commit "$DEPLOY_COMMIT" --expect-marker production \
-  --expect-accepting false
+  --url "$EXACT_DEPLOYMENT_URL" --expect-mode closed --expect-status paused
 ```
 
 the health contract requires database `up`, the embedding limiter `up`, the

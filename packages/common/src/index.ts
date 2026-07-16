@@ -41,5 +41,9 @@ export type {
   SplootApiErrorActionType,
   SplootApiErrorCode,
   SplootApiUploadResponse,
+  SplootEnrollmentPublicState,
+  SplootEnrollmentPublicStatus,
   StorageQuotaSnapshot,
 } from './types';
+
+export { isSplootEnrollmentPublicState } from './types';

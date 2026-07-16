@@ -29,3 +29,7 @@ export function getSplootAppUrl(path = '/app'): string {
 export function getSplootSignInUrl(): string {
   return getSplootAppUrl('/sign-in');
 }
+
+export function getSplootEnrollmentUrl(): string {
+  return getSplootAppUrl('/api/health/enrollment');
+}

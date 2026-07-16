@@ -42,6 +42,15 @@ management, …) is Clerk/qa-local session-only and returns the stable
 cannot read your full library, delete anything, or manage other tokens. See
 `AUTH.md` for the auth-door architecture this is built on.
 
+New account enrollment is a separate server-owned boundary. Signed-out public
+surfaces and token-scoped save/search calls never mint a new account or token;
+existing users can continue using their already-issued personal token. When
+the boundary is paused or unavailable, save/search return the documented
+`403 enrollment_closed` or `503 enrollment_unavailable` response. A configured
+runtime gate can independently return `503 uploads_disabled` for save or
+`503 embeddings_disabled` for a search that needs a new embedding; those are
+operational pauses, not enrollment/configuration failures.
+
 ## Base URL
 
 ```
@@ -86,8 +95,9 @@ Accepted media types: JPEG, PNG, WebP, GIF, MP4, WebM.
 **Errors:** `400` missing/invalid file · `401` bad or missing token ·
 `403 {"code":"quota_exceeded"}` storage quota exceeded or
 `{"code":"enrollment_closed"}` new-account admission paused · `503
-{"code":"enrollment_unavailable"}` enrollment boundary unavailable · `413` file too
-large · `429` rate limited · `503 {"code":"uploads_disabled"}` uploads paused.
+{"code":"enrollment_unavailable"}` enrollment/configuration or database boundary unavailable · `413` file too
+large · `429` rate limited · `503 {"code":"uploads_disabled"}` the independent
+upload runtime gate is paused.
 
 ```bash
 curl -X POST https://www.sploot.app/api/upload \
@@ -113,8 +123,9 @@ dedupe/quota pipeline as bytes upload.
 **Errors:** `400` missing/invalid/private URL · `401` bad or missing token ·
 `422` remote fetch failed or was not an image · `403` quota exceeded or
 `{"code":"enrollment_closed"}` new-account admission paused · `503
-{"code":"enrollment_unavailable"}` enrollment boundary unavailable or uploads
-paused.
+{"code":"enrollment_unavailable"}` enrollment/configuration or database boundary
+unavailable · `503 {"code":"uploads_disabled"}` the independent upload
+runtime gate is paused.
 
 ```bash
 curl -X POST https://www.sploot.app/api/upload/url \
@@ -171,7 +182,9 @@ web app itself calls.
 `403 {"code":"enrollment_closed"}` admission paused ·
 `409 {"code":"enrollment_identity_conflict"}` identity repair required ·
 `503 {"code":"enrollment_unavailable"}` admission boundary unavailable or
-embedding service unavailable (Replicate not configured or paused).
+embedding admission limiter unavailable · `503 {"code":"embeddings_disabled"}`
+the embedding runtime gate is paused. A provider configuration failure without
+a stable code remains a generic 503.
 
 ```bash
 curl -X POST https://www.sploot.app/api/search \

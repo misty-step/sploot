@@ -39,6 +39,48 @@ export interface StorageQuotaSnapshot {
 }
 
 /**
+ * - 'open': a valid capped/GA policy verified live capacity.
+ * - 'paused': policy deliberately refuses new accounts (closed mode, cap
+ *   reached, or the invalid-configuration fail-safe).
+ * - 'unknown': a valid capped/GA policy could not reach its database, so the
+ *   truthful public claim is "cannot confirm", never an ordinary pause.
+ */
+export type SplootEnrollmentPublicStatus = 'open' | 'paused' | 'unknown';
+
+export interface SplootEnrollmentPublicState {
+  status: SplootEnrollmentPublicStatus;
+  mode: 'capped' | 'ga' | 'closed';
+  configuration: 'valid' | 'invalid';
+}
+
+export function isSplootEnrollmentPublicState(value: unknown): value is SplootEnrollmentPublicState {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  const shapeIsValid = (
+    (candidate.status === 'open' || candidate.status === 'paused' || candidate.status === 'unknown') &&
+    (candidate.mode === 'capped' || candidate.mode === 'ga' || candidate.mode === 'closed') &&
+    (candidate.configuration === 'valid' || candidate.configuration === 'invalid') &&
+    Object.keys(candidate).length === 3
+  );
+
+  if (!shapeIsValid) return false;
+
+  // Public state is a projection, not a bag of independent flags. Invalid
+  // configuration is always the canonical closed/paused fail-safe; an open
+  // state can only come from a valid capped or GA policy, and unknown exists
+  // only where a valid capped/GA policy actually needed the database.
+  if (candidate.configuration === 'invalid') {
+    return candidate.status === 'paused' && candidate.mode === 'closed';
+  }
+
+  if (candidate.mode === 'closed') return candidate.status === 'paused';
+  if (candidate.status === 'open' || candidate.status === 'unknown') {
+    return candidate.mode === 'capped' || candidate.mode === 'ga';
+  }
+  return true;
+}
+
+/**
  * Response from POST /api/upload
  *
  * This is the public API contract that clients depend on.

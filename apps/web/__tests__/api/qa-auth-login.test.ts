@@ -59,4 +59,14 @@ describe('/api/qa-auth/login', () => {
     expect(res.status).toBe(404);
     expect(res.headers.get('set-cookie')).toBeNull();
   });
+
+  it('returns 404 when the qa-local build seam is compiled out, before any runtime gate', async () => {
+    // Production builds inline NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD to 'false',
+    // making the handler an unconditional 404 regardless of runtime env.
+    process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD = 'false';
+
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(404);
+    expect(res.headers.get('set-cookie')).toBeNull();
+  });
 });

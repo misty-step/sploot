@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { PublicPageHeader } from "@/components/public-page-header";
 import { Suspense } from "react";
 import sanitizeHtml from "sanitize-html";
 import { getReleases, type Release } from "@/lib/releases";
@@ -71,7 +71,7 @@ function ReleaseCard({ release }: { release: Release }) {
           href={release.html_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-sm text-accent-cyan hover:underline"
+          className="sploot-public-link text-sm"
         >
           View on GitHub
         </a>
@@ -164,13 +164,8 @@ function ReleasesLoading() {
 export default function ChangelogPage() {
   return (
     <main className="min-h-screen bg-background">
-      <div className="max-w-3xl mx-auto px-6 py-12">
-        <Link
-          href="/"
-          className="text-muted-foreground hover:text-foreground transition-colors mb-8 inline-block"
-        >
-          &larr; Back to Sploot
-        </Link>
+      <PublicPageHeader current="/changelog" />
+      <div className="mx-auto max-w-3xl px-6 py-12">
 
         <header className="mb-12">
           <h1
@@ -183,7 +178,7 @@ export default function ChangelogPage() {
             Latest updates and improvements to Sploot. Subscribe to our{" "}
             <a
               href="/changelog.xml"
-              className="text-accent-cyan hover:underline"
+              className="sploot-public-link"
             >
               RSS feed
             </a>{" "}

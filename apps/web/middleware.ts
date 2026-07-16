@@ -1,6 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse, type NextRequest } from 'next/server'
-import { verifyQaLocalAuthHeaders } from '@/lib/auth/qa-local'
 
 // Define protected routes that require authentication
 const isProtectedRoute = createRouteMatcher([
@@ -35,21 +34,47 @@ export function getCanonicalWebRedirectUrl(req: Pick<NextRequest, 'method'> & { 
   return new URL(`${url.pathname}${url.search}`, CANONICAL_WEB_ORIGIN)
 }
 
-export default clerkMiddleware(async (auth, req) => {
+const clerkAuthMiddleware = clerkMiddleware(async (auth, req) => {
   const canonicalUrl = getCanonicalWebRedirectUrl(req)
   if (canonicalUrl) {
     return NextResponse.redirect(canonicalUrl, 308)
   }
 
   if (isProtectedRoute(req)) {
-    const qaAuth = await verifyQaLocalAuthHeaders(req.headers ?? new Headers())
-    if (qaAuth.status === 'authenticated') {
-      return
+    // Compile-time omission: only explicit dev/test qa builds inline this
+    // flag to 'true'. Production builds eliminate the qa-local bypass (and
+    // its markers) entirely — proven by the production public-truth guard.
+    if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
+      const { verifyQaLocalAuthHeaders } = await import('@/lib/auth/qa-local')
+      const qaAuth = await verifyQaLocalAuthHeaders(req.headers ?? new Headers())
+      if (qaAuth.status === 'authenticated') {
+        return
+      }
     }
 
     await auth.protect({ unauthenticatedUrl: new URL('/sign-in', req.url).toString() })
   }
 })
+
+/**
+ * The production-shaped anonymous artifact has no provider credentials. Its
+ * build-time-only seam makes the signed-out boundary explicit for public proof;
+ * production authority rejects the artifact and always uses Clerk below.
+ */
+const publicTruthSignedOutMiddleware = (req: NextRequest) => {
+  const canonicalUrl = getCanonicalWebRedirectUrl(req)
+  if (canonicalUrl) return NextResponse.redirect(canonicalUrl, 308)
+  if (isProtectedRoute(req)) return NextResponse.redirect(new URL('/sign-in', req.url), 307)
+  return NextResponse.next()
+}
+
+const isPublicTruthSignedOutBuild =
+  process.env.NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E === 'true' &&
+  (process.env.SPLOOT_DEPLOYMENT_ENV === 'test' || process.env.SPLOOT_DEPLOYMENT_ENV === 'evidence')
+
+export default isPublicTruthSignedOutBuild
+  ? publicTruthSignedOutMiddleware
+  : clerkAuthMiddleware
 
 export const config = {
   matcher: [

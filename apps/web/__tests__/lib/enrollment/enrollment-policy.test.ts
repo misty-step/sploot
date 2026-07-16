@@ -3,6 +3,7 @@ import {
   ENROLLMENT_DENIAL_CODE,
   getEnrollmentStatus,
   getEnrollmentReadback,
+  readPublicEnrollmentState,
   enrollmentDeniedResponse,
   enrollmentDeniedResponseBody,
   assertNewEnrollmentAllowed,
@@ -10,12 +11,113 @@ import {
 } from '@/lib/enrollment/enrollment-policy';
 
 describe('enrollment policy', () => {
+  const productionEnv = {
+    NODE_ENV: 'production',
+    SPLOOT_DEPLOYMENT_ENV: 'production',
+    SPLOOT_DEPLOYMENT_APP_ID: 'app-1',
+    SPLOOT_DEPLOYMENT_COMMIT: 'deadbeef',
+    SPLOOT_DEPLOYMENT_CHANGE_ID: 'change-1',
+  };
+
+  it('counts capped accounts and pauses at the exact limit', async () => {
+    const count = async () => 12;
+    const result = await readPublicEnrollmentState({
+      env: { ...productionEnv, SPLOOT_ENROLLMENT_MODE: 'capped', SPLOOT_ENROLLMENT_MAX_ACCOUNTS: '12' },
+      prisma: { user: { count } },
+    });
+
+    expect(result).toEqual({
+      state: { status: 'paused', mode: 'capped', configuration: 'valid' },
+      available: true,
+    });
+  });
+
+  it('changes the public state when the capped runtime count crosses the limit', async () => {
+    let accountCount = 11;
+    const prisma = { user: { count: async () => accountCount } };
+    const env = { ...productionEnv, SPLOOT_ENROLLMENT_MODE: 'capped', SPLOOT_ENROLLMENT_MAX_ACCOUNTS: '12' };
+
+    await expect(readPublicEnrollmentState({ env, prisma })).resolves.toMatchObject({
+      state: { status: 'open', mode: 'capped', configuration: 'valid' },
+      available: true,
+    });
+
+    accountCount = 12;
+    await expect(readPublicEnrollmentState({ env, prisma })).resolves.toMatchObject({
+      state: { status: 'paused', mode: 'capped', configuration: 'valid' },
+      available: true,
+    });
+  });
+
+  it('reports unknown, not paused, when the enrollment database is unavailable', async () => {
+    const result = await readPublicEnrollmentState({
+      env: { ...productionEnv, SPLOOT_ENROLLMENT_MODE: 'ga' },
+      prisma: { user: { count: async () => { throw new Error('database down'); } } },
+    });
+
+    expect(result).toEqual({
+      state: { status: 'unknown', mode: 'ga', configuration: 'valid' },
+      available: false,
+    });
+  });
+
+  it('reports unknown for a capped configuration without a database seam', async () => {
+    const result = await readPublicEnrollmentState({
+      env: { ...productionEnv, SPLOOT_ENROLLMENT_MODE: 'capped', SPLOOT_ENROLLMENT_MAX_ACCOUNTS: '12' },
+      prisma: null,
+    });
+
+    expect(result).toEqual({
+      state: { status: 'unknown', mode: 'capped', configuration: 'valid' },
+      available: false,
+    });
+  });
+
+  it('keeps closed mode an ordinary pause that never needs the database', async () => {
+    const result = await readPublicEnrollmentState({
+      env: { ...productionEnv, SPLOOT_ENROLLMENT_MODE: 'closed' },
+      prisma: null,
+    });
+
+    expect(result).toEqual({
+      state: { status: 'paused', mode: 'closed', configuration: 'valid' },
+      available: true,
+    });
+  });
+
+  it('pauses malformed configuration without attempting a database read', async () => {
+    const count = async () => 0;
+    const result = await readPublicEnrollmentState({
+      env: { ...productionEnv, SPLOOT_ENROLLMENT_MODE: 'capped' },
+      prisma: { user: { count } },
+    });
+
+    expect(result).toEqual({
+      state: { status: 'paused', mode: 'closed', configuration: 'invalid' },
+      available: false,
+    });
+  });
+
   it('fails closed for an incomplete production configuration', () => {
     expect(getEnrollmentStatus({ NODE_ENV: 'production', SPLOOT_DEPLOYMENT_ENV: 'production' })).toMatchObject({
       mode: 'closed',
       acceptingNewAccounts: false,
       configuration: 'invalid',
     });
+  });
+
+  it('allows only the explicit test deployment authority for the production-shaped browser artifact', () => {
+    expect(getEnrollmentStatus({
+      NODE_ENV: 'production',
+      SPLOOT_DEPLOYMENT_ENV: 'test',
+      SPLOOT_PUBLIC_TRUTH_E2E_BUILD: 'true',
+      SPLOOT_ENROLLMENT_MODE: 'closed',
+    })).toMatchObject({ mode: 'closed', configuration: 'valid' });
+    expect(getEnrollmentStatus({
+      NODE_ENV: 'production',
+      SPLOOT_DEPLOYMENT_ENV: 'test',
+      SPLOOT_ENROLLMENT_MODE: 'closed',
+    })).toMatchObject({ mode: 'closed', configuration: 'invalid' });
   });
 
   it('fails closed when the production marker is missing or ambiguous', () => {

@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { EnrollmentNotice } from "@/components/enrollment/enrollment-notice";
+import { PublicPageHeader } from "@/components/public-page-header";
+import { prisma } from "@/lib/db";
+import { readPublicEnrollmentState } from "@/lib/enrollment/enrollment-policy";
 
 export const metadata: Metadata = {
   title: "Save to Sploot on iPhone - Sploot Help",
@@ -7,13 +11,18 @@ export const metadata: Metadata = {
     "Set up the Save to Sploot Apple Shortcut so images share straight from any iPhone app into your library.",
 };
 
-export default function IosShortcutHelp() {
+export const dynamic = "force-dynamic";
+
+export default async function IosShortcutHelp() {
+  const { state: enrollmentState } = await readPublicEnrollmentState({ prisma });
+
   return (
     <main className="min-h-screen bg-background">
+      <PublicPageHeader current="/help" />
       <div className="max-w-3xl mx-auto px-6 py-12">
         <Link
           href="/help"
-          className="text-muted-foreground hover:text-foreground transition-colors mb-8 inline-block"
+          className="sploot-public-link mb-8 inline-flex min-h-11 min-w-11 items-center transition-colors"
         >
           ← Back to Getting Started
         </Link>
@@ -38,19 +47,20 @@ export default function IosShortcutHelp() {
           — a credential that can only upload to your library, never read or
           delete it.
         </p>
+        <EnrollmentNotice state={enrollmentState} />
 
         <div className="space-y-10">
           <section>
-            <h2 className="text-xl font-semibold mb-4">1. Mint an upload token</h2>
+            <h2 className="text-xl font-semibold mb-4">1. Use an existing account&apos;s upload token</h2>
             <ol className="list-decimal pl-6 space-y-2 text-muted-foreground">
               <li>
                 Open Sploot →{" "}
-                <Link href="/app/settings" className="text-accent-cyan hover:underline">
+                <Link href="/app/settings" className="sploot-public-link inline-flex min-h-11 min-w-11 items-center">
                   Settings
                 </Link>{" "}
                 → Upload tokens.
               </li>
-              <li>Name it (e.g. &quot;iphone&quot;) and tap mint token.</li>
+              <li>Existing Sploot users can name it (e.g. &quot;iphone&quot;) and tap mint token.</li>
               <li>
                 Copy the <code className="text-foreground">splt_…</code> value.{" "}
                 <strong className="text-foreground">It is shown only once.</strong> If
@@ -145,7 +155,11 @@ export default function IosShortcutHelp() {
                   </tr>
                   <tr>
                     <td className="py-2 pr-4">503</td>
-                    <td className="py-2">Uploads are temporarily paused.</td>
+                    <td className="py-2"><code>enrollment_unavailable</code> — enrollment/configuration or database boundary unavailable.</td>
+                  </tr>
+                  <tr>
+                    <td className="py-2 pr-4">503</td>
+                    <td className="py-2"><code>uploads_disabled</code> — uploads are temporarily paused by the runtime gate.</td>
                   </tr>
                 </tbody>
               </table>
@@ -163,7 +177,7 @@ export default function IosShortcutHelp() {
               <li>Only a hash of the token is stored server-side; the plaintext is shown once.</li>
               <li>
                 If a token leaks (lost phone, shared screenshot), open{" "}
-                <Link href="/app/settings" className="text-accent-cyan hover:underline">
+                <Link href="/app/settings" className="sploot-public-link inline-flex min-h-11 min-w-11 items-center">
                   Settings → Upload tokens
                 </Link>{" "}
                 and revoke it. Revocation is immediate.
