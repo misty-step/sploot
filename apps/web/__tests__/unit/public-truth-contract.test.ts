@@ -64,14 +64,14 @@ describe('public truth contracts', () => {
     const playwright = read('playwright.config.ts');
     const workflow = readFileSync(resolve(root, '../../.github/workflows/ci.yml'), 'utf8');
 
-    expect(webPackage.scripts?.['e2e:public-truth']).toBe('playwright test --config playwright.config.ts --grep "public truth"');
+    expect(webPackage.scripts?.['e2e:public-truth']).toBe('playwright test --config playwright.config.ts --project=public-truth --grep "public truth"');
     expect(packageJson.scripts?.['ci:public-truth']).toContain('e2e:public-truth');
-    expect(playwright).toContain("SPLOOT_ENROLLMENT_MODE: process.env.SPLOOT_ENROLLMENT_MODE ?? 'closed'");
-    expect(playwright).toContain("SPLOOT_QA_AUTH_MODE: process.env.SPLOOT_QA_AUTH_MODE ?? 'disabled'");
+    expect(playwright).toContain("SPLOOT_ENROLLMENT_MODE: authProjectSelected ? 'ga'");
+    expect(playwright).toContain("SPLOOT_QA_AUTH_MODE: authProjectSelected ? 'enabled'");
     expect(playwright).toContain("CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY ?? 'sk_test_public-truth-ci-only'");
     expect(playwright).toContain("name: '__clerk_db_jwt'");
     expect(playwright).toContain("value: 'public-truth-signed-out'");
-    expect(playwright).toContain("SPLOOT_PUBLIC_TRUTH_E2E_BUILD: 'true'");
+    expect(playwright).toContain("SPLOOT_PUBLIC_TRUTH_E2E_BUILD: authProjectSelected ? 'false' : 'true'");
     expect(read('next.config.ts')).toContain('assertPublicTruthE2EBuildAllowed');
     expect(read('lib/auth/client.tsx')).toContain('<ClerkProvider');
     expect(read('lib/auth/client.tsx')).not.toContain('return <>{children}</>');
