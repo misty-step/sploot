@@ -12,7 +12,13 @@ const bootstrapPostSource = readFileSync('apps/web/prisma/stripe-ledger-bootstra
 const bootstrapRollbackSource = readFileSync('apps/web/prisma/stripe-ledger-bootstrap-rollback.sql', 'utf8');
 
 function assertVectorShapes(dbText, advancedText) {
-  assert.match(dbText, /WITH ranked AS MATERIALIZED/);
+  // The ranked CTE is now a two-stage chain: ranked_candidates (the bounded
+  // HNSW scan, LIMIT applied) feeding ranked (adds COUNT(*) OVER() as the
+  // candidate-exhaustion signal, computed after that LIMIT). "ranked" is
+  // still the final exposed name every downstream query joins against.
+  assert.match(dbText, /WITH ranked_candidates AS MATERIALIZED/);
+  assert.match(dbText, /ranked AS MATERIALIZED/);
+  assert.match(dbText, /COUNT\(\*\) OVER \(\) AS candidate_count/);
   assert.match(dbText, /ORDER BY ae\.image_embedding <=>[\s\S]*?ASC, ae\.asset_id ASC/);
   assert.match(dbText, /1 - ranked\.distance AS distance/);
   assert.match(dbText, /ae\.owner_user_id =/);
