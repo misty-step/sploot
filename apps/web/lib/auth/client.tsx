@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <ClerkProvider>
+    <ClerkProvider telemetry={{ disabled: true }}>
       <ClerkAuthBridge>{children}</ClerkAuthBridge>
     </ClerkProvider>
   );
