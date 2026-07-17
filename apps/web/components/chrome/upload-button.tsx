@@ -1,13 +1,9 @@
 'use client';
 
 import { Upload } from 'lucide-react';
-import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-
-const subscribeHydration = () => () => {};
-const getClientHydrationSnapshot = () => true;
-const getServerHydrationSnapshot = () => false;
+import { useHydrated } from '@/hooks/use-hydrated';
 
 interface UploadButtonProps {
   onClick?: () => void;
@@ -28,7 +24,7 @@ export function UploadButton({
   showLabel = true,
   size = 'md',
 }: UploadButtonProps) {
-  const isActionReady = useSyncExternalStore(subscribeHydration, getClientHydrationSnapshot, getServerHydrationSnapshot);
+  const isActionReady = useHydrated();
 
   // Map custom size to Button size
   const buttonSize = size === 'md' ? 'default' : size;

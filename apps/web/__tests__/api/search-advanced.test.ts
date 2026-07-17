@@ -4,8 +4,8 @@ import { NextRequest } from 'next/server';
 const mocks = vi.hoisted(() => ({
   authenticatedUserId: 'qa-design-user',
   createEmbeddingService: vi.fn(),
-  getSearchResults: vi.fn(),
-  setSearchResults: vi.fn(),
+  getSearchResultPage: vi.fn(),
+  setSearchResultPage: vi.fn(),
   findManyAssetTags: vi.fn(),
   findManyAssets: vi.fn(),
   queryRaw: vi.fn(),
@@ -29,6 +29,7 @@ vi.mock('@/lib/auth/with-authenticated-api', () => ({
 }));
 
 vi.mock('@/lib/embeddings', () => ({
+  CLIP_MODEL: 'test/clip:model',
   createEmbeddingService: mocks.createEmbeddingService,
   EmbeddingAdmissionError: class EmbeddingAdmissionError extends Error {
     constructor(message: string, public statusCode?: number, public code?: string) {
@@ -44,26 +45,37 @@ vi.mock('@/lib/embeddings', () => ({
 
 vi.mock('@/lib/cache', () => ({
   getCacheService: () => ({
-    getSearchResults: mocks.getSearchResults,
-    setSearchResults: mocks.setSearchResults,
+    getSearchResultPage: mocks.getSearchResultPage,
+    setSearchResultPage: mocks.setSearchResultPage,
   }),
 }));
 
-vi.mock('@/lib/db', () => ({
-  prisma: {
-    user: {
-      findUnique: vi.fn().mockResolvedValue({ id: 'qa-design-user' }),
+vi.mock('@/lib/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/db')>();
+  return {
+    // buildRankedEmbeddingCte is a pure Prisma.sql builder (no DB access);
+    // keep the real implementation so the ranked-CTE SQL text assertions
+    // below stay meaningful instead of asserting against a stub.
+    buildRankedEmbeddingCte: actual.buildRankedEmbeddingCte,
+    // queryHnswRanked normally wraps the query in a transaction that sets
+    // per-statement HNSW scan settings; the test only cares about the final
+    // SELECT sent to $queryRaw, so replay the same mock directly.
+    queryHnswRanked: (query: unknown) => mocks.queryRaw(query),
+    prisma: {
+      user: {
+        findUnique: vi.fn().mockResolvedValue({ id: 'qa-design-user' }),
+      },
+      asset: {
+        findMany: mocks.findManyAssets,
+      },
+      assetTag: {
+        findMany: mocks.findManyAssetTags,
+      },
+      $queryRaw: mocks.queryRaw,
     },
-    asset: {
-      findMany: mocks.findManyAssets,
-    },
-    assetTag: {
-      findMany: mocks.findManyAssetTags,
-    },
-    $queryRaw: mocks.queryRaw,
-  },
-  logSearch: mocks.logSearch,
-}));
+    logSearch: mocks.logSearch,
+  };
+});
 
 vi.mock('@/lib/with-observability', () => ({
   withObservability: (handler: any) => handler,
@@ -83,8 +95,8 @@ describe('POST /api/search/advanced', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.authenticatedUserId = 'qa-design-user';
-    mocks.getSearchResults.mockResolvedValue(null);
-    mocks.setSearchResults.mockResolvedValue(undefined);
+    mocks.getSearchResultPage.mockResolvedValue(null);
+    mocks.setSearchResultPage.mockResolvedValue(undefined);
     mocks.findManyAssetTags.mockResolvedValue([]);
     mocks.logSearch.mockResolvedValue(undefined);
     mocks.createEmbeddingService.mockReturnValue({

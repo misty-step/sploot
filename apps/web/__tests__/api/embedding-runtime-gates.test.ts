@@ -7,14 +7,20 @@ const mocks = vi.hoisted(() => ({
   authenticatedUserId: 'user-1',
   createEmbeddingService: vi.fn(),
   getSearchResults: vi.fn(),
+  getSearchResultPage: vi.fn(),
   setSearchResults: vi.fn(),
+  setSearchResultPage: vi.fn(),
   getTextEmbedding: vi.fn(),
   findFirst: vi.fn(),
   findManyAssetTags: vi.fn(),
   vectorSearch: vi.fn(),
+  vectorSearchPage: vi.fn(),
   logSearch: vi.fn(),
   userFindUnique: vi.fn(),
   authenticateRequest: vi.fn(),
+  decodeVectorSearchCursor: vi.fn(),
+  createVectorSearchContext: vi.fn((context: unknown) => context),
+  vectorSearchCursorMatchesContext: vi.fn(() => true),
 }));
 
 vi.mock('@/lib/auth/server', () => ({
@@ -40,6 +46,8 @@ vi.mock('@/lib/cache', () => ({
   getCacheService: () => ({
     getSearchResults: mocks.getSearchResults,
     setSearchResults: mocks.setSearchResults,
+    getSearchResultPage: mocks.getSearchResultPage,
+    setSearchResultPage: mocks.setSearchResultPage,
     getTextEmbedding: mocks.getTextEmbedding,
   }),
 }));
@@ -54,8 +62,13 @@ vi.mock('@/lib/db', () => ({
       findMany: mocks.findManyAssetTags,
     },
   },
+  vectorSearchPage: mocks.vectorSearchPage,
   vectorSearch: mocks.vectorSearch,
   logSearch: mocks.logSearch,
+  decodeVectorSearchCursor: mocks.decodeVectorSearchCursor,
+  createVectorSearchContext: mocks.createVectorSearchContext,
+  vectorSearchCursorMatchesContext: mocks.vectorSearchCursorMatchesContext,
+  VECTOR_SEARCH_CURSOR_CONTEXT_ERROR: 'Search cursor does not match search context',
   upsertAssetEmbedding: vi.fn(),
 }));
 
@@ -82,6 +95,7 @@ describe('embedding runtime gates', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv('SPLOOT_EMBEDDINGS_ENABLED', 'false');
+    mocks.decodeVectorSearchCursor.mockReturnValue(null);
     mocks.getAuth.mockResolvedValue({ userId: 'user-1' });
     mocks.getAuthWithUser.mockResolvedValue({ userId: 'user-1' });
     mocks.userFindUnique.mockResolvedValue({ id: 'user-1' });
@@ -98,6 +112,7 @@ describe('embedding runtime gates', () => {
       syncStatus: 'success',
     });
     mocks.getSearchResults.mockResolvedValue(null);
+    mocks.getSearchResultPage.mockResolvedValue(null);
     mocks.findFirst.mockResolvedValue({ id: 'asset-1' });
   });
 
@@ -132,7 +147,7 @@ describe('search degraded-service honesty', () => {
     mocks.getAuthWithUser.mockResolvedValue({ userId: 'user-1' });
     mocks.userFindUnique.mockResolvedValue({ id: 'user-1' });
     mocks.authenticatedUserId = 'user-1';
-    mocks.getSearchResults.mockResolvedValue(null);
+    mocks.getSearchResultPage.mockResolvedValue(null);
     mocks.logSearch.mockResolvedValue(undefined);
   });
 
@@ -160,7 +175,7 @@ describe('search degraded-service honesty', () => {
         model: 'test-embedding-model',
       }),
     });
-    mocks.vectorSearch.mockResolvedValue([]);
+    mocks.vectorSearchPage.mockResolvedValue({ results: [], total: 0 });
 
     const response = await search(jsonRequest('/api/search', {
       query: 'impossible tiny hat query',
@@ -178,11 +193,11 @@ describe('search degraded-service honesty', () => {
       threshold: 0.9,
       thresholdFallback: false,
     });
-    expect(mocks.vectorSearch).toHaveBeenCalledTimes(1);
-    expect(mocks.vectorSearch).toHaveBeenCalledWith(
+    expect(mocks.vectorSearchPage).toHaveBeenCalledTimes(1);
+    expect(mocks.vectorSearchPage).toHaveBeenCalledWith(
       'user-1',
       [0.1, 0.2, 0.3],
-      { limit: 5, threshold: 0.9, shuffleSeed: undefined }
+      expect.objectContaining({ limit: 5, threshold: 0.9, favoriteOnly: false, tagId: null })
     );
   });
 });

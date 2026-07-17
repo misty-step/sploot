@@ -1,9 +1,10 @@
 import { PrismaClient, Prisma } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 import { databaseConfigured } from './env';
+import { normalizeSearchQuery, SEARCH_MAX_CURSOR_LENGTH, SEARCH_MAX_LIMIT } from './search-config';
+export { normalizeSearchQuery } from './search-config';
 import logger from './logger';
-import { shuffleWithSeed } from './seeded-random';
 import { getPerformanceMonitor } from './performance-monitor';
 import { logger as observabilityLogger } from './observability-logger';
 import { embeddingVectorSql } from './embedding-vector-sql';
@@ -847,36 +848,311 @@ export interface VectorSearchRow {
   size: number;
   created_at: Date;
   distance: number;
+  /** Exact pgvector distance text used only to advance a keyset cursor. */
+  rawDistance: string;
 }
 
-export async function vectorSearch(
+interface VectorSearchDbRow extends Omit<VectorSearchRow, 'rawDistance'> {
+  raw_distance: string;
+  /** Present on every row (including the all-NULL zero-match sentinel row
+   * from candidate_summary's LEFT JOIN); never part of the public
+   * VectorSearchRow -- read directly off the raw db row before mapping. */
+  candidate_count: bigint | number;
+}
+
+function mapVectorSearchRow(row: VectorSearchDbRow): VectorSearchRow {
+  const { raw_distance, candidate_count: _candidateCount, ...publicRow } = row;
+  return { ...publicRow, rawDistance: raw_distance };
+}
+
+export interface VectorSearchPage {
+  results: VectorSearchRow[];
+  total: number;
+  hasMore: boolean;
+  nextCursor?: string;
+}
+
+const HNSW_MAX_SCAN_TUPLES = 20_000;
+
+/**
+ * pgvector filtering is approximate unless iterative scans are enabled. Keep
+ * the setting transaction-local, strict-ordered, and bounded; every ranked
+ * production query uses this seam so a caller cannot accidentally revert to a
+ * lossy post-filtered HNSW scan.
+ */
+export async function queryHnswRanked<T>(query: Prisma.Sql): Promise<T[]> {
+  if (!prisma) return [];
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe("SET LOCAL hnsw.iterative_scan = 'strict_order'");
+    await tx.$executeRawUnsafe(`SET LOCAL hnsw.max_scan_tuples = ${HNSW_MAX_SCAN_TUPLES}`);
+    return tx.$queryRaw<T[]>(query);
+  });
+}
+
+export const VECTOR_SEARCH_CURSOR_CONTEXT_ERROR = 'Search cursor does not match search context';
+
+const VECTOR_SEARCH_CURSOR_VERSION = 4;
+const TEST_VECTOR_SEARCH_CURSOR_SECRET = 'sploot-test-only-vector-search-cursor-secret';
+
+function getVectorSearchCursorSecret(): string | null {
+  const configured = process.env.SEARCH_CURSOR_SECRET || process.env.CLERK_SECRET_KEY;
+  if (configured) return configured;
+  return process.env.NODE_ENV === 'test' ? TEST_VECTOR_SEARCH_CURSOR_SECRET : null;
+}
+
+function signVectorSearchCursor(payload: string): string | null {
+  const secret = getVectorSearchCursorSecret();
+  if (!secret) return null;
+  return createHmac('sha256', secret).update(payload, 'utf8').digest('base64url');
+}
+
+export interface VectorSearchContext {
+  query: string;
+  embeddingModel: string;
+  threshold: number;
+  sort: 'relevance';
+  direction: 'desc';
+  favoriteOnly: boolean;
+  tagId: string | null;
+  limit: number;
+}
+
+export type VectorSearchFilterVariant = 'unfiltered' | 'favorite' | 'tag' | 'favorite+tag';
+
+export function vectorSearchFilterVariant(input: {
+  favoriteOnly?: boolean;
+  tagId?: string | null;
+}): VectorSearchFilterVariant {
+  if (input.favoriteOnly && input.tagId) return 'favorite+tag';
+  if (input.favoriteOnly) return 'favorite';
+  if (input.tagId) return 'tag';
+  return 'unfiltered';
+}
+
+interface VectorSearchCursor {
+  version: typeof VECTOR_SEARCH_CURSOR_VERSION;
+  userId: string;
+  order: 'relevance';
+  id: string;
+  rawDistance: string;
+  context: VectorSearchContext;
+}
+
+export function createVectorSearchContext(input: {
+  query: string;
+  embeddingModel?: string;
+  threshold: number;
+  favoriteOnly?: boolean;
+  tagId?: string | null;
+  limit: number;
+}): VectorSearchContext {
+  const normalizedTagId = typeof input.tagId === 'string' ? input.tagId.trim() || null : null;
+  return {
+    query: normalizeSearchQuery(input.query),
+    embeddingModel: input.embeddingModel ?? process.env.SEARCH_EMBEDDING_MODEL ?? 'default',
+    threshold: input.threshold,
+    sort: 'relevance',
+    direction: 'desc',
+    favoriteOnly: input.favoriteOnly ?? false,
+    tagId: normalizedTagId,
+    limit: input.limit,
+  };
+}
+
+const VECTOR_SEARCH_RAW_DISTANCE_PATTERN = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+
+export function encodeVectorSearchCursor(cursor: Omit<VectorSearchCursor, 'version'>): string {
+  if (!cursor.userId) throw new Error('Search cursor requires a user id');
+  if (!VECTOR_SEARCH_RAW_DISTANCE_PATTERN.test(cursor.rawDistance) || !Number.isFinite(Number(cursor.rawDistance))) {
+    throw new Error('Search cursor requires an exact raw vector distance');
+  }
+  const payload = Buffer.from(JSON.stringify({ version: VECTOR_SEARCH_CURSOR_VERSION, ...cursor })).toString('base64url');
+  const signature = signVectorSearchCursor(payload);
+  if (!signature) throw new Error('Search cursor signing authority is not configured');
+  return `${payload}.${signature}`;
+}
+
+export function decodeVectorSearchCursor(value: string, expectedUserId?: string): VectorSearchCursor | null {
+  try {
+    const [payload, signature, extra] = value.split('.');
+    if (!payload || !signature || extra !== undefined) return null;
+    const expectedSignature = signVectorSearchCursor(payload);
+    if (!expectedSignature) return null;
+    const actualBytes = Buffer.from(signature, 'base64url');
+    const expectedBytes = Buffer.from(expectedSignature, 'base64url');
+    if (actualBytes.length !== expectedBytes.length || !timingSafeEqual(actualBytes, expectedBytes)) return null;
+
+    const cursor = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as VectorSearchCursor;
+    const context = cursor.context;
+    if (cursor.version !== VECTOR_SEARCH_CURSOR_VERSION ||
+        typeof cursor.userId !== 'string' || cursor.userId.length === 0 || cursor.userId.length > 200 ||
+        (expectedUserId !== undefined && cursor.userId !== expectedUserId) ||
+        cursor.order !== 'relevance' ||
+        typeof cursor.id !== 'string' || cursor.id.length === 0 || cursor.id.length > 200 ||
+        typeof cursor.rawDistance !== 'string' ||
+        !VECTOR_SEARCH_RAW_DISTANCE_PATTERN.test(cursor.rawDistance) ||
+        !Number.isFinite(Number(cursor.rawDistance)) ||
+        !context || typeof context !== 'object' ||
+        typeof context.query !== 'string' || context.query !== normalizeSearchQuery(context.query) ||
+        typeof context.embeddingModel !== 'string' || context.embeddingModel.length === 0 || context.embeddingModel.length > 500 ||
+        typeof context.threshold !== 'number' || !Number.isFinite(context.threshold) ||
+        context.threshold < 0 || context.threshold > 1 ||
+        context.sort !== 'relevance' || context.direction !== 'desc' ||
+        typeof context.favoriteOnly !== 'boolean' ||
+        (context.tagId !== null && (typeof context.tagId !== 'string' || context.tagId.length === 0)) ||
+        !Number.isSafeInteger(context.limit) || context.limit < 1 || context.limit > SEARCH_MAX_LIMIT) {
+      return null;
+    }
+    return cursor;
+  } catch {
+    return null;
+  }
+}
+
+export function vectorSearchCursorMatchesContext(
+  cursor: VectorSearchCursor,
+  context: VectorSearchContext,
+  userId: string,
+): boolean {
+  return cursor.userId === userId &&
+    cursor.context.query === context.query &&
+    cursor.context.embeddingModel === context.embeddingModel &&
+    cursor.context.threshold === context.threshold &&
+    cursor.context.sort === context.sort &&
+    cursor.context.direction === context.direction &&
+    cursor.context.favoriteOnly === context.favoriteOnly &&
+    cursor.context.tagId === context.tagId &&
+    cursor.context.limit === context.limit;
+}
+
+/** Semantic search is always relevance-first; gallery shuffle belongs to /api/assets. */
+export function vectorSearchOrderClause(): Prisma.Sql {
+  return Prisma.sql`ORDER BY ranked.distance ASC, ranked.id ASC`;
+}
+
+export function vectorSearchFilterClause(
+  variant: VectorSearchFilterVariant,
+  tagId: string | null,
+  thresholdClause: Prisma.Sql = Prisma.empty,
+): Prisma.Sql {
+  switch (variant) {
+    case 'unfiltered':
+      return Prisma.sql`${thresholdClause}`;
+    case 'favorite':
+      return Prisma.sql`AND a.favorite = true ${thresholdClause}`;
+    case 'tag':
+      return Prisma.sql`
+        AND EXISTS (
+          SELECT 1 FROM "asset_tags" at
+          WHERE at.asset_id = a.id AND at.tag_id = ${tagId}
+        )
+        ${thresholdClause}
+      `;
+    case 'favorite+tag':
+      return Prisma.sql`
+        AND a.favorite = true
+        AND EXISTS (
+          SELECT 1 FROM "asset_tags" at
+          WHERE at.asset_id = a.id AND at.tag_id = ${tagId}
+        )
+        ${thresholdClause}
+      `;
+  }
+}
+
+/**
+ * Keep pgvector's order-by/LIMIT contract at an owner-scoped scan boundary.
+ * The outer query repeats visibility predicates defensively, but no other
+ * tenant or deleted asset can consume a candidate slot.
+ */
+export function buildRankedEmbeddingCte(
+  vectorSql: Prisma.Sql,
+  candidateLimit: number,
+  ownerUserId: string,
+  cursor: Pick<VectorSearchCursor, 'rawDistance' | 'id'> | null = null,
+  additionalWhereClause: Prisma.Sql = Prisma.empty,
+): Prisma.Sql {
+  // Cursor.rawDistance is the exact database ordering key. Never reconstruct
+  // it from the public similarity score: decimal round-trips can skip/duplicate rows.
+  const cursorClause = cursor
+    ? Prisma.sql`
+        AND (
+          ae.image_embedding <=> ${vectorSql} > ${cursor.rawDistance}::double precision
+          OR (
+            ae.image_embedding <=> ${vectorSql} = ${cursor.rawDistance}::double precision
+            AND ae.asset_id > ${cursor.id}
+          )
+        )
+      `
+    : Prisma.empty;
+
+  return Prisma.sql`
+    WITH ranked_candidates AS MATERIALIZED (
+      SELECT
+        ae.asset_id AS id,
+        ae.image_embedding <=> ${vectorSql} AS distance,
+        (ae.image_embedding <=> ${vectorSql})::text AS raw_distance
+      FROM "asset_embeddings" ae
+      WHERE ae.owner_user_id = ${ownerUserId}
+        AND ae.asset_deleted_at IS NULL
+        AND ae.status = 'ready'
+        ${cursorClause}
+        ${additionalWhereClause}
+      ORDER BY ae.image_embedding <=> ${vectorSql} ASC, ae.asset_id ASC
+      LIMIT ${candidateLimit}
+    ),
+    ranked AS MATERIALIZED (
+      SELECT
+        ranked_candidates.*,
+        -- Exact row count this CTE actually materialized (bounded by the
+        -- LIMIT above, applied in ranked_candidates before this window
+        -- function runs). A caller compares this against the requested
+        -- candidateLimit to detect true exhaustion (fewer eligible
+        -- embeddings existed than requested) from the same execution,
+        -- without a second scan or a separate eligible-count query.
+        COUNT(*) OVER () AS candidate_count
+      FROM ranked_candidates
+    )
+  `;
+}
+
+export function buildVectorSearchPageQuery(
   userId: string,
   queryEmbedding: number[],
-  options?: {
-    limit?: number;
+  options: {
+    limit: number;
     threshold?: number;
-    shuffleSeed?: number;
-  }
-) {
-  if (!prisma) {
-    return [];
-  }
-
-  const { limit = 30, threshold, shuffleSeed } = options || {};
-
+    favoriteOnly: boolean;
+    tagId: string | null;
+    offset: number;
+    cursor: VectorSearchCursor | null;
+    candidateLimit?: number;
+  },
+): Prisma.Sql {
   const vectorSql = embeddingVectorSql(queryEmbedding, 'search query embedding');
-
-  // Fetch more candidates when shuffling or thresholding for better pool
-  const fetchLimit = shuffleSeed !== undefined
-    ? Math.min(limit * 3, 120) // Fetch 3x for better shuffle pool
-    : (typeof threshold === 'number' && threshold > 0
-        ? Math.min(limit * 3, 120)
-        : limit);
-
-  try {
-    // ALWAYS order by similarity (preserve semantic ranking)
-    // Shuffle happens in application code after fetching top results
-    const results = await prisma.$queryRaw<VectorSearchRow[]>(Prisma.sql`
+  const thresholdClause = typeof options.threshold === 'number' && options.threshold > 0
+    ? Prisma.sql`AND 1 - ranked.distance >= ${options.threshold}`
+    : Prisma.empty;
+  const filterClause = vectorSearchFilterClause(
+    vectorSearchFilterVariant({ favoriteOnly: options.favoriteOnly, tagId: options.tagId }),
+    options.tagId,
+    thresholdClause,
+  );
+  return Prisma.sql`
+    ${buildRankedEmbeddingCte(
+      vectorSql,
+      options.candidateLimit ?? Math.max(options.limit + 1, options.offset + options.limit + 1),
+      userId,
+      options.cursor,
+    )},
+    candidate_summary AS MATERIALIZED (
+      -- Exactly one row always, independent of how many (if any) ranked
+      -- candidates survive the owner/visibility/tag/favorite/threshold
+      -- filter below -- the exhaustion signal must reach the caller even
+      -- on a genuinely empty page (sparse tag, tail cursor).
+      SELECT COALESCE(MAX(candidate_count), 0) AS candidate_count FROM ranked
+    ),
+    matched AS MATERIALIZED (
       SELECT
         a.id,
         a.blob_url,
@@ -888,28 +1164,146 @@ export async function vectorSearch(
         a.favorite,
         a.size,
         a."createdAt" AS created_at,
-        1 - (ae.image_embedding <=> ${vectorSql}) AS distance
+        1 - ranked.distance AS distance,
+        ranked.raw_distance
+      FROM ranked
+      INNER JOIN "assets" a ON a.id = ranked.id
+      WHERE
+        a.owner_user_id = ${userId}
+        AND a.deleted_at IS NULL
+        ${filterClause}
+    )
+    SELECT
+      matched.id,
+      matched.blob_url,
+      matched.thumbnail_url,
+      matched.pathname,
+      matched.mime,
+      matched.width,
+      matched.height,
+      matched.favorite,
+      matched.size,
+      matched.created_at,
+      matched.distance,
+      matched.raw_distance,
+      candidate_summary.candidate_count
+    FROM candidate_summary
+    LEFT JOIN matched ON true
+    -- matched.distance is similarity (1 - raw cosine distance); DESC here
+      -- means highest-similarity (closest) first, equivalent to the ranked
+      -- CTE's own ascending raw-distance ORDER BY.
+      ORDER BY matched.distance DESC NULLS LAST, matched.id ASC
+  `;
+}
+
+export async function vectorSearchPage(
+  userId: string,
+  queryEmbedding: number[],
+  options?: {
+    limit?: number;
+    threshold?: number;
+    favoriteOnly?: boolean;
+    tagId?: string | null;
+    offset?: number;
+    cursor?: string;
+    cursorContext?: VectorSearchContext;
+  }
+): Promise<VectorSearchPage> {
+  const {
+    limit = 30,
+    threshold,
+    favoriteOnly = false,
+    tagId = null,
+    offset = 0,
+    cursor: cursorValue,
+    cursorContext,
+  } = options || {};
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > SEARCH_MAX_LIMIT) {
+    throw new Error(`vector search page limit must be between 1 and ${SEARCH_MAX_LIMIT}`);
+  }
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 500) {
+    throw new Error('vector search offset must be between 0 and 500; use a cursor for later pages');
+  }
+
+  if (cursorValue && cursorValue.length > SEARCH_MAX_CURSOR_LENGTH) {
+    throw new Error('vector search cursor is invalid');
+  }
+  const cursor = cursorValue ? decodeVectorSearchCursor(cursorValue, userId) : null;
+  if (cursorValue && !cursor) throw new Error('vector search cursor is invalid');
+  if (cursor && offset > 0) throw new Error('vector search cursor cannot be combined with offset');
+  if (cursor && (!cursorContext || !vectorSearchCursorMatchesContext(cursor, cursorContext, userId))) {
+    throw new Error(VECTOR_SEARCH_CURSOR_CONTEXT_ERROR);
+  }
+
+  if (!prisma) {
+    return { results: [], total: 0, hasMore: false };
+  }
+
+  const thresholdClause = typeof threshold === 'number' && threshold > 0
+    ? Prisma.sql`AND 1 - (ae.image_embedding <=> ${embeddingVectorSql(queryEmbedding, 'search query embedding')}) >= ${threshold}`
+    : Prisma.empty;
+  const filterVariant = vectorSearchFilterVariant({ favoriteOnly, tagId });
+  const filterClause = vectorSearchFilterClause(filterVariant, tagId, thresholdClause);
+
+  try {
+    const countRows = await prisma.$queryRaw<Array<{ total_count: bigint | number }>>(Prisma.sql`
+      SELECT COUNT(*) AS total_count
       FROM "assets" a
       INNER JOIN "asset_embeddings" ae ON a.id = ae.asset_id
       WHERE
         a.owner_user_id = ${userId}
         AND a.deleted_at IS NULL
-      ORDER BY ae.image_embedding <=> ${vectorSql}
-      LIMIT ${fetchLimit}
-    `);
+        AND ae.status = 'ready'
+        ${filterClause}
+      `);
+    const total = Number(countRows[0]?.total_count ?? 0);
+    let candidateLimit = Math.max(limit + 1, offset + limit + 1);
+    let rows: VectorSearchRow[] = [];
+    while (true) {
+      const dbRows = await queryHnswRanked<VectorSearchDbRow>(buildVectorSearchPageQuery(
+        userId,
+        queryEmbedding,
+        { limit, threshold, favoriteOnly, tagId, offset, cursor, candidateLimit },
+      ));
+      // The ranked CTE's own materialized row count, carried through even
+      // on a zero-match page (sparse tag/favorite, tail cursor) via the
+      // candidate_summary LEFT JOIN. Fewer candidates than requested means
+      // the CTE's owner-scoped, ready-status HNSW scan is exhausted --
+      // widening candidateLimit further would only re-scan the same
+      // already-exhausted set, never surface more rows. This replaces a
+      // separate eligible-count query and an eligibleCount-bounded loop
+      // that could otherwise re-scan up to ~log2(eligibleCount) times on a
+      // sparse filter before the old exhaustion check ever tripped.
+      const candidateCount = dbRows.length > 0 ? Number(dbRows[0].candidate_count) : 0;
+      rows = dbRows.map(mapVectorSearchRow).filter((row) => row.id !== null && row.id !== undefined);
+      const candidateWindowExhausted = candidateCount < candidateLimit;
+      // HNSW_MAX_SCAN_TUPLES is a hard ceiling on this query's own scan
+      // (queryHnswRanked sets hnsw.max_scan_tuples to the same value), so
+      // once candidateLimit reaches it, candidateCount can legitimately
+      // equal candidateLimit forever on a sparse tag/favorite filter --
+      // Math.min below would keep re-clamping to the same cap and this
+      // loop would never terminate. Once a query has actually run AT the
+      // cap, stop regardless of exhaustion/match state: this is the best
+      // bounded-approximate page obtainable without lifting the scan
+      // ceiling itself, not a correctness gap in the exhaustion signal.
+      const atScanCap = candidateLimit >= HNSW_MAX_SCAN_TUPLES;
+      if (candidateWindowExhausted || rows.length >= offset + limit + 1 || atScanCap) break;
+      candidateLimit = Math.min(HNSW_MAX_SCAN_TUPLES, Math.max(candidateLimit * 2, candidateLimit + limit));
+    }
+    const results = rows
+      .slice(offset, offset + limit)
+      .map((row) => row);
+    // A cursor query starts at an arbitrary point in the ordered set, so its
+    // page length cannot be compared with the global total. The +1 probe is
+    // the authoritative continuation signal for keyset pages; legacy offset
+    // pages retain the total-based check.
+    const hasMore = rows.length > offset + limit;
+    const last = results.at(-1);
+    const nextCursor = hasMore && last && cursorContext
+      ? encodeVectorSearchCursor({ userId, order: 'relevance', id: last.id, rawDistance: last.rawDistance, context: cursorContext })
+      : undefined;
 
-    // Filter by threshold if provided
-    const filteredResults =
-      typeof threshold === 'number' && threshold > 0
-        ? results.filter(result => result.distance >= threshold)
-        : results;
-
-    // Shuffle top results if seed provided (preserves semantic relevance)
-    const finalResults = shuffleSeed !== undefined
-      ? shuffleWithSeed(filteredResults, shuffleSeed).slice(0, limit)
-      : filteredResults.slice(0, limit);
-
-    return finalResults;
+    return { results, total, hasMore, ...(nextCursor ? { nextCursor } : {}) };
   } catch (error) {
     logger.error('Vector search query failed', {
       userId,
@@ -920,6 +1314,116 @@ export async function vectorSearch(
     });
     throw error;
   }
+}
+
+export async function vectorSearch(
+  userId: string,
+  queryEmbedding: number[],
+  options?: {
+    limit?: number;
+    threshold?: number;
+    favoriteOnly?: boolean;
+    tagId?: string | null;
+    offset?: number;
+    cursor?: string;
+    cursorContext?: VectorSearchContext;
+  }
+) {
+  const {
+    limit = 30,
+    threshold,
+    favoriteOnly = false,
+    tagId = null,
+    offset = 0,
+    cursor,
+  } = options || {};
+  if (prisma && vectorSearchFilterVariant({ favoriteOnly, tagId }) === 'unfiltered' && !cursor && offset === 0) {
+    return vectorSearchLegacyUnfiltered(userId, queryEmbedding, limit, threshold);
+  }
+  const page = await vectorSearchPage(userId, queryEmbedding, options);
+  return page.results;
+}
+
+async function vectorSearchLegacyUnfiltered(
+  userId: string,
+  queryEmbedding: number[],
+  limit: number,
+  threshold?: number,
+): Promise<VectorSearchRow[]> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > SEARCH_MAX_LIMIT) {
+    throw new Error(`vector search page limit must be between 1 and ${SEARCH_MAX_LIMIT}`);
+  }
+  // Keep the direct pgvector plan shape free of a similarity predicate: on
+  // pgvector this preserves the HNSW/order-by plan used by the 6.5ms p95
+  // baseline. Start with the proven bounded probe and expand only when the
+  // threshold result is not yet complete.
+  const hasThreshold = typeof threshold === 'number' && threshold > 0;
+  let fetchLimit = hasThreshold ? Math.min(limit * 3, 120) : limit;
+
+  try {
+    // Keep the golden eval and similar-assets path on the pre-pagination SQL
+    // shape: no CTE, count, or optional filter joins when no filters apply.
+    while (true) {
+      const dbResults = await queryHnswRanked<VectorSearchDbRow>(buildUnfilteredVectorSearchQuery(
+        userId,
+        queryEmbedding,
+        fetchLimit,
+      ));
+      const results = dbResults.map(mapVectorSearchRow);
+      const filtered = results
+        .filter((result) => !hasThreshold || result.distance >= threshold!)
+        .slice(0, limit);
+
+      if (!hasThreshold || filtered.length >= limit || results.length < fetchLimit) {
+        return filtered;
+      }
+
+      // A full probe with too few qualifying rows is not a complete answer:
+      // lower-scoring neighbors may still hide later qualifying rows. Keep
+      // expanding until the database returns fewer rows than requested so the
+      // bounded result page never silently omits a qualifying asset.
+      fetchLimit = Math.max(fetchLimit * 2, fetchLimit + limit);
+    }
+  } catch (error) {
+    logger.error('Vector search query failed', {
+      userId,
+      limit,
+      threshold,
+      embeddingLength: queryEmbedding.length,
+      error: error instanceof Error ? error.message : error,
+    });
+    throw error;
+  }
+}
+
+export function buildUnfilteredVectorSearchQuery(
+  userId: string,
+  queryEmbedding: number[],
+  fetchLimit: number,
+): Prisma.Sql {
+  const vectorSql = embeddingVectorSql(queryEmbedding, 'search query embedding');
+  return Prisma.sql`
+      ${buildRankedEmbeddingCte(vectorSql, fetchLimit, userId)}
+      SELECT
+        a.id,
+        a.blob_url,
+        a.thumbnail_url,
+        a.pathname,
+        a.mime,
+        a.width,
+        a.height,
+        a.favorite,
+        a.size,
+        a."createdAt" AS created_at,
+        1 - ranked.distance AS distance,
+        ranked.raw_distance
+      FROM ranked
+      INNER JOIN "assets" a ON a.id = ranked.id
+      WHERE
+        a.owner_user_id = ${userId}
+        AND a.deleted_at IS NULL
+      ORDER BY ranked.distance ASC, a.id ASC
+    `;
 }
 
 export async function logSearch(

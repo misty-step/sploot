@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  createQaLocalAuthToken,
-  getQaLocalAuthCookieName,
-  isQaLocalAuthEnabled,
-} from '@/lib/auth/qa-local';
 import { syncUser } from '@/lib/db';
 
 const QA_USER_ID = 'qa-design-user';
-// Keep convenience sessions within the same short-lived QA token bound.
-const SESSION_SECONDS = 15 * 60;
 // Optional ?user= override so QA can walk non-seeded states (e.g. a 0-asset
 // first-run library for the sploot-074 capture rig) without touching the
 // seeded qa-design-user. Restricted to qa-* ids so the harness can never
 // mint a session for a real account, even on a misconfigured non-prod deploy.
 const QA_USER_ID_PATTERN = /^qa-[a-z0-9-]{1,64}$/;
+// Keep convenience sessions within the same short-lived QA token bound.
+const PWA_SESSION_SECONDS = 15 * 60;
+const GALLERY_SESSION_SECONDS = 15 * 60;
 
 /**
  * Dev-only browser sign-in for the qa-local auth harness. Reached only
@@ -23,12 +19,20 @@ const QA_USER_ID_PATTERN = /^qa-[a-z0-9-]{1,64}$/;
  *
  * When SPLOOT_QA_AUTH_MODE=enabled, GET mints a signed qa-local token for
  * the seeded QA user (or a `?user=qa-…` override), sets it as the session
- * cookie, and redirects to /app — so `pnpm dev:local` can end at a
- * signed-in grid without Clerk credentials. Anywhere else this route is
- * indistinguishable from a 404.
+ * cookie, and redirects to /app -- so `pnpm dev:local` (PWA) and Gallery's
+ * qa:gallery gate can both end at a signed-in grid without Clerk
+ * credentials. Anywhere else this route is indistinguishable from a 404.
+ * SPLOOT_QA_EVIDENCE_MODE is exclusively Gallery's runtime marker, so it is
+ * the dispatch key between the two adapters -- PWA's own path below is
+ * byte-identical to before Gallery's adapter existed.
  */
 export async function handleQaLocalLoginRequest(request: NextRequest) {
-  if (!isQaLocalAuthEnabled()) {
+  const isGalleryEvidence = process.env.SPLOOT_QA_EVIDENCE_MODE === 'enabled';
+  const adapter = isGalleryEvidence
+    ? await import('@/lib/auth/qa-gallery-local')
+    : await import('@/lib/auth/qa-local');
+
+  if (!adapter.isQaLocalAuthEnabled()) {
     return new NextResponse(null, { status: 404 });
   }
 
@@ -57,18 +61,19 @@ export async function handleQaLocalLoginRequest(request: NextRequest) {
     // /app surfaces will report their own DB errors if the row is missing.
   }
 
-  const token = await createQaLocalAuthToken({
+  const sessionSeconds = isGalleryEvidence ? GALLERY_SESSION_SECONDS : PWA_SESSION_SECONDS;
+  const token = await adapter.createQaLocalAuthToken({
     userId,
     email,
     secret,
-    expiresInSeconds: SESSION_SECONDS,
+    expiresInSeconds: sessionSeconds,
   });
 
   const response = NextResponse.redirect(new URL('/app', request.url), 307);
   const cookie = [
-    `${getQaLocalAuthCookieName()}=${encodeURIComponent(token)}`,
+    `${adapter.getQaLocalAuthCookieName()}=${encodeURIComponent(token)}`,
     'Path=/',
-    `Max-Age=${SESSION_SECONDS}`,
+    `Max-Age=${sessionSeconds}`,
     'HttpOnly',
     'SameSite=Lax',
   ].join('; ');

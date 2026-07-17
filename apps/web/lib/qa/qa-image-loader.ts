@@ -8,8 +8,9 @@
  * host back to that local path so seeded assets render without touching DB
  * constraints or production code paths.
  *
- * Only wired up when SPLOOT_QA_AUTH_MODE=enabled outside production
- * (see next.config.ts); otherwise it reproduces the default loader behavior.
+ * Wired up for ordinary local QA and for the explicitly named local evidence
+ * mode used by the production-server browser loop (see next.config.ts).
+ * Neither mode is enabled by the normal production environment.
  */
 
 export const QA_SEED_BLOB_HOST = 'https://sploot-qa-seed.public.blob.vercel-storage.com';

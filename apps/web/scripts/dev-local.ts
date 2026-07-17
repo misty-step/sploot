@@ -349,6 +349,14 @@ async function main() {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     DATABASE_URL: `postgresql://test:test@localhost:${args.dbPort}/sploot_test?sslmode=disable`,
+    // isQaLocalAuthEnabled() (lib/auth/qa-local-enabled.ts) gates the
+    // sign-in page's QA auto-login redirect on SPLOOT_DEPLOYMENT_ENV being
+    // 'development' or 'test', not on SPLOOT_QA_DEPLOYMENT_ENV (a distinct
+    // marker identifying *which* QA deployment/environment, consumed by
+    // qa-client.ts and friends). Without this, `pnpm dev:local` never
+    // redirects and the standalone local dev flow has no Clerk keys to
+    // fall back to.
+    SPLOOT_DEPLOYMENT_ENV: 'development',
     SPLOOT_QA_AUTH_MODE: 'enabled',
     SPLOOT_QA_AUTH_SECRET: secret,
     SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,

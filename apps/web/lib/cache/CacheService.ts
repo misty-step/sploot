@@ -1,45 +1,46 @@
+import { createHash } from 'node:crypto';
 import { ICacheBackend, CacheStats, SearchFilters } from './types';
 import { MemoryBackend } from './MemoryBackend';
 import { PostgresTextEmbeddingStore } from './PostgresTextEmbeddingStore';
+import { normalizeSearchQuery } from '../search-config';
 
 /**
- * Generate a hash string from input for cache key generation.
- * Uses fast non-cryptographic hash for performance.
- * Copied from multi-layer-cache.ts (lines 362-372)
+ * Cache-key versioning deliberately invalidates the old 32-bit identities.
+ * Old entries are allowed to expire naturally; reading them would reintroduce
+ * cross-query contamination during a rolling deployment.
  */
-function hashString(str: string): string {
-  let hash = 0;
-  if (str.length === 0) return hash.toString(36);
+const CACHE_KEY_VERSION = 'v2';
 
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-
-  return Math.abs(hash).toString(36);
+/**
+ * Generate a deterministic, collision-resistant identity for cache keys.
+ * The full SHA-256 digest is cheap compared with embedding/database work and
+ * avoids lossy 32-bit truncation for persistent and in-memory namespaces.
+ */
+function stableIdentity(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
 /**
  * Cache key generators
  * Uses delimited hashing to prevent collisions
  */
-/**
- * Normalize query text for cache keying only (the raw text still goes to the
- * embedding model). Trim, lowercase, collapse whitespace.
- */
-function normalizeQueryText(text: string): string {
-  return text.trim().toLowerCase().replace(/\s+/g, ' ');
+function serializeSearchFilters(filters: SearchFilters): string {
+  return JSON.stringify(
+    Object.fromEntries(Object.entries(filters).sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0
+    ))
+  );
 }
 
 const CACHE_KEYS = {
   TEXT_EMBEDDING: (text: string, model: string) =>
-    `txt:${hashString(model)}:${hashString(normalizeQueryText(text))}`,
-  IMAGE_EMBEDDING: (checksum: string) => `img:${checksum}`,
-  SEARCH_RESULTS: (userId: string, query: string, filters: string) =>
-    `search:${userId}:${hashString(query)}:${hashString(filters)}`,
+    `txt:${CACHE_KEY_VERSION}:${stableIdentity(model)}:${stableIdentity(normalizeSearchQuery(text))}`,
+  IMAGE_EMBEDDING: (checksum: string, model: string) =>
+    `img:${CACHE_KEY_VERSION}:${stableIdentity(model)}:${stableIdentity(checksum)}`,
+  SEARCH_RESULTS: (userId: string, query: string, filters: string, model: string) =>
+    `search:${CACHE_KEY_VERSION}:${userId}:${stableIdentity(model)}:${stableIdentity(normalizeSearchQuery(query))}:${stableIdentity(filters)}`,
   ASSET_LIST: (userId: string, params: string) =>
-    `assets:${userId}:${hashString(params)}`,
+    `assets:${CACHE_KEY_VERSION}:${userId}:${stableIdentity(params)}`,
 } as const;
 
 /**
@@ -114,9 +115,9 @@ export class CacheService {
 
   // Image Embedding Methods
 
-  async getImageEmbedding(checksum: string): Promise<number[] | null> {
+  async getImageEmbedding(checksum: string, model: string): Promise<number[] | null> {
     try {
-      const key = CACHE_KEYS.IMAGE_EMBEDDING(checksum);
+      const key = CACHE_KEYS.IMAGE_EMBEDDING(checksum, model);
       const embedding = await this.backend.get<number[]>(key);
       if (embedding) {
         this.incrementHit();
@@ -135,9 +136,9 @@ export class CacheService {
     }
   }
 
-  async setImageEmbedding(checksum: string, embedding: number[]): Promise<void> {
+  async setImageEmbedding(checksum: string, model: string, embedding: number[]): Promise<void> {
     try {
-      const key = CACHE_KEYS.IMAGE_EMBEDDING(checksum);
+      const key = CACHE_KEYS.IMAGE_EMBEDDING(checksum, model);
       await this.backend.set(key, embedding);
     } catch (error) {
       console.error('[CacheService] setImageEmbedding failed:', {
@@ -152,11 +153,12 @@ export class CacheService {
   async getSearchResults(
     userId: string,
     query: string,
-    filters: SearchFilters = {}
+    filters: SearchFilters = {},
+    model = '',
   ): Promise<any[] | null> {
     try {
-      const filterKey = JSON.stringify(filters);
-      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
+      const filterKey = serializeSearchFilters(filters);
+      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey, model);
       const results = await this.backend.get<any[]>(key);
       if (results) {
         this.incrementHit();
@@ -176,15 +178,56 @@ export class CacheService {
     }
   }
 
+  async getSearchResultPage(
+    userId: string,
+    query: string,
+    filters: SearchFilters = {},
+    model = '',
+  ): Promise<{ results: any[]; total: number; hasMore?: boolean; nextCursor?: string } | null> {
+    try {
+      const filterKey = serializeSearchFilters({ ...filters, __pageEnvelope: true });
+      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey, model);
+      const value = await this.backend.get<any>(key);
+      if (!value) {
+        this.incrementMiss();
+        return null;
+      }
+
+      this.incrementHit();
+      if (Array.isArray(value)) {
+        return { results: value, total: value.length };
+      }
+      if (Array.isArray(value.results) && Number.isInteger(value.total)) {
+        return {
+          results: value.results,
+          total: value.total,
+          ...(typeof value.hasMore === 'boolean' ? { hasMore: value.hasMore } : {}),
+          ...(typeof value.nextCursor === 'string' ? { nextCursor: value.nextCursor } : {}),
+        };
+      }
+      this.incrementMiss();
+      return null;
+    } catch (error) {
+      console.error('[CacheService] getSearchResultPage failed:', {
+        userId,
+        queryPreview: query.substring(0, 50),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.incrementMiss();
+      return null;
+    }
+  }
+
   async setSearchResults(
     userId: string,
     query: string,
     filters: SearchFilters,
-    results: any[]
+    results: any[],
+    model = '',
   ): Promise<void> {
     try {
-      const filterKey = JSON.stringify(filters);
-      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey);
+      const filterKey = serializeSearchFilters(filters);
+      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey, model);
       await this.backend.set(key, results);
     } catch (error) {
       console.error('[CacheService] setSearchResults failed:', {
@@ -192,6 +235,30 @@ export class CacheService {
         queryPreview: query.substring(0, 50),
         resultsCount: results.length,
         error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  async setSearchResultPage(
+    userId: string,
+    query: string,
+    filters: SearchFilters,
+    results: any[],
+    total: number,
+    hasMore: boolean,
+    nextCursor?: string,
+    model = '',
+  ): Promise<void> {
+    try {
+      const filterKey = serializeSearchFilters({ ...filters, __pageEnvelope: true });
+      const key = CACHE_KEYS.SEARCH_RESULTS(userId, query, filterKey, model);
+      await this.backend.set(key, { results, total, hasMore, ...(nextCursor ? { nextCursor } : {}) });
+    } catch (error) {
+      console.error('[CacheService] setSearchResultPage failed:', {
+        userId,
+        queryPreview: query.substring(0, 50),
+        resultsCount: results.length,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }

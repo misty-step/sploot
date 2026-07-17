@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it, expect } from 'vitest';
 // @ts-expect-error — .mjs script without type declarations; we test its pure helper.
-import { deriveDirectUrl, runMigrateDeploy, readBootstrapVersion } from '../../scripts/migrate-deploy.mjs';
+import { deriveDirectUrl, drainOwnerVisibilityBackfill, isOwnerVisibilityEnforcementFailure, OWNER_VISIBILITY_BATCH_SIZE, OWNER_VISIBILITY_BATCH_TIMEOUT_MS, runMigrateDeploy, readBootstrapVersion } from '../../scripts/migrate-deploy.mjs';
 
 // migrate-deploy.mjs derives a direct (non-pooler) connection for `prisma
 // migrate deploy`, because Prisma's advisory lock does not work through Neon's
@@ -83,7 +83,7 @@ describe('online migration transaction contract', () => {
   it('wraps every new regular migration explicitly and keeps the online index helper separate', () => {
     const migrationRoot = join(process.cwd(), 'prisma/migrations');
     const names = readdirSync(migrationRoot)
-      .filter((name) => /^20260715\d+_/.test(name))
+      .filter((name) => /^(20260715|20260717)\d+_/.test(name))
       .sort();
     expect(names).toEqual([
       '20260715000000_add_embedding_resilience',
@@ -101,6 +101,11 @@ describe('online migration transaction contract', () => {
       '20260715080000_add_library_exports',
       '20260715120000_index_upload_receipt_processing_sweep',
       '20260715130000_add_provider_neutral_storage',
+      '20260717010000_restore_asset_embeddings_hnsw_index',
+      '20260717020000_add_asset_embedding_owner_visibility',
+      '20260717021000_backfill_asset_embedding_owner_visibility',
+      '20260717022000_enforce_asset_embedding_owner_visibility',
+      '20260717022100_finalize_asset_embedding_owner_visibility'
     ]);
     for (const name of names) {
       if (name === '20260715080000_add_library_exports') continue;
@@ -113,6 +118,44 @@ describe('online migration transaction contract', () => {
     expect(helper).toContain('CREATE INDEX CONCURRENTLY');
     expect(helper).toContain('indisvalid');
     expect(helper).toContain('indisready');
+
+    // The HNSW restore migration is a deliberate no-op marker: the real
+    // CREATE INDEX CONCURRENTLY lives in the online-index helper, not in a
+    // Prisma-transactional migration bound by migrate-deploy's global
+    // PGOPTIONS statement_timeout=30s.
+    const hnswMigration = readFileSync(
+      join(migrationRoot, '20260717010000_restore_asset_embeddings_hnsw_index/migration.sql'),
+      'utf8',
+    );
+    expect(hnswMigration).not.toMatch(/CREATE INDEX/);
+    expect(hnswMigration).not.toMatch(/USING hnsw/);
+    expect(helper).toContain('applyOnlineHnswIndex');
+    expect(helper).toContain('asset_embeddings_hnsw_idx');
+    expect(helper).toContain('USING hnsw');
+  });
+
+  it('keeps the HNSW online index helper on an independent, generously-bounded timeout, never the global 30s', () => {
+    const helper = readFileSync(join(process.cwd(), 'scripts/apply-online-embedding-index.mjs'), 'utf8');
+    // The HNSW build must not inherit migrate-deploy's global
+    // PGOPTIONS statement_timeout=30s (apps/web/scripts/migrate-deploy.mjs) --
+    // an HNSW graph build on a production-sized table routinely exceeds 30s.
+    expect(helper).toContain('ONLINE_HNSW_INDEX_STATEMENT_TIMEOUT');
+    expect(helper).not.toMatch(/ONLINE_HNSW_INDEX_STATEMENT_TIMEOUT\s*=\s*'30s'/);
+    expect(helper).toContain('EMBEDDING_HNSW_INDEX_STATEMENT_TIMEOUT');
+    expect(helper).toContain('EMBEDDING_HNSW_INDEX_LOCK_TIMEOUT');
+  });
+
+  it('never DROP/CREATEs a valid, ready, contract-matching HNSW index on repeat deploys', () => {
+    const helper = readFileSync(join(process.cwd(), 'scripts/apply-online-embedding-index.mjs'), 'utf8');
+    expect(helper).toMatch(/rowIsCorrect[\s\S]*?return;/);
+    expect(helper).toContain('pg_get_indexdef');
+    expect(helper).toContain('does not match the declared cosine HNSW contract');
+  });
+
+  it('runs the online-index helper as an independent process, not inside the Prisma migrate-deploy transaction', () => {
+    const runner = readFileSync(join(process.cwd(), 'scripts/migrate-deploy.mjs'), 'utf8');
+    expect(runner).toContain('applyOnlineIndexes');
+    expect(runner).toMatch(/execFileSync\(process\.execPath, \[helper\]/);
   });
 
   it('keeps additive DDL replay-safe and validation in separate transactions', () => {
@@ -146,6 +189,29 @@ describe('online migration transaction contract', () => {
     expect(replacement).toContain('terminal embedding may exit only through bounded revival transition');
     expect(replacement).toContain("SET LOCAL lock_timeout = '5s'");
     expect(replacement).toContain("SET LOCAL statement_timeout = '30s'");
+  });
+
+  it('keeps owner visibility draining separate from final enforcement', () => {
+    const migrationRoot = join(process.cwd(), 'prisma/migrations');
+    const backfill = readFileSync(join(migrationRoot, '20260717021000_backfill_asset_embedding_owner_visibility/migration.sql'), 'utf8');
+    const enforcement = readFileSync(join(migrationRoot, '20260717022000_enforce_asset_embedding_owner_visibility/migration.sql'), 'utf8');
+    const finalization = readFileSync(join(migrationRoot, '20260717022100_finalize_asset_embedding_owner_visibility/migration.sql'), 'utf8');
+
+    expect(backfill).toContain('CREATE OR REPLACE PROCEDURE');
+    expect(backfill).toContain('LIMIT p_batch_size');
+    expect(backfill).toContain('FOR UPDATE OF embedding SKIP LOCKED');
+    expect(backfill).not.toContain('CALL "sploot_backfill_asset_embedding_owner_visibility"');
+
+    expect(enforcement).toContain('CHECK ("owner_user_id" IS NOT NULL)');
+    expect(enforcement).toContain('ADD CONSTRAINT "asset_embeddings_owner_user_id_fkey"');
+    expect(enforcement).toContain('NOT VALID');
+    expect(enforcement).not.toContain('VALIDATE CONSTRAINT');
+    expect(finalization).toContain('VALIDATE CONSTRAINT "asset_embeddings_owner_user_id_not_null"');
+    expect(finalization).toContain('VALIDATE CONSTRAINT "asset_embeddings_owner_user_id_fkey"');
+    expect(finalization.indexOf('VALIDATE CONSTRAINT "asset_embeddings_owner_user_id_not_null"')).toBeLessThan(
+      finalization.indexOf('ALTER COLUMN "owner_user_id" SET NOT NULL'),
+    );
+    expect(finalization).toContain('DROP CONSTRAINT "asset_embeddings_owner_user_id_not_null"');
   });
 
   it('enforces bounded DDL timeouts at the migration runner boundary without rewriting applied SQL', () => {
@@ -227,7 +293,7 @@ describe('online migration transaction contract', () => {
 describe('bootstrap failure handling with injected faults', () => {
   const tempDirs: string[] = [];
 
-  function makeHarness(options: { failOn?: string[]; prismaFail?: boolean } = {}) {
+  function makeHarness(options: { failOn?: string[]; prismaFail?: boolean; ownerMigrationFail?: boolean } = {}) {
     const dir = mkdtempSync(join(tmpdir(), 'migrate-deploy-stub-'));
     tempDirs.push(dir);
     const log = join(dir, 'invocations.log');
@@ -245,6 +311,7 @@ describe('bootstrap failure handling with injected faults', () => {
       '#!/bin/sh',
       'echo "prisma $*" >> "$STUB_LOG"',
       'if [ "$STUB_PRISMA_FAIL" = "1" ]; then exit 3; fi',
+      'case "$*" in *"migrate deploy"*) if [ "$STUB_OWNER_MIGRATION_FAIL" = "1" ] && ! grep -q "migrate resolve --rolled-back" "$STUB_LOG"; then echo "P3018 20260717022000_enforce_asset_embedding_owner_visibility: asset embedding visibility enforcement refused: 1 rows remain" >&2; exit 3; fi ;; esac',
       'exit 0',
       '',
     ].join('\n'));
@@ -255,6 +322,7 @@ describe('bootstrap failure handling with injected faults', () => {
       STUB_LOG: log,
       STUB_PSQL_FAIL: (options.failOn ?? []).join(':'),
       STUB_PRISMA_FAIL: options.prismaFail ? '1' : '0',
+      STUB_OWNER_MIGRATION_FAIL: options.ownerMigrationFail ? '1' : '0',
       DATABASE_URL: 'postgresql://app:secret@db.example.test/app',
       STRIPE_LEDGER_BOOTSTRAP_DATABASE_URL: 'postgresql://bootstrap:secret@db.example.test/app',
       STRIPE_LEDGER_MIGRATION_DATABASE_URL: 'postgresql://migrator:secret@db.example.test/app',
@@ -277,6 +345,76 @@ describe('bootstrap failure handling with injected faults', () => {
 
   afterEach(() => {
     for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('drains owner visibility in bounded batches with timeout and readback per batch', async () => {
+    const calls: Array<{ sql: string; params?: unknown[] }> = [];
+    const remaining = ['25001', '15001', '15001', '5001', '5001', '0'];
+    const client = {
+      connect: async () => {},
+      end: async () => {},
+      query: async (sql: string, params?: unknown[]) => {
+        calls.push({ sql, params });
+        if (sql.includes('to_regprocedure')) {
+          return { rows: [{ backfill_procedure: 'sploot_backfill_asset_embedding_owner_visibility(integer)', remaining_function: 'sploot_asset_embedding_visibility_backfill_remaining()' }] };
+        }
+        if (sql.includes('backfill_remaining')) return { rows: [{ remaining: remaining.shift() }] };
+        return { rows: [] };
+      },
+    };
+    let config: Record<string, unknown> | undefined;
+    const result = await drainOwnerVisibilityBackfill('postgresql://u:p@db.example.test/app?sslmode=require', {
+      createClient: (candidateConfig: Record<string, unknown>) => {
+        config = candidateConfig;
+        return client;
+      },
+    });
+
+    expect(result).toEqual({ batches: 3, remaining: 0 });
+    expect(config).toMatchObject({
+      statement_timeout: OWNER_VISIBILITY_BATCH_TIMEOUT_MS,
+      query_timeout: OWNER_VISIBILITY_BATCH_TIMEOUT_MS,
+    });
+    const batchCalls = calls.filter(({ sql }) => sql.includes('CALL "sploot_backfill_asset_embedding_owner_visibility"'));
+    expect(batchCalls).toHaveLength(3);
+    expect(batchCalls.every(({ params }) => Array.isArray(params))).toBe(true);
+    expect(batchCalls.map(({ params }) => params)).toEqual([
+      [OWNER_VISIBILITY_BATCH_SIZE],
+      [OWNER_VISIBILITY_BATCH_SIZE],
+      [OWNER_VISIBILITY_BATCH_SIZE],
+    ]);
+    expect(calls.filter(({ sql }) => sql === 'BEGIN')).toHaveLength(3);
+    expect(calls.filter(({ sql }) => sql === 'COMMIT')).toHaveLength(3);
+    expect(calls.filter(({ sql }) => sql.includes('SET LOCAL lock_timeout'))).toHaveLength(3);
+    expect(calls.filter(({ sql }) => sql.includes('SET LOCAL statement_timeout'))).toHaveLength(3);
+    expect(calls.filter(({ sql }) => sql.includes('SELECT \"sploot_asset_embedding_visibility_backfill_remaining\"'))).toHaveLength(6);
+  });
+
+  it('retries fail-closed owner enforcement only after a drained readback', async () => {
+    const harness = makeHarness({ ownerMigrationFail: true });
+    const backfillUrls: string[] = [];
+    await runMigrateDeploy(harness.env, {
+      ...harness.runOptions,
+      runOwnerVisibilityBackfill: async (url: string) => { backfillUrls.push(url); },
+    });
+    const log = harness.readLog();
+    const firstDeploy = log.indexOf('prisma migrate deploy');
+    const resolve = log.indexOf('migrate resolve --rolled-back 20260717022000_enforce_asset_embedding_owner_visibility');
+    const secondDeploy = log.indexOf('prisma migrate deploy', firstDeploy + 1);
+    const post = log.indexOf('stripe-ledger-bootstrap-post.sql');
+    expect(firstDeploy).toBeGreaterThanOrEqual(0);
+    expect(resolve).toBeGreaterThan(firstDeploy);
+    expect(secondDeploy).toBeGreaterThan(resolve);
+    expect(post).toBeGreaterThan(secondDeploy);
+    expect(backfillUrls).toEqual(['postgresql://migrator:secret@db.example.test/app']);
+    expect(harness.historyCalls).toHaveLength(1);
+    expect(harness.readReport()).toBeNull();
+  });
+
+  it('recognizes only the owner enforcement gate as recoverable', () => {
+    expect(isOwnerVisibilityEnforcementFailure(new Error('P3018 20260717022000_enforce_asset_embedding_owner_visibility: asset embedding visibility enforcement refused: 1 rows remain'))).toBe(true);
+    expect(isOwnerVisibilityEnforcementFailure(new Error('P3018 20260717022000_enforce_asset_embedding_owner_visibility: lock timeout'))).toBe(false);
+    expect(isOwnerVisibilityEnforcementFailure(new Error('asset embedding visibility enforcement refused'))).toBe(false);
   });
 
   it('runs pre -> prisma migrate -> post with the declared version and writes no failure report', async () => {

@@ -8,7 +8,8 @@ import {
   isEnrollmentIdentityConflictError,
   isEnrollmentUnavailableError,
 } from '@/lib/enrollment/enrollment-policy';
-import { hasQaLocalAuthInput, verifyQaLocalAuthHeaders } from './qa-local';
+import * as qaLocalPwa from './qa-local';
+import * as qaLocalGallery from './qa-gallery-local';
 import type { RequestAuthResult } from './types';
 import type { AuthResult, AuthWithUserResult } from './server';
 
@@ -20,12 +21,13 @@ import type { AuthResult, AuthWithUserResult } from './server';
  * the production public-truth guard proves that omission on every CI run.
  */
 async function getQaLocalAuthFromCurrentRequest(): Promise<(RequestAuthResult & { terminal: true }) | null> {
+  const adapter = process.env.SPLOOT_QA_EVIDENCE_MODE === 'enabled' ? qaLocalGallery : qaLocalPwa;
   try {
     const { headers: getHeaders } = await import('next/headers');
     const requestHeaders = await getHeaders();
     const headerBag = requestHeaders as unknown as Headers;
-    if (!hasQaLocalAuthInput(headerBag)) return null;
-    const result = await verifyQaLocalAuthHeaders(headerBag);
+    if (!adapter.hasQaLocalAuthInput(headerBag)) return null;
+    const result = await adapter.verifyQaLocalAuthHeaders(headerBag);
     return { ...result, terminal: true };
   } catch {
     return null;

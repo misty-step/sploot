@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SignIn } from "@clerk/nextjs";
+import { redirect } from "next/navigation";
 import {
   ConsoleDoor,
   consoleDoorAppearance,
@@ -27,6 +28,9 @@ export default async function SignInPage() {
   const qaLocalCaptureBuild = process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' &&
     process.env.NEXT_PUBLIC_SPLOOT_PWA_CAPTURE_MODE === 'enabled';
 
+  // PWA's deterministic browser proof relies on this exact signed-out door
+  // (data-testid="qa-local-signed-out-door") and must never be preempted by
+  // Gallery's local-dev auto-login convenience below -- check it first.
   if (qaLocalCaptureBuild) {
     return (
       <ConsoleDoor>
@@ -40,6 +44,15 @@ export default async function SignInPage() {
         </div>
       </ConsoleDoor>
     );
+  }
+
+  // Gallery's own local dev/evidence auto-login convenience (pnpm dev:local,
+  // scripts/qa-evidence.ts): skip the real Clerk sign-in form and mint a
+  // deterministic QA session in one hop. PWA's signed-out door above takes
+  // priority when both are compile-time selected.
+  const { isQaLocalAuthEnabled } = await import("@/lib/auth/qa-local-enabled");
+  if (isQaLocalAuthEnabled()) {
+    redirect('/api/qa-auth/login');
   }
 
   return (

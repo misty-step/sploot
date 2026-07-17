@@ -47,7 +47,7 @@ export function PileFilterRail({
         className={cn(
           'sploot-press-sm sploot-shadow-sm flex min-h-[42px] shrink-0 flex-col justify-center rounded-[var(--sploot-radius-pill)] border-[3px] border-sploot-ink px-4 py-1.5 text-left font-mono text-xs font-bold lowercase',
           selectedPileId === null
-            ? 'bg-sploot-yellow text-sploot-ink'
+            ? 'bg-sploot-yellow text-sploot-on-yellow'
             : 'bg-sploot-panel text-sploot-ink'
         )}
       >
@@ -69,7 +69,7 @@ export function PileFilterRail({
             className={cn(
               'sploot-press-sm sploot-shadow-sm flex min-h-[42px] shrink-0 flex-col justify-center rounded-[var(--sploot-radius-pill)] border-[3px] border-sploot-ink px-4 py-1.5 text-left font-mono text-xs font-bold lowercase',
               selected
-                ? 'bg-sploot-yellow text-sploot-ink'
+                ? 'bg-sploot-yellow text-sploot-on-yellow'
                 : 'bg-sploot-panel text-sploot-ink'
             )}
           >

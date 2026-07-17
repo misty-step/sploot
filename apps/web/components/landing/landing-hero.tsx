@@ -19,7 +19,7 @@ export function LandingHero({ enrollmentState }: { enrollmentState: SplootEnroll
 
   return (
     <section className="relative bg-sploot-workbench text-sploot-ink">
-      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-5 pb-16 pt-24 sm:px-8 lg:grid-cols-12 lg:items-start lg:gap-8">
+      <div data-testid="landing-hero-content" className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-5 pb-16 pt-[calc(var(--sploot-touch-target)+2.75rem)] sm:px-8 sm:pt-32 lg:grid-cols-12 lg:items-start lg:gap-8">
         {/* left tower: sticky on large screens, stacks above the console on mobile */}
         <div className="flex flex-col items-start gap-5 lg:sticky lg:top-24 lg:col-span-5">
           <StickerTab tone="cyan" tilt="left">
@@ -56,7 +56,7 @@ export function LandingHero({ enrollmentState }: { enrollmentState: SplootEnroll
               shuffle the demo
             </Button>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div data-testid="landing-stats" className="grid grid-cols-2 gap-4">
             <StatBlock label="demo classics in the wall" value="8" tone="paper" />
             <StatBlock label="re-rank on every search" value="instant" tone="magenta" />
           </div>

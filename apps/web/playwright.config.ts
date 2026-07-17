@@ -74,12 +74,22 @@ export default defineConfig({
       testMatch: /portable-telemetry\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      // Gallery's qa:gallery gate (scripts/qa-gallery-gate.mjs) manages its
+      // own standalone/loopback server externally and drives this project
+      // directly with PLAYWRIGHT_BASE_URL set, so no webServer wiring here.
+      name: 'gallery',
+      testMatch: /gallery\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
   ],
   // Queue and auth fixtures own their child server (including production
   // builds in CI), so Playwright must not race them with another server.
   // Portable telemetry uses the production-start server contract;
   // public-truth retains a managed server for its signed-out artifact.
-  webServer: isQueueProject || isAuthProject || process.env.PLAYWRIGHT_EXTERNAL_SERVER ? undefined : {
+  // Gallery's qa:gallery gate manages its own standalone/loopback server
+  // externally and always sets PLAYWRIGHT_BASE_URL.
+  webServer: isQueueProject || isAuthProject || process.env.PLAYWRIGHT_EXTERNAL_SERVER || process.env.PLAYWRIGHT_BASE_URL ? undefined : {
     command: webServerCommand,
     url: webServerUrl,
     reuseExistingServer: false,
