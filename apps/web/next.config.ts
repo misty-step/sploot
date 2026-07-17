@@ -11,6 +11,9 @@ import { assertPublicTruthE2EBuildAllowed, isPublicTruthE2EBuild } from "./lib/p
 
 assertPublicTruthE2EBuildAllowed(process.env);
 const publicTruthE2EBuild = isPublicTruthE2EBuild(process.env);
+const QA_BUILD_PUBLISHABLE_KEY = 'pk_test_Y2xlcmsuZXhhbXBsZS5jb20k';
+const qaEvidenceBuildSafe = !process.env.CLERK_SECRET_KEY &&
+  (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY === QA_BUILD_PUBLISHABLE_KEY);
 
 // The qa-local auth harness is a build-time capability, not just a runtime
 // flag: only explicit dev/test deployments may compile the seam in at all.
@@ -42,7 +45,7 @@ const nextConfig: NextConfig = {
     process.env.SPLOOT_QA_DEPLOYMENT_ID === 'sploot-gallery-qa-local' &&
     process.env.SPLOOT_QA_DEPLOYMENT_AUDIENCE === 'sploot-gallery-evidence' &&
     process.env.DEPLOYMENT_ENV === 'qa-local' &&
-    !process.env.CLERK_SECRET_KEY && !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+    qaEvidenceBuildSafe
     ? { output: 'standalone' }
     : {}),
   webpack(config) {
@@ -91,7 +94,7 @@ const nextConfig: NextConfig = {
       process.env.SPLOOT_QA_DEPLOYMENT_ID === 'sploot-gallery-qa-local' &&
       process.env.SPLOOT_QA_DEPLOYMENT_AUDIENCE === 'sploot-gallery-evidence' &&
       process.env.DEPLOYMENT_ENV === 'qa-local' &&
-      !process.env.CLERK_SECRET_KEY && !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+      qaEvidenceBuildSafe
       ? { loader: 'custom' as const, loaderFile: './lib/qa/qa-image-loader.ts' }
       : {}),
     // Configure domains for Next.js Image optimization
