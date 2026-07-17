@@ -155,9 +155,9 @@ describe('online migration transaction contract', () => {
 
   it('keeps owner visibility draining separate from final enforcement', () => {
     const migrationRoot = join(process.cwd(), 'prisma/migrations');
-    const backfill = readFileSync(join(migrationRoot, '20260715121000_backfill_asset_embedding_owner_visibility/migration.sql'), 'utf8');
-    const enforcement = readFileSync(join(migrationRoot, '20260715122000_enforce_asset_embedding_owner_visibility/migration.sql'), 'utf8');
-    const finalization = readFileSync(join(migrationRoot, '20260715122100_finalize_asset_embedding_owner_visibility/migration.sql'), 'utf8');
+    const backfill = readFileSync(join(migrationRoot, '20260717021000_backfill_asset_embedding_owner_visibility/migration.sql'), 'utf8');
+    const enforcement = readFileSync(join(migrationRoot, '20260717022000_enforce_asset_embedding_owner_visibility/migration.sql'), 'utf8');
+    const finalization = readFileSync(join(migrationRoot, '20260717022100_finalize_asset_embedding_owner_visibility/migration.sql'), 'utf8');
 
     expect(backfill).toContain('CREATE OR REPLACE PROCEDURE');
     expect(backfill).toContain('LIMIT p_batch_size');
@@ -273,7 +273,7 @@ describe('bootstrap failure handling with injected faults', () => {
       '#!/bin/sh',
       'echo "prisma $*" >> "$STUB_LOG"',
       'if [ "$STUB_PRISMA_FAIL" = "1" ]; then exit 3; fi',
-      'case "$*" in *"migrate deploy"*) if [ "$STUB_OWNER_MIGRATION_FAIL" = "1" ] && ! grep -q "migrate resolve --rolled-back" "$STUB_LOG"; then echo "P3018 20260715122000_enforce_asset_embedding_owner_visibility: asset embedding visibility enforcement refused: 1 rows remain" >&2; exit 3; fi ;; esac',
+      'case "$*" in *"migrate deploy"*) if [ "$STUB_OWNER_MIGRATION_FAIL" = "1" ] && ! grep -q "migrate resolve --rolled-back" "$STUB_LOG"; then echo "P3018 20260717022000_enforce_asset_embedding_owner_visibility: asset embedding visibility enforcement refused: 1 rows remain" >&2; exit 3; fi ;; esac',
       'exit 0',
       '',
     ].join('\n'));
@@ -361,7 +361,7 @@ describe('bootstrap failure handling with injected faults', () => {
     });
     const log = harness.readLog();
     const firstDeploy = log.indexOf('prisma migrate deploy');
-    const resolve = log.indexOf('migrate resolve --rolled-back 20260715122000_enforce_asset_embedding_owner_visibility');
+    const resolve = log.indexOf('migrate resolve --rolled-back 20260717022000_enforce_asset_embedding_owner_visibility');
     const secondDeploy = log.indexOf('prisma migrate deploy', firstDeploy + 1);
     const post = log.indexOf('stripe-ledger-bootstrap-post.sql');
     expect(firstDeploy).toBeGreaterThanOrEqual(0);
@@ -374,8 +374,8 @@ describe('bootstrap failure handling with injected faults', () => {
   });
 
   it('recognizes only the owner enforcement gate as recoverable', () => {
-    expect(isOwnerVisibilityEnforcementFailure(new Error('P3018 20260715122000_enforce_asset_embedding_owner_visibility: asset embedding visibility enforcement refused: 1 rows remain'))).toBe(true);
-    expect(isOwnerVisibilityEnforcementFailure(new Error('P3018 20260715122000_enforce_asset_embedding_owner_visibility: lock timeout'))).toBe(false);
+    expect(isOwnerVisibilityEnforcementFailure(new Error('P3018 20260717022000_enforce_asset_embedding_owner_visibility: asset embedding visibility enforcement refused: 1 rows remain'))).toBe(true);
+    expect(isOwnerVisibilityEnforcementFailure(new Error('P3018 20260717022000_enforce_asset_embedding_owner_visibility: lock timeout'))).toBe(false);
     expect(isOwnerVisibilityEnforcementFailure(new Error('asset embedding visibility enforcement refused'))).toBe(false);
   });
 
