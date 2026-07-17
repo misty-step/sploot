@@ -357,14 +357,14 @@ test('live usage reconciles without identifiers or silently-zero unknowns', asyn
   const inputs = await loadInputs();
   const serialized = JSON.stringify(inputs.liveUsage);
   assert.doesNotMatch(serialized, /token|secret|account[_ -]?id|invoice[_ -]?(id|uuid)/i);
-  assert.equal(inputs.liveUsage.storage.blobObjects, 6_461);
-  assert.equal(inputs.liveUsage.storage.blobBytes, 532_395_408);
-  assert.equal(inputs.liveUsage.database.databaseBytes, 42_016_768);
-  assert.equal(inputs.liveUsage.inference.latestPredictionSample.failed, 95);
-  assert.equal(inputs.liveUsage.telemetry.errors30d, 5_917);
-  assert.equal(inputs.liveUsage.digitalOcean.monthToDateUsageUsd, 45.84);
-  assert.equal(inputs.liveUsage.digitalOcean.invoicePreviewUsd, 41.69);
-  assert.equal(inputs.liveUsage.digitalOcean.namedVarianceUsd, 4.15);
+  assert.equal(inputs.liveUsage.storage.blobObjects, 6_557);
+  assert.equal(inputs.liveUsage.storage.blobBytes, 534_074_133);
+  assert.equal(inputs.liveUsage.database.databaseBytes, 42_156_032);
+  assert.equal(inputs.liveUsage.inference.latestPredictionSample.failed, 77);
+  assert.equal(inputs.liveUsage.telemetry.errors30d, 14_683);
+  assert.equal(inputs.liveUsage.digitalOcean.monthToDateUsageUsd, 62.27);
+  assert.equal(inputs.liveUsage.digitalOcean.invoicePreviewUsd, 56.88);
+  assert.equal(inputs.liveUsage.digitalOcean.namedVarianceUsd, 5.39);
   const vercel = inputs.liveUsage.vercel;
   const vercelCategoryTotal = vercel.categories.reduce(
     (sum, category) => sum + category.effectiveUsageUsd,
@@ -431,7 +431,7 @@ test('known live costs reconcile to a named account-level remainder', async () =
   const inputs = await loadInputs();
   const floor = calculateLiveKnownFloor(inputs);
   assert.equal(floor.knownSplootFloorUsd, 28.36);
-  assert.equal(floor.accountPreviewDifferenceUsd, 13.33);
+  assert.equal(floor.accountPreviewDifferenceUsd, 28.52);
 });
 
 test('abusive and viral workloads trip explicit dollar budgets', async () => {
@@ -482,7 +482,7 @@ test('recommendations are derived from versioned rates and workloads', async () 
   free.sourceTrashStorageGb = 0.75;
   collector.priceUsd = 13;
 
-  const report = buildReport(changed, new Date('2026-07-15T14:00:00Z'));
+  const report = buildReport(changed, new Date('2026-07-17T18:00:00Z'));
   assert.match(report, /Rates were refreshed on 2026-07-15/);
   assert.match(report, /Cardless Free:\*\* 0\.75 GB/);
   assert.match(report, /Collector:\*\* \$13\/month/);

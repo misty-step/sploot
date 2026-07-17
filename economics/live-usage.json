@@ -1,34 +1,34 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-07-15T13:53:21Z",
+  "capturedAt": "2026-07-17T17:25:31Z",
   "storage": {
-    "blobObjects": 6461,
-    "blobBytes": 532395408,
-    "databaseSourceBytesLive": 499266304,
+    "blobObjects": 6557,
+    "blobBytes": 534074133,
+    "databaseSourceBytesLive": 501508274,
     "databaseSourceBytesDeleted": 18827,
-    "liveAssets": 3232,
+    "liveAssets": 3280,
     "deletedAssets": 1,
-    "liveThumbnails": 3113,
+    "liveThumbnails": 3161,
     "reconciliation": "The displayed gap is derived from Blob bytes minus live-plus-deleted Postgres source bytes; the residual may include thumbnails or unreferenced objects. Vercel Blob billing remains account-wide and unattributed at store level."
   },
   "database": {
-    "databaseBytes": 42016768,
+    "databaseBytes": 42156032,
     "users": 10,
-    "readyEmbeddings": 3088,
-    "failedEmbeddings": 130,
-    "processingEmbeddings": 14,
+    "readyEmbeddings": 3136,
+    "failedEmbeddings": 144,
+    "processingEmbeddings": 0,
     "pendingEmbeddings": 1,
-    "searches30d": 9,
-    "textCacheRows": 12
+    "searches30d": 11,
+    "textCacheRows": 14
   },
   "inference": {
     "latestPredictionSample": {
       "size": 100,
-      "from": "2026-07-15T05:21:10Z",
-      "to": "2026-07-15T06:46:24Z",
-      "failed": 95,
+      "from": "2026-07-16T17:51:36.488000Z",
+      "to": "2026-07-17T16:28:43.289000Z",
+      "failed": 77,
       "canceled": 1,
-      "succeeded": 4,
+      "succeeded": 22,
       "model": "krthr/clip-embeddings",
       "modelVersion": "1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4"
     },
@@ -40,14 +40,14 @@
     "scheduledSmallJobs": 4,
     "embeddingJobSchedule": "three calls over about ten minutes every fifteen minutes",
     "embeddingJobEstimatedMonthlyUsd": 3.33,
-    "invoicePreviewUsd": 41.69,
-    "monthToDateUsageUsd": 45.84,
-    "namedVarianceUsd": 4.15,
-    "varianceExplanation": "The latest redacted account readback is $45.84 month-to-date versus a $41.69 invoice preview, a named $4.15 cadence/account-wide variance. Preview and balance endpoints update on different cadences and cover the entire account, which hosts multiple apps. DigitalOcean exposes no per-app accrued-transfer or invoice-preview allocation, so Sploot's exact July line item is not inferable from this authority."
+    "invoicePreviewUsd": 56.88,
+    "monthToDateUsageUsd": 62.27,
+    "namedVarianceUsd": 5.39,
+    "varianceExplanation": "The 2026-07-17 redacted account readback is $62.27 month-to-date versus a $56.88 invoice preview, a named $5.39 cadence/account-wide variance. Preview and balance endpoints update on different cadences and cover the entire account, which hosts multiple apps. DigitalOcean exposes no per-app accrued-transfer or invoice-preview allocation, so Sploot's exact July line item is not inferable from this authority."
   },
   "vercel": {
     "periodStart": "2026-07-01",
-    "periodEnd": "2026-07-15",
+    "periodEnd": "2026-07-17",
     "projectEffectiveUsageUsd": 1.6836573508,
     "allowanceAbsorbedUsd": null,
     "billedAfterAllowanceUsd": null,
@@ -65,15 +65,15 @@
     "blobAttribution": "Vercel Blob remains account-wide and unattributed at store level."
   },
   "telemetry": {
-    "errors30d": 5917,
+    "errors30d": 14683,
     "errorGroupsReturned": 50,
-    "reconciliation": "Canary is a self-hosted shared DigitalOcean component. This is event usage, not a separate vendor bill; the model allocates fixed component cost instead of inventing a per-event price."
+    "reconciliation": "The 2026-07-17 readback came directly from Canary's authoritative production SQLite store while its public read API was unavailable. Canary is a self-hosted shared DigitalOcean component; this is event usage, not a separate vendor bill, so the model allocates fixed component cost instead of inventing a per-event price."
   },
   "github": {
     "repositoryVisibility": "public",
-    "activeCacheCount": 16,
-    "activeCacheBytes": 6835929239,
-    "reconciliation": "6.37 GiB is below the separate 10 GiB per-repository cache allowance; standard public-repository runners are free."
+    "activeCacheCount": 14,
+    "activeCacheBytes": 6031395579,
+    "reconciliation": "5.62 GiB is below the separate 10 GiB per-repository cache allowance; standard public-repository runners are free."
   },
   "unknowns": [
     {
