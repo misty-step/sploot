@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { TAG, isValidAssetId, isValidTagName } from '@sploot/common';
 import { unstable_rethrow } from 'next/navigation';
 import { getCacheService } from '@/lib/cache';
 import { prisma } from '@/lib/db';
@@ -10,6 +11,9 @@ import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api'
 import type { RouteContext } from '@/lib/with-observability';
 import { acquireEnrollmentIdentityWriterLock, enrollmentResponseForError, enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
 import { ConfiguredStorageWriter } from '@/lib/storage/object-store';
+
+class TagLimitError extends Error {}
+
 
 async function getHandler(
   req: NextRequest,
@@ -27,6 +31,9 @@ async function getHandler(
         { error: 'Asset not found' },
         { status: 404 }
       );
+    }
+    if (!isValidAssetId(id)) {
+      return NextResponse.json({ error: 'Invalid asset id' }, { status: 400 });
     }
 
     if (!prisma) return enrollmentUnavailableResponse();
@@ -103,8 +110,14 @@ async function patchHandler(
         { status: 404 }
       );
     }
+    if (!isValidAssetId(id)) {
+      return NextResponse.json({ error: 'Invalid asset id' }, { status: 400 });
+    }
     const body = await req.json();
     const { favorite, tags } = body;
+    if (tags !== undefined && (!Array.isArray(tags) || tags.length > TAG.maxPerAsset || tags.some((value) => !isValidTagName(value)))) {
+      return NextResponse.json({ error: 'Tags are invalid or too many' }, { status: 400 });
+    }
 
     if (!prisma) return enrollmentUnavailableResponse();
 
@@ -113,7 +126,7 @@ async function patchHandler(
       const existingAsset = await tx.asset.findFirst({
         where: { id, ownerUserId: userId, deletedAt: null },
       });
-      if (!existingAsset) return null;
+      if (!existingAsset) return { kind: 'missing' as const };
 
       const updateData: { favorite?: boolean } = {};
       if (typeof favorite === 'boolean') updateData.favorite = favorite;
@@ -121,26 +134,30 @@ async function patchHandler(
 
       if (tags && Array.isArray(tags)) {
         await tx.assetTag.deleteMany({ where: { assetId: id } });
-        for (const tagName of tags) {
-          if (typeof tagName !== 'string') continue;
-          const tag = await tx.tag.upsert({
-            where: { unique_user_tag: { ownerUserId: userId, name: tagName } },
-            update: {},
-            create: { ownerUserId: userId, name: tagName },
-          });
+        let userTagCount = await tx.tag.count({ where: { ownerUserId: userId } });
+        const normalizedTags = Array.from(new Set(tags.map((tagName) => tagName.trim().toLowerCase())));
+        for (const normalizedName of normalizedTags) {
+          const existingTag = await tx.tag.findFirst({ where: { ownerUserId: userId, name: normalizedName } });
+          if (!existingTag && userTagCount >= TAG.maxPerUser) {
+            throw new TagLimitError('tag limit reached');
+          }
+          const tag = existingTag ?? await tx.tag.create({ data: { ownerUserId: userId, name: normalizedName } });
+          if (!existingTag) userTagCount += 1;
           await tx.assetTag.create({ data: { assetId: id, tagId: tag.id } });
         }
       }
 
-      return tx.asset.findUnique({
+      const asset = await tx.asset.findUnique({
         where: { id },
         include: { embedding: true, tags: { include: { tag: true } } },
       });
+      return { kind: 'ok' as const, asset };
     });
 
-    if (!updatedAsset) {
+    if (updatedAsset.kind === 'missing' || !updatedAsset.asset) {
       return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
     }
+    const updatedAssetRow = updatedAsset.asset;
 
     // Invalidate cache after update (favorites affect search results)
     // Clear only asset and search caches (preserve embeddings)
@@ -152,19 +169,19 @@ async function patchHandler(
 
     return NextResponse.json({
       asset: {
-        id: updatedAsset!.id,
-        blobUrl: updatedAsset!.blobUrl,
-        pathname: updatedAsset!.pathname,
-        filename: updatedAsset!.pathname,
-        mime: updatedAsset!.mime,
-        size: updatedAsset!.size,
-        width: updatedAsset!.width,
-        height: updatedAsset!.height,
-        favorite: updatedAsset!.favorite,
-        createdAt: updatedAsset!.createdAt,
-        updatedAt: updatedAsset!.updatedAt,
-        embedding: updatedAsset!.embedding,
-        tags: updatedAsset!.tags.map((at: any) => ({
+        id: updatedAssetRow.id,
+        blobUrl: updatedAssetRow.blobUrl,
+        pathname: updatedAssetRow.pathname,
+        filename: updatedAssetRow.pathname,
+        mime: updatedAssetRow.mime,
+        size: updatedAssetRow.size,
+        width: updatedAssetRow.width,
+        height: updatedAssetRow.height,
+        favorite: updatedAssetRow.favorite,
+        createdAt: updatedAssetRow.createdAt,
+        updatedAt: updatedAssetRow.updatedAt,
+        embedding: updatedAssetRow.embedding,
+        tags: updatedAssetRow.tags.map((at: any) => ({
           id: at.tag.id,
           name: at.tag.name,
         })),
@@ -172,6 +189,9 @@ async function patchHandler(
       message: 'Asset updated successfully',
     });
   } catch (error) {
+    if (error instanceof TagLimitError) {
+      return NextResponse.json({ error: 'Tag limit reached' }, { status: 400 });
+    }
     unstable_rethrow(error);
     const enrollmentResponse = enrollmentResponseForError(error);
     if (enrollmentResponse) return enrollmentResponse;
@@ -200,6 +220,9 @@ async function deleteHandler(
         { status: 404 }
       );
     }
+    if (!isValidAssetId(id)) {
+      return NextResponse.json({ error: 'Invalid asset id' }, { status: 400 });
+    }
     const { searchParams } = new URL(req.url);
     const permanent = searchParams.get('permanent') === 'true';
 
@@ -211,6 +234,12 @@ async function deleteHandler(
         await acquireEnrollmentIdentityWriterLock(tx, userId);
         const asset = await tx.asset.findFirst({ where: { id, ownerUserId: userId } });
         if (!asset) return null;
+        // A permanent delete destroys snapshot membership. Cancel active
+        // exports under the same identity lock before tombstoning the asset.
+        await tx.libraryExport.updateMany({
+          where: { ownerUserId: userId, status: 'active' },
+          data: { status: 'canceled' },
+        });
         const fallback = [
           { provider: asset.storageProvider ?? 'vercel', key: asset.storageSourceKey ?? asset.storageKey ?? asset.pathname, url: asset.blobUrl },
           asset.thumbnailUrl ? { provider: asset.storageProvider ?? 'vercel', key: asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey ?? asset.thumbnailPath ?? asset.pathname, url: asset.thumbnailUrl } : null,

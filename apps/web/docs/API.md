@@ -62,6 +62,7 @@ Protected product API route inventory:
 - `/api/taste/profile`
 - `/api/search`, `/api/search/advanced`
 - `/api/stats`
+- `/api/library/export`, `/api/library/export/{exportId}`, `/api/library/export/{exportId}/parts/{partIndex}`, `/api/library/export/{exportId}/manifest`
 - `/api/tags`, `/api/tags/{tagId}`
 - `/api/analytics/usage`, `/api/telemetry`
 - `/api/cache/stats`, `/api/embeddings/text`, `/api/embeddings/image`, `/api/sse/embedding-updates`
@@ -685,7 +686,7 @@ Update asset metadata (favorite status, tags).
 **Parameters:**
 
 - `favorite` (boolean, optional): Set favorite status
-- `tags` (array, optional): Array of tag strings
+- `tags` (array, optional): Up to 256 tag strings; each name is at most 128 characters
 
 **Success Response (200):**
 
@@ -737,7 +738,7 @@ List tags attached to an asset you own.
 
 #### POST /api/assets/{id}/tags
 
-Attach existing or new tags to an asset you own.
+Attach existing or new tags to an asset you own. The request accepts at most 256 tag IDs and 256 tag names; each name is at most 128 characters and each asset may have at most 256 tags.
 
 **Authentication:** Required
 
@@ -790,6 +791,97 @@ Return per-user aggregate stats (`assetCount`, `storageBytes`, `storageLimitByte
 
 ---
 
+### Library Export
+
+Complete-library export: every original plus a versioned, portable
+`manifest.json`. Manifest schema, snapshot semantics, retry model, and
+bounds are specified in **[`EXPORT.md`](./EXPORT.md)** — this section is the
+endpoint reference. Session-authenticated only (no upload-token opt-in).
+
+Export deliberately bypasses storage-quota, billing, and upload runtime
+gates: over-limit, delinquent, and canceled accounts export normally.
+
+#### POST /api/library/export
+
+Create the caller's export session, or return the existing active session or durable completed manifest. A finalized manifest reports `status: complete`, is reused with `reused: true`,
+and remains retryable for the manifest only. Body (optional): `{"force": true}` supersedes the active
+session and snapshots fresh. At most one active session per user.
+
+**Authentication:** Required (session)
+
+**Response (201 created / 200 reused):**
+
+```json
+{
+  "export": {
+    "id": "cm0…",
+    "status": "active",
+    "createdAt": "…", "snapshotAt": "…", "expiresAt": "…",
+    "manifestVersion": "1.0",
+    "totals": { "assets": 1234, "originalBytes": 987654321 },
+    "partCount": 4,
+    "parts": [{ "index": 0, "count": 400, "bytes": 260000000, "served": false, "file": "sploot-export-…-part-001-of-004.zip" }],
+    "failures": [],
+    "complete": false,
+    "incompleteReasons": ["parts_not_fully_downloaded"],
+    "egress": { "usedBytes": 0, "allowanceBytes": 3108583235, "windowAllowanceBytes": 6217166470 },
+    "downloads": {
+      "status": "/api/library/export/cm0…",
+      "manifest": "/api/library/export/cm0…/manifest",
+      "parts": ["/api/library/export/cm0…/parts/0"]
+    }
+  },
+  "reused": false
+}
+```
+
+#### GET /api/library/export
+
+Return the caller's active export session or durable completed manifest (same
+shape as above), or `{"export": null}` — used to resume an interrupted export
+or rediscover its finalized manifest. Completed sessions expose no part-download
+affordance; their manifest URL remains available until expiry.
+
+#### GET /api/library/export/{exportId}
+
+Server-verified status/progress for one export (owner only; 404 otherwise).
+`status` becomes `expired` after `expiresAt`.
+
+#### DELETE /api/library/export/{exportId}
+
+Cancel the export immediately; its download URLs answer 410 afterwards.
+Returns `{"canceled": true|false}`.
+
+#### GET /api/library/export/{exportId}/parts/{partIndex}
+
+Stream one zip part (`application/zip`, attachment). Idempotent: re-request
+the same part to retry an interrupted download. A part is marked served only
+after its final byte was streamed.
+
+Egress allowance is `3 × (totalOriginalBytes + 3,072 × totalAssets + measuredManifestMetadataBytes) + 128 MB`; the rolling 24-hour tenant allowance is twice that amount. The example above assumes 987,654,321 original bytes, 1,234 assets, and 10,000 measured UTF-8 manifest/tag metadata bytes.
+
+Egress is reservation-admitted: a conservative bound for the whole response
+is charged atomically before any byte streams, settled down to actual bytes
+on clean completion, and kept in full if the download is aborted (see
+[`EXPORT.md`](./EXPORT.md)).
+
+**Error Responses:**
+
+- 401: `{"error":"Unauthorized"}`
+- 404: unknown export id, foreign export id, or out-of-range part index
+- 410: `export_expired` | `export_unavailable` (canceled/superseded)
+- 429: `export_egress_exhausted` (per-export download budget spent;
+  `retryable: false`) | `export_egress_window_exhausted` (rolling 24h tenant
+  budget spent; `retryable: true` — the window slides)
+
+#### GET /api/library/export/{exportId}/manifest
+
+Stream `manifest.json` (`application/json`, attachment). Download it after
+the parts — it records explicit completeness including unserved parts and
+failed/missing objects. Same error contract as parts.
+
+---
+
 ### Tags
 
 #### GET /api/tags
@@ -806,7 +898,7 @@ List tags for the authenticated user.
 
 #### POST /api/tags
 
-Create a tag for the authenticated user.
+Create a tag for the authenticated user. Names are at most 128 characters, colors are at most 32 characters, and each user may own at most 10,000 tags.
 
 **Authentication:** Required
 
@@ -820,7 +912,7 @@ Create a tag for the authenticated user.
 
 #### PATCH /api/tags/{tagId}
 
-Update an existing user-owned tag.
+Update an existing user-owned tag. Names are at most 128 characters and colors are at most 32 characters.
 
 **Authentication:** Required
 

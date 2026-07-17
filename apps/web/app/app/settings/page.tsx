@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuthUser, useAuthActions } from '@/lib/auth/client';
 import { usePwaInstallPrompt } from '@/hooks/use-pwa-install';
+import { LibraryExportCard } from '@/components/settings/library-export-card';
 import { UploadTokensCard } from '@/components/settings/upload-tokens-card';
 import { Button } from '@/components/ui/button';
 import { StatBlock, StickerTab } from '@/components/sploot';
@@ -196,6 +197,8 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      <LibraryExportCard />
+
       <section className="sploot-card p-5 space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-foreground">Install as app</h2>
@@ -250,9 +253,9 @@ export default function SettingsPage() {
       <section className="sploot-card p-5 space-y-3">
         <h2 className="text-lg font-semibold text-foreground">What exists now</h2>
         <p className="text-muted-foreground text-sm">
-          This settings panel manages your account, storage, install path, upload
-          tokens, version, help, support, and privacy links. No social surface is
-          hiding behind a teaser.
+          This settings panel manages your account, storage, library export,
+          install path, upload tokens, version, help, support, and privacy
+          links. No social surface is hiding behind a teaser.
         </p>
       </section>
 

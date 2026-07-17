@@ -33,6 +33,7 @@ model User {
   uploadTokens             UploadToken[]
   searchLogs               SearchLog[]
   embeddingRateLeases      EmbeddingRateLease[]
+  libraryExports           LibraryExport[]
 
   @@map("users")
 }
@@ -99,7 +100,7 @@ model StorageQuotaReservation {
 
 // Asset model - represents uploaded images
 model Asset {
-  id             String    @id @default(cuid())
+  id             String    @id @default(cuid()) // max 128 chars (migration CHECK)
   ownerUserId    String    @map("owner_user_id")
   blobUrl        String    @map("blob_url") // Validated via CHECK constraint: https://[a-z0-9-]+.public.blob.vercel-storage.com/*
   thumbnailUrl   String?   @map("thumbnail_url") // URL for 256px thumbnail. Validated via CHECK constraint if set
@@ -195,8 +196,8 @@ model EmbeddingProviderCircuit {
 model Tag {
   id          String   @id @default(cuid())
   ownerUserId String   @map("owner_user_id")
-  name        String
-  color       String? // Hex color for UI
+  name        String // max 128 chars (migration CHECK)
+  color       String? // max 32 chars (migration CHECK) // Hex color for UI
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -224,6 +225,38 @@ model AssetTag {
   @@id([assetId, tagId])
   @@index([tagId])
   @@map("asset_tags")
+}
+
+// LibraryExport model - one resumable complete-library export session.
+// The snapshot is recomputable (frozen predicate over snapshot_at), so only
+// bookkeeping lives here: deterministic part boundaries, which parts were
+// fully served, per-part object failures, and the egress spent. At most one
+// 'active' row per user (partial unique index in migration SQL).
+model LibraryExport {
+  id                 String   @id @default(cuid())
+  ownerUserId        String   @map("owner_user_id")
+  status             String   @default("active") // active | complete | superseded | canceled
+  snapshotAt         DateTime @map("snapshot_at")
+  expiresAt          DateTime @map("expires_at")
+  manifestVersion    String   @map("manifest_version")
+  totalAssets        Int      @map("total_assets")
+  totalOriginalBytes BigInt   @map("total_original_bytes")
+  partBoundaries     Json     @map("part_boundaries") // bounded array: max 10,000 [{index, afterId, count, bytes}]
+  servedParts        Json     @default("[]") @map("served_parts") // number[]
+  failures           Json     @default("{}") // {"<partIndex>": [{assetId, archivePath, reason}]}
+  egressBytes        BigInt   @default(0) @map("egress_bytes")
+  manifestMetadataBytes BigInt @default(0) @map("manifest_metadata_bytes")
+  createdAt          DateTime @default(now()) @map("created_at")
+  manifestFinalizedAt DateTime? @map("manifest_finalized_at")
+  manifestFinalizedSummary Json? @map("manifest_finalized_summary")
+  manifestFinalizedArtifact String? @db.Text @map("manifest_finalized_artifact")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  owner User @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@index([ownerUserId, status])
+  @@index([expiresAt])
+  @@map("library_exports")
 }
 
 // Search log model - for analytics and improving search

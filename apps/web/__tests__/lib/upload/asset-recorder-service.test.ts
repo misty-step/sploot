@@ -49,6 +49,8 @@ describe('AssetRecorderService', () => {
   function withEnrollmentContract<T extends object>(tx: T) {
     return {
       ...tx,
+      tag: { count: vi.fn().mockResolvedValue(0), ...(tx as any).tag },
+      assetTag: { count: vi.fn().mockResolvedValue(0), ...(tx as any).assetTag },
       $executeRaw: vi.fn().mockResolvedValue(0),
       user: { findUnique: vi.fn().mockResolvedValue({ id: mockMetadata.ownerUserId }) },
     };

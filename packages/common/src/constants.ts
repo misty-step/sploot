@@ -89,3 +89,29 @@ export function isAnimatedImageMimeType(mimeType: string): boolean {
 export function isStaticImageMimeType(mimeType: string): boolean {
   return isImageMimeType(mimeType) && !isAnimatedImageMimeType(mimeType);
 }
+
+/** Bounds shared by tag APIs, upload metadata, and export manifests. */
+export const TAG = {
+  maxNameLength: 128,
+  maxColorLength: 32,
+  maxPerUser: 10_000,
+  maxPerAsset: 256,
+  maxRequestItems: 256,
+} as const;
+
+/** Asset identifiers are persisted and copied into archive paths. */
+export const ASSET = {
+  maxIdLength: 128,
+} as const;
+
+export function isValidTagName(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= TAG.maxNameLength;
+}
+
+export function isValidTagColor(value: unknown): value is string | null {
+  return value === null || (typeof value === 'string' && value.length <= TAG.maxColorLength);
+}
+
+export function isValidAssetId(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= ASSET.maxIdLength;
+}

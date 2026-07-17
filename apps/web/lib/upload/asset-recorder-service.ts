@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import { TAG, isValidTagName } from '@sploot/common';
 import type { StorageReplica } from '@/lib/storage/object-store';
 import { logger } from '@/lib/logger';
 import { Prisma, type Asset } from '@prisma/client';
@@ -232,6 +233,16 @@ export class AssetRecorderService {
 
     // Identify new tags that need creation
     const newTagNames = tagNames.filter(name => !existingTagMap.has(name));
+    if (typeof tx.tag.count !== 'function' || typeof tx.assetTag.count !== 'function') {
+      throw new Error('tag count queries are unavailable');
+    }
+    const [tagCount, assetTagCount] = await Promise.all([
+      tx.tag.count({ where: { ownerUserId: userId } }),
+      tx.assetTag.count({ where: { assetId } }),
+    ]);
+    if (tagCount + newTagNames.length > TAG.maxPerUser || assetTagCount + tagNames.length > TAG.maxPerAsset) {
+      throw new Error('tag metadata exceeds shared count bounds');
+    }
 
     let tagsCreated = 0;
 
@@ -290,10 +301,13 @@ export class AssetRecorderService {
     if (!Array.isArray(tags) || tags.length === 0) {
       return [];
     }
+    if (tags.length > TAG.maxRequestItems || tags.some((tag) => typeof tag === 'string' && tag.trim().length > TAG.maxNameLength)) {
+      throw new Error('tag metadata exceeds shared bounds');
+    }
 
     const uniqueTags = new Set(
       tags
-        .filter(tag => typeof tag === 'string')
+        .filter((tag): tag is string => typeof tag === 'string')
         .map(tag => tag.trim())
         .filter(tag => tag.length > 0)
     );
