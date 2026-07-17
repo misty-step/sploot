@@ -142,7 +142,11 @@ export function GallerySpine({
         <div className="flex justify-between gap-3 py-1"><dt>sort</dt><dd>{sortBy}{sortBy !== 'shuffle' ? ` · ${sortOrder}` : ''}</dd></div>
       </dl>
 
-      <div className="mt-auto flex flex-col gap-2 p-3">
+      {/* relative z-50: the durable-upload-queue toast is a viewport-fixed
+          overlay (z-40, bottom-left) that would otherwise sit on top of this
+          sidebar's own bottom-pinned footer and swallow pointer events aimed
+          at the Upload button whenever an upload is queued. */}
+      <div className="relative z-50 mt-auto flex flex-col gap-2 p-3 bg-sploot-panel">
         <Button
           type="button"
           variant="primary"
