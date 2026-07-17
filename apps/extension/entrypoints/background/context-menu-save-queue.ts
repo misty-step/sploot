@@ -1,7 +1,6 @@
 import { UPLOAD } from '@sploot/common';
-import { AUTH_MESSAGES } from '../../shared/auth-messages';
 import { setSaveStatus } from '../../shared/save-status';
-import { getAuthAuthority, promptUserSignIn, readAuthAuthority, sameAccountAuthority, type AuthAuthority } from './auth-manager';
+import { getAuthAuthority, onAuthStateChanged, promptUserSignIn, readAuthAuthority, sameAccountAuthority, type AuthAuthority } from './auth-manager';
 import { fetchImage } from './image-fetcher';
 import { showErrorNotification } from './notifications';
 import { saveToSploot } from './save-flow';
@@ -770,6 +769,8 @@ async function recoverPendingSavesLocked(
   await scheduleContextMenuSaveQueueWakeup();
 }
 
+let removeAuthStateListener: (() => void) | undefined
+
 export function setupContextMenuSaveQueue(): void {
   chrome.alarms.onAlarm.addListener(alarm => {
     if (alarm.name !== CONTEXT_MENU_SAVE_ALARM_NAME) {
@@ -780,17 +781,17 @@ export function setupContextMenuSaveQueue(): void {
     });
   });
 
-  // A new worker can be revived by Clerk's cookie event after the original
-  // context-menu event was terminated. Re-run recovery on the signed-in state
-  // broadcast so ownerless prepared bytes cross that worker boundary.
-  chrome.runtime?.onMessage?.addListener(message => {
-    if (message?.type !== AUTH_MESSAGES.STATE_CHANGED || message.payload?.status !== 'signed-in') {
-      return false;
+  // The auth bridge and queue share this worker, so a signed-in Clerk resource
+  // transition is the reliable wakeup for an ownerless prepared save. Runtime
+  // messages are popup-facing and never loop back to their background sender.
+  removeAuthStateListener?.();
+  removeAuthStateListener = onAuthStateChanged(state => {
+    if (state.status !== 'signed-in') {
+      return;
     }
     void recoverPendingContextMenuSaves('startup').catch(error => {
       console.error('[Background][ContextMenu] Auth recovery failed', error);
     });
-    return false;
   });
 }
 

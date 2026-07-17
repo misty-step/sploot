@@ -132,6 +132,41 @@ describe('auth-manager', () => {
     });
   });
 
+  it('notifies worker subscribers when Clerk state changes', async () => {
+    createClerkClient.mockResolvedValue({
+      session: null,
+      addListener: vi.fn(listener => {
+        clerkListeners.push(listener)
+        return () => undefined
+      }),
+    })
+
+    const { onAuthStateChanged, setupAuthBridge } = await importAuthManager()
+    const listener = vi.fn()
+    const remove = onAuthStateChanged(listener)
+    setupAuthBridge()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    clerkListeners[0]({
+      user: { id: 'user_subscriber' },
+      session: { id: 'session_subscriber', expireAt: null },
+    })
+    expect(listener).toHaveBeenLastCalledWith({
+      status: 'signed-in',
+      userId: 'user_subscriber',
+      sessionId: 'session_subscriber',
+      expiresAt: null,
+    })
+
+    const callsBeforeRemove = listener.mock.calls.length
+    remove()
+    clerkListeners[0]({
+      user: { id: 'user_after_remove' },
+      session: { id: 'session_after_remove', expireAt: null },
+    })
+    expect(listener).toHaveBeenCalledTimes(callsBeforeRemove)
+  })
+
   it('returns an explicit user/account/session authority for durable owner fencing', async () => {
     createClerkClient.mockResolvedValue({
       session: {

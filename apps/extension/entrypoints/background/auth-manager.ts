@@ -18,6 +18,7 @@ const AUTH_SYNC_INITIAL_RETRY_LIMIT = 4
 
 let cachedState: AuthState = { status: 'unknown' }
 const waiters = new Set<(state: AuthState) => void>()
+const authStateListeners = new Set<(state: AuthState) => void>()
 let clerkClientPromise: ReturnType<typeof createClerkClient> | undefined
 let removeClerkListener: (() => void) | undefined
 let bridgeListener: Parameters<typeof chrome.runtime.onMessage.addListener>[0] | undefined
@@ -72,6 +73,15 @@ function notifyWaiters(state: AuthState) {
   for (const listener of waiters) {
     listener(state)
   }
+  for (const listener of authStateListeners) {
+    listener(state)
+  }
+}
+
+/** Subscribe to authoritative Clerk state transitions inside the worker. */
+export function onAuthStateChanged(listener: (state: AuthState) => void): () => void {
+  authStateListeners.add(listener)
+  return () => authStateListeners.delete(listener)
 }
 
 function authStateFromResources(resources: {

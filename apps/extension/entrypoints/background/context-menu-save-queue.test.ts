@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   saveToSploot: vi.fn(),
   showErrorNotification: vi.fn(),
   getAuthAuthority: vi.fn(),
+  onAuthStateChanged: vi.fn(),
   promptUserSignIn: vi.fn(),
   readAuthAuthority: vi.fn(),
 }));
@@ -20,6 +21,7 @@ vi.mock('./save-flow', () => ({ saveToSploot: mocks.saveToSploot }));
 vi.mock('./notifications', () => ({ showErrorNotification: mocks.showErrorNotification }));
 vi.mock('./auth-manager', () => ({
   getAuthAuthority: mocks.getAuthAuthority,
+  onAuthStateChanged: mocks.onAuthStateChanged,
   promptUserSignIn: mocks.promptUserSignIn,
   readAuthAuthority: mocks.readAuthAuthority,
   // Mirrors the production contract proven in auth-manager.test.ts: durable
@@ -72,6 +74,7 @@ interface StoredJob {
 
 let storedQueue: StoredJob[];
 let alarmListener: ((alarm: { name: string }) => void) | undefined;
+let authStateListener: ((state: { status: string }) => void) | undefined;
 let alarmCreate: ReturnType<typeof vi.fn>;
 let alarmClear: ReturnType<typeof vi.fn>;
 const OWNER = { userId: 'user-1', sessionId: 'session-1' };
@@ -82,6 +85,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   storedQueue = [];
   alarmListener = undefined;
+  authStateListener = undefined;
   alarmCreate = vi.fn(async () => undefined);
   alarmClear = vi.fn(async () => true);
   vi.stubGlobal('chrome', {
@@ -112,6 +116,10 @@ beforeEach(() => {
       },
     },
   });
+  mocks.onAuthStateChanged.mockImplementation((listener: (state: { status: string }) => void) => {
+    authStateListener = listener;
+    return () => undefined;
+  });
   setupContextMenuSaveQueue();
   mocks.getAuthAuthority.mockResolvedValue(OWNER);
   mocks.promptUserSignIn.mockResolvedValue(true);
@@ -132,17 +140,23 @@ describe.sequential('durable context-menu save queue', () => {
     await vi.waitFor(() => expect(storedQueue).toEqual([]));
   });
 
-  it('waits for signed-in cookie state and continues the original prepared save', async () => {
+  it('continues a signed-out prepared save from the worker auth event', async () => {
     mocks.getAuthAuthority
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(OWNER);
+    let finishPrompt!: (signedIn: boolean) => void;
+    mocks.promptUserSignIn.mockReturnValueOnce(new Promise(resolve => { finishPrompt = resolve; }));
 
-    await enqueueCapturedSave(new Blob(['prepared-original'], { type: 'image/png' }), 'cat.png', 'https://x.test/cat.png');
-
+    const enqueue = enqueueCapturedSave(new Blob(['prepared-original'], { type: 'image/png' }), 'cat.png', 'https://x.test/cat.png');
+    await vi.waitFor(() => expect(storedQueue).toEqual([expect.objectContaining({ state: 'awaiting-auth' })]));
     expect(mocks.promptUserSignIn).toHaveBeenCalledOnce();
+
+    authStateListener?.({ status: 'signed-in' });
     await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(
       expect.any(Function), 'image', { owner: OWNER, signal: expect.any(AbortSignal) },
     ));
+    finishPrompt(false);
+    await enqueue;
     expect(storedQueue).toEqual([]);
   });
 

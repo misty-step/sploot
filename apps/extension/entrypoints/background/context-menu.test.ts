@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AUTH_MESSAGES } from '../../shared/auth-messages';
 import { CONTEXT_MENU_SAVE_MESSAGES } from '../../shared/context-menu-save-messages';
 
 const mocks = vi.hoisted(() => ({
@@ -7,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   isAuthenticated: vi.fn(),
   promptUserSignIn: vi.fn(),
   getAuthAuthority: vi.fn(),
+  onAuthStateChanged: vi.fn(),
   readAuthAuthority: vi.fn(),
   getAuthTokenForAuthority: vi.fn(),
   sameAccountAuthority: vi.fn(),
@@ -29,6 +29,7 @@ vi.mock('./auth-manager', () => ({
   isAuthenticated: mocks.isAuthenticated,
   promptUserSignIn: mocks.promptUserSignIn,
   getAuthAuthority: mocks.getAuthAuthority,
+  onAuthStateChanged: mocks.onAuthStateChanged,
   readAuthAuthority: mocks.readAuthAuthority,
   getAuthTokenForAuthority: mocks.getAuthTokenForAuthority,
   sameAccountAuthority: mocks.sameAccountAuthority,
@@ -53,7 +54,7 @@ type MessageHandler = (
 let onClicked: ClickHandler;
 let onStartup: (() => Promise<void>) | undefined;
 let onMessage: MessageHandler;
-let runtimeMessageListeners: Array<(message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => unknown> = [];
+let authStateListeners: Array<(state: { status: string }) => void> = [];
 let contextMenusCreate: ReturnType<typeof vi.fn>;
 let contextMenusRemove: ReturnType<typeof vi.fn>;
 let storedQueue: unknown[] = [];
@@ -65,7 +66,7 @@ beforeEach(() => {
   contextMenusCreate = vi.fn();
   contextMenusRemove = vi.fn();
   storedQueue = [];
-  runtimeMessageListeners = [];
+  authStateListeners = [];
   vi.stubGlobal('chrome', {
     contextMenus: {
       create: contextMenusCreate,
@@ -75,7 +76,7 @@ beforeEach(() => {
     runtime: {
       onInstalled: { addListener: vi.fn() },
       onStartup: { addListener: vi.fn((fn: () => Promise<void>) => { onStartup = fn; }) },
-      onMessage: { addListener: vi.fn((fn: MessageHandler) => { runtimeMessageListeners.push(fn as unknown as (message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => unknown); onMessage = fn; }) },
+      onMessage: { addListener: vi.fn((fn: MessageHandler) => { onMessage = fn; }) },
     },
     alarms: {
       create: vi.fn(async () => undefined),
@@ -117,6 +118,10 @@ beforeEach(() => {
     thumbnailUrl: 't',
     isDuplicate: false,
   });
+  mocks.onAuthStateChanged.mockImplementation((listener: (state: { status: string }) => void) => {
+    authStateListeners.push(listener);
+    return () => undefined;
+  });
   setupContextMenu();
 });
 
@@ -145,11 +150,8 @@ describe('context menu save', () => {
     await vi.waitFor(() => expect(mocks.promptUserSignIn).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(storedQueue).toEqual([expect.objectContaining({ state: 'awaiting-auth' })]));
 
-    for (const listener of runtimeMessageListeners) {
-      listener({
-        type: AUTH_MESSAGES.STATE_CHANGED,
-        payload: { status: 'signed-in', userId: OWNER.userId, sessionId: OWNER.sessionId },
-      }, {}, vi.fn());
+    for (const listener of authStateListeners) {
+      listener({ status: 'signed-in' });
     }
 
     await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledWith(
