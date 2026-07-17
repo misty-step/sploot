@@ -450,6 +450,24 @@ TO sploot_stripe_app;
 -- applied schema version. The runtime remains unable to mutate Prisma's ledger.
 GRANT SELECT ON TABLE public._prisma_migrations TO sploot_stripe_app;
 
+-- Runtime cutover validation may read only the durable state row; journal,
+-- inventory, and migration-entry tables remain denied to the app role.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_app') THEN
+    GRANT SELECT ON TABLE public.storage_cutover_state TO sploot_stripe_app;
+    -- Upload recording inserts immutable provider receipts; explicit delete only
+    -- reads the provider-local columns below. Cutover/update/delete remain
+    -- reserved for the storage operator role.
+    REVOKE ALL ON TABLE public.asset_storage_replicas FROM sploot_stripe_app;
+    GRANT INSERT ON TABLE public.asset_storage_replicas TO sploot_stripe_app;
+    GRANT SELECT (asset_id, provider, source_key, logical_key, delivery_url, active)
+      ON TABLE public.asset_storage_replicas TO sploot_stripe_app;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.storage_cutover_state, public.storage_migration_entries, public.storage_inventory_state, public.storage_inventory_failures, public.asset_storage_replicas, public.storage_cleanup_outbox TO sploot_storage_operator;
+    GRANT SELECT, INSERT, UPDATE ON TABLE public.storage_cleanup_outbox TO sploot_stripe_app;
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO sploot_storage_operator;
+  END IF;
+END $$;
+
 -- Strip PUBLIC EXECUTE from every SECURITY DEFINER function and from trigger
 -- functions, then re-grant only the exact runtime or migration-authority
 -- contract.

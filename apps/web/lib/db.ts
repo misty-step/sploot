@@ -390,6 +390,11 @@ export interface ExistingAssetMetadata {
   checksumSha256: string;
   favorite: boolean;
   createdAt: Date;
+  storageProvider?: string;
+  storageKey?: string | null;
+  storageSourceKey?: string | null;
+  thumbnailStorageKey?: string | null;
+  thumbnailStorageSourceKey?: string | null;
   hasEmbedding?: boolean;
 }
 
@@ -442,6 +447,11 @@ export async function assetExists(
         checksumSha256: true,
         favorite: true,
         createdAt: true,
+        storageProvider: true,
+        storageKey: true,
+        storageSourceKey: true,
+        thumbnailStorageKey: true,
+        thumbnailStorageSourceKey: true,
         // Include embedding check if requested
         ...(options?.includeEmbedding && {
           embedding: {
@@ -470,6 +480,11 @@ export async function assetExists(
       checksumSha256: asset.checksumSha256,
       favorite: asset.favorite,
       createdAt: asset.createdAt,
+      storageProvider: asset.storageProvider,
+      storageKey: asset.storageKey,
+      storageSourceKey: asset.storageSourceKey,
+      thumbnailStorageKey: asset.thumbnailStorageKey,
+      thumbnailStorageSourceKey: asset.thumbnailStorageSourceKey,
     };
 
     // Add embedding status if requested
@@ -505,6 +520,12 @@ export async function findOrCreateAsset(
     width?: number | null;
     height?: number | null;
     size: number;
+    storageProvider?: string;
+    storageKey?: string | null;
+    storageSourceKey?: string | null;
+    thumbnailStorageKey?: string | null;
+    thumbnailStorageSourceKey?: string | null;
+    storageConfigFingerprint?: string | null;
   }
 ): Promise<ExistingAssetMetadata> {
   if (!prisma) {
@@ -537,6 +558,12 @@ export async function findOrCreateAsset(
           height: assetData.height,
           size: assetData.size,
           checksumSha256: assetData.checksumSha256,
+          ...(assetData.storageProvider ? { storageProvider: assetData.storageProvider } : {}),
+          ...(assetData.storageKey !== undefined ? { storageKey: assetData.storageKey } : {}),
+          ...(assetData.storageSourceKey !== undefined ? { storageSourceKey: assetData.storageSourceKey } : {}),
+          ...(assetData.thumbnailStorageKey !== undefined ? { thumbnailStorageKey: assetData.thumbnailStorageKey } : {}),
+          ...(assetData.thumbnailStorageSourceKey !== undefined ? { thumbnailStorageSourceKey: assetData.thumbnailStorageSourceKey } : {}),
+          ...(assetData.storageConfigFingerprint !== undefined ? { storageConfigFingerprint: assetData.storageConfigFingerprint } : {}),
           favorite: false,
         },
         select: {
@@ -551,6 +578,11 @@ export async function findOrCreateAsset(
           checksumSha256: true,
           favorite: true,
           createdAt: true,
+          storageProvider: true,
+          storageKey: true,
+          storageSourceKey: true,
+          thumbnailStorageKey: true,
+          thumbnailStorageSourceKey: true,
         },
       });
 
@@ -566,6 +598,11 @@ export async function findOrCreateAsset(
         checksumSha256: newAsset.checksumSha256,
         favorite: newAsset.favorite,
         createdAt: newAsset.createdAt,
+        storageProvider: newAsset.storageProvider,
+        storageKey: newAsset.storageKey,
+        storageSourceKey: newAsset.storageSourceKey,
+        thumbnailStorageKey: newAsset.thumbnailStorageKey,
+        thumbnailStorageSourceKey: newAsset.thumbnailStorageSourceKey,
       };
     } catch (error) {
       // Handle unique constraint violation (another request created it)

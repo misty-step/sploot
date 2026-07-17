@@ -1,7 +1,10 @@
-import { put, del } from '@vercel/blob';
+import { createHash } from 'node:crypto';
+import { isValidMimeType, normalizeMimeType } from '@sploot/common';
 import { generateUniqueFilename } from '@/lib/blob';
 import { logger } from '@/lib/logger';
 import type { ProcessedImage } from '@/lib/image-processing';
+import { ConfiguredStorageWriter, type StorageReplica, type StorageWriter } from '@/lib/storage/object-store';
+import { storageConfigFromEnv, storageConfigFingerprint } from '@/lib/storage/config';
 
 /**
  * Blob upload error with cleanup information
@@ -25,6 +28,16 @@ export interface BlobUploadResult {
   mainPathname: string;
   thumbnailUrl: string | null;
   thumbnailPathname: string | null;
+  storageProvider: string;
+  storageKey: string;
+  thumbnailStorageKey: string | null;
+  mainSize: number;
+  mainSha256: string;
+  thumbnailSize: number | null;
+  thumbnailSha256: string | null;
+  storageConfigFingerprint: string;
+  mainReplicas: Array<StorageReplica & { size: number; sha256: string; contentType?: string }>;
+  thumbnailReplicas: Array<StorageReplica & { size: number; sha256: string; contentType?: string }>;
 }
 
 export interface BlobUploadRenditions {
@@ -55,11 +68,16 @@ export class BlobUploaderService {
   private access: 'public';
   private addRandomSuffix: boolean;
   private maxRetries: number;
+  private storage: StorageWriter;
+  private readonly configFingerprint: string;
 
   constructor(config?: BlobUploaderConfig) {
     this.access = config?.access ?? 'public';
     this.addRandomSuffix = config?.addRandomSuffix ?? false;
     this.maxRetries = config?.maxRetries ?? 2;
+    const storageConfig = storageConfigFromEnv();
+    this.configFingerprint = storageConfigFingerprint(storageConfig);
+    this.storage = new ConfiguredStorageWriter(storageConfig, this.addRandomSuffix);
   }
 
   /**
@@ -70,9 +88,12 @@ export class BlobUploaderService {
     userId: string,
     originalFilename: string,
     mainBuffer: Buffer,
-    renditions?: BlobUploadRenditions | null
+    renditions?: BlobUploadRenditions | null,
+    mimeType?: string
   ): Promise<BlobUploadResult> {
-    const uniqueFilename = generateUniqueFilename(userId, originalFilename);
+    const contentType = normalizeMimeType(mimeType ?? '');
+    if (contentType && !isValidMimeType(contentType)) throw new BlobUploadError(`Invalid upload MIME type: ${contentType}`);
+    const uniqueFilename = contentType ? generateUniqueFilename(userId, originalFilename, contentType) : generateUniqueFilename(userId, originalFilename);
     const thumbnailFilename = withThumbnailSuffix(
       uniqueFilename,
       renditions?.thumbnail?.format ?? 'jpg'
@@ -89,16 +110,28 @@ export class BlobUploaderService {
     let mainPathname: string | null = null;
     let thumbnailBlobUrl: string | null = null;
     let thumbnailPathname: string | null = null;
+    let mainSize = 0;
+    let mainSha256 = '';
+    let thumbnailSize: number | null = null;
+    let thumbnailSha256: string | null = null;
+    let storageProvider = 'vercel';
+    let mainReplicas: StorageReplica[] = [];
+    let thumbnailReplicas: StorageReplica[] = [];
 
     try {
       // Upload main image
       const mainBlob = await this.uploadWithRetry(
         uniqueFilename,
-        renditions?.main?.buffer ?? mainBuffer
+        renditions?.main?.buffer ?? mainBuffer,
+        contentType || undefined
       );
 
       mainBlobUrl = mainBlob.url;
+      mainReplicas = mainBlob.replicas ?? [{ provider: mainBlob.provider, key: mainBlob.pathname, url: mainBlob.url }];
       mainPathname = mainBlob.pathname;
+      storageProvider = mainBlob.provider;
+      mainSize = mainBlob.metadata.size;
+      mainSha256 = mainBlob.metadata.sha256;
 
       logger.debug('Main blob uploaded successfully', {
         url: mainBlobUrl,
@@ -108,13 +141,17 @@ export class BlobUploaderService {
       // Upload thumbnail if processed images are available
       if (renditions?.thumbnail) {
         try {
-          const thumbnailBlob = await put(thumbnailFilename, renditions.thumbnail.buffer, {
-            access: this.access,
-            addRandomSuffix: this.addRandomSuffix,
-          });
+          const thumbnailBlob = await this.storage.put(
+            thumbnailFilename,
+            renditions.thumbnail.buffer,
+            metadataFor(renditions.thumbnail.buffer, thumbnailContentType(renditions.thumbnail.format)),
+          );
 
           thumbnailBlobUrl = thumbnailBlob.url;
-          thumbnailPathname = thumbnailBlob.pathname;
+          thumbnailReplicas = thumbnailBlob.replicas ?? [{ provider: thumbnailBlob.provider, key: thumbnailBlob.key, url: thumbnailBlob.url }];
+          thumbnailPathname = thumbnailBlob.key;
+          thumbnailSize = thumbnailBlob.metadata.size;
+          thumbnailSha256 = thumbnailBlob.metadata.sha256;
 
           logger.debug('Thumbnail blob uploaded successfully', {
             url: thumbnailBlobUrl,
@@ -124,6 +161,7 @@ export class BlobUploaderService {
           logger.warn('Thumbnail upload failed, continuing without thumbnail', {
             error: thumbError instanceof Error ? thumbError.message : String(thumbError),
           });
+          if (this.storage.strict) throw thumbError;
           // Continue without thumbnail - not critical, don't retry
         }
       }
@@ -133,6 +171,16 @@ export class BlobUploaderService {
         mainPathname: mainPathname,
         thumbnailUrl: thumbnailBlobUrl,
         thumbnailPathname: thumbnailPathname,
+        storageProvider,
+        storageKey: mainPathname,
+        thumbnailStorageKey: thumbnailPathname,
+        mainSize,
+        mainSha256,
+        thumbnailSize,
+        thumbnailSha256,
+        storageConfigFingerprint: this.configFingerprint,
+        mainReplicas: mainReplicas.map(replica => ({ ...replica, size: mainSize, sha256: mainSha256, contentType })),
+        thumbnailReplicas: thumbnailReplicas.map(replica => ({ ...replica, size: thumbnailSize!, sha256: thumbnailSha256!, contentType: thumbnailContentType(renditions?.thumbnail?.format ?? 'jpg') })),
       };
     } catch (error) {
       // Upload failed - clean up any uploaded blobs
@@ -142,7 +190,8 @@ export class BlobUploaderService {
         thumbnailUploaded: !!thumbnailBlobUrl,
       });
 
-      await this.cleanup(mainBlobUrl, thumbnailBlobUrl);
+      if (mainReplicas.length > 0 || thumbnailReplicas.length > 0) await this.cleanup(mainBlobUrl, thumbnailBlobUrl, mainReplicas, thumbnailReplicas);
+      else await this.cleanup(mainBlobUrl, thumbnailBlobUrl);
 
       throw new BlobUploadError(
         'Failed to upload to blob storage',
@@ -157,20 +206,22 @@ export class BlobUploaderService {
    */
   private async uploadWithRetry(
     filename: string,
-    buffer: Buffer
-  ): Promise<{ url: string; pathname: string }> {
+    buffer: Buffer,
+    contentType?: string
+  ): Promise<{ provider: string; url: string; pathname: string; metadata: ReturnType<typeof metadataFor>; replicas?: StorageReplica[] }> {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       try {
-        const blob = await put(filename, buffer, {
-          access: this.access,
-          addRandomSuffix: this.addRandomSuffix,
-        });
+        const metadata = metadataFor(buffer, contentType);
+        const blob = await this.storage.put(filename, buffer, metadata);
 
         return {
+          provider: blob.provider,
           url: blob.url,
-          pathname: blob.pathname,
+          pathname: blob.key,
+          metadata,
+          replicas: blob.replicas,
         };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
@@ -200,16 +251,23 @@ export class BlobUploaderService {
    * Clean up uploaded blobs (used on failure)
    * Best-effort cleanup - logs errors but doesn't throw
    */
+  private async deleteReceipt(replicas: StorageReplica[], url: string): Promise<void> {
+    if (replicas.length > 0 && this.storage.deleteReplicas) return this.storage.deleteReplicas(replicas);
+    return this.storage.deleteUrl(url);
+  }
+
   async cleanup(
     mainBlobUrl: string | null,
-    thumbnailBlobUrl: string | null
+    thumbnailBlobUrl: string | null,
+    mainReplicas: StorageReplica[] = [],
+    thumbnailReplicas: StorageReplica[] = []
   ): Promise<void> {
     const cleanupErrors: string[] = [];
 
     // Delete main blob if uploaded
     if (mainBlobUrl) {
       try {
-        await del(mainBlobUrl);
+        await this.deleteReceipt(mainReplicas, mainBlobUrl);
         logger.info('Successfully cleaned up main blob', { url: mainBlobUrl });
       } catch (error) {
         const errorMsg = `Failed to delete main blob: ${error instanceof Error ? error.message : String(error)}`;
@@ -224,7 +282,7 @@ export class BlobUploaderService {
     // Delete thumbnail blob if uploaded
     if (thumbnailBlobUrl) {
       try {
-        await del(thumbnailBlobUrl);
+        await this.deleteReceipt(thumbnailReplicas, thumbnailBlobUrl);
         logger.info('Successfully cleaned up thumbnail blob', { url: thumbnailBlobUrl });
       } catch (error) {
         const errorMsg = `Failed to delete thumbnail: ${error instanceof Error ? error.message : String(error)}`;
@@ -253,7 +311,7 @@ export class BlobUploaderService {
     for (const url of urls) {
       if (url) {
         try {
-          await del(url);
+          await this.storage.deleteUrl(url);
           logger.info('Blob deleted successfully', { url });
         } catch (error) {
           logger.error('Failed to delete blob', {
@@ -296,6 +354,13 @@ export function getBlobUploader(): BlobUploaderService {
   return defaultUploader;
 }
 
+function thumbnailContentType(format: string): string {
+  if (format === 'jpeg') return 'image/jpeg';
+  if (format === 'png') return 'image/png';
+  if (format === 'webp') return 'image/webp';
+  throw new Error(`Unsupported thumbnail format: ${format}`);
+}
+
 function withThumbnailSuffix(filename: string, format: string): string {
   const extension = format === 'jpeg' ? 'jpg' : format;
 
@@ -304,4 +369,13 @@ function withThumbnailSuffix(filename: string, format: string): string {
   }
 
   return `${filename}-thumb.${extension}`;
+}
+
+function metadataFor(buffer: Buffer, contentType?: string) {
+  const normalized = contentType ? normalizeMimeType(contentType) : undefined;
+  return {
+    size: buffer.byteLength,
+    sha256: createHash('sha256').update(buffer).digest('hex'),
+    contentType: normalized,
+  };
 }

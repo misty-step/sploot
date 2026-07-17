@@ -45,6 +45,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_ledger_maintenance') THEN
     CREATE ROLE sploot_stripe_ledger_maintenance NOLOGIN NOINHERIT;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_storage_operator') THEN
+    CREATE ROLE sploot_storage_operator NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_adversary') THEN
     CREATE ROLE sploot_stripe_adversary NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
   END IF;
@@ -72,7 +75,8 @@ BEGIN
     'sploot_stripe_ledger_consumer',
     'sploot_stripe_ledger_maintenance',
     'sploot_stripe_adversary',
-    'sploot_stripe_app'
+    'sploot_stripe_app',
+    'sploot_storage_operator'
   ] LOOP
     EXECUTE format(
       'ALTER ROLE %I NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT',
@@ -118,7 +122,7 @@ BEGIN
 END
 $$;
 
-GRANT USAGE ON SCHEMA public TO sploot_stripe_app;
+GRANT USAGE ON SCHEMA public TO sploot_stripe_app, sploot_storage_operator;
 GRANT USAGE, CREATE ON SCHEMA public TO sploot_stripe_schema_migrator;
 GRANT USAGE ON SCHEMA public TO sploot_stripe_ledger_issuer, sploot_stripe_ledger_consumer, sploot_stripe_ledger_maintenance;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM sploot_stripe_app;

@@ -130,7 +130,22 @@ wait "$probe_holder_pid"
 for migration in apps/web/prisma/migrations/*; do
   [[ -d "$migration" ]] || continue
   migration_name="$(basename "$migration")"
-  if [[ "$migration_name" == 20260715* ]]; then continue; fi
+  case "$migration_name" in
+    20260715000000_add_embedding_resilience|\
+    20260715010000_add_embedding_circuit_generation|\
+    20260715020000_add_embedding_probe_lease_token|\
+    20260715030000_enforce_embedding_attempt_ceiling|\
+    20260715035000_validate_embedding_attempt_ceiling|\
+    20260715040000_add_embedding_processing_claim_token|\
+    20260715045000_validate_embedding_processing_claim_token_state|\
+    20260715050000_cap_embedding_terminal_revivals|\
+    20260715055000_validate_embedding_revival_budget|\
+    20260715060000_update_embedding_attempt_ceiling|\
+    20260715065000_validate_embedding_attempt_ceiling|\
+    20260715070000_harden_terminal_revival_exit)
+      continue
+      ;;
+  esac
   psql "$admin_url" -v ON_ERROR_STOP=1 -f "$migration/migration.sql"
   DATABASE_URL="$admin_url" pnpm --filter web exec prisma migrate resolve --applied "$migration_name"
 done
@@ -242,6 +257,21 @@ app_ledger_dml="$(PGPASSWORD="$app_password" psql "postgresql://sploot_stripe_ap
 test "$app_ledger_dml" = 'f'
 app_url="postgresql://sploot_stripe_app:${app_password}@localhost:5432/sploot_upgrade?sslmode=disable"
 app_bootstrap_marker="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT phase || ':' || version FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
+# The production app role may read only the columns required to enqueue
+# permanent-delete receipts and insert immutable provider receipts; updates,
+# deletes, and unlisted columns remain denied.
+app_replica_columns="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT bool_and(has_column_privilege(current_user, 'public.asset_storage_replicas', column_name, 'SELECT')) FROM (VALUES ('asset_id'), ('provider'), ('source_key'), ('logical_key'), ('delivery_url'), ('active')) AS allowed(column_name)")"
+test "$app_replica_columns" = 't'
+app_replica_select="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'public.asset_storage_replicas', 'SELECT')")"
+test "$app_replica_select" = 'f'
+app_replica_insert="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'public.asset_storage_replicas', 'INSERT')")"
+test "$app_replica_insert" = 't'
+app_replica_update="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'public.asset_storage_replicas', 'UPDATE')")"
+test "$app_replica_update" = 'f'
+app_replica_delete="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'public.asset_storage_replicas', 'DELETE')")"
+test "$app_replica_delete" = 'f'
+PGPASSWORD="$app_password" psql "$app_url" -v ON_ERROR_STOP=1 -c 'SELECT asset_id, provider, source_key, logical_key, delivery_url, active FROM public.asset_storage_replicas LIMIT 0'
+
 test "$app_bootstrap_marker" = "ready:${bootstrap_version}"
 app_bootstrap_mutation="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'sploot_bootstrap.stripe_ledger_bootstrap_state', 'INSERT,UPDATE,DELETE') OR has_table_privilege(current_user, 'public._prisma_migrations', 'INSERT,UPDATE,DELETE')")"
 test "$app_bootstrap_mutation" = 'f'
@@ -257,7 +287,8 @@ for _ in $(seq 1 60); do
   if health_json="$(curl --fail --silent --show-error "http://127.0.0.1:${health_port}/api/health" 2>/dev/null)"; then break; fi
   sleep 1
 done
-HEALTH_JSON="$health_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") process.exit(1)'
+if [[ -z "$health_json" ]]; then echo "health readiness never returned HTTP 200 on port $health_port" >&2; cat "/tmp/sploot-health-$PG_VERSION.log" >&2; exit 1; fi
+HEALTH_JSON="$health_json" node -e 'try { const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") { console.error("unexpected health payload:", process.env.HEALTH_JSON); process.exit(1); } } catch (error) { console.error("invalid health payload:", process.env.HEALTH_JSON, error); process.exit(1); }'
 kill "$health_pid"
 wait "$health_pid" 2>/dev/null || true
 trap - EXIT
@@ -279,6 +310,7 @@ for _ in $(seq 1 60); do
   if absent_json="$(curl --fail --silent --show-error "http://127.0.0.1:${absent_port}/api/health" 2>/dev/null)"; then break; fi
   sleep 1
 done
+if [[ -z "$absent_json" ]]; then echo "absent-flag health readiness never returned HTTP 200 on port $absent_port" >&2; cat "/tmp/sploot-health-absent-$PG_VERSION.log" >&2; exit 1; fi
 HEALTH_JSON="$absent_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") process.exit(1)'
 absent_live_json="$(curl --fail --silent --show-error "http://127.0.0.1:${absent_port}/api/health/live")"
 HEALTH_JSON="$absent_live_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="alive"||h.service!=="sploot-web") process.exit(1)'
@@ -310,6 +342,7 @@ for _ in $(seq 1 60); do
   if plain_json="$(curl --fail --silent --show-error "http://127.0.0.1:${plain_port}/api/health" 2>/dev/null)"; then break; fi
   sleep 1
 done
+if [[ -z "$plain_json" ]]; then echo "plain health readiness never returned HTTP 200 on port $plain_port" >&2; cat "/tmp/sploot-health-plain-$PG_VERSION.log" >&2; exit 1; fi
 HEALTH_JSON="$plain_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") process.exit(1)'
 plain_live_json="$(curl --fail --silent --show-error "http://127.0.0.1:${plain_port}/api/health/live")"
 HEALTH_JSON="$plain_live_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="alive"||h.service!=="sploot-web") process.exit(1)'

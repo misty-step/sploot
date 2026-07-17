@@ -98,6 +98,7 @@ describe('online migration transaction contract', () => {
       '20260715060000_update_embedding_attempt_ceiling',
       '20260715065000_validate_embedding_attempt_ceiling',
       '20260715070000_harden_terminal_revival_exit',
+      '20260715130000_add_provider_neutral_storage',
     ]);
     for (const name of names) {
       const sql = readFileSync(join(migrationRoot, name, 'migration.sql'), 'utf8');

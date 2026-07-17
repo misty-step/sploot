@@ -1,4 +1,5 @@
-import { put, del, list } from '@vercel/blob';
+import { createHash } from 'node:crypto';
+import { VercelObjectStore } from '@/lib/storage/object-store';
 
 // Re-export shared constants and validation from @sploot/common
 export {
@@ -25,11 +26,14 @@ export interface UploadResult {
  */
 export function generateUniqueFilename(
   userId: string,
-  originalFilename: string
+  originalFilename: string,
+  contentType?: string
 ): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 9);
-  const extension = originalFilename.split('.').pop()?.toLowerCase() || 'jpg';
+  const extensionByMime: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif', 'video/mp4': 'mp4', 'video/webm': 'webm' };
+  const normalizedMime = contentType?.toLowerCase().split(';')[0].trim();
+  const extension = extensionByMime[normalizedMime ?? ''] ?? 'jpg';
   return `${userId}/${timestamp}-${random}.${extension}`;
 }
 
@@ -45,18 +49,20 @@ export async function uploadToBlob(
     cacheControlMaxAge?: number;
   }
 ): Promise<UploadResult> {
-  const blob = await put(pathname, file, {
-    access: 'public',
-    addRandomSuffix: options?.addRandomSuffix ?? false,
-    cacheControlMaxAge: options?.cacheControlMaxAge,
+  if (options?.addRandomSuffix) throw new Error('Random suffixes are not allowed for canonical storage keys');
+  const bytes = Buffer.from(await file.arrayBuffer());
+  const blob = await new VercelObjectStore().put(pathname, bytes, {
+    size: bytes.byteLength,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    contentType: file.type || undefined,
   });
 
   return {
     url: blob.url,
-    downloadUrl: blob.downloadUrl,
-    pathname: blob.pathname,
-    contentType: blob.contentType,
-    contentDisposition: blob.contentDisposition,
+    downloadUrl: blob.url,
+    pathname: blob.key,
+    contentType: file.type || 'application/octet-stream',
+    contentDisposition: 'inline',
   };
 }
 
@@ -66,7 +72,7 @@ export async function uploadToBlob(
  * @throws Error if deletion fails
  */
 export async function deleteFromBlob(url: string): Promise<void> {
-  await del(url);
+  await new VercelObjectStore().deleteUrl(url);
 }
 
 /**
@@ -74,12 +80,7 @@ export async function deleteFromBlob(url: string): Promise<void> {
  * Returns up to 1000 most recent files.
  */
 export async function listUserBlobs(userId: string) {
-  const blobs = await list({
-    prefix: `${userId}/`,
-    limit: 1000,
-  });
-
-  return blobs.blobs;
+  return (await new VercelObjectStore().list(`${userId}/`, 1000)) ?? [];
 }
 
 /**

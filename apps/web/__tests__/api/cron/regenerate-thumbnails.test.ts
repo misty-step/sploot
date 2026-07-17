@@ -57,10 +57,7 @@ async function png(width: number, height: number): Promise<Buffer> {
 }
 
 function fetchResponse(buffer: Buffer) {
-  return {
-    ok: true,
-    arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
-  };
+  return new Response(buffer, { status: 200, headers: { 'content-length': String(buffer.byteLength) } });
 }
 
 describe('/api/cron/regenerate-thumbnails', () => {
@@ -71,6 +68,9 @@ describe('/api/cron/regenerate-thumbnails', () => {
     blobUrl: 'https://blob.example/original.png',
     thumbnailUrl: 'https://blob.example/original-thumb.png',
     pathname: 'user/original.png',
+    storageKey: null,
+    thumbnailStorageKey: null,
+    thumbnailPath: 'user/original-thumb.png',
     mime: 'image/png',
     width: 800,
     height: 1000,
@@ -78,6 +78,7 @@ describe('/api/cron/regenerate-thumbnails', () => {
 
   beforeEach(() => {
     process.env.CRON_SECRET = CRON_SECRET;
+    process.env.NEXT_PUBLIC_BLOB_BASE_URL = 'https://blob.example';
     mockDatabaseAvailable = true;
     vi.clearAllMocks();
     mockHeaders.mockReturnValue({
@@ -119,13 +120,18 @@ describe('/api/cron/regenerate-thumbnails', () => {
     const meta = await sharp(uploadedBuffer).metadata();
     expect(Math.abs(meta.width! / meta.height! - 800 / 1000)).toBeLessThan(0.02);
 
-    expect(mockPrisma.asset.update).toHaveBeenCalledWith({
+    expect(mockPrisma.asset.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'asset-1' },
-      data: {
+      data: expect.objectContaining({
         thumbnailUrl: 'https://blob.example/original-thumb-new.png',
-        thumbnailPath: 'user/original-thumb-new.png',
-      },
-    });
+        thumbnailPath: expect.any(String),
+        thumbnailStorageKey: expect.any(String),
+        thumbnailStorageSize: expect.any(Number),
+        thumbnailStorageSha256: expect.any(String),
+        storageConfigFingerprint: expect.any(String),
+      }),
+    }));
+
     expect(mockDel).toHaveBeenCalledWith('https://blob.example/original-thumb.png');
   });
 
@@ -133,7 +139,7 @@ describe('/api/cron/regenerate-thumbnails', () => {
     mockPrisma.asset.findMany.mockResolvedValue([baseAsset]);
     const original = await png(800, 1000);
     fetchMock
-      .mockResolvedValueOnce({ ok: false, status: 404 })
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
       .mockResolvedValueOnce(fetchResponse(original));
 
     const res = await GET(makeRequest());
@@ -166,7 +172,7 @@ describe('/api/cron/regenerate-thumbnails', () => {
     const correctThumb = await png(205, 256);
     fetchMock
       .mockResolvedValueOnce({ ok: false, status: 404 }) // asset-1 thumb gone
-      .mockResolvedValueOnce({ ok: false, status: 503 }) // asset-1 original unavailable
+      .mockResolvedValueOnce(new Response(null, { status: 503 })) // asset-1 original unavailable
       .mockResolvedValueOnce(fetchResponse(correctThumb)); // asset-2 fine
 
     const res = await GET(makeRequest('?limit=2'));

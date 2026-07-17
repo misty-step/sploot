@@ -105,6 +105,16 @@ model Asset {
   thumbnailUrl   String?   @map("thumbnail_url") // URL for 256px thumbnail. Validated via CHECK constraint if set
   pathname       String // Path in blob storage
   thumbnailPath  String?   @map("thumbnail_path") // Path for thumbnail in blob storage
+  storageProvider          String  @default("vercel") @map("storage_provider")
+  storageKey               String? @map("storage_key")
+  storageSourceKey         String? @map("storage_source_key")
+  thumbnailStorageKey      String? @map("thumbnail_storage_key")
+  thumbnailStorageSourceKey String? @map("thumbnail_storage_source_key")
+  storageConfigFingerprint String? @map("storage_config_fingerprint")
+  storageSize              Int?    @map("storage_size")
+  storageSha256            String? @map("storage_sha256")
+  thumbnailStorageSize     Int?    @map("thumbnail_storage_size")
+  thumbnailStorageSha256   String? @map("thumbnail_storage_sha256")
   mime           String
   width          Int?
   height         Int?
@@ -122,6 +132,7 @@ model Asset {
   owner     User            @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
   embedding AssetEmbedding?
   tags      AssetTag[]
+  storageReplicas AssetStorageReplica[]
 
   // Indexes
   @@unique([ownerUserId, checksumSha256], name: "unique_user_checksum")
@@ -386,4 +397,108 @@ model StripeCancellationMaintenanceToken {
   consumedAt    DateTime? @map("consumed_at")
 
   @@map("stripe_cancellation_maintenance_tokens")
+}
+
+// Durable provider-neutral migration receipt. Claims are leased so a dead
+// worker can resume without allowing two workers to finish the same row.
+model StorageMigrationEntry {
+  id              String    @id @default(cuid())
+  logicalKey      String    @unique @map("logical_key")
+  rendition       String    @default("original")
+  sourceProvider  String    @map("source_provider")
+  sourceKey       String    @map("source_key")
+  targetProvider  String    @map("target_provider")
+  targetKey       String    @map("target_key")
+  size            Int
+  sha256          String
+  contentType     String?   @map("content_type")
+  status          String    @default("pending")
+  attempts        Int       @default(0)
+  leaseGeneration Int       @default(0) @map("lease_generation")
+  workerId        String?   @map("worker_id")
+  leaseExpiresAt  DateTime? @map("lease_expires_at")
+  lastError       String?   @map("last_error")
+  verifiedAt      DateTime? @map("verified_at")
+  rolledBackAt    DateTime? @map("rolled_back_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, leaseExpiresAt, logicalKey])
+  @@map("storage_migration_entries")
+}
+
+model AssetStorageReplica {
+  id          String   @id @default(cuid())
+  assetId     String   @map("asset_id")
+  rendition   String
+  provider    String
+  sourceKey   String?  @map("source_key")
+  logicalKey  String   @map("logical_key")
+  deliveryUrl String   @map("delivery_url")
+  size        Int
+  sha256      String
+  contentType String?  @map("content_type")
+  generation  Int
+  active      Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  @@unique([assetId, rendition, generation, provider])
+  @@index([assetId, rendition, active])
+  @@map("asset_storage_replicas")
+}
+
+model StorageCleanupOutbox {
+  id          String   @id @default(cuid())
+  assetId     String?  @map("asset_id")
+  provider    String
+  key         String
+  url         String
+  action      String
+  status      String   @default("pending")
+  attempts    Int      @default(0)
+  lastError   String?  @map("last_error")
+  availableAt DateTime @default(now()) @map("available_at")
+  claimOwner  String?   @map("claim_owner")
+  claimToken  String?   @map("claim_token")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  @@index([status, availableAt])
+  @@index([status, availableAt, claimOwner, claimToken])
+  @@map("storage_cleanup_outbox")
+}
+
+model StorageCutoverState {
+  id                  String    @id
+  phase               String
+  generation          Int       @default(0)
+  providerFingerprint String    @map("provider_fingerprint")
+  manifestSha256      String?   @map("manifest_sha256")
+  verifiedAt          DateTime? @map("verified_at")
+  rollbackAt          DateTime? @map("rollback_at")
+  legacyDeleteAfter   DateTime? @map("legacy_delete_after")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  @@map("storage_cutover_state")
+}
+
+
+model StorageInventoryState {
+  id                  String   @id
+  cursor              String?
+  providerFingerprint String   @map("provider_fingerprint")
+  lastError           String?  @map("last_error")
+  updatedAt           DateTime @map("updated_at")
+  @@map("storage_inventory_state")
+}
+
+model StorageInventoryFailure {
+  assetId   String   @map("asset_id")
+  kind      String
+  error     String
+  attempts  Int      @default(1)
+  updatedAt DateTime @map("updated_at")
+  @@id([assetId, kind])
+  @@map("storage_inventory_failures")
 }

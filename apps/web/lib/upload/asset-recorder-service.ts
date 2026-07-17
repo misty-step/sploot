@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import type { StorageReplica } from '@/lib/storage/object-store';
 import { logger } from '@/lib/logger';
 import { Prisma, type Asset } from '@prisma/client';
 import {
@@ -30,12 +31,21 @@ export interface AssetMetadata {
   thumbnailUrl: string | null;
   pathname: string;
   thumbnailPath: string | null;
+  storageProvider?: string;
+  storageKey?: string | null;
+  thumbnailStorageKey?: string | null;
+  storageConfigFingerprint?: string | null;
+  storageSize?: number | null;
+  storageSha256?: string | null;
+  thumbnailStorageSize?: number | null;
+  thumbnailStorageSha256?: string | null;
   mime: string;
   width: number | null;
   height: number | null;
   size: number;
   checksumSha256: string;
   phash?: string | null;
+  storageReplicas?: Array<StorageReplica & { rendition: 'original' | 'thumbnail'; size: number; sha256: string; contentType?: string; active?: boolean; generation?: number }>;
 }
 
 /**
@@ -99,6 +109,14 @@ export class AssetRecorderService {
             thumbnailUrl: metadata.thumbnailUrl,
             pathname: metadata.pathname,
             thumbnailPath: metadata.thumbnailPath,
+            ...(metadata.storageProvider ? { storageProvider: metadata.storageProvider } : {}),
+            ...(metadata.storageKey !== undefined ? { storageKey: metadata.storageKey } : {}),
+            ...(metadata.thumbnailStorageKey !== undefined ? { thumbnailStorageKey: metadata.thumbnailStorageKey } : {}),
+            ...(metadata.storageConfigFingerprint !== undefined ? { storageConfigFingerprint: metadata.storageConfigFingerprint } : {}),
+            ...(metadata.storageSize !== undefined ? { storageSize: metadata.storageSize } : {}),
+            ...(metadata.storageSha256 !== undefined ? { storageSha256: metadata.storageSha256 } : {}),
+            ...(metadata.thumbnailStorageSize !== undefined ? { thumbnailStorageSize: metadata.thumbnailStorageSize } : {}),
+            ...(metadata.thumbnailStorageSha256 !== undefined ? { thumbnailStorageSha256: metadata.thumbnailStorageSha256 } : {}),
             mime: metadata.mime,
             width: metadata.width,
             height: metadata.height,
@@ -108,6 +126,25 @@ export class AssetRecorderService {
             favorite: false,
           },
         });
+
+        if (metadata.storageReplicas && metadata.storageReplicas.length > 0) {
+          await tx.assetStorageReplica.createMany({
+            data: metadata.storageReplicas.map((replica) => ({
+              assetId: asset.id,
+              rendition: replica.rendition,
+              provider: replica.provider,
+              sourceKey: replica.provider === 'vercel' ? replica.key : null,
+              logicalKey: replica.key,
+              deliveryUrl: replica.url,
+              size: replica.size,
+              sha256: replica.sha256,
+              contentType: replica.contentType ?? metadata.mime,
+              generation: replica.generation ?? 0,
+              active: replica.active ?? replica.provider === (metadata.storageProvider ?? replica.provider),
+            })),
+            skipDuplicates: true,
+          });
+        }
 
         let tagsCreated = 0;
         let tagsAssociated = 0;

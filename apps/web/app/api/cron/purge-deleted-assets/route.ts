@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { del as deleteBlob } from '@vercel/blob';
+import { ConfiguredStorageWriter } from '@/lib/storage/object-store';
+import { enqueueAssetReplicaCleanup, markReplicaCleanupDone } from '@/lib/storage/permanent-delete';
 import { headers } from 'next/headers';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
@@ -63,6 +64,8 @@ async function getHandler(request: NextRequest) {
       );
     }
 
+    const storage = new ConfiguredStorageWriter();
+
     // Calculate cutoff date: 30 days ago
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
@@ -79,6 +82,11 @@ async function getHandler(request: NextRequest) {
         blobUrl: true,
         thumbnailUrl: true,
         pathname: true,
+        storageProvider: true,
+        storageKey: true,
+        storageSourceKey: true,
+        thumbnailStorageKey: true,
+        thumbnailStorageSourceKey: true,
         deletedAt: true,
         ownerUserId: true,
       },
@@ -98,54 +106,43 @@ async function getHandler(request: NextRequest) {
       });
     }
 
-    // Process each asset
+    // Enqueue and delete every provider replica through the shared transaction seam.
     for (const asset of assetsToDelete) {
       try {
-        logger.logInfo('cron.purge-deleted-assets.asset-start', {
-          assetId: asset.id,
-          deletedAt: asset.deletedAt,
+        logger.logInfo('cron.purge-deleted-assets.asset-start', { assetId: asset.id, deletedAt: asset.deletedAt });
+        const tombstone = await prisma.$transaction(async (tx) => {
+          const locked = await tx.asset.findFirst({ where: { id: asset.id, deletedAt: { not: null, lt: thirtyDaysAgo } } });
+          if (!locked) return null;
+          const fallback = [
+            { provider: locked.storageProvider ?? 'vercel', key: locked.storageSourceKey ?? locked.storageKey ?? locked.pathname, url: locked.blobUrl },
+            locked.thumbnailUrl ? { provider: locked.storageProvider ?? 'vercel', key: locked.thumbnailStorageSourceKey ?? locked.thumbnailStorageKey ?? locked.thumbnailPath ?? locked.pathname, url: locked.thumbnailUrl } : null,
+          ].filter((entry): entry is { provider: string; key: string; url: string } => Boolean(entry));
+          const replicas = await enqueueAssetReplicaCleanup(tx, locked.id, fallback);
+          return { replicas };
         });
+        if (!tombstone) continue;
 
-        // Delete blobs from Vercel Blob storage
-        const blobUrls = [asset.blobUrl];
-        if (asset.thumbnailUrl) {
-          blobUrls.push(asset.thumbnailUrl);
+        for (const replica of tombstone.replicas) {
+          if (storage.deleteReplica) await storage.deleteReplica(replica);
+          else if (storage.deleteKey) await storage.deleteKey(replica.provider, replica.key);
+          else await storage.deleteUrl(replica.url);
+          stats.blobsDeleted++;
+          logger.logInfo('cron.purge-deleted-assets.blob-deleted', { assetId: asset.id, provider: replica.provider, key: replica.key });
         }
 
-        for (const blobUrl of blobUrls) {
-          try {
-            await deleteBlob(blobUrl);
-            stats.blobsDeleted++;
-            logger.logInfo('cron.purge-deleted-assets.blob-deleted', {
-              assetId: asset.id,
-              blobUrl,
-            });
-          } catch (blobError) {
-            // Log but continue - blob might already be deleted
-            logger.logError('cron:purge-deleted-assets:blob-delete-failed', blobError as Error, { assetId: asset.id, blobUrl });
-          }
-        }
-
-        // Delete from database (cascades to embeddings and tags via schema)
-        await prisma.asset.delete({
-          where: { id: asset.id },
+        await prisma.$transaction(async (tx) => {
+          const locked = await tx.asset.findFirst({ where: { id: asset.id, deletedAt: { not: null, lt: thirtyDaysAgo } } });
+          if (!locked) return;
+          await markReplicaCleanupDone(tx, asset.id, tombstone.replicas);
+          await tx.asset.delete({ where: { id: asset.id } });
         });
-
         stats.purgedCount++;
-        logger.logInfo('cron.purge-deleted-assets.asset-success', {
-          assetId: asset.id,
-        });
+        logger.logInfo('cron.purge-deleted-assets.asset-success', { assetId: asset.id });
       } catch (error) {
         stats.failedCount++;
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        stats.errors.push({
-          assetId: asset.id,
-          error: errorMessage,
-        });
+        stats.errors.push({ assetId: asset.id, error: errorMessage });
         logger.logError('cron:purge-deleted-assets:asset-failed', error as Error, { assetId: asset.id });
-
-        // Continue processing other assets even if one fails
-        continue;
       }
     }
 

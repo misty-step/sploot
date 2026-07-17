@@ -11,6 +11,7 @@ vi.mock('next/headers', () => ({
 
 // Mock lib/db
 const mockPrisma = {
+  $transaction: vi.fn(),
   asset: {
     findMany: vi.fn(),
     delete: vi.fn(),
@@ -43,6 +44,7 @@ describe('/api/cron/purge-deleted-assets', () => {
   beforeEach(() => {
     // Set up environment
     process.env.CRON_SECRET = CRON_SECRET;
+    process.env.NEXT_PUBLIC_BLOB_BASE_URL = 'https://blob.vercel-storage.com';
     mockDatabaseAvailable = true;
 
     // Reset all mocks
@@ -61,6 +63,29 @@ describe('/api/cron/purge-deleted-assets', () => {
 
     // Default: delete succeeds
     mockPrisma.asset.delete.mockResolvedValue({});
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({
+      asset: {
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => {
+          const base = where.id === 'asset-old-1' ? 'old-1' : where.id === 'asset-old-2' ? 'old-2' : where.id === 'asset-1' ? '1' : where.id === 'asset-2' ? '2' : where.id === 'asset-with-thumb' || where.id === 'asset-no-thumb' ? 'main' : where.id;
+          return {
+            id: where.id,
+            storageProvider: 'vercel',
+            storageKey: base + '.jpg',
+            storageSourceKey: null,
+            thumbnailStorageKey: null,
+            thumbnailStorageSourceKey: null,
+            pathname: base + '.jpg',
+            thumbnailPath: base + '-thumb.jpg',
+            blobUrl: 'https://blob.vercel-storage.com/' + base + '.jpg',
+            thumbnailUrl: where.id === 'asset-old-1' ? 'https://blob.vercel-storage.com/old-1-thumb.jpg' : where.id === 'asset-1' ? 'https://blob.vercel-storage.com/1-thumb.jpg' : where.id === 'asset-2' ? 'https://blob.vercel-storage.com/2-thumb.jpg' : where.id === 'asset-with-thumb' ? 'https://blob.vercel-storage.com/thumb.jpg' : null,
+            deletedAt: daysAgo(35),
+          };
+        }),
+        delete: mockPrisma.asset.delete,
+      },
+      $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+      $executeRawUnsafe: vi.fn().mockResolvedValue(1),
+    }));
   });
 
   afterEach(() => {
@@ -204,7 +229,7 @@ describe('/api/cron/purge-deleted-assets', () => {
 
       mockPrisma.asset.findMany.mockResolvedValue(mockAssets);
 
-      // Blob deletion fails but asset purge should continue
+      // Blob deletion failure is fail-closed: the database row remains for retry
       vi.mocked(blobModule.del).mockRejectedValue(new Error('Blob not found'));
 
       // Suppress structured logging output (logError writes JSON to console.error)
@@ -214,17 +239,10 @@ describe('/api/cron/purge-deleted-assets', () => {
       const data = await response.json();
 
       expect(response.status).toBe(200);
-      expect(data.stats.purgedCount).toBe(1); // Still purged from database
-      expect(data.stats.failedCount).toBe(0); // Blob failure doesn't count as asset failure
-      expect(data.stats.blobsDeleted).toBe(0); // No blobs deleted successfully
-
-      // Database record should still be deleted
-      expect(mockPrisma.asset.delete).toHaveBeenCalledWith({ where: { id: 'asset-1' } });
-
-      // Verify error was logged via structured logging (JSON with context field)
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('"context":"cron:purge-deleted-assets:blob-delete-failed"')
-      );
+      expect(data.stats.purgedCount).toBe(0);
+      expect(data.stats.failedCount).toBe(1);
+      expect(data.stats.blobsDeleted).toBe(0);
+      expect(mockPrisma.asset.delete).not.toHaveBeenCalled();
 
       consoleErrorSpy.mockRestore();
     });

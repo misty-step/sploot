@@ -170,7 +170,7 @@ export async function ingestImage({
     });
 
     // Step 6: Upload to blob storage
-    const uploadResult = await uploader.upload(userId, file.name, fileBuffer, processedImages);
+    const uploadResult = await uploader.upload(userId, file.name, fileBuffer, processedImages, file.type);
 
     logger.info('Blobs uploaded', {
       userId,
@@ -187,6 +187,18 @@ export async function ingestImage({
           thumbnailUrl: uploadResult.thumbnailUrl,
           pathname: uploadResult.mainPathname,
           thumbnailPath: uploadResult.thumbnailPathname,
+          storageProvider: uploadResult.storageProvider,
+          storageConfigFingerprint: uploadResult.storageConfigFingerprint,
+          storageKey: uploadResult.storageKey,
+          thumbnailStorageKey: uploadResult.thumbnailStorageKey,
+          storageSize: uploadResult.mainSize,
+          storageSha256: uploadResult.mainSha256,
+          thumbnailStorageSize: uploadResult.thumbnailSize,
+          thumbnailStorageSha256: uploadResult.thumbnailSha256,
+          storageReplicas: [
+            ...uploadResult.mainReplicas.map((replica) => ({ ...replica, rendition: 'original' as const })),
+            ...uploadResult.thumbnailReplicas.map((replica) => ({ ...replica, rendition: 'thumbnail' as const })),
+          ],
           mime: file.type,
           width: processingResult.metadata?.width ?? processedImages?.main?.width ?? null,
           height: processingResult.metadata?.height ?? processedImages?.main?.height ?? null,
@@ -246,7 +258,7 @@ export async function ingestImage({
       });
 
       try {
-        await uploader.cleanup(uploadResult.mainUrl, uploadResult.thumbnailUrl);
+        await uploader.cleanup(uploadResult.mainUrl, uploadResult.thumbnailUrl, uploadResult.mainReplicas, uploadResult.thumbnailReplicas);
       } catch (cleanupError) {
         // Log but don't throw - blob may already be deleted in race condition
         logger.warn('Blob cleanup failed (may already be deleted)', {

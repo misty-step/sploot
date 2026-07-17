@@ -90,6 +90,29 @@ describe('AssetRecorderService', () => {
       });
     });
 
+    it('persists every provider replica in the asset transaction', async () => {
+      const mockTx = {
+        asset: { create: vi.fn().mockResolvedValue(mockAsset) },
+        assetStorageReplica: { createMany: vi.fn().mockResolvedValue({ count: 2 }) },
+      };
+      vi.mocked(db.prisma!.$transaction).mockImplementation(async (fn: any) => fn(withEnrollmentContract(mockTx)));
+      await recorder.recordAsset({
+        ...mockMetadata,
+        storageProvider: 'vercel',
+        storageReplicas: [
+          { rendition: 'original', provider: 'vercel', key: 'uploads/original.png', url: 'https://blob.store/uploads/original.png', size: 4, sha256: 'a'.repeat(64), active: true },
+          { rendition: 'original', provider: 's3', key: 'assets/asset/original.png', url: 'https://objects.example.test/sploot/assets/asset/original.png', size: 4, sha256: 'a'.repeat(64), active: false },
+        ],
+      });
+      expect(mockTx.assetStorageReplica.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({ provider: 'vercel', rendition: 'original', sourceKey: 'uploads/original.png', active: true, generation: 0 }),
+          expect.objectContaining({ provider: 's3', rendition: 'original', sourceKey: null, active: false, generation: 0 }),
+        ],
+        skipDuplicates: true,
+      });
+    });
+
     it('creates asset with tags using batch operations', async () => {
       const tags = ['nature', 'landscape', 'sunset'];
 

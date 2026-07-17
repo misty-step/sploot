@@ -190,6 +190,8 @@ jobs:
         run: |
           export PGPASSWORD=test
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -v bootstrap_version="$(cat apps/web/prisma/stripe-ledger-bootstrap.version)" -f apps/web/prisma/stripe-ledger-bootstrap-post.sql
+      - name: Run focused storage portability tests
+        run: pnpm --filter web exec vitest run __tests__/api/assets-permanent-delete.test.ts __tests__/api/cron/process-storage-cleanup.test.ts __tests__/lib/storage/cleanup-outbox.test.ts __tests__/lib/storage/storage-contract.test.ts
       - name: Run tests
         env:
           STRIPE_LEDGER_ADMIN_DATABASE_URL: postgresql://test:test@localhost:5432/sploot_test?sslmode=disable
