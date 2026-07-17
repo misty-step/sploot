@@ -64,9 +64,14 @@ export function renditionMime(key: string, bytes: Buffer, reported?: string, fal
   return byExtension[extension ?? ''] ?? (fallback && isValidMimeType(fallback) ? normalizeMimeType(fallback) : undefined);
 }
 
-async function inventory(limit: number, cursor?: string) {
+export async function inventory(limit: number, cursor?: string): Promise<void> {
   await requireOperatorAuthority();
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_BATCH) throw new Error('Inventory batch size must be 1-' + MAX_BATCH);
+  // Captured before `cursor`/`nextCursor` are consulted below: only a call
+  // that started with no cursor at all re-seeds every live asset from the
+  // absolute beginning in one unbroken pass, which is the only case safe to
+  // treat as complete/authoritative for pruning and full-manifest emission.
+  const isFreshPass = cursor === undefined;
   const config = storageConfigFromEnv();
   const fingerprint = storageConfigFingerprint(config);
   const source = new VercelObjectStore(config.legacyBaseUrl);
@@ -112,12 +117,22 @@ async function inventory(limit: number, cursor?: string) {
     if (assets.length < limit) break;
   }
   if (failures > 0) throw new Error('Inventory parity failed for ' + failures + ' asset(s); resume from the recorded cursor after repairing source objects');
-  // A full, uninterrupted pass above re-seeds every non-deleted asset's
-  // current original/thumbnail keys, so it is now safe to prune whatever no
-  // longer matches any live asset.
-  await pruneStaleMigrationEntries(prisma);
-  const durableManifest = await prisma.storageMigrationEntry.findMany({ orderBy: { logicalKey: 'asc' }, select: { logicalKey: true, sourceKey: true, rendition: true, sourceProvider: true, size: true, sha256: true, contentType: true } });
-  process.stdout.write(JSON.stringify(durableManifest) + '\n');
+  if (isFreshPass) {
+    // A full, uninterrupted pass above re-seeds every non-deleted asset's
+    // current original/thumbnail keys, so it is now safe to prune whatever
+    // no longer matches any live asset.
+    await pruneStaleMigrationEntries(prisma);
+    const durableManifest = await prisma.storageMigrationEntry.findMany({ orderBy: { logicalKey: 'asc' }, select: { logicalKey: true, sourceKey: true, rendition: true, sourceProvider: true, size: true, sha256: true, contentType: true } });
+    process.stdout.write(JSON.stringify(durableManifest) + '\n');
+    return;
+  }
+  // A cursor-resumed pass only re-seeds a SUFFIX of the live asset set — it
+  // must never be trusted as a complete inventory. Pruning and the durable
+  // full-manifest emission stay gated on a fresh, cursor-less pass that
+  // re-visits every live asset from the very beginning in one unbroken run;
+  // this run's output is explicitly non-authoritative.
+  process.stderr.write('Inventory resumed from cursor ' + cursor + '; seeded ' + manifest.length + ' entr' + (manifest.length === 1 ? 'y' : 'ies') + ' through ' + (nextCursor ?? cursor) + '. Re-run inventory WITHOUT --cursor for a complete, prunable, authoritative manifest before verify.\n');
+  process.stdout.write(JSON.stringify({ resumed: true, cursor: nextCursor ?? null, seeded: manifest.length }) + '\n');
 }
 
 /**
@@ -255,7 +270,8 @@ export async function restoreCutoverMappings(config: StorageConfig, digest: stri
       await tx.$executeRawUnsafe('UPDATE asset_storage_replicas SET active=false, updated_at=NOW() WHERE asset_id=$1 AND rendition=$2', row.asset_id, row.rendition);
       await tx.$executeRawUnsafe('UPDATE asset_storage_replicas SET active=true, updated_at=NOW() WHERE asset_id=$1 AND rendition=$2 AND generation=$3 AND provider=$4', row.asset_id, row.rendition, row.old_generation, row.provider);
     }
-    await tx.storageCutoverState.updateMany({ where: { id: 'default', phase: 'target', generation: state.generation, providerFingerprint: fingerprint, manifestSha256: digest }, data: { phase: 'rollback', rollbackAt: new Date(), updatedAt: new Date() } });
+    const updated = await tx.storageCutoverState.updateMany({ where: { id: 'default', phase: 'target', generation: state.generation, providerFingerprint: fingerprint, manifestSha256: digest }, data: { phase: 'rollback', rollbackAt: new Date(), updatedAt: new Date() } });
+    if (updated.count !== 1) throw new Error('Rollback fence lost while restoring asset mappings');
   });
 }
 

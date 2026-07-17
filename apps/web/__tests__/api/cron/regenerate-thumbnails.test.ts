@@ -243,6 +243,39 @@ describe('/api/cron/regenerate-thumbnails', () => {
     );
   });
 
+  it('preserves the original transaction error and durably enqueues the orphaned replica when cleanup-after-failure also fails', async () => {
+    mockPrisma.asset.findMany.mockResolvedValue([baseAsset]);
+    const legacySquareThumb = await png(256, 256);
+    const original = await png(800, 1000);
+    fetchMock
+      .mockResolvedValueOnce(fetchResponse(legacySquareThumb))
+      .mockResolvedValueOnce(fetchResponse(original));
+    mockTx.assetStorageReplica.createMany.mockRejectedValueOnce(new Error('permission denied'));
+    // The cleanup attempt for the just-uploaded orphan ALSO fails (e.g. a
+    // provider outage right after the ledger write failed).
+    mockDel.mockRejectedValueOnce(new Error('cleanup provider outage'));
+
+    const res = await GET(makeRequest());
+    const body = await res.json();
+
+    expect(body.failed).toBe(1);
+    // The ORIGINAL transaction error must survive — never replaced by the
+    // cleanup failure that happened while handling it.
+    expect(body.failures[0].reason).toBe('permission denied');
+    expect(body.failures[0].reason).not.toContain('cleanup provider outage');
+    // The orphaned new replica that could not be deleted must be durably
+    // enqueued through the existing storage_cleanup_outbox seam — never
+    // silently dropped as a best-effort-only leak.
+    expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
+      expect.any(String),
+      'asset-1',
+      'vercel',
+      'user/original-thumb-new.png',
+      'https://blob.example/original-thumb-new.png',
+      'cleanup provider outage',
+    );
+  });
+
   it('rolls back the asset update when the replica ledger write fails, and cleans up the newly uploaded object', async () => {
     mockPrisma.asset.findMany.mockResolvedValue([baseAsset]);
     const legacySquareThumb = await png(256, 256);

@@ -214,7 +214,26 @@ async function getHandler(request: NextRequest) {
           });
         });
       } catch (error) {
-        await storage.deleteReplicas?.(newReplicas);
+        // The just-uploaded replica(s) must be cleaned up, but a failure
+        // here must never replace or mask the ORIGINAL transaction error —
+        // that's the actionable failure reason (e.g. a permission/DB error),
+        // not an artifact of best-effort cleanup. If cleanup itself fails,
+        // durably enqueue every new replica through the same
+        // storage_cleanup_outbox seam the old-thumbnail-delete path below
+        // already uses, so it is retried rather than silently leaked.
+        try {
+          await storage.deleteReplicas?.(newReplicas);
+        } catch (cleanupError) {
+          const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+          for (const replica of newReplicas) {
+            try {
+              await recordThumbnailCleanupFailure(asset.id, replica.provider, replica.key, replica.url, cleanupMessage);
+            } catch {
+              // Best-effort enqueue; the original transaction error below is
+              // always what surfaces to the caller regardless.
+            }
+          }
+        }
         throw error;
       }
       try {

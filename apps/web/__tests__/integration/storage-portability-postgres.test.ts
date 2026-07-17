@@ -402,4 +402,102 @@ describeWithDatabase('storage portability PostgreSQL authority', () => {
     expect(afterReplicas).toEqual(beforeReplicas);
     expect(await admin.storageCutoverState.findUnique({ where: { id: 'default' }, select: { phase: true, generation: true } })).toEqual(beforeState);
   });
+
+
+  it('fails closed and leaves the database unchanged when the state fence is lost immediately before the rollback phase-advance update lands', async () => {
+    previousState = await admin.storageCutoverState.findUnique({ where: { id: 'default' } });
+    const config = createStorageConfig({
+      provider: 's3',
+      phase: 'dual-write',
+      endpoint: 'https://objects.example.test',
+      publicUrlBase: 'https://objects.example.test',
+      bucket: 'sploot',
+      accessKeyId: 'integration-id',
+      secretAccessKey: 'integration-secret',
+    });
+    const manifest = [
+      { logicalKey: 'assets/storage-portability-lost-fence/original.png', sourceKey: 'uploads/original.png', rendition: 'original' as const, sourceProvider: 'vercel', size: 3, sha256: 'a'.repeat(64), contentType: 'image/png' },
+      { logicalKey: 'assets/storage-portability-lost-fence/thumb.png', sourceKey: 'uploads/thumb.png', rendition: 'thumbnail' as const, sourceProvider: 'vercel', size: 3, sha256: 'b'.repeat(64), contentType: 'image/png' },
+    ];
+    const digest = manifestSha256(manifest);
+    await admin.user.create({ data: { id: userId, email: userId + '@example.test' } });
+    await admin.asset.create({ data: {
+      id: assetId,
+      ownerUserId: userId,
+      blobUrl: 'https://source.public.blob.vercel-storage.com/uploads/original.png',
+      thumbnailUrl: 'https://source.public.blob.vercel-storage.com/uploads/thumb.png',
+      pathname: 'uploads/original.png',
+      thumbnailPath: 'uploads/thumb.png',
+      storageProvider: 'vercel',
+      storageKey: manifest[0]!.logicalKey,
+      storageSourceKey: manifest[0]!.sourceKey,
+      thumbnailStorageKey: manifest[1]!.logicalKey,
+      thumbnailStorageSourceKey: manifest[1]!.sourceKey,
+      mime: 'image/png',
+      size: 3,
+      checksumSha256: 'storage-portability-lost-fence-checksum',
+    } });
+    await admin.storageCutoverState.create({ data: { id: 'default', phase: 'dual-write', generation: 0, providerFingerprint: storageConfigFingerprint(config), manifestSha256: digest } });
+
+    await commitCutover(manifest, config, digest, admin);
+
+    const beforeAsset = await admin.asset.findUniqueOrThrow({ where: { id: assetId }, select: {
+      storageProvider: true, storageKey: true, storageSourceKey: true, blobUrl: true,
+      thumbnailStorageKey: true, thumbnailStorageSourceKey: true, thumbnailUrl: true,
+    } });
+    const beforeReplicas = await admin.assetStorageReplica.findMany({ where: { assetId }, orderBy: [{ rendition: 'asc' }, { generation: 'asc' }, { provider: 'asc' }], select: { rendition: true, provider: true, generation: true, active: true } });
+    const beforeState = await admin.storageCutoverState.findUnique({ where: { id: 'default' }, select: { phase: true, generation: true } });
+
+    // Simulate a concurrent racer moving the fence between
+    // restoreCutoverMappings' own initial read and its terminal
+    // phase-advance update: wrap the real Postgres transaction client so
+    // every statement executes for real EXCEPT the final
+    // storageCutoverState.updateMany, whose result is forced to
+    // { count: 0 } as if a concurrent writer had already claimed the row.
+    // Every asset/replica mutation inside the same transaction still runs
+    // against real Postgres, so this proves the WHOLE transaction — not
+    // just the fence-check statement — rolls back when the count-guard
+    // fires, exactly as commitCutover's sibling guard already does.
+    const fencedAdmin = {
+      $transaction: (fn: (tx: unknown) => Promise<unknown>) => admin.$transaction((tx) => {
+        const realUpdateMany = tx.storageCutoverState.updateMany.bind(tx.storageCutoverState);
+        const wrappedCutoverState = new Proxy(tx.storageCutoverState, {
+          get(target, prop, receiver) {
+            if (prop === 'updateMany') {
+              return async (...args: Parameters<typeof realUpdateMany>) => {
+                // A real racer would have already updated the row (0 further
+                // matches); we simulate that outcome directly rather than
+                // actually running a second concurrent transaction.
+                void args;
+                return { count: 0 };
+              };
+            }
+            return Reflect.get(target, prop, receiver);
+          },
+        });
+        const wrappedTx = new Proxy(tx, {
+          get(target, prop, receiver) {
+            if (prop === 'storageCutoverState') return wrappedCutoverState;
+            return Reflect.get(target, prop, receiver);
+          },
+        });
+        return fn(wrappedTx);
+      }),
+    } as unknown as typeof admin;
+
+    await expect(restoreCutoverMappings(config, digest, fencedAdmin)).rejects.toThrow(/[Rr]ollback fence lost/);
+
+    // Fails closed: the asset columns, every replica row, and the cutover
+    // state itself must be byte-for-byte unchanged — the lost fence must
+    // roll back the mapping-restoration work done earlier in the SAME
+    // transaction, not just skip the terminal phase write.
+    const afterAsset = await admin.asset.findUniqueOrThrow({ where: { id: assetId }, select: {
+      storageProvider: true, storageKey: true, storageSourceKey: true, blobUrl: true,
+      thumbnailStorageKey: true, thumbnailStorageSourceKey: true, thumbnailUrl: true,
+    } });
+    expect(afterAsset).toEqual(beforeAsset);
+    const afterReplicas = await admin.assetStorageReplica.findMany({ where: { assetId }, orderBy: [{ rendition: 'asc' }, { generation: 'asc' }, { provider: 'asc' }], select: { rendition: true, provider: true, generation: true, active: true } });
+    expect(afterReplicas).toEqual(beforeReplicas);
+    expect(await admin.storageCutoverState.findUnique({ where: { id: 'default' }, select: { phase: true, generation: true } })).toEqual(beforeState);
+  });
 });
