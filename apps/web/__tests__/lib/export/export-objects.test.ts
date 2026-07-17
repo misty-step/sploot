@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -218,9 +218,14 @@ describe('QA seed object mapping', () => {
   const seedPath = join(seedDir, seedFile);
   const seedUrl = `${QA_SEED_BLOB_HOST}/qa-blob-seed/${seedFile}`;
   const seedBytes = new Uint8Array([9, 8, 7, 6, 5]);
+  const escapeFile = '__test-export-objects-qa-seed-link.bin';
+  const escapePath = join(seedDir, escapeFile);
+  const outsidePath = join(seedDir, '..', '__test-export-objects-outside.bin');
 
   afterEach(() => {
     rmSync(seedPath, { force: true });
+    rmSync(escapePath, { force: true });
+    rmSync(outsidePath, { force: true });
   });
 
   function enableQaMode() {
@@ -258,6 +263,21 @@ describe('QA seed object mapping', () => {
     vi.stubGlobal('fetch', fetchSpy);
     const result = await openExportObject(
       `${QA_SEED_BLOB_HOST}/qa-blob-seed/../../lib/export/export-objects.ts`,
+    );
+    expect(result).toEqual({ ok: false, reason: 'object_url_rejected' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects a seed-directory symlink whose canonical target escapes the root', async () => {
+    mkdirSync(seedDir, { recursive: true });
+    writeFileSync(outsidePath, seedBytes);
+    symlinkSync(outsidePath, escapePath);
+    enableQaMode();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const result = await openExportObject(
+      `${QA_SEED_BLOB_HOST}/qa-blob-seed/${escapeFile}`,
     );
     expect(result).toEqual({ ok: false, reason: 'object_url_rejected' });
     expect(fetchSpy).not.toHaveBeenCalled();

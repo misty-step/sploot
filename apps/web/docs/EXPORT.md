@@ -27,8 +27,9 @@ rules the endpoints enforce.
   byte.
 - **Bounded persistence.** Parts are streamed without server-side archives; the
   terminal manifest is additionally persisted as a bounded replay artifact (up to
-  16 MiB) on the `library_exports` row. Bookkeeping rows are lazily deleted 7 days
-  after expiry.
+  16 MiB) on the `library_exports` row. Each user retains at most 32 rows:
+  rolling-window spend and unexpired finalized manifests are never pruned,
+  while zero-egress canceled/superseded history remains cap-eligible.
 - **Expiring capability.** An export and its download URLs die 24 hours after
   creation (HTTP `410`), and immediately on cancel. Tenant-scoped: only the
   owner's session can resolve an export id; provider URLs never reach the
@@ -51,6 +52,11 @@ UTF-8 manifest/tag framing and keeps tiny-asset exports bounded; if it
   `429 export_egress_window_exhausted` (retryable — the window slides, so a
   full export is always possible again; data is never held hostage and there
   is no billing gate).
+  At most 32 spend-bearing or unexpired-finalized sessions may be protected at
+  once. A force-create at that boundary returns the same retryable 429 before
+  snapshotting, with `Retry-After` derived from the earliest protection expiry.
+  Zero-egress force-create spam remains prunable and cannot grow rows without
+  bound.
 - **Bounded streaming.** Producers await downstream capacity; a stalled consumer
   is failed closed after 60 seconds, while a slow consumer that makes progress
   continues. Provider headers and read-idle waits are separately capped at 60
@@ -152,3 +158,4 @@ know.
 | Asset permanently deleted | Active exports are canceled in the same transaction before the row is removed; later part/manifest requests return `410 export_unavailable` instead of claiming a complete historical snapshot. |
 | Per-export egress cap reached | `429 export_egress_exhausted`; start a new export (subject to the rolling window). |
 | Rolling 24h window cap reached | `429 export_egress_window_exhausted`; retryable — wait for the window to slide. |
+| Protected session ceiling reached | `429 export_egress_window_exhausted` with `Retry-After`; no new snapshot is created, and retry succeeds after the earliest spend window or finalized manifest expires. |

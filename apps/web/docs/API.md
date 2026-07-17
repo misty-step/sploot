@@ -841,6 +841,13 @@ session and snapshots fresh. At most one active session per user.
 }
 ```
 
+`force: true` is refused before snapshotting when 32 prior sessions must remain
+to preserve rolling-window egress accounting or an unexpired finalized
+manifest. The response is HTTP 429 with
+`{"code":"export_egress_window_exhausted","retryable":true,"retryAfterSec":…}`
+and a matching `Retry-After` header. Zero-egress canceled/superseded history is
+cap-prunable even inside the window, so force-create spam cannot grow storage.
+
 #### GET /api/library/export
 
 Return the caller's active export session or durable completed manifest (same
@@ -878,7 +885,8 @@ on clean completion, and kept in full if the download is aborted (see
 - 410: `export_expired` | `export_unavailable` (canceled/superseded)
 - 429: `export_egress_exhausted` (per-export download budget spent;
   `retryable: false`) | `export_egress_window_exhausted` (rolling 24h tenant
-  budget spent; `retryable: true` — the window slides)
+  budget or protected-session ceiling reached; `retryable: true`, with
+  `Retry-After` — the window slides)
 
 #### GET /api/library/export/{exportId}/manifest
 

@@ -6,7 +6,11 @@ import {
 } from '@/lib/auth/with-authenticated-api';
 import { prisma } from '@/lib/db';
 import { enrollmentUnavailableResponse } from '@/lib/enrollment/enrollment-policy';
-import { createOrReuseExport, getActiveExport } from '@/lib/export/export-service';
+import {
+  createOrReuseExport,
+  ExportEgressWindowExhaustedError,
+  getActiveExport,
+} from '@/lib/export/export-service';
 import { withObservability } from '@/lib/with-observability';
 import logger from '@/lib/logger';
 
@@ -45,6 +49,20 @@ async function postHandler(
     return NextResponse.json({ export: view, reused }, { status: reused ? 200 : 201 });
   } catch (error) {
     unstable_rethrow(error);
+    if (error instanceof ExportEgressWindowExhaustedError) {
+      return NextResponse.json(
+        {
+          error: 'Export session limit reached for the rolling egress window',
+          code: error.code,
+          retryable: true,
+          retryAfterSec: error.retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(error.retryAfterSeconds) },
+        },
+      );
+    }
     logger.error('library-export:create-failed', error);
     return NextResponse.json({ error: 'Failed to create export' }, { status: 500 });
   }

@@ -8,8 +8,8 @@
  */
 
 
-import { createReadStream } from 'node:fs';
-import { stat as fsStat } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { open, realpath, type FileHandle } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { isQaLocalAuthEnabled } from '@/lib/auth/qa-local-enabled';
@@ -92,14 +92,40 @@ async function openQaSeedObject(url: string): Promise<OpenExportObjectResult> {
   if (resolved !== QA_SEED_ROOT && !resolved.startsWith(`${QA_SEED_ROOT}${sep}`)) {
     return { ok: false, reason: 'object_url_rejected' };
   }
+
+  let canonicalRoot: string;
+  let canonicalFile: string;
   try {
-    const stats = await fsStat(resolved);
-    if (!stats.isFile()) return { ok: false, reason: 'object_missing' };
+    [canonicalRoot, canonicalFile] = await Promise.all([
+      realpath(QA_SEED_ROOT),
+      realpath(resolved),
+    ]);
   } catch {
     return { ok: false, reason: 'object_missing' };
   }
-  const body = Readable.toWeb(createReadStream(resolved)) as ReadableStream<Uint8Array>;
-  return { ok: true, body };
+  if (
+    canonicalFile !== canonicalRoot
+    && !canonicalFile.startsWith(`${canonicalRoot}${sep}`)
+  ) {
+    return { ok: false, reason: 'object_url_rejected' };
+  }
+
+  let file: FileHandle | undefined;
+  try {
+    file = await open(canonicalFile, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const stats = await file.stat();
+    if (!stats.isFile()) {
+      await file.close();
+      return { ok: false, reason: 'object_missing' };
+    }
+    const body = Readable.toWeb(
+      file.createReadStream({ autoClose: true }),
+    ) as ReadableStream<Uint8Array>;
+    return { ok: true, body };
+  } catch {
+    await file?.close().catch(() => undefined);
+    return { ok: false, reason: 'object_missing' };
+  }
 }
 
 function cancelBody(body: ReadableStream<Uint8Array> | null): Promise<void> {

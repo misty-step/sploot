@@ -123,9 +123,23 @@ const fakePrisma = vi.hoisted(() => {
       },
     },
     $transaction: async (fn: any) => fn(db),
+    $queryRaw: async () => [],
     $queryRawUnsafe: async () => [],
     $executeRawUnsafe: async () => 1,
-    $executeRaw: async () => 1,
+    $executeRaw: async (...args: unknown[]) => {
+      const strings = args[0] as readonly string[];
+      if (strings.join('?').includes('SET "status" = \'superseded\'')) {
+        const ownerUserId = String(args[1]);
+        let count = 0;
+        for (const row of state.exports.values()) {
+          if (row.ownerUserId !== ownerUserId || row.status !== 'active') continue;
+          row.status = 'superseded';
+          count += 1;
+        }
+        return count;
+      }
+      return 1;
+    },
   };
   return db;
 });

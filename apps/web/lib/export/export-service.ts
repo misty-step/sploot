@@ -77,14 +77,25 @@ export interface LibraryExportView {
   downloads: { status: string; manifest: string; parts: string[] };
 }
 
-/** How long finished (superseded/canceled/expired) rows linger for debugging. */
-const EXPORT_ROW_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 /** Active plus bounded inactive history; force-create cannot grow rows forever. */
 const EXPORT_MAX_RETAINED_ROWS_PER_USER = 32;
 /** Planning/manifest admission is bounded but may scan a large library. */
 const EXPORT_PLANNING_TRANSACTION_TIMEOUT_MS = 120_000;
 const EXPORT_LIFECYCLE_POLL_MS = 1_000;
 
+interface ProtectedExportLock {
+  id: string;
+  releaseAt: Date;
+}
+
+export class ExportEgressWindowExhaustedError extends Error {
+  readonly code = 'export_egress_window_exhausted';
+
+  constructor(readonly retryAfterSeconds: number) {
+    super('Export session limit reached for the rolling egress window');
+    this.name = 'ExportEgressWindowExhaustedError';
+  }
+}
 type ExportDatabase = NonNullable<typeof prisma> | Prisma.TransactionClient;
 
 function requirePrismaDb(): NonNullable<typeof prisma> {
@@ -95,6 +106,13 @@ function requirePrismaDb(): NonNullable<typeof prisma> {
 function requireDb(database?: ExportDatabase): ExportDatabase {
   if (database) return database;
   return requirePrismaDb();
+}
+
+function isPrismaUniqueConstraintError(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && error.code === 'P2002';
 }
 
 // Prisma returns Json columns as unknown; normalize defensively so a
@@ -298,6 +316,18 @@ export async function createOrReuseExport(
   try {
     const result = await db.$transaction(async (tx) => {
       await acquireEnrollmentIdentityWriterLock(tx, userId);
+      // Synchronize force-create with every in-flight reservation before
+      // inspecting or changing reusable sessions. The identity lock
+      // serializes creates; these row locks serialize create vs. download.
+      await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id"
+        FROM "library_exports"
+        WHERE "owner_user_id" = ${userId}
+          AND "status" IN ('active', 'complete')
+        ORDER BY "id"
+        FOR UPDATE
+      `;
+
       const lockedActive = await tx.libraryExport.findFirst({
         where: { ownerUserId: userId, status: 'active' },
       });
@@ -319,6 +349,49 @@ export async function createOrReuseExport(
         return { row: lockedComplete, reused: true };
       }
 
+      const windowStart = new Date(now.getTime() - EXPORT_EGRESS_WINDOW_MS);
+      const protectedRows = await tx.$queryRaw<ProtectedExportLock[]>`
+        SELECT
+          "id",
+          GREATEST(
+            CASE
+              WHEN "egress_bytes" > 0 AND "updated_at" >= ${windowStart}
+                THEN "updated_at" + make_interval(secs => ${EXPORT_EGRESS_WINDOW_MS / 1000})
+              ELSE '-infinity'::timestamptz
+            END,
+            CASE
+              WHEN "status" = 'complete'
+                AND "manifest_finalized_at" IS NOT NULL
+                AND "manifest_finalized_artifact" IS NOT NULL
+                AND "expires_at" > ${now}
+                THEN "expires_at"
+              ELSE '-infinity'::timestamptz
+            END
+          ) AS "releaseAt"
+        FROM "library_exports"
+        WHERE "owner_user_id" = ${userId}
+          AND (
+            ("egress_bytes" > 0 AND "updated_at" >= ${windowStart})
+            OR (
+              "status" = 'complete'
+              AND "manifest_finalized_at" IS NOT NULL
+              AND "manifest_finalized_artifact" IS NOT NULL
+              AND "expires_at" > ${now}
+            )
+          )
+        ORDER BY "releaseAt" ASC, "id" ASC
+        LIMIT ${EXPORT_MAX_RETAINED_ROWS_PER_USER}
+        FOR UPDATE
+      `;
+      if (protectedRows.length >= EXPORT_MAX_RETAINED_ROWS_PER_USER) {
+        const releaseAt = protectedRows[0]?.releaseAt ?? new Date(now.getTime() + 1_000);
+        const retryAfterSeconds = Math.max(
+          1,
+          Math.ceil((releaseAt.getTime() - now.getTime()) / 1_000),
+        );
+        throw new ExportEgressWindowExhaustedError(retryAfterSeconds);
+      }
+
       // Keep planning and active-row creation under the same identity lock as
       // permanent asset deletion. Never hold this transaction across streaming.
       const snapshotAt = new Date();
@@ -327,26 +400,26 @@ export async function createOrReuseExport(
         userId,
         snapshotAt,
       );
-      await tx.libraryExport.deleteMany({
+      // Preserve updated_at: it is the rolling egress clock, so a lifecycle
+      // status change must not manufacture a fresh 24-hour spend window.
+      await tx.$executeRaw`
+        UPDATE "library_exports"
+        SET "status" = 'superseded'
+        WHERE "owner_user_id" = ${userId}
+          AND "status" = 'active'
+      `;
+
+      const protectedIds = protectedRows.map((row) => row.id);
+      const retainedHistorySlots =
+        EXPORT_MAX_RETAINED_ROWS_PER_USER - 1 - protectedIds.length;
+      const staleInactive = await tx.libraryExport.findMany({
         where: {
           ownerUserId: userId,
-          expiresAt: { lt: new Date(now.getTime() - EXPORT_ROW_RETENTION_MS) },
+          status: { not: 'active' },
+          ...(protectedIds.length > 0 ? { id: { notIn: protectedIds } } : {}),
         },
-      });
-      await tx.libraryExport.updateMany({
-        where: { ownerUserId: userId, status: 'active' },
-        data: { status: 'superseded' },
-      });
-      // Rows updated within the rolling egress window still contribute to
-      // reserveExportEgress's window-headroom aggregate for other sessions —
-      // deleting them here would let a user manufacture fresh egress budget
-      // simply by force-creating past the retention cap. Only rows already
-      // outside the window are eligible for the count-based cap.
-      const windowStart = new Date(now.getTime() - EXPORT_EGRESS_WINDOW_MS);
-      const staleInactive = await tx.libraryExport.findMany({
-        where: { ownerUserId: userId, status: { not: 'active' }, updatedAt: { lt: windowStart } },
         orderBy: { updatedAt: 'desc' },
-        skip: EXPORT_MAX_RETAINED_ROWS_PER_USER - 1,
+        skip: retainedHistorySlots,
         select: { id: true },
       });
       if (staleInactive.length > 0) {
@@ -354,6 +427,7 @@ export async function createOrReuseExport(
           where: { id: { in: staleInactive.map((row) => row.id) } },
         });
       }
+
       const row = await tx.libraryExport.create({
         data: {
           ownerUserId: userId,
@@ -385,7 +459,7 @@ export async function createOrReuseExport(
       reused: result.reused,
     };
   } catch (error: unknown) {
-    if ((error as { code?: string })?.code === 'P2002') {
+    if (isPrismaUniqueConstraintError(error)) {
       const winner = await db.libraryExport.findFirst({
         where: { ownerUserId: userId, status: 'active' },
       });
