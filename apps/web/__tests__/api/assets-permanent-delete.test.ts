@@ -4,10 +4,12 @@ import { NextRequest } from 'next/server';
 const mockPrisma = { $transaction: vi.fn() };
 const mockDeleteReplica = vi.fn();
 const mockQuery = vi.fn();
+const mockInvalidateExports = vi.fn();
 const mockTx = {
   asset: { findFirst: vi.fn(), update: vi.fn(), delete: vi.fn() },
   assetTag: { deleteMany: vi.fn() },
   assetEmbedding: { deleteMany: vi.fn() },
+  libraryExport: { updateMany: mockInvalidateExports },
   $queryRawUnsafe: mockQuery,
   $executeRawUnsafe: vi.fn(),
 };
