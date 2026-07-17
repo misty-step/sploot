@@ -68,6 +68,8 @@ describe('DELETE /api/assets/[id] share-slug cache', () => {
       deletedAt: new Date('2026-07-10T00:00:00Z'),
     });
     mocks.transaction.mockImplementation(async (work: (tx: unknown) => Promise<unknown>) => work({
+      $queryRawUnsafe: vi.fn(async () => []),
+      $executeRawUnsafe: vi.fn(async () => 1),
       $executeRaw: vi.fn(),
       user: { findUnique: mocks.userFindUnique },
       asset: {
