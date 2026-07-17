@@ -7,6 +7,8 @@ export type MigrationStatus = 'pending' | 'copying' | 'copied' | 'verified' | 'm
 export interface MigrationManifestEntry {
   logicalKey: string;
   sourceKey: string;
+  rendition?: 'original' | 'thumbnail';
+  sourceProvider?: string;
   size: number;
   sha256: string;
   contentType?: string;

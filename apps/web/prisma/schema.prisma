@@ -404,6 +404,7 @@ model StripeCancellationMaintenanceToken {
 model StorageMigrationEntry {
   id              String    @id @default(cuid())
   logicalKey      String    @unique @map("logical_key")
+  rendition       String    @default("original")
   sourceProvider  String    @map("source_provider")
   sourceKey       String    @map("source_key")
   targetProvider  String    @map("target_provider")
@@ -442,7 +443,7 @@ model AssetStorageReplica {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  @@unique([assetId, rendition, generation])
+  @@unique([assetId, rendition, generation, provider])
   @@index([assetId, rendition, active])
   @@map("asset_storage_replicas")
 }
@@ -458,9 +459,12 @@ model StorageCleanupOutbox {
   attempts    Int      @default(0)
   lastError   String?  @map("last_error")
   availableAt DateTime @default(now()) @map("available_at")
+  claimOwner  String?   @map("claim_owner")
+  claimToken  String?   @map("claim_token")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   @@index([status, availableAt])
+  @@index([status, availableAt, claimOwner, claimToken])
   @@map("storage_cleanup_outbox")
 }
 

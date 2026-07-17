@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db';
+import type { StorageReplica } from '@/lib/storage/object-store';
 import { logger } from '@/lib/logger';
 import { Prisma, type Asset } from '@prisma/client';
 import {
@@ -44,6 +45,7 @@ export interface AssetMetadata {
   size: number;
   checksumSha256: string;
   phash?: string | null;
+  storageReplicas?: Array<StorageReplica & { rendition: 'original' | 'thumbnail'; size: number; sha256: string; contentType?: string; active?: boolean; generation?: number }>;
 }
 
 /**
@@ -124,6 +126,25 @@ export class AssetRecorderService {
             favorite: false,
           },
         });
+
+        if (metadata.storageReplicas && metadata.storageReplicas.length > 0) {
+          await tx.assetStorageReplica.createMany({
+            data: metadata.storageReplicas.map((replica) => ({
+              assetId: asset.id,
+              rendition: replica.rendition,
+              provider: replica.provider,
+              sourceKey: replica.provider === 'vercel' ? replica.key : null,
+              logicalKey: replica.key,
+              deliveryUrl: replica.url,
+              size: replica.size,
+              sha256: replica.sha256,
+              contentType: replica.contentType ?? metadata.mime,
+              generation: replica.generation ?? 0,
+              active: replica.active ?? replica.provider === (metadata.storageProvider ?? replica.provider),
+            })),
+            skipDuplicates: true,
+          });
+        }
 
         let tagsCreated = 0;
         let tagsAssociated = 0;

@@ -36,6 +36,8 @@ export interface BlobUploadResult {
   thumbnailSize: number | null;
   thumbnailSha256: string | null;
   storageConfigFingerprint: string;
+  mainReplicas: Array<StorageReplica & { size: number; sha256: string; contentType?: string }>;
+  thumbnailReplicas: Array<StorageReplica & { size: number; sha256: string; contentType?: string }>;
 }
 
 export interface BlobUploadRenditions {
@@ -177,6 +179,8 @@ export class BlobUploaderService {
         thumbnailSize,
         thumbnailSha256,
         storageConfigFingerprint: this.configFingerprint,
+        mainReplicas: mainReplicas.map(replica => ({ ...replica, size: mainSize, sha256: mainSha256, contentType })),
+        thumbnailReplicas: thumbnailReplicas.map(replica => ({ ...replica, size: thumbnailSize!, sha256: thumbnailSha256!, contentType: thumbnailContentType(renditions?.thumbnail?.format ?? 'jpg') })),
       };
     } catch (error) {
       // Upload failed - clean up any uploaded blobs
