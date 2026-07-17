@@ -152,18 +152,22 @@ export async function commitCutover(manifest: MigrationManifestEntry[], config: 
           sourceProvider,
         );
         const recordedSource = sourceReplica[0];
-        if (!recordedSource && sourceProvider !== asset.storageProvider) {
+        const fallbackSourceKey = rendition === 'thumbnail'
+          ? asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey
+          : asset.storageSourceKey ?? asset.storageKey;
+        const fallbackSourceUrl = rendition === 'thumbnail' ? asset.thumbnailUrl : asset.blobUrl;
+        if (!recordedSource && (!fallbackSourceKey || !fallbackSourceUrl)) {
           throw new Error('Cutover source replica is missing for ' + asset.id + '/' + rendition);
         }
         const oldKey = recordedSource
           ? (recordedSource.provider === 'vercel' ? recordedSource.source_key ?? recordedSource.logical_key : recordedSource.logical_key)
-          : (rendition === 'thumbnail' ? asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey ?? entry.sourceKey : asset.storageSourceKey ?? asset.storageKey ?? entry.sourceKey);
-        const oldUrl = recordedSource?.delivery_url ?? (rendition === 'thumbnail' ? asset.thumbnailUrl : asset.blobUrl);
+          : fallbackSourceKey ?? entry.sourceKey;
+        const oldUrl = recordedSource?.delivery_url ?? fallbackSourceUrl;
         if (!oldUrl) throw new Error('Cutover source delivery URL is missing for ' + asset.id + '/' + rendition);
         const targetUrl = stableDeliveryUrl(config, entry.logicalKey);
         await tx.$executeRawUnsafe('UPDATE asset_storage_replicas SET active=false, updated_at=NOW() WHERE asset_id=$1 AND rendition=$2', asset.id, rendition);
         await tx.$executeRawUnsafe('INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, source_key, logical_key, delivery_url, size, sha256, content_type, generation, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false) ON CONFLICT (asset_id, rendition, generation, provider) DO UPDATE SET source_key=EXCLUDED.source_key, logical_key=EXCLUDED.logical_key, delivery_url=EXCLUDED.delivery_url, size=EXCLUDED.size, sha256=EXCLUDED.sha256, content_type=EXCLUDED.content_type, active=false, updated_at=NOW()', randomUUID(), asset.id, rendition, sourceProvider, oldKey, entry.logicalKey, oldUrl, entry.size, entry.sha256, entry.contentType ?? asset.mime, generation);
-        await tx.$executeRawUnsafe('INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, source_key, logical_key, delivery_url, size, sha256, content_type, generation, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true) ON CONFLICT (asset_id, rendition, generation, provider) DO UPDATE SET source_key=EXCLUDED.source_key, logical_key=EXCLUDED.logical_key, delivery_url=EXCLUDED.delivery_url, size=EXCLUDED.size, sha256=EXCLUDED.sha256, content_type=EXCLUDED.content_type, active=true, updated_at=NOW()', randomUUID(), asset.id, rendition, config.provider, entry.sourceKey, entry.logicalKey, targetUrl, entry.size, entry.sha256, entry.contentType ?? asset.mime);
+        await tx.$executeRawUnsafe('INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, source_key, logical_key, delivery_url, size, sha256, content_type, generation, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true) ON CONFLICT (asset_id, rendition, generation, provider) DO UPDATE SET source_key=EXCLUDED.source_key, logical_key=EXCLUDED.logical_key, delivery_url=EXCLUDED.delivery_url, size=EXCLUDED.size, sha256=EXCLUDED.sha256, content_type=EXCLUDED.content_type, active=true, updated_at=NOW()', randomUUID(), asset.id, rendition, config.provider, entry.sourceKey, entry.logicalKey, targetUrl, entry.size, entry.sha256, entry.contentType ?? asset.mime, generation);
         await tx.asset.update({ where: { id: asset.id }, data: rendition === 'thumbnail' ? { storageProvider: config.provider, thumbnailStorageKey: entry.logicalKey, thumbnailStorageSourceKey: entry.sourceKey, thumbnailUrl: targetUrl, thumbnailStorageSize: entry.size, thumbnailStorageSha256: entry.sha256, storageConfigFingerprint: fingerprint } : { storageProvider: config.provider, storageKey: entry.logicalKey, storageSourceKey: entry.sourceKey, blobUrl: targetUrl, storageSize: entry.size, storageSha256: entry.sha256, storageConfigFingerprint: fingerprint } });
       }
     }
