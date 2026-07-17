@@ -46,6 +46,8 @@ const env = {
   ...process.env,
   DATABASE_URL: databaseUrl,
   SPLOOT_QA_AUTH_MODE: 'enabled',
+  NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: 'true',
+  SPLOOT_DEPLOYMENT_ENV: 'test',
   SPLOOT_QA_EVIDENCE_MODE: 'enabled',
   SPLOOT_QA_DEPLOYMENT_ID: 'sploot-gallery-qa-local',
   SPLOOT_QA_DEPLOYMENT_AUDIENCE: 'sploot-gallery-evidence',

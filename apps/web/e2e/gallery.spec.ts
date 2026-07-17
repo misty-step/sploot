@@ -124,7 +124,7 @@ test.describe('authenticated seeded gallery', () => {
       secret: qaSecret,
       expiresInSeconds: 15 * 60,
     });
-    const context = await browser.newContext();
+    const context = await browser.newContext({ baseURL });
     await context.setExtraHTTPHeaders({ 'x-sploot-qa-auth': staleHeaderToken });
     await context.addCookies([
       { name: 'sploot_qa_auth', value: staleHeaderToken, url: baseURL },
@@ -159,7 +159,7 @@ test.describe('authenticated seeded gallery', () => {
     for (const theme of themes) {
       for (const viewport of viewports) {
         console.log(`[gallery] start ${theme} ${viewport.label}`);
-        const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
+        const context = await browser.newContext({ baseURL, viewport: { width: viewport.width, height: viewport.height } });
         await context.setExtraHTTPHeaders({
           'x-sploot-qa-auth': token,
         });

@@ -92,6 +92,7 @@ describe('middleware auth boundary', () => {
   );
 
   it('allows signed qa-local app navigation without Clerk protect outside production', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD', 'true');
     vi.stubEnv('SPLOOT_QA_EVIDENCE_MODE', 'enabled');
     vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ID', 'sploot-gallery-qa-local');
     vi.stubEnv('SPLOOT_QA_DEPLOYMENT_AUDIENCE', 'sploot-gallery-evidence');
@@ -147,17 +148,28 @@ describe('middleware auth boundary', () => {
   it('uses the compile-time-gated qa-local boundary for production-start acceptance mode', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD', 'true');
+    vi.stubEnv('SPLOOT_QA_EVIDENCE_MODE', 'enabled');
+    vi.stubEnv('DEPLOYMENT_ENV', 'qa-local');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ID', 'sploot-gallery-qa-local');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_AUDIENCE', 'sploot-gallery-evidence');
     const token = await createQaLocalAuthToken({
       userId: 'qa-user-1',
       secret: QA_SECRET,
       expiresInSeconds: 60,
+      deploymentId: 'sploot-gallery-qa-local',
+      audience: 'sploot-gallery-evidence',
     });
+    const proxyProof = await createQaLocalProxyProof('127.0.0.1', '127.0.0.1', QA_SECRET);
 
     const response = await middleware({
       method: 'GET',
       nextUrl: { pathname: '/app' },
       url: 'http://127.0.0.1:3108/app',
-      headers: new Headers({ [getQaLocalAuthHeader()]: token }),
+      headers: new Headers({
+        host: '127.0.0.1:3108',
+        [getQaLocalAuthHeader()]: token,
+        [getQaLocalProxyProofHeader()]: proxyProof,
+      }),
     } as any);
 
     expect(response).toBeUndefined();
