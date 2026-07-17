@@ -167,7 +167,12 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(authorityScript).toContain('20260715000000_add_embedding_resilience/migration.sql');
     expect(authorityScript).toContain('20260715020000_add_embedding_probe_lease_token/migration.sql');
     expect(authorityScript).toContain("PGOPTIONS='-c lock_timeout=5s -c statement_timeout=30s'");
-    expect(authorityScript).toContain('migration_name" == 20260715*');
+    expect(authorityScript).toContain('case "$migration_name" in');
+    expect(authorityScript).not.toContain('20260715*');
+    expect(authorityScript).toContain('app_replica_insert=');
+    expect(authorityScript).toContain("test \"$app_replica_insert\" = 't'");
+    expect(authorityScript).toContain("test \"$app_replica_update\" = 'f'");
+    expect(authorityScript).toContain("test \"$app_replica_delete\" = 'f'");
     expect(authorityScript).toContain('legacy-upgrade-event');
     expect(authorityScript).toContain('INSERT INTO public.assets (id, owner_user_id, blob_url, pathname, mime, size, checksum_sha256, "createdAt", "updatedAt")');
     expect(authorityScript).toContain('INSERT INTO public.asset_embeddings (asset_id, model_name, model_version, dim, status, "createdAt", "updatedAt")');

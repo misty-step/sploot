@@ -130,7 +130,22 @@ wait "$probe_holder_pid"
 for migration in apps/web/prisma/migrations/*; do
   [[ -d "$migration" ]] || continue
   migration_name="$(basename "$migration")"
-  if [[ "$migration_name" == 20260715* ]]; then continue; fi
+  case "$migration_name" in
+    20260715000000_add_embedding_resilience|\
+    20260715010000_add_embedding_circuit_generation|\
+    20260715020000_add_embedding_probe_lease_token|\
+    20260715030000_enforce_embedding_attempt_ceiling|\
+    20260715035000_validate_embedding_attempt_ceiling|\
+    20260715040000_add_embedding_processing_claim_token|\
+    20260715045000_validate_embedding_processing_claim_token_state|\
+    20260715050000_cap_embedding_terminal_revivals|\
+    20260715055000_validate_embedding_revival_budget|\
+    20260715060000_update_embedding_attempt_ceiling|\
+    20260715065000_validate_embedding_attempt_ceiling|\
+    20260715070000_harden_terminal_revival_exit)
+      continue
+      ;;
+  esac
   psql "$admin_url" -v ON_ERROR_STOP=1 -f "$migration/migration.sql"
   DATABASE_URL="$admin_url" pnpm --filter web exec prisma migrate resolve --applied "$migration_name"
 done
@@ -243,13 +258,18 @@ test "$app_ledger_dml" = 'f'
 app_url="postgresql://sploot_stripe_app:${app_password}@localhost:5432/sploot_upgrade?sslmode=disable"
 app_bootstrap_marker="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT phase || ':' || version FROM sploot_bootstrap.stripe_ledger_bootstrap_state WHERE id=true")"
 # The production app role may read only the columns required to enqueue
-# permanent-delete receipts; all replica DML and unlisted columns remain denied.
+# permanent-delete receipts and insert immutable provider receipts; updates,
+# deletes, and unlisted columns remain denied.
 app_replica_columns="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT bool_and(has_column_privilege(current_user, 'public.asset_storage_replicas', column_name, 'SELECT')) FROM (VALUES ('asset_id'), ('provider'), ('source_key'), ('logical_key'), ('delivery_url'), ('active')) AS allowed(column_name)")"
 test "$app_replica_columns" = 't'
 app_replica_select="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'public.asset_storage_replicas', 'SELECT')")"
 test "$app_replica_select" = 'f'
-app_replica_dml="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'public.asset_storage_replicas', 'INSERT') OR has_table_privilege(current_user, 'public.asset_storage_replicas', 'UPDATE') OR has_table_privilege(current_user, 'public.asset_storage_replicas', 'DELETE')")"
-test "$app_replica_dml" = 'f'
+app_replica_insert="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'public.asset_storage_replicas', 'INSERT')")"
+test "$app_replica_insert" = 't'
+app_replica_update="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'public.asset_storage_replicas', 'UPDATE')")"
+test "$app_replica_update" = 'f'
+app_replica_delete="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'public.asset_storage_replicas', 'DELETE')")"
+test "$app_replica_delete" = 'f'
 PGPASSWORD="$app_password" psql "$app_url" -v ON_ERROR_STOP=1 -c 'SELECT asset_id, provider, source_key, logical_key, delivery_url, active FROM public.asset_storage_replicas LIMIT 0'
 
 test "$app_bootstrap_marker" = "ready:${bootstrap_version}"
