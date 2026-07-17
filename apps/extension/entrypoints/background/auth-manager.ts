@@ -9,15 +9,26 @@ import {
 } from '../../shared/env'
 import { getSplootSignInUrl } from '../../shared/app-url'
 import { IS_DEV_BUILD } from '../../shared/build-mode'
-import { runBestEffort } from '../../shared/best-effort'
 
 const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
 const SIGN_IN_TIMEOUT_MS = 60000
-const SIGN_IN_POLL_INTERVAL_MS = 1000
 const E2E_AUTH_KEY = 'sploot:e2e-auth-authority'
+const AUTH_SYNC_RETRY_DELAYS_MS = [50, 100, 250, 500, 1000, 2000, 5000, 10000, 15000, 15000] as const
+const AUTH_SYNC_INITIAL_RETRY_LIMIT = 4
 
 let cachedState: AuthState = { status: 'unknown' }
 const waiters = new Set<(state: AuthState) => void>()
+const authStateListeners = new Set<(state: AuthState) => void>()
+let clerkClientPromise: ReturnType<typeof createClerkClient> | undefined
+let removeClerkListener: (() => void) | undefined
+let bridgeListener: Parameters<typeof chrome.runtime.onMessage.addListener>[0] | undefined
+let authSyncRetryTimer: ReturnType<typeof setTimeout> | undefined
+let authSyncRetryAttempt = 0
+let authSyncGeneration = 0
+let authSyncInFlightGeneration: number | undefined
+let authSyncInFlightPromise: Promise<void> | undefined
+let authCookieListener: ((changeInfo: chrome.cookies.CookieChangeInfo) => void) | undefined
+let authCookieRefreshPromise: Promise<void> | undefined
 
 /**
  * The Clerk authority behind a durable save job.
@@ -62,24 +73,203 @@ function notifyWaiters(state: AuthState) {
   for (const listener of waiters) {
     listener(state)
   }
+  for (const listener of authStateListeners) {
+    listener(state)
+  }
+}
+
+/** Subscribe to authoritative Clerk state transitions inside the worker. */
+export function onAuthStateChanged(listener: (state: AuthState) => void): () => void {
+  authStateListeners.add(listener)
+  return () => authStateListeners.delete(listener)
+}
+
+function authStateFromResources(resources: {
+  session?: { id: string; user?: { id: string } | null; expireAt?: Date | null } | null
+  user?: { id: string } | null
+}): AuthState {
+  if (!resources.session) {
+    return { status: 'signed-out', userId: null, sessionId: null, expiresAt: null }
+  }
+
+  return {
+    status: 'signed-in',
+    userId: resources.user?.id ?? resources.session.user?.id ?? null,
+    sessionId: resources.session.id,
+    expiresAt: resources.session.expireAt?.getTime() ?? null,
+  }
+}
+
+function sameAuthState(left: AuthState, right: AuthState): boolean {
+  return (
+    left.status === right.status &&
+    left.userId === right.userId &&
+    left.sessionId === right.sessionId &&
+    left.expiresAt === right.expiresAt
+  )
 }
 
 function updateCachedState(next: AuthState) {
+  if (sameAuthState(cachedState, next)) {
+    return
+  }
+
   cachedState = next
-  console.log('[Auth] State updated', next)
+  console.log('[Auth] State changed', {
+    status: next.status,
+    userId: next.userId,
+    sessionId: next.sessionId,
+    expiresAt: next.expiresAt,
+  })
   notifyWaiters(next)
+
+  try {
+    const result = chrome.runtime.sendMessage({
+      type: AUTH_MESSAGES.STATE_CHANGED,
+      payload: next,
+    })
+    if (result && typeof result.catch === 'function') {
+      void result.catch(() => undefined)
+    }
+  } catch {
+    // The popup may have closed between the state change and this broadcast.
+  }
 }
 
-async function createFreshClerkClient() {
+function normalizeCookieDomain(domain: string): string {
+  return domain.trim().replace(/^\.+/, '').toLowerCase()
+}
+
+function isClerkSyncCookieChange(changeInfo: chrome.cookies.CookieChangeInfo): boolean {
+  if (!changeInfo?.cookie?.domain || !CLERK_SYNC_HOST) {
+    return false
+  }
+
+  try {
+    const syncDomain = normalizeCookieDomain(new URL(CLERK_SYNC_HOST).hostname)
+    return syncDomain.length > 0 && normalizeCookieDomain(changeInfo.cookie.domain) === syncDomain
+  } catch {
+    return false
+  }
+}
+
+async function refreshAuthFromCookie(): Promise<void> {
+  const clerk = await getClerkClient()
+  await clerk.__internal_reloadInitialResources()
+  updateCachedState(authStateFromResources(clerk))
+}
+
+function queueAuthCookieRefresh(): void {
+  const previous = authCookieRefreshPromise ?? Promise.resolve()
+  const next = previous
+    .then(async () => {
+      await startAuthSync()
+      await refreshAuthFromCookie()
+    })
+    .catch(error => {
+      console.error('[Auth] Failed to refresh Clerk from cookie change', error)
+    })
+
+  const cleanup = next.finally(() => {
+    if (authCookieRefreshPromise === cleanup) {
+      authCookieRefreshPromise = undefined
+    }
+  })
+  authCookieRefreshPromise = cleanup
+}
+
+function installAuthCookieListener(): void {
+  if (E2E_AUTH_MODE || authCookieListener) {
+    return
+  }
+
+  const onChanged = chrome.cookies?.onChanged
+  if (!onChanged || typeof onChanged.addListener !== 'function') {
+    throw new Error('Chrome cookie change listener is unavailable')
+  }
+
+  const listener = (changeInfo: chrome.cookies.CookieChangeInfo) => {
+    if (isClerkSyncCookieChange(changeInfo)) {
+      queueAuthCookieRefresh()
+    }
+  }
+
+  onChanged.addListener(listener)
+  authCookieListener = listener
+}
+
+async function getClerkClient() {
   assertExtensionConfig()
   // CreateClerkClientOptions exposes no telemetry option and the SDK loads
   // Clerk internally with fixed options, so there is no typed disable knob
   // here. Clerk's telemetry collector no-ops for production publishable keys
   // (instanceType gate); the ClerkProvider surfaces disable it explicitly.
-  return await createClerkClient({
+  clerkClientPromise ??= Promise.resolve(createClerkClient({
     publishableKey: PUBLISHABLE_KEY,
     syncHost: CLERK_SYNC_HOST,
-    __experimental_syncHostListener: true,
+    __experimental_syncHostListener: false,
+  })).catch(error => {
+    clerkClientPromise = undefined
+    throw error
+  })
+  return await clerkClientPromise
+}
+
+async function startAuthSyncImplementation(generation: number): Promise<void> {
+  if (E2E_AUTH_MODE || removeClerkListener) {
+    return
+  }
+
+  const clerk = await getClerkClient()
+  if (generation !== authSyncGeneration) {
+    return
+  }
+  if (!clerk || typeof clerk.addListener !== 'function') {
+    throw new Error('Clerk sync listener is unavailable')
+  }
+  const removeListener = clerk.addListener(resources => {
+    updateCachedState(authStateFromResources(resources))
+  })
+  removeClerkListener = typeof removeListener === 'function' ? removeListener : () => undefined
+  authSyncRetryAttempt = 0
+  updateCachedState(authStateFromResources(clerk))
+}
+
+function startAuthSync(generation = authSyncGeneration): Promise<void> {
+  if (authSyncInFlightGeneration === generation && authSyncInFlightPromise) {
+    return authSyncInFlightPromise
+  }
+
+  const promise = startAuthSyncImplementation(generation)
+  authSyncInFlightGeneration = generation
+  authSyncInFlightPromise = promise.finally(() => {
+    if (authSyncInFlightGeneration === generation) {
+      authSyncInFlightGeneration = undefined
+      authSyncInFlightPromise = undefined
+    }
+  })
+  return authSyncInFlightPromise
+}
+
+function startAuthSyncWithRetry(generation = authSyncGeneration): void {
+  if (E2E_AUTH_MODE || removeClerkListener || authSyncRetryTimer || generation !== authSyncGeneration) {
+    return
+  }
+
+  void startAuthSync(generation).catch(error => {
+    if (generation !== authSyncGeneration) {
+      return
+    }
+    console.error('[Auth] Failed to initialize Clerk sync', error)
+    const retryLimit = waiters.size > 0 ? AUTH_SYNC_RETRY_DELAYS_MS.length : AUTH_SYNC_INITIAL_RETRY_LIMIT
+    if (authSyncRetryAttempt >= retryLimit) {
+      return
+    }
+    const delay = AUTH_SYNC_RETRY_DELAYS_MS[authSyncRetryAttempt++]
+    authSyncRetryTimer = setTimeout(() => {
+      authSyncRetryTimer = undefined
+      startAuthSyncWithRetry(generation)
+    }, delay)
   })
 }
 
@@ -88,7 +278,7 @@ export async function isAuthenticated(signal?: AbortSignal): Promise<boolean> {
     if (E2E_AUTH_MODE) {
       return Boolean(await getE2eAuthority(signal));
     }
-    const clerk = await withAbort(createFreshClerkClient(), signal)
+    const clerk = await withAbort(getClerkClient(), signal)
     const authority = sessionAuthority(clerk.session)
     const hasSession = Boolean(authority)
 
@@ -119,7 +309,7 @@ export async function getAuthToken(signal?: AbortSignal): Promise<string | null>
       const authority = await getE2eAuthority(signal);
       return authority ? `e2e-token-${authority.userId}-${authority.sessionId}` : null;
     }
-    const clerk = await withAbort(createFreshClerkClient(), signal)
+    const clerk = await withAbort(getClerkClient(), signal)
 
     if (!clerk.session) {
       console.warn('[Auth] No session available for token retrieval')
@@ -161,7 +351,7 @@ export async function readAuthAuthority(signal?: AbortSignal): Promise<AuthAutho
   if (E2E_AUTH_MODE) {
     return await getE2eAuthority(signal);
   }
-  const clerk = await withAbort(createFreshClerkClient(), signal)
+  const clerk = await withAbort(getClerkClient(), signal)
   const authority = sessionAuthority(clerk.session)
   if (authority) {
     updateCachedState({
@@ -199,7 +389,7 @@ export async function getAuthTokenForAuthority(expected: AuthAuthority, signal?:
         ? `e2e-token-${actual.userId}-${actual.sessionId}`
         : null;
     }
-    const clerk = await withAbort(createFreshClerkClient(), signal)
+    const clerk = await withAbort(getClerkClient(), signal)
     const actual = sessionAuthority(clerk.session)
     if (!sameAccountAuthority(actual, expected) || !clerk.session) {
       return null
@@ -250,7 +440,7 @@ function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSignal): Promise<boolean> {
   return new Promise(resolve => {
     let settled = false
-    let intervalId: ReturnType<typeof setInterval> | undefined
+    let listener: (state: AuthState) => void
 
     const finish = (signedIn: boolean) => {
       if (settled) {
@@ -259,10 +449,15 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSign
 
       settled = true
       clearTimeout(timeoutId)
-      if (intervalId) {
-        clearInterval(intervalId)
-      }
       waiters.delete(listener)
+      if (waiters.size === 0) {
+        authSyncGeneration += 1
+        if (authSyncRetryTimer) {
+          clearTimeout(authSyncRetryTimer)
+          authSyncRetryTimer = undefined
+        }
+        authSyncRetryAttempt = 0
+      }
       signal?.removeEventListener('abort', abort)
       resolve(signedIn)
     }
@@ -278,39 +473,66 @@ export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSign
     }
     signal?.addEventListener('abort', abort, { once: true })
 
-    const listener = (state: AuthState) => {
+    listener = (state: AuthState) => {
       if (state.status === 'signed-in') {
         finish(true)
       }
     }
 
-    const pollForSyncedSession = async () => {
-      if (settled) {
-        return
-      }
-
-      if (await isAuthenticated()) {
-        finish(true)
-      }
+    if (cachedState.status === 'signed-in') {
+      finish(true)
+      return
     }
 
+    const hadActiveWaiter = waiters.size > 0
     waiters.add(listener)
-    intervalId = setInterval(() => {
-      runBestEffort('auth sign-in poll', pollForSyncedSession)
-    }, SIGN_IN_POLL_INTERVAL_MS)
-    runBestEffort('auth initial sign-in poll', pollForSyncedSession)
+    if (!hadActiveWaiter) {
+      authSyncGeneration += 1
+      if (authSyncRetryTimer) {
+        clearTimeout(authSyncRetryTimer)
+        authSyncRetryTimer = undefined
+      }
+      authSyncRetryAttempt = 0
+      startAuthSyncWithRetry(authSyncGeneration)
+    }
   })
 }
 
-export async function promptUserSignIn(signal?: AbortSignal): Promise<boolean> {
+async function closeOwnedSignInTab(tabId: number | undefined, signInUrl: string): Promise<void> {
+  if (tabId === undefined) {
+    return
+  }
+
   try {
-    await chrome.tabs.create({ url: getSplootSignInUrl() })
+    const tab = await chrome.tabs.get(tabId)
+    if (tab.url === signInUrl) {
+      await chrome.tabs.remove(tabId)
+    }
+  } catch {
+    // The tab may have been closed or navigated away while auth completed.
+  }
+}
+
+export async function promptUserSignIn(signal?: AbortSignal): Promise<boolean> {
+  const signInUrl = getSplootSignInUrl()
+  let tabId: number | undefined
+  try {
+    const tab = await chrome.tabs.create({ url: signInUrl })
+    tabId = tab?.id
   } catch (error) {
     console.warn('[Auth] Unable to open Sploot sign-in tab', error)
     return false
   }
 
-  return await waitForSignIn(SIGN_IN_TIMEOUT_MS, signal)
+  try {
+    if (await isAuthenticated(signal)) {
+      return true
+    }
+
+    return await waitForSignIn(SIGN_IN_TIMEOUT_MS, signal)
+  } finally {
+    await closeOwnedSignInTab(tabId, signInUrl)
+  }
 }
 
 export interface AuthDiagnosticsSnapshot {
@@ -334,7 +556,7 @@ export async function runAuthDiagnostics(): Promise<AuthDiagnosticsSnapshot> {
   }
 
   try {
-    const clerk = await createFreshClerkClient()
+    const clerk = await getClerkClient()
     snapshot.status = clerk.session ? 'signed-in' : 'signed-out'
     snapshot.userId = clerk.session?.user?.id
     snapshot.sessionId = clerk.session?.id
@@ -348,13 +570,11 @@ export async function runAuthDiagnostics(): Promise<AuthDiagnosticsSnapshot> {
 }
 
 export function setupAuthBridge() {
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type === AUTH_MESSAGES.STATE_UPDATE) {
-      updateCachedState(message.payload)
-      sendResponse({ ok: true })
-      return true
-    }
+  if (bridgeListener) {
+    return
+  }
 
+  bridgeListener = (message, _sender, sendResponse) => {
     if (message?.type === AUTH_MESSAGES.REQUEST_STATE) {
       sendResponse({ state: cachedState })
       return true
@@ -371,5 +591,9 @@ export function setupAuthBridge() {
     }
 
     return false
-  })
+  }
+
+  chrome.runtime.onMessage.addListener(bridgeListener)
+  installAuthCookieListener()
+  startAuthSyncWithRetry()
 }

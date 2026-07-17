@@ -7,7 +7,7 @@ export const CONTEXT_MENU_SAVE_MESSAGES = {
   E2E_SAVE: 'sploot:e2e:context-menu-save',
 } as const;
 
-export type ContextMenuSaveJobState = 'pending' | 'processing' | 'failed' | 'paused';
+export type ContextMenuSaveJobState = 'pending' | 'processing' | 'failed' | 'paused' | 'awaiting-auth';
 
 export interface ContextMenuSaveJobSummary {
   id: string;

@@ -1,6 +1,6 @@
 import { UPLOAD } from '@sploot/common';
 import { setSaveStatus } from '../../shared/save-status';
-import { getAuthAuthority, readAuthAuthority, sameAccountAuthority, type AuthAuthority } from './auth-manager';
+import { getAuthAuthority, onAuthStateChanged, promptUserSignIn, readAuthAuthority, sameAccountAuthority, type AuthAuthority } from './auth-manager';
 import { fetchImage } from './image-fetcher';
 import { showErrorNotification } from './notifications';
 import { saveToSploot } from './save-flow';
@@ -26,7 +26,7 @@ export const MAX_CONTEXT_MENU_SAVE_STORAGE_BYTES = 8 * 1024 * 1024;
 /** Fetch, conversion, and upload each have a finite worker deadline. */
 export const CONTEXT_MENU_SAVE_DEADLINE_MS = UPLOAD.timeout;
 
-export type ContextMenuSaveJobState = 'pending' | 'processing' | 'failed' | 'paused';
+export type ContextMenuSaveJobState = 'pending' | 'processing' | 'failed' | 'paused' | 'awaiting-auth';
 
 export interface ContextMenuSaveJob {
   id: string;
@@ -150,7 +150,7 @@ function normalizeJob(job: unknown): ContextMenuSaveJob | null {
     typeof candidate.id !== 'string'
     || typeof candidate.imageUrl !== 'string'
     || typeof candidate.filename !== 'string'
-    || !['pending', 'processing', 'failed', 'paused'].includes(candidate.state ?? '')
+    || !['pending', 'processing', 'failed', 'paused', 'awaiting-auth'].includes(candidate.state ?? '')
     || typeof candidate.createdAt !== 'number'
     || !Number.isFinite(candidate.createdAt)
   ) {
@@ -716,6 +716,17 @@ async function recoverPendingSavesLocked(
           nextAttemptAt: Math.max(job.nextAttemptAt, now),
         };
       }
+      // A signed-out right-click is durably retained without an owner while the
+      // web sign-in tab is open. The first signed-in authority claims it before
+      // the job becomes eligible for upload; this is the restart boundary.
+      if (job.state === 'awaiting-auth' && !job.owner && currentAuthority) {
+        return {
+          ...job,
+          owner: currentAuthority,
+          state: 'pending' as const,
+          nextAttemptAt: now,
+        };
+      }
       // Same-account adoption: a new session of the owning account resumes its
       // paused saves — sign-out/re-auth must never orphan durable work.
       if (job.state === 'paused' && job.owner && sameAccountAuthority(currentAuthority, job.owner)) {
@@ -758,6 +769,8 @@ async function recoverPendingSavesLocked(
   await scheduleContextMenuSaveQueueWakeup();
 }
 
+let removeAuthStateListener: (() => void) | undefined
+
 export function setupContextMenuSaveQueue(): void {
   chrome.alarms.onAlarm.addListener(alarm => {
     if (alarm.name !== CONTEXT_MENU_SAVE_ALARM_NAME) {
@@ -765,6 +778,19 @@ export function setupContextMenuSaveQueue(): void {
     }
     return recoverPendingContextMenuSaves().catch(error => {
       console.error('[Background][ContextMenu] Alarm recovery failed', error);
+    });
+  });
+
+  // The auth bridge and queue share this worker, so a signed-in Clerk resource
+  // transition is the reliable wakeup for an ownerless prepared save. Runtime
+  // messages are popup-facing and never loop back to their background sender.
+  removeAuthStateListener?.();
+  removeAuthStateListener = onAuthStateChanged(state => {
+    if (state.status !== 'signed-in') {
+      return;
+    }
+    void recoverPendingContextMenuSaves('startup').catch(error => {
+      console.error('[Background][ContextMenu] Auth recovery failed', error);
     });
   });
 }
@@ -815,7 +841,7 @@ function evictionCandidateIndex(jobs: ContextMenuSaveJob[], owner: AuthAuthority
  */
 function reclaimQueueCapacity(
   jobs: ContextMenuSaveJob[],
-  owner: AuthAuthority,
+  owner: AuthAuthority | null,
   incomingSourceBytes: number,
   now: number,
 ): QueueAdmission {
@@ -826,7 +852,9 @@ function reclaimQueueCapacity(
     || retainedSourceBytes(retained) + incomingSourceBytes > MAX_CONTEXT_MENU_SAVE_STORAGE_BYTES
   );
   while (overCapacity()) {
-    const candidateIndex = evictionCandidateIndex(retained, owner);
+    // An unaffiliated save cannot evict another account's retained work before
+    // authentication establishes the admission owner.
+    const candidateIndex = owner ? evictionCandidateIndex(retained, owner) : -1;
     if (candidateIndex < 0) {
       return { admitted: false, jobs, evictedCount: 0 };
     }
@@ -836,51 +864,60 @@ function reclaimQueueCapacity(
   return { admitted: true, jobs: retained, evictedCount };
 }
 
-/** Persist captured bytes and owner in one authoritative storage transition. */
+/** Persist captured bytes before any potentially long web sign-in wait. */
 export function enqueueCapturedSave(blob: Blob, filename: string, imageUrl = 'captured://visible-tab'): Promise<void> {
   return withDeadline(() => blobToStoredSource(blob), 'Image preparation timed out; save was not queued.')
-    .then(retained => exclusively(async () => {
-      // Throwing read: a transient auth failure surfaces as its own error
-      // instead of masquerading as "signed out".
+    .then(async retained => {
+      // Throwing read: a transient auth failure surfaces as its own error instead
+      // of masquerading as "signed out". Signed-out admission is deliberately
+      // ownerless and durable; it must not hold the image only in worker memory
+      // while promptUserSignIn waits for a cookie transition.
       const owner = await withDeadline(
         signal => readAuthAuthority(signal),
         'Auth check timed out; save was not queued.',
       );
-      if (!owner) {
-        throw new ContextMenuSaveQueueError('Sign in to Sploot before saving this image.', 'owner-unavailable');
-      }
+      return exclusively(async () => {
+        const jobs = await readJobs();
+        const now = Date.now();
+        const admission = reclaimQueueCapacity(jobs, owner, retained.sourceBytes.length, now);
+        if (!admission.admitted) {
+          throw new ContextMenuSaveQueueError(
+            'Save queue is full. Open the extension popup to retry or discard a failed save, then try again.',
+            'queue-full',
+          );
+        }
+        if (admission.evictedCount > 0) {
+          // Count only: evicted jobs belong to other accounts and their
+          // filenames/URLs must not leak into this profile's logs.
+          console.log(`[Background][ContextMenu] Reclaimed ${admission.evictedCount} expired or inactive retained save(s) to admit a new save`);
+        }
 
-      const jobs = await readJobs();
-      const now = Date.now();
-      const admission = reclaimQueueCapacity(jobs, owner, retained.sourceBytes.length, now);
-      if (!admission.admitted) {
-        throw new ContextMenuSaveQueueError(
-          'Save queue is full. Open the extension popup to retry or discard a failed save, then try again.',
-          'queue-full',
-        );
+        const job: ContextMenuSaveJob = {
+          id: crypto.randomUUID(),
+          imageUrl,
+          filename,
+          ...(owner ? { owner } : {}),
+          ...retained,
+          state: owner ? 'pending' : 'awaiting-auth',
+          createdAt: now,
+          attempts: 0,
+          nextAttemptAt: now,
+        };
+        await writeJobs([...admission.jobs, job]);
+        setQueuedStatus(filename);
+        return { id: job.id, awaitingAuth: !owner };
+      });
+    })
+    .then(async ({ id: jobId, awaitingAuth }) => {
+      if (awaitingAuth) {
+        // The bytes are already durable. If this worker is terminated while the
+        // tab is open, a new worker claims the ownerless job on the signed-in
+        // auth broadcast and resumes it without another right-click.
+        const signedIn = await promptUserSignIn();
+        if (!signedIn) {
+          return;
+        }
       }
-      if (admission.evictedCount > 0) {
-        // Count only: evicted jobs belong to other accounts and their
-        // filenames/URLs must not leak into this profile's logs.
-        console.log(`[Background][ContextMenu] Reclaimed ${admission.evictedCount} expired or inactive retained save(s) to admit a new save`);
-      }
-
-      const job: ContextMenuSaveJob = {
-        id: crypto.randomUUID(),
-        imageUrl,
-        filename,
-        owner,
-        ...retained,
-        state: 'pending',
-        createdAt: now,
-        attempts: 0,
-        nextAttemptAt: now,
-      };
-      await writeJobs([...admission.jobs, job]);
-      setQueuedStatus(filename);
-      return job.id;
-    }))
-    .then(async jobId => {
       // Start recovery before acknowledging the durable write. The attempt
       // remains detached and bounded, but is scoped to this exact durable job;
       // a late event cannot process a later job after a worker boundary.

@@ -60,4 +60,20 @@ describe('SplootApiClient token provider', () => {
       })
     );
   });
+
+  it('makes an expired-session notification actionable with the web sign-in route', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 401 })));
+
+    const { createSplootApiClient } = await import('./api-client');
+    const client = createSplootApiClient({
+      getToken: vi.fn(async () => 'injected-token'),
+    });
+
+    await expect(
+      client.uploadImage(new Blob(['image'], { type: 'image/jpeg' }), 'asset.jpg')
+    ).rejects.toMatchObject({
+      code: 'unauthorized',
+      actionHref: '/sign-in',
+    });
+  });
 });

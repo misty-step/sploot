@@ -6,11 +6,13 @@ import {
   SignedOut,
   SignOutButton,
   useAuth,
+  useClerk,
   useSession,
   useUser,
 } from '@clerk/chrome-extension'
 import type { SplootEnrollmentPublicState } from '@sploot/common'
-import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
+import { installPopupAuthSync } from '../../shared/auth-sync'
+import { AUTH_MESSAGES } from '../../shared/auth-messages'
 import { IS_DEV_BUILD } from '../../shared/build-mode'
 import { requestVisibleTabCapture } from '../../shared/capture-messages'
 import { CONTEXT_MENU_SAVE_MESSAGES, type ContextMenuSaveJobSummary } from '../../shared/context-menu-save-messages'
@@ -48,7 +50,7 @@ function App() {
       telemetry={{ disabled: true }}
       __experimental_syncHostListener
     >
-      <AuthStatusReporter />
+      <AuthStateSync />
       <PopupContent>
         <SignedOut>
           <SignedOutPanel />
@@ -480,23 +482,16 @@ function SaveStatusStrip({ status }: { status: SaveStatus }) {
   )
 }
 
-function AuthStatusReporter() {
-  const { isSignedIn } = useAuth()
-  const { user } = useUser()
-  const { session } = useSession()
+function AuthStateSync() {
+  const { isLoaded } = useAuth()
+  const clerk = useClerk()
 
   useEffect(() => {
-    const payload: AuthState = {
-      status: isSignedIn ? 'signed-in' : 'signed-out',
-      userId: user?.id ?? null,
-      sessionId: session?.id ?? null,
-      expiresAt: session?.expireAt?.getTime() ?? null,
+    if (!isLoaded) {
+      return
     }
-
-    chrome.runtime
-      .sendMessage({ type: AUTH_MESSAGES.STATE_UPDATE, payload })
-      .catch(error => console.error('[Popup] Failed to publish auth state', error))
-  }, [isSignedIn, user?.id, session?.id, session?.expireAt])
+    return installPopupAuthSync(clerk)
+  }, [clerk, isLoaded])
 
   return null
 }

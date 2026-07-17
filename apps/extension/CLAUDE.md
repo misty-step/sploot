@@ -71,7 +71,9 @@ Every module exports a **simple interface** (1-4 functions) hiding complex imple
 - `logout(): Promise<void>`
 - `setupAuthListeners(): void`
 
-**Critical Detail:** Creates **fresh Clerk client on every call**. Caching clients breaks WebSSO cookie sync. This is intentional.
+**Critical Detail:** The background owns one long-lived Clerk client with its
+event-driven WebSSO cookie listener. It publishes sanitized auth metadata to
+the popup; tokens stay inside the Clerk client and never cross runtime messages.
 
 **`entrypoints/background/image-fetcher.ts`** - CORS-Aware Downloads
 - `fetchImage(url: string): Promise<{ blob: Blob, filename: string }>`
@@ -131,16 +133,17 @@ the full Clerk surface instead of a constrained extension popup.
 
 1. Signed-out popup and background prompts open `${VITE_API_BASE_URL}/sign-in`
    in a new tab
-2. Successful popup state checks still trigger an `AUTH_STATE_UPDATE` broadcast
-   to the background worker
-3. Background lazily calls `createClerkClient` for tokens whenever uploads need them
-4. Context menu prompts poll a fresh Clerk background client until WebSSO syncs
-   the web session into the extension
+2. The background starts one persistent Clerk sync listener and broadcasts
+   `AUTH_STATE_CHANGED` metadata when WebSSO changes
+3. An already-open popup requests the current state and refreshes its own Clerk
+   provider; it does not receive a token or need to be reopened
+4. Context-menu prompts wait on the same event boundary for up to 60 seconds;
+   they do not poll
 
 **Implementation constraints:**
 - Clerk domain must be in manifest `host_permissions`
 - Extension ID must be allowed in Clerk dashboard (via `pnpm setup:clerk`)
-- Fresh Clerk client per call (no caching)
+- One background Clerk client per service-worker lifecycle, recreated on worker restart
 - Web app URLs are centralized in `shared/app-url.ts`
 
 ### RPC Message Pattern
@@ -149,7 +152,7 @@ Cross-context communication now centers on auth state broadcasts:
 
 ```typescript
 chrome.runtime.sendMessage({
-  type: AUTH_MESSAGES.STATE_UPDATE,
+  type: AUTH_MESSAGES.STATE_CHANGED,
   payload: {
     status: 'signed-in',
     userId,
@@ -159,7 +162,9 @@ chrome.runtime.sendMessage({
 });
 ```
 
-Background listeners respond to `AUTH_STATE_UPDATE`, `AUTH_REQUEST_STATE`, and `RUN_AUTH_DIAGNOSTICS`.
+The background responds to `AUTH_REQUEST_STATE` and `RUN_AUTH_DIAGNOSTICS`.
+`AUTH_STATE_CHANGED` is a background-to-popup refresh signal; it contains only
+non-secret session metadata.
 
 ## Code Conventions
 
