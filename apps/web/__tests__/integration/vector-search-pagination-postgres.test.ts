@@ -106,7 +106,7 @@ describeWithDatabase('Postgres seeded vector-search pagination', () => {
         userId,
         order: 'relevance',
         id: last.id,
-        distance: last.distance,
+        rawDistance: last.rawDistance,
         context,
       });
       pages.push(await vectorSearchPage(userId, query, {
@@ -213,7 +213,7 @@ describeWithDatabase('Postgres seeded vector-search pagination', () => {
         userId,
         order: 'relevance',
         id: last.id,
-        distance: last.distance,
+        rawDistance: last.rawDistance,
         context,
       });
       pages.push(await vectorSearchPage(userId, query, {

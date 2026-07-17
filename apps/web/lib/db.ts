@@ -848,6 +848,17 @@ export interface VectorSearchRow {
   size: number;
   created_at: Date;
   distance: number;
+  /** Exact pgvector distance text used only to advance a keyset cursor. */
+  rawDistance: string;
+}
+
+interface VectorSearchDbRow extends Omit<VectorSearchRow, 'rawDistance'> {
+  raw_distance: string;
+}
+
+function mapVectorSearchRow(row: VectorSearchDbRow): VectorSearchRow {
+  const { raw_distance, ...publicRow } = row;
+  return { ...publicRow, rawDistance: raw_distance };
 }
 
 export interface VectorSearchPage {
@@ -876,7 +887,7 @@ export async function queryHnswRanked<T>(query: Prisma.Sql): Promise<T[]> {
 
 export const VECTOR_SEARCH_CURSOR_CONTEXT_ERROR = 'Search cursor does not match search context';
 
-const VECTOR_SEARCH_CURSOR_VERSION = 3;
+const VECTOR_SEARCH_CURSOR_VERSION = 4;
 const TEST_VECTOR_SEARCH_CURSOR_SECRET = 'sploot-test-only-vector-search-cursor-secret';
 
 function getVectorSearchCursorSecret(): string | null {
@@ -919,7 +930,7 @@ interface VectorSearchCursor {
   userId: string;
   order: 'relevance';
   id: string;
-  distance: number;
+  rawDistance: string;
   context: VectorSearchContext;
 }
 
@@ -944,8 +955,13 @@ export function createVectorSearchContext(input: {
   };
 }
 
+const VECTOR_SEARCH_RAW_DISTANCE_PATTERN = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+
 export function encodeVectorSearchCursor(cursor: Omit<VectorSearchCursor, 'version'>): string {
   if (!cursor.userId) throw new Error('Search cursor requires a user id');
+  if (!VECTOR_SEARCH_RAW_DISTANCE_PATTERN.test(cursor.rawDistance) || !Number.isFinite(Number(cursor.rawDistance))) {
+    throw new Error('Search cursor requires an exact raw vector distance');
+  }
   const payload = Buffer.from(JSON.stringify({ version: VECTOR_SEARCH_CURSOR_VERSION, ...cursor })).toString('base64url');
   const signature = signVectorSearchCursor(payload);
   if (!signature) throw new Error('Search cursor signing authority is not configured');
@@ -969,7 +985,9 @@ export function decodeVectorSearchCursor(value: string, expectedUserId?: string)
         (expectedUserId !== undefined && cursor.userId !== expectedUserId) ||
         cursor.order !== 'relevance' ||
         typeof cursor.id !== 'string' || cursor.id.length === 0 || cursor.id.length > 200 ||
-        typeof cursor.distance !== 'number' || !Number.isFinite(cursor.distance) ||
+        typeof cursor.rawDistance !== 'string' ||
+        !VECTOR_SEARCH_RAW_DISTANCE_PATTERN.test(cursor.rawDistance) ||
+        !Number.isFinite(Number(cursor.rawDistance)) ||
         !context || typeof context !== 'object' ||
         typeof context.query !== 'string' || context.query !== normalizeSearchQuery(context.query) ||
         typeof context.embeddingModel !== 'string' || context.embeddingModel.length === 0 || context.embeddingModel.length > 500 ||
@@ -1005,7 +1023,7 @@ export function vectorSearchCursorMatchesContext(
 
 /** Semantic search is always relevance-first; gallery shuffle belongs to /api/assets. */
 export function vectorSearchOrderClause(): Prisma.Sql {
-  return Prisma.sql`ORDER BY ranked.distance DESC, ranked.id ASC`;
+  return Prisma.sql`ORDER BY ranked.distance ASC, ranked.id ASC`;
 }
 
 export function vectorSearchFilterClause(
@@ -1047,17 +1065,17 @@ export function buildRankedEmbeddingCte(
   vectorSql: Prisma.Sql,
   candidateLimit: number,
   ownerUserId: string,
-  cursor: Pick<VectorSearchCursor, 'distance' | 'id'> | null = null,
+  cursor: Pick<VectorSearchCursor, 'rawDistance' | 'id'> | null = null,
+  additionalWhereClause: Prisma.Sql = Prisma.empty,
 ): Prisma.Sql {
-  // Cursor.distance is the public similarity score (higher is better), while
-  // pgvector orders by cosine distance (lower is better).
-  const cursorRawDistance = cursor ? 1 - cursor.distance : null;
+  // Cursor.rawDistance is the exact database ordering key. Never reconstruct
+  // it from the public similarity score: decimal round-trips can skip/duplicate rows.
   const cursorClause = cursor
     ? Prisma.sql`
         AND (
-          ae.image_embedding <=> ${vectorSql} > ${cursorRawDistance}
+          ae.image_embedding <=> ${vectorSql} > ${cursor.rawDistance}::double precision
           OR (
-            ae.image_embedding <=> ${vectorSql} = ${cursorRawDistance}
+            ae.image_embedding <=> ${vectorSql} = ${cursor.rawDistance}::double precision
             AND ae.asset_id > ${cursor.id}
           )
         )
@@ -1068,12 +1086,14 @@ export function buildRankedEmbeddingCte(
     WITH ranked AS MATERIALIZED (
       SELECT
         ae.asset_id AS id,
-        ae.image_embedding <=> ${vectorSql} AS distance
+        ae.image_embedding <=> ${vectorSql} AS distance,
+        (ae.image_embedding <=> ${vectorSql})::text AS raw_distance
       FROM "asset_embeddings" ae
       WHERE ae.owner_user_id = ${ownerUserId}
         AND ae.asset_deleted_at IS NULL
         AND ae.status = 'ready'
         ${cursorClause}
+        ${additionalWhereClause}
       ORDER BY ae.image_embedding <=> ${vectorSql} ASC, ae.asset_id ASC
       LIMIT ${candidateLimit}
     )
@@ -1120,7 +1140,8 @@ export function buildVectorSearchPageQuery(
       a.favorite,
       a.size,
       a."createdAt" AS created_at,
-      1 - ranked.distance AS distance
+      1 - ranked.distance AS distance,
+      ranked.raw_distance
     FROM ranked
     INNER JOIN "assets" a ON a.id = ranked.id
     WHERE
@@ -1207,11 +1228,12 @@ export async function vectorSearchPage(
     let rows: VectorSearchRow[] = [];
     let candidateWindowExhausted = false;
     while (true) {
-      rows = await queryHnswRanked<VectorSearchRow>(buildVectorSearchPageQuery(
+      const dbRows = await queryHnswRanked<VectorSearchDbRow>(buildVectorSearchPageQuery(
         userId,
         queryEmbedding,
         { limit, threshold, favoriteOnly, tagId, offset, cursor, candidateLimit },
       ));
+      rows = dbRows.map(mapVectorSearchRow);
       candidateWindowExhausted = candidateLimit >= eligibleCount;
       if (candidateWindowExhausted || rows.length >= offset + limit + 1) break;
       candidateLimit = Math.min(
@@ -1230,7 +1252,7 @@ export async function vectorSearchPage(
     const hasMore = rows.length > offset + limit;
     const last = results.at(-1);
     const nextCursor = hasMore && last && cursorContext
-      ? encodeVectorSearchCursor({ userId, order: 'relevance', id: last.id, distance: last.distance, context: cursorContext })
+      ? encodeVectorSearchCursor({ userId, order: 'relevance', id: last.id, rawDistance: last.rawDistance, context: cursorContext })
       : undefined;
 
     return { results, total, hasMore, ...(nextCursor ? { nextCursor } : {}) };
@@ -1294,11 +1316,12 @@ async function vectorSearchLegacyUnfiltered(
     // Keep the golden eval and similar-assets path on the pre-pagination SQL
     // shape: no CTE, count, or optional filter joins when no filters apply.
     while (true) {
-      const results = await queryHnswRanked<VectorSearchRow>(buildUnfilteredVectorSearchQuery(
+      const dbResults = await queryHnswRanked<VectorSearchDbRow>(buildUnfilteredVectorSearchQuery(
         userId,
         queryEmbedding,
         fetchLimit,
       ));
+      const results = dbResults.map(mapVectorSearchRow);
       const filtered = results
         .filter((result) => !hasThreshold || result.distance >= threshold!)
         .slice(0, limit);
@@ -1344,7 +1367,8 @@ export function buildUnfilteredVectorSearchQuery(
         a.favorite,
         a.size,
         a."createdAt" AS created_at,
-        1 - ranked.distance AS distance
+        1 - ranked.distance AS distance,
+        ranked.raw_distance
       FROM ranked
       INNER JOIN "assets" a ON a.id = ranked.id
       WHERE

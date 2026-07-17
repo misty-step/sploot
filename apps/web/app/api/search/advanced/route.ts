@@ -78,25 +78,31 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     const cache = getCacheService();
 
     // Check cache for advanced search results
-    const cacheKey = {
+    const cacheLookupKey = {
       filters,
       limit,
       offset,
       threshold,
       sortBy,
     };
-    const cachedResults = await cache.getSearchResults(userId, query, cacheKey);
+    const cachedPage = await cache.getSearchResultPage(userId, query, cacheLookupKey, CLIP_MODEL);
 
-    if (cachedResults) {
-      // Cache hit for advanced search
+    if (cachedPage) {
+      // Cache hit preserves the SQL-computed total and page continuation.
       return NextResponse.json({
-        results: cachedResults,
+        results: cachedPage.results,
         query,
-        total: cachedResults.length,
-        limit,
-        offset,
+        filters,
+        sortBy,
+        pagination: {
+          total: cachedPage.total,
+          limit,
+          offset,
+          hasMore: cachedPage.hasMore ?? offset + limit < cachedPage.total,
+        },
         processingTime: Date.now() - startTime,
-        searchType: 'vector',
+        embeddingModel: CLIP_MODEL,
+        searchType: 'semantic',
         cached: true,
       });
     }
@@ -160,6 +166,36 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     const validatedMimeTypes = filters.mimeTypes?.filter(
       (m): m is string => typeof m === 'string' && m.length > 0 && m.length < 100
     ) || [];
+    const validatedTags = filters.tags?.filter(
+      (tag): tag is string => typeof tag === 'string' && tag.length > 0 && tag.length < 100
+    ) || [];
+    const tagClause = validatedTags.length > 0
+      ? Prisma.sql`
+          AND EXISTS (
+            SELECT 1
+            FROM "asset_tags" at
+            INNER JOIN "tags" t ON t.id = at.tag_id
+            WHERE at.asset_id = a.id
+              AND t.owner_user_id = ${userId}
+              AND t.name = ANY(${validatedTags})
+          )
+        `
+      : Prisma.empty;
+    // Relevance ranking must apply tag membership inside the owner-scoped
+    // candidate scan, otherwise a non-tagged vector can consume the bounded
+    // HNSW window before LIMIT/OFFSET is applied.
+    const rankedTagClause = validatedTags.length > 0
+      ? Prisma.sql`
+          AND EXISTS (
+            SELECT 1
+            FROM "asset_tags" at
+            INNER JOIN "tags" t ON t.id = at.tag_id
+            WHERE at.asset_id = ae.asset_id
+              AND t.owner_user_id = ${userId}
+              AND t.name = ANY(${validatedTags})
+          )
+        `
+      : Prisma.empty;
 
     const validatedDateFrom = filters.dateFrom && isValidISODate(filters.dateFrom)
       ? new Date(filters.dateFrom)
@@ -182,7 +218,7 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     const validatedSortBy = validSortOptions.includes(sortBy as any) ? sortBy : 'relevance';
 
     const orderByClauses: Record<string, Prisma.Sql> = {
-      date: Prisma.sql`a.created_at DESC, a.id ASC`,
+      date: Prisma.sql`a."createdAt" DESC, a.id ASC`,
       favorite: Prisma.sql`a.favorite DESC, ae.image_embedding <=> ${embeddingVectorSql} ASC, a.id ASC`,
       relevance: Prisma.sql`ranked.distance ASC, a.id ASC`,
     };
@@ -219,19 +255,19 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     };
     const runResultsQuery = (candidateLimitForQuery: number) => {
       const query = Prisma.sql`
-      ${usesRankedVectorCte ? buildRankedEmbeddingCte(embeddingVectorSql, candidateLimitForQuery, userId) : Prisma.empty}
+      ${usesRankedVectorCte ? buildRankedEmbeddingCte(embeddingVectorSql, candidateLimitForQuery, userId, null, rankedTagClause) : Prisma.empty}
       SELECT
         a.id,
         a.blob_url,
         a.pathname,
-        a.filename,
+        a.pathname AS filename,
         a.mime,
         a.size,
         a.width,
         a.height,
         a.favorite,
-        a.created_at,
-        a.updated_at,
+        a."createdAt" AS created_at,
+        a."updatedAt" AS updated_at,
         1 - ${rankedDistance} as similarity,
         COUNT(*) OVER() as total_count
       ${rankedFrom}
@@ -241,10 +277,11 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
         ${rankedThreshold}
         ${filters.favorites === true ? Prisma.sql`AND a.favorite = true` : Prisma.empty}
         ${validatedMimeTypes.length > 0 ? Prisma.sql`AND a.mime = ANY(${validatedMimeTypes})` : Prisma.empty}
-        ${validatedDateFrom ? Prisma.sql`AND a.created_at >= ${validatedDateFrom}` : Prisma.empty}
-        ${validatedDateTo ? Prisma.sql`AND a.created_at <= ${validatedDateTo}` : Prisma.empty}
+        ${validatedDateFrom ? Prisma.sql`AND a."createdAt" >= ${validatedDateFrom}` : Prisma.empty}
+        ${validatedDateTo ? Prisma.sql`AND a."createdAt" <= ${validatedDateTo}` : Prisma.empty}
         ${validatedMinWidth ? Prisma.sql`AND a.width >= ${validatedMinWidth}` : Prisma.empty}
         ${validatedMinHeight ? Prisma.sql`AND a.height >= ${validatedMinHeight}` : Prisma.empty}
+        ${tagClause}
       ORDER BY ${orderByClause}
       LIMIT ${limit}
       OFFSET ${offset}
@@ -275,46 +312,28 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
 
     // The ranked CTE deliberately bounds only the vector scan. Keep the
     // published total exact with the same owner/visibility/threshold filters;
-    // the page itself remains HNSW-orderable at the CTE boundary.
-    const exactTotal = usesRankedVectorCte
-      ? await prisma!.$queryRaw<Array<{ total_count: bigint }>>(Prisma.sql`
-          SELECT COUNT(*) AS total_count
-          FROM assets a
-          INNER JOIN asset_embeddings ae ON a.id = ae.asset_id
-          WHERE a.owner_user_id = ${userId}
-            AND a.deleted_at IS NULL
-            AND ae.status = 'ready'
-            AND 1 - (ae.image_embedding <=> ${embeddingVectorSql}) >= ${threshold}
-            ${filters.favorites === true ? Prisma.sql`AND a.favorite = true` : Prisma.empty}
-            ${validatedMimeTypes.length > 0 ? Prisma.sql`AND a.mime = ANY(${validatedMimeTypes})` : Prisma.empty}
-            ${validatedDateFrom ? Prisma.sql`AND a.created_at >= ${validatedDateFrom}` : Prisma.empty}
-            ${validatedDateTo ? Prisma.sql`AND a.created_at <= ${validatedDateTo}` : Prisma.empty}
-            ${validatedMinWidth ? Prisma.sql`AND a.width >= ${validatedMinWidth}` : Prisma.empty}
-            ${validatedMinHeight ? Prisma.sql`AND a.height >= ${validatedMinHeight}` : Prisma.empty}
-        `)
-      : null;
+    // the page itself remains HNSW-orderable at the CTE boundary. This count
+    // also runs for date/favorite sorts and empty pages, where the page query
+    // cannot carry a reliable window total after OFFSET.
+    const exactTotal = await prisma!.$queryRaw<Array<{ total_count: bigint }>>(Prisma.sql`
+      SELECT COUNT(*) AS total_count
+      FROM assets a
+      INNER JOIN asset_embeddings ae ON a.id = ae.asset_id
+      WHERE a.owner_user_id = ${userId}
+        AND a.deleted_at IS NULL
+        AND ae.status = 'ready'
+        AND 1 - (ae.image_embedding <=> ${embeddingVectorSql}) >= ${threshold}
+        ${filters.favorites === true ? Prisma.sql`AND a.favorite = true` : Prisma.empty}
+        ${validatedMimeTypes.length > 0 ? Prisma.sql`AND a.mime = ANY(${validatedMimeTypes})` : Prisma.empty}
+        ${validatedDateFrom ? Prisma.sql`AND a."createdAt" >= ${validatedDateFrom}` : Prisma.empty}
+        ${validatedDateTo ? Prisma.sql`AND a."createdAt" <= ${validatedDateTo}` : Prisma.empty}
+        ${validatedMinWidth ? Prisma.sql`AND a.width >= ${validatedMinWidth}` : Prisma.empty}
+        ${validatedMinHeight ? Prisma.sql`AND a.height >= ${validatedMinHeight}` : Prisma.empty}
+        ${tagClause}
+    `);
 
-    // Handle tag filtering if specified
-    let filteredResults = results;
-    if (filters.tags && filters.tags.length > 0) {
-      const assetIds = results.map(r => r.id);
-      const assetsWithTags = await prisma!.asset.findMany({
-        where: {
-          id: { in: assetIds },
-          tags: {
-            some: {
-              tag: {
-                name: { in: filters.tags },
-              },
-            },
-          },
-        },
-        select: { id: true },
-      });
-
-      const taggedAssetIds = new Set(assetsWithTags.map((a: any) => a.id));
-      filteredResults = results.filter((r: any) => taggedAssetIds.has(r.id));
-    }
+    // Tag membership was applied before LIMIT/OFFSET in SQL.
+    const filteredResults = results;
 
     // Get tags for all results
     const resultIds = filteredResults.map((r: any) => r.id);
@@ -356,17 +375,26 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
       ? Number(exactTotal[0]?.total_count ?? 0)
       : results.length > 0 ? Number(results[0].total_count) : 0;
 
-    // Cache the search results
-    if (formattedResults.length > 0) {
-      const cacheKey = {
-        filters,
-        limit,
-        offset,
-        threshold,
-        sortBy,
-      };
-      await cache.setSearchResults(userId, query, cacheKey, formattedResults);
-    }
+    // Cache the SQL-computed page envelope, including empty pages, so a hit
+    // cannot regress to result-count totals after filtering or OFFSET.
+    const paginationHasMore = offset + limit < totalCount;
+    const cacheKey = {
+      filters,
+      limit,
+      offset,
+      threshold,
+      sortBy,
+    };
+    await cache.setSearchResultPage(
+      userId,
+      query,
+      cacheKey,
+      formattedResults,
+      totalCount,
+      paginationHasMore,
+      undefined,
+      CLIP_MODEL,
+    );
 
     // Log search
     logSearch(userId, query, formattedResults.length, queryTime).catch(() => {});
@@ -380,7 +408,7 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
         total: totalCount,
         limit,
         offset,
-        hasMore: offset + limit < totalCount,
+        hasMore: paginationHasMore,
       },
       processingTime: queryTime,
       embeddingModel: embeddingResult.model,
@@ -446,7 +474,7 @@ async function performMetadataSearch(
   const where: any = {
     ownerUserId: userId,
     deletedAt: null,
-    filename: {
+    pathname: {
       contains: query,
       mode: 'insensitive',
     },
@@ -496,7 +524,7 @@ async function performMetadataSearch(
     id: asset.id,
     blobUrl: asset.blobUrl,
     pathname: asset.pathname,
-    filename: asset.filename,
+    filename: asset.pathname,
     mime: asset.mime,
     size: asset.size,
     width: asset.width,

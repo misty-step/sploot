@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 import {
@@ -20,7 +21,7 @@ describe('seeded vector-search pagination', () => {
     const clause = vectorSearchOrderClause();
 
     expect(clause.strings.join('?')).toMatch(
-      /ORDER BY ranked\.distance DESC, ranked\.id ASC/
+      /ORDER BY ranked\.distance ASC, ranked\.id ASC/
     );
     expect(clause.values).toEqual([]);
   });
@@ -29,7 +30,7 @@ describe('seeded vector-search pagination', () => {
     const clause = vectorSearchOrderClause();
 
     expect(clause.strings.join('?')).toContain(
-      'ORDER BY ranked.distance DESC, ranked.id ASC'
+      'ORDER BY ranked.distance ASC, ranked.id ASC'
     );
     expect(clause.values).toEqual([]);
   });
@@ -122,7 +123,7 @@ describe('seeded vector-search pagination', () => {
       userId,
       order: 'relevance',
       id: 'asset-7',
-      distance: 0.9,
+      rawDistance: '0.1',
       context,
     });
     const decoded = decodeVectorSearchCursor(cursor, userId);
@@ -155,21 +156,28 @@ describe('seeded vector-search pagination', () => {
       userId,
       order: 'relevance',
       id: 'asset-42',
-      distance: 0.91,
+      rawDistance: '0.09',
       context,
     });
 
     expect(decodeVectorSearchCursor(cursor)).toEqual({
-      version: 3,
+      version: 4,
       userId,
       order: 'relevance',
       id: 'asset-42',
-      distance: 0.91,
+      rawDistance: '0.09',
       context,
     });
     expect(decodeVectorSearchCursor('not-a-cursor')).toBeNull();
     expect(decodeVectorSearchCursor(cursor, 'another-user')).toBeNull();
     expect(decodeVectorSearchCursor(`${cursor.slice(0, -1)}${cursor.endsWith('a') ? 'b' : 'a'}`)).toBeNull();
+
+    const legacyPayload = Buffer.from(JSON.stringify({ ...decodeVectorSearchCursor(cursor)!, version: 3 })).toString('base64url');
+    const legacySignature = createHmac('sha256', 'sploot-test-only-vector-search-cursor-secret').update(legacyPayload, 'utf8').digest('base64url');
+    expect(decodeVectorSearchCursor(`${legacyPayload}.${legacySignature}`)).toBeNull();
+    const unknownPayload = Buffer.from(JSON.stringify({ ...decodeVectorSearchCursor(cursor)!, version: 99 })).toString('base64url');
+    const unknownSignature = createHmac('sha256', 'sploot-test-only-vector-search-cursor-secret').update(unknownPayload, 'utf8').digest('base64url');
+    expect(decodeVectorSearchCursor(`${unknownPayload}.${unknownSignature}`)).toBeNull();
   });
 
   it('normalizes query and tag context before binding a cursor', () => {
@@ -196,12 +204,12 @@ describe('seeded vector-search pagination', () => {
       userId,
       order: 'relevance',
       id: 'asset-42',
-      distance: 0.91,
+      rawDistance: '0.09',
       context,
     });
 
     expect(cursor.length).toBeGreaterThan(512);
-    expect(decodeVectorSearchCursor(cursor)).toEqual({ version: 3, userId, order: 'relevance', id: 'asset-42', distance: 0.91, context });
+    expect(decodeVectorSearchCursor(cursor)).toEqual({ version: 4, userId, order: 'relevance', id: 'asset-42', rawDistance: '0.09', context });
   });
 
   it.each([
@@ -215,20 +223,20 @@ describe('seeded vector-search pagination', () => {
     const changed = createVectorSearchContext({ ...original, ...change });
 
     expect(vectorSearchCursorMatchesContext({
-      version: 3,
+      version: 4,
       userId,
       order: 'relevance',
       id: 'asset-1',
-      distance: 0.9,
+      rawDistance: '0.1',
       context: original,
     }, changed, userId)).toBe(false);
 
     expect(vectorSearchCursorMatchesContext({
-      version: 3,
+      version: 4,
       userId,
       order: 'relevance',
       id: 'asset-1',
-      distance: 0.9,
+      rawDistance: '0.1',
       context: original,
     }, original, 'another-user')).toBe(false);
   });
@@ -238,7 +246,7 @@ describe('seeded vector-search pagination', () => {
       userId: 'user-1',
       order: 'relevance',
       id: 'asset-1',
-      distance: 0.9,
+      rawDistance: '0.1',
       context: createVectorSearchContext({ query: 'cats', threshold: 0.2, limit: 1 }),
     });
 

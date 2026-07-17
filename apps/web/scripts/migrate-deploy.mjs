@@ -19,10 +19,11 @@
 //   healthy. The single declared contract version lives in
 //   prisma/stripe-ledger-bootstrap.version and is passed to every psql run.
 import { execFileSync, execSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { checkDatabaseMigrationHistory } from '../../../scripts/check-migration-history.mjs';
+import { checkDatabaseMigrationHistory, migrationHistoryClientConfig } from '../../../scripts/check-migration-history.mjs';
 
 export function deriveDirectUrl(raw) {
   const url = new URL(raw);
@@ -52,6 +53,84 @@ export function readBootstrapVersion(root = repoRoot) {
     throw new Error('[migrate-deploy] stripe-ledger-bootstrap.version must contain the single 14-digit declared contract version');
   }
   return version;
+}
+
+const OWNER_VISIBILITY_MIGRATION = '20260715122000_enforce_asset_embedding_owner_visibility';
+export const OWNER_VISIBILITY_BATCH_SIZE = 10_000;
+export const OWNER_VISIBILITY_BATCH_TIMEOUT_MS = 30_000;
+
+function requirePg() {
+  const requireFromWeb = createRequire(pathToFileURL(join(repoRoot, 'apps/web/package.json')));
+  return requireFromWeb('pg');
+}
+
+/**
+ * Drain the owner/live projection in independent transactions. The procedure
+ * itself updates at most OWNER_VISIBILITY_BATCH_SIZE rows; this runner commits
+ * and reads the remaining count after every batch before enforcement can retry.
+ */
+export async function drainOwnerVisibilityBackfill(databaseUrl, options = {}) {
+  const clientConfig = {
+    ...migrationHistoryClientConfig(databaseUrl),
+    statement_timeout: OWNER_VISIBILITY_BATCH_TIMEOUT_MS,
+    query_timeout: OWNER_VISIBILITY_BATCH_TIMEOUT_MS,
+  };
+  const client = options.createClient
+    ? options.createClient(clientConfig)
+    : new (requirePg().Client)(clientConfig);
+  await client.connect();
+  try {
+    const capability = await client.query(
+      `SELECT
+         to_regprocedure('public.sploot_backfill_asset_embedding_owner_visibility(integer)')::text AS backfill_procedure,
+         to_regprocedure('public.sploot_asset_embedding_visibility_backfill_remaining()')::text AS remaining_function`
+    );
+    const row = capability.rows[0] ?? {};
+    if (!row.backfill_procedure || !row.remaining_function) {
+      throw new Error('[migrate-deploy] owner visibility backfill authority is unavailable; refusing enforcement retry');
+    }
+
+    let batches = 0;
+    while (true) {
+      const readbackBefore = await client.query(
+        'SELECT "sploot_asset_embedding_visibility_backfill_remaining"() AS remaining'
+      );
+      const remainingBefore = BigInt(String(readbackBefore.rows[0]?.remaining ?? 0));
+      if (remainingBefore === 0n) return { batches, remaining: 0 };
+
+      await client.query('BEGIN');
+      try {
+        await client.query("SET LOCAL lock_timeout = '5s'");
+        await client.query(`SET LOCAL statement_timeout = '${OWNER_VISIBILITY_BATCH_TIMEOUT_MS}ms'`);
+        await client.query(
+          'CALL "sploot_backfill_asset_embedding_owner_visibility"($1)',
+          [OWNER_VISIBILITY_BATCH_SIZE],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        try { await client.query('ROLLBACK'); } catch { /* preserve the batch error */ }
+        throw error;
+      }
+
+      batches += 1;
+      const readbackAfter = await client.query(
+        'SELECT "sploot_asset_embedding_visibility_backfill_remaining"() AS remaining'
+      );
+      const remainingAfter = BigInt(String(readbackAfter.rows[0]?.remaining ?? 0));
+      if (remainingAfter === 0n) return { batches, remaining: 0 };
+      if (remainingAfter >= remainingBefore) {
+        throw new Error(`[migrate-deploy] owner visibility backfill made no progress; ${remainingAfter} rows remain`);
+      }
+    }
+  } finally {
+    await client.end();
+  }
+}
+
+export function isOwnerVisibilityEnforcementFailure(error) {
+  const message = [error?.message, error?.stdout, error?.stderr].filter(Boolean).map(String).join('\n');
+  return message.includes(OWNER_VISIBILITY_MIGRATION)
+    && message.includes('asset embedding visibility enforcement refused');
 }
 
 function applyOnlineEmbeddingIndex(databaseUrl, env) {
@@ -127,14 +206,43 @@ export async function runMigrateDeploy(env = process.env, options = {}) {
     // default is the workspace pg-client readback (no psql binary needed in
     // the PRE_DEPLOY image). Any history failure pauses the deployment.
     const historyCheck = options.checkMigrationHistory ?? checkDatabaseMigrationHistory;
-    await historyCheck(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl);
+    const verifyHistory = async () => {
+      const result = await historyCheck(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl);
+      if (!result || result.status !== 'verified') {
+        throw new Error('[migrate-deploy] immutable migration history verification did not return verified; pausing deployment');
+      }
+      return result;
+    };
+    await verifyHistory();
     console.log('[migrate-deploy] running prisma migrate deploy...');
     const migrationEnv = {
       ...env,
       DATABASE_URL: migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl,
       PGOPTIONS: [env.PGOPTIONS, '-c lock_timeout=5s', '-c statement_timeout=30s'].filter(Boolean).join(' '),
     };
-    execSync('prisma migrate deploy', { stdio: 'inherit', env: migrationEnv });
+    const applyMigrations = () => {
+      try {
+        return execFileSync('prisma', ['migrate', 'deploy'], { encoding: 'utf8', env: migrationEnv });
+      } catch (error) {
+        if (error?.stdout) process.stdout.write(String(error.stdout));
+        if (error?.stderr) process.stderr.write(String(error.stderr));
+        throw error;
+      }
+    };
+    try {
+      applyMigrations();
+    } catch (error) {
+      if (!isOwnerVisibilityEnforcementFailure(error)) throw error;
+      stage = 'owner-visibility-backfill';
+      const backfill = options.runOwnerVisibilityBackfill ?? drainOwnerVisibilityBackfill;
+      await backfill(migrationEnv.DATABASE_URL);
+      execFileSync('prisma', [
+        'migrate', 'resolve', '--rolled-back', OWNER_VISIBILITY_MIGRATION,
+      ], { stdio: 'inherit', env: migrationEnv });
+      stage = 'prisma-migrate-retry';
+      await verifyHistory();
+      applyMigrations();
+    }
     if (options.applyOnlineIndex ?? (env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test')) {
       stage = 'online-embedding-index';
       applyOnlineEmbeddingIndex(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl, env);
