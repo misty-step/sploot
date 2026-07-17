@@ -337,15 +337,21 @@ export async function createOrReuseExport(
         where: { ownerUserId: userId, status: 'active' },
         data: { status: 'superseded' },
       });
-      const inactiveToDelete = await tx.libraryExport.findMany({
-        where: { ownerUserId: userId, status: { not: 'active' } },
+      // Rows updated within the rolling egress window still contribute to
+      // reserveExportEgress's window-headroom aggregate for other sessions —
+      // deleting them here would let a user manufacture fresh egress budget
+      // simply by force-creating past the retention cap. Only rows already
+      // outside the window are eligible for the count-based cap.
+      const windowStart = new Date(now.getTime() - EXPORT_EGRESS_WINDOW_MS);
+      const staleInactive = await tx.libraryExport.findMany({
+        where: { ownerUserId: userId, status: { not: 'active' }, updatedAt: { lt: windowStart } },
         orderBy: { updatedAt: 'desc' },
         skip: EXPORT_MAX_RETAINED_ROWS_PER_USER - 1,
         select: { id: true },
       });
-      if (inactiveToDelete.length > 0) {
+      if (staleInactive.length > 0) {
         await tx.libraryExport.deleteMany({
-          where: { id: { in: inactiveToDelete.map((row) => row.id) } },
+          where: { id: { in: staleInactive.map((row) => row.id) } },
         });
       }
       const row = await tx.libraryExport.create({

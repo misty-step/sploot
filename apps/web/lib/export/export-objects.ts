@@ -8,6 +8,12 @@
  */
 
 
+import { createReadStream } from 'node:fs';
+import { stat as fsStat } from 'node:fs/promises';
+import { join, resolve, sep } from 'node:path';
+import { Readable } from 'node:stream';
+import { isQaLocalAuthEnabled } from '@/lib/auth/qa-local-enabled';
+import { QA_SEED_BLOB_HOST } from '@/lib/qa/qa-image-loader';
 import { EXPORT_STREAM_CHUNK_BYTES } from './export-backpressure';
 
 export type ExportObjectFailureReason =
@@ -50,6 +56,50 @@ export function isAllowedExportObjectUrl(rawUrl: string): boolean {
     return false;
   }
   return url.protocol === 'https:' && ALLOWED_OBJECT_HOST.test(url.hostname);
+}
+
+/**
+ * QA-only local object mapping.
+ *
+ * QA seed assets (scripts/qa-seed.ts) store a constraint-compliant blob URL
+ * under the reserved QA_SEED_BLOB_HOST so the assets table CHECK constraint
+ * is satisfied without touching production code paths; the actual bytes sit
+ * in public/qa-blob-seed/. The client-side image loader
+ * (lib/qa/qa-image-loader.ts) already maps that host back to a local path
+ * for rendering — this does the equivalent for the server-side export
+ * pipeline, since a real fetch() against the reserved (non-existent) host
+ * always fails and made QA-seeded libraries permanently unexportable.
+ *
+ * Gated by isQaLocalAuthEnabled(), the same production-impossible check
+ * (SPLOOT_QA_AUTH_MODE=enabled AND SPLOOT_DEPLOYMENT_ENV in
+ * {development,test}) the rest of the QA harness uses, so this path is
+ * unreachable outside local QA runs.
+ */
+const QA_SEED_ROOT = resolve(join(process.cwd(), 'public', 'qa-blob-seed'));
+
+async function openQaSeedObject(url: string): Promise<OpenExportObjectResult> {
+  const relative = url.slice(QA_SEED_BLOB_HOST.length);
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(new URL(relative, 'http://qa-seed.invalid').pathname);
+  } catch {
+    return { ok: false, reason: 'object_url_rejected' };
+  }
+  if (!pathname.startsWith('/qa-blob-seed/')) {
+    return { ok: false, reason: 'object_url_rejected' };
+  }
+  const resolved = resolve(join(process.cwd(), 'public', pathname));
+  if (resolved !== QA_SEED_ROOT && !resolved.startsWith(`${QA_SEED_ROOT}${sep}`)) {
+    return { ok: false, reason: 'object_url_rejected' };
+  }
+  try {
+    const stats = await fsStat(resolved);
+    if (!stats.isFile()) return { ok: false, reason: 'object_missing' };
+  } catch {
+    return { ok: false, reason: 'object_missing' };
+  }
+  const body = Readable.toWeb(createReadStream(resolved)) as ReadableStream<Uint8Array>;
+  return { ok: true, body };
 }
 
 function cancelBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
@@ -167,6 +217,10 @@ export function createExportObjectReader(
   return async (url, externalSignal) => {
     if (!isAllowedExportObjectUrl(url)) {
       return { ok: false, reason: 'object_url_rejected' };
+    }
+
+    if (isQaLocalAuthEnabled() && url.startsWith(`${QA_SEED_BLOB_HOST}/`)) {
+      return openQaSeedObject(url);
     }
 
     const controller = new AbortController();

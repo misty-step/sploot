@@ -291,14 +291,72 @@ describe.skipIf(!dbAvailable)('library export persistence (DB)', () => {
 
 
 
-  it('caps retained inactive sessions during a force-create burst', async () => {
+  it('never prunes rows still inside the egress window, only stale ones beyond it', async () => {
     await createOrReuseExport(OWNER);
     for (let index = 0; index < 40; index += 1) {
       await createOrReuseExport(OWNER, { force: true });
     }
+    // The whole burst lands well inside the 24h egress window (this test
+    // runs in milliseconds), so the count-based retention cap must not
+    // touch any of it — see the dedicated window-erasure test below for why.
+    const burstRows = await prisma!.libraryExport.findMany({ where: { ownerUserId: OWNER } });
+    expect(burstRows.filter((row) => row.status === 'active')).toHaveLength(1);
+    expect(burstRows.length).toBe(41);
+
+    // Once the non-active rows genuinely age out of the window, the
+    // count-based cap resumes bounding storage. A row superseded by the
+    // very act of force-creating is fresh (its own updated_at just moved to
+    // "now"), so it only becomes cap-eligible once it, too, ages past the
+    // window — simulate two full aging cycles to reach steady state.
+    await prisma!.$executeRaw`
+      UPDATE "library_exports"
+      SET "updated_at" = NOW() - INTERVAL '25 hours'
+      WHERE "owner_user_id" = ${OWNER} AND "status" <> 'active'
+    `;
+    await createOrReuseExport(OWNER, { force: true });
+    await prisma!.$executeRaw`
+      UPDATE "library_exports"
+      SET "updated_at" = NOW() - INTERVAL '25 hours'
+      WHERE "owner_user_id" = ${OWNER} AND "status" <> 'active'
+    `;
+    await createOrReuseExport(OWNER, { force: true });
     const rows = await prisma!.libraryExport.findMany({ where: { ownerUserId: OWNER } });
     expect(rows.filter((row) => row.status === 'active')).toHaveLength(1);
-    expect(rows.length).toBeLessThanOrEqual(32);
+    // Steady-state bound, not exactly the raw cap: the row a force-create
+    // just superseded is fresh in that same transaction (its own updated_at
+    // moved to "now"), so it survives one extra cycle before the count-based
+    // cap can retire it too — 1 active + 1 just-superseded + the 31 stale
+    // rows the cap retains.
+    expect(rows.length).toBeLessThanOrEqual(33);
+  });
+
+  it('force-create/prune cycling cannot erase egress accounting inside the rolling window', async () => {
+    const { export: first } = await createOrReuseExport(OWNER);
+    const firstRow = (await getOwnedExport(OWNER, first.id))!;
+    const allowance = exportEgressAllowance(firstRow.totalOriginalBytes, firstRow.totalAssets, firstRow.manifestMetadataBytes);
+    expect((await reserveExportEgress(firstRow, allowance)).kind).toBe('reserved');
+
+    const { export: second } = await createOrReuseExport(OWNER, { force: true });
+    const secondRow = (await getOwnedExport(OWNER, second.id))!;
+    expect((await reserveExportEgress(secondRow, allowance)).kind).toBe('reserved');
+
+    // A burst of force-creates that, under a count-based-only retention cap,
+    // would prune sessions 1 and 2 out of the table entirely — silently
+    // erasing their egress contribution and reopening budget that must stay
+    // closed for the rest of the rolling window.
+    for (let index = 0; index < 40; index += 1) {
+      await createOrReuseExport(OWNER, { force: true });
+    }
+
+    const rows = await prisma!.libraryExport.findMany({ where: { ownerUserId: OWNER } });
+    expect(rows.length).toBeGreaterThan(32);
+    expect(rows.find((row) => row.id === first.id)).toBeDefined();
+    expect(rows.find((row) => row.id === second.id)).toBeDefined();
+
+    const { export: latest } = await createOrReuseExport(OWNER, { force: true });
+    const latestRow = (await getOwnedExport(OWNER, latest.id))!;
+    const refused = await reserveExportEgress(latestRow, BigInt(1));
+    expect(refused).toEqual({ kind: 'refused', code: 'export_egress_window_exhausted' });
   });
 
   it('uses the shared identity lock as a create/delete barrier', async () => {
