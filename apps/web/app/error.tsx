@@ -12,9 +12,7 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    sendClientErrorTelemetry('app-error', error, {
-      metadata: error.digest ? { digest: error.digest } : undefined,
-    });
+    sendClientErrorTelemetry('app-error', error);
   }, [error]);
 
   return (

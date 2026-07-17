@@ -364,6 +364,36 @@ describe('withObservability', () => {
     expect(logOrder).toBeLessThan(rethrowOrder);
   });
 
+  it('omits telemetry query parameters from start, timing, and error logs', async () => {
+    const request = createRequest(
+      'https://sploot.dev/api/telemetry?token=secret&query=private',
+      'POST'
+    );
+    const success = withObservability(
+      async () => createResponse(200),
+      { operation: 'telemetry:ingest', includeQuery: false },
+    );
+    await success(request, defaultContext);
+
+    const failure = withObservability(
+      async () => { throw new Error('telemetry handler failed'); },
+      { operation: 'telemetry:ingest', includeQuery: false },
+    );
+    await expect(failure(request, defaultContext)).rejects.toThrow('telemetry handler failed');
+
+    const records = loggerRecords.flatMap(({ logger }) => [
+      ...logger.logInfo.mock.calls,
+      ...logger.logTiming.mock.calls,
+      ...logger.logError.mock.calls,
+    ]);
+    const serialized = JSON.stringify(records);
+    expect(serialized).not.toContain('token');
+    expect(serialized).not.toContain('secret');
+    expect(serialized).not.toContain('query');
+    expect(serialized).not.toContain('private');
+    expect(records.every((call) => !call.some((value) => value && typeof value === 'object' && 'query' in value))).toBe(true);
+  });
+
   it('skips logging when skipLogging is true', async () => {
     const handler = vi.fn(async () => {
       vi.setSystemTime(new Date(BASE_TIME + 300));

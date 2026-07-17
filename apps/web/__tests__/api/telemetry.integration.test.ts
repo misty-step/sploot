@@ -1,7 +1,31 @@
 import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { POST } from '@/app/api/telemetry/route';
-import { createMockRequest } from '../utils/test-helpers';
+import { __resetTelemetryRateLimitForTests } from '@/lib/telemetry-rate-limit';
+import { createMockRequest as buildMockRequest } from '../utils/test-helpers';
+
+// The route enforces its byte cap on the web stream itself; the shared mock's
+// NextRequest does not expose a web-standard body in this environment, so
+// give each request a real ReadableStream carrying the exact JSON bytes.
+const createMockRequest = (
+  method: string,
+  body?: unknown,
+  headers?: Record<string, string>
+) => {
+  const request = buildMockRequest(method, body, headers);
+  if (body !== undefined) {
+    const bytes = new TextEncoder().encode(JSON.stringify(body));
+    Object.defineProperty(request, 'body', {
+      value: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes);
+          controller.close();
+        },
+      }),
+    });
+  }
+  return request;
+};
 import { logger } from '@/lib/observability-logger';
 import {
   postBlobLoadFailure,
@@ -47,6 +71,7 @@ const AUTH_USER = {
 describe('/api/telemetry', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetTelemetryRateLimitForTests();
     authMock.authenticateRequest.mockResolvedValue({
       status: 'authenticated',
       principal: {
@@ -118,10 +143,9 @@ describe('/api/telemetry', () => {
       type: 'error' as const,
       payload: {
         name: 'TypeError',
-        message: 'meltdown imminent',
-        stack: 'stack trace',
-        componentStack: 'Component > Child',
-        url: '/app/library',
+        boundary: 'app-error',
+        hasStack: true,
+        hasComponentStack: true,
         timestamp: Date.now(),
       },
     };
@@ -136,9 +160,8 @@ describe('/api/telemetry', () => {
       'client:error',
       expect.any(Error),
       expect.objectContaining({
-        userId: AUTH_USER.userId,
         name: payload.payload.name,
-        url: payload.payload.url,
+        boundary: payload.payload.boundary,
         hasStack: true,
         hasComponentStack: true,
       })
@@ -150,16 +173,10 @@ describe('/api/telemetry', () => {
       type: 'error' as const,
       payload: {
         name: 'RenderError',
-        message: 'tile went sideways',
         boundary: 'image-tile-error-boundary',
-        location: {
-          origin: 'https://www.sploot.app',
-          pathname: '/app',
-        },
         timestamp: Date.now(),
         hasStack: true,
-        digest: 'digest-123',
-        metadata: { assetId: 'asset-123' },
+        hasComponentStack: false,
       },
     };
 
@@ -173,17 +190,14 @@ describe('/api/telemetry', () => {
       'client:error',
       expect.any(Error),
       expect.objectContaining({
-        userId: AUTH_USER.userId,
         boundary: 'image-tile-error-boundary',
-        location: payload.payload.location,
         hasStack: true,
-        digest: 'digest-123',
-        metadata: { assetId: 'asset-123' },
+        hasComponentStack: false,
       })
     );
   });
 
-  it('strips untrusted error text and secrets from top-level client fields', async () => {
+  it('rejects raw error text, location, and arbitrary metadata at the boundary', async () => {
     const secrets = {
       email: 'private-person@example.com',
       token: 'top-secret-token-123',
@@ -193,42 +207,21 @@ describe('/api/telemetry', () => {
       type: 'error' as const,
       payload: {
         name: 'TypeError',
+        boundary: 'image-tile-error-boundary',
+        hasStack: true,
+        hasComponentStack: true,
         message: `failed for ${secrets.email} token=${secrets.token}`,
-        stack: `Error: failed\n at https://sploot.app/app?token=${secrets.token}`,
-        componentStack: `Component cookie=${secrets.cookie}`,
-        url: `https://sploot.app/app?token=${secrets.token}`,
-        location: {
-          origin: `https://sploot.app?token=${secrets.token}`,
-          pathname: `/users/${secrets.email}`,
-        },
-        boundary: `tile:${secrets.cookie}`,
-        digest: `digest:${secrets.token}`,
         timestamp: Date.now(),
       },
     };
 
     const response = await POST(createMockRequest('POST', payload), defaultContext);
 
-    expect(response.status).toBe(200);
-    const clientErrorCall = mockLogger.logError.mock.calls.find(
-      ([eventName]) => eventName === 'client:error'
-    );
-    const forwarded = JSON.stringify(clientErrorCall);
-    expect(forwarded).not.toContain(payload.payload.message);
-    expect(forwarded).not.toContain(payload.payload.stack);
-    expect(forwarded).not.toContain(payload.payload.componentStack);
-    expect(forwarded).not.toContain(secrets.email);
-    expect(forwarded).not.toContain(secrets.token);
-    expect(forwarded).not.toContain(secrets.cookie);
-    expect(clientErrorCall?.[1]).toMatchObject({
-      name: 'TypeError',
-      message: 'Client-reported error',
-    });
-    expect(clientErrorCall?.[2]).toMatchObject({
-      url: 'https://sploot.app/app',
-      hasStack: true,
-      hasComponentStack: true,
-    });
+    expect(response.status).toBe(400);
+    expect(mockLogger.logError.mock.calls.some(([eventName]) => eventName === 'client:error')).toBe(false);
+    expect(JSON.stringify(mockLogger.logError.mock.calls)).not.toContain(secrets.email);
+    expect(JSON.stringify(mockLogger.logError.mock.calls)).not.toContain(secrets.token);
+    expect(JSON.stringify(mockLogger.logError.mock.calls)).not.toContain(secrets.cookie);
   });
 
   it('rejects oversized top-level error telemetry strings', async () => {
@@ -265,8 +258,9 @@ describe('/api/telemetry', () => {
       type: 'error' as const,
       payload: {
         name: 'TypeError',
-        message: 'broken vibes',
-        url: '/app',
+        boundary: 'app-error',
+        hasStack: false,
+        hasComponentStack: false,
         timestamp: Date.now(),
       },
     };
@@ -350,48 +344,56 @@ describe('/api/telemetry', () => {
     const payload = {
       type: 'performance' as const,
       payload: {
-        metric: 'time_to_empty_state',
-        value: 1500,
-        unit: 'ms',
+        metric: 'broken_images_ratio',
+        value: 0.02,
+        unit: 'ratio',
         timestamp: Date.now(),
         tags: {
-          size: 2048,
+          broken_count: 2,
+          total_count: 100,
           userId: 'user_private_123',
           query: 'private performance search text',
-          email: 'private@example.com',
-          referrer: 'https://example.com/path?token=secret',
-          note: 'also-private@example.com',
-          nested: { token: 'super-secret' },
-          oversized: 'x'.repeat(2_001),
         },
       },
     };
 
     const response = await POST(createMockRequest('POST', payload), defaultContext);
 
-    expect(response.status).toBe(200);
-    expect(mockLogger.logInfo).toHaveBeenCalledWith('performance_metric', {
-      metric: payload.payload.metric,
-      value: payload.payload.value,
-      unit: payload.payload.unit,
-      timestamp: payload.payload.timestamp,
-      tags: {
-        size: 2048,
-        referrer: 'https://example.com/path',
-        note: '[REDACTED]',
-      },
-    });
-    const timingCall = mockLogger.logInfo.mock.calls.find(
-      ([eventName]) => eventName === 'performance_metric'
-    );
-    expect(JSON.stringify(timingCall)).not.toContain('user_private_123');
-    expect(JSON.stringify(timingCall)).not.toContain('private performance search text');
-    expect(JSON.stringify(timingCall)).not.toContain('private@example.com');
-    expect(JSON.stringify(timingCall)).not.toContain('super-secret');
-    expect(JSON.stringify(timingCall)).not.toContain('x'.repeat(2_001));
+    expect(response.status).toBe(400);
+    expect(mockLogger.logInfo.mock.calls.some(([eventName]) => eventName === 'performance_metric')).toBe(false);
+    expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain('user_private_123');
+    expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain('private performance search text');
   });
 
-  it('caps structured metadata cardinality', async () => {
+  it('rejects performance tags with values outside their declared contract', async () => {
+    const invalidTags = [
+      { target: '100' },
+      { met: 'true' },
+      { broken_count: -1 },
+      { percent: 'not-a-percent' },
+      { rating: 'excellent' },
+    ];
+
+    for (const tags of invalidTags) {
+      const response = await POST(
+        createMockRequest('POST', {
+          type: 'performance',
+          payload: {
+            metric: 'broken_images_ratio',
+            value: 0.02,
+            unit: 'ratio',
+            timestamp: Date.now(),
+            tags,
+          },
+        }),
+        defaultContext
+      );
+
+      expect(response.status, JSON.stringify(tags)).toBe(400);
+    }
+  });
+
+  it('rejects unknown performance metadata instead of forwarding arbitrary fields', async () => {
     const tags = Object.fromEntries(
       Array.from({ length: 40 }, (_, index) => [`field_${index}`, index])
     );
@@ -410,13 +412,8 @@ describe('/api/telemetry', () => {
       defaultContext
     );
 
-    expect(response.status).toBe(200);
-    const timingCall = mockLogger.logInfo.mock.calls.find(
-      ([eventName]) => eventName === 'performance_metric'
-    );
-    expect(Object.keys((timingCall?.[1] as { tags?: object })?.tags ?? {})).toHaveLength(
-      30
-    );
+    expect(response.status).toBe(400);
+    expect(mockLogger.logInfo.mock.calls.some(([eventName]) => eventName === 'performance_metric')).toBe(false);
   });
 
   it('forwards first-party analytics events to the structured logger', async () => {
@@ -444,16 +441,13 @@ describe('/api/telemetry', () => {
     mockLogger.logInfo.mockImplementation((eventName) => {
       if (eventName === 'analytics:event') throw new Error('structured logging offline');
     });
-    const rawQuery = 'private failed analytics query';
     const payload = {
       type: 'analytics' as const,
       payload: {
         name: 'search_no_results',
         properties: {
-          queryLength: rawQuery.length,
+          queryLength: 12,
           hasFilters: false,
-          query: rawQuery,
-          userId: 'client-supplied-user',
         },
         timestamp: Date.now(),
       },
@@ -469,12 +463,10 @@ describe('/api/telemetry', () => {
     const failureCall = mockLogger.logError.mock.calls.find(
       ([eventName]) => eventName === 'telemetry:analytics-forwarding-failed'
     );
-    expect(JSON.stringify(failureCall)).not.toContain(rawQuery);
     expect(JSON.stringify(failureCall)).not.toContain(AUTH_USER.userId);
-    expect(JSON.stringify(failureCall)).not.toContain('client-supplied-user');
   });
 
-  it('allowlists analytics properties and drops raw search text and direct identity', async () => {
+  it('rejects analytics properties outside the declared contract', async () => {
     const rawQuery = 'private therapy reaction meme';
     const payload = {
       type: 'analytics' as const,
@@ -494,21 +486,9 @@ describe('/api/telemetry', () => {
 
     const response = await POST(createMockRequest('POST', payload), defaultContext);
 
-    expect(response.status).toBe(200);
-    expect(mockLogger.logInfo).toHaveBeenCalledWith('analytics:event', {
-      name: payload.payload.name,
-      properties: {
-        queryLength: rawQuery.length,
-        hasFilters: false,
-      },
-      timestamp: payload.payload.timestamp,
-    });
-    const analyticsCall = mockLogger.logInfo.mock.calls.find(
-      ([eventName]) => eventName === 'analytics:event'
-    );
-    expect(JSON.stringify(analyticsCall)).not.toContain(rawQuery);
-    expect(JSON.stringify(analyticsCall)).not.toContain(AUTH_USER.userId);
-    expect(JSON.stringify(analyticsCall)).not.toContain('client-supplied-user');
+    expect(response.status).toBe(400);
+    expect(mockLogger.logInfo.mock.calls.some(([eventName]) => eventName === 'analytics:event')).toBe(false);
+    expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain(rawQuery);
   });
 
   it('rejects analytics event names outside the declared contract', async () => {
@@ -530,15 +510,31 @@ describe('/api/telemetry', () => {
     ).toBe(false);
   });
 
+  it('rejects attacker-controlled flow and timing event names without logging them', async () => {
+    for (const name of ['flow:secretToken123:step', 'timing:private:query:token']) {
+      const response = await POST(
+        createMockRequest('POST', {
+          type: 'analytics',
+          payload: { name, properties: {}, timestamp: Date.now() },
+        }),
+        defaultContext,
+      );
+      expect(response.status).toBe(400);
+    }
+
+    expect(mockLogger.logInfo.mock.calls.some(([eventName]) => eventName === 'analytics:event')).toBe(false);
+    expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain('secretToken123');
+  });
+
   it('accepts declared flow and timing event families with bounded properties', async () => {
     const events = [
       {
         name: 'flow:upload_wizard:selected',
-        properties: { count: 2, query: 'private flow text' },
+        properties: { count: 2 },
       },
       {
         name: 'timing:upload:single',
-        properties: { duration: 45, success: true, size: 100, userId: 'user_private_123' },
+        properties: { duration: 45, success: true, size: 100 },
       },
     ];
 
@@ -565,7 +561,6 @@ describe('/api/telemetry', () => {
       name: 'timing:upload:single',
       properties: { duration: 45, success: true, size: 100 },
     });
-    expect(JSON.stringify(analyticsCalls)).not.toContain('private flow text');
     expect(JSON.stringify(analyticsCalls)).not.toContain('user_private_123');
   });
 
@@ -603,11 +598,10 @@ describe('/api/telemetry', () => {
     const payload = {
       type: 'usage' as const,
       payload: {
-        userId: 'external-user',
-        action: 'upload',
-        count: 3,
+        action: 'blob_load_failure',
+        count: 1,
         timestamp: Date.now(),
-        metadata: { plan: 'pro' },
+        metadata: { fallbackAttempted: true },
       },
     };
 
@@ -631,6 +625,24 @@ describe('/api/telemetry', () => {
     expect(JSON.stringify(usageCall)).not.toContain('external-user');
   });
 
+  it('rejects usage metadata outside fallbackAttempted', async () => {
+    const response = await POST(
+      createMockRequest('POST', {
+        type: 'usage',
+        payload: {
+          action: 'blob_load_failure',
+          count: 1,
+          timestamp: Date.now(),
+          metadata: { fallbackAttempted: true, assetId: 'private-asset' },
+        },
+      }),
+      defaultContext
+    );
+
+    expect(response.status).toBe(400);
+    expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain('private-asset');
+  });
+
   it('logs errors when usage forwarding fails but does not block response', async () => {
     // Make logInfo fail silently (returns undefined instead of throwing)
     // to test that logging failures don't block the response
@@ -647,8 +659,7 @@ describe('/api/telemetry', () => {
     const payload = {
       type: 'usage' as const,
       payload: {
-        userId: 'external-user',
-        action: 'search',
+        action: 'blob_load_failure',
         count: 1,
         timestamp: Date.now(),
       },
@@ -666,6 +677,133 @@ describe('/api/telemetry', () => {
     expect(logInfoCallCount).toBeGreaterThanOrEqual(2);
   });
 
+  describe('adversarial payload bounds', () => {
+    const URL_WITH_TOKEN = 'https://evil.example/cb?token=leaked-bearer-credential-123456';
+
+    it('rejects a URL string smuggled into a numeric analytics property', async () => {
+      const request = createMockRequest('POST', {
+        type: 'analytics',
+        payload: {
+          name: 'search_result_clicked',
+          properties: { position: URL_WITH_TOKEN, score: 0.9 },
+          timestamp: Date.now(),
+        },
+      });
+
+      const response = await POST(request, defaultContext);
+
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain(URL_WITH_TOKEN);
+    });
+
+    it('rejects an upload_failed reason outside the bounded enum', async () => {
+      const request = createMockRequest('POST', {
+        type: 'analytics',
+        payload: {
+          name: 'upload_failed',
+          properties: { reason: URL_WITH_TOKEN, size: 100 },
+          timestamp: Date.now(),
+        },
+      });
+
+      const response = await POST(request, defaultContext);
+
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(mockLogger.logInfo.mock.calls)).not.toContain(URL_WITH_TOKEN);
+    });
+
+    it('rejects a boolean-typed timing property delivered as a string', async () => {
+      const request = createMockRequest('POST', {
+        type: 'analytics',
+        payload: {
+          name: 'timing:search',
+          properties: { duration: 12, success: 'true' },
+          timestamp: Date.now(),
+        },
+      });
+
+      const response = await POST(request, defaultContext);
+
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects a non-finite numeric analytics property', async () => {
+      const request = createMockRequest('POST', {
+        type: 'analytics',
+        payload: {
+          name: 'search_result_clicked',
+          properties: { position: Number.NaN, score: 0.9 },
+          timestamp: Date.now(),
+        },
+      });
+
+      const response = await POST(request, defaultContext);
+
+      expect(response.status).toBe(400);
+    });
+
+    it('returns 413 for a body over the telemetry byte cap', async () => {
+      const request = createMockRequest('POST', {
+        type: 'analytics',
+        payload: {
+          name: 'x'.repeat(20_000),
+          properties: {},
+          timestamp: Date.now(),
+        },
+      });
+
+      const response = await POST(request, defaultContext);
+      const body = await response.json();
+
+      expect(response.status).toBe(413);
+      expect(body).toEqual({ success: false, message: 'payload too large' });
+      expect(mockLogger.logInfo.mock.calls.some(([name]) => name === 'analytics:event')).toBe(false);
+    });
+
+    it('returns 413 for an oversized declared content-length without reading the body', async () => {
+      const request = createMockRequest('POST', undefined, {
+        'content-length': String(1_000_000),
+      });
+
+      const response = await POST(request, defaultContext);
+
+      expect(response.status).toBe(413);
+    });
+
+    it('rate limits a user after 60 requests in one window and isolates other users', async () => {
+      const payload = () => ({
+        type: 'usage' as const,
+        payload: { action: 'blob_load_failure', count: 1, timestamp: Date.now() },
+      });
+
+      for (let i = 0; i < 60; i += 1) {
+        const okResponse = await POST(createMockRequest('POST', payload()), defaultContext);
+        expect(okResponse.status).toBe(200);
+      }
+
+      const limited = await POST(createMockRequest('POST', payload()), defaultContext);
+      const limitedBody = await limited.json();
+      expect(limited.status).toBe(429);
+      expect(limitedBody).toEqual({ success: false, message: 'rate limited' });
+
+      authMock.authenticateRequest.mockResolvedValue({
+        status: 'authenticated',
+        principal: {
+          userId: 'user_other',
+          provider: 'qa-local',
+          providerSubject: 'user_other',
+          source: 'qa-local',
+          credentialKind: 'qa-local',
+        },
+        syncStatus: 'success',
+      });
+      authMock.userFindUnique.mockResolvedValue({ id: 'user_other' });
+
+      const otherUser = await POST(createMockRequest('POST', payload()), defaultContext);
+      expect(otherUser.status).toBe(200);
+    });
+  });
+
   it('swallows unexpected handler errors and returns success', async () => {
     mockLogger.logError.mockImplementationOnce(() => {
       throw new Error('Logger also down');
@@ -675,8 +813,9 @@ describe('/api/telemetry', () => {
       type: 'error' as const,
       payload: {
         name: 'EdgeCase',
-        message: 'boom',
-        url: '/app',
+        boundary: 'app-error',
+        hasStack: false,
+        hasComponentStack: false,
         timestamp: Date.now(),
       },
     };

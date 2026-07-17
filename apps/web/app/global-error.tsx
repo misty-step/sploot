@@ -12,9 +12,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    sendClientErrorTelemetry('app-global-error', error, {
-      metadata: error.digest ? { digest: error.digest } : undefined,
-    });
+    sendClientErrorTelemetry('app-global-error', error);
   }, [error]);
 
   return (

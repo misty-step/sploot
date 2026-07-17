@@ -4,6 +4,7 @@ import { SEARCH_DEFAULT_LIMIT, SEARCH_SIMILARITY_FLOOR } from '@/lib/search-conf
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { error as logError } from '@/lib/logger';
 import { track } from '@/lib/analytics';
+import type { AnalyticsEvent } from '@/lib/analytics';
 import { logger } from '@/lib/observability-logger';
 import type { Asset, TasteMetadata, UseAssetsOptions } from '@/lib/types';
 import { isAssetSortBy } from '@sploot/common';
@@ -255,7 +256,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
   const updateAsset = useCallback((id: string, updates: Partial<Asset>) => {
     // Collect analytics events to emit after state update completes
-    const events: Array<{ name: string; properties: Record<string, any> }> = [];
+    const events: AnalyticsEvent[] = [];
 
     setAssets((prev) =>
       prev.map((asset) => {
@@ -301,29 +302,21 @@ export function useAssets(options: UseAssetsOptions = {}) {
         if (favoriteChanged) {
           events.push({
             name: updates.favorite ? 'asset_favorited' : 'asset_unfavorited',
-            properties: {
-              assetId: asset.id,
-            },
+            properties: {},
           });
         }
 
-        addedTags.forEach((tagName) => {
+        addedTags.forEach(() => {
           events.push({
             name: 'tag_added',
-            properties: {
-              assetId: asset.id,
-              tagName,
-            },
+            properties: {},
           });
         });
 
-        removedTags.forEach((tagName) => {
+        removedTags.forEach(() => {
           events.push({
             name: 'tag_removed',
-            properties: {
-              assetId: asset.id,
-              tagName,
-            },
+            properties: {},
           });
         });
 
@@ -333,22 +326,21 @@ export function useAssets(options: UseAssetsOptions = {}) {
     );
 
     // Emit collected analytics events after state update completes
-    events.forEach((event) => track(event as any));
+    events.forEach(track);
   }, []);
 
   const deleteAsset = useCallback((id: string) => {
     // Collect analytics event before state update
-    let eventToTrack: { name: string; properties: Record<string, any> } | null = null;
+    let eventToTrack: AnalyticsEvent | null = null;
 
     setAssets((prev) => {
       const assetToRemove = prev.find((asset) => asset.id === id);
       if (assetToRemove) {
         // Collect event data (don't emit inside updater function)
         eventToTrack = {
-          name: 'asset_deleted',
-          properties: {
-            assetId: assetToRemove.id,
-            hadTags: Boolean(assetToRemove.tags && assetToRemove.tags.length > 0),
+            name: 'asset_deleted',
+            properties: {
+              hadTags: Boolean(assetToRemove.tags && assetToRemove.tags.length > 0),
           },
         };
       }
@@ -359,7 +351,7 @@ export function useAssets(options: UseAssetsOptions = {}) {
 
     // Emit collected analytics event after state update completes
     if (eventToTrack) {
-      track(eventToTrack as any);
+      track(eventToTrack);
     }
   }, []);
 

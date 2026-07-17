@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAnalyticsPropertyAllowlist } from '@/lib/analytics';
+import { getAnalyticsPropertyAllowlist, getAnalyticsPropertySpec } from '@/lib/analytics';
+import { consumeTelemetryRateLimit } from '@/lib/telemetry-rate-limit';
 import { logger } from '@/lib/observability-logger';
 import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
@@ -8,6 +9,7 @@ import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api'
 import {
   isPerformanceMetricName,
   isPerformanceMetricUnit,
+  getPerformanceTagAllowlist,
   type AnalyticsTelemetryPayload as AnalyticsPayload,
   type ErrorTelemetryPayload as ErrorPayload,
   type PerformanceTelemetryPayload as PerformancePayload,
@@ -20,24 +22,31 @@ interface TelemetryResponse {
   message?: string;
 }
 
-type TelemetryPrimitive = string | number | boolean;
-
 const TELEMETRY_SENSITIVE_KEY =
   /(authorization|cookie|token|secret|password|session|email|user(?:_|-)?id|account(?:_|-)?id|clerk)/i;
 const TELEMETRY_CONTENT_KEY = /^(query|search(?:Query|Term|Text)|search[_-](?:query|term|text))$/i;
-const TELEMETRY_URL_KEY = /^(url|referrer|href)$/i;
-const EMAIL_VALUE = /\S+@\S+\.\S+/;
 const MAX_TELEMETRY_METADATA_ENTRIES = 30;
 const MAX_TELEMETRY_KEY_LENGTH = 80;
 const MAX_TELEMETRY_STRING_LENGTH = 2_000;
 const MAX_ERROR_IDENTIFIER_LENGTH = 120;
 const SAFE_ERROR_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+const MAX_TELEMETRY_BODY_BYTES = 16_384;
 
-async function postHandler(request: NextRequest, _context: unknown, { principal }: AuthenticatedApiContext): Promise<NextResponse> {
+// Telemetry is a best-effort, authenticated, same-origin channel. The
+// explicit rejection paths below (429/413/400) bound abuse; anything else
+// stays a 200 so a telemetry hiccup never turns into product breakage.
+async function postHandler(request: NextRequest, _context: unknown, auth: AuthenticatedApiContext): Promise<NextResponse> {
   try {
-    const userId = principal.userId;
+    if (!consumeTelemetryRateLimit(auth.principal.userId)) {
+      return respond({ success: false, message: 'rate limited' }, 429);
+    }
 
-    const body = await safeJson(request);
+    const rawBody = await readBoundedTelemetryBody(request);
+    if (rawBody === null) {
+      return respond({ success: false, message: 'payload too large' }, 413);
+    }
+
+    const body = parseTelemetryJson(rawBody);
     if (!body) {
       return respond({ success: false, message: 'invalid json' }, 400);
     }
@@ -46,7 +55,7 @@ async function postHandler(request: NextRequest, _context: unknown, { principal 
       return respond({ success: false, message: 'invalid payload' }, 400);
     }
 
-    await forwardTelemetry(body, userId);
+    await forwardTelemetry(body);
 
     return respond({ success: true }, 200);
   } catch (error) {
@@ -55,10 +64,55 @@ async function postHandler(request: NextRequest, _context: unknown, { principal 
   }
 }
 
-async function forwardTelemetry(request: TelemetryRequest, userId: string): Promise<void> {
+// Mirrors the bounded-read discipline of the Stripe webhook route: reject on
+// declared oversize before reading, and cancel mid-stream the moment the cap
+// is crossed. Returns null when the payload exceeds MAX_TELEMETRY_BODY_BYTES.
+async function readBoundedTelemetryBody(request: NextRequest): Promise<Uint8Array | null> {
+  const declaredLength = request.headers.get('content-length');
+  if (declaredLength !== null) {
+    const length = Number(declaredLength);
+    if (!Number.isSafeInteger(length) || length < 0 || length > MAX_TELEMETRY_BODY_BYTES) {
+      return null;
+    }
+  }
+
+  if (!request.body) return new Uint8Array();
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_TELEMETRY_BODY_BYTES) {
+      await reader.cancel('telemetry body limit exceeded');
+      return null;
+    }
+    chunks.push(value);
+  }
+
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+function parseTelemetryJson(rawBody: Uint8Array): unknown | null {
+  try {
+    return JSON.parse(new TextDecoder().decode(rawBody));
+  } catch {
+    return null;
+  }
+}
+
+async function forwardTelemetry(request: TelemetryRequest): Promise<void> {
   switch (request.type) {
     case 'error':
-      forwardErrorTelemetry(request.payload, userId);
+      forwardErrorTelemetry(request.payload);
       break;
     case 'performance':
       forwardPerformanceTelemetry(request.payload);
@@ -100,7 +154,7 @@ function sanitizeAnalyticsProperties(
   return sanitizeTelemetryMetadata(allowedProperties);
 }
 
-function forwardErrorTelemetry(payload: ErrorPayload, userId: string): void {
+function forwardErrorTelemetry(payload: ErrorPayload): void {
   try {
     // Browser error text and stacks are untrusted free text. Preserve only
     // bounded structural signal; never forward their raw contents to logs.
@@ -108,16 +162,11 @@ function forwardErrorTelemetry(payload: ErrorPayload, userId: string): void {
     error.name = sanitizeErrorIdentifier(payload.name) ?? 'ClientError';
 
     logger.logError('client:error', error, {
-      userId,
       name: error.name,
-      url: sanitizeTelemetryUrl(payload.url),
-      location: sanitizeTelemetryLocation(payload.location),
       boundary: sanitizeErrorIdentifier(payload.boundary),
-      digest: sanitizeErrorIdentifier(payload.digest),
       timestamp: payload.timestamp,
-      hasStack: payload.hasStack ?? Boolean(payload.stack),
-      hasComponentStack: payload.hasComponentStack ?? Boolean(payload.componentStack),
-      metadata: sanitizeOptionalTelemetryMetadata(payload.metadata),
+      hasStack: payload.hasStack,
+      hasComponentStack: payload.hasComponentStack,
     });
   } catch (error) {
     logger.logError('telemetry:canary-forwarding-failed', error, {
@@ -138,39 +187,6 @@ function sanitizeErrorIdentifier(value: string | undefined): string | undefined 
   return value;
 }
 
-function sanitizeTelemetryUrl(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  const withoutQuery = stripQueryParams(value);
-  return EMAIL_VALUE.test(withoutQuery) || TELEMETRY_SENSITIVE_KEY.test(withoutQuery)
-    ? '[REDACTED]'
-    : withoutQuery;
-}
-
-function sanitizeTelemetryLocation(
-  location: ErrorPayload['location']
-): ErrorPayload['location'] | undefined {
-  if (!location) return undefined;
-
-  let origin: string;
-  try {
-    origin = new URL(location.origin).origin;
-  } catch {
-    origin = stripQueryParams(location.origin);
-  }
-
-  const pathname = location.pathname.split(/[?#]/, 1)[0];
-  return {
-    origin:
-      EMAIL_VALUE.test(origin) || TELEMETRY_SENSITIVE_KEY.test(origin)
-        ? '[REDACTED]'
-        : origin,
-    pathname:
-      EMAIL_VALUE.test(pathname) || TELEMETRY_SENSITIVE_KEY.test(pathname)
-        ? '[REDACTED]'
-        : pathname,
-  };
-}
-
 function forwardPerformanceTelemetry(payload: PerformancePayload): void {
   try {
     logger.logInfo('performance_metric', {
@@ -178,7 +194,7 @@ function forwardPerformanceTelemetry(payload: PerformancePayload): void {
       value: payload.value,
       unit: payload.unit,
       timestamp: payload.timestamp,
-      tags: sanitizeOptionalTelemetryMetadata(payload.tags),
+      tags: sanitizePerformanceTags(payload.metric, payload.tags),
     });
   } catch (error) {
     logger.logError('telemetry:performance-forwarding-failed', error, {
@@ -203,16 +219,16 @@ function forwardUsageTelemetry(payload: UsagePayload): void {
 }
 
 function sanitizeOptionalTelemetryMetadata(
-  metadata: Record<string, unknown> | undefined
-): Record<string, TelemetryPrimitive> | undefined {
+  metadata: unknown
+): Record<string, string | number | boolean> | undefined {
   return metadata ? sanitizeTelemetryMetadata(metadata) : undefined;
 }
 
-function sanitizeTelemetryMetadata(value: unknown): Record<string, TelemetryPrimitive> {
+function sanitizeTelemetryMetadata(value: unknown): Record<string, string | number | boolean> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
 
   const metadata = value as Record<string, unknown>;
-  const sanitized: Record<string, TelemetryPrimitive> = {};
+  const sanitized: Record<string, string | number | boolean> = {};
   const keys = Object.keys(metadata).slice(0, MAX_TELEMETRY_METADATA_ENTRIES);
 
   for (const key of keys) {
@@ -227,11 +243,11 @@ function sanitizeTelemetryMetadata(value: unknown): Record<string, TelemetryPrim
     const property = metadata[key];
     if (typeof property === 'string') {
       if (property.length > MAX_TELEMETRY_STRING_LENGTH) continue;
-      if (EMAIL_VALUE.test(property)) {
+      if (/\S+@\S+\.\S+/.test(property)) {
         sanitized[key] = '[REDACTED]';
         continue;
       }
-      sanitized[key] = TELEMETRY_URL_KEY.test(key) ? stripQueryParams(property) : property;
+      sanitized[key] = property;
       continue;
     }
 
@@ -243,21 +259,16 @@ function sanitizeTelemetryMetadata(value: unknown): Record<string, TelemetryPrim
   return sanitized;
 }
 
-function stripQueryParams(value: string): string {
-  try {
-    const parsed = new URL(value);
-    return `${parsed.origin}${parsed.pathname}`;
-  } catch {
-    return value.split('?')[0];
-  }
-}
-
-async function safeJson(request: NextRequest): Promise<unknown | null> {
-  try {
-    return await request.json();
-  } catch {
-    return null;
-  }
+function sanitizePerformanceTags(
+  metric: PerformancePayload['metric'],
+  tags: PerformancePayload['tags']
+): PerformancePayload['tags'] | undefined {
+  if (!tags) return undefined;
+  const allowlist = getPerformanceTagAllowlist(metric);
+  const sanitized = sanitizeTelemetryMetadata(
+    Object.fromEntries(allowlist.map((key) => [key, tags[key]]))
+  );
+  return sanitized as PerformancePayload['tags'];
 }
 
 function respond(body: TelemetryResponse, status: number): NextResponse<TelemetryResponse> {
@@ -293,11 +304,13 @@ function isAnalyticsPayload(value: unknown): value is AnalyticsPayload {
   if (!value || typeof value !== 'object') return false;
 
   const payload = value as Partial<Record<keyof AnalyticsPayload, unknown>>;
+  const allowlist =
+    typeof payload.name === 'string' ? getAnalyticsPropertyAllowlist(payload.name) : null;
   if (
     typeof payload.name !== 'string' ||
     payload.name.length === 0 ||
     payload.name.length > 120 ||
-    getAnalyticsPropertyAllowlist(payload.name) === null ||
+    allowlist === null ||
     typeof payload.timestamp !== 'number' ||
     !payload.properties ||
     typeof payload.properties !== 'object' ||
@@ -307,12 +320,38 @@ function isAnalyticsPayload(value: unknown): value is AnalyticsPayload {
   }
 
   const entries = Object.entries(payload.properties);
-  return entries.length <= 30 && entries.every(([key, property]) => {
-    if (key.length > 80 || !['string', 'number', 'boolean'].includes(typeof property)) {
-      return false;
-    }
-    return typeof property !== 'string' || property.length <= 2_000;
-  });
+  if (!allowlist) return false;
+  const requiredByEvent: Record<string, readonly string[]> = {
+    upload_file_selected: ['count', 'totalSize'],
+    upload_started: ['size'],
+    upload_completed: ['duration', 'size'],
+    upload_failed: ['reason', 'size'],
+    search_query_submitted: ['queryLength', 'hasFilters'],
+    search_results_shown: ['count', 'latency', 'hasFilters'],
+    search_result_clicked: ['position', 'score'],
+    search_no_results: ['queryLength', 'hasFilters'],
+    asset_favorited: [],
+    asset_unfavorited: [],
+    asset_deleted: ['hadTags'],
+    tag_added: [],
+    tag_removed: [],
+  };
+  const requiredProperties = requiredByEvent[payload.name] ?? [];
+  // Free-form strings are not part of the analytics contract: every property
+  // must be a finite number, a boolean, or a member of a bounded enum, so no
+  // URL, token, or other attacker-chosen text can reach the logger or Canary.
+  const spec = getAnalyticsPropertySpec(payload.name);
+  if (!spec) return false;
+  return entries.length <= 30 &&
+    requiredProperties.every((key) => Object.prototype.hasOwnProperty.call(payload.properties, key)) &&
+    entries.every(([key, property]) => {
+      if (key.length > 80) return false;
+      const expected = spec[key];
+      if (expected === undefined) return false;
+      if (expected === 'number') return typeof property === 'number' && Number.isFinite(property);
+      if (expected === 'boolean') return typeof property === 'boolean';
+      return typeof property === 'string' && expected.includes(property);
+    });
 }
 
 function isErrorPayload(value: unknown): value is ErrorPayload {
@@ -321,34 +360,15 @@ function isErrorPayload(value: unknown): value is ErrorPayload {
   }
 
   const payload = value as Partial<Record<keyof ErrorPayload, unknown>>;
-  const hasLocation =
-    typeof payload.location === 'object' &&
-    payload.location !== null &&
-    isBoundedString((payload.location as { origin?: unknown }).origin) &&
-    isBoundedString((payload.location as { pathname?: unknown }).pathname);
-  const hasValidOptionalLocation = payload.location === undefined || hasLocation;
-  const hasValidOptionalMetadata =
-    payload.metadata === undefined ||
-    (typeof payload.metadata === 'object' &&
-      payload.metadata !== null &&
-      !Array.isArray(payload.metadata));
 
   return (
     isBoundedString(payload.name, MAX_ERROR_IDENTIFIER_LENGTH) &&
-    isBoundedString(payload.message) &&
-    isOptionalBoundedString(payload.stack) &&
-    isOptionalBoundedString(payload.componentStack) &&
-    isOptionalBoundedString(payload.url) &&
-    isOptionalBoundedString(payload.boundary, MAX_ERROR_IDENTIFIER_LENGTH) &&
-    isOptionalBoundedString(payload.digest, MAX_ERROR_IDENTIFIER_LENGTH) &&
-    (payload.hasStack === undefined || typeof payload.hasStack === 'boolean') &&
-    (payload.hasComponentStack === undefined ||
-      typeof payload.hasComponentStack === 'boolean') &&
-    hasValidOptionalLocation &&
-    hasValidOptionalMetadata &&
-    (typeof payload.url === 'string' || hasLocation) &&
+    isBoundedString(payload.boundary, MAX_ERROR_IDENTIFIER_LENGTH) &&
+    typeof payload.hasStack === 'boolean' &&
+    typeof payload.hasComponentStack === 'boolean' &&
     typeof payload.timestamp === 'number' &&
-    Number.isFinite(payload.timestamp)
+    Number.isFinite(payload.timestamp) &&
+    hasOnlyKeys(payload, ['name', 'boundary', 'hasStack', 'hasComponentStack', 'timestamp'])
   );
 }
 
@@ -357,13 +377,6 @@ function isBoundedString(
   maxLength: number = MAX_TELEMETRY_STRING_LENGTH
 ): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength;
-}
-
-function isOptionalBoundedString(
-  value: unknown,
-  maxLength: number = MAX_TELEMETRY_STRING_LENGTH
-): boolean {
-  return value === undefined || isBoundedString(value, maxLength);
 }
 
 function isPerformancePayload(value: unknown): value is PerformancePayload {
@@ -376,7 +389,12 @@ function isPerformancePayload(value: unknown): value is PerformancePayload {
     payload.tags === undefined ||
     (typeof payload.tags === 'object' &&
       payload.tags !== null &&
-      !Array.isArray(payload.tags));
+      !Array.isArray(payload.tags) &&
+      isPerformanceMetricName(payload.metric) &&
+      Object.entries(payload.tags).every(([key, value]) =>
+        getPerformanceTagAllowlist(payload.metric as PerformancePayload['metric']).includes(key as never) &&
+        isValidPerformanceTagValue(key, value)
+      ));
 
   return (
     isPerformanceMetricName(payload.metric) &&
@@ -385,7 +403,8 @@ function isPerformancePayload(value: unknown): value is PerformancePayload {
     isPerformanceMetricUnit(payload.unit) &&
     typeof payload.timestamp === 'number' &&
     Number.isFinite(payload.timestamp) &&
-    hasValidOptionalTags
+    hasValidOptionalTags &&
+    hasOnlyKeys(payload, ['metric', 'value', 'unit', 'timestamp', 'tags'])
   );
 }
 
@@ -397,14 +416,46 @@ function isUsagePayload(value: unknown): value is UsagePayload {
   const payload = value as Partial<Record<keyof UsagePayload, unknown>>;
 
   return (
-    sanitizeErrorIdentifier(
-      typeof payload.action === 'string' ? payload.action : undefined
-    ) !== undefined &&
+    payload.action === 'blob_load_failure' &&
     typeof payload.count === 'number' &&
     Number.isFinite(payload.count) &&
     typeof payload.timestamp === 'number' &&
-    Number.isFinite(payload.timestamp)
+    Number.isFinite(payload.timestamp) &&
+    (payload.metadata === undefined ||
+      (typeof payload.metadata === 'object' &&
+        payload.metadata !== null &&
+        !Array.isArray(payload.metadata) &&
+        typeof (payload.metadata as { fallbackAttempted?: unknown }).fallbackAttempted === 'boolean' &&
+        hasOnlyKeys(payload.metadata, ['fallbackAttempted']))) &&
+    hasOnlyKeys(payload, ['action', 'count', 'timestamp', 'metadata'])
   );
 }
 
-export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'telemetry:ingest' });
+function isValidPerformanceTagValue(key: string, value: unknown): boolean {
+  switch (key) {
+    case 'target':
+      return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+    case 'met':
+      return typeof value === 'boolean';
+    case 'broken_count':
+    case 'total_count':
+      return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+    case 'percent':
+      return typeof value === 'string' &&
+        /^\d{1,3}(?:\.\d{1,2})?$/.test(value) &&
+        Number(value) <= 100;
+    case 'rating':
+      return value === 'good' || value === 'needs-improvement' || value === 'poor';
+    default:
+      return false;
+  }
+}
+
+function hasOnlyKeys(value: object, allowed: readonly string[]): boolean {
+  return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+export const POST = withObservability(withAuthenticatedApi(postHandler), {
+  operation: 'telemetry:ingest',
+  includeQuery: false,
+});

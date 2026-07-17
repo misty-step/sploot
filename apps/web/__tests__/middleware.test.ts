@@ -129,6 +129,25 @@ describe('middleware auth boundary', () => {
     expect(protect).toHaveBeenCalledTimes(1);
   });
 
+  it('uses the compile-time-gated qa-local boundary for production-start acceptance mode', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD', 'true');
+    const token = await createQaLocalAuthToken({
+      userId: 'qa-user-1',
+      secret: QA_SECRET,
+      expiresInSeconds: 60,
+    });
+
+    const response = await middleware({
+      method: 'GET',
+      nextUrl: { pathname: '/app' },
+      url: 'http://127.0.0.1:3108/app',
+      headers: new Headers({ [getQaLocalAuthHeader()]: token }),
+    } as any);
+
+    expect(response).toBeUndefined();
+  });
+
   it('does not let qa-local bypass app protection in production', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'production');

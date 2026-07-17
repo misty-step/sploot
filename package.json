@@ -43,6 +43,8 @@
     "stripe:sandbox:check": "node scripts/check-stripe-sandbox.mjs",
     "provider:check": "node scripts/check-provider-retirement.mjs",
     "provider:test": "node --test scripts/check-provider-retirement.test.mjs",
+    "telemetry:check": "node scripts/check-telemetry-inventory.mjs",
+    "telemetry:test": "node --test scripts/check-telemetry-inventory.test.mjs",
     "deployment:check": "node scripts/check-web-deployment-runtime.mjs",
     "deployment:build": "node scripts/build-web-without-runtime-secrets.mjs",
     "deployment:test": "node --test scripts/check-web-deployment-runtime.test.mjs scripts/smoke-deployed-redirect.test.mjs scripts/check-migration-history.test.mjs",

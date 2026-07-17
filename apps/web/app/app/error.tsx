@@ -12,13 +12,7 @@ export default function AppError({
   reset: () => void;
 }) {
   useEffect(() => {
-    sendClientErrorTelemetry('app-layout-error', error, {
-      metadata: {
-        section: 'authenticated-app',
-        action: 'layout-render',
-        ...(error.digest ? { digest: error.digest } : {}),
-      },
-    });
+    sendClientErrorTelemetry('app-layout-error', error);
   }, [error]);
 
   const message = error.message?.toLowerCase() ?? '';

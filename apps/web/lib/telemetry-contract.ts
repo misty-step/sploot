@@ -15,24 +15,42 @@ export const PERFORMANCE_METRIC_UNITS = [
 
 export type PerformanceMetricName = (typeof PERFORMANCE_METRIC_NAMES)[number];
 export type PerformanceMetricUnit = (typeof PERFORMANCE_METRIC_UNITS)[number];
-export type TelemetryMetadata = Record<string, unknown>;
+
+export type PerformanceTelemetryTags = Partial<{
+  target: number;
+  met: boolean;
+  broken_count: number;
+  total_count: number;
+  percent: string;
+  rating: 'good' | 'needs-improvement' | 'poor';
+}>;
+
+const PERFORMANCE_TAG_ALLOWLIST = {
+  time_to_empty_state: ['target', 'met'],
+  broken_images_ratio: ['broken_count', 'total_count', 'percent', 'target', 'met'],
+  image_grid_cls: ['rating', 'target', 'met'],
+  first_contentful_paint: ['rating'],
+  largest_contentful_paint: ['rating'],
+} as const satisfies Record<PerformanceMetricName, readonly (keyof PerformanceTelemetryTags)[]>;
+
+export function getPerformanceTagAllowlist(
+  metric: PerformanceMetricName
+): readonly (keyof PerformanceTelemetryTags)[] {
+  return PERFORMANCE_TAG_ALLOWLIST[metric];
+}
+
+export type UsageAction = 'blob_load_failure';
+
+export interface UsageTelemetryMetadata {
+  fallbackAttempted: boolean;
+}
 
 export interface ErrorTelemetryPayload {
   name: string;
-  message: string;
-  stack?: string;
-  componentStack?: string;
-  url?: string;
-  location?: {
-    origin: string;
-    pathname: string;
-  };
-  boundary?: string;
-  hasStack?: boolean;
-  hasComponentStack?: boolean;
-  digest?: string;
+  boundary: string;
+  hasStack: boolean;
+  hasComponentStack: boolean;
   timestamp: number;
-  metadata?: TelemetryMetadata;
 }
 
 export interface PerformanceTelemetryPayload {
@@ -40,14 +58,14 @@ export interface PerformanceTelemetryPayload {
   value: number;
   unit: PerformanceMetricUnit;
   timestamp: number;
-  tags?: TelemetryMetadata;
+  tags?: PerformanceTelemetryTags;
 }
 
 export interface UsageTelemetryPayload {
-  action: string;
+  action: UsageAction;
   count: number;
   timestamp: number;
-  metadata?: TelemetryMetadata;
+  metadata?: UsageTelemetryMetadata;
 }
 
 export interface AnalyticsTelemetryPayload {

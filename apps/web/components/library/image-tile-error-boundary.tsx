@@ -34,10 +34,6 @@ export class ImageTileErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     sendClientErrorTelemetry('image-tile-error-boundary', error, {
       errorInfo,
-      metadata: {
-        assetId: this.props.asset.id,
-        filename: this.props.asset.filename ?? this.props.asset.pathname,
-      },
     });
 
     // Log to console in development

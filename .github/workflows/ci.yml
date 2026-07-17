@@ -52,6 +52,8 @@ jobs:
       - run: node --test scripts/check-stripe-sandbox.test.mjs
       - run: pnpm provider:check
       - run: pnpm provider:test
+      - run: pnpm telemetry:check
+      - run: pnpm telemetry:test
       - run: pnpm deployment:check
       - run: pnpm deployment:test
       - run: pnpm turbo run lint
@@ -81,7 +83,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Build without runtime database or provider secrets
+        env:
+          NEXT_PUBLIC_TELEMETRY_ENABLED: 'false'
+          NEXT_PUBLIC_TELEMETRY_ENDPOINT: /ci-telemetry-sink
         run: pnpm deployment:build
+      - name: Scan compiled telemetry configuration
+        run: pnpm telemetry:check -- --bundle-dir apps/web/.next/static --expect-endpoint /ci-telemetry-sink --expect-enabled false --expect-clerk-disabled
+      - name: Scan server output and public assets for provider residue
+        run: pnpm telemetry:check -- --bundle-dir apps/web/.next/server --bundle-dir apps/web/public
 
   design:
     name: Design
@@ -145,6 +154,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # GitHub-hosted runners do not include the Playwright browser binary.
+      - name: Install Playwright Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
       - name: Provision restricted migration role without storing credentials
         shell: bash
         run: |
@@ -188,6 +200,27 @@ jobs:
       # absolute budget in eval/baseline.json. Fails the job on any regression.
       - name: Retrieval eval (golden-set search quality)
         run: pnpm --filter web eval:search
+      - name: Seed qa-local authenticated e2e user
+        run: pnpm --filter web qa:seed -- --user-id qa-playwright-user --count 1
+      - name: Run production-start Playwright QA
+        env:
+          SPLOOT_QA_AUTH_MODE: enabled
+          SPLOOT_QA_AUTH_SECRET: local-playwright-secret-with-enough-entropy
+          SPLOOT_DEPLOYMENT_ENV: development
+          SPLOOT_ENROLLMENT_MODE: ga
+          NO_PROXY: localhost,127.0.0.1
+        run: pnpm --filter web e2e:auth -- e2e/portable-telemetry.spec.ts
+      - name: Report production-start Playwright failures
+        if: ${{ failure() }}
+        working-directory: apps/web
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob globstar
+          for report in test-results/**/error-context.md; do
+            message="$(tr '\n' ' ' < "$report")"
+            echo "::error title=Playwright failure::$message"
+          done
 
   extension:
     name: Extension
@@ -206,6 +239,8 @@ jobs:
         env:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
         run: pnpm --filter extension zip:prod
+      - name: Scan compiled extension for provider residue and Clerk telemetry
+        run: pnpm telemetry:check -- --bundle-dir apps/extension/dist/chrome-mv3 --expect-clerk-disabled
       - name: Validate candidate release structure and provenance
         env:
           RELEASE_CANDIDATE_SHA: ${{ github.sha }}

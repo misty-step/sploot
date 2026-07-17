@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse, type NextRequest } from 'next/server'
+import { isQaLocalAuthEnabled } from '@/lib/auth/qa-local-enabled'
 
 // Define protected routes that require authentication
 const isProtectedRoute = createRouteMatcher([
@@ -72,9 +73,34 @@ const isPublicTruthSignedOutBuild =
   process.env.NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E === 'true' &&
   (process.env.SPLOOT_DEPLOYMENT_ENV === 'test' || process.env.SPLOOT_DEPLOYMENT_ENV === 'evidence')
 
-export default isPublicTruthSignedOutBuild
-  ? publicTruthSignedOutMiddleware
-  : clerkAuthMiddleware
+export default async function middleware(...args: Parameters<typeof clerkAuthMiddleware>) {
+  const req = args[0] as NextRequest
+  if (isPublicTruthSignedOutBuild) {
+    return publicTruthSignedOutMiddleware(req)
+  }
+
+  // Local production-shaped QA remains compile-time gated so production
+  // bundles cannot carry an authentication bypass.
+  if (
+    process.env.NODE_ENV === 'production' &&
+    process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' &&
+    isQaLocalAuthEnabled()
+  ) {
+    const { verifyQaLocalAuthHeaders } = await import('@/lib/auth/qa-local')
+    const canonicalUrl = getCanonicalWebRedirectUrl(req)
+    if (canonicalUrl) return NextResponse.redirect(canonicalUrl, 308)
+
+    if (isProtectedRoute(req)) {
+      const qaAuth = await verifyQaLocalAuthHeaders(req.headers ?? new Headers())
+      if (qaAuth.status !== 'authenticated') {
+        return NextResponse.redirect(new URL('/sign-in', req.url))
+      }
+    }
+    return
+  }
+
+  return clerkAuthMiddleware(...args)
+}
 
 export const config = {
   matcher: [

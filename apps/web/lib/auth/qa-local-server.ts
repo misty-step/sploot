@@ -33,12 +33,13 @@ async function getQaLocalAuthFromCurrentRequest(): Promise<(RequestAuthResult & 
 }
 
 /**
- * getAuth-shaped qa resolution: null when the request carries no qa-local
- * input (callers continue to Clerk); a terminal result otherwise.
+ * getAuth-shaped qa resolution. In the explicit QA build every request is
+ * terminal: a signed-out request must not fall through to a provider with dummy
+ * credentials, while a supplied QA credential remains terminal input.
  */
-export async function getQaLocalAuthResult(): Promise<AuthResult | null> {
+export async function getQaLocalAuthResult(): Promise<AuthResult> {
   const qaAuth = await getQaLocalAuthFromCurrentRequest();
-  if (!qaAuth) return null;
+  if (!qaAuth) return { userId: null, sessionId: null, getToken: async () => null };
   if (qaAuth.status === 'authenticated') {
     return {
       userId: qaAuth.principal.userId,
@@ -55,9 +56,9 @@ export async function getQaLocalAuthResult(): Promise<AuthResult | null> {
  * getAuthWithUser-shaped qa resolution with the same durable-enrollment
  * admission proof the Clerk path carries.
  */
-export async function getQaLocalAuthWithUserResult(): Promise<AuthWithUserResult | null> {
+export async function getQaLocalAuthWithUserResult(): Promise<AuthWithUserResult> {
   const qaAuth = await getQaLocalAuthFromCurrentRequest();
-  if (!qaAuth) return null;
+  if (!qaAuth) return { userId: null, sessionId: null, getToken: async () => null, syncStatus: 'skipped' };
   if (qaAuth.status === 'authenticated') {
     let syncStatus: AuthWithUserResult['syncStatus'] = 'success';
     let syncError: string | undefined;
