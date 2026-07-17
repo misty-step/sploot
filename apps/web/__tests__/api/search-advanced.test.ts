@@ -162,5 +162,21 @@ describe('POST /api/search/advanced', () => {
     expect(body.results[0].filename).toBe('b.png');
     expect(body.results[0].similarity).toBe(0);
     expect(body.results[0].relevance).toBe(0);
+
+    // sploot-049: the Prisma `where` clause must query the real `pathname`
+    // column -- `filename` does not exist on Asset (schema.prisma) and a
+    // permissive mock previously hid a real-runtime Prisma validation error
+    // on this exact fallback path.
+    expect(mocks.findManyAssets).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          ownerUserId: 'qa-design-user',
+          deletedAt: null,
+          pathname: { contains: 'b', mode: 'insensitive' },
+        }),
+      }),
+    );
+    const [findManyArgs] = mocks.findManyAssets.mock.calls[0];
+    expect(findManyArgs.where).not.toHaveProperty('filename');
   });
 });

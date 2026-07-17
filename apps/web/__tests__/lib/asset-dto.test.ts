@@ -106,11 +106,13 @@ describe('toGridAsset', () => {
     expect(asset.relevance).toBe(1);
     expect(asset.embeddingStatus).toBe('ready');
     // Vector-search rows are always matched via an inner join on
-    // asset_embeddings, so a ready embedding is always present.
+    // asset_embeddings, so a ready embedding is always present -- but the
+    // row never selects the embedding's own model/timestamp columns, so
+    // toGridAsset must not fabricate them (sploot-049 Cerberus correction:
+    // a fake empty modelName + the asset's own createdAt reused as the
+    // embedding's createdAt is a lie, not a truthful assetId-only shape).
     expect(asset.embedding).toEqual({
       assetId: 'asset-3',
-      modelName: '',
-      createdAt: new Date('2026-07-01T00:00:00Z'),
     });
   });
 

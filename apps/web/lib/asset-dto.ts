@@ -108,8 +108,11 @@ function baseFromSnakeCase(row: SnakeCaseAssetRow): Asset {
     createdAt: row.created_at,
     ...(row.updated_at ? { updatedAt: row.updated_at } : {}),
     // Vector-search rows are matched via an inner join on asset_embeddings,
-    // so a returned row always has a ready embedding.
-    embedding: { assetId: row.id, modelName: '', createdAt: row.created_at },
+    // so a returned row always has a ready embedding -- but the row itself
+    // never selects the embedding's own model/timestamp columns, so this
+    // must stay assetId-only rather than fabricating a fake model name or
+    // reusing the asset's createdAt as the embedding's. See sploot-049.
+    embedding: { assetId: row.id },
     embeddingStatus: 'ready',
   };
 }

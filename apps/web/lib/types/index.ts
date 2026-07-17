@@ -14,12 +14,16 @@ export type EmbeddingStatus = 'pending' | 'processing' | 'ready' | 'failed';
 
 export interface AssetEmbedding {
   assetId: string;
-  modelName: string;
+  // Optional: snake-case pgvector rows (search/similar) only ever confirm
+  // that a matching embedding exists via the inner join -- they never carry
+  // the embedding's own model/timestamp metadata, so those fields must stay
+  // optional rather than being fabricated. See sploot-049.
+  modelName?: string;
   modelVersion?: string;
   // pending | processing | ready | failed — the API returns the full row,
   // so a present embedding is NOT necessarily a ready one.
   status?: string | null;
-  createdAt: Date | string;
+  createdAt?: Date | string;
 }
 
 export interface AssetTag {

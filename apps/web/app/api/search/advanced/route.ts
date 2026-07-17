@@ -377,7 +377,10 @@ async function performMetadataSearch(
   const where: any = {
     ownerUserId: userId,
     deletedAt: null,
-    filename: {
+    // The assets table has no `filename` column (only `pathname`); querying
+    // a nonexistent Prisma field throws on every call to this fallback. See
+    // sploot-049.
+    pathname: {
       contains: query,
       mode: 'insensitive',
     },

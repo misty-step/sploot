@@ -122,6 +122,16 @@ type AssetSelectRow = {
 
 type FormattableAssetRow = AssetListRow | TasteAssetRow | AssetSelectRow;
 
+// The shuffle and taste raw-SQL rows select the asset's own `updatedAt`
+// (needed by their ORDER BY/joins), but the pre-canonicalization list
+// response never surfaced it on any mode (see git history pre-sploot-049).
+// Strip it so normal/shuffle/taste stay on one response shape instead of
+// leaking a mode-dependent field. See sploot-049.
+function stripUpdatedAt<T extends { id: string; updatedAt?: Date }>(row: T): Omit<T, "updatedAt"> {
+  const { updatedAt: _updatedAt, ...rest } = row;
+  return rest;
+}
+
 type ShuffleQueryOptions = {
   userId: string;
   favorite: string | null;
@@ -487,7 +497,7 @@ async function getHandler(req: NextRequest) {
 
     const formattedAssets: Asset[] = assets.map((asset) =>
       toGridAsset(
-        { ...asset, filename: asset.pathname },
+        { ...stripUpdatedAt(asset), filename: asset.pathname },
         includeTags ? { tags: tagsByAssetId[asset.id] || [] } : {},
       ),
     );
