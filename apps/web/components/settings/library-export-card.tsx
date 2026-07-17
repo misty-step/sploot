@@ -22,7 +22,7 @@ interface ExportPart {
 
 interface ExportView {
   id: string;
-  status: 'active' | 'superseded' | 'canceled' | 'expired';
+  status: 'active' | 'complete' | 'superseded' | 'canceled' | 'expired';
   createdAt: string;
   expiresAt: string;
   totals: { assets: number; originalBytes: number };
@@ -169,6 +169,28 @@ export function LibraryExportCard() {
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Checking for an export in progress…</p>
+      ) : view?.status === 'complete' ? (
+        <div className="space-y-3">
+          <p className="text-sm text-foreground">
+            Your export is complete. The immutable manifest is ready to download.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {view.totals.assets.toLocaleString()} memes · {formatBytes(view.totals.originalBytes)} · {formatExpiry(view.expiresAt)}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" asChild>
+              <a href={view.downloads.manifest} download>
+                Download manifest.json
+              </a>
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => start(true)} disabled={working}>
+              Start fresh export
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            The completed session is manifest-only; media parts were already finalized.
+          </p>
+        </div>
       ) : !view || !active ? (
         <div className="space-y-3">
           {view?.status === 'expired' && (

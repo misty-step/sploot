@@ -110,11 +110,18 @@ const fakePrisma = vi.hoisted(() => {
         }).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(skip, take ? skip + take : undefined);
         return rows.map((row) => select ? { id: row.id } : { ...row });
       },
-      findFirst: async ({ where }: any) => {
-        for (const row of state.exports.values()) {
+      findFirst: async ({ where, orderBy }: any) => {
+        const rows = [...state.exports.values()];
+        if (orderBy?.updatedAt === 'desc') {
+          rows.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+        }
+        for (const row of rows) {
           if (where.id && row.id !== where.id) continue;
           if (where.ownerUserId && row.ownerUserId !== where.ownerUserId) continue;
-          if (where.status && row.status !== where.status) continue;
+          if (where.status && typeof where.status === 'string' && row.status !== where.status) continue;
+          if (where.manifestFinalizedAt?.not === null && row.manifestFinalizedAt === null) continue;
+          if (where.manifestFinalizedArtifact?.not === null && row.manifestFinalizedArtifact === null) continue;
+          if (where.expiresAt?.gt !== undefined && !(row.expiresAt > where.expiresAt.gt)) continue;
           return { ...row };
         }
         return null;
@@ -677,6 +684,33 @@ describe('egress bound — durable reservation admission', () => {
     }
   });
 
+  it('fails a part whose completion fence loses to manifest finalization', async () => {
+    seedAsset('asset-part-finalize-race', USER, new Uint8Array([1, 2, 3]));
+    const created = await createExport();
+    const row = state.exports.get(created.id)!;
+    const reserve = estimatePartEgressBytes(row.partBoundaries[0] as ExportPartBoundary);
+    const originalExecuteRaw = fakePrisma.$executeRaw;
+    let raceRawCalls = 0;
+    fakePrisma.$executeRaw = async (...args: unknown[]) => {
+      state.executeRawCalls.push(args);
+      raceRawCalls += 1;
+      if (raceRawCalls === 2) {
+        row.status = 'complete';
+        return 0;
+      }
+      return 1;
+    };
+    try {
+      const response = await getPart(created);
+      expect(response.status).toBe(200);
+      await expect(response.arrayBuffer()).rejects.toThrow(/completion fence was lost/);
+      expect(row.egressBytes).toBe(reserve);
+      expect(row.servedParts).toEqual([]);
+    } finally {
+      fakePrisma.$executeRaw = originalExecuteRaw;
+    }
+  });
+
   it('admits exactly to the boundary and refuses one byte beyond it', async () => {
     seedAsset('asset-a', USER, new Uint8Array(100).fill(1));
     const created = await createExport();
@@ -852,6 +886,39 @@ describe('GET /api/library/export/:exportId/manifest', () => {
       release();
       fakePrisma.libraryExport.updateMany = originalUpdateMany;
     }
+  });
+
+  it('rediscovers a finalized manifest through list and POST without duplicating the session', async () => {
+    seedAsset('asset-discover-complete', USER, new Uint8Array([1, 2]));
+    const created = await createExport();
+    state.exports.get(created.id)!.servedParts = [0];
+    const finalized = await manifestGet(
+      request(`/api/library/export/${created.id}/manifest`),
+      ctx({ exportId: created.id }),
+    );
+    expect(finalized.status).toBe(200);
+    await finalized.arrayBuffer();
+    expect(state.exports.get(created.id)!.status).toBe('complete');
+
+    let response = await listGet(request('/api/library/export'), ctx({}));
+    expect((await response.json()).export).toMatchObject({ id: created.id, status: 'complete', complete: true });
+
+    response = await createPost(request('/api/library/export', { method: 'POST' }), ctx({}));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ reused: true, export: { id: created.id, status: 'complete' } });
+    expect(state.exports.size).toBe(1);
+
+    authAs(OTHER);
+    response = await listGet(request('/api/library/export'), ctx({}));
+    expect((await response.json()).export).toBeNull();
+
+    authAs(USER);
+    state.exports.get(created.id)!.expiresAt = new Date(Date.now() - 1000);
+    response = await listGet(request('/api/library/export'), ctx({}));
+    expect((await response.json()).export.status).toBe('expired');
+    response = await createPost(request('/api/library/export', { method: 'POST' }), ctx({}));
+    expect(response.status).toBe(201);
+    expect((await response.json()).export.id).not.toBe(created.id);
   });
 
   it('rejects a manifest at the durable replay boundary before response bytes', async () => {

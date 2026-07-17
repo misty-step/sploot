@@ -128,7 +128,14 @@ async function getHandler(
       signal: lifecycle.signal,
       onFinish: lifecycle.stop,
       onComplete: async ({ failures, bytesStreamed }) => {
-        await recordPartOutcome(row.id, partIndex, failures);
+        const recorded = await recordPartOutcome(row.id, partIndex, failures);
+        if (!recorded) {
+          // Finalization/cancellation may win after the stream's last byte but
+          // before outcome persistence. Keep the reservation charged and fail
+          // the body rather than claiming a part the terminal manifest cannot
+          // account for.
+          throw new Error('export part completion fence was lost');
+        }
         // Clean completion settles the conservative reservation to actual bytes.
         // If bookkeeping fails, this callback rejects and the reservation stays
         // charged in full for expiry/reclaim; never report a silent success.

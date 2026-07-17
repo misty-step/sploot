@@ -90,7 +90,7 @@ async function getHandler(
       const code = postAdmission.kind === 'gone' ? postAdmission.code : 'export_unavailable';
       return NextResponse.json({ error: 'This export is no longer available.', code, retryable: false }, { status: 410 });
     }
-    const lifecycle = monitorExportLifecycle(row.ownerUserId, row.id);
+    const lifecycle = monitorExportLifecycle(row.ownerUserId, row.id, undefined, true);
 
     const stream = streamExportManifest({
       row,

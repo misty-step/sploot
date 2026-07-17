@@ -155,7 +155,9 @@ export function toExportView(row: ExportRowData, now: Date = new Date()): Librar
     row.failures,
   );
   const status =
-    row.status === 'active' && isExportExpired(row.expiresAt, now) ? 'expired' : row.status;
+    (row.status === 'active' || row.status === 'complete') && isExportExpired(row.expiresAt, now)
+      ? 'expired'
+      : row.status;
   const base = `/api/library/export/${row.id}`;
 
   return {
@@ -235,6 +237,7 @@ export function monitorExportLifecycle(
   ownerUserId: string,
   exportId: string,
   intervalMs: number = EXPORT_LIFECYCLE_POLL_MS,
+  allowComplete = false,
 ): ExportLifecycleMonitor {
   const db = requirePrismaDb();
   const controller = new AbortController();
@@ -246,7 +249,7 @@ export function monitorExportLifecycle(
         where: { id: exportId, ownerUserId },
         select: { status: true, expiresAt: true },
       });
-      if (!current || (current.status !== 'active' && current.status !== 'complete') || isExportExpired(current.expiresAt as Date)) {
+      if (!current || (current.status !== 'active' && !(allowComplete && current.status === 'complete')) || isExportExpired(current.expiresAt as Date)) {
         controller.abort();
       }
     } catch {
@@ -277,6 +280,20 @@ export async function createOrReuseExport(
   if (active && !options.force && !isExportExpired(active.expiresAt as Date, now)) {
     return { export: toExportView(normalizeExportRow(active)), reused: true };
   }
+  const complete = !options.force
+    ? await db.libraryExport.findFirst({
+        where: {
+          ownerUserId: userId,
+          status: 'complete',
+          manifestFinalizedAt: { not: null },
+          manifestFinalizedArtifact: { not: null },
+        },
+        orderBy: { updatedAt: 'desc' },
+      })
+    : null;
+  if (complete && !isExportExpired(complete.expiresAt as Date, now)) {
+    return { export: toExportView(normalizeExportRow(complete)), reused: true };
+  }
 
   try {
     const result = await db.$transaction(async (tx) => {
@@ -286,6 +303,20 @@ export async function createOrReuseExport(
       });
       if (lockedActive && !options.force && !isExportExpired(lockedActive.expiresAt as Date, now)) {
         return { row: lockedActive, reused: true };
+      }
+      const lockedComplete = !options.force
+        ? await tx.libraryExport.findFirst({
+            where: {
+              ownerUserId: userId,
+              status: 'complete',
+              manifestFinalizedAt: { not: null },
+              manifestFinalizedArtifact: { not: null },
+            },
+            orderBy: { updatedAt: 'desc' },
+          })
+        : null;
+      if (lockedComplete && !isExportExpired(lockedComplete.expiresAt as Date, now)) {
+        return { row: lockedComplete, reused: true };
       }
 
       // Keep planning and active-row creation under the same identity lock as
@@ -360,10 +391,21 @@ export async function createOrReuseExport(
 
 export async function getActiveExport(userId: string): Promise<LibraryExportView | null> {
   const db = requireDb();
-  const row = await db.libraryExport.findFirst({
+  const active = await db.libraryExport.findFirst({
     where: { ownerUserId: userId, status: 'active' },
   });
-  return row ? toExportView(normalizeExportRow(row)) : null;
+  if (active) return toExportView(normalizeExportRow(active));
+
+  const complete = await db.libraryExport.findFirst({
+    where: {
+      ownerUserId: userId,
+      status: 'complete',
+      manifestFinalizedAt: { not: null },
+      manifestFinalizedArtifact: { not: null },
+    },
+    orderBy: { updatedAt: 'desc' },
+  });
+  return complete ? toExportView(normalizeExportRow(complete)) : null;
 }
 
 export async function getOwnedExport(
@@ -579,7 +621,7 @@ export async function recordPartOutcome(
   exportId: string,
   partIndex: number,
   failures: ExportFailure[],
-): Promise<void> {
+): Promise<boolean> {
   const db = requirePrismaDb();
   const indexJson = JSON.stringify(partIndex);
   if (failures.length > EXPORT_MAX_FAILURES_PER_PART) {
@@ -587,6 +629,7 @@ export async function recordPartOutcome(
   }
   const failuresJson = JSON.stringify(failures);
   const partKey = String(partIndex);
+  let recorded = false;
 
   await db.$transaction(async (tx) => {
     const row = await tx.libraryExport.findFirst({ where: { id: exportId } });
@@ -600,7 +643,7 @@ export async function recordPartOutcome(
     if (existingFailureTotal - currentPartFailures + failures.length > EXPORT_MAX_FAILURES_TOTAL) {
       throw new Error('library export has too many total failures');
     }
-    await tx.$executeRaw`
+    const updated = await tx.$executeRaw`
       UPDATE "library_exports"
       SET
         "served_parts" = CASE
@@ -613,5 +656,7 @@ export async function recordPartOutcome(
         AND "status" = 'active'
         AND "expires_at" > NOW()
     `;
+    recorded = updated === 1;
   });
+  return recorded;
 }

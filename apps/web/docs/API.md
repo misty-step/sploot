@@ -803,9 +803,8 @@ gates: over-limit, delinquent, and canceled accounts export normally.
 
 #### POST /api/library/export
 
-Create the caller's export session, or return the existing active one. A finalized
-manifest may report `status: complete` and remains retryable for the manifest only
-(`reused: true`). Body (optional): `{"force": true}` supersedes the active
+Create the caller's export session, or return the existing active session or durable completed manifest. A finalized manifest reports `status: complete`, is reused with `reused: true`,
+and remains retryable for the manifest only. Body (optional): `{"force": true}` supersedes the active
 session and snapshots fresh. At most one active session per user.
 
 **Authentication:** Required (session)
@@ -838,8 +837,10 @@ session and snapshots fresh. At most one active session per user.
 
 #### GET /api/library/export
 
-Return the caller's active export session (same shape as above) or
-`{"export": null}` — used to resume an interrupted export.
+Return the caller's active export session or durable completed manifest (same
+shape as above), or `{"export": null}` — used to resume an interrupted export
+or rediscover its finalized manifest. Completed sessions expose no part-download
+affordance; their manifest URL remains available until expiry.
 
 #### GET /api/library/export/{exportId}
 

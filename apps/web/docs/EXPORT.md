@@ -10,9 +10,10 @@ rules the endpoints enforce.
 
 - **One visible operation.** Settings → *Export your library* creates (or
   resumes) the user's single active export session. A manifest that reaches its terminal
-  fence is durably marked `complete` with its bounded summary before the final
-  bytes are emitted; a retry replays that summary after a process crash. Everything else — parts,
-  manifest, progress, cancel — hangs off that session.
+  fence is durably marked `complete` with its bounded summary and replay artifact before
+  the final bytes are emitted; a retry after a process crash or page reload replays that
+  immutable artifact. Completed sessions remain discoverable as manifest-only exports; parts,
+  progress, and cancel hang off active sessions.
 - **Frozen snapshot.** An export covers exactly the assets that existed and
   were not deleted at `snapshotAt`. Uploads and deletions during the export
   window change nothing; the entry set is recomputed deterministically from
@@ -24,9 +25,10 @@ rules the endpoints enforce.
   interrupted or corrupted download is retried by requesting the same part
   again. A part counts as *served* only when the server streamed its final
   byte.
-- **Nothing is buffered or persisted.** Parts and the manifest are streamed;
-  no archive artifact is stored server-side. The only persistence is a
-  bookkeeping row (`library_exports`), lazily deleted 7 days after expiry.
+- **Bounded persistence.** Parts are streamed without server-side archives; the
+  terminal manifest is additionally persisted as a bounded replay artifact (up to
+  16 MiB) on the `library_exports` row. Bookkeeping rows are lazily deleted 7 days
+  after expiry.
 - **Expiring capability.** An export and its download URLs die 24 hours after
   creation (HTTP `410`), and immediately on cancel. Tenant-scoped: only the
   owner's session can resolve an export id; provider URLs never reach the

@@ -13,9 +13,9 @@ import logger from '@/lib/logger';
 /**
  * Complete-library export sessions (Powder card sploot-057).
  *
- * POST creates (or reuses) the caller's single active export session — the
- * one visible operation that covers every original plus portable metadata.
- * GET returns the active session so an interrupted export can resume.
+ * POST creates (or reuses) the caller's active export session, or replays a
+ * durable completed manifest. GET returns the active session or completed
+ * manifest so an interrupted or finished export can be rediscovered.
  *
  * Deliberately gate-free beyond enrollment: no storage-quota, billing, or
  * runtime-gate checks may ever be added here. Per VISION.md, crossing a
