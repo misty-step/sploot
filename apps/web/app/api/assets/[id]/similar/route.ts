@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { prisma, vectorSearch, type VectorSearchRow } from '@/lib/db';
+import { toGridAsset } from '@/lib/asset-dto';
 import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
@@ -80,23 +81,7 @@ async function getHandler(
       })
       .slice(0, limit);
 
-    const formattedResults = filtered.map((result: VectorSearchRow) => ({
-      id: result.id,
-      blobUrl: result.blob_url,
-      thumbnailUrl: result.thumbnail_url,
-      pathname: result.pathname,
-      filename: result.pathname.split('/').pop() || result.pathname,
-      mime: result.mime,
-      width: result.width,
-      height: result.height,
-      favorite: result.favorite,
-      size: result.size,
-      createdAt: result.created_at,
-      embedding: { assetId: result.id },
-      embeddingStatus: 'ready' as const,
-      similarity: result.distance,
-      relevance: Math.round(result.distance * 100),
-    }));
+    const formattedResults = filtered.map((result: VectorSearchRow) => toGridAsset(result));
 
     // Source is embedded but the library has nothing else near it. Distinct
     // from source-unembedded so the client can explain why the grid is empty.

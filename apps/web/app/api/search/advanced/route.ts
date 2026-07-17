@@ -11,6 +11,7 @@ import {
   reportEmbeddingConfigurationErrorOnce,
 } from '@/lib/embedding-errors';
 import { getCacheService } from '@/lib/cache';
+import { toGridAsset, mapAssetTags } from '@/lib/asset-dto';
 import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
@@ -190,11 +191,15 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
 
     // Execute parameterized search query
     // Using Prisma.sql template literal for safe parameterization
+    // Note: the assets table has no `filename` column (only `pathname`);
+    // toGridAsset() derives the client-facing filename from pathname's
+    // basename. thumbnail_url must be selected explicitly so the grid can
+    // render it directly instead of falling back to the full original.
     const results = await prisma!.$queryRaw<Array<{
       id: string;
       blob_url: string;
+      thumbnail_url: string | null;
       pathname: string;
-      filename: string;
       mime: string;
       size: number;
       width: number | null;
@@ -208,8 +213,8 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
       SELECT
         a.id,
         a.blob_url,
+        a.thumbnail_url,
         a.pathname,
-        a.filename,
         a.mime,
         a.size,
         a.width,
@@ -265,32 +270,19 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     });
 
     // Group tags by asset
-    const tagsByAsset = allTags.reduce((acc: any, at: any) => {
-      if (!acc[at.assetId]) acc[at.assetId] = [];
-      acc[at.assetId].push({
-        id: at.tag.id,
-        name: at.tag.name,
-      });
-      return acc;
-    }, {} as Record<string, Array<{ id: string; name: string }>>);
+    const tagsByAsset: Record<string, ReturnType<typeof mapAssetTags>> = {};
+    const rowsByAsset: Record<string, Array<{ tag: { id: string; name: string } }>> = {};
+    for (const at of allTags) {
+      (rowsByAsset[at.assetId] ??= []).push(at);
+    }
+    for (const [assetId, rows] of Object.entries(rowsByAsset)) {
+      tagsByAsset[assetId] = mapAssetTags(rows);
+    }
 
     // Format results
-    const formattedResults = filteredResults.map((result: any) => ({
-      id: result.id,
-      blobUrl: result.blob_url,
-      pathname: result.pathname,
-      filename: result.filename,
-      mime: result.mime,
-      size: result.size,
-      width: result.width,
-      height: result.height,
-      favorite: result.favorite,
-      createdAt: result.created_at,
-      updatedAt: result.updated_at,
-      similarity: result.similarity,
-      relevance: Math.round(result.similarity * 100),
-      tags: tagsByAsset[result.id] || [],
-    }));
+    const formattedResults = filteredResults.map((result) =>
+      toGridAsset(result, { tags: tagsByAsset[result.id] || [] }),
+    );
 
     const queryTime = Date.now() - startTime;
     const totalCount = results.length > 0 ? Number(results[0].total_count) : 0;
@@ -385,7 +377,10 @@ async function performMetadataSearch(
   const where: any = {
     ownerUserId: userId,
     deletedAt: null,
-    filename: {
+    // The assets table has no `filename` column (only `pathname`); querying
+    // a nonexistent Prisma field throws on every call to this fallback. See
+    // sploot-049.
+    pathname: {
       contains: query,
       mode: 'insensitive',
     },
@@ -431,25 +426,9 @@ async function performMetadataSearch(
     },
   });
 
-  return assets.map((asset: any) => ({
-    id: asset.id,
-    blobUrl: asset.blobUrl,
-    pathname: asset.pathname,
-    filename: asset.filename,
-    mime: asset.mime,
-    size: asset.size,
-    width: asset.width,
-    height: asset.height,
-    favorite: asset.favorite,
-    createdAt: asset.createdAt,
-    updatedAt: asset.updatedAt,
-    similarity: 0,
-    relevance: 0,
-    tags: asset.tags.map((at: any) => ({
-      id: at.tag.id,
-      name: at.tag.name,
-    })),
-  }));
+  return assets.map((asset) =>
+    toGridAsset(asset, { tags: mapAssetTags(asset.tags), similarity: 0, relevance: 0 }),
+  );
 }
 
 // Helper to validate ISO 8601 date strings

@@ -139,6 +139,11 @@ describe("GET /api/assets", () => {
     ]);
     // 048: the shuffle mapping must carry the stored thumbnail through to the grid.
     expect(body.assets[0].thumbnailUrl).toBe("https://blob.test/thumb-b.png");
+    // sploot-049: the shuffle raw SQL selects a."updatedAt", but the
+    // pre-canonicalization list response never surfaced it on any mode --
+    // it must not leak into the shuffle-only shape now.
+    expect(body.assets[0]).not.toHaveProperty("updatedAt");
+    expect(body.assets[1]).not.toHaveProperty("updatedAt");
     expect(body.pagination).toEqual({
       total: 2,
       limit: 2,
@@ -304,6 +309,10 @@ describe("GET /api/assets", () => {
         embeddingStatus: "ready",
       }),
     ]);
+    // sploot-049: the taste raw SQL also selects a."updatedAt" (needed for
+    // its own query, unrelated to the response shape) -- it must not leak
+    // into the taste-only response either, matching shuffle/normal.
+    expect(body.assets[0]).not.toHaveProperty("updatedAt");
     expect(body.pagination.total).toBe(1);
     expect(body.taste).toEqual({
       status: "ready",

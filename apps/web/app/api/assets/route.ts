@@ -35,7 +35,10 @@ import {
 import {
   getTasteWeightedAssets,
   MIN_TASTE_BANGER_EMBEDDINGS,
+  type TasteAssetRow,
 } from "@/lib/taste/taste-engine";
+import { toGridAsset, mapAssetTags } from "@/lib/asset-dto";
+import type { Asset, AssetTag } from "@/lib/types";
 import {
   assertEnrolledUser,
   enrollmentDeniedResponse,
@@ -96,6 +99,38 @@ type AssetListRow = {
   embeddingStatus: string | null;
   embeddingCreatedAt: Date | null;
 };
+
+type AssetSelectRow = {
+  id: string;
+  blobUrl: string;
+  thumbnailUrl: string | null;
+  pathname: string;
+  mime: string;
+  width: number | null;
+  height: number | null;
+  favorite: boolean;
+  size: number;
+  createdAt: Date;
+  embedding: {
+    status: string | null;
+    modelName: string;
+    modelVersion: string;
+    createdAt: Date;
+    updatedAt: Date;
+  } | null;
+};
+
+type FormattableAssetRow = AssetListRow | TasteAssetRow | AssetSelectRow;
+
+// The shuffle and taste raw-SQL rows select the asset's own `updatedAt`
+// (needed by their ORDER BY/joins), but the pre-canonicalization list
+// response never surfaced it on any mode (see git history pre-sploot-049).
+// Strip it so normal/shuffle/taste stay on one response shape instead of
+// leaking a mode-dependent field. See sploot-049.
+function stripUpdatedAt<T extends { id: string; updatedAt?: Date }>(row: T): Omit<T, "updatedAt"> {
+  const { updatedAt: _updatedAt, ...rest } = row;
+  return rest;
+}
 
 type ShuffleQueryOptions = {
   userId: string;
@@ -396,7 +431,7 @@ async function getHandler(req: NextRequest) {
         })
       : null;
 
-    const [assets, total] = tasteResult
+    const [assets, total] = (tasteResult
       ? [tasteResult.assets, tasteResult.total]
       : await Promise.all([
           shuffleSeed !== undefined
@@ -437,12 +472,12 @@ async function getHandler(req: NextRequest) {
                 },
               }),
           prisma.asset.count({ where }),
-        ]);
+        ])) as [FormattableAssetRow[], number];
 
-    let tagsByAssetId: Record<string, Array<{ id: string; name: string }>> = {};
+    let tagsByAssetId: Record<string, AssetTag[]> = {};
 
     if (includeTags && assets.length > 0) {
-      const assetIds = assets.map((asset: any) => asset.id);
+      const assetIds = assets.map((asset) => asset.id);
       const tagRows = await prisma!.assetTag.findMany({
         where: { assetId: { in: assetIds } },
         select: {
@@ -451,49 +486,21 @@ async function getHandler(req: NextRequest) {
         },
       });
 
-      tagsByAssetId = tagRows.reduce(
-        (acc: Record<string, Array<{ id: string; name: string }>>, row) => {
-          if (!acc[row.assetId]) acc[row.assetId] = [];
-          acc[row.assetId].push({ id: row.tag.id, name: row.tag.name });
-          return acc;
-        },
-        {},
+      const rowsByAssetId: Record<string, Array<{ tag: { id: string; name: string } }>> = {};
+      for (const row of tagRows) {
+        (rowsByAssetId[row.assetId] ??= []).push(row);
+      }
+      tagsByAssetId = Object.fromEntries(
+        Object.entries(rowsByAssetId).map(([assetId, rows]) => [assetId, mapAssetTags(rows)]),
       );
     }
 
-    const formattedAssets = assets.map((asset: any) => ({
-      id: asset.id,
-      blobUrl: asset.blobUrl,
-      thumbnailUrl: asset.thumbnailUrl ?? null,
-      pathname: asset.pathname,
-      filename: asset.pathname,
-      mime: asset.mime,
-      size: asset.size,
-      width: asset.width,
-      height: asset.height,
-      favorite: asset.favorite,
-      createdAt: asset.createdAt,
-      // Format embedding data for both shuffle and normal queries without vector payload
-      embedding:
-        asset.embedding ||
-        (asset.embeddingId
-          ? {
-              assetId: asset.embeddingId,
-              modelName: asset.embeddingModelName,
-              modelVersion: asset.embeddingModelVersion,
-              createdAt: asset.embeddingCreatedAt,
-            }
-          : undefined),
-      embeddingStatus: asset.embeddingStatus || asset.embedding?.status,
-      ...(typeof asset.tasteScore === "number"
-        ? { tasteScore: Number(asset.tasteScore.toFixed(3)) }
-        : {}),
-      ...(includeTags
-        ? {
-            tags: tagsByAssetId[asset.id] || [],
-          }
-        : {}),
-    }));
+    const formattedAssets: Asset[] = assets.map((asset) =>
+      toGridAsset(
+        { ...stripUpdatedAt(asset), filename: asset.pathname },
+        includeTags ? { tags: tagsByAssetId[asset.id] || [] } : {},
+      ),
+    );
 
     // Drift detector: zero assets for known user hints at wrong DB branch
     if (total === 0 && !isTaste) {

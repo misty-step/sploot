@@ -3,6 +3,7 @@ import { TAG, isValidAssetId, isValidTagName } from '@sploot/common';
 import { unstable_rethrow } from 'next/navigation';
 import { getCacheService } from '@/lib/cache';
 import { prisma } from '@/lib/db';
+import { toGridAsset, mapAssetTags } from '@/lib/asset-dto';
 import { invalidateSlugCache } from '@/lib/slug-cache';
 import { enqueueAssetReplicaCleanup, markReplicaCleanupDone } from '@/lib/storage/permanent-delete';
 import { withObservability } from '@/lib/with-observability';
@@ -62,24 +63,10 @@ async function getHandler(
     }
 
     return NextResponse.json({
-      asset: {
-        id: asset.id,
-        blobUrl: asset.blobUrl,
-        pathname: asset.pathname,
-        filename: asset.pathname,
-        mime: asset.mime,
-        size: asset.size,
-        width: asset.width,
-        height: asset.height,
-        favorite: asset.favorite,
-        createdAt: asset.createdAt,
-        updatedAt: asset.updatedAt,
-        embedding: asset.embedding,
-        tags: asset.tags.map((at: any) => ({
-          id: at.tag.id,
-          name: at.tag.name,
-        })),
-      },
+      asset: toGridAsset(
+        { ...asset, filename: asset.pathname },
+        { tags: mapAssetTags(asset.tags) },
+      ),
     });
   } catch (error) {
     unstable_rethrow(error);
@@ -168,24 +155,10 @@ async function patchHandler(
     }
 
     return NextResponse.json({
-      asset: {
-        id: updatedAssetRow.id,
-        blobUrl: updatedAssetRow.blobUrl,
-        pathname: updatedAssetRow.pathname,
-        filename: updatedAssetRow.pathname,
-        mime: updatedAssetRow.mime,
-        size: updatedAssetRow.size,
-        width: updatedAssetRow.width,
-        height: updatedAssetRow.height,
-        favorite: updatedAssetRow.favorite,
-        createdAt: updatedAssetRow.createdAt,
-        updatedAt: updatedAssetRow.updatedAt,
-        embedding: updatedAssetRow.embedding,
-        tags: updatedAssetRow.tags.map((at: any) => ({
-          id: at.tag.id,
-          name: at.tag.name,
-        })),
-      },
+      asset: toGridAsset(
+        { ...updatedAssetRow, filename: updatedAssetRow.pathname },
+        { tags: mapAssetTags(updatedAssetRow.tags) },
+      ),
       message: 'Asset updated successfully',
     });
   } catch (error) {
