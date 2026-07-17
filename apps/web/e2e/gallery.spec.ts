@@ -374,6 +374,7 @@ test.describe('authenticated seeded gallery', () => {
 
         if (theme === 'light' && viewport.width === 390) {
           const reducedContext = await browser.newContext({
+            baseURL,
             viewport: { width: viewport.width, height: viewport.height },
             reducedMotion: 'reduce',
           });
