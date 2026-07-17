@@ -53,6 +53,8 @@ describe('withAuthenticatedApi', () => {
           SPLOOT_QA_DEPLOYMENT_ID: 'sploot-gallery-qa-local',
           SPLOOT_QA_DEPLOYMENT_AUDIENCE: 'sploot-gallery-evidence',
           DEPLOYMENT_ENV: 'qa-local',
+    SPLOOT_QA_BIND_HOST: '127.0.0.1',
+    SPLOOT_QA_LOCAL_CAPABILITY: '0123456789abcdef0123456789abcdef0123456789abcdef',
           SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
         },
       }
@@ -121,6 +123,8 @@ describe('withAuthenticatedApi', () => {
           SPLOOT_QA_DEPLOYMENT_ID: 'sploot-gallery-qa-local',
           SPLOOT_QA_DEPLOYMENT_AUDIENCE: 'sploot-gallery-evidence',
           DEPLOYMENT_ENV: 'qa-local',
+    SPLOOT_QA_BIND_HOST: '127.0.0.1',
+    SPLOOT_QA_LOCAL_CAPABILITY: '0123456789abcdef0123456789abcdef0123456789abcdef',
           SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
         },
       }
@@ -168,6 +172,8 @@ describe('withAuthenticatedApi', () => {
           SPLOOT_QA_DEPLOYMENT_ID: 'sploot-gallery-qa-local',
           SPLOOT_QA_DEPLOYMENT_AUDIENCE: 'sploot-gallery-evidence',
           DEPLOYMENT_ENV: 'qa-local',
+    SPLOOT_QA_BIND_HOST: '127.0.0.1',
+    SPLOOT_QA_LOCAL_CAPABILITY: '0123456789abcdef0123456789abcdef0123456789abcdef',
           SPLOOT_QA_AUTH_SECRET: 'test-secret-with-enough-entropy',
         },
       }

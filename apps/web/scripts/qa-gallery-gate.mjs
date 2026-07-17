@@ -9,6 +9,7 @@
  * at the loopback-only standalone artifact through the signed QA seam.
  */
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -57,6 +58,8 @@ const env = {
   SPLOOT_QA_DEPLOYMENT_ID: 'sploot-gallery-qa-local',
   SPLOOT_QA_DEPLOYMENT_AUDIENCE: 'sploot-gallery-evidence',
   DEPLOYMENT_ENV: 'qa-local',
+  SPLOOT_QA_BIND_HOST: '127.0.0.1',
+  SPLOOT_QA_LOCAL_CAPABILITY: randomBytes(24).toString('hex'),
   NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: 'enabled',
   NEXT_PUBLIC_SPLOOT_QA_EVIDENCE_MODE: 'enabled',
   NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID: 'sploot-gallery-qa-local',
