@@ -19,8 +19,19 @@ const commandArgs = process.argv.slice(2);
 const authProjectSelected = isAuthProject || isPortableTelemetryProject || commandArgs.some((arg, index) =>
   arg === '--project=auth' || (arg === '--project' && commandArgs[index + 1] === 'auth')
 ) || process.env.SPLOOT_QA_AUTH_MODE === 'enabled';
+const authWebServerEnv: Record<string, string> = authProjectSelected ? {
+  DEPLOYMENT_ENV: 'local-qa',
+  SPLOOT_PWA_CAPTURE_MODE: 'enabled',
+  SPLOOT_QA_DEPLOYMENT_ID: 'local-pwa-capture-v1',
+  SPLOOT_QA_DEPLOYMENT_ENV: 'local-qa',
+  SPLOOT_QA_AUDIENCE: 'sploot-pwa-capture',
+  SPLOOT_QA_BIND_HOST: '127.0.0.1',
+  SPLOOT_QA_LOCAL_CAPABILITY: '0123456789abcdef0123456789abcdef0123456789abcdef',
+  NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: 'enabled',
+  NEXT_PUBLIC_SPLOOT_PWA_CAPTURE_MODE: 'enabled',
+} : {};
 const webServerCommand = authProjectSelected
-  ? 'pnpm --filter web build && PORT=' + port + ' pnpm --filter web start --hostname 0.0.0.0'
+  ? 'pnpm --filter web build && PORT=' + port + ' pnpm --filter web start --hostname 127.0.0.1'
   : 'pnpm e2e:public-truth:serve';
 const webServerUrl = authProjectSelected ? baseURL + '/api/health/live' : baseURL;
 
@@ -72,9 +83,10 @@ export default defineConfig({
     command: webServerCommand,
     url: webServerUrl,
     reuseExistingServer: false,
-    timeout: 120_000,
+    timeout: 240_000,
     env: {
       ...process.env,
+      ...authWebServerEnv,
       NO_PROXY: [process.env.NO_PROXY, 'localhost', '127.0.0.1'].filter(Boolean).join(','),
       no_proxy: [process.env.no_proxy, 'localhost', '127.0.0.1'].filter(Boolean).join(','),
       PORT: String(port),
