@@ -11,7 +11,7 @@ const describeWithDatabase = process.env.DATABASE_URL && prisma
 const userId = 'vector-search-pagination-user';
 const foreignUserId = 'vector-search-pagination-foreign-user';
 const assetIds = Array.from({ length: 25 }, (_, index) =>
-  `vector-search-pagination-${index.toString().padStart(2, '0')}`
+  `${userId}-${index.toString().padStart(2, '0')}`
 );
 let laterMatchTagId: string;
 
