@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
-import Masonry from 'react-masonry-css';
 import { ImageTile } from './image-tile';
 import { ImageTileErrorBoundary } from './image-tile-error-boundary';
 import { ImageGridSkeleton } from './image-skeleton';
@@ -15,8 +14,11 @@ import { IMAGE_GRID_BREAKPOINT_COLS, IMAGE_GRID_SCROLL_CLASS } from './image-gri
 interface ImageGridProps {
   assets: Asset[];
   loading?: boolean;
+  dimmed?: boolean;
+  error?: string | null;
   hasMore?: boolean;
   onLoadMore?: () => void;
+  onRetry?: () => void;
   onAssetUpdate?: (id: string, updates: Partial<Asset>) => void;
   onAssetDelete?: (id: string) => void;
   onAssetSelect?: (asset: Asset) => void;
@@ -31,8 +33,11 @@ interface ImageGridProps {
 export function ImageGrid({
   assets,
   loading = false,
+  dimmed = false,
+  error = null,
   hasMore = false,
   onLoadMore,
+  onRetry,
   onAssetUpdate,
   onAssetDelete,
   onAssetSelect,
@@ -140,6 +145,27 @@ export function ImageGrid({
     [onAssetUpdate]
   );
 
+  if (error) {
+    return (
+      <div className="flex h-full items-center justify-center overflow-auto p-4" role="alert">
+        <section className="w-full max-w-xl rounded-[var(--sploot-radius)] border-[3px] border-sploot-red bg-sploot-panel p-6 text-center sploot-shadow-sm">
+          <p className="font-mono text-xs lowercase text-sploot-red">retrieval failed</p>
+          <h2 className="mt-2 font-display text-2xl font-normal lowercase">the shelf is still here.</h2>
+          <p className="mt-2 text-sm lowercase text-muted-foreground">{error}</p>
+          {onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="mt-5 min-h-[var(--sploot-touch-target)] rounded-[var(--sploot-radius-pill)] border-[3px] border-sploot-ink bg-sploot-blue px-5 font-bold text-sploot-on-blue sploot-press"
+            >
+              try again
+            </button>
+          ) : null}
+        </section>
+      </div>
+    );
+  }
+
   // Show skeleton loaders during initial load
   if (assets.length === 0 && loading) {
     return (
@@ -201,16 +227,22 @@ export function ImageGrid({
         className={cn(IMAGE_GRID_SCROLL_CLASS, containerClassName)}
         style={{ scrollbarGutter: 'stable' }}
       >
-        <Masonry
-          breakpointCols={IMAGE_GRID_BREAKPOINT_COLS}
-          className="masonry-grid"
-          columnClassName="masonry-grid-column"
+        <div
+          role="list"
+          aria-label="meme results"
+          aria-busy={loading || undefined}
+          className={cn(
+            'grid grid-cols-2 items-start gap-2 p-3 sm:grid-cols-2 sm:gap-3 md:grid-cols-3 md:p-5 xl:grid-cols-4 motion-safe:transition-opacity motion-safe:duration-200',
+            dimmed && 'opacity-45'
+          )}
         >
           {assets.map((asset, index) => (
             <div
               key={asset.id}
               data-asset-id={asset.id}
-              className="masonry-item"
+              data-sploot-grid-item
+              role="listitem"
+              className="min-w-0"
               style={{
                 // Cap the cascade so late/paginated tiles never wait seconds
                 animation: `fadeInScale 300ms var(--sploot-ease-out) ${Math.min(index, 15) * 30}ms forwards`,
@@ -226,11 +258,12 @@ export function ImageGrid({
                   onAssetUpdate={onAssetUpdate}
                   showSimilarityScore={showSimilarityScores}
                   preserveAspectRatio
+                  squareFrame
                 />
               </ImageTileErrorBoundary>
             </div>
           ))}
-        </Masonry>
+        </div>
 
         {/* Loading indicator */}
         {loading && (

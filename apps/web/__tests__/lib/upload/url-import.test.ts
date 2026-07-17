@@ -41,6 +41,13 @@ describe('validateImportUrl', () => {
     vi.stubEnv('SPLOOT_QA_ALLOW_LOCAL_URL_IMPORT', '1');
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
     vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'test');
+    vi.stubEnv('SPLOOT_QA_EVIDENCE_MODE', 'enabled');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ID', 'sploot-gallery-qa-local');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_AUDIENCE', 'sploot-gallery-evidence');
+    vi.stubEnv('DEPLOYMENT_ENV', 'qa-local');
+    vi.stubEnv('SPLOOT_QA_AUTH_SECRET', 'test-secret-with-enough-entropy');
+    vi.stubEnv('CLERK_SECRET_KEY', '');
+    vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', '');
     vi.stubEnv('NODE_ENV', 'test');
 
     expect(validateImportUrl('http://localhost:3000/qa-blob-seed/x.png')).toMatchObject({
@@ -52,6 +59,13 @@ describe('validateImportUrl', () => {
     vi.stubEnv('SPLOOT_QA_ALLOW_LOCAL_URL_IMPORT', '1');
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
     vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'test');
+    vi.stubEnv('SPLOOT_QA_EVIDENCE_MODE', 'enabled');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ID', 'sploot-gallery-qa-local');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_AUDIENCE', 'sploot-gallery-evidence');
+    vi.stubEnv('DEPLOYMENT_ENV', 'qa-local');
+    vi.stubEnv('SPLOOT_QA_AUTH_SECRET', 'test-secret-with-enough-entropy');
+    vi.stubEnv('CLERK_SECRET_KEY', '');
+    vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', '');
     vi.stubEnv('NODE_ENV', 'test');
 
     expect(validateImportUrl('http://169.254.169.254/latest/meta-data')).toMatchObject({

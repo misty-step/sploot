@@ -1154,19 +1154,37 @@ Perform semantic search using text queries.
 {
   "query": "distracted boyfriend",
   "limit": 30,
-  "threshold": 0.2,
-  "shuffleSeed": 424242
+  "threshold": 0.12,
+  "favoriteOnly": false,
+  "tagId": null
 }
 ```
 
 **Parameters:**
 
 - `query` (string, required): Search text (max 500 characters)
-- `limit` (number, optional): requested result count (default: 30).
-- `threshold` (number, optional): Minimum similarity score (0-1, default: 0.2)
+- `limit` (number, optional): requested result count (default: 30, max: 100).
+  Every page is bounded.
+- `cursor` (string, optional): opaque cursor from the previous response for
+  deterministic keyset traversal beyond the legacy offset window.
+- `offset` (number, optional): retained for backwards compatibility (default:
+  0, max: 500); do not combine it with `cursor`.
+- `threshold` (number, optional): Minimum similarity score (0-1, default: 0.12;
+  the runtime source of truth is `lib/search-config.ts`)
   Results below this score are not returned; a real miss returns an empty
   `results` array rather than low-similarity padding.
-- `shuffleSeed` (number, optional): Seed used by vector search when supported
+- `favoriteOnly` (boolean, optional): Restrict results to favorited assets.
+- `tagId` (string, optional): Restrict results to assets carrying this tag.
+
+Semantic search is always ordered by descending vector relevance, with asset id
+as the deterministic tie-breaker. The gallery's seeded shuffle is a library
+view concern and is not applied to semantic search. Cursors are opaque,
+cryptographically signed by the server, and bound to the authenticated owner,
+embedding-model revision, normalized query, threshold, relevance order,
+favorite/tag filters, and page size; tampering or replaying one with a
+different user/context returns `400` with
+`{"error":"Search cursor does not match search context"}` before vector or
+database work.
 
 **Success Response (200):**
 
@@ -1196,16 +1214,20 @@ Perform semantic search using text queries.
   ],
   "query": "distracted boyfriend",
   "total": 1,
+  "hasMore": false,
   "limit": 30,
   "requestedLimit": 30,
-  "threshold": 0.2,
-  "requestedThreshold": 0.2,
+  "threshold": 0.12,
+  "requestedThreshold": 0.12,
   "processingTime": 245,
   "embeddingModel": "krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4",
   "cached": false,
   "thresholdFallback": false
 }
 ```
+
+When `hasMore` is true, the response also includes `nextCursor`; send it as
+`cursor` on the next request.
 
 When Replicate is not configured, the route returns `503` with an `error`
 explaining search is unavailable.
@@ -1290,7 +1312,8 @@ returned before cache, embedding, metadata, or vector work.
 - `sortBy` (string, optional): Sort order (`relevance`, `date`, or `favorite`)
 - `limit` (number, optional): Results per page (default: 30)
 - `offset` (number, optional): Pagination offset (default: 0)
-- `threshold` (number, optional): Minimum similarity (0-1, default: 0.5)
+- `threshold` (number, optional): Minimum similarity (0-1, default: 0.12;
+  `0.5` above is an explicit request override)
 
 **Success Response (200):**
 

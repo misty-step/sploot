@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SignIn } from "@clerk/nextjs";
+import { redirect } from "next/navigation";
 import {
   ConsoleDoor,
   consoleDoorAppearance,
@@ -22,6 +23,11 @@ const closedEnrollmentAppearance = {
 };
 
 export default async function SignInPage() {
+  const { isQaLocalAuthEnabled } = await import("@/lib/auth/qa-local-enabled");
+  if (isQaLocalAuthEnabled()) {
+    redirect('/api/qa-auth/login');
+  }
+
   const { state: enrollmentState } = await readPublicEnrollmentState({ prisma });
   const enrollmentOpen = enrollmentState.status === 'open';
   const qaLocalCaptureBuild = process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' &&

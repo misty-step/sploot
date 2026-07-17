@@ -8,6 +8,7 @@ import type {
 import { extractUploadToken, verifyUploadToken } from './upload-token';
 import { verifyBearerOrThrow } from './verify-bearer';
 import { isEnrollmentUnavailableError } from '@/lib/enrollment/enrollment-policy';
+import { resolveQaLocalRequestAuth } from '@/lib/auth/qa-request-auth';
 
 const DEFAULT_AUTH_POLICY: Required<
   Pick<AuthPolicy, 'allowClerk' | 'allowQaLocal' | 'allowUploadToken'>
@@ -26,15 +27,10 @@ export async function authenticateRequest(
     ...policy,
   };
   const env = resolvedPolicy.env ?? process.env;
-
-  // Compile-time omission: production builds inline this flag to 'false' and
-  // dead-code-eliminate the qa-local seam out of every API route bundle. QA
-  // credentials remain terminal input in qa builds: a malformed, expired,
-  // disabled, or otherwise forbidden QA credential never falls through to
-  // Clerk.
-  if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
-    const { resolveQaLocalRequestAuth } = await import('./qa-local');
-    const qaResult = await resolveQaLocalRequestAuth(req.headers, env);
+  if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' && resolvedPolicy.allowQaLocal) {
+    const qaResult = await resolveQaLocalRequestAuth(req.headers, env, requestHostname(req) || undefined);
+    // QA credentials are terminal input. A malformed, expired, disabled, or
+    // otherwise forbidden QA credential must never fall through to Clerk.
     if (qaResult) return qaResult;
   }
 
@@ -78,6 +74,17 @@ export async function authenticateRequest(
     }
 
     return { status: 'unavailable', reason: 'enrollment_unavailable' };
+  }
+}
+
+function requestHostname(req: NextRequest): string {
+  if (req.nextUrl?.hostname) return req.nextUrl.hostname;
+  try {
+    return new URL(req.url).hostname;
+  } catch {
+    // A malformed synthetic request cannot crash authentication. Retain the
+    // signed QA context's host so verification still fails closed on mismatch.
+    return '';
   }
 }
 

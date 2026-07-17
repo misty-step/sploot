@@ -142,6 +142,34 @@ export async function assertFinalEmbeddingSchema(databaseUrl = process.env.DATAB
              FROM pg_class c
              JOIN pg_namespace n ON n.oid = c.relnamespace
              JOIN pg_index i ON i.indexrelid = c.oid
+             JOIN pg_class t ON t.oid = i.indrelid
+             JOIN pg_am am ON am.oid = c.relam
+             JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = i.indkey[0]
+             JOIN pg_opclass opc ON opc.oid = i.indclass[0]
+             WHERE n.nspname = 'public'
+             AND c.relname = 'asset_embeddings_hnsw_idx'
+             AND t.relname = 'asset_embeddings'
+             AND am.amname = 'hnsw'
+             AND i.indnkeyatts = 1
+             AND opc.opcname = 'vector_cosine_ops'
+             AND format_type(a.atttypid, a.atttypmod) = 'vector(768)'
+             AND pg_get_indexdef(i.indexrelid) ~ 'USING hnsw \\(image_embedding vector_cosine_ops\\)'
+             AND pg_get_indexdef(i.indexrelid) ~ 'm=''?24''?'
+             AND pg_get_indexdef(i.indexrelid) ~ 'ef_construction=''?128''?')
+        AND (SELECT count(*) = 1
+             FROM pg_attribute
+             WHERE attrelid = 'public.asset_embeddings'::regclass
+             AND attname = 'owner_user_id'
+             AND attnotnull)
+        AND (SELECT count(*) = 1
+             FROM pg_attribute
+             WHERE attrelid = 'public.asset_embeddings'::regclass
+             AND attname = 'asset_deleted_at'
+             AND NOT attnotnull)
+        AND (SELECT count(*) = 1
+             FROM pg_class c
+             JOIN pg_namespace n ON n.oid = c.relnamespace
+             JOIN pg_index i ON i.indexrelid = c.oid
              WHERE n.nspname = 'public'
              AND c.relname = 'asset_embeddings_pending_next_attempt_idx'
              AND pg_get_userbyid(c.relowner) = 'sploot_stripe_schema_migrator')

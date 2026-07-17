@@ -154,14 +154,30 @@ web app itself calls.
 **Request:**
 
 ```json
-{ "query": "distracted boyfriend", "limit": 30, "threshold": 0.2 }
+{ "query": "distracted boyfriend", "limit": 30, "threshold": 0.12, "favoriteOnly": false, "tagId": null }
 ```
 
 - `query` (string, required, max 500 chars)
-- `limit` (number, optional, default 30)
-- `threshold` (number, optional, 0–1, default 0.2) — results below this
+- `limit` (number, optional, default 30, max 100) — each page is bounded.
+- `cursor` (string, optional) — opaque cursor from the previous response for
+  deterministic keyset traversal. It is the pagination mechanism for results
+  beyond the legacy offset window.
+- `offset` (number, optional, default 0, max 500) — retained for backwards
+  compatibility on the first 500 results; do not combine it with `cursor`.
+- `threshold` (number, optional, 0–1, default 0.12; see
+  `apps/web/lib/search-config.ts`) — results below this
   similarity are not returned; a real miss is an empty `results` array, never
   low-similarity padding.
+- `favoriteOnly` (boolean, optional, default `false`) — restrict results to
+  favorited assets.
+- `tagId` (string, optional) — restrict results to assets carrying this tag.
+
+Semantic results are always ordered by descending vector relevance, with asset
+id as the deterministic tie-breaker. The gallery shuffle seed is not part of
+this endpoint. Each opaque cursor is cryptographically signed by the server
+ and binds the authenticated token owner, embedding-model revision, normalized
+ query, threshold, relevance order, favorite/tag filters, and page size; a
+tampered, cross-user, or cross-context replay returns `400 {"error":"Search cursor does not match search context"}` before vector or database work.
 
 **`200`:**
 
@@ -181,11 +197,15 @@ web app itself calls.
   ],
   "query": "distracted boyfriend",
   "total": 1,
+  "hasMore": false,
   "limit": 30,
-  "threshold": 0.2,
+  "threshold": 0.12,
   "processingTime": 245
 }
 ```
+
+When `hasMore` is true, the response also includes `nextCursor`; send it as
+`cursor` on the next request.
 
 **Errors:** `400` missing/invalid/too-long query · `401` bad or missing token ·
 `403 {"code":"enrollment_closed"}` admission paused ·

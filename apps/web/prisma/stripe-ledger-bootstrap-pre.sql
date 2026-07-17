@@ -137,12 +137,14 @@ $$;
 -- before any upgrade DDL runs, including grants left by an older installation.
 DO $$
 DECLARE fn RECORD;
+  object_kind TEXT;
 BEGIN
-  FOR fn IN SELECT p.oid::regprocedure AS signature
+  FOR fn IN SELECT p.oid::regprocedure AS signature, p.prokind
             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
             WHERE n.nspname = 'public' AND p.prosecdef
   LOOP
-    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, sploot_stripe_app, sploot_stripe_ledger_issuer, sploot_stripe_ledger_consumer, sploot_stripe_ledger_maintenance, sploot_stripe_schema_migrator', fn.signature);
+    object_kind := CASE WHEN fn.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END;
+    EXECUTE format('REVOKE ALL ON %s %s FROM PUBLIC, sploot_stripe_app, sploot_stripe_ledger_issuer, sploot_stripe_ledger_consumer, sploot_stripe_ledger_maintenance, sploot_stripe_schema_migrator', object_kind, fn.signature);
   END LOOP;
 END
 $$;

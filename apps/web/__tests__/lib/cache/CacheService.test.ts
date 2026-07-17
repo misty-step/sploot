@@ -45,6 +45,7 @@ class MockBackend implements ICacheBackend {
 }
 
 describe('CacheService', () => {
+  const imageModel = 'image-model:v1';
   let mockBackend: MockBackend;
   let cacheService: CacheService;
 
@@ -119,11 +120,27 @@ describe('CacheService', () => {
 
       expect(keys.some(key => key.startsWith('txt:'))).toBe(true);
     });
+
+    it('does not let known legacy 32-bit collisions cross-contaminate embeddings', async () => {
+      await cacheService.setTextEmbedding('a!', [0.1], 'model');
+
+      await expect(cacheService.getTextEmbedding('`@', 'model')).resolves.toBeNull();
+      await expect(cacheService.getTextEmbedding('a!', 'model')).resolves.toEqual([0.1]);
+
+      const keys = Array.from(mockBackend.getStore().keys());
+      expect(keys.some((key) => key.startsWith('txt:v2:'))).toBe(true);
+    });
+
+    it('ignores pre-v2 text keys so old lossy entries migrate by expiry', async () => {
+      await mockBackend.set('txt:0:2cg', [9, 9, 9]);
+
+      await expect(cacheService.getTextEmbedding('a!', '')).resolves.toBeNull();
+    });
   });
 
   describe('Image Embeddings', () => {
     it('should return null on cache miss', async () => {
-      const result = await cacheService.getImageEmbedding('abc123');
+      const result = await cacheService.getImageEmbedding('abc123', imageModel);
       expect(result).toBeNull();
     });
 
@@ -131,8 +148,8 @@ describe('CacheService', () => {
       const embedding = [0.7, 0.8, 0.9];
       const checksum = 'abc123def456';
 
-      await cacheService.setImageEmbedding(checksum, embedding);
-      const result = await cacheService.getImageEmbedding(checksum);
+      await cacheService.setImageEmbedding(checksum, imageModel, embedding);
+      const result = await cacheService.getImageEmbedding(checksum, imageModel);
 
       expect(result).toEqual(embedding);
     });
@@ -141,24 +158,39 @@ describe('CacheService', () => {
       const embedding = [0.1, 0.2, 0.3];
       const checksum = 'test-checksum';
 
-      await cacheService.setImageEmbedding(checksum, embedding);
+      await cacheService.setImageEmbedding(checksum, imageModel, embedding);
 
       const store = mockBackend.getStore();
       const keys = Array.from(store.keys());
 
-      // Image embedding keys should be img:checksum
-      expect(keys.some(key => key === `img:${checksum}`)).toBe(true);
+      // Image embedding keys are versioned and bound to the exact model revision.
+      expect(keys.some(key => key.startsWith('img:v2:'))).toBe(true);
+    });
+
+    it('does not cross-contaminate the same checksum across model revisions', async () => {
+      const checksum = 'same-image-checksum';
+      const modelV1 = 'image-model:v1';
+      const modelV2 = 'image-model:v2';
+
+      await cacheService.setImageEmbedding(checksum, modelV1, [0.1]);
+
+      await expect(cacheService.getImageEmbedding(checksum, modelV2)).resolves.toBeNull();
+      await expect(cacheService.getImageEmbedding(checksum, modelV1)).resolves.toEqual([0.1]);
+
+      await cacheService.setImageEmbedding(checksum, modelV2, [0.2]);
+      await expect(cacheService.getImageEmbedding(checksum, modelV1)).resolves.toEqual([0.1]);
+      await expect(cacheService.getImageEmbedding(checksum, modelV2)).resolves.toEqual([0.2]);
     });
 
     it('should track stats for image embedding hits and misses', async () => {
       const embedding = [0.1, 0.2, 0.3];
 
       // Miss
-      await cacheService.getImageEmbedding('checksum1');
+      await cacheService.getImageEmbedding('checksum1', imageModel);
 
       // Set and hit
-      await cacheService.setImageEmbedding('checksum1', embedding);
-      await cacheService.getImageEmbedding('checksum1');
+      await cacheService.setImageEmbedding('checksum1', imageModel, embedding);
+      await cacheService.getImageEmbedding('checksum1', imageModel);
 
       const stats = cacheService.getStats();
       expect(stats.hits).toBe(1);
@@ -170,6 +202,8 @@ describe('CacheService', () => {
   describe('Search Results', () => {
     const userId = 'user-123';
     const query = 'funny cats';
+    const searchModelV1 = 'clip-model:v1';
+    const searchModelV2 = 'clip-model:v2';
     const filters = { limit: 50, threshold: 0.3 };
     const results = [
       { id: 'asset-1', score: 0.95 },
@@ -230,6 +264,95 @@ describe('CacheService', () => {
 
       expect(cached1).toEqual(results1);
       expect(cached2).toEqual(results2);
+    });
+
+    it('should use the canonical query for paged search cache keys', async () => {
+      const page = { results, total: 2, hasMore: false };
+
+      await cacheService.setSearchResultPage(userId, '  Funny   Cats  ', filters, page.results, page.total, page.hasMore);
+
+      await expect(cacheService.getSearchResultPage(userId, 'funny cats', filters)).resolves.toEqual(page);
+    });
+
+    it('does not let known legacy 32-bit collisions cross-contaminate page results', async () => {
+      const firstPage = [{ id: 'asset-a' }];
+      const secondPage = [{ id: 'asset-b' }];
+
+      await cacheService.setSearchResultPage(userId, 'a!', filters, firstPage, 1, false);
+      await cacheService.setSearchResultPage(userId, '`@', filters, secondPage, 1, false);
+
+      await expect(cacheService.getSearchResultPage(userId, 'a!', filters)).resolves.toEqual({
+        results: firstPage,
+        total: 1,
+        hasMore: false,
+      });
+      await expect(cacheService.getSearchResultPage(userId, '`@', filters)).resolves.toEqual({
+        results: secondPage,
+        total: 1,
+        hasMore: false,
+      });
+    });
+
+    it('does not reuse search pages when the embedding model revision changes', async () => {
+      const page = [{ id: 'asset-model-v1' }];
+
+      await cacheService.setSearchResultPage(
+        userId,
+        query,
+        filters,
+        page,
+        1,
+        false,
+        undefined,
+        searchModelV1,
+      );
+
+      await expect(cacheService.getSearchResultPage(userId, query, filters, searchModelV2)).resolves.toBeNull();
+      await expect(cacheService.getSearchResultPage(userId, query, filters, searchModelV1)).resolves.toEqual({
+        results: page,
+        total: 1,
+        hasMore: false,
+      });
+    });
+
+    it('should isolate every semantic page-shaping filter', async () => {
+      const baseFilters = {
+        limit: 10,
+        threshold: 0.2,
+        sort: 'relevance' as const,
+        direction: 'desc' as const,
+        favoriteOnly: false,
+        tagId: null,
+        cursor: 'cursor-a',
+      };
+      const variants = [
+        { ...baseFilters, threshold: 0.3 },
+        { ...baseFilters, sort: 'relevance' as const, direction: 'desc' as const, favoriteOnly: true },
+        { ...baseFilters, tagId: 'tag-cats' },
+        { ...baseFilters, limit: 20 },
+        { ...baseFilters, cursor: 'cursor-b' },
+      ];
+
+      await Promise.all(variants.map((variant, index) =>
+        cacheService.setSearchResultPage(userId, 'cats', variant, [{ id: `asset-${index}` }], 1, false)
+      ));
+
+      await expect(cacheService.getSearchResultPage(userId, 'cats', baseFilters)).resolves.toBeNull();
+      for (const [index, variant] of variants.entries()) {
+        await expect(cacheService.getSearchResultPage(userId, 'cats', variant)).resolves.toEqual({
+          results: [{ id: `asset-${index}` }],
+          total: 1,
+          hasMore: false,
+        });
+      }
+
+      const reordered = { cursor: 'cursor-a', tagId: null, favoriteOnly: false, direction: 'desc' as const, sort: 'relevance' as const, threshold: 0.2, limit: 10 };
+      await cacheService.setSearchResultPage(userId, 'cats', reordered, [{ id: 'asset-reordered' }], 1, false);
+      await expect(cacheService.getSearchResultPage(userId, 'cats', baseFilters)).resolves.toEqual({
+        results: [{ id: 'asset-reordered' }],
+        total: 1,
+        hasMore: false,
+      });
     });
 
     it('should use search: prefix for search result keys', async () => {
@@ -319,13 +442,13 @@ describe('CacheService', () => {
   describe('Cache Invalidation', () => {
     it('should clear all caches when no namespace provided', async () => {
       await cacheService.setTextEmbedding('text1', [0.1]);
-      await cacheService.setImageEmbedding('img1', [0.2]);
+      await cacheService.setImageEmbedding('img1', imageModel, [0.2]);
       await cacheService.setSearchResults('user1', 'query', { limit: 50 }, []);
 
       await cacheService.clear();
 
       const text = await cacheService.getTextEmbedding('text1');
-      const image = await cacheService.getImageEmbedding('img1');
+      const image = await cacheService.getImageEmbedding('img1', imageModel);
       const search = await cacheService.getSearchResults('user1', 'query', { limit: 50 });
 
       expect(text).toBeNull();
@@ -335,12 +458,12 @@ describe('CacheService', () => {
 
     it('should clear only specified namespace', async () => {
       await cacheService.setTextEmbedding('text1', [0.1]);
-      await cacheService.setImageEmbedding('img1', [0.2]);
+      await cacheService.setImageEmbedding('img1', imageModel, [0.2]);
 
       await cacheService.clear('txt');
 
       const text = await cacheService.getTextEmbedding('text1');
-      const image = await cacheService.getImageEmbedding('img1');
+      const image = await cacheService.getImageEmbedding('img1', imageModel);
 
       expect(text).toBeNull();
       expect(image).toEqual([0.2]); // Image cache should still exist
@@ -366,12 +489,12 @@ describe('CacheService', () => {
     it('should handle mixed cache operations correctly', async () => {
       // Add various types of cached data
       await cacheService.setTextEmbedding('query1', [0.1, 0.2]);
-      await cacheService.setImageEmbedding('img1', [0.3, 0.4]);
+      await cacheService.setImageEmbedding('img1', imageModel, [0.3, 0.4]);
       await cacheService.setSearchResults('user1', 'cats', { limit: 10 }, [{ id: '1' }]);
 
       // Retrieve them
       const text = await cacheService.getTextEmbedding('query1');
-      const image = await cacheService.getImageEmbedding('img1');
+      const image = await cacheService.getImageEmbedding('img1', imageModel);
       const search = await cacheService.getSearchResults('user1', 'cats', { limit: 10 });
 
       expect(text).toEqual([0.1, 0.2]);
@@ -389,8 +512,8 @@ describe('CacheService', () => {
       await cacheService.getTextEmbedding('miss1');
 
       // Hit
-      await cacheService.setImageEmbedding('img1', [0.1]);
-      await cacheService.getImageEmbedding('img1');
+      await cacheService.setImageEmbedding('img1', imageModel, [0.1]);
+      await cacheService.getImageEmbedding('img1', imageModel);
 
       // Miss
       await cacheService.getSearchResults('user1', 'query', { limit: 10 });

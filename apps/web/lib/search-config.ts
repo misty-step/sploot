@@ -39,3 +39,14 @@ export const SIMILARITY_NEAR_BOUNDARY = 0.25;
 
 /** Default number of results the client requests. */
 export const SEARCH_DEFAULT_LIMIT = 50;
+
+/** Maximum number of results any one semantic-search page may return. */
+export const SEARCH_MAX_LIMIT = 100;
+
+/** Maximum opaque cursor size accepted by the API and DB seam. */
+export const SEARCH_MAX_CURSOR_LENGTH = 8192;
+
+/** Canonical text form shared by cursor contexts and search cache keys. */
+export function normalizeSearchQuery(query: string): string {
+  return query.trim().toLowerCase().replace(/\s+/g, ' ');
+}

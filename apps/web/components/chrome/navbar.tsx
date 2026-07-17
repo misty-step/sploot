@@ -64,6 +64,7 @@ export function Navbar({
         {/* Left section: SPLOOT branding with pile mark */}
         <Link
           href="/app"
+          prefetch={false}
           aria-label="Sploot - Home"
           className="flex min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)] items-center gap-2 group no-underline hover:opacity-80 transition-opacity duration-150"
         >

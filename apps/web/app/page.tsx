@@ -26,11 +26,14 @@ export default async function Home() {
   return (
     <div className="relative min-h-screen bg-sploot-workbench text-sploot-ink">
       {/* Top navigation */}
-      <nav className="fixed top-0 right-0 z-50 flex items-center gap-3 p-5 sm:p-6">
+      <nav
+        aria-label="landing navigation"
+        className="absolute top-0 right-0 z-50 flex items-center gap-2 p-3 sm:gap-3 sm:p-6"
+      >
         <ThemeToggle />
         <Link
           href="/sign-in"
-          className="sploot-press-sm inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border-[2px] border-sploot-ink bg-sploot-panel px-4 font-sans text-sm font-extrabold lowercase tracking-normal text-sploot-ink"
+          className="sploot-press-sm inline-flex min-h-[var(--sploot-touch-target)] min-w-11 items-center justify-center rounded-full border-[2px] border-sploot-ink bg-sploot-panel px-3 py-2 text-xs font-extrabold lowercase tracking-normal text-sploot-ink sm:px-4 sm:text-sm"
         >
           sign in
         </Link>

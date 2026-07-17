@@ -40,4 +40,5 @@ regexes = [
   '''sk_test_your_[A-Za-z0-9_]+''',
   '''vercel_blob_(?:your_token_here|x+)''',
   '''r8_your_[A-Za-z0-9_]+''',
+  '''pk_test_Y2xlcmsuZXhhbXBsZS5jb20k''', # deterministic QA-build placeholder Clerk publishable key; decodes to clerk.example.com$, not a real credential
 ]

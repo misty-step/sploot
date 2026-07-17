@@ -14,7 +14,7 @@ import { getMobileFeedDockPaddingClass } from '@/components/library/image-grid-l
 import { ImageGridErrorBoundary } from '@/components/library/image-grid-error-boundary';
 import { MobileCommandDock } from '@/components/chrome/mobile-command-dock';
 import { AssetIntegrityBanner } from '@/components/library/asset-integrity-banner';
-import { SearchBar, SearchLoadingScreen, SimilarityScoreLegend, QuerySyntaxIndicator } from '@/components/search';
+import { SearchBar, SimilarityScoreLegend } from '@/components/search';
 import { cn } from '@/lib/utils';
 import { UploadZone } from '@/components/upload/upload-zone';
 import { Heart } from 'lucide-react';
@@ -27,14 +27,22 @@ import { useSearchShortcut, useSlashSearchShortcut } from '@/hooks/use-keyboard-
 import { CommandPalette, useCommandPalette } from '@/components/chrome/command-palette';
 import { useSortPreferences } from '@/hooks/use-sort-preferences';
 import { useFilter } from '@/contexts/filter-context';
-import { UploadButton } from '@/components/chrome/upload-button';
-import { FilterChips, type FilterType } from '@/components/chrome/filter-chips';
-import { SortDropdown } from '@/components/chrome/sort-dropdown';
+import { type FilterType } from '@/components/chrome/filter-chips';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { PileFilterRail, StickerTab, IconButton } from '@/components/sploot';
-import { RotateCcw, Shuffle, X, Trash2 } from 'lucide-react';
+import {
+  PileFilterRail,
+  GalleryMobileStatusline,
+  GallerySpine,
+  IconButton,
+  QueryTokenHighlight,
+} from '@/components/sploot';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { X, Trash2 } from 'lucide-react';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
 import { track } from '@/lib/analytics';
 import { logger } from '@/lib/observability-logger';
@@ -60,9 +68,8 @@ function AppPageClient() {
     setTagFilter,
   } = useFilter();
 
-  const [isClient, setIsClient] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<any>(null);
-  const [showMetadata, setShowMetadata] = useState(false);
+  const detailReturnFocusRef = useRef<HTMLElement | null>(null);
 
   // Command palette state
   const { isOpen: isCommandPaletteOpen, openPalette, closePalette } = useCommandPalette();
@@ -87,7 +94,6 @@ function AppPageClient() {
     getSortColumn,
   } = useSortPreferences();
   const [failedEmbeddings, setFailedEmbeddings] = useState<EmbeddingQueueItem[]>([]);
-  const [cookingCount, setCookingCount] = useState(0);
   const [showRetryModal, setShowRetryModal] = useState(false);
   const [retryProgress, setRetryProgress] = useState({ current: 0, total: 0, processing: false });
 
@@ -153,7 +159,6 @@ function AppPageClient() {
     total,
     integrityIssue,
     error: libraryError,
-    tasteMetadata,
     loadAssets,
     updateAsset,
     deleteAsset,
@@ -177,13 +182,17 @@ function AppPageClient() {
     updateAsset: updateSearchAsset,
     deleteAsset: deleteSearchAsset,
     search: runInlineSearch,
+    hasMore: searchHasMore,
+    loadMore: loadMoreSearch,
     metadata: searchMetadata,
-  } = useSearchAssets(debouncedLibraryQuery, { limit: SEARCH_DEFAULT_LIMIT, threshold: SEARCH_SIMILARITY_FLOOR, shuffleSeed });
-
-  // Set isClient flag once mounted
-  useEffect(() => {
-    queueMicrotask(() => setIsClient(true));
-  }, []);
+    total: searchTotal,
+    resultQuery: searchResultQuery,
+  } = useSearchAssets(debouncedLibraryQuery, {
+    limit: SEARCH_DEFAULT_LIMIT,
+    threshold: SEARCH_SIMILARITY_FLOOR,
+    favoriteOnly: bangersOnly,
+    tagId: tagIdParam,
+  });
 
   // Global keyboard shortcut to focus search (Cmd+K / Ctrl+K)
   const focusSearchBar = useCallback(() => {
@@ -201,15 +210,12 @@ function AppPageClient() {
   // Also add "/" key shortcut to focus search
   useSlashSearchShortcut(focusSearchBar);
 
-  // Monitor failed embeddings + the in-flight "cooking" count for the
-  // command bar's mono readout (row two of the AFD-NAV-1 chrome).
+  // Monitor failed embeddings for the retry action.
   useEffect(() => {
     const checkFailedEmbeddings = () => {
       const manager = getEmbeddingQueueManager();
       const failed = manager.getFailedItems();
       setFailedEmbeddings(failed);
-      const status = manager.getStatus();
-      setCookingCount(status.queued + status.processing);
     };
 
     // Check immediately
@@ -277,18 +283,10 @@ function AppPageClient() {
     };
   }, []);
 
-  const filteredSearchAssets = useMemo(() => {
-    let results = searchAssets;
-    if (bangersOnly) {
-      results = results.filter((asset) => asset.favorite);
-    }
-    if (tagIdParam) {
-      results = results.filter((asset) => asset.tags?.some((tag) => tag.id === tagIdParam));
-    }
-    return results;
-  }, [searchAssets, bangersOnly, tagIdParam]);
-
-  const searchHitCount = filteredSearchAssets.length;
+  // Semantic search applies favorite/tag filters in SQL before pagination and
+  // total computation. Keeping the server page intact preserves global count
+  // and empty-state truthfulness.
+  const filteredSearchAssets = searchAssets;
 
   // Update tag name when we have the asset data
   useEffect(() => {
@@ -380,6 +378,13 @@ function AppPageClient() {
     }
   }, []);
 
+  const scrollGridToTop = useCallback(() => {
+    const behavior = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 'auto'
+      : 'smooth';
+    gridScrollRef.current?.scrollTo({ top: 0, behavior });
+  }, []);
+
   const gridContainerClassName = cn(
     'h-full overflow-y-auto overflow-x-hidden',
     getMobileFeedDockPaddingClass(failedEmbeddings.length)
@@ -420,6 +425,10 @@ function AppPageClient() {
 
   const trimmedLibraryQuery = libraryQuery.trim();
   const isSearching = trimmedLibraryQuery.length > 0;
+  const searchResultIsCurrent = searchResultQuery === trimmedLibraryQuery;
+  const searchHitCount = searchResultIsCurrent ? searchTotal : 0;
+  const searchVisibleCount = filteredSearchAssets.length;
+  const currentSearchMetadata = searchResultIsCurrent ? searchMetadata : null;
   const showMobileSearch = isMobileSearchOpen || isSearching;
   const {
     piles: automaticPiles,
@@ -430,6 +439,14 @@ function AppPageClient() {
     limit: 6,
     minAssets: 50,
   });
+
+  const gallerySearchState = searchError
+    ? 'error' as const
+    : searchLoading || (isSearching && !searchResultIsCurrent)
+      ? 'loading' as const
+      : isSearching
+        ? 'ready' as const
+        : 'idle' as const;
 
   const selectedPile = useMemo(
     () => automaticPiles.find((pile) => pile.id === selectedPileId) ?? null,
@@ -470,11 +487,15 @@ function AppPageClient() {
   }, [isSearching, filteredSearchAssets, selectedPile, selectedPileAssetIds, sortedAssets]);
 
   const activeLoading = isSearching ? searchLoading : loading;
-  const activeHasMore = hasMore;
+  const activeHasMore = isSearching ? searchHasMore : hasMore;
 
   const handleLoadMore = useCallback(() => {
+    if (isSearching) {
+      loadMoreSearch();
+      return;
+    }
     loadAssets();
-  }, [loadAssets]);
+  }, [isSearching, loadAssets, loadMoreSearch]);
 
   const handleAssetUpdate = useCallback(
     (id: string, updates: Partial<(typeof assets)[number]>) => {
@@ -510,14 +531,14 @@ function AppPageClient() {
 
     const hasFilters = Boolean(bangersOnly || tagIdParam);
 
-    if (filteredSearchAssets.length > 0) {
+    if (searchResultIsCurrent && filteredSearchAssets.length > 0) {
       const key = `${query}|${filteredSearchAssets.map((asset) => asset.id).join(',')}`;
       if (lastResultsTrackedRef.current !== key) {
         track({
           name: 'search_results_shown',
           properties: {
             count: filteredSearchAssets.length,
-            latency: searchMetadata?.latencyMs ?? 0,
+            latency: currentSearchMetadata?.latencyMs ?? 0,
             hasFilters,
           },
         });
@@ -539,11 +560,12 @@ function AppPageClient() {
     }
   }, [
     isSearching,
+    searchResultIsCurrent,
     searchLoading,
     searchError,
     filteredSearchAssets,
     trimmedLibraryQuery,
-    searchMetadata?.latencyMs,
+    currentSearchMetadata?.latencyMs,
     bangersOnly,
     tagIdParam,
   ]);
@@ -566,9 +588,12 @@ function AppPageClient() {
         });
       }
 
-      router.push(`/app/meme/${asset.id}`);
+      detailReturnFocusRef.current = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+      setSelectedAsset(asset);
     },
-    [filteredSearchAssets, isSearching, router]
+    [filteredSearchAssets, isSearching]
   );
 
   // Handler for performing the actual delete with modal integration
@@ -656,248 +681,128 @@ function AppPageClient() {
     queueMicrotask(() => setSelectedAsset(null));
   }, [trimmedLibraryQuery]);
 
-  // Reset metadata visibility when modal opens/closes
-  useEffect(() => {
-    queueMicrotask(() => setShowMetadata(false));
-  }, [selectedAsset]);
-
   return (
-    <div className="flex h-[calc(100vh-48px)] md:h-[calc(100vh-56px)] flex-col">
-      <div className="border-b-[3px] border-sploot-cyan bg-background px-2 pb-2 pt-2 md:px-6 2xl:px-10">
-        <div className="mx-auto w-full max-w-7xl 2xl:max-w-[1920px]">
-          <header className="flex flex-col gap-2">
-            {/* Row one — the search pill owns the center; upload/retry sit
-                right of it. Compact ink-mini grammar continues from the
-                global mast's help/theme controls above. */}
-            <div className="hidden items-center gap-3 md:flex">
+    <div className="flex h-[calc(100vh-48px)] flex-col bg-sploot-workbench md:h-[calc(100vh-56px)]">
+      <GalleryMobileStatusline
+        total={total}
+        query={trimmedLibraryQuery}
+        loading={searchLoading || (isSearching && !searchResultIsCurrent)}
+        error={searchError}
+        resultCount={searchHitCount}
+        latencyMs={currentSearchMetadata?.latencyMs}
+        className="md:hidden"
+      />
+      <div className="flex min-h-0 flex-1">
+        <GallerySpine
+          query={libraryQuery}
+          searchState={gallerySearchState}
+          searchResultCount={searchHitCount}
+          searchLatencyMs={currentSearchMetadata?.latencyMs}
+          searchModel={currentSearchMetadata?.model}
+          searchCached={currentSearchMetadata?.cached}
+          searchError={searchError}
+          piles={automaticPiles}
+          total={total}
+          embeddedAssetCount={pileEmbeddedAssetCount}
+          selectedPileId={selectedPileId}
+          onSearch={handleInlineSearch}
+          onSelectPile={(pileId) => {
+            setSelectedPileId(pileId);
+            requestAnimationFrame(scrollGridToTop);
+          }}
+          onUpload={() => setShowUploadPanel((previous) => !previous)}
+          onShuffle={() => handleSortChange('shuffle', 'desc')}
+          onRetry={handleBulkRetry}
+          retryCount={failedEmbeddings.length}
+          sortBy={sortBy}
+          sortOrder={sortOrder}
+          onSortChange={handleSortChange}
+        />
+
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="border-b-[3px] border-sploot-ink bg-sploot-paper px-3 py-2 md:hidden">
+            <div className={cn(showMobileSearch ? 'block' : 'hidden')}>
               <SearchBar
                 onSearch={handleInlineSearch}
                 inline
                 initialQuery={queryParam}
-                searchState={
-                  searchLoading ? 'loading' :
-                    isTyping ? 'typing' :
-                      searchError ? 'error' :
-                        libraryQuery && searchAssets.length > 0 ? 'success' :
-                          libraryQuery && searchAssets.length === 0 ? 'no-results' :
-                            'idle'
-                }
-                resultCount={searchAssets.length}
-                className="min-w-0 flex-1"
-                placeholder="search your memes..."
-              />
-
-              <div className="flex flex-none items-center gap-2">
-                <UploadButton
-                  onClick={() => setShowUploadPanel((prev) => !prev)}
-                  isActive={showUploadPanel}
-                  size="lg"
-                  showLabel={true}
-                />
-                {failedEmbeddings.length > 0 && (
-                  <Button
-                    variant="accent"
-                    size="lg"
-                    onClick={handleBulkRetry}
-                    className="gap-2"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                    RETRY ({failedEmbeddings.length})
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Hairline divider between the search row and the filter row. */}
-            <Separator className="hidden md:block" />
-
-            {/* Row two — hairline-divided: tabs, sort, shuffle read left to
-                right; the machine's mono readout anchors the right edge. */}
-            <div className="hidden items-center justify-between gap-3 md:flex">
-              <div className="flex flex-wrap items-center gap-2">
-                <FilterChips
-                  activeFilter={bangersOnly ? 'bangers' : 'all'}
-                  onFilterChange={handleBangersFilterChange}
-                  size="sm"
-                  showLabels={true}
-                />
-                <SortDropdown
-                  value={sortBy}
-                  direction={sortOrder}
-                  onChange={handleSortChange}
-                />
-                <IconButton
-                  label="shuffle the pile"
-                  pressed={sortBy === 'shuffle'}
-                  onClick={() => {
-                    handleSortChange('shuffle', 'desc');
-                    requestAnimationFrame(() => {
-                      gridScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                    });
-                  }}
-                >
-                  <Shuffle />
-                </IconButton>
-
-                {tagIdParam && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={clearTagFilter}
-                    className="gap-1"
-                  >
-                    <X className="h-4 w-4" />
-                    <span className="hidden sm:inline">clear</span>
-                    <span>#{activeTagName ?? 'tag'}</span>
-                  </Button>
-                )}
-              </div>
-
-              <span className="shrink-0 font-mono text-xs lowercase tabular-nums text-muted-foreground">
-                {total.toLocaleString()} in the pile
-                {cookingCount > 0 ? ` · ${cookingCount.toLocaleString()} cooking` : ''}
-              </span>
-            </div>
-
-            <div className={cn('md:hidden', showMobileSearch ? 'block' : 'hidden')}>
-              <SearchBar
-                onSearch={handleInlineSearch}
-                inline
-                initialQuery={queryParam}
-                searchState={
-                  searchLoading ? 'loading' :
-                    isTyping ? 'typing' :
-                      searchError ? 'error' :
-                        libraryQuery && searchAssets.length > 0 ? 'success' :
-                          libraryQuery && searchAssets.length === 0 ? 'no-results' :
-                            'idle'
-                }
-                resultCount={searchAssets.length}
+                searchState={searchLoading || (isSearching && !searchResultIsCurrent) ? 'loading' : searchError ? 'error' : isSearching ? 'success' : 'idle'}
+                resultCount={searchHitCount}
                 className="w-full"
-                placeholder="search your memes..."
+                placeholder="type words. get the picture."
                 autoFocus={showMobileSearch && !isSearching}
               />
+              <QueryTokenHighlight query={libraryQuery} />
             </div>
-
             {!isSearching && !bangersOnly && !tagIdParam && (
-              <div className="flex items-center gap-2">
-                <PileFilterRail
-                  piles={automaticPiles}
-                  total={total}
-                  embeddedAssetCount={pileEmbeddedAssetCount}
-                  selectedPileId={selectedPileId}
-                  onSelectPile={(pileId) => {
-                    setSelectedPileId(pileId);
-                    requestAnimationFrame(() => {
-                      gridScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                    });
-                  }}
-                  className="min-w-0 flex-1"
-                />
-              </div>
+              <PileFilterRail
+                piles={automaticPiles}
+                total={total}
+                embeddedAssetCount={pileEmbeddedAssetCount}
+                selectedPileId={selectedPileId}
+                onSelectPile={setSelectedPileId}
+                className="mt-2"
+              />
             )}
+          </div>
 
-            {(!isSearching && tagIdParam) && (
-              <div className="flex flex-wrap items-center gap-2">
-                <StickerTab tone="violet" className="animate-sploot-pop">
-                  filtering tag #{activeTagName ?? tagIdParam.slice(0, 6)}
-                </StickerTab>
-              </div>
-            )}
+          <div className="hidden items-center gap-3 border-b-[3px] border-sploot-ink bg-sploot-paper px-5 py-3 md:flex">
+            <span className="font-mono text-[0.65rem] lowercase">{isSearching ? `matches for “${trimmedLibraryQuery}”` : 'the shelf'}</span>
+            <span className="h-px flex-1 bg-sploot-ink" />
+            <span aria-live="polite" className="font-mono text-[0.65rem] lowercase tabular-nums">
+              {isSearching ? `${searchHitCount.toLocaleString()} matches` : `${total.toLocaleString()} in the pile`}
+              {currentSearchMetadata?.latencyMs !== undefined ? ` · ${currentSearchMetadata.latencyMs} ms` : ''}
+            </span>
+          </div>
 
-            {(!isSearching && sortBy === 'taste' && tasteMetadata) && (
-              <Alert>
-                <AlertDescription className="flex flex-wrap items-center gap-2">
-                  <Heart className="h-4 w-4 text-sploot-coral" />
-                  {tasteMetadata.status === 'ready' ? (
-                    <span>
-                      taste mode: {tasteMetadata.embeddedBangerCount.toLocaleString()} embedded bangers are ranking this feed.
-                    </span>
-                  ) : (
-                    <span>
-                      taste mode needs {tasteMetadata.minimumBangerEmbeddings.toLocaleString()} embedded bangers; {tasteMetadata.embeddedBangerCount.toLocaleString()} ready.
-                    </span>
-                  )}
-                </AlertDescription>
-              </Alert>
-            )}
+          {showUploadPanel && (
+            <div className="animate-sploot-slide-up border-b-[3px] border-sploot-ink bg-sploot-paper-warm p-3 md:p-5">
+              <UploadZone
+                isOnDashboard
+                onUploadComplete={(stats) => {
+                  refresh();
+                  void reloadPiles();
+                  if (stats.uploaded > 0) showToast(`✓ ${stats.uploaded} ${stats.uploaded === 1 ? 'file' : 'files'} uploaded`, 'success', 2000);
+                  setTimeout(() => setShowUploadPanel(false), 2000);
+                }}
+              />
+            </div>
+          )}
 
-            {showUploadPanel && (
-              <div className="animate-sploot-slide-up border-[3px] border-dashed border-sploot-ink rounded-[var(--sploot-radius)] bg-secondary p-3 md:p-5">
-                <UploadZone
-                  isOnDashboard={true}
-                  onUploadComplete={(stats) => {
-                    // Refresh the gallery
-                    refresh();
-                    void reloadPiles();
+          {isSearching && searchResultIsCurrent && !searchError && !searchLoading && searchHitCount > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-dashed border-sploot-ink px-4 py-2">
+              <span className="font-mono text-xs lowercase">
+                showing {searchVisibleCount} of {searchHitCount} matches · scores are human match percentages
+              </span>
+              <SimilarityScoreLegend />
+            </div>
+          )}
 
-                    // Show brief success toast
-                    if (stats.uploaded > 0) {
-                      showToast(
-                        `✓ ${stats.uploaded} ${stats.uploaded === 1 ? 'file' : 'files'} uploaded`,
-                        'success',
-                        2000
-                      );
-                    }
-
-                    // Auto-close upload panel after brief delay
-                    setTimeout(() => setShowUploadPanel(false), 2000);
-                  }}
-                />
-              </div>
-            )}
-
-            {isSearching && (
-              <div className="space-y-3">
-                {/* Query Syntax Indicator */}
-                {!searchError && !searchLoading && (
-                  <QuerySyntaxIndicator
-                    query={trimmedLibraryQuery}
-                    resultCount={searchHitCount}
-                    filters={{
-                      favorites: bangersOnly || undefined,
-                      tagName: activeTagName || undefined,
-                    }}
-                    latencyMs={searchMetadata?.latencyMs}
-                  />
-                )}
-
-                {searchError && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{searchError}</AlertDescription>
-                  </Alert>
-                )}
-
-                {!searchError && !searchLoading && filteredSearchAssets.length > 0 && (
-                  <>
-                    <Alert>
-                      <AlertDescription className="flex flex-col gap-1">
-                        <span>
-                          showing <span className="font-semibold">{searchHitCount}</span> matches for &quot;<span className="font-medium">{trimmedLibraryQuery}</span>&quot;
-                        </span>
-                      </AlertDescription>
-                    </Alert>
-                    <SimilarityScoreLegend />
-                  </>
-                )}
-
-                {!searchError && !searchLoading && searchHitCount === 0 && (
-                  <Alert>
-                    <AlertDescription>
-                      no matches yet for &quot;<span className="font-medium">{trimmedLibraryQuery}</span>&quot;. try adjusting your search.
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </div>
-            )}
-
-            {!isSearching && libraryError && (
-              <Alert variant="destructive">
-                <AlertDescription>{libraryError}</AlertDescription>
-              </Alert>
-            )}
-          </header>
-        </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <ImageGridErrorBoundary
+              onRetry={isSearching ? () => runInlineSearch() : () => loadAssets()}
+            >
+              <ImageGrid
+                assets={activeAssets}
+                loading={activeLoading}
+                error={isSearching ? searchError : libraryError}
+                onRetry={isSearching ? () => runInlineSearch() : () => loadAssets()}
+                hasMore={activeHasMore}
+                dimmed={isSearching && (!searchResultIsCurrent || searchLoading)}
+                onLoadMore={handleLoadMore}
+                onAssetUpdate={handleAssetUpdate}
+                onAssetDelete={handleAssetDelete}
+                onAssetSelect={handleAssetSelect}
+                containerClassName={cn(gridContainerClassName, 'w-full')}
+                onScrollContainerReady={handleScrollContainerReady}
+                onUploadClick={() => setShowUploadPanel(true)}
+                showSimilarityScores={isSearching}
+                emptyStateVariant={isSearching && (bangersOnly || tagIdParam) ? 'filtered' : isSearching ? 'search' : (bangersOnly || tagIdParam || selectedPile) ? 'filtered' : 'first-use'}
+                emptyStateSearchQuery={isSearching ? trimmedLibraryQuery : undefined}
+              />
+            </ImageGridErrorBoundary>
+          </div>
+        </main>
       </div>
 
       {/* Asset integrity warning banner */}
@@ -908,39 +813,6 @@ function AppPageClient() {
             window.open('/api/assets/audit', '_blank');
           }}
         />
-      )}
-
-      {/* Show loading screen when search is executing */}
-      {searchLoading && libraryQuery ? (
-        <SearchLoadingScreen query={libraryQuery} />
-      ) : (
-        <div className="flex-1 overflow-hidden">
-          <div className="mx-auto flex h-full w-full flex-col overflow-hidden 2xl:max-w-[1920px]">
-            <div className="h-full flex-1 overflow-hidden">
-              <ImageGridErrorBoundary
-                onRetry={isSearching ? () => runInlineSearch() : () => loadAssets()}
-              >
-                <ImageGrid
-                  assets={activeAssets}
-                  loading={activeLoading}
-                  hasMore={activeHasMore}
-                  onLoadMore={handleLoadMore}
-                  onAssetUpdate={handleAssetUpdate}
-                  onAssetDelete={handleAssetDelete}
-                  onAssetSelect={handleAssetSelect}
-                  containerClassName={cn(gridContainerClassName, 'w-full')}
-                  onScrollContainerReady={handleScrollContainerReady}
-                  onUploadClick={() => setShowUploadPanel(true)}
-                  showSimilarityScores={isSearching}
-                  emptyStateVariant={
-                    isSearching ? 'search' : (bangersOnly || tagIdParam || selectedPile) ? 'filtered' : 'first-use'
-                  }
-                  emptyStateSearchQuery={isSearching ? trimmedLibraryQuery : undefined}
-                />
-              </ImageGridErrorBoundary>
-            </div>
-          </div>
-        </div>
       )}
 
       <MobileCommandDock
@@ -962,7 +834,7 @@ function AppPageClient() {
         onShuffle={() => {
           handleSortChange('shuffle', 'desc');
           requestAnimationFrame(() => {
-            gridScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+            scrollGridToTop();
           });
         }}
         onSortChange={handleSortChange}
@@ -971,154 +843,134 @@ function AppPageClient() {
         sortOrder={sortOrder}
       />
 
-      {/* Image Preview Modal */}
-      {selectedAsset && (
-        <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => setSelectedAsset(null)}
-        >
-          {/* Top action bar - all controls in one row */}
-          <div className="fixed top-[calc(1rem+env(safe-area-inset-top))] left-[calc(1rem+env(safe-area-inset-left))] right-[calc(1rem+env(safe-area-inset-right))] flex items-center justify-between z-[60]">
-            {/* Left side: empty for now, could add image counter later */}
-            <div />
-
-            {/* Right side: Action buttons + Close */}
-            <div className="flex items-center gap-2">
-              {/* Favorite button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  'h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-sploot-coral',
-                  selectedAsset.favorite && 'text-sploot-coral hover:text-sploot-coral'
-                )}
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  try {
-                    const res = await fetch(`/api/assets/${selectedAsset.id}`, {
-                      method: 'PATCH',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ favorite: !selectedAsset.favorite }),
-                    });
-
-                    if (res.ok) {
-                      // Update modal state
-                      setSelectedAsset({ ...selectedAsset, favorite: !selectedAsset.favorite });
-                      // Update grid state
-                      handleAssetUpdate(selectedAsset.id, { favorite: !selectedAsset.favorite });
-                    }
-                  } catch (error) {
-                    logError('Failed to toggle favorite:', error);
-                  }
-                }}
-                aria-label={selectedAsset.favorite ? 'Remove from bangers' : 'Add to bangers'}
-              >
-                <Heart className={cn('h-5 w-5', selectedAsset.favorite && 'fill-current')} />
-              </Button>
-
-              {/* Share button */}
-              <ShareButton
-                assetId={selectedAsset.id}
-                blobUrl={selectedAsset.blobUrl}
-                filename={selectedAsset.filename}
-                mimeType={selectedAsset.mime}
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-sploot-cyan"
-              />
-
-              {/* Delete button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-sploot-red"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  // Check if skip confirmation preference is set
-                  const shouldSkip = openDeleteConfirmation({
-                    id: selectedAsset.id,
-                    imageUrl: selectedAsset.thumbnailUrl || selectedAsset.blobUrl,
-                    imageName: selectedAsset.filename,
-                  });
-
-                  // If skip preference is set, delete immediately
-                  if (shouldSkip) {
-                    handleDeleteAsset(selectedAsset.id);
-                  }
-                }}
-                aria-label="Delete meme"
-              >
-                <Trash2 className="h-5 w-5" />
-              </Button>
-
-              {/* Close button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedAsset(null);
-                }}
-                className="h-10 w-10 bg-black/50 backdrop-blur-sm text-white hover:bg-black/70 hover:text-white"
-                aria-label="Close preview"
-              >
-                <X className="w-6 h-6" />
-              </Button>
-            </div>
-          </div>
-
-          <div
-            className="max-w-4xl max-h-[90vh] relative"
-            onClick={(e) => e.stopPropagation()}
-            onMouseMove={() => setShowMetadata(true)}
-            onMouseLeave={() => setShowMetadata(false)}
+      <Dialog open={Boolean(selectedAsset)} onOpenChange={(open) => !open && setSelectedAsset(null)}>
+        {selectedAsset && (
+          <DialogContent
+            showCloseButton={false}
+            role="dialog"
+            aria-modal="true"
+            overlayClassName="bg-sploot-void/90"
+            onEscapeKeyDown={() => setSelectedAsset(null)}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              detailReturnFocusRef.current?.focus();
+            }}
+            className="relative max-h-[calc(100vh-2rem)] max-w-6xl overflow-auto bg-sploot-panel p-0 sm:rounded-[var(--sploot-radius)]"
           >
-            <div className="relative w-full h-full">
-              {isVideoMimeType(selectedAsset.mime) ? (
-                <video
-                  src={resolveQaSeedSrc(selectedAsset.blobUrl)}
-                  poster={selectedAsset.thumbnailUrl ? resolveQaSeedSrc(selectedAsset.thumbnailUrl) : undefined}
-                  controls
-                  autoPlay
-                  loop
-                  playsInline
-                  className="max-w-full max-h-[90vh] object-contain"
-                />
-              ) : (
-                <Image
-                  src={resolveQaSeedSrc(selectedAsset.blobUrl)}
-                  alt={selectedAsset.filename}
-                  width={1920}
-                  height={1080}
-                  className="max-w-full max-h-[90vh] object-contain"
-                  priority
-                  unoptimized={isAnimatedImageMimeType(selectedAsset.mime)}
-                />
-              )}
+            <DialogTitle className="sr-only">{selectedAsset.filename}</DialogTitle>
+            <DialogDescription className="sr-only">Meme detail and actions</DialogDescription>
+            <div className="flex w-full min-w-0 flex-col">
+              <div className="flex items-center justify-between gap-3 border-b-[3px] border-sploot-ink px-4 py-3 pr-16">
+                <div className="min-w-0">
+                  <p className="truncate font-display text-lg font-normal lowercase">{selectedAsset.filename}</p>
+                  <p className="font-mono text-[0.65rem] lowercase text-muted-foreground">detail · esc closes</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)]"
+                    onClick={async () => {
+                      try {
+                        const favorite = !selectedAsset.favorite;
+                        const res = await fetch(`/api/assets/${selectedAsset.id}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ favorite }),
+                        });
+                        if (res.ok) {
+                          setSelectedAsset({ ...selectedAsset, favorite });
+                          handleAssetUpdate(selectedAsset.id, { favorite });
+                        }
+                      } catch (error) {
+                        logError('Failed to toggle favorite:', error);
+                      }
+                    }}
+                    aria-label={selectedAsset.favorite ? 'Remove from bangers' : 'Add to bangers'}
+                  >
+                    <Heart className={cn('h-5 w-5', selectedAsset.favorite && 'fill-current text-sploot-magenta')} />
+                  </Button>
+                  <ShareButton
+                    assetId={selectedAsset.id}
+                    blobUrl={selectedAsset.blobUrl}
+                    filename={selectedAsset.filename}
+                    mimeType={selectedAsset.mime}
+                    variant="ghost"
+                    size="icon"
+                    className="min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)]"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)] hover:bg-sploot-red"
+                    onClick={() => {
+                      const shouldSkip = openDeleteConfirmation({
+                        id: selectedAsset.id,
+                        imageUrl: selectedAsset.thumbnailUrl || selectedAsset.blobUrl,
+                        imageName: selectedAsset.filename,
+                      });
+                      if (shouldSkip) handleDeleteAsset(selectedAsset.id);
+                    }}
+                    aria-label="Delete meme"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </Button>
+                </div>
+              </div>
+              <div className="grid w-full min-w-0 gap-4 p-4 md:grid-cols-[minmax(0,1fr)_16rem]">
+                <div className="relative flex min-h-[min(60vh,38rem)] min-w-0 w-full max-w-full items-center justify-center overflow-hidden rounded-[var(--sploot-radius-inner)] border-2 border-sploot-ink bg-sploot-paper-warm p-3">
+                  {isVideoMimeType(selectedAsset.mime) ? (
+                    <video
+                      src={resolveQaSeedSrc(selectedAsset.blobUrl)}
+                      poster={selectedAsset.thumbnailUrl ? resolveQaSeedSrc(selectedAsset.thumbnailUrl) : undefined}
+                      controls
+                      autoPlay
+                      loop
+                      playsInline
+                      className="block h-auto w-auto max-h-full max-w-full object-contain"
+                    />
+                  ) : (
+                    <Image
+                      src={resolveQaSeedSrc(selectedAsset.blobUrl)}
+                      alt={selectedAsset.filename}
+                      fill
+                      sizes="(max-width: 768px) 100vw, 70vw"
+                      className="object-contain p-3"
+                      priority
+                      unoptimized={isAnimatedImageMimeType(selectedAsset.mime)}
+                    />
+                  )}
+                </div>
+                <dl aria-label="meme metadata" className="min-w-0 max-w-full self-start overflow-hidden rounded-[var(--sploot-radius-inner)] border-2 border-dashed border-sploot-ink p-3 font-mono text-xs lowercase">
+                  <div className="flex justify-between gap-3 border-b border-dashed border-sploot-ink/50 py-2"><dt>index</dt><dd>—</dd></div>
+                  <div className="flex justify-between gap-3 border-b border-dashed border-sploot-ink/50 py-2"><dt>match</dt><dd>{typeof selectedAsset.relevance === 'number' ? `${Math.round(selectedAsset.relevance)}%` : '—'}</dd></div>
+                  <div className="flex justify-between gap-3 border-b border-dashed border-sploot-ink/50 py-2"><dt>cosine</dt><dd>{typeof selectedAsset.similarity === 'number' ? selectedAsset.similarity.toFixed(2) : '—'}</dd></div>
+                  <div className="flex justify-between gap-3 border-b border-dashed border-sploot-ink/50 py-2"><dt>size</dt><dd>{selectedAsset.width && selectedAsset.height ? `${selectedAsset.width}×${selectedAsset.height}` : '—'}</dd></div>
+                  <div className="flex justify-between gap-3 py-2"><dt>mime</dt><dd>{selectedAsset.mime}</dd></div>
+                </dl>
+              </div>
+              {/* Keep the visible close control last in DOM order so the dialog's
+                  native media controls remain keyboard reachable without stealing
+                  the reverse-tab boundary from the primary dismissal action. */}
+              <IconButton
+                label="Close preview"
+                size="dock"
+                className="absolute right-4 top-3 z-10 min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)]"
+                onClick={() => setSelectedAsset(null)}
+              >
+                <X className="h-5 w-5" />
+              </IconButton>
             </div>
-
-            {/* Metadata overlay - shows on hover */}
-            <div className={cn(
-              "absolute bottom-4 left-4 right-4 bg-black/50 backdrop-blur-sm p-4 transition-opacity duration-300",
-              showMetadata ? 'opacity-100' : 'opacity-0'
-            )}>
-              <p className="text-white font-medium">{selectedAsset.filename}</p>
-              <p className="text-white/80 text-sm mt-1">
-                {selectedAsset.width && selectedAsset.height ? `${selectedAsset.width}×${selectedAsset.height} • ` : ''}
-                {selectedAsset.mime.split('/')[1].toUpperCase()}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+          </DialogContent>
+        )}
+      </Dialog>
 
       {/* Retry Progress Modal */}
-      {showRetryModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-card border-[3px] border-sploot-ink rounded-[var(--sploot-radius)] sploot-shadow-lg p-6 max-w-sm w-full">
-            <h3 className="text-lg font-semibold text-foreground mb-4">
-              regenerating embeddings
-            </h3>
+      <Dialog open={showRetryModal} onOpenChange={(open) => !open && setShowRetryModal(false)}>
+        {showRetryModal && (
+          <DialogContent className="max-w-sm bg-sploot-panel p-6" showCloseButton={false}>
+            <DialogTitle className="text-lg font-semibold lowercase">regenerating embeddings</DialogTitle>
+            <DialogDescription className="sr-only">Embedding retry progress</DialogDescription>
 
             <div className="space-y-4">
               <div className="flex items-center justify-center">
@@ -1179,15 +1031,15 @@ function AppPageClient() {
                 </p>
               )}
             </div>
-          </div>
-        </div>
-      )}
+          </DialogContent>
+        )}
+      </Dialog>
 
       {/* Command Palette */}
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={closePalette}
-        onUpload={() => router.push('/app/upload')}
+        onUpload={() => setShowUploadPanel(true)}
         onSignOut={async () => {
           await signOut();
           router.push('/');

@@ -38,13 +38,13 @@ const asset: Asset = {
 };
 
 describe('mobile meme feed layout contract', () => {
-  it('uses one readable column on phones while preserving denser larger breakpoints', () => {
+  it('uses a two-up image-first contact sheet on phones while preserving denser larger breakpoints', () => {
     expect(IMAGE_GRID_BREAKPOINT_COLS).toEqual({
       default: 4,
       1280: 4,
       1024: 3,
       768: 2,
-      640: 1,
+      640: 2,
     });
   });
 

@@ -76,6 +76,13 @@ interface Baseline {
   note: string;
 }
 
+interface SlowLatencySample {
+  elapsedMs: number;
+  query: string;
+  rep: number;
+  context: string;
+}
+
 function parseArgs(argv: string[]) {
   const args = {
     teardown: false,
@@ -226,6 +233,7 @@ async function main() {
     const correctSims: number[] = [];
     const irrelevantSims: number[] = [];
     const latencies: number[] = [];
+    const slowLatencySamples: SlowLatencySample[] = [];
 
     for (const q of queriesFile.queries) {
       const expected = new Set(q.expected);
@@ -238,7 +246,20 @@ async function main() {
           limit: SEARCH_LIMIT,
           threshold,
         })) as Array<{ pathname: string; distance: number }>;
-        latencies.push(performance.now() - start);
+        const elapsedMs = performance.now() - start;
+        latencies.push(elapsedMs);
+        slowLatencySamples.push({
+          elapsedMs,
+          query: q.query,
+          rep,
+          context: JSON.stringify({
+            threshold,
+            favoriteOnly: false,
+            tagId: null,
+            limit: SEARCH_LIMIT,
+            sort: 'relevance',
+          }),
+        });
       }
 
       const rankedIds = rows.map((r) => idByPathname.get(r.pathname) ?? r.pathname);
@@ -348,6 +369,15 @@ async function main() {
     }
 
     if (failures.length > 0) {
+      console.error('\n== Slowest latency samples (failure diagnostics) ==');
+      for (const sample of slowLatencySamples
+        .sort((left, right) => right.elapsedMs - left.elapsedMs)
+        .slice(0, 10)) {
+        console.error(
+          `  ${sample.elapsedMs.toFixed(1)}ms rep=${sample.rep + 1} ` +
+          `query="${sample.query}" context=${sample.context}`
+        );
+      }
       console.error('\nEVAL FAILED:');
       for (const f of failures) console.error(`  - ${f}`);
       process.exitCode = 1;

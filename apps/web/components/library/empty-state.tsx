@@ -45,7 +45,7 @@ interface EmptyStateProps {
 /** One demo tile spec for the example pile. */
 const DEMO_PILE = [
   { file: 'IMG_0041.png', index: 'v#00041', doodle: 'skull', state: 'dim' },
-  { file: 'cat_scream.png', index: 'v#00107', doodle: 'cat', state: 'match', score: '0.91' },
+  { file: 'cat_scream.png', index: 'v#00107', doodle: 'cat', state: 'match' },
   { file: 'rxn_774.png', index: 'v#00774', doodle: 'sob', state: 'dim' },
 ] as const;
 
@@ -336,7 +336,7 @@ export function EmptyState({
               {isSearch ? 'no matches in the pile' : 'no memes match these filters'}
             </h2>
             {isSearch && searchQuery ? (
-              <div className="border-[3px] border-sploot-ink bg-sploot-yellow px-3 py-1.5 font-mono text-sm tracking-normal text-sploot-ink">
+              <div className="border-[3px] border-sploot-ink bg-sploot-yellow px-3 py-1.5 font-mono text-sm tracking-normal text-sploot-on-yellow">
                 “{searchQuery}”
               </div>
             ) : null}
@@ -386,7 +386,6 @@ export function EmptyState({
                   index={cell.index}
                   doodle={cell.doodle}
                   state={cell.state}
-                  score={'score' in cell ? cell.score : undefined}
                   animate={false}
                   className="min-h-[110px]"
                 />
