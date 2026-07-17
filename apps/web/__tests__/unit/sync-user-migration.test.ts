@@ -27,6 +27,7 @@ type UserIdentityRecord = {
   createdAt?: Date;
   updatedAt?: Date;
 };
+type LibraryExportRecord = { id: string; ownerUserId: string };
 
 const createState = () => ({
   users: [] as UserRecord[],
@@ -34,6 +35,7 @@ const createState = () => ({
   tags: [] as TagRecord[],
   searchLogs: [] as SearchLogRecord[],
   identities: [] as UserIdentityRecord[],
+  exports: [] as LibraryExportRecord[],
 });
 
 describe('syncUser migration', () => {
@@ -170,6 +172,10 @@ describe('syncUser migration', () => {
           },
         };
 
+        $extends() {
+          return this;
+        }
+
         $use() {
           // no-op for middleware stubs
         }
@@ -178,6 +184,18 @@ describe('syncUser migration', () => {
         storageQuotaReservation = { updateMany: async () => ({ count: 0 }) };
         uploadToken = { updateMany: async () => ({ count: 0 }) };
         embeddingRateLease = { updateMany: async () => ({ count: 0 }) };
+        libraryExport = {
+          updateMany: async ({ where, data }: any) => {
+            let count = 0;
+            state.exports.forEach((row, idx) => {
+              if (row.ownerUserId === where.ownerUserId) {
+                state.exports[idx] = { ...row, ...data };
+                count++;
+              }
+            });
+            return { count };
+          },
+        };
 
         $executeRaw = async () => 0;
 
@@ -213,6 +231,7 @@ describe('syncUser migration', () => {
       resultCount: 1,
       queryTime: 5,
     });
+    __dbState.exports.push({ id: 'export1', ownerUserId: oldUserId });
 
     await syncUser(newUserId, email);
 
@@ -223,6 +242,7 @@ describe('syncUser migration', () => {
     expect(__dbState.assets.every((a: AssetRecord) => a.ownerUserId === newUserId)).toBe(true);
     expect(__dbState.tags.every((t: TagRecord) => t.ownerUserId === newUserId)).toBe(true);
     expect(__dbState.searchLogs.every((s: SearchLogRecord) => s.userId === newUserId)).toBe(true);
+    expect(__dbState.exports.every((e: LibraryExportRecord) => e.ownerUserId === newUserId)).toBe(true);
     expect(__dbState.identities).toContainEqual(expect.objectContaining({
       userId: newUserId,
       provider: 'clerk',
