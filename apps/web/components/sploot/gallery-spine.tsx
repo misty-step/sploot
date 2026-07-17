@@ -9,6 +9,7 @@ import { visiblePileFilters } from './pile-filter-rail';
 import { GalleryPipeline, type GalleryPipelineState } from './gallery-pipeline';
 import { QueryTokenHighlight } from './query-token-highlight';
 import { cn } from '@/lib/utils';
+import { useHydrated } from '@/hooks/use-hydrated';
 
 interface GallerySpineProps {
   query: string;
@@ -60,6 +61,7 @@ export function GallerySpine({
   onSortChange,
 }: GallerySpineProps) {
   const visiblePiles = visiblePileFilters(piles);
+  const isUploadActionReady = useHydrated();
 
   return (
     <aside
@@ -141,7 +143,14 @@ export function GallerySpine({
       </dl>
 
       <div className="mt-auto flex flex-col gap-2 p-3">
-        <Button type="button" variant="primary" onClick={onUpload} className="w-full justify-center gap-2">
+        <Button
+          type="button"
+          variant="primary"
+          onClick={onUpload}
+          className="w-full justify-center gap-2"
+          aria-label="UPLOAD"
+          data-upload-action-ready={isUploadActionReady ? 'true' : 'false'}
+        >
           <Upload className="h-4 w-4" /> upload
         </Button>
         <div className="grid grid-cols-2 gap-2">

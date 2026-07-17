@@ -244,8 +244,8 @@ test.describe('authenticated seeded gallery', () => {
         console.log(`[gallery] detail checked ${theme} ${viewport.label}`);
 
         const uploadButton = viewport.width < 768
-          ? page.getByRole('button', { name: 'upload meme' })
-          : page.getByRole('button', { name: 'upload', exact: true }).first();
+          ? page.getByRole('button', { name: 'UPLOAD', exact: true })
+          : page.getByRole('button', { name: 'UPLOAD', exact: true }).first();
         await uploadButton.click();
         await expect(page.getByText('drag chaos here')).toBeVisible();
         await assertCleanSurface(page);

@@ -28,7 +28,7 @@ describe('MobileCommandDock', () => {
     const user = userEvent.setup();
     render(<MobileCommandDock {...props} />);
 
-    await user.click(screen.getByRole('button', { name: /upload meme/i }));
+    await user.click(screen.getByRole('button', { name: /UPLOAD/i }));
     await user.click(screen.getByRole('button', { name: /search memes/i }));
     await user.click(screen.getByRole('button', { name: /shuffle memes/i }));
 
