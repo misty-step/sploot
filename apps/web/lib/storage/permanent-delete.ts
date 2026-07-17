@@ -42,6 +42,41 @@ export function replicasForPermanentDelete(rows: AssetReplicaRow[], fallback: As
  * used by explicit DELETE and the retention purge; outbox rows survive asset
  * deletion and are idempotent via their deterministic identity.
  */
+/**
+ * A physical object is fenced from deletion whenever any other still-live
+ * asset also references it (by exact provider+delivery-URL identity via its
+ * replica ledger, or via the raw legacy Asset columns before any replica row
+ * exists). Cutover explicitly models more than one live Asset row sharing a
+ * single legacy storage key/URL (see storage-portability.ts commitCutover's
+ * per-manifest-entry `assets` loop); deletion must honor the same invariant
+ * or it would physically destroy an object a sibling asset still serves.
+ */
+async function hasLiveSharedReference(
+  tx: CleanupTransaction,
+  assetId: string,
+  replica: StorageReplica,
+): Promise<boolean> {
+  const rows = await tx.$queryRawUnsafe<Array<{ shared: boolean }>>(
+    `SELECT (
+       EXISTS (
+         SELECT 1 FROM asset_storage_replicas r
+         JOIN assets a ON a.id = r.asset_id
+         WHERE r.asset_id <> $1 AND a.deleted_at IS NULL
+           AND r.provider = $2 AND r.delivery_url = $3
+       )
+       OR EXISTS (
+         SELECT 1 FROM assets a2
+         WHERE a2.id <> $1 AND a2.deleted_at IS NULL
+           AND (a2.blob_url = $3 OR a2.thumbnail_url = $3)
+       )
+     ) AS shared`,
+    assetId,
+    replica.provider,
+    replica.url,
+  );
+  return rows[0]?.shared === true;
+}
+
 export async function enqueueAssetReplicaCleanup(
   tx: CleanupTransaction,
   assetId: string,
@@ -51,8 +86,11 @@ export async function enqueueAssetReplicaCleanup(
     'SELECT provider, source_key, logical_key, delivery_url, active FROM asset_storage_replicas WHERE asset_id=$1',
     assetId,
   );
-  const replicas = replicasForPermanentDelete(rows, fallback);
-  for (const replica of replicas) {
+  const candidates = replicasForPermanentDelete(rows, fallback);
+  const replicas: StorageReplica[] = [];
+  for (const replica of candidates) {
+    if (await hasLiveSharedReference(tx, assetId, replica)) continue;
+    replicas.push(replica);
     await tx.$executeRawUnsafe(
       "INSERT INTO storage_cleanup_outbox (id, asset_id, provider, key, url, action, status, updated_at) VALUES (md5(concat_ws(chr(0), $1, $2, $3, $4, $5)), $1, $2, $3, $4, $5, 'pending', NOW()) ON CONFLICT (id) DO NOTHING",
       assetId,

@@ -135,6 +135,61 @@ describe('portable storage contract', () => {
     fetchMock.mockRestore();
   });
 
+  it('signs and persists the sha256 checksum as object metadata, and bounds the request with a timeout', async () => {
+    const config = createStorageConfig({ provider: 's3', endpoint: 'https://objects.example.test', publicUrlBase: 'https://objects.example.test/cdn/base', bucket: 'sploot', accessKeyId: 'public-id', secretAccessKey: 'secret' });
+    const target = new S3CompatibleObjectStore(config);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(bytes, { status: 200, headers: { 'content-length': String(bytes.byteLength), 'content-type': 'image/png', 'x-amz-meta-sha256': metadata.sha256 } }));
+    await target.put('assets/checksum.png', bytes, metadata);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0]! as [URL, RequestInit & { headers: Record<string, string> }];
+    expect(init.headers['x-amz-meta-sha256']).toBe(metadata.sha256);
+    // S3 rejects unsigned x-amz-* headers with SignatureDoesNotMatch, so the
+    // checksum header must be part of the signed-headers set the Authorization
+    // header declares, not merely present on the request.
+    const authorization = init.headers.authorization;
+    expect(authorization).toBeDefined();
+    const signedHeaders = authorization!.match(/SignedHeaders=([^,]+)/)?.[1]?.split(';') ?? [];
+    expect(signedHeaders).toContain('x-amz-meta-sha256');
+    // The request never hangs indefinitely against an unresponsive provider.
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    fetchMock.mockRestore();
+  });
+
+  it('bounds the legacy Vercel Blob read with a request timeout', async () => {
+    const store = new VercelObjectStore('https://blob.example.test');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(bytes, { status: 200, headers: { 'content-length': String(bytes.byteLength), 'content-type': 'image/png' } }));
+    await store.get('assets/a.png');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0]! as [string, RequestInit];
+    expect(init?.signal).toBeInstanceOf(AbortSignal);
+    fetchMock.mockRestore();
+  });
+
+  it('surfaces a structured, actionable error instead of a raw abort exception when an S3-compatible request times out', async () => {
+    const target = new S3CompatibleObjectStore(createStorageConfig({ provider: 's3', endpoint: 'https://objects.example.test', publicUrlBase: 'https://objects.example.test/cdn/base', bucket: 'sploot', accessKeyId: 'public-id', secretAccessKey: 'secret' }));
+    const timeoutError = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(timeoutError);
+    await expect(target.put('assets/slow.png', bytes, metadata)).rejects.toThrow(/timed out after 30000ms/);
+    fetchMock.mockRestore();
+  });
+
+  it('surfaces a structured, actionable error instead of a raw abort exception when a legacy Vercel Blob read times out', async () => {
+    const store = new VercelObjectStore('https://blob.example.test');
+    const timeoutError = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(timeoutError);
+    await expect(store.get('assets/a.png')).rejects.toThrow(/timed out after 30000ms/);
+    fetchMock.mockRestore();
+  });
+
+  it('does not mask a non-timeout fetch failure behind the timeout message', async () => {
+    const store = new VercelObjectStore('https://blob.example.test');
+    const networkError = new Error('getaddrinfo ENOTFOUND blob.example.test');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(networkError);
+    await expect(store.get('assets/a.png')).rejects.toThrow('getaddrinfo ENOTFOUND blob.example.test');
+    fetchMock.mockRestore();
+  });
+
   it('reads back the exact URL returned by a provider', async () => {
     const calls: string[] = [];
     const provider = {

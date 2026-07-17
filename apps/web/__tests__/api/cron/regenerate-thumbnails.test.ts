@@ -10,11 +10,17 @@ vi.mock('next/headers', () => ({
 }));
 
 // Mock lib/db
+const mockTx = {
+  asset: { update: vi.fn() },
+  assetStorageReplica: { createMany: vi.fn() },
+};
 const mockPrisma = {
   asset: {
     findMany: vi.fn(),
     update: vi.fn(),
   },
+  $transaction: vi.fn(async (fn: (tx: typeof mockTx) => unknown) => fn(mockTx)),
+  $executeRawUnsafe: vi.fn(),
 };
 
 let mockDatabaseAvailable = true;
@@ -92,6 +98,9 @@ describe('/api/cron/regenerate-thumbnails', () => {
     });
     mockDel.mockResolvedValue(undefined);
     mockPrisma.asset.update.mockResolvedValue({});
+    mockTx.asset.update.mockResolvedValue({});
+    mockTx.assetStorageReplica.createMany.mockResolvedValue({ count: 1 });
+    mockPrisma.$executeRawUnsafe.mockResolvedValue(1);
   });
 
   it('rejects requests without the cron secret', async () => {
@@ -120,7 +129,7 @@ describe('/api/cron/regenerate-thumbnails', () => {
     const meta = await sharp(uploadedBuffer).metadata();
     expect(Math.abs(meta.width! / meta.height! - 800 / 1000)).toBeLessThan(0.02);
 
-    expect(mockPrisma.asset.update).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockTx.asset.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'asset-1' },
       data: expect.objectContaining({
         thumbnailUrl: 'https://blob.example/original-thumb-new.png',
@@ -130,6 +139,22 @@ describe('/api/cron/regenerate-thumbnails', () => {
         thumbnailStorageSha256: expect.any(String),
         storageConfigFingerprint: expect.any(String),
       }),
+    }));
+
+    // The new thumbnail object is recorded in the replica ledger in the same
+    // transaction, or a later permanent delete would never enqueue it for
+    // provider cleanup (it would have no row at all once any row exists for
+    // this asset — see permanent-delete.ts's authoritative-rows comment).
+    expect(mockTx.assetStorageReplica.createMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.arrayContaining([
+        expect.objectContaining({
+          assetId: 'asset-1',
+          rendition: 'thumbnail',
+          logicalKey: 'user/original-thumb-new.png',
+          deliveryUrl: 'https://blob.example/original-thumb-new.png',
+          active: true,
+        }),
+      ]),
     }));
 
     expect(mockDel).toHaveBeenCalledWith('https://blob.example/original-thumb.png');
@@ -148,7 +173,7 @@ describe('/api/cron/regenerate-thumbnails', () => {
     expect(res.status).toBe(200);
     expect(body.regenerated).toBe(1);
     expect(body.failed).toBe(0);
-    expect(mockPrisma.asset.update).toHaveBeenCalledTimes(1);
+    expect(mockTx.asset.update).toHaveBeenCalledTimes(1);
   });
 
   it('skips thumbnails whose aspect already matches the original', async () => {
@@ -183,5 +208,58 @@ describe('/api/cron/regenerate-thumbnails', () => {
     expect(body.failures[0].id).toBe('asset-1');
     expect(body.alreadyCorrect).toBe(1);
     expect(body.nextCursor).toBe('asset-2'); // third candidate signals more work
+  });
+
+  it('prefers the raw legacy source key over the inventoried logical key when recording an old-thumbnail cleanup failure', async () => {
+    const inventoriedAsset = {
+      ...baseAsset,
+      storageProvider: 'vercel',
+      thumbnailStorageSourceKey: 'user/raw-legacy-thumb.png',
+      thumbnailStorageKey: 'legacy/asset-1/thumbnail-deadbeef',
+    };
+    mockPrisma.asset.findMany.mockResolvedValue([inventoriedAsset]);
+    const legacySquareThumb = await png(256, 256);
+    const original = await png(800, 1000);
+    fetchMock
+      .mockResolvedValueOnce(fetchResponse(legacySquareThumb))
+      .mockResolvedValueOnce(fetchResponse(original));
+    mockDel.mockRejectedValueOnce(new Error('provider outage'));
+
+    const res = await GET(makeRequest());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.failed).toBe(1);
+    // The replica ledger write and asset update still committed before the
+    // best-effort old-object delete failed, so the new thumbnail is not lost.
+    expect(mockTx.assetStorageReplica.createMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
+      expect.any(String),
+      'asset-1',
+      'vercel',
+      'user/raw-legacy-thumb.png',
+      'https://blob.example/original-thumb.png',
+      'provider outage',
+    );
+  });
+
+  it('rolls back the asset update when the replica ledger write fails, and cleans up the newly uploaded object', async () => {
+    mockPrisma.asset.findMany.mockResolvedValue([baseAsset]);
+    const legacySquareThumb = await png(256, 256);
+    const original = await png(800, 1000);
+    fetchMock
+      .mockResolvedValueOnce(fetchResponse(legacySquareThumb))
+      .mockResolvedValueOnce(fetchResponse(original));
+    mockTx.assetStorageReplica.createMany.mockRejectedValueOnce(new Error('permission denied'));
+
+    const res = await GET(makeRequest());
+    const body = await res.json();
+
+    expect(body.failed).toBe(1);
+    expect(body.failures[0].reason).toContain('permission denied');
+    // Cleanup deletes the just-uploaded object since the transaction rolled back.
+    expect(mockDel).toHaveBeenCalledWith('https://blob.example/original-thumb-new.png');
+    // The stale-crop thumbnail was never touched since the write never committed.
+    expect(mockDel).not.toHaveBeenCalledWith('https://blob.example/original-thumb.png');
   });
 });
