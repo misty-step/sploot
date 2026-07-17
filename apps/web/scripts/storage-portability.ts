@@ -112,8 +112,44 @@ async function inventory(limit: number, cursor?: string) {
     if (assets.length < limit) break;
   }
   if (failures > 0) throw new Error('Inventory parity failed for ' + failures + ' asset(s); resume from the recorded cursor after repairing source objects');
+  // A full, uninterrupted pass above re-seeds every non-deleted asset's
+  // current original/thumbnail keys, so it is now safe to prune whatever no
+  // longer matches any live asset.
+  await pruneStaleMigrationEntries(prisma);
   const durableManifest = await prisma.storageMigrationEntry.findMany({ orderBy: { logicalKey: 'asc' }, select: { logicalKey: true, sourceKey: true, rendition: true, sourceProvider: true, size: true, sha256: true, contentType: true } });
   process.stdout.write(JSON.stringify(durableManifest) + '\n');
+}
+
+/**
+ * A never-claimed ('pending') migration-entry row that no longer matches any
+ * live asset's *current* original/thumbnail keys is orphaned — most commonly
+ * a thumbnail entry whose physical object was superseded by
+ * regenerate-thumbnails after it was inventoried (the crop-fix cron rewrites
+ * `thumbnail_storage_key`/`thumbnail_storage_source_key` and deletes the old
+ * object independently of this ledger). Left in place, a later commitCutover
+ * would fail closed for the whole batch on that single entry ("no matching
+ * live asset"), even though every other entry is fine.
+ *
+ * Only callable by inventory(), after a full, uninterrupted pass has re-seeded
+ * every live asset's current keys — otherwise an asset merely outside the
+ * current page's cursor range would look orphaned and get pruned by mistake.
+ * In-flight ('copying') and terminal ('verified'/'rolled_back') rows are
+ * never touched: pruning only ever discards work nothing has started yet.
+ */
+export async function pruneStaleMigrationEntries(db: PrismaClient): Promise<number> {
+  const result = await db.$executeRaw(Prisma.sql`
+    DELETE FROM storage_migration_entries e
+    WHERE e.status = 'pending'
+      AND NOT EXISTS (
+        SELECT 1 FROM assets a
+        WHERE a.deleted_at IS NULL
+          AND (
+            (e.rendition = 'original' AND (a.storage_source_key = e.source_key OR a.storage_key = e.logical_key))
+            OR (e.rendition = 'thumbnail' AND (a.thumbnail_storage_source_key = e.source_key OR a.thumbnail_storage_key = e.logical_key))
+          )
+      )
+  `);
+  return result;
 }
 async function ensureCutoverState(config: StorageConfig, digest: string, phase: 'dual-write' | 'target' | 'rollback'): Promise<void> {
   const fingerprint = storageConfigFingerprint(config);
@@ -177,17 +213,48 @@ export async function commitCutover(manifest: MigrationManifestEntry[], config: 
 }
 
 
-async function restoreCutoverMappings(config: StorageConfig, digest: string): Promise<void> {
+export async function restoreCutoverMappings(config: StorageConfig, digest: string, database: PrismaClient = prisma): Promise<void> {
   const fingerprint = storageConfigFingerprint(config);
-  await prisma.$transaction(async (tx) => {
+  await database.$transaction(async (tx) => {
     const state = await tx.storageCutoverState.findUnique({ where: { id: 'default' } });
     if (!state || state.phase !== 'target' || state.providerFingerprint !== fingerprint || state.manifestSha256 !== digest) throw new Error('Rollback fence mismatch; refusing mapping restoration');
-    const rows = await tx.$queryRawUnsafe<Array<{ asset_id: string; rendition: string; provider: string; source_key: string | null; delivery_url: string }>>('SELECT r.asset_id, r.rendition, old.provider, old.source_key, old.delivery_url FROM asset_storage_replicas r JOIN asset_storage_replicas old ON old.asset_id=r.asset_id AND old.rendition=r.rendition AND old.generation=r.generation AND old.active=false WHERE r.generation=$1 AND r.active=true', state.generation);
+    // A target-phase thumbnail regeneration (regenerate-thumbnails cron) writes a
+    // fresh replica pair at its own unix-seconds generation without deactivating
+    // the cutover-generation pair it supersedes — the app runtime role has no
+    // UPDATE grant on this table (insert-only; see the asset_storage_replicas
+    // grants in stripe-ledger-bootstrap-post.sql), so it cannot deactivate
+    // anything itself. Restoring blindly from `state.generation` would therefore
+    // resurrect the stale pre-regeneration Vercel identity and leave the
+    // regenerated S3 replica active. Instead, for every asset+rendition this
+    // cutover touched (any row recorded at the cutover's own generation, i.e.
+    // `scope` below), find the *freshest* still-active target-provider replica
+    // for that asset+rendition — the cutover's own row when nothing regenerated
+    // it since, or a later regen's row when one did, since a regen's
+    // unix-seconds generation always outranks the small sequential cutover
+    // generation — and require its paired source-provider peer at that exact
+    // same generation (commitCutover and the regen cron always insert their pair
+    // together at one shared generation, opposite providers). The LEFT JOINs
+    // below surface a scoped asset+rendition with no active target row, or a
+    // target row with no paired peer, as NULLs rather than silently dropping it;
+    // either case fails the whole transaction closed instead of restoring a
+    // stale or mixed-generation mapping.
+    const rows = await tx.$queryRawUnsafe<Array<{ asset_id: string; rendition: string; target_generation: number | null; provider: string | null; source_key: string | null; logical_key: string | null; delivery_url: string | null; old_generation: number | null }>>('WITH scope AS (SELECT DISTINCT asset_id, rendition FROM asset_storage_replicas WHERE generation=$1), target AS (SELECT DISTINCT ON (t.asset_id, t.rendition) t.asset_id, t.rendition, t.generation FROM asset_storage_replicas t JOIN scope s ON s.asset_id=t.asset_id AND s.rendition=t.rendition WHERE t.provider=$2 AND t.active=true ORDER BY t.asset_id, t.rendition, t.generation DESC) SELECT s.asset_id, s.rendition, target.generation AS target_generation, old.provider, old.source_key, old.logical_key, old.delivery_url, old.generation AS old_generation FROM scope s LEFT JOIN target ON target.asset_id=s.asset_id AND target.rendition=s.rendition LEFT JOIN asset_storage_replicas old ON old.asset_id=target.asset_id AND old.rendition=target.rendition AND old.generation=target.generation AND old.provider<>$2', state.generation, config.provider);
     for (const row of rows) {
-      if (row.rendition === 'thumbnail') await tx.asset.update({ where: { id: row.asset_id }, data: { storageProvider: row.provider, thumbnailStorageKey: row.source_key, thumbnailStorageSourceKey: row.source_key, thumbnailUrl: row.delivery_url } });
-      else await tx.asset.update({ where: { id: row.asset_id }, data: { storageProvider: row.provider, storageKey: row.source_key, storageSourceKey: row.source_key, blobUrl: row.delivery_url } });
+      if (row.target_generation === null || row.provider === null) {
+        throw new Error('Rollback cannot find a complete provider-paired replica generation for ' + row.asset_id + '/' + row.rendition + '; refusing to restore a stale or mixed-generation mapping');
+      }
+      if (row.rendition === 'thumbnail') await tx.asset.update({ where: { id: row.asset_id }, data: { storageProvider: row.provider, thumbnailStorageKey: row.logical_key!, thumbnailStorageSourceKey: row.source_key, thumbnailUrl: row.delivery_url! } });
+      else await tx.asset.update({ where: { id: row.asset_id }, data: { storageProvider: row.provider, storageKey: row.logical_key!, storageSourceKey: row.source_key, blobUrl: row.delivery_url! } });
+      // Deactivate every generation of this asset+rendition — mirrors
+      // commitCutover's own blanket deactivate — then reactivate exactly the row
+      // just restored onto the asset above. This keeps the ledger's `active`
+      // flag single-valued and in agreement with the asset's columns regardless
+      // of how many un-deactivatable regen rows piled up since the cutover, and
+      // commits atomically with the asset-column restore above and the phase
+      // transition below (all inside this one transaction).
+      await tx.$executeRawUnsafe('UPDATE asset_storage_replicas SET active=false, updated_at=NOW() WHERE asset_id=$1 AND rendition=$2', row.asset_id, row.rendition);
+      await tx.$executeRawUnsafe('UPDATE asset_storage_replicas SET active=true, updated_at=NOW() WHERE asset_id=$1 AND rendition=$2 AND generation=$3 AND provider=$4', row.asset_id, row.rendition, row.old_generation, row.provider);
     }
-    await tx.$executeRawUnsafe('UPDATE asset_storage_replicas SET active=false WHERE generation=$1', state.generation);
     await tx.storageCutoverState.updateMany({ where: { id: 'default', phase: 'target', generation: state.generation, providerFingerprint: fingerprint, manifestSha256: digest }, data: { phase: 'rollback', rollbackAt: new Date(), updatedAt: new Date() } });
   });
 }

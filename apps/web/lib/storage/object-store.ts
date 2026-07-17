@@ -3,6 +3,33 @@ import { createHmac } from 'node:crypto';
 import { del, list as listVercel, put } from '@vercel/blob';
 import { canonicalLogicalKey, createStorageConfig, stableDeliveryUrl, storageConfigFingerprint, storageConfigFromEnv, type StorageConfig, type StoragePhase } from './config';
 
+// Provider HTTP calls must never hang the request/cron indefinitely; both the
+// S3-compatible signer and the legacy Vercel Blob reader below bound every
+// outbound fetch with this timeout.
+const PROVIDER_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * A raw AbortSignal.timeout() rejection is an opaque DOMException ("The
+ * operation was aborted") with no context on which provider request timed
+ * out. Every outbound provider fetch in this module routes through here so
+ * an operator or caller sees a clear, actionable error naming the operation
+ * instead of that generic abort message.
+ */
+async function fetchWithTimeout(url: string | URL, init: RequestInit | undefined, operation: string): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS) });
+  } catch (error) {
+    // DOMException (what AbortSignal.timeout() rejects with) does not
+    // reliably satisfy `instanceof Error` across runtimes, so check `name`
+    // directly on whatever was thrown rather than narrowing to Error first.
+    const name = (error as { name?: unknown } | null)?.name;
+    if (name === 'TimeoutError' || name === 'AbortError') {
+      throw new Error(`${operation} timed out after ${PROVIDER_REQUEST_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  }
+}
+
 export interface ObjectMetadata {
   size: number;
   sha256: string;
@@ -326,7 +353,7 @@ export class VercelObjectStore implements ObjectStore {
   }
 
   private async readUrl(url: string, logicalKey: string): Promise<StoredObject> {
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url, undefined, `Vercel Blob read of ${logicalKey}`);
     if (response.status === 404) throw new ObjectNotFoundError(logicalKey);
     if (!response.ok || !response.body) throw new Error(`Vercel Blob read failed: ${response.status}`);
     return { key: logicalKey, url: response.url, metadata: { size: Number(response.headers.get('content-length') ?? 0), sha256: response.headers.get('x-amz-meta-sha256') ?? '', contentType: response.headers.get('content-type') ?? undefined }, body: response.body };
@@ -410,7 +437,7 @@ export class S3CompatibleObjectStore implements ObjectStore {
     const bytes = await bodyToBuffer(body, Math.max(metadata.size, 1));
     const actual = actualMetadata(bytes, metadata.contentType);
     assertMetadata(actual, metadata);
-    const response = await this.request('PUT', logicalKey, bytes, metadata.contentType);
+    const response = await this.request('PUT', logicalKey, bytes, metadata.contentType, actual.sha256);
     if (!response.ok) throw new Error(`S3-compatible write failed: ${response.status}`);
     return { provider: this.provider, key: logicalKey, url: this.objectUrl(logicalKey), metadata: actual };
   }
@@ -463,7 +490,7 @@ export class S3CompatibleObjectStore implements ObjectStore {
     return stableDeliveryUrl(this.config, key);
   }
 
-  private async request(method: string, key: string, body?: Uint8Array, contentType?: string): Promise<Response> {
+  private async request(method: string, key: string, body?: Uint8Array, contentType?: string, sha256?: string): Promise<Response> {
     const encodedKey = key.split('/').map(encodeRfc3986).join('/');
     const endpointBase = this.endpoint.toString().replace(/\/$/, '');
     const requestPath = `${this.endpoint.pathname.replace(/\/$/, '')}/${encodeRfc3986(this.config.bucket)}/${encodedKey}`;
@@ -479,6 +506,10 @@ export class S3CompatibleObjectStore implements ObjectStore {
     };
     if (body) headers['content-length'] = String(body.byteLength);
     if (contentType) headers['content-type'] = contentType;
+    // Persisted as object metadata on write so a foreign reader/tool can see the
+    // canonical checksum; never trusted for integrity here, since every parity
+    // check in this codebase recomputes the hash from the actual response bytes.
+    if (sha256) headers['x-amz-meta-sha256'] = sha256;
     const signedHeaders = Object.keys(headers).sort().join(';');
     const canonicalHeaders = Object.keys(headers).sort().map(name => `${name}:${headers[name]!.trim()}\n`).join('');
     const canonicalRequest = [method, requestPath, '', canonicalHeaders, signedHeaders, payloadHash].join('\n');
@@ -486,7 +517,7 @@ export class S3CompatibleObjectStore implements ObjectStore {
     const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256Hex(Buffer.from(canonicalRequest))].join('\n');
     const signingKey = hmac(hmac(hmac(hmac(Buffer.from(`AWS4${this.config.secretAccessKey}`), date), this.config.region), 's3'), 'aws4_request');
     headers.authorization = `AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${hmac(signingKey, stringToSign).toString('hex')}`;
-    return fetch(url, { method, headers, body: body as BodyInit | undefined });
+    return fetchWithTimeout(url, { method, headers, body: body as BodyInit | undefined }, `S3-compatible ${method} of ${key}`);
   }
 }
 

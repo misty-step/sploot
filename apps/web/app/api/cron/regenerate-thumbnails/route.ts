@@ -146,22 +146,75 @@ async function getHandler(request: NextRequest) {
       const metadata = { size: newThumb.byteLength, sha256: createHash('sha256').update(newThumb).digest('hex'), contentType: 'image/' + (format === 'jpeg' ? 'jpeg' : format) };
       const blob = await storage.put(key, newThumb, metadata);
       const oldThumbUrl = asset.thumbnailUrl!;
-      const oldThumb = { provider: asset.storageProvider, key: asset.thumbnailStorageKey ?? asset.thumbnailPath ?? '', url: oldThumbUrl };
+      // Match the read-path provider preference above: for a legacy Vercel
+      // asset the raw source key (not the inventoried logical key) is the
+      // real deletable pathname.
+      const oldThumbKey = asset.storageProvider === 'vercel'
+        ? (asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey ?? asset.thumbnailPath ?? '')
+        : (asset.thumbnailStorageKey ?? asset.thumbnailPath ?? '');
+      const oldThumb = { provider: asset.storageProvider, key: oldThumbKey, url: oldThumbUrl };
+      const newReplicas = blob.replicas ?? [{ provider: blob.provider, key: blob.key, url: blob.url }];
+      // Unix-seconds generation: fits int4, is monotonic, and always
+      // outranks both upload's default generation 0 and cutover's small
+      // sequential counter (state.generation + 1) in every `ORDER BY
+      // generation DESC LIMIT 1` source-replica lookup a later cutover
+      // performs — so a pre-cutover regen correctly supersedes the stale
+      // (already-deleted) original thumbnail object as the recorded source.
+      // Reading the real next generation is not an option here: the app
+      // role's SELECT grant on this table is column-restricted and excludes
+      // `generation` (see stripe-ledger-bootstrap-post.sql).
+      const regenGeneration = Math.floor(Date.now() / 1000);
       try {
-        await prisma.asset.update({
-          where: { id: asset.id },
-          data: {
-            thumbnailUrl: blob.url,
-            thumbnailPath: blob.key,
-            thumbnailStorageKey: blob.key,
-            thumbnailStorageSourceKey: null,
-            thumbnailStorageSize: blob.metadata.size,
-            thumbnailStorageSha256: blob.metadata.sha256,
-            storageConfigFingerprint: configFingerprint,
-          },
+        await prisma.$transaction(async (tx) => {
+          await tx.asset.update({
+            where: { id: asset.id },
+            data: {
+              thumbnailUrl: blob.url,
+              thumbnailPath: blob.key,
+              thumbnailStorageKey: blob.key,
+              thumbnailStorageSourceKey: null,
+              thumbnailStorageSize: blob.metadata.size,
+              thumbnailStorageSha256: blob.metadata.sha256,
+              storageConfigFingerprint: configFingerprint,
+            },
+          });
+          // Insert-only: the app runtime role has no UPDATE/DELETE grant on
+          // this ledger, so the superseded row is left in place rather than
+          // deactivated. permanent-delete's replicasForPermanentDelete
+          // treats every row as authoritative regardless of `active`, so the
+          // old object still gets tombstoned for cleanup; without this
+          // insert the *new* thumbnail object would have no replica row at
+          // all once any row exists for this asset, and would leak forever
+          // on permanent delete.
+          // No skipDuplicates: the (assetId, rendition, generation, provider)
+          // unique constraint is our only collision guard against two
+          // concurrent regen attempts for the same asset within the same
+          // wall-clock second (both would compute an identical
+          // regenGeneration). Silently skipping a colliding insert would
+          // let the transaction commit with the asset pointed at a new
+          // object that has no ledger row — exactly the leak this insert
+          // exists to prevent. Letting the unique-constraint violation
+          // throw instead rolls back this entire transaction (including
+          // the asset.update above), so the loser is cleanly retried on
+          // the next cron pass with a fresh generation a second later.
+          await tx.assetStorageReplica.createMany({
+            data: newReplicas.map((replica) => ({
+              assetId: asset.id,
+              rendition: 'thumbnail' as const,
+              provider: replica.provider,
+              sourceKey: replica.provider === 'vercel' ? replica.key : null,
+              logicalKey: replica.key,
+              deliveryUrl: replica.url,
+              size: blob.metadata.size,
+              sha256: blob.metadata.sha256,
+              contentType: metadata.contentType,
+              generation: regenGeneration,
+              active: replica.provider === blob.provider,
+            })),
+          });
         });
       } catch (error) {
-        await storage.deleteReplicas?.(blob.replicas ?? [{ provider: blob.provider, key: blob.key, url: blob.url }]);
+        await storage.deleteReplicas?.(newReplicas);
         throw error;
       }
       try {
