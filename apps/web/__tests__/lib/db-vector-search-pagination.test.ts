@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 import {
   buildVectorSearchPageQuery,
@@ -7,6 +7,7 @@ import {
   createVectorSearchContext,
   decodeVectorSearchCursor,
   encodeVectorSearchCursor,
+  prisma,
   vectorSearchCursorMatchesContext,
   vectorSearchFilterClause,
   vectorSearchFilterVariant,
@@ -269,5 +270,71 @@ describe('seeded vector-search pagination', () => {
   it('rejects an unbounded page before touching the database', async () => {
     await expect(vectorSearchPage('user-1', [0.1], { limit: 101 })).rejects.toThrow(/between 1 and 100/);
     await expect(vectorSearchPage('user-1', [0.1], { offset: 501 })).rejects.toThrow(/use a cursor/);
+  });
+});
+
+describe('vectorSearchPage candidate-window scan-cap termination', () => {
+  it('terminates within a bounded number of ranked-CTE widenings when candidateLimit keeps hitting HNSW_MAX_SCAN_TUPLES with a sparse/empty match, instead of looping forever', async () => {
+    if (!prisma) throw new Error('test requires a configured prisma client');
+
+    const HNSW_MAX_SCAN_TUPLES = 20_000;
+    const totalCountSpy = vi.spyOn(prisma, '$queryRaw').mockResolvedValue([{ total_count: 0 }] as never);
+    let transactionCalls = 0;
+    // Doubling from the loop's initial candidateLimit (max(limit+1,
+    // offset+limit+1) = 6 here) up to the 20,000 scan cap takes a bounded,
+    // deterministic number of widenings (13, by the loop's own
+    // Math.max(x*2, x+limit) growth). A regression back to the pre-fix
+    // behavior -- Math.min silently re-clamping to the same cap forever
+    // once candidateLimit reaches it -- would never terminate; failing
+    // fast well above that bound (30) turns a hang into a fast, readable
+    // test failure instead of a suite-wide timeout.
+    const transactionSpy = vi.spyOn(prisma, '$transaction').mockImplementation(async (callback: unknown) => {
+      transactionCalls += 1;
+      if (transactionCalls > 30) {
+        throw new Error('vectorSearchPage looped past the HNSW_MAX_SCAN_TUPLES cap without terminating');
+      }
+      const tx = {
+        $executeRawUnsafe: vi.fn().mockResolvedValue(undefined),
+        // Every widening "finds" exactly HNSW_MAX_SCAN_TUPLES candidates in
+        // the owner-scoped ready-status pool (a large real tenant), all of
+        // which the sparse tag filter rejects -- the candidate_summary/
+        // matched LEFT JOIN sentinel row that previously pinned
+        // candidateLimit at the cap forever once reached.
+        $queryRaw: vi.fn().mockResolvedValue([{
+          id: null,
+          blob_url: null,
+          thumbnail_url: null,
+          pathname: null,
+          mime: null,
+          width: null,
+          height: null,
+          favorite: null,
+          size: null,
+          created_at: null,
+          distance: null,
+          raw_distance: null,
+          candidate_count: HNSW_MAX_SCAN_TUPLES,
+        }]),
+      };
+      return (callback as (tx: typeof tx) => unknown)(tx);
+    });
+
+    const context = createVectorSearchContext({ query: 'sparse at cap', threshold: 0, tagId: 'sparse-tag', limit: 5 });
+    const page = await vectorSearchPage('scan-cap-user', Array(EMBEDDING_DIMENSION).fill(0.1), {
+      limit: 5,
+      tagId: 'sparse-tag',
+      cursorContext: context,
+    });
+
+    // Deterministic: candidateLimit widens 6 -> 12 -> 24 -> ... -> clamped
+    // to 20,000, then one more execution at the cap observes atScanCap and
+    // breaks -- 13 total ranked-CTE executions, never repeating the same
+    // candidateLimit twice.
+    expect(transactionCalls).toBe(13);
+    expect(page.results).toEqual([]);
+    expect(page.hasMore).toBe(false);
+
+    totalCountSpy.mockRestore();
+    transactionSpy.mockRestore();
   });
 });

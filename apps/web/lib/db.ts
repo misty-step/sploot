@@ -1277,7 +1277,17 @@ export async function vectorSearchPage(
       const candidateCount = dbRows.length > 0 ? Number(dbRows[0].candidate_count) : 0;
       rows = dbRows.map(mapVectorSearchRow).filter((row) => row.id !== null && row.id !== undefined);
       const candidateWindowExhausted = candidateCount < candidateLimit;
-      if (candidateWindowExhausted || rows.length >= offset + limit + 1) break;
+      // HNSW_MAX_SCAN_TUPLES is a hard ceiling on this query's own scan
+      // (queryHnswRanked sets hnsw.max_scan_tuples to the same value), so
+      // once candidateLimit reaches it, candidateCount can legitimately
+      // equal candidateLimit forever on a sparse tag/favorite filter --
+      // Math.min below would keep re-clamping to the same cap and this
+      // loop would never terminate. Once a query has actually run AT the
+      // cap, stop regardless of exhaustion/match state: this is the best
+      // bounded-approximate page obtainable without lifting the scan
+      // ceiling itself, not a correctness gap in the exhaustion signal.
+      const atScanCap = candidateLimit >= HNSW_MAX_SCAN_TUPLES;
+      if (candidateWindowExhausted || rows.length >= offset + limit + 1 || atScanCap) break;
       candidateLimit = Math.min(HNSW_MAX_SCAN_TUPLES, Math.max(candidateLimit * 2, candidateLimit + limit));
     }
     const results = rows
