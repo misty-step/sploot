@@ -279,6 +279,12 @@ async function main() {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     DATABASE_URL: process.env.DATABASE_URL ?? DEFAULT_DB_URL,
+    // isQaLocalAuthEnabled() (lib/auth/qa-local-enabled.ts) gates the
+    // sign-in page's QA auto-login redirect on SPLOOT_DEPLOYMENT_ENV being
+    // 'development' or 'test', not on SPLOOT_QA_DEPLOYMENT_ENV (a distinct
+    // marker identifying *which* QA deployment/environment). Without this,
+    // scripts spawned with this env never redirect and lack Clerk keys.
+    SPLOOT_DEPLOYMENT_ENV: 'development',
     SPLOOT_QA_AUTH_MODE: 'enabled',
     SPLOOT_QA_AUTH_SECRET: await resolveAuthSecret(args.baseUrl),
     SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,

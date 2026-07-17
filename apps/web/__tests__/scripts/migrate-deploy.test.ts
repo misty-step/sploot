@@ -118,6 +118,44 @@ describe('online migration transaction contract', () => {
     expect(helper).toContain('CREATE INDEX CONCURRENTLY');
     expect(helper).toContain('indisvalid');
     expect(helper).toContain('indisready');
+
+    // The HNSW restore migration is a deliberate no-op marker: the real
+    // CREATE INDEX CONCURRENTLY lives in the online-index helper, not in a
+    // Prisma-transactional migration bound by migrate-deploy's global
+    // PGOPTIONS statement_timeout=30s.
+    const hnswMigration = readFileSync(
+      join(migrationRoot, '20260717010000_restore_asset_embeddings_hnsw_index/migration.sql'),
+      'utf8',
+    );
+    expect(hnswMigration).not.toMatch(/CREATE INDEX/);
+    expect(hnswMigration).not.toMatch(/USING hnsw/);
+    expect(helper).toContain('applyOnlineHnswIndex');
+    expect(helper).toContain('asset_embeddings_hnsw_idx');
+    expect(helper).toContain('USING hnsw');
+  });
+
+  it('keeps the HNSW online index helper on an independent, generously-bounded timeout, never the global 30s', () => {
+    const helper = readFileSync(join(process.cwd(), 'scripts/apply-online-embedding-index.mjs'), 'utf8');
+    // The HNSW build must not inherit migrate-deploy's global
+    // PGOPTIONS statement_timeout=30s (apps/web/scripts/migrate-deploy.mjs) --
+    // an HNSW graph build on a production-sized table routinely exceeds 30s.
+    expect(helper).toContain('ONLINE_HNSW_INDEX_STATEMENT_TIMEOUT');
+    expect(helper).not.toMatch(/ONLINE_HNSW_INDEX_STATEMENT_TIMEOUT\s*=\s*'30s'/);
+    expect(helper).toContain('EMBEDDING_HNSW_INDEX_STATEMENT_TIMEOUT');
+    expect(helper).toContain('EMBEDDING_HNSW_INDEX_LOCK_TIMEOUT');
+  });
+
+  it('never DROP/CREATEs a valid, ready, contract-matching HNSW index on repeat deploys', () => {
+    const helper = readFileSync(join(process.cwd(), 'scripts/apply-online-embedding-index.mjs'), 'utf8');
+    expect(helper).toMatch(/rowIsCorrect[\s\S]*?return;/);
+    expect(helper).toContain('pg_get_indexdef');
+    expect(helper).toContain('does not match the declared cosine HNSW contract');
+  });
+
+  it('runs the online-index helper as an independent process, not inside the Prisma migrate-deploy transaction', () => {
+    const runner = readFileSync(join(process.cwd(), 'scripts/migrate-deploy.mjs'), 'utf8');
+    expect(runner).toContain('applyOnlineIndexes');
+    expect(runner).toMatch(/execFileSync\(process\.execPath, \[helper\]/);
   });
 
   it('keeps additive DDL replay-safe and validation in separate transactions', () => {

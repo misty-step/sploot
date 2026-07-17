@@ -66,14 +66,19 @@ describe('seeded vector-search pagination', () => {
     );
     const sql = query.strings.join(' ');
 
-    expect(sql).toContain('WITH ranked AS MATERIALIZED');
+    expect(sql).toContain('WITH ranked_candidates AS MATERIALIZED');
+    expect(sql).toContain('ranked AS MATERIALIZED');
     expect(sql).toContain('FROM "asset_embeddings" ae');
     expect(sql).toContain('ORDER BY ae.image_embedding <=>');
     expect(sql).toContain('ae.asset_id ASC');
     expect(sql).toContain('1 - ranked.distance AS distance');
     expect(sql).toContain('FROM ranked');
     expect(sql).toContain('LIMIT');
-    expect(sql).not.toContain('COUNT');
+    // The ranked CTE now carries its own materialized-row-count exhaustion
+    // signal (COUNT(*) OVER ()) for vectorSearchPage's candidate-expansion
+    // loop; this simpler unfiltered eval query still ignores tag/favorite
+    // filtering.
+    expect(sql).toContain('COUNT(*) OVER ()');
     expect(sql).not.toContain('asset_tags');
     expect(sql).not.toContain('AND a.favorite');
   });
@@ -91,7 +96,7 @@ describe('seeded vector-search pagination', () => {
     expect(sql).toContain('a.id ASC');
     expect(sql).toContain("ae.status = 'ready'");
     expect(sql).toContain('1 - ranked.distance AS distance');
-    expect(sql).not.toContain('COUNT');
+    expect(sql).toContain('COUNT(*) OVER ()');
   });
 
   it('asserts the paged SQL owner, ready-state, threshold, and tie contracts directly', () => {
@@ -113,8 +118,12 @@ describe('seeded vector-search pagination', () => {
     expect(sql).toContain("ae.status = 'ready'");
     expect(sql).toContain('1 - ranked.distance >=');
     expect(sql).toContain('>=');
-    expect(sql).toContain('ORDER BY ranked.distance ASC');
-    expect(sql).toContain('a.id ASC');
+    expect(sql).toContain('ORDER BY matched.distance DESC');
+    expect(sql).toContain('matched.id ASC');
+    // The exhaustion signal from the ranked CTE survives even a zero-match
+    // page via a LEFT JOIN from a guaranteed-one-row candidate_summary.
+    expect(sql).toContain('candidate_summary');
+    expect(sql).toContain('LEFT JOIN matched ON true');
   });
 
   it('binds a cursor to the raw-distance boundary while retaining deterministic asset ties', () => {
@@ -141,7 +150,7 @@ describe('seeded vector-search pagination', () => {
     expect(sql).toContain('ae.image_embedding <=>');
     expect(sql).toContain('ae.asset_id >');
     expect(sql).toContain('ORDER BY ae.image_embedding <=>');
-    expect(sql).toContain('ORDER BY ranked.distance ASC, a.id ASC');
+    expect(sql).toContain('ORDER BY matched.distance DESC NULLS LAST, matched.id ASC');
   });
 
   it('encodes a canonical search-context-bound cursor without exposing pagination offsets', () => {

@@ -126,7 +126,16 @@ export function isOwnerVisibilityEnforcementFailure(error) {
     && message.includes('asset embedding visibility enforcement refused');
 }
 
-function applyOnlineEmbeddingIndex(databaseUrl, env) {
+// Spawns apply-online-embedding-index.mjs as its own process (not an
+// import + call): CREATE INDEX CONCURRENTLY needs an autocommit connection
+// outside migrate-deploy's own Prisma child and its PGOPTIONS
+// lock_timeout=5s/statement_timeout=30s, which cannot bound either an
+// online partial-index build or the far longer HNSW graph build. Running
+// the helper as a full process (not this module's Client) means both
+// applyOnlineEmbeddingIndex() and applyOnlineHnswIndex() execute via its
+// own bottom-of-file guard, each on their own bounded-but-independent
+// connection options.
+function applyOnlineIndexes(databaseUrl, env) {
   const helper = resolve(repoRoot, 'apps/web/scripts/apply-online-embedding-index.mjs');
   execFileSync(process.execPath, [helper], {
     stdio: 'inherit',
@@ -227,8 +236,8 @@ export async function runMigrateDeploy(env = process.env, options = {}) {
       applyMigrations();
     }
     if (options.applyOnlineIndex ?? (env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test')) {
-      stage = 'online-embedding-index';
-      applyOnlineEmbeddingIndex(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl, env);
+      stage = 'online-indexes';
+      applyOnlineIndexes(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl, env);
     }
     stage = 'post-bootstrap';
     if (bootstrapUrl) privileged(post);

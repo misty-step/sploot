@@ -1,42 +1,16 @@
 -- Restore the cosine HNSW access path removed by the text-cache and vector
--- dimension migrations. This is intentionally additive: canonical migration
--- history is immutable, and both fresh installs and legacy upgrades must end
--- with the same vector(768) index contract.
+-- dimension migrations. This migration is deliberately a no-op: HNSW graph
+-- builds scan and link every row in asset_embeddings, so building this
+-- index here, blocking, could exceed migrate-deploy's PGOPTIONS
+-- statement_timeout=30s on a production-sized table and fail predeploy,
+-- gating the owner-visibility migration chain behind it. The actual
+-- concurrent, autocommit, bounded-but-generous-timeout online index build
+-- runs as its own post-Prisma-migrate stage --
+-- applyOnlineHnswIndex() in scripts/apply-online-embedding-index.mjs,
+-- invoked by scripts/migrate-deploy.mjs after `prisma migrate deploy`
+-- completes. Canonical migration history is immutable, so this file stays
+-- in sequence as a marker; both fresh installs and legacy upgrades still
+-- end with the same vector(768) index contract, just built online instead
+-- of inside this transaction.
 BEGIN;
-
-DO $$
-DECLARE
-  existing_definition TEXT;
-BEGIN
-  SELECT indexdef
-  INTO existing_definition
-  FROM pg_indexes
-  WHERE schemaname = current_schema()
-    AND tablename = 'asset_embeddings'
-    AND indexname = 'asset_embeddings_hnsw_idx';
-
-  IF existing_definition IS NULL THEN
-    CREATE INDEX "asset_embeddings_hnsw_idx"
-      ON "asset_embeddings"
-      USING hnsw ("image_embedding" vector_cosine_ops)
-      WITH (m = 24, ef_construction = 128);
-  END IF;
-
-  SELECT indexdef
-  INTO existing_definition
-  FROM pg_indexes
-  WHERE schemaname = current_schema()
-    AND tablename = 'asset_embeddings'
-    AND indexname = 'asset_embeddings_hnsw_idx';
-
-  IF existing_definition IS NULL OR
-     existing_definition !~ 'USING hnsw \(image_embedding vector_cosine_ops\)' OR
-     existing_definition !~ 'm=''?24''?' OR
-     existing_definition !~ 'ef_construction=''?128''?' THEN
-    RAISE EXCEPTION
-      'asset_embeddings_hnsw_idx has incompatible definition: %',
-      existing_definition;
-  END IF;
-END $$;
-
 COMMIT;

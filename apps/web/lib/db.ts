@@ -854,10 +854,14 @@ export interface VectorSearchRow {
 
 interface VectorSearchDbRow extends Omit<VectorSearchRow, 'rawDistance'> {
   raw_distance: string;
+  /** Present on every row (including the all-NULL zero-match sentinel row
+   * from candidate_summary's LEFT JOIN); never part of the public
+   * VectorSearchRow -- read directly off the raw db row before mapping. */
+  candidate_count: bigint | number;
 }
 
 function mapVectorSearchRow(row: VectorSearchDbRow): VectorSearchRow {
-  const { raw_distance, ...publicRow } = row;
+  const { raw_distance, candidate_count: _candidateCount, ...publicRow } = row;
   return { ...publicRow, rawDistance: raw_distance };
 }
 
@@ -1083,7 +1087,7 @@ export function buildRankedEmbeddingCte(
     : Prisma.empty;
 
   return Prisma.sql`
-    WITH ranked AS MATERIALIZED (
+    WITH ranked_candidates AS MATERIALIZED (
       SELECT
         ae.asset_id AS id,
         ae.image_embedding <=> ${vectorSql} AS distance,
@@ -1096,6 +1100,18 @@ export function buildRankedEmbeddingCte(
         ${additionalWhereClause}
       ORDER BY ae.image_embedding <=> ${vectorSql} ASC, ae.asset_id ASC
       LIMIT ${candidateLimit}
+    ),
+    ranked AS MATERIALIZED (
+      SELECT
+        ranked_candidates.*,
+        -- Exact row count this CTE actually materialized (bounded by the
+        -- LIMIT above, applied in ranked_candidates before this window
+        -- function runs). A caller compares this against the requested
+        -- candidateLimit to detect true exhaustion (fewer eligible
+        -- embeddings existed than requested) from the same execution,
+        -- without a second scan or a separate eligible-count query.
+        COUNT(*) OVER () AS candidate_count
+      FROM ranked_candidates
     )
   `;
 }
@@ -1128,27 +1144,55 @@ export function buildVectorSearchPageQuery(
       options.candidateLimit ?? Math.max(options.limit + 1, options.offset + options.limit + 1),
       userId,
       options.cursor,
-    )}
+    )},
+    candidate_summary AS MATERIALIZED (
+      -- Exactly one row always, independent of how many (if any) ranked
+      -- candidates survive the owner/visibility/tag/favorite/threshold
+      -- filter below -- the exhaustion signal must reach the caller even
+      -- on a genuinely empty page (sparse tag, tail cursor).
+      SELECT COALESCE(MAX(candidate_count), 0) AS candidate_count FROM ranked
+    ),
+    matched AS MATERIALIZED (
+      SELECT
+        a.id,
+        a.blob_url,
+        a.thumbnail_url,
+        a.pathname,
+        a.mime,
+        a.width,
+        a.height,
+        a.favorite,
+        a.size,
+        a."createdAt" AS created_at,
+        1 - ranked.distance AS distance,
+        ranked.raw_distance
+      FROM ranked
+      INNER JOIN "assets" a ON a.id = ranked.id
+      WHERE
+        a.owner_user_id = ${userId}
+        AND a.deleted_at IS NULL
+        ${filterClause}
+    )
     SELECT
-      a.id,
-      a.blob_url,
-      a.thumbnail_url,
-      a.pathname,
-      a.mime,
-      a.width,
-      a.height,
-      a.favorite,
-      a.size,
-      a."createdAt" AS created_at,
-      1 - ranked.distance AS distance,
-      ranked.raw_distance
-    FROM ranked
-    INNER JOIN "assets" a ON a.id = ranked.id
-    WHERE
-      a.owner_user_id = ${userId}
-      AND a.deleted_at IS NULL
-      ${filterClause}
-    ORDER BY ranked.distance ASC, a.id ASC
+      matched.id,
+      matched.blob_url,
+      matched.thumbnail_url,
+      matched.pathname,
+      matched.mime,
+      matched.width,
+      matched.height,
+      matched.favorite,
+      matched.size,
+      matched.created_at,
+      matched.distance,
+      matched.raw_distance,
+      candidate_summary.candidate_count
+    FROM candidate_summary
+    LEFT JOIN matched ON true
+    -- matched.distance is similarity (1 - raw cosine distance); DESC here
+      -- means highest-similarity (closest) first, equivalent to the ranked
+      -- CTE's own ascending raw-distance ORDER BY.
+      ORDER BY matched.distance DESC NULLS LAST, matched.id ASC
   `;
 }
 
@@ -1213,36 +1257,30 @@ export async function vectorSearchPage(
         ${filterClause}
       `);
     const total = Number(countRows[0]?.total_count ?? 0);
-    const eligibleCountRows = await prisma.$queryRaw<Array<{ eligible_count: bigint | number }>>(Prisma.sql`
-      SELECT COUNT(*) AS eligible_count
-      FROM "asset_embeddings"
-      WHERE owner_user_id = ${userId}
-        AND asset_deleted_at IS NULL
-        AND status = 'ready'
-    `);
-    const eligibleCount = Number(eligibleCountRows[0]?.eligible_count ?? 0);
-    let candidateLimit = Math.min(
-      Math.max(limit + 1, offset + limit + 1),
-      Math.max(eligibleCount, 1),
-    );
+    let candidateLimit = Math.max(limit + 1, offset + limit + 1);
     let rows: VectorSearchRow[] = [];
-    let candidateWindowExhausted = false;
     while (true) {
       const dbRows = await queryHnswRanked<VectorSearchDbRow>(buildVectorSearchPageQuery(
         userId,
         queryEmbedding,
         { limit, threshold, favoriteOnly, tagId, offset, cursor, candidateLimit },
       ));
-      rows = dbRows.map(mapVectorSearchRow);
-      candidateWindowExhausted = candidateLimit >= eligibleCount;
+      // The ranked CTE's own materialized row count, carried through even
+      // on a zero-match page (sparse tag/favorite, tail cursor) via the
+      // candidate_summary LEFT JOIN. Fewer candidates than requested means
+      // the CTE's owner-scoped, ready-status HNSW scan is exhausted --
+      // widening candidateLimit further would only re-scan the same
+      // already-exhausted set, never surface more rows. This replaces a
+      // separate eligible-count query and an eligibleCount-bounded loop
+      // that could otherwise re-scan up to ~log2(eligibleCount) times on a
+      // sparse filter before the old exhaustion check ever tripped.
+      const candidateCount = dbRows.length > 0 ? Number(dbRows[0].candidate_count) : 0;
+      rows = dbRows.map(mapVectorSearchRow).filter((row) => row.id !== null && row.id !== undefined);
+      const candidateWindowExhausted = candidateCount < candidateLimit;
       if (candidateWindowExhausted || rows.length >= offset + limit + 1) break;
-      candidateLimit = Math.min(
-        eligibleCount,
-        Math.max(candidateLimit * 2, candidateLimit + limit),
-      );
+      candidateLimit = Math.min(HNSW_MAX_SCAN_TUPLES, Math.max(candidateLimit * 2, candidateLimit + limit));
     }
     const results = rows
-      .filter((row) => row.id !== null && row.id !== undefined)
       .slice(offset, offset + limit)
       .map((row) => row);
     // A cursor query starts at an arbitrary point in the ordered set, so its

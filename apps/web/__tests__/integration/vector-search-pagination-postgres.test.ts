@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { EMBEDDING_DIMENSION } from '@sploot/common';
 
@@ -267,5 +267,45 @@ describeWithDatabase('Postgres seeded vector-search pagination', () => {
 
     expect(results).toHaveLength(5);
     expect(results.every(({ distance }) => distance >= 0.99)).toBe(true);
+  });
+
+  it('resolves a sparse tail-tag page from the same-execution exhaustion signal, with no separate eligible-count query', async () => {
+    // A sparse tag match (1 of 25) near the tail of the asset-id sort
+    // order forces vectorSearchPage's candidate window to widen past the
+    // small initial candidateLimit before it reaches the match. What the
+    // fix removes is not the widening itself (finding a genuinely sparse
+    // deep match still requires growing the window) but the *separate*
+    // eligibleCount pre-query the old exhaustion check depended on, plus
+    // any extra round-trip beyond the ranked-CTE scan each widening
+    // already performs -- exhaustion is now read directly off the same
+    // execution that returns the (possibly zero) matched rows.
+    const queryRawSpy = vi.spyOn(prisma, '$queryRaw');
+    const transactionSpy = vi.spyOn(prisma, '$transaction');
+    const query = Array(EMBEDDING_DIMENSION).fill(0.1);
+
+    const tagPage = await vectorSearchPage(userId, query, {
+      limit: 5,
+      tagId: laterMatchTagId,
+      cursorContext: createVectorSearchContext({ query: 'sparse tagged tail', threshold: 0, tagId: laterMatchTagId, limit: 5 }),
+    });
+
+    // One $queryRaw for the page's own "total" count (unrelated to
+    // candidate-window exhaustion) plus exactly one $transaction per
+    // ranked-CTE widening attempt -- no separate eligible_count query ever
+    // executes via $queryRaw beyond that single total-count call.
+    const queryRawSqlTexts = queryRawSpy.mock.calls.map((call) => String((call[0] as { text?: string })?.text ?? call[0]));
+    const scanCount = transactionSpy.mock.calls.length;
+    queryRawSpy.mockRestore();
+    transactionSpy.mockRestore();
+
+    expect(tagPage.total).toBe(1);
+    expect(tagPage.results.map(({ id }) => id)).toEqual([assetIds[22]]);
+    expect(tagPage.hasMore).toBe(false);
+    expect(scanCount).toBeGreaterThan(0);
+    // A 25-item pool needs at most ceil(log2(25/6))+1 widenings to either
+    // find the tail match or exhaust the pool outright; bound generously
+    // above the observed worst case instead of pinning an exact count.
+    expect(scanCount).toBeLessThanOrEqual(6);
+    expect(queryRawSqlTexts.filter((sql) => sql.includes('eligible_count')).length).toBe(0);
   });
 });
