@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createHmac } from 'node:crypto';
 import { del, list as listVercel, put } from '@vercel/blob';
-import { canonicalLogicalKey, createStorageConfig, storageConfigFingerprint, storageConfigFromEnv, type StorageConfig, type StoragePhase } from './config';
+import { canonicalLogicalKey, createStorageConfig, stableDeliveryUrl, storageConfigFingerprint, storageConfigFromEnv, type StorageConfig, type StoragePhase } from './config';
 
 export interface ObjectMetadata {
   size: number;
@@ -337,9 +337,9 @@ export class VercelObjectStore implements ObjectStore {
 
   private ownsDeliveryUrl(url: string): boolean {
     try {
-      // URL parsing normalizes literal/encoded dot segments, so reject those
-      // bytes in the raw input before normalization can hide traversal.
-      if (/(?:\\|%2e|%2f|%5c)/i.test(url)) return false;
+      // URL parsing normalizes literal/encoded dot segments, so inspect the raw
+      // pathname before normalization can hide traversal.
+      if (hasUnsafeRawUrlPath(url)) return false;
       const candidate = new URL(url);
       const base = new URL(this.baseUrl);
       if (candidate.protocol !== 'https:' || candidate.origin !== base.origin || candidate.search || candidate.hash || candidate.username || candidate.password) return false;
@@ -356,6 +356,7 @@ export class VercelObjectStore implements ObjectStore {
 
   keyFromUrl(url: string): string | null {
     try {
+      if (hasUnsafeRawUrlPath(url)) return null;
       const candidate = new URL(url);
       const base = new URL(this.baseUrl);
       if (candidate.protocol !== 'https:' || candidate.origin !== base.origin || candidate.search || candidate.hash || candidate.username || candidate.password) return null;
@@ -449,6 +450,7 @@ export class S3CompatibleObjectStore implements ObjectStore {
 
   keyFromUrl(url: string): string | null {
     try {
+      if (hasUnsafeRawUrlPath(url)) return null;
       const candidate = new URL(url);
       if (candidate.protocol !== 'https:' || candidate.origin !== this.publicUrlBase.origin || candidate.username || candidate.password || candidate.search || candidate.hash) return null;
       const prefix = `${this.publicUrlBase.pathname.replace(/\/$/, '')}/${encodeRfc3986(this.config.bucket)}/`;
@@ -458,8 +460,7 @@ export class S3CompatibleObjectStore implements ObjectStore {
   }
 
   private objectUrl(key: string): string {
-    const base = this.publicUrlBase.toString().replace(/\/$/, '');
-    return `${base}/${encodeRfc3986(this.config.bucket)}/${key.split('/').map(encodeRfc3986).join('/')}`;
+    return stableDeliveryUrl(this.config, key);
   }
 
   private async request(method: string, key: string, body?: Uint8Array, contentType?: string): Promise<Response> {
@@ -487,6 +488,14 @@ export class S3CompatibleObjectStore implements ObjectStore {
     headers.authorization = `AWS4-HMAC-SHA256 Credential=${this.config.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${hmac(signingKey, stringToSign).toString('hex')}`;
     return fetch(url, { method, headers, body: body as BodyInit | undefined });
   }
+}
+
+
+function hasUnsafeRawUrlPath(url: string): boolean {
+  const rawPath = url.match(/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*(\/[^?#]*)?(?:[?#]|$)/i)?.[1] ?? '';
+  return /(?:^|\/)\.{1,2}(?:\/|$)/.test(rawPath)
+    || /(?:^|\/)(?:%2e|\.){1,2}(?:\/|$)/i.test(rawPath)
+    || /%2f|%5c|\\/i.test(rawPath);
 }
 
 function encodeRfc3986(value: string): string {

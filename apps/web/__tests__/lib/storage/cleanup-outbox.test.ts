@@ -46,8 +46,8 @@ describe('storage cleanup outbox', () => {
     expect(result).toMatchObject({ processed: 2, succeeded: 2, failed: 0, retrying: 0 });
     expect(del).toHaveBeenCalledWith('https://blob.example.test/uploads/file%20name.png');
     expect(globalThis.fetch).toHaveBeenCalledWith(expect.any(URL), expect.objectContaining({ method: 'DELETE' }));
-    expect(tx.$executeRawUnsafe).toHaveBeenCalledWith(expect.stringContaining("status = 'processing'"), 'legacy', 300);
-    expect(db.$executeRawUnsafe).toHaveBeenCalledWith(expect.stringContaining("status = 'done'"), 'target');
+    expect(tx.$executeRawUnsafe).toHaveBeenCalledWith(expect.stringContaining("status='processing'"), 'legacy', expect.any(String), expect.any(String), 300);
+    expect(db.$executeRawUnsafe).toHaveBeenCalledWith(expect.stringContaining("status='done'"), 'target', expect.any(String), expect.any(String));
   });
 
   it('records a transient failure and retries the row on the next scheduled run', async () => {
@@ -55,7 +55,7 @@ describe('storage cleanup outbox', () => {
     vi.mocked(del).mockRejectedValueOnce(new Error('temporary provider outage'));
     const failed = await processStorageCleanup(first.db as never, 1);
     expect(failed).toMatchObject({ processed: 1, succeeded: 0, failed: 1, retrying: 1 });
-    expect(first.db.$executeRawUnsafe).toHaveBeenCalledWith(expect.stringContaining("status = 'pending'"), 'retry', 'temporary provider outage', 60);
+    expect(first.db.$executeRawUnsafe).toHaveBeenCalledWith(expect.stringContaining("status='pending'"), 'retry', 'temporary provider outage', 60, expect.any(String), expect.any(String));
 
     const second = database([{ id: 'retry', provider: 'vercel', key: 'uploads/retry.png', url: 'https://blob.example.test/uploads/retry.png', attempts: 1 }]);
     const succeeded = await processStorageCleanup(second.db as never, 1);

@@ -83,8 +83,8 @@ async function inventory(limit: number, cursor?: string) {
         const bytes = await bodyToBuffer(original.body, 512 * 1024 * 1024);
         const sha256 = createHash('sha256').update(bytes).digest('hex');
         const logicalKey = inventoryLogicalKey(asset.id, sourceKey, 'original');
-        await prisma.asset.update({ where: { id: asset.id }, data: { storageProvider: 'vercel', storageKey: logicalKey, storageSourceKey: sourceKey, storageConfigFingerprint: fingerprint, storageSize: bytes.byteLength, storageSha256: sha256 } });
-        const originalEntry = { logicalKey, sourceKey, size: bytes.byteLength, sha256, contentType: renditionMime(sourceKey, bytes, original.metadata.contentType, asset.mime) };
+        await prisma.asset.update({ where: { id: asset.id }, data: { storageKey: logicalKey, storageSourceKey: sourceKey, storageConfigFingerprint: fingerprint, storageSize: bytes.byteLength, storageSha256: sha256 } });
+        const originalEntry = { logicalKey, sourceKey, rendition: 'original' as const, sourceProvider: 'vercel', size: bytes.byteLength, sha256, contentType: renditionMime(sourceKey, bytes, original.metadata.contentType, asset.mime) };
         manifest.push(originalEntry);
         await seedMigrationManifest(prisma, [originalEntry], { source: 'vercel', target: 's3' });
         const thumbnailKey = asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey ?? asset.thumbnailPath;
@@ -94,7 +94,7 @@ async function inventory(limit: number, cursor?: string) {
           const thumbSha = createHash('sha256').update(thumbBytes).digest('hex');
           const thumbLogicalKey = inventoryLogicalKey(asset.id, thumbnailKey, 'thumbnail');
           await prisma.asset.update({ where: { id: asset.id }, data: { thumbnailStorageKey: thumbLogicalKey, thumbnailStorageSourceKey: thumbnailKey, thumbnailStorageSize: thumbBytes.byteLength, thumbnailStorageSha256: thumbSha } });
-          const thumbnailEntry = { logicalKey: thumbLogicalKey, sourceKey: thumbnailKey, size: thumbBytes.byteLength, sha256: thumbSha, contentType: renditionMime(thumbnailKey, thumbBytes, thumbnail.metadata.contentType) };
+          const thumbnailEntry = { logicalKey: thumbLogicalKey, sourceKey: thumbnailKey, rendition: 'thumbnail' as const, sourceProvider: 'vercel', size: thumbBytes.byteLength, sha256: thumbSha, contentType: renditionMime(thumbnailKey, thumbBytes, thumbnail.metadata.contentType) };
           manifest.push(thumbnailEntry);
           await seedMigrationManifest(prisma, [thumbnailEntry], { source: 'vercel', target: 's3' });
         }
@@ -112,7 +112,7 @@ async function inventory(limit: number, cursor?: string) {
     if (assets.length < limit) break;
   }
   if (failures > 0) throw new Error('Inventory parity failed for ' + failures + ' asset(s); resume from the recorded cursor after repairing source objects');
-  const durableManifest = await prisma.storageMigrationEntry.findMany({ orderBy: { logicalKey: 'asc' }, select: { logicalKey: true, sourceKey: true, size: true, sha256: true, contentType: true } });
+  const durableManifest = await prisma.storageMigrationEntry.findMany({ orderBy: { logicalKey: 'asc' }, select: { logicalKey: true, sourceKey: true, rendition: true, sourceProvider: true, size: true, sha256: true, contentType: true } });
   process.stdout.write(JSON.stringify(durableManifest) + '\n');
 }
 async function ensureCutoverState(config: StorageConfig, digest: string, phase: 'dual-write' | 'target' | 'rollback'): Promise<void> {
@@ -130,23 +130,41 @@ async function ensureCutoverState(config: StorageConfig, digest: string, phase: 
 }
 
 
-async function commitCutover(manifest: MigrationManifestEntry[], config: StorageConfig, digest: string): Promise<void> {
+export async function commitCutover(manifest: MigrationManifestEntry[], config: StorageConfig, digest: string): Promise<void> {
   const fingerprint = storageConfigFingerprint(config);
+  if (config.provider !== 's3') throw new Error('Storage cutover requires the S3 target provider');
   await prisma.$transaction(async (tx) => {
     const state = await tx.storageCutoverState.findUnique({ where: { id: 'default' } });
     if (!state || state.phase !== 'dual-write' || state.providerFingerprint !== fingerprint || state.manifestSha256 !== digest) throw new Error('Cutover fence mismatch; refusing asset rebinding');
     const generation = state.generation + 1;
     for (const entry of manifest) {
-      const assets = await tx.asset.findMany({ where: { deletedAt: null, OR: [{ storageSourceKey: entry.sourceKey }, { thumbnailStorageSourceKey: entry.sourceKey }, { storageKey: entry.logicalKey }, { thumbnailStorageKey: entry.logicalKey }] }, select: { id: true, storageProvider: true, storageKey: true, storageSourceKey: true, blobUrl: true, thumbnailStorageKey: true, thumbnailStorageSourceKey: true, thumbnailUrl: true, mime: true } });
+      const rendition = entry.rendition ?? 'original';
+      const assets = await tx.asset.findMany({ where: { deletedAt: null, OR: rendition === 'thumbnail'
+        ? [{ thumbnailStorageSourceKey: entry.sourceKey }, { thumbnailStorageKey: entry.logicalKey }]
+        : [{ storageSourceKey: entry.sourceKey }, { storageKey: entry.logicalKey }] }, select: { id: true, storageProvider: true, storageKey: true, storageSourceKey: true, blobUrl: true, thumbnailStorageKey: true, thumbnailStorageSourceKey: true, thumbnailUrl: true, mime: true } });
+      if (assets.length === 0) throw new Error('Cutover manifest entry has no matching live asset: ' + entry.logicalKey);
       for (const asset of assets) {
-        const thumbnail = asset.thumbnailStorageSourceKey === entry.sourceKey || asset.thumbnailStorageKey === entry.logicalKey;
-        const rendition = thumbnail ? 'thumbnail' : 'original';
-        const oldKey = thumbnail ? asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey ?? entry.sourceKey : asset.storageSourceKey ?? asset.storageKey ?? entry.sourceKey;
-        const oldUrl = thumbnail ? asset.thumbnailUrl : asset.blobUrl;
+        const sourceProvider = entry.sourceProvider ?? 'vercel';
+        const sourceReplica = await tx.$queryRawUnsafe<Array<{ provider: string; source_key: string | null; logical_key: string; delivery_url: string }>>(
+          'SELECT provider, source_key, logical_key, delivery_url FROM asset_storage_replicas WHERE asset_id=$1 AND rendition=$2 AND provider=$3 ORDER BY generation DESC LIMIT 1',
+          asset.id,
+          rendition,
+          sourceProvider,
+        );
+        const recordedSource = sourceReplica[0];
+        if (!recordedSource && sourceProvider !== asset.storageProvider) {
+          throw new Error('Cutover source replica is missing for ' + asset.id + '/' + rendition);
+        }
+        const oldKey = recordedSource
+          ? (recordedSource.provider === 'vercel' ? recordedSource.source_key ?? recordedSource.logical_key : recordedSource.logical_key)
+          : (rendition === 'thumbnail' ? asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey ?? entry.sourceKey : asset.storageSourceKey ?? asset.storageKey ?? entry.sourceKey);
+        const oldUrl = recordedSource?.delivery_url ?? (rendition === 'thumbnail' ? asset.thumbnailUrl : asset.blobUrl);
+        if (!oldUrl) throw new Error('Cutover source delivery URL is missing for ' + asset.id + '/' + rendition);
         const targetUrl = stableDeliveryUrl(config, entry.logicalKey);
-        await tx.$executeRawUnsafe('INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, source_key, logical_key, delivery_url, size, sha256, content_type, generation, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false) ON CONFLICT DO NOTHING', randomUUID(), asset.id, rendition, asset.storageProvider, oldKey, entry.logicalKey, oldUrl, entry.size, entry.sha256, entry.contentType ?? asset.mime, generation);
-        await tx.$executeRawUnsafe('INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, source_key, logical_key, delivery_url, size, sha256, content_type, generation, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true)', randomUUID(), asset.id, rendition, config.provider, entry.sourceKey, entry.logicalKey, targetUrl, entry.size, entry.sha256, entry.contentType ?? asset.mime, generation);
-        await tx.asset.update({ where: { id: asset.id }, data: thumbnail ? { storageProvider: config.provider, thumbnailStorageKey: entry.logicalKey, thumbnailStorageSourceKey: entry.sourceKey, thumbnailUrl: targetUrl, thumbnailStorageSize: entry.size, thumbnailStorageSha256: entry.sha256, storageConfigFingerprint: fingerprint } : { storageProvider: config.provider, storageKey: entry.logicalKey, storageSourceKey: entry.sourceKey, blobUrl: targetUrl, storageSize: entry.size, storageSha256: entry.sha256, storageConfigFingerprint: fingerprint } });
+        await tx.$executeRawUnsafe('UPDATE asset_storage_replicas SET active=false, updated_at=NOW() WHERE asset_id=$1 AND rendition=$2', asset.id, rendition);
+        await tx.$executeRawUnsafe('INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, source_key, logical_key, delivery_url, size, sha256, content_type, generation, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false) ON CONFLICT (asset_id, rendition, generation, provider) DO UPDATE SET source_key=EXCLUDED.source_key, logical_key=EXCLUDED.logical_key, delivery_url=EXCLUDED.delivery_url, size=EXCLUDED.size, sha256=EXCLUDED.sha256, content_type=EXCLUDED.content_type, active=false, updated_at=NOW()', randomUUID(), asset.id, rendition, sourceProvider, oldKey, entry.logicalKey, oldUrl, entry.size, entry.sha256, entry.contentType ?? asset.mime, generation);
+        await tx.$executeRawUnsafe('INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, source_key, logical_key, delivery_url, size, sha256, content_type, generation, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true) ON CONFLICT (asset_id, rendition, generation, provider) DO UPDATE SET source_key=EXCLUDED.source_key, logical_key=EXCLUDED.logical_key, delivery_url=EXCLUDED.delivery_url, size=EXCLUDED.size, sha256=EXCLUDED.sha256, content_type=EXCLUDED.content_type, active=true, updated_at=NOW()', randomUUID(), asset.id, rendition, config.provider, entry.sourceKey, entry.logicalKey, targetUrl, entry.size, entry.sha256, entry.contentType ?? asset.mime);
+        await tx.asset.update({ where: { id: asset.id }, data: rendition === 'thumbnail' ? { storageProvider: config.provider, thumbnailStorageKey: entry.logicalKey, thumbnailStorageSourceKey: entry.sourceKey, thumbnailUrl: targetUrl, thumbnailStorageSize: entry.size, thumbnailStorageSha256: entry.sha256, storageConfigFingerprint: fingerprint } : { storageProvider: config.provider, storageKey: entry.logicalKey, storageSourceKey: entry.sourceKey, blobUrl: targetUrl, storageSize: entry.size, storageSha256: entry.sha256, storageConfigFingerprint: fingerprint } });
       }
     }
     const updated = await tx.storageCutoverState.updateMany({ where: { id: 'default', phase: 'dual-write', generation: state.generation, providerFingerprint: fingerprint, manifestSha256: digest }, data: { phase: 'target', generation, verifiedAt: new Date(), updatedAt: new Date() } });

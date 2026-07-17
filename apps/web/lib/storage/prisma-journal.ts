@@ -8,6 +8,8 @@ export interface DurableMigrationClaim {
   id: string;
   logicalKey: string;
   sourceKey: string;
+  rendition: string;
+  sourceProvider: string;
   size: number;
   sha256: string;
   contentType: string | null;
@@ -70,6 +72,8 @@ export async function claimMigrationEntries(
       entry.id,
       entry."logical_key" AS "logicalKey",
       entry."source_key" AS "sourceKey",
+      entry."rendition" AS "rendition",
+      entry."source_provider" AS "sourceProvider",
       entry.size,
       entry.sha256,
       entry."content_type" AS "contentType",
@@ -119,7 +123,7 @@ export async function seedMigrationManifest(
   for (const entry of entries) {
     const existing = await db.storageMigrationEntry.findUnique({ where: { logicalKey: entry.logicalKey } });
     if (existing) {
-      if (existing.size !== entry.size || existing.sha256 !== entry.sha256 || existing.sourceKey !== entry.sourceKey) {
+      if (existing.size !== entry.size || existing.sha256 !== entry.sha256 || existing.sourceKey !== entry.sourceKey || existing.rendition !== (entry.rendition ?? 'original') || existing.sourceProvider !== (entry.sourceProvider ?? providers.source)) {
         throw new Error(`Manifest changed for existing migration key ${entry.logicalKey}`);
       }
       continue;
@@ -127,7 +131,8 @@ export async function seedMigrationManifest(
     await db.storageMigrationEntry.create({
       data: {
         logicalKey: entry.logicalKey,
-        sourceProvider: providers.source,
+        rendition: entry.rendition ?? 'original',
+        sourceProvider: entry.sourceProvider ?? providers.source,
         sourceKey: entry.sourceKey,
         targetProvider: providers.target,
         targetKey: entry.logicalKey,
@@ -191,6 +196,7 @@ export async function rollbackPrismaMigrationBatch(
         "lease_generation" = entry."lease_generation" + 1, "updated_at" = NOW()
     FROM candidates WHERE entry.id = candidates.id
     RETURNING entry.id, entry."logical_key" AS "logicalKey", entry."source_key" AS "sourceKey",
+      entry."rendition" AS "rendition", entry."source_provider" AS "sourceProvider",
       entry.size, entry.sha256, entry."content_type" AS "contentType", entry.attempts,
       entry."lease_generation" AS "leaseGeneration"
   `);

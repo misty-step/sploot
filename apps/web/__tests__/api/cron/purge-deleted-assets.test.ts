@@ -11,6 +11,7 @@ vi.mock('next/headers', () => ({
 
 // Mock lib/db
 const mockPrisma = {
+  $transaction: vi.fn(),
   asset: {
     findMany: vi.fn(),
     delete: vi.fn(),
@@ -62,6 +63,29 @@ describe('/api/cron/purge-deleted-assets', () => {
 
     // Default: delete succeeds
     mockPrisma.asset.delete.mockResolvedValue({});
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({
+      asset: {
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => {
+          const base = where.id === 'asset-old-1' ? 'old-1' : where.id === 'asset-old-2' ? 'old-2' : where.id === 'asset-1' ? '1' : where.id === 'asset-2' ? '2' : where.id === 'asset-with-thumb' || where.id === 'asset-no-thumb' ? 'main' : where.id;
+          return {
+            id: where.id,
+            storageProvider: 'vercel',
+            storageKey: base + '.jpg',
+            storageSourceKey: null,
+            thumbnailStorageKey: null,
+            thumbnailStorageSourceKey: null,
+            pathname: base + '.jpg',
+            thumbnailPath: base + '-thumb.jpg',
+            blobUrl: 'https://blob.vercel-storage.com/' + base + '.jpg',
+            thumbnailUrl: where.id === 'asset-old-1' ? 'https://blob.vercel-storage.com/old-1-thumb.jpg' : where.id === 'asset-1' ? 'https://blob.vercel-storage.com/1-thumb.jpg' : where.id === 'asset-2' ? 'https://blob.vercel-storage.com/2-thumb.jpg' : where.id === 'asset-with-thumb' ? 'https://blob.vercel-storage.com/thumb.jpg' : null,
+            deletedAt: daysAgo(35),
+          };
+        }),
+        delete: mockPrisma.asset.delete,
+      },
+      $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+      $executeRawUnsafe: vi.fn().mockResolvedValue(1),
+    }));
   });
 
   afterEach(() => {

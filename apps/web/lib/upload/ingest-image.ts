@@ -195,6 +195,10 @@ export async function ingestImage({
           storageSha256: uploadResult.mainSha256,
           thumbnailStorageSize: uploadResult.thumbnailSize,
           thumbnailStorageSha256: uploadResult.thumbnailSha256,
+          storageReplicas: [
+            ...uploadResult.mainReplicas.map((replica) => ({ ...replica, rendition: 'original' as const })),
+            ...uploadResult.thumbnailReplicas.map((replica) => ({ ...replica, rendition: 'thumbnail' as const })),
+          ],
           mime: file.type,
           width: processingResult.metadata?.width ?? processedImages?.main?.width ?? null,
           height: processingResult.metadata?.height ?? processedImages?.main?.height ?? null,
@@ -254,7 +258,7 @@ export async function ingestImage({
       });
 
       try {
-        await uploader.cleanup(uploadResult.mainUrl, uploadResult.thumbnailUrl);
+        await uploader.cleanup(uploadResult.mainUrl, uploadResult.thumbnailUrl, uploadResult.mainReplicas, uploadResult.thumbnailReplicas);
       } catch (cleanupError) {
         // Log but don't throw - blob may already be deleted in race condition
         logger.warn('Blob cleanup failed (may already be deleted)', {
