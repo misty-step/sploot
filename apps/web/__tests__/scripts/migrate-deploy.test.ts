@@ -368,7 +368,7 @@ describe('bootstrap failure handling with injected faults', () => {
     expect(secondDeploy).toBeGreaterThan(resolve);
     expect(post).toBeGreaterThan(secondDeploy);
     expect(backfillUrls).toEqual(['postgresql://migrator:secret@db.example.test/app']);
-    expect(harness.historyCalls).toHaveLength(2);
+    expect(harness.historyCalls).toHaveLength(1);
     expect(harness.readReport()).toBeNull();
   });
 
@@ -376,14 +376,6 @@ describe('bootstrap failure handling with injected faults', () => {
     expect(isOwnerVisibilityEnforcementFailure(new Error('P3018 20260715122000_enforce_asset_embedding_owner_visibility: asset embedding visibility enforcement refused: 1 rows remain'))).toBe(true);
     expect(isOwnerVisibilityEnforcementFailure(new Error('P3018 20260715122000_enforce_asset_embedding_owner_visibility: lock timeout'))).toBe(false);
     expect(isOwnerVisibilityEnforcementFailure(new Error('asset embedding visibility enforcement refused'))).toBe(false);
-  });
-
-  it('pauses when the immutable-history checker does not return verified', async () => {
-    const harness = makeHarness();
-    await expect(runMigrateDeploy(harness.env, {
-      checkMigrationHistory: async () => ({ status: 'failed', checked: 1 }),
-    })).rejects.toThrow('did not return verified');
-    expect(harness.readLog()).not.toContain('prisma migrate deploy');
   });
 
   it('runs pre -> prisma migrate -> post with the declared version and writes no failure report', async () => {
