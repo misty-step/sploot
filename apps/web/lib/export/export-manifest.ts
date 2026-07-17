@@ -334,10 +334,20 @@ export function streamExportManifest(
     let artifactBytes = 0;
     let artifactOverflow = false;
 
-    const emit = async (text: string): Promise<void> => {
+    const enqueue = async (chunk: Uint8Array): Promise<void> => {
       await waitForExportCapacity(() => controller.desiredSize, () => canceled, backpressureTimeoutMs);
       if (!ensureOpen()) return;
-      const chunk = encoder.encode(text);
+      controller.enqueue(chunk);
+    };
+
+    const flushBuffered = async (): Promise<void> => {
+      const buffered = artifactChunks.splice(0);
+      artifactBytes = 0;
+      for (const chunk of buffered) await enqueue(chunk);
+    };
+
+    const emitChunk = async (chunk: Uint8Array): Promise<void> => {
+      if (!ensureOpen()) return;
       if (maxBytes !== undefined && BigInt(bytesStreamed + chunk.length) > maxBytes) {
         // Never hand out a byte past the admitted reservation.
         throw new Error('export manifest would exceed its egress reservation');
@@ -347,17 +357,22 @@ export function streamExportManifest(
         if (artifactBytes + chunk.length <= MANIFEST_FINALIZED_ARTIFACT_MAX_BYTES) {
           artifactChunks.push(chunk.slice());
           artifactBytes += chunk.length;
-        } else {
-          artifactOverflow = true;
-          artifactChunks.length = 0;
+          return;
         }
+        artifactOverflow = true;
+        await flushBuffered();
       }
-      controller.enqueue(chunk);
+      await enqueue(chunk);
+    };
+
+    const emit = async (text: string): Promise<void> => {
+      await emitChunk(encoder.encode(text));
     };
 
     try {
       if (row.status === 'complete' && row.manifestFinalizedArtifact) {
         await emit(row.manifestFinalizedArtifact);
+        await flushBuffered();
         if (onComplete) await onComplete(bytesStreamed);
         controller.close();
         return;
@@ -467,7 +482,7 @@ export function streamExportManifest(
         const manifestReasons = manifestLiveAssets < finalRow.totalAssets
           ? [...finalCompleteness.reasons, 'snapshot_membership_changed' as const]
           : finalCompleteness.reasons;
-        const summary = manifestSummary(
+        let summary = manifestSummary(
           finalRow,
           manifestLiveAssets,
           finalCompleteness.complete && manifestLiveAssets >= finalRow.totalAssets,
@@ -476,6 +491,7 @@ export function streamExportManifest(
         );
         const summaryChunk = encoder.encode('],' + JSON.stringify(summary).slice(1));
         let artifact: string | null = null;
+        let replayArtifact: string | null = null;
         if (!artifactOverflow && artifactBytes + summaryChunk.length <= MANIFEST_FINALIZED_ARTIFACT_MAX_BYTES) {
           const all = new Uint8Array(artifactBytes + summaryChunk.length);
           let offset = 0;
@@ -495,23 +511,47 @@ export function streamExportManifest(
             where: { id: finalRow.id, ownerUserId: finalRow.ownerUserId, status: 'active', manifestFinalizedAt: null },
             data: { status: 'complete', manifestFinalizedAt: new Date(), manifestFinalizedSummary: summary as unknown as Prisma.InputJsonValue, manifestFinalizedArtifact: artifact },
           });
-          if (claimed.count !== 1) throw new Error('export completion fence was lost');
+          if (claimed.count !== 1) {
+            // A concurrent request may have won the finalization CAS after
+            // both requests built their complete body. Do not stream this
+            // request's stale prefix: replay the winner's durable artifact.
+            const winner = await tx.libraryExport.findFirst({
+              where: { id: finalRow.id, ownerUserId: finalRow.ownerUserId, status: 'complete' },
+              select: { manifestFinalizedArtifact: true },
+            });
+            if (!winner || typeof winner.manifestFinalizedArtifact !== 'string') {
+              throw new Error('export completion fence was lost');
+            }
+            replayArtifact = winner.manifestFinalizedArtifact;
+            artifact = replayArtifact;
+          }
         }
-        return { summary, artifact: canFinalize ? artifact : null, summaryChunk };
+        return { summary, artifact: canFinalize ? artifact : null, replayArtifact, summaryChunk };
       });
       if (!terminalResult) return;
-      const terminalSummary = terminalResult.summary;       if (terminalSummary.complete === true && terminalResult.artifact === null) {
-        throw new Error('export manifest exceeds the durable replay limit');
+      const terminalSummary = terminalResult.summary;
+      if (!terminalSummary) return;
+      if (terminalResult.replayArtifact !== null) {
+        // The competing request already persisted the immutable final body.
+        // Discard this request's generated (but not yet delivered) prefix and
+        // serve exactly the winner's replay bytes instead.
+        artifactChunks.length = 0;
+        artifactBytes = 0;
+        artifactOverflow = true;
+        bytesStreamed = 0;
+        const replayBytes = encoder.encode(terminalResult.replayArtifact);
+        if (maxBytes !== undefined && BigInt(replayBytes.length) > maxBytes) {
+          throw new Error('export manifest would exceed its egress reservation');
+        }
+        bytesStreamed = replayBytes.length;
+        await enqueue(replayBytes);
+      } else {
+        if (terminalSummary.complete === true && terminalResult.artifact === null) {
+          throw new Error('export manifest exceeds the durable replay limit');
+        }
+        await emitChunk(terminalResult.summaryChunk);
+        await flushBuffered();
       }
-     if (!terminalSummary) return;
-      const summaryChunk = terminalResult.summaryChunk;
-      if (maxBytes !== undefined && BigInt(bytesStreamed + summaryChunk.length) > maxBytes) {
-        throw new Error('export manifest would exceed its egress reservation');
-      }
-      await waitForExportCapacity(() => controller.desiredSize, () => canceled, backpressureTimeoutMs);
-      if (!ensureOpen()) return;
-      bytesStreamed += summaryChunk.length;
-      controller.enqueue(summaryChunk);
 
       if (!ensureOpen()) return;
       if (onComplete) {

@@ -161,6 +161,7 @@ const fakePrisma = vi.hoisted(() => {
           if (where.status && typeof where.status === 'string' && row.status !== where.status) continue;
           if (where.status?.in && !where.status.in.includes(row.status)) continue;
           if (where.status?.notIn && where.status.notIn.includes(row.status)) continue;
+          if (where.manifestFinalizedAt === null && row.manifestFinalizedAt !== null) continue;
           if (where.expiresAt?.gt !== undefined && !(row.expiresAt > where.expiresAt.gt)) continue;
           if (where.egressBytes?.lte !== undefined && !(row.egressBytes <= where.egressBytes.lte))
             continue;
@@ -804,6 +805,53 @@ describe('GET /api/library/export/:exportId/manifest', () => {
     expect(final.status).toBe(200);
     expect(JSON.parse(await final.text()).complete).toBe(true);
     expect(state.exports.get(created.id)!.status).toBe('complete');
+  });
+
+  it('replays the winner when concurrent finalization races at the CAS fence', async () => {
+    seedAsset('asset-finalization-race', USER, new Uint8Array([1, 2]));
+    const created = await createExport();
+    state.exports.get(created.id)!.servedParts = [0];
+
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    let finalizationCalls = 0;
+    let bothReady!: () => void;
+    const bothFinalizersReady = new Promise<void>((resolve) => { bothReady = resolve; });
+    const originalUpdateMany = fakePrisma.libraryExport.updateMany;
+    fakePrisma.libraryExport.updateMany = async (args: any) => {
+      if (args.data?.status === 'complete') {
+        finalizationCalls += 1;
+        if (finalizationCalls === 2) bothReady();
+        await barrier;
+      }
+      return originalUpdateMany(args);
+    };
+
+    try {
+      const firstPromise = manifestGet(
+        request('/api/library/export/' + created.id + '/manifest'),
+        ctx({ exportId: created.id }),
+      );
+      const secondPromise = manifestGet(
+        request('/api/library/export/' + created.id + '/manifest'),
+        ctx({ exportId: created.id }),
+      );
+      await bothFinalizersReady;
+      release();
+
+      const [first, second] = await Promise.all([firstPromise, secondPromise]);
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      const [firstBody, secondBody] = await Promise.all([first.text(), second.text()]);
+      expect(JSON.parse(firstBody).complete).toBe(true);
+      expect(JSON.parse(secondBody).complete).toBe(true);
+      expect(firstBody).toBe(secondBody);
+      expect(state.exports.get(created.id)!.status).toBe('complete');
+      expect(state.exports.get(created.id)!.manifestFinalizedArtifact).toBe(firstBody);
+    } finally {
+      release();
+      fakePrisma.libraryExport.updateMany = originalUpdateMany;
+    }
   });
 
   it('rejects a manifest at the durable replay boundary before response bytes', async () => {
