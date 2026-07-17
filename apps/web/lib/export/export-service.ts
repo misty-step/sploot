@@ -357,7 +357,7 @@ export async function createOrReuseExport(
             CASE
               WHEN "egress_bytes" > 0 AND "updated_at" >= ${windowStart}
                 THEN "updated_at" + make_interval(secs => ${EXPORT_EGRESS_WINDOW_MS / 1000})
-              ELSE '-infinity'::timestamptz
+              ELSE '-infinity'::timestamp
             END,
             CASE
               WHEN "status" = 'complete'
@@ -365,7 +365,7 @@ export async function createOrReuseExport(
                 AND "manifest_finalized_artifact" IS NOT NULL
                 AND "expires_at" > ${now}
                 THEN "expires_at"
-              ELSE '-infinity'::timestamptz
+              ELSE '-infinity'::timestamp
             END
           ) AS "releaseAt"
         FROM "library_exports"
@@ -584,7 +584,7 @@ export async function reserveExportEgress(
       expiresAt: { gt: now },
       egressBytes: { lte: ceiling - reserveBytes },
     },
-    data: { egressBytes: { increment: reserveBytes } },
+    data: { egressBytes: { increment: reserveBytes }, updatedAt: now },
   });
   if (admitted.count === 1) {
     return { kind: 'reserved', reservedBytes: reserveBytes };
@@ -592,7 +592,7 @@ export async function reserveExportEgress(
   if (allowComplete) {
     const completedAdmission = await db.libraryExport.updateMany({
       where: { id: row.id, status: 'complete', expiresAt: { gt: now }, egressBytes: { lte: ceiling - reserveBytes } },
-      data: { egressBytes: { increment: reserveBytes } },
+      data: { egressBytes: { increment: reserveBytes }, updatedAt: now },
     });
     if (completedAdmission.count === 1) return { kind: 'reserved', reservedBytes: reserveBytes };
   }
@@ -618,14 +618,15 @@ export async function reserveExportEgress(
 export async function refundExportEgress(exportId: string, refundBytes: bigint): Promise<void> {
   if (refundBytes <= BigInt(0)) return;
   const db = requireDb();
+  const now = new Date();
   const activeRefund = await db.libraryExport.updateMany({
-    where: { id: exportId, status: 'active', expiresAt: { gt: new Date() }, egressBytes: { gte: refundBytes } },
-    data: { egressBytes: { decrement: refundBytes } },
+    where: { id: exportId, status: 'active', expiresAt: { gt: now }, egressBytes: { gte: refundBytes } },
+    data: { egressBytes: { decrement: refundBytes }, updatedAt: now },
   });
   if (activeRefund.count === 0) {
     await db.libraryExport.updateMany({
-      where: { id: exportId, status: 'complete', expiresAt: { gt: new Date() }, egressBytes: { gte: refundBytes } },
-      data: { egressBytes: { decrement: refundBytes } },
+      where: { id: exportId, status: 'complete', expiresAt: { gt: now }, egressBytes: { gte: refundBytes } },
+      data: { egressBytes: { decrement: refundBytes }, updatedAt: now },
     });
   }
 }
@@ -645,9 +646,10 @@ export async function refundExportEgressReservation(
 ): Promise<void> {
   if (reservationBytes <= BigInt(0)) return;
   const db = requireDb();
+  const now = new Date();
   const refunded = await db.libraryExport.updateMany({
     where: { id: exportId, egressBytes: { gte: reservationBytes } },
-    data: { egressBytes: { decrement: reservationBytes } },
+    data: { egressBytes: { decrement: reservationBytes }, updatedAt: now },
   });
   if (refunded.count !== 1) {
     const existing = await db.libraryExport.findFirst({ where: { id: exportId }, select: { id: true } });

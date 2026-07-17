@@ -158,10 +158,9 @@ const fakePrisma = vi.hoisted(() => {
         return { ...row };
       },
       updateMany: async ({ where, data }: any) => {
-        // Mirrors documented Prisma/Postgres semantics: filters (including
-        // comparison operators) and atomic increment/decrement apply per row.
-        // The body is synchronous, so like a row-locked UPDATE it can never
-        // interleave with another updateMany mid-application.
+        // Mirrors Postgres filters and atomic arithmetic. `updateMany` does
+        // not advance Prisma's @updatedAt field unless the service supplies
+        // updatedAt explicitly in data.
         let count = 0;
         for (const row of state.exports.values()) {
           if (where.id && row.id !== where.id) continue;
@@ -185,7 +184,7 @@ const fakePrisma = vi.hoisted(() => {
               applied[key] = value;
             }
           }
-          Object.assign(row, applied, { updatedAt: new Date() });
+          Object.assign(row, applied);
           count += 1;
         }
         return { count };

@@ -206,6 +206,16 @@ describe.skipIf(!dbAvailable)('library export persistence (DB)', () => {
       expect(after.egressBytes <= allowance).toBe(true);
     });
 
+    it('records reservation time as the rolling-window clock', async () => {
+      const { export: created } = await createOrReuseExport(OWNER);
+      const row = (await getOwnedExport(OWNER, created.id))!;
+      const reservedAt = new Date(row.updatedAt.getTime() + 5_000);
+
+      expect((await reserveExportEgress(row, BigInt(1), reservedAt)).kind).toBe('reserved');
+      const after = (await getOwnedExport(OWNER, created.id))!;
+      expect(after.updatedAt.getTime()).toBe(reservedAt.getTime());
+    });
+
     it('admits exactly to the boundary, refuses beyond it, and classifies the refusal', async () => {
       const { export: created } = await createOrReuseExport(OWNER);
       const row = (await getOwnedExport(OWNER, created.id))!;
