@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { prisma, vectorSearch, logSearch, type VectorSearchRow } from '@/lib/db';
+import { toGridAsset, mapAssetTags } from '@/lib/asset-dto';
 import { CLIP_MODEL, createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
 import {
   EmbeddingConfigurationError,
@@ -138,29 +139,10 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
           include: { tag: true },
         });
 
-        return {
-          id: result.id,
-          blobUrl: result.blob_url,
-          thumbnailUrl: result.thumbnail_url ?? null,
-          pathname: result.pathname,
-          filename: result.pathname.split('/').pop() || result.pathname,
-          mime: result.mime,
-          width: result.width,
-          height: result.height,
-          favorite: result.favorite,
-          size: result.size,
-          createdAt: result.created_at,
-          // Indicate embeddings exist (search results always have embeddings)
-          embedding: { assetId: result.id },
-          embeddingStatus: 'ready' as const,
-          similarity: result.distance, // 0-1 score, higher is better
-          relevance: Math.round(result.distance * 100), // Percentage for UI
+        return toGridAsset(result, {
+          tags: mapAssetTags(assetTags),
           belowThreshold: false,
-          tags: assetTags.map((at: any) => ({
-            id: at.tag.id,
-            name: at.tag.name,
-          })),
-        };
+        });
       })
     );
 
