@@ -1,5 +1,6 @@
--- Enforcement is deliberately separate from additive DDL and backfill. It is
--- fail-closed for legacy databases that still need another resumable batch.
+-- Phase-two admission: once the phase-one projection is drained, add both
+-- constraints as NOT VALID. They enforce all new writes while keeping the
+-- validation scans in the following migration and transaction.
 BEGIN;
 
 SET lock_timeout = '5s';
@@ -20,29 +21,14 @@ END
 $$;
 
 ALTER TABLE "asset_embeddings"
-  ALTER COLUMN "owner_user_id" SET NOT NULL;
+  ADD CONSTRAINT "asset_embeddings_owner_user_id_not_null"
+  CHECK ("owner_user_id" IS NOT NULL)
+  NOT VALID;
 
 ALTER TABLE "asset_embeddings"
   ADD CONSTRAINT "asset_embeddings_owner_user_id_fkey"
   FOREIGN KEY ("owner_user_id") REFERENCES "users"("id")
   ON DELETE CASCADE ON UPDATE CASCADE
   NOT VALID;
-
-ALTER TABLE "asset_embeddings"
-  VALIDATE CONSTRAINT "asset_embeddings_owner_user_id_fkey";
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_attribute
-    WHERE attrelid = 'asset_embeddings'::regclass
-      AND attname = 'owner_user_id'
-      AND attnotnull
-  ) THEN
-    RAISE EXCEPTION 'asset_embeddings.owner_user_id final NOT NULL contract is missing';
-  END IF;
-END
-$$;
 
 COMMIT;

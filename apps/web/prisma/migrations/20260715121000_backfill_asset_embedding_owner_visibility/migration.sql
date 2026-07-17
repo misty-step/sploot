@@ -1,7 +1,6 @@
--- A resumable, bounded backfill for rolling databases. The migration executes
--- one batch so migrate deploy never takes an unbounded table lock; operators
--- can safely rerun the procedure until the remaining count reaches zero before
--- applying the enforcement migration.
+-- A resumable, bounded backfill authority for rolling databases. Each call
+-- updates at most 10,000 rows in its own transaction. Deployment orchestration
+-- drains calls until the remaining count reaches zero before enforcement.
 
 BEGIN;
 
@@ -54,9 +53,8 @@ AS $$
      OR embedding."asset_deleted_at" IS DISTINCT FROM asset."deleted_at";
 $$;
 
--- Fresh CI databases fit in one bounded batch. Legacy databases with more rows
--- remain resumable through CALL ...() and are intentionally not forced through
--- the later NOT NULL/FK migration until the readback is zero.
-CALL "sploot_backfill_asset_embedding_owner_visibility"(10000);
+-- Do not execute a batch here. Prisma marks this migration applied after its
+-- transaction, so a one-shot CALL would falsely claim a larger legacy table was
+-- drained. The deploy orchestrator owns the repeatable 10k drain and readback.
 
 COMMIT;

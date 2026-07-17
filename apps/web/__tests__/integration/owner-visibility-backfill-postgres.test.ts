@@ -4,12 +4,15 @@ import { prisma } from '@/lib/db';
 
 const describeWithDatabase = process.env.DATABASE_URL && prisma ? describe.sequential : describe.skip;
 const userId = 'owner-visibility-backfill-user';
+const staleOwnerId = userId + '-stale';
 const assetIds = Array.from({ length: 3 }, (_, index) => userId + '-' + index);
 
 describeWithDatabase('Postgres owner visibility backfill', () => {
   beforeAll(async () => {
+    await prisma.user.deleteMany({ where: { id: staleOwnerId } });
     await prisma.user.deleteMany({ where: { id: userId } });
     await prisma.user.create({ data: { id: userId, email: userId + '@example.test' } });
+    await prisma.user.create({ data: { id: staleOwnerId, email: staleOwnerId + '@example.test' } });
     await prisma.asset.createMany({
       data: assetIds.map((id, index) => ({
         id,
@@ -32,15 +35,21 @@ describeWithDatabase('Postgres owner visibility backfill', () => {
         'ready', NOW(), NOW()
       FROM unnest(${assetIds}::text[]) AS ids(id)
     `);
+    // The visibility trigger is intentionally bypassed only in this fixture so
+    // the resumable procedure has a real mismatched projection to repair. The
+    // stale owner is valid, so the final FK remains enforced throughout.
+    await prisma.$executeRaw(Prisma.sql`ALTER TABLE "asset_embeddings" DISABLE TRIGGER "asset_embeddings_sync_visibility"`);
     await prisma.$executeRaw(Prisma.sql`
       UPDATE "asset_embeddings"
-      SET "owner_user_id" = NULL, "asset_deleted_at" = NULL
+      SET "owner_user_id" = ${staleOwnerId}, "asset_deleted_at" = NOW()
       WHERE "asset_id" = ANY(${assetIds})
     `);
+    await prisma.$executeRaw(Prisma.sql`ALTER TABLE "asset_embeddings" ENABLE TRIGGER "asset_embeddings_sync_visibility"`);
   }, 30_000);
 
   afterAll(async () => {
     await prisma.user.deleteMany({ where: { id: userId } });
+    await prisma.user.deleteMany({ where: { id: staleOwnerId } });
   });
 
   it('drains separate bounded batches and reaches zero before enforcement', async () => {

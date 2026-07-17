@@ -10,6 +10,7 @@ const finalSchemaSource = readFileSync('apps/web/scripts/assert-final-embedding-
 const projectionMigration = readFileSync('apps/web/prisma/migrations/20260715120000_add_asset_embedding_owner_visibility/migration.sql', 'utf8');
 const backfillMigration = readFileSync('apps/web/prisma/migrations/20260715121000_backfill_asset_embedding_owner_visibility/migration.sql', 'utf8');
 const enforcementMigration = readFileSync('apps/web/prisma/migrations/20260715122000_enforce_asset_embedding_owner_visibility/migration.sql', 'utf8');
+const finalizationMigration = readFileSync('apps/web/prisma/migrations/20260715122100_finalize_asset_embedding_owner_visibility/migration.sql', 'utf8');
 
 function validateHnswPlanProbe(workflowText) {
   const probe = workflowText.match(/seed_and_explain_hnsw\(\) \{([\s\S]*?)\n          \}\n\n          assert_hnsw_contract/);
@@ -78,6 +79,10 @@ function validateProductionVectorQueryShapes(dbText, advancedText) {
   assert.match(dbText, /SET LOCAL hnsw\.iterative_scan = 'strict_order'/);
   assert.match(dbText, /HNSW_MAX_SCAN_TUPLES = 20_000/);
   assert.match(dbText, /hnsw\.max_scan_tuples/);
+  assert.match(dbText, /raw_distance/);
+  assert.match(dbText, /rawDistance/);
+  assert.match(dbText, /cursor\.rawDistance::double precision/);
+  assert.match(dbText, /ae\.asset_id > \${cursor\.id}/);
   assert.doesNotMatch(dbText, /ORDER BY\s+1\s*-\s*\(?.*image_embedding/);
 
   assert.match(advancedText, /buildRankedEmbeddingCte\(/);
@@ -86,9 +91,15 @@ function validateProductionVectorQueryShapes(dbText, advancedText) {
   assert.match(advancedText, /ae\.status = 'ready'/);
   assert.match(advancedText, /asset_deleted_at IS NULL/);
   assert.match(advancedText, /queryHnswRanked/);
+  assert.match(advancedText, /rankedTagClause/);
+  assert.match(advancedText, /tagClause/);
+  assert.match(advancedText, /getSearchResultPage/);
+  assert.match(advancedText, /setSearchResultPage/);
+  assert.doesNotMatch(advancedText, /getSearchResults/);
+  assert.doesNotMatch(advancedText, /a\.created_at/);
 }
 
-function validateVisibilityMigrationSplit(projection, backfill, enforcement) {
+function validateVisibilityMigrationSplit(projection, backfill, enforcement, finalization) {
   assert.match(projection, /ADD COLUMN "owner_user_id" TEXT/);
   assert.match(projection, /CREATE TRIGGER "asset_embeddings_sync_visibility"/);
   assert.match(projection, /CREATE TRIGGER "assets_propagate_embedding_visibility"/);
@@ -96,16 +107,20 @@ function validateVisibilityMigrationSplit(projection, backfill, enforcement) {
 
   assert.match(backfill, /FOR UPDATE OF embedding SKIP LOCKED/);
   assert.match(backfill, /p_batch_size/);
-  assert.match(backfill, /CALL "sploot_backfill_asset_embedding_owner_visibility"/);
+  assert.doesNotMatch(backfill, /CALL \"sploot_backfill_asset_embedding_owner_visibility\"/);
   assert.match(backfill, /visibility_backfill_remaining/);
 
   assert.match(enforcement, /SET lock_timeout = '5s'/);
   assert.match(enforcement, /SET statement_timeout = '30s'/);
-  assert.match(enforcement, /ALTER COLUMN "owner_user_id" SET NOT NULL/);
+  assert.match(enforcement, /CHECK \(\"owner_user_id\" IS NOT NULL\)/);
+  assert.doesNotMatch(enforcement, /ALTER COLUMN \"owner_user_id\" SET NOT NULL/);
   assert.match(enforcement, /ADD CONSTRAINT "asset_embeddings_owner_user_id_fkey"/);
   assert.match(enforcement, /NOT VALID/);
-  assert.match(enforcement, /VALIDATE CONSTRAINT/);
-  assert.match(enforcement, /AND attnotnull/);
+  assert.doesNotMatch(enforcement, /VALIDATE CONSTRAINT/);
+  assert.match(finalization, /VALIDATE CONSTRAINT \"asset_embeddings_owner_user_id_not_null\"/);
+  assert.match(finalization, /VALIDATE CONSTRAINT \"asset_embeddings_owner_user_id_fkey\"/);
+  assert.match(finalization, /ALTER COLUMN \"owner_user_id\" SET NOT NULL/);
+  assert.match(finalization, /AND attnotnull/);
 }
 
 test('CI SQL fixtures supply every schema-owned server timestamp', () => {
@@ -136,14 +151,15 @@ test('production vector query mutation cannot reintroduce transformed ordering',
 });
 
 test('owner visibility migration is additive, resumable, and timeout-bounded', () => {
-  validateVisibilityMigrationSplit(projectionMigration, backfillMigration, enforcementMigration);
+  validateVisibilityMigrationSplit(projectionMigration, backfillMigration, enforcementMigration, finalizationMigration);
 });
 
 test('owner visibility enforcement mutation cannot weaken the final catalog oracle', () => {
   assert.throws(() => validateVisibilityMigrationSplit(
     projectionMigration,
     backfillMigration,
-    enforcementMigration.replace(/\s+AND attnotnull\s+/, '\n'),
+    enforcementMigration,
+    finalizationMigration.replace(/\s+AND attnotnull\s+/, '\n'),
   ));
 });
 

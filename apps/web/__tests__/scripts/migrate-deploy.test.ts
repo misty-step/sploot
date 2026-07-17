@@ -103,7 +103,8 @@ describe('online migration transaction contract', () => {
       '20260715120000_add_asset_embedding_owner_visibility',
       '20260715121000_backfill_asset_embedding_owner_visibility',
       '20260715122000_enforce_asset_embedding_owner_visibility',
-      '20260715130000_add_provider_neutral_storage',
+      '20260715122100_finalize_asset_embedding_owner_visibility',
+      '20260715130000_add_provider_neutral_storage'
     ]);
     for (const name of names) {
       if (name === '20260715080000_add_library_exports') continue;
@@ -149,6 +150,29 @@ describe('online migration transaction contract', () => {
     expect(replacement).toContain('terminal embedding may exit only through bounded revival transition');
     expect(replacement).toContain("SET LOCAL lock_timeout = '5s'");
     expect(replacement).toContain("SET LOCAL statement_timeout = '30s'");
+  });
+
+  it('keeps owner visibility draining separate from final enforcement', () => {
+    const migrationRoot = join(process.cwd(), 'prisma/migrations');
+    const backfill = readFileSync(join(migrationRoot, '20260715121000_backfill_asset_embedding_owner_visibility/migration.sql'), 'utf8');
+    const enforcement = readFileSync(join(migrationRoot, '20260715122000_enforce_asset_embedding_owner_visibility/migration.sql'), 'utf8');
+    const finalization = readFileSync(join(migrationRoot, '20260715122100_finalize_asset_embedding_owner_visibility/migration.sql'), 'utf8');
+
+    expect(backfill).toContain('CREATE OR REPLACE PROCEDURE');
+    expect(backfill).toContain('LIMIT p_batch_size');
+    expect(backfill).toContain('FOR UPDATE OF embedding SKIP LOCKED');
+    expect(backfill).not.toContain('CALL "sploot_backfill_asset_embedding_owner_visibility"');
+
+    expect(enforcement).toContain('CHECK ("owner_user_id" IS NOT NULL)');
+    expect(enforcement).toContain('ADD CONSTRAINT "asset_embeddings_owner_user_id_fkey"');
+    expect(enforcement).toContain('NOT VALID');
+    expect(enforcement).not.toContain('VALIDATE CONSTRAINT');
+    expect(finalization).toContain('VALIDATE CONSTRAINT "asset_embeddings_owner_user_id_not_null"');
+    expect(finalization).toContain('VALIDATE CONSTRAINT "asset_embeddings_owner_user_id_fkey"');
+    expect(finalization.indexOf('VALIDATE CONSTRAINT "asset_embeddings_owner_user_id_not_null"')).toBeLessThan(
+      finalization.indexOf('ALTER COLUMN "owner_user_id" SET NOT NULL'),
+    );
+    expect(finalization).toContain('DROP CONSTRAINT "asset_embeddings_owner_user_id_not_null"');
   });
 
   it('enforces bounded DDL timeouts at the migration runner boundary without rewriting applied SQL', () => {

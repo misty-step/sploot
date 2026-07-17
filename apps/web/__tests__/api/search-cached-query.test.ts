@@ -206,12 +206,12 @@ describe('/api/search with a cached query embedding', () => {
     ['page size', { query: 'cats', limit: 10, cursor: 'cursor-from-cats' }],
   ])('rejects a cursor replay with a changed %s before embedding or DB execution', async (_change, body) => {
     mocks.decodeVectorSearchCursor.mockReturnValue({
-      version: 3,
+      version: 4,
       userId: 'qa-design-user',
       order: 'relevance',
       id: 'asset-1',
-      distance: 0.9,
-      context: { query: 'cats', threshold: 0.2, sort: 'relevance', direction: 'desc', favoriteOnly: false, tagId: null, limit: 30 },
+      rawDistance: '0.1',
+      context: { query: 'cats', embeddingModel: 'default', threshold: 0.2, sort: 'relevance', direction: 'desc', favoriteOnly: false, tagId: null, limit: 30 },
     });
     mocks.vectorSearchCursorMatchesContext.mockReturnValue(false);
     mocks.getTextEmbedding.mockResolvedValue(new Array(512).fill(0.1));

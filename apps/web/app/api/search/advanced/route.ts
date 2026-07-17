@@ -484,6 +484,22 @@ async function performMetadataSearch(
     where.favorite = true;
   }
 
+  const validatedTags = filters.tags?.filter(
+    (tag): tag is string => typeof tag === 'string' && tag.length > 0 && tag.length < 100
+  ) || [];
+  if (validatedTags.length > 0) {
+    // Apply tags in Prisma's WHERE before take/skip so pagination cannot
+    // discard untagged rows and return a short or drifting page.
+    where.tags = {
+      some: {
+        tag: {
+          ownerUserId: userId,
+          name: { in: validatedTags },
+        },
+      },
+    };
+  }
+
   if (filters.mimeTypes && filters.mimeTypes.length > 0) {
     where.mime = { in: filters.mimeTypes };
   }
