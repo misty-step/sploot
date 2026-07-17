@@ -117,79 +117,31 @@ verification, and diagnostics. It stays fail-closed (503 on database, schema,
 or required-bootstrap failure), shares one bounded database probe across
 concurrent requests, and never globally disconnects the shared Prisma client.
 
-## Executable DigitalOcean lifecycle
+## Manual DigitalOcean release boundary
 
-Enrollment changes are audited DigitalOcean App Platform mutations, not local
-shell environment experiments. The repo-owned command is fail-closed and
-dry-run by default. It rejects a capped-first lifecycle, requires a structured
-App spec with exact bindings, snapshots and proves the active closed
-deployment, then performs one DigitalOcean spec update (which itself creates
-the deployment), observes the single provider deployment, waits for it, and
-uses the exact HTTPS public enrollment endpoint as runtime mode/status
-authority. Provider receipts and the authenticated operator readback retain
-deployment identity, capacity, and resolved commit diagnostics. If any step after mutation fails, it restores the snapshotted
-closed spec through the same one-update path only when the source was not
-updated and the exact provider identity receipt is still available. A source
-update or lost provider identity produces a redacted operator-recovery packet;
-the command never pretends that a spec-only update rolled Git back. It does not print
-the spec, environment values, secrets, or `doctl` output.
+Merging `master` and publishing a GitHub release do not deploy production.
+Estate's `sploot-production` declaration sets `release.policy = "manual"`,
+and Estate is the sole DigitalOcean mutation authority. A green merge or a new
+release tag is therefore not production evidence.
 
-For the one-time transition from an older closed runtime that does not yet
-expose `/api/health/enrollment`, pre-bind the deployment identity before
-merging the new runtime. This spec-only transaction preserves the live source,
-commands, jobs, routes, scaling, secrets, and auto-deploy setting; it does not
-request a source update or probe an endpoint the old runtime cannot expose:
+Before any deployed claim, compare the intended release commit with the active
+App Platform source commit and `GET /api/version`, and confirm whether a
+deployment is in progress. If the active source is stale and no deployment is
+running, the release has not started.
 
-```bash
-pnpm --filter web enrollment:lifecycle -- \
-  --mode closed --bootstrap-bindings --app-id "$DO_APP_ID" \
-  --url "$EXACT_DEPLOYMENT_URL" --marker production \
-  --commit "$CURRENT_DEPLOY_COMMIT" --change-id "$CHANGE_ID"
-```
+`pnpm --filter web enrollment:lifecycle` remains useful without `--apply` for
+product-owned dry-run validation and readback. Its direct `--apply` path is not
+an authorized agent entry point while Estate has no live DigitalOcean
+executor. Do not substitute `doctl`, the App Platform dashboard, an environment
+override, or conversational approval for an Estate-approved
+`deploy_release` artifact and receipt.
 
-Review the dry-run, then repeat it with `--apply`. Retain the returned provider
-deployment ID and verify that the same source commit remains active. The flag
-refuses already-bound or partially-bound specs, so it cannot be reused as a
-general environment editor. It also refuses if `--commit` is no longer the
-exact active source commit. Merge the reviewed runtime promptly after this
-receipt; if an unrelated auto-deploy intervenes, stop and re-run the dry-run
-against the new active commit. Once the new runtime is deployed, all later
-changes use the normal closed/GA lifecycle and its live enrollment probe.
+Until that executor exists, an agent must report the production release as
+blocked rather than mutating the provider or claiming the merged commit is
+live. After an authorized release, verify the exact active source commit,
+`/api/version`, `/api/health/live`, `/api/health`, the public enrollment state,
+and production migration history before recording production acceptance.
 
-Dry-run the closed action first:
-
-```bash
-pnpm --filter web enrollment:lifecycle -- \
-  --mode closed --app-id "$DO_APP_ID" --spec ./deploy/app-spec.yaml \
-  --url "$EXACT_DEPLOYMENT_URL" --marker production \
-  --commit "$DEPLOY_COMMIT" --change-id "$CHANGE_ID"
-```
-
-After reviewing the plan, run the same command with `--apply`. The operator's
-authenticated `doctl` context performs the audited App Platform update (GA
-also requests the provider-supported source update),
-observes its provider deployment ID, and runs the exact URL probe. A failed
-readback/probe exits non-zero and the lifecycle remains closed.
-
-Only after the closed deployment's output and audit record are retained may a
-separate deliberate GA lift run. It first proves the named closed deployment,
-then applies the GA spec, redeploys, pins the new deployment, and requires the
-same exact readback/probe:
-
-```bash
-pnpm --filter web enrollment:lifecycle -- \
-  --mode ga --closed-deployment-id "$CLOSED_DEPLOYMENT_ID" \
-  --app-id "$DO_APP_ID" --spec ./deploy/app-spec-ga.yaml \
-  --url "$EXACT_DEPLOYMENT_URL" --marker production \
-  --commit "$GA_COMMIT" --change-id "$GA_CHANGE_ID" --apply
-```
-
-The command is the deployment mutation authority; do not substitute an inline
-local `SPLOOT_ENROLLMENT_MODE=ga` value or a public-origin probe from another
-deployment. The named `--closed-deployment-id` is a provider deployment ID and
-must be the exact active closed deployment at the time of a GA lift. Rollback
-repeats the closed lifecycle and exact proof. No lifecycle example may use
-capped as the first deployed state.
 
 ## deploy contract
 

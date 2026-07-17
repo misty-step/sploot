@@ -171,7 +171,7 @@ Pre-commit runs gitleaks, secrets scan, web lint, extension lint, and typecheck 
 ## CI/CD
 
 - GitHub Actions: lint, type-check, test (with postgres service), extension build
-- DigitalOcean App Platform: automatic web deploys from `master`
+- DigitalOcean App Platform: manual web releases under Estate authority; merging `master` does not deploy production
 - Extension: Manual submission to Chrome Web Store from `apps/extension/.output/`
 
 ## Known Debt Map
