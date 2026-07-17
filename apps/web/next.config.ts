@@ -11,6 +11,10 @@ import { assertPublicTruthE2EBuildAllowed, isPublicTruthE2EBuild } from "./lib/p
 
 assertPublicTruthE2EBuildAllowed(process.env);
 const publicTruthE2EBuild = isPublicTruthE2EBuild(process.env);
+const QA_BUILD_PUBLISHABLE_KEY = 'pk_test_Y2xlcmsuZXhhbXBsZS5jb20k';
+const qaEvidenceBuildSafe = !process.env.CLERK_SECRET_KEY &&
+  (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY === QA_BUILD_PUBLISHABLE_KEY);
+
 const qaLocalDeployment =
   process.env.SPLOOT_DEPLOYMENT_ENV === 'development' ||
   process.env.SPLOOT_DEPLOYMENT_ENV === 'test' ||
@@ -39,7 +43,7 @@ const nextConfig: NextConfig = {
     process.env.SPLOOT_QA_DEPLOYMENT_ID === 'sploot-gallery-qa-local' &&
     process.env.SPLOOT_QA_DEPLOYMENT_AUDIENCE === 'sploot-gallery-evidence' &&
     process.env.DEPLOYMENT_ENV === 'qa-local' &&
-    !process.env.CLERK_SECRET_KEY && !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+    qaEvidenceBuildSafe
     ? { output: 'standalone' }
     : {}),
   env: {
@@ -85,7 +89,7 @@ const nextConfig: NextConfig = {
       process.env.SPLOOT_QA_DEPLOYMENT_ID === 'sploot-gallery-qa-local' &&
       process.env.SPLOOT_QA_DEPLOYMENT_AUDIENCE === 'sploot-gallery-evidence' &&
       process.env.DEPLOYMENT_ENV === 'qa-local' &&
-      !process.env.CLERK_SECRET_KEY && !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+      qaEvidenceBuildSafe
       ? { loader: 'custom' as const, loaderFile: './lib/qa/qa-image-loader.ts' }
       : {}),
     // Configure domains for Next.js Image optimization
