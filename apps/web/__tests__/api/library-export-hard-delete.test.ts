@@ -44,10 +44,14 @@ const fakePrisma = vi.hoisted(() => {
   const db: any = {
     user: { findUnique: async () => ({ id: OWNER }) },
     asset: {
-      findFirst: async ({ where }: any) =>
-        where.id === asset.id && where.ownerUserId === OWNER && asset.deletedAt === null
+      findFirst: async ({ where }: any) => {
+        const deletedAtMatches = where.deletedAt?.not !== undefined
+          ? asset.deletedAt !== null
+          : asset.deletedAt === null;
+        return where.id === asset.id && where.ownerUserId === OWNER && deletedAtMatches
           ? { ...asset }
-          : null,
+          : null;
+      },
       count: async ({ where }: any) => (where.ownerUserId === OWNER && asset.deletedAt === null ? 1 : 0),
       findMany: async ({ where, take }: any) => {
         if (where.ownerUserId !== OWNER || asset.deletedAt !== null) return [];
@@ -55,6 +59,10 @@ const fakePrisma = vi.hoisted(() => {
         if (where.id?.gt && !(asset.id > where.id.gt)) return [];
         const row = { ...asset };
         return [{ id: row.id, size: row.size, mime: row.mime, blobUrl: row.blobUrl, checksumSha256: row.checksumSha256, width: row.width, height: row.height, favorite: row.favorite, phash: row.phash, createdAt: row.createdAt, updatedAt: row.updatedAt }].slice(0, take ?? 1000);
+      },
+      update: async ({ data }: any) => {
+        Object.assign(asset, data);
+        return { ...asset };
       },
       delete: async () => {
         asset.deletedAt = new Date();
@@ -115,6 +123,8 @@ const fakePrisma = vi.hoisted(() => {
       },
     },
     $transaction: async (fn: any) => fn(db),
+    $queryRawUnsafe: async () => [],
+    $executeRawUnsafe: async () => 1,
     $executeRaw: async () => 1,
   };
   return db;
