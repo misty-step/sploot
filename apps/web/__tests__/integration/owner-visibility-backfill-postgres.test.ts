@@ -86,7 +86,7 @@ describeWithDatabase('Postgres owner visibility backfill', () => {
     expect(Number(afterFirst[0]?.remaining ?? 0)).toBe(1);
 
     await admin!.$executeRaw(Prisma.sql`
-      CALL "sploot_backfill_asset_embedding_owner_visibility"(${2})
+      CALL "sploot_backfill_asset_embedding_owner_visibility"(${2}::integer)
     `);
     const afterSecond = await admin!.$queryRaw<Array<{ remaining: bigint }>>(Prisma.sql`
       SELECT "sploot_asset_embedding_visibility_backfill_remaining"() AS remaining
