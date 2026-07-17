@@ -36,8 +36,10 @@
     "postinstall": "prisma generate",
     "secrets:check": "gitleaks detect --verbose",
     "generate-icons": "node scripts/generate-icons.js",
+    "validate:pwa": "node scripts/validate-pwa-assets.mjs",
     "generate-og": "node scripts/generate-og-image.js",
     "generate-assets": "pnpm run generate-icons && pnpm run generate-og",
+    "capture:pwa-screenshots": "tsx scripts/capture-pwa-screenshots.ts",
     "benchmark": "ts-node scripts/benchmark.ts",
     "benchmark:large": "ts-node scripts/benchmark.ts 10000",
     "validate:deployment": "bash scripts/validate-deployment.sh",
@@ -48,7 +50,9 @@
     "enrollment:lifecycle": "node scripts/enrollment-lifecycle.mjs",
     "db:fingerprint": "./scripts/db-fingerprint.sh",
     "db:drift": "./scripts/db-drift-check.sh",
-    "storage:portability": "tsx scripts/storage-portability.ts"
+    "storage:portability": "tsx scripts/storage-portability.ts",
+    "e2e:queue": "PLAYWRIGHT_PROJECT=queue playwright test --config playwright.config.ts --project=queue",
+    "e2e:portable-telemetry": "PLAYWRIGHT_PROJECT=portable-telemetry playwright test --config playwright.config.ts --project=portable-telemetry"
   },
   "dependencies": {
     "@clerk/backend": "^2.33.4",

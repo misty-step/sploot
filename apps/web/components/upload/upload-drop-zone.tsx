@@ -3,8 +3,7 @@
 import { useState, useRef, DragEvent, ClipboardEvent, useEffect, useCallback } from 'react';
 import { Upload, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { CardContent } from '@/components/ui/card';
 import { showToast } from '@/components/ui/toast';
 import { UPLOAD } from '@sploot/common';
 
@@ -23,6 +22,8 @@ interface UploadDropZoneProps {
   preparingFileCount?: number;
   preparingTotalSize?: number;
 
+  /** Upload identity is ready to partition durable browser storage. */
+  isReady?: boolean;
 }
 
 /**
@@ -43,6 +44,7 @@ export function UploadDropZone({
   isPreparing = false,
   preparingFileCount = 0,
   preparingTotalSize = 0,
+  isReady = true,
 }: UploadDropZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingPulse, setIsProcessingPulse] = useState(false);
@@ -76,6 +78,7 @@ export function UploadDropZone({
   const handleDrop = (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isReady) return;
     setIsDragging(false);
     dragCounter.current = 0;
 
@@ -90,6 +93,7 @@ export function UploadDropZone({
 
   // Paste handler
   const handlePaste = useCallback((e: ClipboardEvent) => {
+    if (!isReady) return;
     const items = e.clipboardData?.items;
     if (!items) return;
 
@@ -118,10 +122,11 @@ export function UploadDropZone({
         onUrlPasted(text);
       }
     }
-  }, [onFilesAdded, onUrlPasted]);
+  }, [isReady, onFilesAdded, onUrlPasted]);
 
   // File input handler
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isReady) return;
     if (e.target.files && e.target.files.length > 0) {
       onFilesAdded(Array.from(e.target.files));
       // Reset input to allow selecting same file again
@@ -138,15 +143,22 @@ export function UploadDropZone({
 
   return (
     <>
-      <Card
+      <button
+        type="button"
+        aria-label="Choose files to upload"
+        aria-disabled={!isReady}
+        data-upload-ready={isReady ? 'true' : 'false'}
+        disabled={!isReady}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
         className={cn(
+          'block w-full text-left',
           'relative border-[3px] border-dashed border-sploot-ink rounded-[var(--sploot-radius)] transition-all duration-200 cursor-pointer',
           'bg-sploot-paper-warm shadow-none',
+          'disabled:cursor-not-allowed disabled:opacity-60',
           'hover:border-sploot-blue hover:bg-sploot-yellow/20',
           isDragging
             ? 'border-sploot-blue bg-sploot-yellow/30 scale-[1.01]'
@@ -190,20 +202,14 @@ export function UploadDropZone({
           <p className="font-mono text-xs text-muted-foreground mb-5">
             jpeg, png, webp, gif, mp4, webm · zips &amp; bookmark exports too · max {UPLOAD.maxSizeMB}mb per file
           </p>
-          <Button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              fileInputRef.current?.click();
-            }}
-          >
+          <span className="inline-flex items-center justify-center rounded-md border border-sploot-ink bg-sploot-blue px-4 py-2 text-sm font-medium text-white sploot-shadow-sm">
             pick files
-          </Button>
+          </span>
           <p className="text-xs text-muted-foreground mt-3">
             or click anywhere here to browse • paste an image or its url
           </p>
         </CardContent>
-      </Card>
+      </button>
 
       {/* Hidden file input */}
       <input
@@ -211,6 +217,7 @@ export function UploadDropZone({
         type="file"
         multiple
         accept={allowedFileTypes.join(',')}
+        disabled={!isReady}
         onChange={handleFileSelect}
         className="hidden"
       />

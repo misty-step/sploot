@@ -31,6 +31,7 @@ model User {
   storageQuota             UserStorageQuota?
   storageQuotaReservations StorageQuotaReservation[]
   uploadTokens             UploadToken[]
+  uploadIdempotency        UploadIdempotency[]
   searchLogs               SearchLog[]
   embeddingRateLeases      EmbeddingRateLease[]
   libraryExports           LibraryExport[]
@@ -142,6 +143,30 @@ model Asset {
   @@index([favorite])
   @@index([shareSlug])
   @@map("assets")
+}
+
+// Durable boundary for retries after a client tab or request crashes. The
+// queue id is stable across stale-lease recovery, so a completed request can
+// be replayed without re-running the vendor-costing ingestion pipeline.
+model UploadIdempotency {
+  id             String   @id @default(cuid())
+  ownerUserId    String   @map("owner_user_id")
+  key            String
+  status         String   @default("processing")
+  result         Json?
+  leaseToken     String   @map("lease_token")
+  leaseExpiresAt DateTime @map("lease_expires_at")
+  retainedUntil  DateTime @map("retained_until")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  owner User @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerUserId, key], name: "upload_idempotency_owner_key")
+  @@index([leaseExpiresAt])
+  @@index([status, retainedUntil])
+  @@index([status, leaseExpiresAt])
+  @@map("upload_idempotency")
 }
 
 // AssetEmbedding model - stores vector embeddings for semantic search

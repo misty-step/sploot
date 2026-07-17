@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   fetchRemoteImage: vi.fn(),
   ingestImage: vi.fn(),
   userFindUnique: vi.fn(),
+  runIdempotentUpload: vi.fn(async (_owner: string, _key: string, execute: () => Promise<unknown>) => execute()),
   uploadGateEnabled: true,
 }));
 
@@ -42,17 +43,23 @@ vi.mock('@/lib/with-observability', () => ({
   withObservability: (handler: any) => handler,
 }));
 
+vi.mock('@/lib/upload/upload-idempotency', () => ({
+  runIdempotentUpload: mocks.runIdempotentUpload,
+  UploadIdempotencyInProgressError: class extends Error {},
+  UploadIdempotencyLeaseLostError: class extends Error {},
+}));
+
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 import { POST } from '@/app/api/upload/url/route';
 
-function request(body: unknown): NextRequest {
+function request(body: unknown, headers?: Record<string, string>): NextRequest {
   return new NextRequest('http://localhost:3000/api/upload/url', {
     method: 'POST',
     body: JSON.stringify(body),
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
   });
 }
 
@@ -142,6 +149,21 @@ describe('POST /api/upload/url', () => {
 
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ success: true, isDuplicate: true });
+  });
+
+  it('runs URL imports through the durable receipt keyed by the queue record id', async () => {
+    authed();
+    mocks.validateImportUrl.mockReturnValue({ ok: true, url: new URL('https://x.com/a.png') });
+    mocks.fetchRemoteImage.mockResolvedValue({
+      ok: true,
+      file: new File([new Uint8Array([1])], 'a.png', { type: 'image/png' }),
+    });
+    mocks.ingestImage.mockResolvedValue({ kind: 'created', asset: { id: 'a1' } });
+
+    const response = await POST(request({ url: 'https://x.com/a.png' }, { 'Idempotency-Key': 'queue-record-1' }), {} as any);
+
+    expect(response.status).toBe(201);
+    expect(mocks.runIdempotentUpload).toHaveBeenCalledWith('qa-design-user', 'queue-record-1', expect.any(Function));
   });
 
   it('returns 400 when the body has no url', async () => {

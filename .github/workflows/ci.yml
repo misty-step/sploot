@@ -74,13 +74,27 @@ jobs:
   web-build:
     name: Web production build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Recorded PWA provenance resolves the immutable capture base/tree
+          # from Git objects even on synthetic merge heads.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
+      - name: Fetch immutable PWA capture base
+        shell: bash
+        run: |
+          set -euo pipefail
+          capture_base="$(node -e "console.log(JSON.parse(require('fs').readFileSync('apps/web/public/screenshots/capture-manifest.json', 'utf8')).gitCommit)")"
+          git fetch --no-tags --depth=1 origin "$capture_base"
+          git cat-file -e "$capture_base^{commit}"
+          git cat-file -e "$capture_base^{tree}"
       - run: pnpm install --frozen-lockfile
       - name: Build without runtime database or provider secrets
         env:
@@ -91,6 +105,8 @@ jobs:
         run: pnpm telemetry:check -- --bundle-dir apps/web/.next/static --expect-endpoint /ci-telemetry-sink --expect-enabled false --expect-clerk-disabled
       - name: Scan server output and public assets for provider residue
         run: pnpm telemetry:check -- --bundle-dir apps/web/.next/server --bundle-dir apps/web/public
+      - name: Validate generated PWA install assets
+        run: pnpm --filter web validate:pwa
 
   design:
     name: Design
@@ -148,11 +164,23 @@ jobs:
       DATABASE_URL: postgresql://test:test@localhost:5432/sploot_test?sslmode=disable
     steps:
       - uses: actions/checkout@v6
+        with:
+          # pwa-contract validates the checked-in capture manifest against its
+          # independent immutable Git base, which must exist in this job.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
+      - name: Fetch immutable PWA capture base
+        shell: bash
+        run: |
+          set -euo pipefail
+          capture_base="$(node -e "console.log(JSON.parse(require('fs').readFileSync('apps/web/public/screenshots/capture-manifest.json', 'utf8')).gitCommit)")"
+          git fetch --no-tags --depth=1 origin "$capture_base"
+          git cat-file -e "$capture_base^{commit}"
+          git cat-file -e "$capture_base^{tree}"
       - run: pnpm install --frozen-lockfile
       # GitHub-hosted runners do not include the Playwright browser binary.
       - name: Install Playwright Chromium
@@ -211,7 +239,7 @@ jobs:
           SPLOOT_DEPLOYMENT_ENV: development
           SPLOOT_ENROLLMENT_MODE: ga
           NO_PROXY: localhost,127.0.0.1
-        run: pnpm --filter web e2e:auth -- e2e/portable-telemetry.spec.ts
+        run: pnpm --filter web e2e:portable-telemetry
       - name: Report production-start Playwright failures
         if: ${{ failure() }}
         working-directory: apps/web
@@ -330,6 +358,133 @@ jobs:
           RELEASE_CANDIDATE_SHA: ${{ github.sha }}
         run: pnpm --filter extension release:verify-uploaded
 
+  auth-browser:
+    name: Chromium QA auth smoke
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: sploot_auth
+        ports:
+          - 55433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://test:test@localhost:55433/sploot_auth?sslmode=disable
+      SPLOOT_DEPLOYMENT_ENV: test
+      DEPLOYMENT_ENV: local-qa
+      SPLOOT_QA_AUTH_MODE: enabled
+      SPLOOT_PWA_CAPTURE_MODE: enabled
+      SPLOOT_QA_DEPLOYMENT_ID: local-pwa-capture-v1
+      SPLOOT_QA_DEPLOYMENT_ENV: local-qa
+      SPLOOT_QA_AUDIENCE: sploot-pwa-capture
+      SPLOOT_QA_BIND_HOST: 127.0.0.1
+      SPLOOT_QA_LOCAL_CAPABILITY: 0123456789abcdef0123456789abcdef0123456789abcdef
+      SPLOOT_QA_AUTH_SECRET: chromium-auth-ci-secret
+      NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: enabled
+      NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: 'true'
+      NEXT_PUBLIC_SPLOOT_PWA_CAPTURE_MODE: enabled
+      NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID: local-pwa-capture-v1
+      NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ENV: local-qa
+      NEXT_PUBLIC_SPLOOT_QA_AUDIENCE: sploot-pwa-capture
+      PLAYWRIGHT_PROJECT: auth
+      PLAYWRIGHT_AUTH_PORT: 3139
+      PLAYWRIGHT_FIXTURE_SERVER_MODE: production
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run auth database migrations
+        run: pnpm --filter web db:migrate
+      - name: Seed the enrolled auth principal
+        run: pnpm --filter web qa:seed --user-id qa-playwright-user --count 1 --images-only
+      - name: Build the QA-auth production artifact
+        run: pnpm --filter web build
+      - name: Install Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Exercise the real QA auth boundary
+        run: pnpm --filter web e2e:auth
+      - name: Exercise portable runtime telemetry behavior
+        env:
+          PLAYWRIGHT_PROJECT: portable-telemetry
+        run: pnpm --filter web e2e:portable-telemetry
+
+  queue-browser:
+    name: Chromium upload queue seams
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: sploot_queue
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://test:test@localhost:55432/sploot_queue?sslmode=disable
+      SPLOOT_DEPLOYMENT_ENV: test
+      DEPLOYMENT_ENV: local-qa
+      SPLOOT_QA_AUTH_MODE: enabled
+      SPLOOT_PWA_CAPTURE_MODE: enabled
+      SPLOOT_QA_DEPLOYMENT_ID: local-pwa-capture-v1
+      SPLOOT_QA_DEPLOYMENT_ENV: local-qa
+      SPLOOT_QA_AUDIENCE: sploot-pwa-capture
+      SPLOOT_QA_BIND_HOST: 127.0.0.1
+      SPLOOT_QA_LOCAL_CAPABILITY: 0123456789abcdef0123456789abcdef0123456789abcdef
+      SPLOOT_QA_AUTH_SECRET: chromium-upload-queue-ci-secret
+      SPLOOT_QA_ALLOW_LOCAL_URL_IMPORT: '1'
+      SPLOOT_ENROLLMENT_MODE: ga
+      NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: enabled
+      NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: 'true'
+      NEXT_PUBLIC_SPLOOT_PWA_CAPTURE_MODE: enabled
+      NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID: local-pwa-capture-v1
+      NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ENV: local-qa
+      NEXT_PUBLIC_SPLOOT_QA_AUDIENCE: sploot-pwa-capture
+      PLAYWRIGHT_PROJECT: queue
+      PLAYWRIGHT_QUEUE_PORT: 3138
+      PLAYWRIGHT_FIXTURE_SERVER_MODE: production
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run queue database migrations
+        run: pnpm --filter web db:migrate
+      - name: Seed deterministic QA database
+        shell: bash
+        run: |
+          set -euo pipefail
+          for user_id in qa-design-user qa-upload-tabs-user qa-upload-queue-user qa-upload-pwa-user qa-upload-retry-user; do
+            pnpm --filter web qa:seed --user-id "$user_id" --count 24 --images-only
+          done
+      - name: Build the production PWA worker with the local QA seam
+        run: pnpm --filter web build
+      - name: Install Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Exercise the real restartable upload queue
+        run: pnpm --filter web e2e:queue
+
   public-truth:
     name: Public truth browser
     runs-on: ubuntu-latest
@@ -408,15 +563,15 @@ jobs:
   merge-gate:
     name: merge-gate
     if: always()
-    needs: [secrets, lint, type-check, web-build, design, economics, test, extension, verify-extension-dist, public-truth, public-truth-production-guard, db-authority]
+    needs: [secrets, lint, type-check, web-build, design, economics, test, extension, verify-extension-dist, auth-browser, queue-browser, public-truth, public-truth-production-guard, db-authority]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.economics.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.verify-extension-dist.result }}" "${{ needs.public-truth.result }}" "${{ needs.public-truth-production-guard.result }}" "${{ needs.db-authority.result }}")
+          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.economics.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.verify-extension-dist.result }}" "${{ needs.public-truth.result }}" "${{ needs.public-truth-production-guard.result }}" "${{ needs.db-authority.result }}" "${{ needs.auth-browser.result }}" "${{ needs.queue-browser.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" ]]; then
-              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} economics=${{ needs.economics.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }} verify-extension-dist=${{ needs.verify-extension-dist.result }} public-truth=${{ needs.public-truth.result }} public-truth-production-guard=${{ needs.public-truth-production-guard.result }} db-authority=${{ needs.db-authority.result }}"
+              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} economics=${{ needs.economics.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }} verify-extension-dist=${{ needs.verify-extension-dist.result }} auth-browser=${{ needs.auth-browser.result }} queue-browser=${{ needs.queue-browser.result }} public-truth=${{ needs.public-truth.result }} public-truth-production-guard=${{ needs.public-truth-production-guard.result }} db-authority=${{ needs.db-authority.result }}"
               exit 1
             fi
           done

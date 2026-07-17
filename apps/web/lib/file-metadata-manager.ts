@@ -1,3 +1,5 @@
+import { createUploadId } from '@/lib/upload-queue';
+
 /**
  * File Metadata Manager
  *
@@ -41,8 +43,14 @@ export class FileMetadataManager {
    * Add a new file with metadata
    */
   addFile(file: File, id?: string): FileMetadata {
+    let metadataId = id ?? createUploadId();
+    while (this.metadata.has(metadataId)) {
+      if (id) throw new Error(`File metadata ID already exists: ${id}`);
+      metadataId = createUploadId();
+    }
+
     const metadata: FileMetadata = {
-      id: id || `${Date.now()}-${Math.random()}`,
+      id: metadataId,
       name: file.name,
       size: file.size,
       status: 'pending',

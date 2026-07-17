@@ -1,51 +1,92 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const port = Number(process.env.PLAYWRIGHT_PORT ?? 3108);
+const selectedProject = process.env.PLAYWRIGHT_PROJECT ?? (() => {
+  const index = process.argv.findIndex((arg) => arg === '--project');
+  return process.argv.find((arg) => arg.startsWith('--project='))?.slice('--project='.length) ??
+    (index >= 0 ? process.argv[index + 1] : undefined);
+})();
+const isQueueProject = selectedProject === 'queue';
+const isAuthProject = selectedProject === 'auth';
+const isPortableTelemetryProject = selectedProject === 'portable-telemetry';
+const port = isQueueProject
+  ? Number(process.env.PLAYWRIGHT_QUEUE_PORT ?? 3138)
+  : isAuthProject || isPortableTelemetryProject
+    ? Number(process.env.PLAYWRIGHT_AUTH_PORT ?? 3139)
+    : Number(process.env.PLAYWRIGHT_PORT ?? 3108);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:' + port;
 const qaSecret = process.env.SPLOOT_QA_AUTH_SECRET ?? 'local-playwright-secret-with-enough-entropy';
 const commandArgs = process.argv.slice(2);
-const authProjectSelected = commandArgs.some((arg, index) =>
+const authProjectSelected = isAuthProject || isPortableTelemetryProject || commandArgs.some((arg, index) =>
   arg === '--project=auth' || (arg === '--project' && commandArgs[index + 1] === 'auth')
 ) || process.env.SPLOOT_QA_AUTH_MODE === 'enabled';
+const authWebServerEnv: Record<string, string> = authProjectSelected ? {
+  DEPLOYMENT_ENV: 'local-qa',
+  SPLOOT_PWA_CAPTURE_MODE: 'enabled',
+  SPLOOT_QA_DEPLOYMENT_ID: 'local-pwa-capture-v1',
+  SPLOOT_QA_DEPLOYMENT_ENV: 'local-qa',
+  SPLOOT_QA_AUDIENCE: 'sploot-pwa-capture',
+  SPLOOT_QA_BIND_HOST: '127.0.0.1',
+  SPLOOT_QA_LOCAL_CAPABILITY: '0123456789abcdef0123456789abcdef0123456789abcdef',
+  NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: 'enabled',
+  NEXT_PUBLIC_SPLOOT_PWA_CAPTURE_MODE: 'enabled',
+} : {};
 const webServerCommand = authProjectSelected
-  ? 'pnpm --filter web build && PORT=' + port + ' pnpm --filter web start --hostname 0.0.0.0'
+  ? 'pnpm --filter web build && PORT=' + port + ' pnpm --filter web start --hostname 127.0.0.1'
   : 'pnpm e2e:public-truth:serve';
 const webServerUrl = authProjectSelected ? baseURL + '/api/health/live' : baseURL;
 
 export default defineConfig({
   testDir: './e2e',
   timeout: 90_000,
-  expect: {
-    timeout: 10_000,
-  },
+  fullyParallel: false,
   use: {
     baseURL,
-    // The public-truth project uses a deterministic signed-out Clerk cookie.
-    // It is a network fixture, never an authentication credential.
+    // A deterministic signed-out Clerk development cookie prevents the SDK's
+    // browser handshake from leaving the local test server. It is only a
+    // network fixture: it is not an authentication credential, never enables
+    // a signed-in session, and is not the protected-route security oracle.
     storageState: {
       cookies: [{ name: '__clerk_db_jwt', value: 'public-truth-signed-out', domain: '127.0.0.1', path: '/', expires: 0, httpOnly: false, secure: false, sameSite: 'Lax' }],
       origins: [],
     },
     trace: 'retain-on-failure',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
   },
   projects: [
     {
       name: 'public-truth',
+      testMatch: /public-truth\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'queue',
+      testMatch: /upload-queue\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'auth',
-      testMatch: '**/portable-telemetry.spec.ts',
+      testMatch: /auth\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'portable-telemetry',
+      testMatch: /portable-telemetry\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
+  // Queue and auth fixtures own their child server (including production
+  // builds in CI), so Playwright must not race them with another server.
+  // Portable telemetry uses the production-start server contract;
+  // public-truth retains a managed server for its signed-out artifact.
+  webServer: isQueueProject || isAuthProject || process.env.PLAYWRIGHT_EXTERNAL_SERVER ? undefined : {
     command: webServerCommand,
     url: webServerUrl,
     reuseExistingServer: false,
-    timeout: 120_000,
+    timeout: 240_000,
     env: {
       ...process.env,
+      ...authWebServerEnv,
       NO_PROXY: [process.env.NO_PROXY, 'localhost', '127.0.0.1'].filter(Boolean).join(','),
       no_proxy: [process.env.no_proxy, 'localhost', '127.0.0.1'].filter(Boolean).join(','),
       PORT: String(port),

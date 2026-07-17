@@ -36,7 +36,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { createQaLocalAuthToken } from '../lib/auth/qa-local';
+import { createQaLocalAuthToken, QA_LOCAL_AUDIENCE, QA_LOCAL_DEPLOYMENT_ENV, QA_LOCAL_DEPLOYMENT_ID } from '../lib/auth/qa-local';
 import {
   renderEvidencePacket,
   packetVerdict,
@@ -279,11 +279,17 @@ async function main() {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     DATABASE_URL: process.env.DATABASE_URL ?? DEFAULT_DB_URL,
-    // The qa-local seam is compile-time gated (NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD):
-    // an explicit dev marker keeps the harness self-sufficient without .env.local.
-    SPLOOT_DEPLOYMENT_ENV: process.env.SPLOOT_DEPLOYMENT_ENV ?? 'development',
     SPLOOT_QA_AUTH_MODE: 'enabled',
     SPLOOT_QA_AUTH_SECRET: await resolveAuthSecret(args.baseUrl),
+    SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
+    SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
+    SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
+    SPLOOT_QA_BIND_HOST: '127.0.0.1',
+    SPLOOT_QA_LOCAL_CAPABILITY: randomBytes(24).toString('hex'),
+    NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: 'enabled',
+    NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
+    NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
+    NEXT_PUBLIC_SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
     CI: '1',
   };
 
@@ -689,7 +695,7 @@ async function main() {
       const port = 3100 + Math.floor(Math.random() * 400);
       baseUrl = `http://localhost:${port}`;
       console.log(`[qa-evidence] booting dev server at ${baseUrl}`);
-      server = spawn('pnpm', ['exec', 'next', 'dev', '-p', String(port)], {
+      server = spawn('pnpm', ['exec', 'next', 'dev', '-H', '127.0.0.1', '-p', String(port)], {
         env,
         cwd: process.cwd(),
         stdio: 'ignore',
@@ -701,7 +707,7 @@ async function main() {
     const token = await createQaLocalAuthToken({
       userId: QA_USER_ID,
       secret: env.SPLOOT_QA_AUTH_SECRET as string,
-      expiresInSeconds: 60 * 60,
+      expiresInSeconds: 15 * 60,
     });
     await browser('cookies', 'set', 'sploot_qa_auth', token, '--url', baseUrl);
 

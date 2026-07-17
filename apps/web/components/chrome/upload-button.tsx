@@ -1,8 +1,13 @@
 'use client';
 
 import { Upload } from 'lucide-react';
+import { useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+
+const subscribeHydration = () => () => {};
+const getClientHydrationSnapshot = () => true;
+const getServerHydrationSnapshot = () => false;
 
 interface UploadButtonProps {
   onClick?: () => void;
@@ -23,6 +28,8 @@ export function UploadButton({
   showLabel = true,
   size = 'md',
 }: UploadButtonProps) {
+  const isActionReady = useSyncExternalStore(subscribeHydration, getClientHydrationSnapshot, getServerHydrationSnapshot);
+
   // Map custom size to Button size
   const buttonSize = size === 'md' ? 'default' : size;
 
@@ -38,6 +45,7 @@ export function UploadButton({
       )}
       aria-label={showLabel ? undefined : 'Upload'}
       title={showLabel ? undefined : 'Upload new meme'}
+      data-upload-action-ready={isActionReady ? 'true' : 'false'}
     >
       <Upload className="h-4 w-4" strokeWidth={2} />
       {showLabel && 'UPLOAD'}

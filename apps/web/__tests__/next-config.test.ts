@@ -14,14 +14,23 @@ describe('next config auth-sensitive pwa caching', () => {
         cacheStartUrl?: boolean;
         dynamicStartUrl?: boolean;
         workboxOptions?: {
-          runtimeCaching?: Array<{ options?: { cacheName?: string } }>;
+          runtimeCaching?: Array<{ handler?: string; urlPattern?: unknown; options?: { cacheName?: string } }>;
         };
       };
     };
 
     expect(config.__pwaOptions.cacheStartUrl).toBe(false);
     expect(config.__pwaOptions.dynamicStartUrl).toBe(false);
-    expect(config.__pwaOptions.workboxOptions?.runtimeCaching?.map((entry) => entry.options?.cacheName))
-      .toEqual(['user-images', 'api-search']);
+    const runtimeCaching = config.__pwaOptions.workboxOptions?.runtimeCaching ?? [];
+    expect(runtimeCaching.map((entry) => entry.options?.cacheName))
+      .toEqual([undefined, 'user-images', 'api-search']);
+
+    const protectedNavigation = runtimeCaching.find((entry) => entry.handler === 'NetworkOnly');
+    expect(protectedNavigation?.options).toBeUndefined();
+    const matches = protectedNavigation?.urlPattern as ((input: { request: { mode: string }; url: URL }) => boolean);
+    expect(matches({ request: { mode: 'navigate' }, url: new URL('https://sploot.app/app') })).toBe(true);
+    expect(matches({ request: { mode: 'navigate' }, url: new URL('https://sploot.app/app/nested') })).toBe(true);
+    expect(matches({ request: { mode: 'navigate' }, url: new URL('https://sploot.app/application') })).toBe(false);
+    expect(matches({ request: { mode: 'same-origin' }, url: new URL('https://sploot.app/app') })).toBe(false);
   });
 });
