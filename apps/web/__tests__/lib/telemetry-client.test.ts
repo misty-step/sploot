@@ -95,5 +95,12 @@ describe('typed first-party telemetry client', () => {
       NEXT_PUBLIC_TELEMETRY_ENDPOINT: '/internal/telemetry',
       NEXT_PUBLIC_TELEMETRY_ENABLED: 'false',
     })).toMatchObject({ endpoint: '/internal/telemetry', enabled: false });
+
+    expect(resolveTelemetrySink({
+      // WHATWG URL parsing turns a slash-backslash prefix into a remote
+      // authority; it must not bypass the same-origin policy.
+      NEXT_PUBLIC_TELEMETRY_ENDPOINT: '/\\collector.example/events',
+      NEXT_PUBLIC_TELEMETRY_ENABLED: 'true',
+    })).toMatchObject({ endpoint: '/api/telemetry', enabled: true });
   });
 });

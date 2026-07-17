@@ -72,7 +72,16 @@ export async function postTelemetry(
 }
 
 function isSafeTelemetryEndpoint(value: string | undefined): value is string {
-  return Boolean(value && value.startsWith('/') && !value.startsWith('//'));
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return false;
+
+  try {
+    // WHATWG URL parsing treats backslashes as authority separators. Resolve
+    // against a fixed same-origin sentinel so malformed network-path values
+    // cannot escape the browser's origin despite starting with a slash.
+    return new URL(value, 'https://sploot.invalid').origin === 'https://sploot.invalid';
+  } catch {
+    return false;
+  }
 }
 
 function sanitizePerformanceTags(
