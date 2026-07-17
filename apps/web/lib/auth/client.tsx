@@ -2,7 +2,6 @@
 
 import { ClerkProvider, useClerk, useUser } from '@clerk/nextjs';
 import { usePathname } from 'next/navigation';
-import { isCompiledPublicTruthE2EBuild } from '@/lib/public-truth-e2e';
 import React from 'react';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -14,7 +13,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const needsClerkProvider =
     pathname.startsWith('/app') || pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up');
 
-  if (isCompiledPublicTruthE2EBuild() || (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' && !needsClerkProvider)) {
+  if (process.env.NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E === 'true' || (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true' && !needsClerkProvider)) {
     return children;
   }
 
