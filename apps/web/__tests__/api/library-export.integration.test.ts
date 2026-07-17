@@ -6,6 +6,7 @@ import {
   cancelExport,
   entriesForPart,
   createOrReuseExport,
+  ExportEgressWindowExhaustedError,
   getOwnedExport,
   recordPartOutcome,
   refundExportEgress,
@@ -205,6 +206,16 @@ describe.skipIf(!dbAvailable)('library export persistence (DB)', () => {
       expect(after.egressBytes <= allowance).toBe(true);
     });
 
+    it('records reservation time as the rolling-window clock', async () => {
+      const { export: created } = await createOrReuseExport(OWNER);
+      const row = (await getOwnedExport(OWNER, created.id))!;
+      const reservedAt = new Date(row.updatedAt.getTime() + 5_000);
+
+      expect((await reserveExportEgress(row, BigInt(1), reservedAt)).kind).toBe('reserved');
+      const after = (await getOwnedExport(OWNER, created.id))!;
+      expect(after.updatedAt.getTime()).toBe(reservedAt.getTime());
+    });
+
     it('admits exactly to the boundary, refuses beyond it, and classifies the refusal', async () => {
       const { export: created } = await createOrReuseExport(OWNER);
       const row = (await getOwnedExport(OWNER, created.id))!;
@@ -291,13 +302,78 @@ describe.skipIf(!dbAvailable)('library export persistence (DB)', () => {
 
 
 
-  it('caps retained inactive sessions during a force-create burst', async () => {
+  it('prunes zero-egress force-create spam even while rows are inside the window', async () => {
     await createOrReuseExport(OWNER);
     for (let index = 0; index < 40; index += 1) {
       await createOrReuseExport(OWNER, { force: true });
     }
+
     const rows = await prisma!.libraryExport.findMany({ where: { ownerUserId: OWNER } });
     expect(rows.filter((row) => row.status === 'active')).toHaveLength(1);
+    expect(rows.length).toBeLessThanOrEqual(32);
+  });
+
+  it('refuses a 33rd protected session and reopens when the earliest window slides', async () => {
+    let active = (await createOrReuseExport(OWNER)).export;
+    for (let index = 0; index < 31; index += 1) {
+      await prisma!.libraryExport.update({
+        where: { id: active.id },
+        data: { egressBytes: BigInt(1) },
+      });
+      active = (await createOrReuseExport(OWNER, { force: true })).export;
+    }
+    await prisma!.libraryExport.update({
+      where: { id: active.id },
+      data: { egressBytes: BigInt(1) },
+    });
+
+    await expect(createOrReuseExport(OWNER, { force: true })).rejects.toBeInstanceOf(
+      ExportEgressWindowExhaustedError,
+    );
+    let rows = await prisma!.libraryExport.findMany({
+      where: { ownerUserId: OWNER },
+      orderBy: { updatedAt: 'asc' },
+    });
+    expect(rows).toHaveLength(32);
+    expect(rows.filter((row) => row.status === 'active')).toHaveLength(1);
+
+    await prisma!.$executeRaw`
+      UPDATE "library_exports"
+      SET "updated_at" = NOW() - INTERVAL '25 hours'
+      WHERE "id" = ${rows[0].id}
+    `;
+    const reopened = await createOrReuseExport(OWNER, { force: true });
+    expect(reopened.reused).toBe(false);
+    rows = await prisma!.libraryExport.findMany({ where: { ownerUserId: OWNER } });
+    expect(rows.length).toBeLessThanOrEqual(32);
+  });
+
+  it('serializes a boundary reservation against force-create without erasing spend', async () => {
+    let active = (await createOrReuseExport(OWNER)).export;
+    for (let index = 0; index < 31; index += 1) {
+      await prisma!.libraryExport.update({
+        where: { id: active.id },
+        data: { egressBytes: BigInt(1) },
+      });
+      active = (await createOrReuseExport(OWNER, { force: true })).export;
+    }
+    const activeRow = (await getOwnedExport(OWNER, active.id))!;
+
+    const [reservation, forceCreate] = await Promise.allSettled([
+      reserveExportEgress(activeRow, BigInt(1)),
+      createOrReuseExport(OWNER, { force: true }),
+    ]);
+    if (reservation.status !== 'fulfilled') throw reservation.reason;
+    if (forceCreate.status === 'fulfilled') {
+      expect(reservation.value.kind).toBe('gone');
+    } else {
+      expect(forceCreate.reason).toBeInstanceOf(ExportEgressWindowExhaustedError);
+      expect(reservation.value.kind).toBe('reserved');
+      const retained = await getOwnedExport(OWNER, active.id);
+      expect(retained?.egressBytes).toBe(BigInt(1));
+    }
+
+    const rows = await prisma!.libraryExport.findMany({ where: { ownerUserId: OWNER } });
     expect(rows.length).toBeLessThanOrEqual(32);
   });
 

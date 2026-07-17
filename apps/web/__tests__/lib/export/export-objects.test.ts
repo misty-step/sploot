@@ -1,3 +1,5 @@
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   isAllowedExportObjectUrl,
@@ -5,9 +7,11 @@ import {
   openExportObject,
 } from '@/lib/export/export-objects';
 import { EXPORT_STREAM_CHUNK_BYTES } from '@/lib/export/export-backpressure';
+import { QA_SEED_BLOB_HOST } from '@/lib/qa/qa-image-loader';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe('export object reader', () => {
@@ -204,5 +208,91 @@ describe('export object reader', () => {
     expect(
       await openExportObject('https://abc.public.blob.vercel-storage.com/u/file.png'),
     ).toEqual({ ok: false, reason: 'object_fetch_failed' });
+  });
+});
+
+
+describe('QA seed object mapping', () => {
+  const seedDir = join(process.cwd(), 'public', 'qa-blob-seed');
+  const seedFile = '__test-export-objects-qa-seed.bin';
+  const seedPath = join(seedDir, seedFile);
+  const seedUrl = `${QA_SEED_BLOB_HOST}/qa-blob-seed/${seedFile}`;
+  const seedBytes = new Uint8Array([9, 8, 7, 6, 5]);
+  const escapeFile = '__test-export-objects-qa-seed-link.bin';
+  const escapePath = join(seedDir, escapeFile);
+  const outsidePath = join(seedDir, '..', '__test-export-objects-outside.bin');
+
+  afterEach(() => {
+    rmSync(seedPath, { force: true });
+    rmSync(escapePath, { force: true });
+    rmSync(outsidePath, { force: true });
+  });
+
+  function enableQaMode() {
+    vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
+    vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'test');
+  }
+
+  it('reads a seeded fixture from disk without any network fetch', async () => {
+    mkdirSync(seedDir, { recursive: true });
+    writeFileSync(seedPath, seedBytes);
+    enableQaMode();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const result = await openExportObject(seedUrl);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const buffer = new Uint8Array(await new Response(result.body).arrayBuffer());
+      expect(buffer).toEqual(seedBytes);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('reports object_missing for a seed URL with no backing file', async () => {
+    enableQaMode();
+    const result = await openExportObject(
+      `${QA_SEED_BLOB_HOST}/qa-blob-seed/does-not-exist.bin`,
+    );
+    expect(result).toEqual({ ok: false, reason: 'object_missing' });
+  });
+
+  it('rejects path traversal outside the seed directory', async () => {
+    enableQaMode();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const result = await openExportObject(
+      `${QA_SEED_BLOB_HOST}/qa-blob-seed/../../lib/export/export-objects.ts`,
+    );
+    expect(result).toEqual({ ok: false, reason: 'object_url_rejected' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects a seed-directory symlink whose canonical target escapes the root', async () => {
+    mkdirSync(seedDir, { recursive: true });
+    writeFileSync(outsidePath, seedBytes);
+    symlinkSync(outsidePath, escapePath);
+    enableQaMode();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    const result = await openExportObject(
+      `${QA_SEED_BLOB_HOST}/qa-blob-seed/${escapeFile}`,
+    );
+    expect(result).toEqual({ ok: false, reason: 'object_url_rejected' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a real network fetch for the seed host outside QA mode', async () => {
+    // No env stubbed: isQaLocalAuthEnabled() is false by default in this
+    // suite's environment, so the reserved host must go through the normal
+    // (and here, failing) network path rather than ever touching disk.
+    const fetchSpy = vi.fn(async () => {
+      throw new Error('network down');
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const result = await openExportObject(seedUrl);
+    expect(result).toEqual({ ok: false, reason: 'object_fetch_failed' });
+    expect(fetchSpy).toHaveBeenCalled();
   });
 });

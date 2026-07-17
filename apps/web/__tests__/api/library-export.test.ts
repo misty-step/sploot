@@ -105,6 +105,7 @@ const fakePrisma = vi.hoisted(() => {
       findMany: async ({ where, skip = 0, take, select }: any) => {
         const rows = [...state.exports.values()].filter((row) => {
           if (where.ownerUserId && row.ownerUserId !== where.ownerUserId) return false;
+          if (where.id?.notIn && where.id.notIn.includes(row.id)) return false;
           if (where.status?.not && row.status === where.status.not) return false;
           return true;
         }).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime()).slice(skip, take ? skip + take : undefined);
@@ -157,10 +158,9 @@ const fakePrisma = vi.hoisted(() => {
         return { ...row };
       },
       updateMany: async ({ where, data }: any) => {
-        // Mirrors documented Prisma/Postgres semantics: filters (including
-        // comparison operators) and atomic increment/decrement apply per row.
-        // The body is synchronous, so like a row-locked UPDATE it can never
-        // interleave with another updateMany mid-application.
+        // Mirrors Postgres filters and atomic arithmetic. `updateMany` does
+        // not advance Prisma's @updatedAt field unless the service supplies
+        // updatedAt explicitly in data.
         let count = 0;
         for (const row of state.exports.values()) {
           if (where.id && row.id !== where.id) continue;
@@ -184,7 +184,7 @@ const fakePrisma = vi.hoisted(() => {
               applied[key] = value;
             }
           }
-          Object.assign(row, applied, { updatedAt: new Date() });
+          Object.assign(row, applied);
           count += 1;
         }
         return { count };
@@ -241,8 +241,74 @@ const fakePrisma = vi.hoisted(() => {
           .map((tag) => ({ name: tag.name, color: tag.color })),
     },
     $transaction: async (fn: any) => fn(prismaLike),
+    $queryRaw: async (...args: unknown[]) => {
+      const strings = args[0] as readonly string[];
+      const sql = strings.join('?');
+      const values = args.slice(1);
+      const ownerUserId = String(sql.includes('AS "releaseAt"') ? values[3] : values[0]);
+      if (!sql.includes('AS "releaseAt"')) {
+        return [...state.exports.values()]
+          .filter(
+            (row) =>
+              row.ownerUserId === ownerUserId
+              && (row.status === 'active' || row.status === 'complete'),
+          )
+          .sort((left, right) => left.id.localeCompare(right.id))
+          .map((row) => ({ id: row.id }));
+      }
+      const windowStart = values[0] as Date;
+      const now = values[2] as Date;
+      const windowMs = Number(values[1]) * 1_000;
+      const limit = Number(values.at(-1));
+      return [...state.exports.values()]
+        .filter((row) => {
+          if (row.ownerUserId !== ownerUserId) return false;
+          const protectsSpend = row.egressBytes > BigInt(0) && row.updatedAt >= windowStart;
+          const protectsManifest =
+            row.status === 'complete'
+            && row.manifestFinalizedAt !== null
+            && row.manifestFinalizedArtifact !== null
+            && row.expiresAt > now;
+          return protectsSpend || protectsManifest;
+        })
+        .map((row) => {
+          const spendRelease =
+            row.egressBytes > BigInt(0) && row.updatedAt >= windowStart
+              ? row.updatedAt.getTime() + windowMs
+              : Number.NEGATIVE_INFINITY;
+          const manifestRelease =
+            row.status === 'complete'
+            && row.manifestFinalizedAt !== null
+            && row.manifestFinalizedArtifact !== null
+            && row.expiresAt > now
+              ? row.expiresAt.getTime()
+              : Number.NEGATIVE_INFINITY;
+          return {
+            id: row.id,
+            releaseAt: new Date(Math.max(spendRelease, manifestRelease)),
+          };
+        })
+        .sort(
+          (left, right) =>
+            left.releaseAt.getTime() - right.releaseAt.getTime()
+            || left.id.localeCompare(right.id),
+        )
+        .slice(0, limit);
+    },
     $executeRaw: async (...args: unknown[]) => {
       state.executeRawCalls.push(args);
+      const strings = args[0] as readonly string[];
+      const sql = strings.join('?');
+      if (sql.includes('SET "status" = \'superseded\'')) {
+        const ownerUserId = String(args[1]);
+        let count = 0;
+        for (const row of state.exports.values()) {
+          if (row.ownerUserId !== ownerUserId || row.status !== 'active') continue;
+          row.status = 'superseded';
+          count += 1;
+        }
+        return count;
+      }
       return 1;
     },
   };
@@ -439,6 +505,42 @@ describe('POST /api/library/export', () => {
     expect(rows.length).toBeLessThanOrEqual(32);
   });
 
+
+  it('returns a retryable 429 before force-create can exceed protected history', async () => {
+    seedAsset('asset-a', USER, new Uint8Array([1]));
+    let active = await createExport();
+    for (let index = 0; index < 31; index += 1) {
+      state.exports.get(active.id)!.egressBytes = BigInt(1);
+      const response = await createPost(
+        request('/api/library/export', {
+          method: 'POST',
+          body: JSON.stringify({ force: true }),
+          headers: { 'content-type': 'application/json' },
+        }),
+        ctx({}),
+      );
+      expect(response.status).toBe(201);
+      active = (await response.json()).export;
+    }
+    state.exports.get(active.id)!.egressBytes = BigInt(1);
+
+    const response = await createPost(
+      request('/api/library/export', {
+        method: 'POST',
+        body: JSON.stringify({ force: true }),
+        headers: { 'content-type': 'application/json' },
+      }),
+      ctx({}),
+    );
+    expect(response.status).toBe(429);
+    expect(response.headers.get('Retry-After')).toMatch(/^[1-9]\d*$/);
+    expect(await response.json()).toMatchObject({
+      code: 'export_egress_window_exhausted',
+      retryable: true,
+    });
+    expect(state.exports.size).toBe(32);
+    expect(state.exports.get(active.id)?.status).toBe('active');
+  });
   it('creates a valid zero-part export for an empty library', async () => {
     const view = await createExport();
     expect(view.totals).toEqual({ assets: 0, originalBytes: 0 });
