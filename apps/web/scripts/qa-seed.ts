@@ -198,6 +198,14 @@ async function seed(prisma: PrismaClient, userId: string, count: number) {
     create: { id: userId, email: `${userId}@qa.local` },
   });
 
+  // Re-seeding must replace the previous fixture generation completely. A
+  // checksum upsert alone leaves older fixture rows (including retired file
+  // extensions) in the QA user and makes the browser matrix request missing
+  // local media. This user is reserved for the local QA harness.
+  await prisma.asset.deleteMany({
+    where: { ownerUserId: userId, pathname: { startsWith: 'qa-blob-seed/' } },
+  });
+  await rm(SEED_DIR, { recursive: true, force: true });
   await mkdir(SEED_DIR, { recursive: true });
 
   for (let i = 0; i < count; i++) {
@@ -215,7 +223,18 @@ async function seed(prisma: PrismaClient, userId: string, count: number) {
 
     const asset = await prisma.asset.upsert({
       where: { unique_user_checksum: { ownerUserId: userId, checksumSha256: checksum } },
-      update: { deletedAt: null },
+      update: {
+        blobUrl,
+        thumbnailUrl,
+        pathname: `qa-blob-seed/${filename}`,
+        thumbnailPath: thumbnail ? `qa-blob-seed/${thumbnail.filename}` : null,
+        mime,
+        width,
+        height,
+        size: buffer.byteLength,
+        favorite: i % 5 === 0,
+        deletedAt: null,
+      },
       create: {
         ownerUserId: userId,
         blobUrl,

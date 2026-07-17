@@ -29,6 +29,7 @@ DECLARE
   present_roles TEXT;
   object_name TEXT;
   fn RECORD;
+  object_kind TEXT;
 BEGIN
   SELECT string_agg(quote_ident(rolname), ', ') INTO present_roles
     FROM pg_roles
@@ -43,13 +44,14 @@ BEGIN
     END IF;
   END LOOP;
 
-  FOR fn IN SELECT p.oid::regprocedure AS signature
+  FOR fn IN SELECT p.oid::regprocedure AS signature, p.prokind
             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
             WHERE n.nspname = 'public' AND (p.prosecdef OR p.proname LIKE 'sploot\_%')
   LOOP
-    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', fn.signature);
+    object_kind := CASE WHEN fn.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END;
+    EXECUTE format('REVOKE ALL ON %s %s FROM PUBLIC', object_kind, fn.signature);
     IF present_roles IS NOT NULL THEN
-      EXECUTE format('REVOKE ALL ON FUNCTION %s FROM %s', fn.signature, present_roles);
+      EXECUTE format('REVOKE ALL ON %s %s FROM %s', object_kind, fn.signature, present_roles);
     END IF;
   END LOOP;
 END

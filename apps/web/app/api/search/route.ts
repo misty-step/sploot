@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
-import { prisma, vectorSearch, logSearch, type VectorSearchRow } from '@/lib/db';
+import {
+  createVectorSearchContext,
+  decodeVectorSearchCursor,
+  prisma,
+  vectorSearchCursorMatchesContext,
+  vectorSearchPage,
+  logSearch,
+  VECTOR_SEARCH_CURSOR_CONTEXT_ERROR,
+  type VectorSearchRow,
+} from '@/lib/db';
 import { toGridAsset, mapAssetTags } from '@/lib/asset-dto';
 import { CLIP_MODEL, createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
 import {
@@ -14,7 +23,7 @@ import { getAuthWithUser } from '@/lib/auth/server';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import { withObservability } from '@/lib/with-observability';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
-import { SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
+import { SEARCH_MAX_CURSOR_LENGTH, SEARCH_MAX_LIMIT, SEARCH_SIMILARITY_FLOOR } from '@/lib/search-config';
 import {
   assertEnrolledUser,
   enrollmentDeniedResponse,
@@ -32,13 +41,16 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
   let query: string = '';
   let limit: number = 30;
   let threshold: number = SEARCH_SIMILARITY_FLOOR;
-  let shuffleSeed: number | undefined = undefined;
+  let favoriteOnly = false;
+  let tagId: string | null = null;
+  let offset = 0;
+  let cursor: string | undefined;
 
   try {
     const userId = principal.userId;
 
     const body = await req.json();
-    ({ query, limit = 30, threshold = SEARCH_SIMILARITY_FLOOR, shuffleSeed } = body);
+    ({ query, limit = 30, threshold = SEARCH_SIMILARITY_FLOOR, favoriteOnly = false, tagId = null, offset = 0, cursor } = body);
 
     if (!query || typeof query !== 'string') {
       return NextResponse.json(
@@ -47,7 +59,26 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       );
     }
 
-    const effectiveLimit = limit;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > SEARCH_MAX_LIMIT) {
+      return NextResponse.json({ error: `Invalid search limit; must be between 1 and ${SEARCH_MAX_LIMIT}` }, { status: 400 });
+    }
+
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 500) {
+      return NextResponse.json({ error: 'Invalid search offset; use the response cursor for pages beyond 500 results' }, { status: 400 });
+    }
+
+    if (typeof threshold !== 'number' || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+      return NextResponse.json({ error: 'Invalid search threshold; must be between 0 and 1' }, { status: 400 });
+    }
+
+    if (typeof favoriteOnly !== 'boolean') {
+      return NextResponse.json({ error: 'Invalid favoriteOnly filter; must be boolean' }, { status: 400 });
+    }
+
+    if (tagId !== null && tagId !== undefined && (typeof tagId !== 'string' || tagId.trim().length === 0)) {
+      return NextResponse.json({ error: 'Invalid tagId filter' }, { status: 400 });
+    }
+    tagId = typeof tagId === 'string' ? tagId.trim() || null : null;
 
     if (query.length > 500) {
       return NextResponse.json(
@@ -56,29 +87,61 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       );
     }
 
+    const searchContext = createVectorSearchContext({ query, embeddingModel: CLIP_MODEL, threshold, favoriteOnly, tagId, limit });
+
+    const decodedCursor = typeof cursor === 'string' && cursor.length <= SEARCH_MAX_CURSOR_LENGTH
+      ? decodeVectorSearchCursor(cursor, userId)
+      : null;
+    if (cursor !== undefined && (typeof cursor !== 'string' || cursor.length > SEARCH_MAX_CURSOR_LENGTH || !decodedCursor)) {
+      return NextResponse.json({ error: 'Invalid search cursor' }, { status: 400 });
+    }
+    if (cursor && offset > 0) {
+      return NextResponse.json({ error: 'Search cursor cannot be combined with offset' }, { status: 400 });
+    }
+    if (decodedCursor && !vectorSearchCursorMatchesContext(decodedCursor, searchContext, userId)) {
+      return NextResponse.json({ error: VECTOR_SEARCH_CURSOR_CONTEXT_ERROR }, { status: 400 });
+    }
+
+    const effectiveLimit = limit;
+
     await assertEnrolledUser(userId, prisma);
 
     // Get cache service
     const cache = getCacheService();
 
-    const cachedResults = await cache.getSearchResults(
+    const searchFilters = {
+      limit: effectiveLimit,
+      threshold,
+      sort: 'relevance' as const,
+      direction: 'desc' as const,
+      favoriteOnly,
+      tagId,
+      ...(offset > 0 && { offset }),
+      ...(cursor && { cursor }),
+    };
+
+    const cachedPage = await cache.getSearchResultPage(
       userId,
       query,
-      { limit: effectiveLimit, threshold, shuffleSeed }
+      searchFilters,
+      CLIP_MODEL,
     );
 
-    if (cachedResults) {
+    if (cachedPage) {
+      const cachedResults = cachedPage.results;
       const cachedFallbackUsed = cachedResults.some((result: any) => Boolean(result?.belowThreshold));
       // Cache hit for search
       return NextResponse.json({
         results: cachedResults,
         query,
-        total: cachedResults.length,
+        total: cachedPage.total,
+        ...(cachedPage.nextCursor ? { nextCursor: cachedPage.nextCursor } : {}),
         limit: effectiveLimit,
         requestedLimit: limit,
         threshold,
         requestedThreshold: threshold,
         thresholdFallback: cachedFallbackUsed,
+        hasMore: cachedPage.hasMore ?? offset + cachedResults.length < cachedPage.total,
         processingTime: Date.now() - startTime,
         cached: true,
       });
@@ -121,14 +184,20 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
 
     // Perform vector similarity search. Keep zero-results honest: callers asked
     // for a similarity floor, so do not pad misses with threshold-0 results.
-    let searchResults = await vectorSearch(
+    const searchPage = await vectorSearchPage(
       userId,
       queryEmbedding,
-      { limit: effectiveLimit, threshold, shuffleSeed }
+      {
+        limit: effectiveLimit,
+        threshold,
+        favoriteOnly,
+        tagId,
+        cursorContext: searchContext,
+        ...(offset > 0 && { offset }),
+        ...(cursor && { cursor }),
+      }
     );
-
-    // Ensure we only return up to the effective limit
-    searchResults = searchResults.slice(0, effectiveLimit);
+    const searchResults = searchPage.results;
 
     // Format results with additional metadata
     const formattedResults = await Promise.all(
@@ -150,11 +219,24 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
 
     // Cache the search results
     if (formattedResults.length > 0) {
-      await cache.setSearchResults(
+      await cache.setSearchResultPage(
         userId,
         query,
-        { limit: effectiveLimit, threshold, shuffleSeed },
-        formattedResults
+        {
+          limit: effectiveLimit,
+          threshold,
+          sort: 'relevance' as const,
+          direction: 'desc' as const,
+          favoriteOnly,
+          tagId,
+          ...(offset > 0 && { offset }),
+          ...(cursor && { cursor }),
+        },
+        formattedResults,
+        searchPage.total,
+        searchPage.hasMore,
+        searchPage.nextCursor,
+        CLIP_MODEL,
       );
     }
 
@@ -166,7 +248,8 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     return NextResponse.json({
       results: formattedResults,
       query,
-      total: formattedResults.length,
+      total: searchPage.total,
+      ...(searchPage.nextCursor ? { nextCursor: searchPage.nextCursor } : {}),
       limit: effectiveLimit,
       requestedLimit: limit,
       threshold,
@@ -175,6 +258,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       embeddingModel,
       cached: false,
       thresholdFallback: false,
+      hasMore: searchPage.hasMore ?? offset + formattedResults.length < searchPage.total,
     });
 
   } catch (error) {
@@ -205,6 +289,9 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
 
     if (isEnrollmentDeniedError(error)) return enrollmentDeniedResponse();
     if (isEnrollmentUnavailableError(error)) return enrollmentUnavailableResponse();
+    if (error instanceof Error && error.message === VECTOR_SEARCH_CURSOR_CONTEXT_ERROR) {
+      return NextResponse.json({ error: VECTOR_SEARCH_CURSOR_CONTEXT_ERROR }, { status: 400 });
+    }
 
     return NextResponse.json(
       {

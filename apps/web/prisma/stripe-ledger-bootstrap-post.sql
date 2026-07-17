@@ -473,18 +473,17 @@ END $$;
 -- contract.
 DO $$
 DECLARE fn RECORD;
+  object_kind TEXT;
 BEGIN
   FOR fn IN
-    SELECT p.oid::regprocedure AS signature
+    SELECT p.oid::regprocedure AS signature, p.prokind
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public'
-      AND (p.prosecdef OR p.proname IN (
-        'sploot_stripe_ledger_append_only',
-        'enforce_asset_embedding_revival_budget'
-      ))
+      AND (p.prosecdef OR p.proname LIKE 'sploot\_%' OR p.proname = 'enforce_asset_embedding_revival_budget')
   LOOP
-    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, sploot_stripe_app, sploot_stripe_schema_migrator, sploot_stripe_ledger_issuer, sploot_stripe_ledger_consumer, sploot_stripe_ledger_maintenance', fn.signature);
+    object_kind := CASE WHEN fn.prokind = 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END;
+    EXECUTE format('REVOKE ALL ON %s %s FROM PUBLIC, sploot_stripe_app, sploot_stripe_schema_migrator, sploot_stripe_ledger_issuer, sploot_stripe_ledger_consumer, sploot_stripe_ledger_maintenance', object_kind, fn.signature);
   END LOOP;
 END
 $$;

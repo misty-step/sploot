@@ -4,6 +4,15 @@ set -euo pipefail
 
 TARGET_URL="${DEPLOYMENT_URL:-https://www.sploot.app}"
 TARGET_URL="${TARGET_URL%/}"
+
+# The signed QA-local proof path is deliberately impossible to enable in a
+# DigitalOcean production validation environment. A flag/header/cookie alone
+# never authorizes it; production must fail closed before any network probe.
+if [[ "${DEPLOYMENT_ENV:-production}" == "production" && "${SPLOOT_QA_EVIDENCE_MODE:-}" == "enabled" ]]; then
+  echo "deployment validation rejects SPLOOT_QA_EVIDENCE_MODE in production" >&2
+  exit 1
+fi
+
 HEALTH_BODY="$(mktemp)"
 trap 'rm -f "$HEALTH_BODY"' EXIT
 

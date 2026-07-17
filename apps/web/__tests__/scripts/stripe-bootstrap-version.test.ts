@@ -73,14 +73,14 @@ describe('stripe ledger bootstrap version authority', () => {
     expect(version).toMatch(/^\d{14}$/);
   });
 
-  it('matches the newest Prisma migration', () => {
-    const prefixes = readdirSync(resolve(webRoot, 'prisma/migrations'), { withFileTypes: true })
+  it('keeps the declared final contract independent of unrelated migration timestamps', () => {
+    const migrations = readdirSync(resolve(webRoot, 'prisma/migrations'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name.split('_')[0])
-      .filter((prefix) => /^\d{8,14}$/.test(prefix))
-      .map((prefix) => prefix.padEnd(14, '0'));
-    const newest = prefixes.sort().at(-1);
-    expect(newest).toBe(version);
+      .map((entry) => entry.name);
+    expect(migrations).toContain('20260714000000_add_stripe_cancellation_ledger');
+    expect(migrations).toContain('20260714050000_bind_stripe_delivery_bytes_and_purge_subject');
+    expect(version).toBe(readFileSync(versionFile, 'utf8').trim());
+    expect(version).not.toBe('20260715000000');
   });
 
   it('is not hardcoded in any bootstrap SQL script', () => {

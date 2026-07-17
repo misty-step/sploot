@@ -23,6 +23,7 @@ export function LogoWordmark({ className, variant = 'default', size = 'md' }: Lo
   return (
     <Link
       href="/app"
+      prefetch={false}
       className={cn('inline-flex items-center gap-2', className)}
       aria-label="Sploot - Home"
     >

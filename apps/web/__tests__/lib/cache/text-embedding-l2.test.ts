@@ -78,6 +78,25 @@ describe('text embedding persistent L2', () => {
     await expect(cache.getTextEmbedding('funny cat', 'model-b')).resolves.toBeNull();
   });
 
+  it('keeps persistent embedding identities distinct for known legacy collisions', async () => {
+    const persisted = new Map<string, { embedding: number[]; expiresAt: Date }>();
+    mocks.findUnique.mockImplementation(({ where }: { where: { key: string } }) =>
+      Promise.resolve(persisted.get(where.key) ?? null)
+    );
+    mocks.upsert.mockImplementation(({ where, create }: { where: { key: string }; create: { embedding: number[]; expiresAt: Date } }) => {
+      persisted.set(where.key, create);
+      return Promise.resolve({});
+    });
+
+    const writer = new CacheService();
+    await writer.setTextEmbedding('a!', [0.1], 'model');
+
+    const reader = new CacheService();
+    await expect(reader.getTextEmbedding('`@', 'model')).resolves.toBeNull();
+    await expect(reader.getTextEmbedding('a!', 'model')).resolves.toEqual([0.1]);
+    expect(persisted.size).toBe(1);
+  });
+
   it('degrades to L1-only when the database throws', async () => {
     mocks.findUnique.mockRejectedValue(new Error('db down'));
     mocks.upsert.mockRejectedValue(new Error('db down'));

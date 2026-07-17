@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import { resolve as resolvePath } from "node:path";
+import { resolve } from "node:path";
 import withPWA from "@ducanh2912/next-pwa";
 import {
   IMAGE_DEVICE_SIZES,
@@ -24,16 +24,35 @@ if (process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && !qaLocalDeployment) {
 }
 const qaLocalAuthBuild = process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && qaLocalDeployment;
 
+const qaClientModule = resolve(__dirname, qaLocalAuthBuild ? "lib/auth/qa-client.ts" : "lib/auth/qa-client-production.ts");
+
 const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E: publicTruthE2EBuild ? 'true' : 'false',
     NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: qaLocalAuthBuild ? 'true' : 'false',
   },
+  // The local QA browser loop must not mount Next's dev-tools portal into
+  // captured evidence. Production is unaffected because the portal is dev
+  // only, while the QA assertion still rejects any accidental mount.
+  devIndicators: false,
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
+  // The evidence gate needs a self-contained artifact while the deployed production contract stays source-based.
+  ...(process.env.SPLOOT_QA_AUTH_MODE === 'enabled' &&
+    process.env.SPLOOT_QA_EVIDENCE_MODE === 'enabled' &&
+    process.env.SPLOOT_QA_DEPLOYMENT_ID === 'sploot-gallery-qa-local' &&
+    process.env.SPLOOT_QA_DEPLOYMENT_AUDIENCE === 'sploot-gallery-evidence' &&
+    process.env.DEPLOYMENT_ENV === 'qa-local' &&
+    !process.env.CLERK_SECRET_KEY && !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+    ? { output: 'standalone' }
+    : {}),
   webpack(config) {
-    const middlewareRuntime = resolvePath(__dirname, qaLocalAuthBuild ? 'middleware-runtime-qa.ts' : 'middleware-runtime.ts');
+    const middlewareRuntime = resolve(__dirname, qaLocalAuthBuild ? 'middleware-runtime-qa.ts' : 'middleware-runtime.ts');
     config.resolve.alias = {
       ...config.resolve.alias,
+      "@/lib/auth/qa-client": qaClientModule,
+      "@/lib/auth/qa-evidence": resolve(__dirname, qaLocalAuthBuild ? "lib/auth/qa-evidence.ts" : "lib/auth/qa-evidence-production.ts"),
+      "@/lib/auth/qa-request-auth": resolve(__dirname, qaLocalAuthBuild ? "lib/auth/qa-request-auth.ts" : "lib/auth/qa-request-auth-production.ts"),
+      "@/lib/auth/qa-server": resolve(__dirname, qaLocalAuthBuild ? "lib/auth/qa-server.ts" : "lib/auth/qa-server-production.ts"),
       '@/middleware-runtime$': middlewareRuntime,
     };
     return config;
@@ -65,9 +84,14 @@ const nextConfig: NextConfig = {
   // Image optimization configuration
   images: {
     // QA-only: map the reserved seed host to local files so qa-seed fixtures
-    // render without weakening the blob_url CHECK constraints. Inert in
-    // production builds (NODE_ENV) and without the QA auth mode flag.
-    ...(process.env.SPLOOT_QA_AUTH_MODE === 'enabled' && process.env.NODE_ENV !== 'production'
+    // render without weakening the blob_url CHECK constraints. Inert unless
+    // every explicit non-production evidence marker is present.
+    ...(process.env.SPLOOT_QA_AUTH_MODE === 'enabled' &&
+      process.env.SPLOOT_QA_EVIDENCE_MODE === 'enabled' &&
+      process.env.SPLOOT_QA_DEPLOYMENT_ID === 'sploot-gallery-qa-local' &&
+      process.env.SPLOOT_QA_DEPLOYMENT_AUDIENCE === 'sploot-gallery-evidence' &&
+      process.env.DEPLOYMENT_ENV === 'qa-local' &&
+      !process.env.CLERK_SECRET_KEY && !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
       ? { loader: 'custom' as const, loaderFile: './lib/qa/qa-image-loader.ts' }
       : {}),
     // Configure domains for Next.js Image optimization

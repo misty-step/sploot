@@ -159,6 +159,12 @@ for (const [path, phrases] of Object.entries({
   'apps/web/components/search/search-bar.tsx': ['--sploot-touch-target'],
   'apps/web/components/chrome/mobile-command-dock.tsx': ['--sploot-touch-target'],
   'apps/web/components/library/image-tile.tsx': ['TileActionRail', 'border-sploot-violet', 'text-sploot-cyan'],
+  'apps/web/components/library/image-grid.tsx': ['role="alert"', 'grid-cols-2'],
+  'apps/web/components/sploot/gallery-pipeline.tsx': ['retrieval pipeline', 'aria-live="polite"'],
+  'apps/web/components/sploot/gallery-spine.tsx': ['gallery index spine', 'GalleryPipeline'],
+  'apps/web/components/sploot/gallery-mobile-statusline.tsx': ['gallery status', 'aria-live="polite"'],
+  'apps/web/components/sploot/query-token-highlight.tsx': ['query tokens', 'bg-sploot-yellow'],
+  'apps/web/app/app/page.tsx': ['GallerySpine', 'GalleryMobileStatusline', 'overlayClassName="bg-sploot-void/90"'],
   // sploot-074: the first-use empty state is the capture rig — demo pile of
   // MemeCells + sticker-labeled capture-surface activation, never a generic
   // Card/icon illustration (DESIGN.md §6 empty-state rule).
@@ -178,6 +184,10 @@ for (const [path, phrases] of Object.entries({
   for (const phrase of phrases) {
     assertIncludes(path, phrase, 'implemented Sploot design-system adoption');
   }
+}
+
+if (read('apps/web/app/app/page.tsx').includes('/app/upload')) {
+  fail('apps/web/app/app/page.tsx: gallery upload commands must open the in-place upload panel');
 }
 
 // sploot-032: the @misty-step/aesthetic substrate is wired and documented.
@@ -389,6 +399,12 @@ const trackedUiFiles = execSync(
   .split('\n')
   .filter(Boolean);
 
+const galleryUiFiles = [
+  'apps/web/components/sploot/gallery-pipeline.tsx',
+  'apps/web/components/sploot/gallery-spine.tsx',
+  'apps/web/components/sploot/gallery-mobile-statusline.tsx',
+].filter((file) => existsSync(join(repoRoot, file)));
+
 const migrationExceptions = new Map([
   ['apps/web/app/not-found.tsx', ['bg-clip-text']],
   // sploot-032 ratchet: the auth door (sign-in/sign-up) and the navbar lost
@@ -397,7 +413,6 @@ const migrationExceptions = new Map([
   // lightbox scrim (content overlay), not chrome glassmorphism.
   ['apps/web/components/library/image-skeleton.tsx', ['bg-gradient-']],
   ['apps/web/components/ui/delete-confirmation-modal.tsx', ['bg-gradient-']],
-  ['apps/web/app/app/page.tsx', ['backdrop-blur']],
   ['apps/web/components/library/image-tile.tsx', ['backdrop-blur']],
 ]);
 
@@ -470,7 +485,7 @@ const cssFiles = execSync("git ls-files 'apps/web/**/*.css'", {
   // tokens, and the legacy back-compat utility classes. It is exempt.
   .filter((f) => f !== 'apps/web/app/globals.css');
 
-const productTsx = trackedUiFiles;
+const productTsx = [...new Set([...trackedUiFiles, ...galleryUiFiles])];
 
 // The one sanctioned hex literal: ink-on-candy text/foreground.
 const ALLOWED_HEX = new Set(['#1c1547']);

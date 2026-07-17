@@ -11,3 +11,7 @@ export { StatBlock } from './stat-block';
 export { DeadShareLinkState, StateSurface } from './state-surface';
 export { StatusBar, type StatusCell } from './status-bar';
 export { StickerTab } from './sticker-tab';
+export { GalleryPipeline, type GalleryPipelineState } from './gallery-pipeline';
+export { GallerySpine } from './gallery-spine';
+export { GalleryMobileStatusline } from './gallery-mobile-statusline';
+export { QueryTokenHighlight } from './query-token-highlight';
