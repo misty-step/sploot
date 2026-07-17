@@ -455,9 +455,11 @@ GRANT SELECT ON TABLE public._prisma_migrations TO sploot_stripe_app;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sploot_stripe_app') THEN
     GRANT SELECT ON TABLE public.storage_cutover_state TO sploot_stripe_app;
-    -- Permanent-delete reads only these replica columns. The app role has no
-    -- table-wide grant and cannot insert, update, or delete replica inventory.
+    -- Upload recording inserts immutable provider receipts; explicit delete only
+    -- reads the provider-local columns below. Cutover/update/delete remain
+    -- reserved for the storage operator role.
     REVOKE ALL ON TABLE public.asset_storage_replicas FROM sploot_stripe_app;
+    GRANT INSERT ON TABLE public.asset_storage_replicas TO sploot_stripe_app;
     GRANT SELECT (asset_id, provider, source_key, logical_key, delivery_url, active)
       ON TABLE public.asset_storage_replicas TO sploot_stripe_app;
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.storage_cutover_state, public.storage_migration_entries, public.storage_inventory_state, public.storage_inventory_failures, public.asset_storage_replicas, public.storage_cleanup_outbox TO sploot_storage_operator;

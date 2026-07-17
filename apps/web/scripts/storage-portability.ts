@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
-import { Prisma } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { isValidMimeType, normalizeMimeType } from '@sploot/common';
 import { prisma } from '../lib/db';
 import { assertCutoverTransition, canonicalLogicalKey, stableDeliveryUrl, storageConfigFromEnv, storageConfigFingerprint, type StorageConfig } from '../lib/storage/config';
@@ -130,10 +130,10 @@ async function ensureCutoverState(config: StorageConfig, digest: string, phase: 
 }
 
 
-export async function commitCutover(manifest: MigrationManifestEntry[], config: StorageConfig, digest: string): Promise<void> {
+export async function commitCutover(manifest: MigrationManifestEntry[], config: StorageConfig, digest: string, database: PrismaClient = prisma): Promise<void> {
   const fingerprint = storageConfigFingerprint(config);
   if (config.provider !== 's3') throw new Error('Storage cutover requires the S3 target provider');
-  await prisma.$transaction(async (tx) => {
+  await database.$transaction(async (tx) => {
     const state = await tx.storageCutoverState.findUnique({ where: { id: 'default' } });
     if (!state || state.phase !== 'dual-write' || state.providerFingerprint !== fingerprint || state.manifestSha256 !== digest) throw new Error('Cutover fence mismatch; refusing asset rebinding');
     const generation = state.generation + 1;
