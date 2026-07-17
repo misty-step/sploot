@@ -1,14 +1,18 @@
 {
-  "name": "Sploot - Your Personal Meme Library",
+  "name": "Sploot",
   "short_name": "Sploot",
-  "description": "Lightning-fast semantic search for your meme collection",
+  "description": "A personal meme library for saving, searching, and sharing memes.",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#000000",
+  "background_color": "#cfe7ff",
+  "theme_color": "#1c1547",
   "orientation": "any",
-  "categories": ["photo", "utilities", "productivity"],
+  "categories": [
+    "photo",
+    "utilities",
+    "productivity"
+  ],
   "icons": [
     {
       "src": "/icons/icon-72x72.png",
@@ -47,16 +51,34 @@
       "purpose": "any"
     },
     {
+      "src": "/icons/icon-192x192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/icons/icon-384x384.png",
       "sizes": "384x384",
       "type": "image/png",
       "purpose": "any"
     },
     {
+      "src": "/icons/icon-384x384-maskable.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
       "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "screenshots": [
@@ -71,6 +93,12 @@
       "sizes": "390x844",
       "type": "image/png",
       "label": "Home screen on mobile"
+    },
+    {
+      "src": "/screenshots/mobile-home-dark.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "label": "Home screen on mobile in dark mode"
     }
   ],
   "share_target": {
@@ -84,7 +112,12 @@
       "files": [
         {
           "name": "images",
-          "accept": ["image/jpeg", "image/png", "image/webp", "image/gif"]
+          "accept": [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif"
+          ]
         }
       ]
     }
@@ -118,11 +151,18 @@
     }
   ],
   "prefer_related_applications": false,
-  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
   "edge_side_panel": {
     "preferred_width": 480
   },
   "launch_handler": {
-    "client_mode": ["navigate-existing", "auto"]
+    "client_mode": [
+      "navigate-existing",
+      "auto"
+    ]
   }
 }

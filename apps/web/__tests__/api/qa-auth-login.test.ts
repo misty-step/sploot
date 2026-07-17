@@ -1,5 +1,5 @@
 import { GET } from '@/app/api/qa-auth/login/route';
-import { verifyQaLocalAuthHeaders } from '@/lib/auth/qa-local';
+import { verifyQaLocalAuthHeaders, QA_LOCAL_AUDIENCE, QA_LOCAL_DEPLOYMENT_ENV, QA_LOCAL_DEPLOYMENT_ID } from '@/lib/auth/qa-local';
 import { NextRequest } from 'next/server';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
@@ -16,6 +16,9 @@ describe('/api/qa-auth/login', () => {
     process.env.SPLOOT_QA_AUTH_MODE = 'enabled';
     process.env.SPLOOT_QA_AUTH_SECRET = QA_SECRET;
     process.env.SPLOOT_DEPLOYMENT_ENV = 'test';
+    process.env.SPLOOT_QA_DEPLOYMENT_ID = QA_LOCAL_DEPLOYMENT_ID;
+    process.env.SPLOOT_QA_DEPLOYMENT_ENV = QA_LOCAL_DEPLOYMENT_ENV;
+    process.env.SPLOOT_QA_AUDIENCE = QA_LOCAL_AUDIENCE;
   });
 
   afterEach(() => {

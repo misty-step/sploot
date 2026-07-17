@@ -3,7 +3,7 @@ import { GET, POST } from '@/app/api/cache/stats/route';
 import { createMockRequest } from '../utils/test-helpers';
 import { getCacheService } from '@/lib/cache';
 import type { CacheStats } from '@/lib/cache';
-import { createQaLocalAuthToken, getQaLocalAuthHeader } from '@/lib/auth/qa-local';
+import { createQaLocalAuthToken, getQaLocalAuthHeader, QA_LOCAL_AUDIENCE, QA_LOCAL_DEPLOYMENT_ENV, QA_LOCAL_DEPLOYMENT_ID } from '@/lib/auth/qa-local';
 
 // Mock dependencies
 vi.mock('@/lib/cache');
@@ -39,6 +39,9 @@ describe('/api/cache/stats', () => {
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
     vi.stubEnv('SPLOOT_QA_AUTH_SECRET', QA_SECRET);
     vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'test');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ID', QA_LOCAL_DEPLOYMENT_ID);
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ENV', QA_LOCAL_DEPLOYMENT_ENV);
+    vi.stubEnv('SPLOOT_QA_AUDIENCE', QA_LOCAL_AUDIENCE);
     vi.stubEnv('NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY', '');
     vi.stubEnv('CLERK_SECRET_KEY', '');
   });

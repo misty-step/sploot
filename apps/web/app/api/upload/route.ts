@@ -28,6 +28,7 @@ import {
   embeddingRetryHeaders,
   reportEmbeddingConfigurationErrorOnce,
 } from '@/lib/embedding-errors';
+import { runIdempotentUpload, UploadIdempotencyInProgressError, UploadIdempotencyLeaseLostError } from '@/lib/upload/upload-idempotency';
 
 /**
  * Configure route segment options
@@ -56,6 +57,10 @@ async function postHandler(req: NextRequest, _context: RouteContext, { principal
     // personal upload token (Apple Shortcut / CLI). allowUploadToken is what
     // makes this an upload-only credential — no other route opts in.
     const userId = principal.userId;
+    const idempotencyKey = req.headers.get('Idempotency-Key')?.trim() || null;
+    if (idempotencyKey && !/^[A-Za-z0-9._:-]{1,128}$/.test(idempotencyKey)) {
+      return NextResponse.json({ success: false, error: 'Invalid upload idempotency key' }, { status: 400 });
+    }
 
     const uploadGate = getRuntimeGate('uploads');
     if (!uploadGate.enabled) {
@@ -86,7 +91,10 @@ async function postHandler(req: NextRequest, _context: RouteContext, { principal
       }
     }
 
-    const result = await ingestImage({ userId, file, tags, syncEmbeddings });
+    const ingest = () => ingestImage({ userId, file, tags, syncEmbeddings });
+    const result = idempotencyKey
+      ? await runIdempotentUpload(userId, idempotencyKey, ingest)
+      : await ingest();
 
     if (result.kind === 'invalid') {
       return NextResponse.json(
@@ -158,6 +166,13 @@ async function postHandler(req: NextRequest, _context: RouteContext, { principal
 
     if (isEnrollmentUnavailableError(error)) {
       return enrollmentUnavailableResponse();
+    }
+
+    if (error instanceof UploadIdempotencyInProgressError || error instanceof UploadIdempotencyLeaseLostError) {
+      return NextResponse.json(
+        { success: false, error: error.message, retryable: true, code: 'UPLOAD_IN_PROGRESS' },
+        { status: 409, headers: { 'Retry-After': '2' } },
+      );
     }
 
     logger.error('Upload endpoint error', {

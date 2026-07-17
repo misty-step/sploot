@@ -120,7 +120,7 @@ describe('public truth contracts', () => {
   it('compiles the qa-local auth seam out of production bundles and proves it', () => {
     expect(read('next.config.ts')).toContain('NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD');
     expect(read('next.config.ts')).toContain('dev/test-only');
-    for (const file of ['middleware.ts', 'lib/auth/server.ts', 'lib/auth/request-auth.ts', 'app/api/qa-auth/login/route.ts']) {
+    for (const file of ['lib/auth/server.ts', 'lib/auth/request-auth.ts', 'app/api/qa-auth/login/route.ts']) {
       expect(read(file), `${file} must gate qa-local behind the compile-time flag`)
         .toContain("process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD");
       expect(read(file), `${file} must not import qa-local statically`)
@@ -144,6 +144,9 @@ describe('public truth contracts', () => {
     expect(isCompiledPublicTruthE2EBuild({ NODE_ENV: 'production', SPLOOT_DEPLOYMENT_ENV: 'production', NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E: 'true' })).toBe(false);
     expect(read('lib/auth/server.ts')).toContain('isCompiledPublicTruthE2EBuild');
     expect(read('middleware.ts')).toContain('NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E');
+    expect(read('middleware.ts')).not.toContain('qa-local');
+    expect(read('middleware-runtime.ts')).not.toContain('qa-local');
+    expect(read('next.config.ts')).toContain("middleware-runtime-qa.ts");
     expect(read('middleware.ts')).toContain('SPLOOT_DEPLOYMENT_ENV === \'test\'');
     expect(read('playwright.config.ts')).toContain('e2e:public-truth:serve');
     expect(read('playwright.config.ts')).not.toContain('next dev');

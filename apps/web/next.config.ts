@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { resolve as resolvePath } from "node:path";
 import withPWA from "@ducanh2912/next-pwa";
 import {
   IMAGE_DEVICE_SIZES,
@@ -29,6 +30,14 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: qaLocalAuthBuild ? 'true' : 'false',
   },
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
+  webpack(config) {
+    const middlewareRuntime = resolvePath(__dirname, qaLocalAuthBuild ? 'middleware-runtime-qa.ts' : 'middleware-runtime.ts');
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@/middleware-runtime$': middlewareRuntime,
+    };
+    return config;
+  },
   // @ffmpeg-installer resolves its platform binary with dynamic requires that
   // Turbopack cannot bundle — without this, `next dev` fails to compile
   // /api/upload (HTTP 500 for every upload, incl. the Chrome extension's
@@ -115,6 +124,13 @@ const pwaConfig = withPWA({
     skipWaiting: true,
     clientsClaim: true,
     runtimeCaching: [
+      // Protected documents must always cross the auth boundary. A URL
+      // predicate is required here because Workbox evaluates runtime routes
+      // against absolute request URLs, not path-only strings.
+      {
+        urlPattern: ({ request, url }) => request.mode === 'navigate' && (url.pathname === '/app' || url.pathname.startsWith('/app/')),
+        handler: 'NetworkOnly',
+      },
       // Custom: Vercel Blob Storage images (our app-specific requirement)
       {
         urlPattern: /^https:\/\/.*\.public\.blob\.vercel-storage\.com\/.*/i,

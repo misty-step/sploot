@@ -69,6 +69,15 @@ Accepted media types: JPEG, PNG, WebP, GIF, MP4, WebM.
 - `file` (required) — the image/video bytes.
 - `tags` (optional) — JSON array of tag name strings.
 
+Optional `Idempotency-Key` header: use the same 1–128 character key for every
+retry of one queued file. A completed key replays the original result; a live
+concurrent request returns `409` with `code: "UPLOAD_IN_PROGRESS"`. The server
+keeps this receipt durably so a second tab cannot re-run the vendor-costing
+ingestion pipeline. The browser's durable claim lease is two minutes, longer
+than its ten-second network timeout. Receipts are retained for seven days and
+then cleaned up only after that replay window. The key fences request replay;
+checksum uniqueness remains the server-side asset deduplication oracle.
+
 **`201` (created):**
 
 ```json

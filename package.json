@@ -34,6 +34,8 @@
     "lint": "pnpm stripe:sandbox:check && pnpm provider:check && pnpm provider:test && turbo run lint",
     "lint:design": "node scripts/check-design-system.mjs",
     "type-check": "turbo run type-check",
+    "prisma:migration-prefixes": "node scripts/check-prisma-migration-prefixes.mjs",
+    "prisma:migration-prefixes:test": "node --test scripts/check-prisma-migration-prefixes.test.mjs",
     "test": "turbo run test",
     "economics": "node economics/cost-model.mjs",
     "test:economics": "node --test economics/cost-model.test.mjs",

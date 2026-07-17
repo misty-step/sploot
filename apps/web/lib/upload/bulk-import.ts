@@ -1,5 +1,20 @@
 import { unzipSync } from 'fflate';
 
+export const MAX_ZIP_COMPRESSED_BYTES = 50 * 1024 * 1024;
+export const MAX_ZIP_ENTRIES = 100;
+export const MAX_ZIP_ENTRY_BYTES = 10 * 1024 * 1024;
+export const MAX_ZIP_EXPANDED_BYTES = 64 * 1024 * 1024;
+export const MAX_ZIP_COMPRESSION_RATIO = 100;
+export const MAX_TEXT_BUNDLE_BYTES = 5 * 1024 * 1024;
+export const MAX_BOOKMARK_URLS = 100;
+
+export class BulkImportLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BulkImportLimitError';
+  }
+}
+
 /**
  * Client-side bundle expansion for bulk import.
  *
@@ -36,8 +51,53 @@ export function isBundleFile(file: File): boolean {
   return isZipFile(file) || isTextBundleFile(file);
 }
 
+function readU16(bytes: Uint8Array, offset: number): number {
+  return bytes[offset] | (bytes[offset + 1] << 8);
+}
+
+function readU32(bytes: Uint8Array, offset: number): number {
+  return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
+}
+
+function preflightZip(bytes: Uint8Array): void {
+  const start = Math.max(0, bytes.length - 65_557);
+  let eocd = -1;
+  for (let offset = bytes.length - 22; offset >= start; offset -= 1) {
+    if (readU32(bytes, offset) === 0x06054b50) {
+      eocd = offset;
+      break;
+    }
+  }
+  if (eocd < 0) throw new BulkImportLimitError('ZIP directory is missing or unsupported.');
+  const entries = readU16(bytes, eocd + 10);
+  const directorySize = readU32(bytes, eocd + 12);
+  const directoryOffset = readU32(bytes, eocd + 16);
+  if (entries > MAX_ZIP_ENTRIES || directoryOffset + directorySize > bytes.length) {
+    throw new BulkImportLimitError(`ZIP exceeds the ${MAX_ZIP_ENTRIES}-entry safety bound.`);
+  }
+  let offset = directoryOffset;
+  let expanded = 0;
+  for (let index = 0; index < entries; index += 1) {
+    if (readU32(bytes, offset) !== 0x02014b50) throw new BulkImportLimitError('ZIP directory entry is invalid.');
+    const compressed = readU32(bytes, offset + 20);
+    const uncompressed = readU32(bytes, offset + 24);
+    const nameLength = readU16(bytes, offset + 28);
+    const extraLength = readU16(bytes, offset + 30);
+    const commentLength = readU16(bytes, offset + 32);
+    if (uncompressed > MAX_ZIP_ENTRY_BYTES || (compressed === 0 && uncompressed > 0) || (compressed > 0 && uncompressed / compressed > MAX_ZIP_COMPRESSION_RATIO)) {
+      throw new BulkImportLimitError('ZIP entry exceeds the expansion safety bound.');
+    }
+    expanded += uncompressed;
+    if (expanded > MAX_ZIP_EXPANDED_BYTES) throw new BulkImportLimitError('ZIP expansion exceeds the memory safety bound.');
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+}
+
 export async function extractZipImages(zip: File): Promise<File[]> {
-  const entries = unzipSync(new Uint8Array(await zip.arrayBuffer()));
+  if (zip.size > MAX_ZIP_COMPRESSED_BYTES) throw new BulkImportLimitError('ZIP compressed size exceeds the safety bound.');
+  const bytes = new Uint8Array(await zip.arrayBuffer());
+  preflightZip(bytes);
+  const entries = unzipSync(bytes);
   const files: File[] = [];
 
   for (const [path, bytes] of Object.entries(entries)) {
@@ -84,12 +144,14 @@ function normalizeImageUrl(url: string): string {
   return url;
 }
 
-export function extractImageUrls(text: string): string[] {
+export function extractImageUrls(text: string, maxUrls = MAX_BOOKMARK_URLS): string[] {
   const matches = text.match(URL_PATTERN) ?? [];
+  if (matches.length > maxUrls * 4) throw new BulkImportLimitError(`Bookmark export exceeds the ${maxUrls}-URL safety bound.`);
   const urls = new Set<string>();
   for (const match of matches) {
     if (isImageUrl(match)) {
       urls.add(normalizeImageUrl(match));
+      if (urls.size > maxUrls) throw new BulkImportLimitError(`Bookmark export exceeds the ${maxUrls}-URL safety bound.`);
     }
   }
   return [...urls];

@@ -80,7 +80,7 @@ describe('declared bootstrap version authority', () => {
 });
 
 describe('online migration transaction contract', () => {
-  it('wraps every new regular embedding migration explicitly and keeps the index helper separate', () => {
+  it('wraps every new regular migration explicitly and keeps the online index helper separate', () => {
     const migrationRoot = join(process.cwd(), 'prisma/migrations');
     const names = readdirSync(migrationRoot)
       .filter((name) => /^20260715\d+_/.test(name))
@@ -99,6 +99,7 @@ describe('online migration transaction contract', () => {
       '20260715065000_validate_embedding_attempt_ceiling',
       '20260715070000_harden_terminal_revival_exit',
       '20260715080000_add_library_exports',
+      '20260715120000_index_upload_receipt_processing_sweep',
       '20260715130000_add_provider_neutral_storage',
     ]);
     for (const name of names) {

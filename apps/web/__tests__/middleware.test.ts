@@ -19,6 +19,7 @@ vi.mock('@clerk/nextjs/server', () => {
 });
 
 import middleware, { config } from '@/middleware';
+import qaMiddleware from '@/middleware-runtime-qa';
 import { createQaLocalAuthToken, getQaLocalAuthHeader } from '@/lib/auth/qa-local';
 
 describe('middleware auth boundary', () => {
@@ -27,6 +28,12 @@ describe('middleware auth boundary', () => {
   beforeEach(() => {
     vi.stubEnv('SPLOOT_QA_AUTH_MODE', 'enabled');
     vi.stubEnv('SPLOOT_QA_AUTH_SECRET', QA_SECRET);
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ID', 'local-pwa-capture-v1');
+    vi.stubEnv('SPLOOT_QA_DEPLOYMENT_ENV', 'local-qa');
+    vi.stubEnv('SPLOOT_QA_AUDIENCE', 'sploot-pwa-capture');
+    vi.stubEnv('SPLOOT_QA_BIND_HOST', '127.0.0.1');
+    vi.stubEnv('SPLOOT_QA_LOCAL_CAPABILITY', '0123456789abcdef0123456789abcdef0123456789abcdef');
+    vi.stubEnv('DEPLOYMENT_ENV', 'local-qa');
     vi.stubEnv('SPLOOT_DEPLOYMENT_ENV', 'test');
   });
 
@@ -93,15 +100,12 @@ describe('middleware auth boundary', () => {
       expiresInSeconds: 60,
     });
 
-    const response = await middleware(
-      { protect } as any,
-      {
-        method: 'GET',
-        nextUrl: { pathname: '/app' },
-        url: 'https://www.sploot.app/app',
-        headers: new Headers({ [getQaLocalAuthHeader()]: token }),
-      } as any
-    );
+    const response = await qaMiddleware({
+      method: 'GET',
+      nextUrl: { pathname: '/app' },
+      url: 'https://www.sploot.app/app',
+      headers: new Headers({ [getQaLocalAuthHeader()]: token }),
+    } as any);
 
     expect(response).toBeUndefined();
     expect(protect).not.toHaveBeenCalled();

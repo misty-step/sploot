@@ -119,7 +119,6 @@ function AppPageClient() {
     }
   }, [queryParam]);
 
-  // Removed useEffect that was causing circular updates - URL params are now the single source of truth
   const updateUrlParams = useCallback(
     (updates: Record<string, string | null>) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -138,14 +137,13 @@ function AppPageClient() {
   );
 
   const uploadParam = searchParams.get('upload');
+  const consumedUploadParamRef = useRef(false);
 
   useEffect(() => {
-    if (uploadParam === '1') {
-      queueMicrotask(() => {
-        setShowUploadPanel(true);
-        updateUrlParams({ upload: null });
-      });
-    }
+    if (uploadParam !== '1' || consumedUploadParamRef.current) return;
+    consumedUploadParamRef.current = true;
+    setShowUploadPanel(true);
+    updateUrlParams({ upload: null });
   }, [uploadParam, updateUrlParams]);
 
   const {

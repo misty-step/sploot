@@ -7,7 +7,8 @@ import {
 import { syncUser } from '@/lib/db';
 
 const QA_USER_ID = 'qa-design-user';
-const SESSION_SECONDS = 8 * 60 * 60;
+// Keep convenience sessions within the same short-lived QA token bound.
+const SESSION_SECONDS = 15 * 60;
 // Optional ?user= override so QA can walk non-seeded states (e.g. a 0-asset
 // first-run library for the sploot-074 capture rig) without touching the
 // seeded qa-design-user. Restricted to qa-* ids so the harness can never
