@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   saveToSploot: vi.fn(),
   showErrorNotification: vi.fn(),
   getAuthAuthority: vi.fn(),
+  promptUserSignIn: vi.fn(),
   readAuthAuthority: vi.fn(),
 }));
 
@@ -19,6 +20,7 @@ vi.mock('./save-flow', () => ({ saveToSploot: mocks.saveToSploot }));
 vi.mock('./notifications', () => ({ showErrorNotification: mocks.showErrorNotification }));
 vi.mock('./auth-manager', () => ({
   getAuthAuthority: mocks.getAuthAuthority,
+  promptUserSignIn: mocks.promptUserSignIn,
   readAuthAuthority: mocks.readAuthAuthority,
   // Mirrors the production contract proven in auth-manager.test.ts: durable
   // ownership is the stable account identity; sessionId never participates.
@@ -54,7 +56,7 @@ interface StoredJob {
   id: string;
   imageUrl: string;
   filename: string;
-  state: 'pending' | 'processing' | 'failed' | 'paused';
+  state: 'pending' | 'processing' | 'failed' | 'paused' | 'awaiting-auth';
   createdAt: number;
   attempts?: number;
   nextAttemptAt?: number;
@@ -88,7 +90,7 @@ beforeEach(() => {
         get: vi.fn(async () => ({
           [CONTEXT_MENU_QUEUE_KEY]: storedQueue.map(job => ({
             ...job,
-            owner: job.owner ?? OWNER,
+            owner: job.owner ?? (job.state === 'awaiting-auth' ? undefined : OWNER),
             sourceBytes: job.sourceBytes ?? btoa('image'),
             sourceType: job.sourceType ?? 'image/png',
           })),
@@ -112,6 +114,7 @@ beforeEach(() => {
   });
   setupContextMenuSaveQueue();
   mocks.getAuthAuthority.mockResolvedValue(OWNER);
+  mocks.promptUserSignIn.mockResolvedValue(true);
   // readAuthAuthority is the throwing variant of getAuthAuthority; by default
   // mirror it so owner-fencing tests drive both through one seam.
   mocks.readAuthAuthority.mockImplementation((signal?: AbortSignal) => mocks.getAuthAuthority(signal));
@@ -127,6 +130,20 @@ describe.sequential('durable context-menu save queue', () => {
       expect.any(Function), 'image', { owner: OWNER, signal: expect.any(AbortSignal) },
     ));
     await vi.waitFor(() => expect(storedQueue).toEqual([]));
+  });
+
+  it('waits for signed-in cookie state and continues the original prepared save', async () => {
+    mocks.getAuthAuthority
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(OWNER);
+
+    await enqueueCapturedSave(new Blob(['prepared-original'], { type: 'image/png' }), 'cat.png', 'https://x.test/cat.png');
+
+    expect(mocks.promptUserSignIn).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(
+      expect.any(Function), 'image', { owner: OWNER, signal: expect.any(AbortSignal) },
+    ));
+    expect(storedQueue).toEqual([]);
   });
 
   it('keeps failed payloads and schedules the next attempt with bounded backoff', async () => {

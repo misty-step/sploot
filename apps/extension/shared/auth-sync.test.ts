@@ -25,118 +25,118 @@ describe('popup auth sync', () => {
     }
   })
 
-  it('does not reload repeatedly for the initial signed-out state', async () => {
-    const clerk = { user: null }
-    const reloadPopup = vi.fn()
-
-    installPopupAuthSync(
-      clerk,
-      runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
-      reloadPopup,
-    )
-    await new Promise(resolve => setTimeout(resolve, 0))
-
-    expect(reloadPopup).not.toHaveBeenCalled()
-  })
-
-  it('converges once for a loaded stale signed-in popup', async () => {
-    runtime.sendMessage.mockResolvedValue({
-      state: { status: 'signed-in', userId: 'user_1', sessionId: 'session_1' },
-    })
-    const clerk = { user: null }
-    const reloadPopup = vi.fn()
-    const storage = new Map<string, string>()
-    const reloadGuardStorage = {
-      getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => { storage.set(key, value) },
+  it('does not rehydrate repeatedly for the initial signed-out state', async () => {
+    const clerk = {
+      user: null,
+      __internal_reloadInitialResources: vi.fn(async () => undefined),
     }
 
     installPopupAuthSync(
       clerk,
       runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
-      reloadPopup,
-      reloadGuardStorage,
     )
     await new Promise(resolve => setTimeout(resolve, 0))
 
-    expect(reloadPopup).toHaveBeenCalledTimes(1)
+    expect(clerk.__internal_reloadInitialResources).not.toHaveBeenCalled()
+  })
+
+  it('rehydrates once for a loaded stale signed-in popup without reloading its window', async () => {
+    runtime.sendMessage.mockResolvedValue({
+      state: { status: 'signed-in', userId: 'user_1', sessionId: 'session_1' },
+    })
+    const clerk = {
+      user: null,
+      __internal_reloadInitialResources: vi.fn(async () => undefined),
+    }
 
     installPopupAuthSync(
       clerk,
       runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
-      reloadPopup,
-      reloadGuardStorage,
     )
     await new Promise(resolve => setTimeout(resolve, 0))
-    expect(reloadPopup).toHaveBeenCalledTimes(1)
+
+    expect(clerk.__internal_reloadInitialResources).toHaveBeenCalledOnce()
   })
 
-  it('reloads once when a stale local user conflicts with signed-out state', async () => {
-    const clerk = { user: { reload: vi.fn(async () => undefined) } }
-    const reloadPopup = vi.fn()
-    const storage = new Map<string, string>()
+  it('replays the latest auth state after an earlier refresh settles', async () => {
+    runtime.sendMessage.mockResolvedValue({
+      state: { status: 'signed-in', userId: 'user_1', sessionId: 'session_1' },
+    })
+    let resolveFirst!: () => void
+    const firstRefresh = new Promise<void>(resolve => { resolveFirst = resolve })
+    const clerk = {
+      user: null,
+      __internal_reloadInitialResources: vi.fn()
+        .mockReturnValueOnce(firstRefresh)
+        .mockResolvedValue(undefined),
+    }
+
+    installPopupAuthSync(
+      clerk,
+      runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
+    )
+    await vi.waitFor(() => expect(clerk.__internal_reloadInitialResources).toHaveBeenCalledOnce())
+
+    listeners[0](
+      {
+        type: AUTH_MESSAGES.STATE_CHANGED,
+        payload: { status: 'signed-in', userId: 'user_2', sessionId: 'session_2' },
+      },
+      { id: runtime.id },
+    )
+    resolveFirst()
+
+    await vi.waitFor(() => expect(clerk.__internal_reloadInitialResources).toHaveBeenCalledTimes(2))
+  })
+
+  it('rehydrates when a stale local user conflicts with signed-out state', async () => {
+    const clerk = {
+      user: { reload: vi.fn(async () => undefined) },
+      __internal_reloadInitialResources: vi.fn(async () => undefined),
+    }
     runtime.sendMessage.mockResolvedValue({ state: { status: 'signed-out' } })
 
     installPopupAuthSync(
       clerk,
       runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
-      reloadPopup,
-      {
-        getItem: key => storage.get(key) ?? null,
-        setItem: (key, value) => { storage.set(key, value) },
-      },
     )
     await new Promise(resolve => setTimeout(resolve, 0))
 
-    expect(reloadPopup).toHaveBeenCalledTimes(1)
+    expect(clerk.__internal_reloadInitialResources).toHaveBeenCalledOnce()
+    expect(clerk.user.reload).not.toHaveBeenCalled()
   })
 
-  it('fails safe across remounts when session storage rejects access', async () => {
+  it('reports a Clerk rehydration failure without falling back to window reload', async () => {
     runtime.sendMessage.mockResolvedValue({
       state: { status: 'signed-in', userId: 'user_throw', sessionId: 'session_throw' },
     })
-    const clerk = { user: null }
-    const reloadPopup = vi.fn()
-    const throwingStorage = {
-      getItem: () => { throw new Error('storage unavailable') },
-      setItem: () => { throw new Error('storage unavailable') },
+    const clerk = {
+      user: null,
+      __internal_reloadInitialResources: vi.fn(async () => { throw new Error('resource refresh failed') }),
     }
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
     installPopupAuthSync(
       clerk,
       runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
-      reloadPopup,
-      throwingStorage,
     )
     await new Promise(resolve => setTimeout(resolve, 0))
-    expect(reloadPopup).not.toHaveBeenCalled()
 
-    installPopupAuthSync(
-      clerk,
-      runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
-      reloadPopup,
-      throwingStorage,
-    )
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(reloadPopup).not.toHaveBeenCalled()
+    expect(clerk.__internal_reloadInitialResources).toHaveBeenCalledOnce()
+    expect(errorSpy).toHaveBeenCalledWith('[Popup] Failed to refresh auth state', expect.any(Error))
+    errorSpy.mockRestore()
   })
 
-  it('refreshes an open popup from a worker state event without receiving a token', async () => {
-    const clerk = { user: null }
-    const reloadPopup = vi.fn()
-    const storage = new Map<string, string>()
-    const reloadGuardStorage = {
-      getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => { storage.set(key, value) },
+  it('rehydrates an open popup from a worker state event without receiving a token', async () => {
+    const clerk = {
+      user: null,
+      __internal_reloadInitialResources: vi.fn(async () => undefined),
     }
     installPopupAuthSync(
       clerk,
       runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
-      reloadPopup,
-      reloadGuardStorage,
     )
     await new Promise(resolve => setTimeout(resolve, 0))
-    reloadPopup.mockClear()
 
     const signedInState: AuthState = {
       status: 'signed-in',
@@ -154,28 +154,28 @@ describe('popup auth sync', () => {
     )
     await new Promise(resolve => setTimeout(resolve, 0))
 
-    expect(reloadPopup).toHaveBeenCalledTimes(1)
-    expect(JSON.stringify(reloadPopup.mock.calls)).not.toContain('must-never-cross')
+    expect(clerk.__internal_reloadInitialResources).toHaveBeenCalledOnce()
+    expect(JSON.stringify(clerk.__internal_reloadInitialResources.mock.calls)).not.toContain('must-never-cross')
   })
 
   it('ignores foreign or malformed messages and removes its listener on cleanup', async () => {
-    const clerk = { user: null }
-    const reloadPopup = vi.fn()
+    const clerk = {
+      user: null,
+      __internal_reloadInitialResources: vi.fn(async () => undefined),
+    }
     const cleanup = installPopupAuthSync(
       clerk,
       runtime as unknown as NonNullable<Parameters<typeof installPopupAuthSync>[1]>,
-      reloadPopup,
     )
     await new Promise(resolve => setTimeout(resolve, 0))
-    reloadPopup.mockClear()
 
     listeners[0]({ type: AUTH_MESSAGES.STATE_CHANGED, payload: { status: 'signed-in' } }, { id: 'foreign' })
     listeners[0]({ type: AUTH_MESSAGES.STATE_CHANGED, payload: { status: 'not-a-state' } }, { id: runtime.id })
-    expect(reloadPopup).not.toHaveBeenCalled()
+    expect(clerk.__internal_reloadInitialResources).not.toHaveBeenCalled()
 
     cleanup()
     expect(runtime.onMessage.removeListener).toHaveBeenCalledWith(listeners[0])
     listeners[0]({ type: AUTH_MESSAGES.STATE_CHANGED, payload: { status: 'signed-out' } }, { id: runtime.id })
-    expect(reloadPopup).not.toHaveBeenCalled()
+    expect(clerk.__internal_reloadInitialResources).not.toHaveBeenCalled()
   })
 })

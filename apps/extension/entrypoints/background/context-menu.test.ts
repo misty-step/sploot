@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AUTH_MESSAGES } from '../../shared/auth-messages';
 import { CONTEXT_MENU_SAVE_MESSAGES } from '../../shared/context-menu-save-messages';
 
 const mocks = vi.hoisted(() => ({
@@ -52,6 +53,7 @@ type MessageHandler = (
 let onClicked: ClickHandler;
 let onStartup: (() => Promise<void>) | undefined;
 let onMessage: MessageHandler;
+let runtimeMessageListeners: Array<(message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => unknown> = [];
 let contextMenusCreate: ReturnType<typeof vi.fn>;
 let contextMenusRemove: ReturnType<typeof vi.fn>;
 let storedQueue: unknown[] = [];
@@ -63,6 +65,7 @@ beforeEach(() => {
   contextMenusCreate = vi.fn();
   contextMenusRemove = vi.fn();
   storedQueue = [];
+  runtimeMessageListeners = [];
   vi.stubGlobal('chrome', {
     contextMenus: {
       create: contextMenusCreate,
@@ -72,7 +75,7 @@ beforeEach(() => {
     runtime: {
       onInstalled: { addListener: vi.fn() },
       onStartup: { addListener: vi.fn((fn: () => Promise<void>) => { onStartup = fn; }) },
-      onMessage: { addListener: vi.fn((fn: MessageHandler) => { onMessage = fn; }) },
+      onMessage: { addListener: vi.fn((fn: MessageHandler) => { runtimeMessageListeners.push(fn as unknown as (message: unknown, sender: unknown, sendResponse: (response: unknown) => void) => unknown); onMessage = fn; }) },
     },
     alarms: {
       create: vi.fn(async () => undefined),
@@ -84,7 +87,7 @@ beforeEach(() => {
         get: vi.fn().mockImplementation(async () => ({
           'sploot:context-menu-queue': storedQueue.map(job => ({
             ...(job as Record<string, unknown>),
-            owner: (job as Record<string, unknown>).owner ?? OWNER,
+            owner: (job as Record<string, unknown>).owner ?? ((job as Record<string, unknown>).state === 'awaiting-auth' ? undefined : OWNER),
             sourceBytes: (job as Record<string, unknown>).sourceBytes ?? btoa('x'),
             sourceType: (job as Record<string, unknown>).sourceType ?? 'image/png',
           })),
@@ -126,6 +129,36 @@ describe('context menu save', () => {
       expect.any(Blob), 'cat.png', expect.anything(), expect.any(AbortSignal),
     ));
     await vi.waitFor(() => expect(mocks.showSuccessNotification).toHaveBeenCalled());
+    expect(mocks.showErrorNotification).not.toHaveBeenCalled();
+  });
+
+  it('continues the original right-click from the signed-in runtime event after a worker boundary', async () => {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    mocks.getAuthAuthority.mockClear();
+    mocks.getAuthAuthority
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(OWNER);
+    let finishPrompt!: (signedIn: boolean) => void;
+    mocks.promptUserSignIn.mockReturnValueOnce(new Promise(resolve => { finishPrompt = resolve; }));
+
+    const click = onClicked({ menuItemId: 'save-to-sploot', srcUrl: 'https://x.test/cat.png' }, { title: 'Cat' });
+    await vi.waitFor(() => expect(mocks.promptUserSignIn).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(storedQueue).toEqual([expect.objectContaining({ state: 'awaiting-auth' })]));
+
+    for (const listener of runtimeMessageListeners) {
+      listener({
+        type: AUTH_MESSAGES.STATE_CHANGED,
+        payload: { status: 'signed-in', userId: OWNER.userId, sessionId: OWNER.sessionId },
+      }, {}, vi.fn());
+    }
+
+    await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledWith(
+      expect.any(Blob), 'cat.png', expect.anything(), expect.any(AbortSignal),
+    ));
+    finishPrompt(false);
+    await click;
+
+    expect(mocks.showSuccessNotification).toHaveBeenCalled();
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
   });
 
