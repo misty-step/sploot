@@ -19,6 +19,7 @@ const publicPort = Number(process.env.QA_GALLERY_PORT ?? 3474);
 const appPort = Number(process.env.QA_GALLERY_APP_PORT ?? publicPort + 1);
 const baseURL = `http://127.0.0.1:${publicPort}`;
 const lifecyclePath = join(webRoot, '.next/qa-evidence-lifecycle.json');
+const qaBuildPublishableKey = 'pk_test_Y2xlcmsuZXhhbXBsZS5jb20k';
 
 function fail(message) {
   console.error(`[qa:gallery] ${message}`);
@@ -35,8 +36,11 @@ if (!parsedDatabaseUrl.pathname || parsedDatabaseUrl.pathname === '/' || parsedD
   fail('QA_GALLERY_DB_URL must name an isolated database, not the postgres maintenance database');
 }
 if (!secret || secret.length < 16) fail('SPLOOT_QA_AUTH_SECRET must be an explicit short-lived-proof signing secret');
-if (process.env.CLERK_SECRET_KEY || process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
-  fail('QA evidence cannot coexist with Clerk credentials');
+if (process.env.CLERK_SECRET_KEY) {
+  fail('QA evidence cannot coexist with a Clerk secret key');
+}
+if (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY !== qaBuildPublishableKey) {
+  fail('QA evidence accepts only its deterministic build-time Clerk publishable key');
 }
 if ((process.env.PLAYWRIGHT_SERVER_MODE ?? 'production') !== 'production') {
   fail('gallery evidence refuses a non-production Playwright server mode');
@@ -47,6 +51,7 @@ const env = {
   DATABASE_URL: databaseUrl,
   SPLOOT_QA_AUTH_MODE: 'enabled',
   NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: 'true',
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: qaBuildPublishableKey,
   SPLOOT_DEPLOYMENT_ENV: 'test',
   SPLOOT_QA_EVIDENCE_MODE: 'enabled',
   SPLOOT_QA_DEPLOYMENT_ID: 'sploot-gallery-qa-local',
@@ -111,7 +116,7 @@ run('pnpm', ['exec', 'tsx', 'scripts/qa-provenance.ts', '.next/qa-provenance.jso
 
 const server = spawn(process.execPath, ['scripts/qa-evidence-server.mjs'], {
   cwd: webRoot,
-  env: { ...env, PORT: String(publicPort), QA_NEXT_PORT: String(appPort) },
+  env: { ...env, NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: '', PORT: String(publicPort), QA_NEXT_PORT: String(appPort) },
   stdio: 'inherit',
 });
 let stopped = false;
