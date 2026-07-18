@@ -9,10 +9,29 @@ vi.mock('next/headers', () => ({
   headers: () => mockHeaders(),
 }));
 
+// Spy on the observability logger's logError to observe structured error
+// signals, while keeping every other export (including withTraceId, used by
+// withObservability) real.
+const mockLogError = vi.fn();
+vi.mock('@/lib/observability-logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/observability-logger')>();
+  return {
+    ...actual,
+    logger: {
+      logInfo: actual.logger.logInfo.bind(actual.logger),
+      logError: (...args: unknown[]) => mockLogError(...args),
+      logTiming: actual.logger.logTiming.bind(actual.logger),
+      getTraceId: actual.logger.getTraceId.bind(actual.logger),
+    },
+  };
+});
+
 // Mock lib/db
 const mockTx = {
   asset: { update: vi.fn() },
   assetStorageReplica: { createMany: vi.fn() },
+  $queryRawUnsafe: vi.fn(),
+  $executeRawUnsafe: vi.fn(),
 };
 const mockPrisma = {
   asset: {
@@ -101,6 +120,11 @@ describe('/api/cron/regenerate-thumbnails', () => {
     mockTx.asset.update.mockResolvedValue({});
     mockTx.assetStorageReplica.createMany.mockResolvedValue({ count: 1 });
     mockPrisma.$executeRawUnsafe.mockResolvedValue(1);
+    // Not shared by default: the old-thumbnail/orphaned-replica
+    // shared-reference fence check (hasLiveSharedReference) resolves false
+    // unless a test explicitly overrides it.
+    mockTx.$queryRawUnsafe.mockResolvedValue([{ shared: false }]);
+    mockTx.$executeRawUnsafe.mockResolvedValue(1);
   });
 
   it('rejects requests without the cron secret', async () => {
@@ -210,7 +234,7 @@ describe('/api/cron/regenerate-thumbnails', () => {
     expect(body.nextCursor).toBe('asset-2'); // third candidate signals more work
   });
 
-  it('prefers the raw legacy source key over the inventoried logical key when recording an old-thumbnail cleanup failure', async () => {
+  it('prefers the raw legacy source key over the inventoried logical key when enqueuing an old-thumbnail cleanup', async () => {
     const inventoriedAsset = {
       ...baseAsset,
       storageProvider: 'vercel',
@@ -233,14 +257,48 @@ describe('/api/cron/regenerate-thumbnails', () => {
     // The replica ledger write and asset update still committed before the
     // best-effort old-object delete failed, so the new thumbnail is not lost.
     expect(mockTx.assetStorageReplica.createMany).toHaveBeenCalledTimes(1);
-    expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
+    // Durably enqueued (fenced, not shared) through the shared outbox seam
+    // BEFORE the best-effort delete was attempted — using the raw legacy
+    // source key, not the inventoried logical key.
+    expect(mockTx.$executeRawUnsafe).toHaveBeenCalledWith(
       expect.any(String),
       'asset-1',
       'vercel',
       'user/raw-legacy-thumb.png',
       'https://blob.example/original-thumb.png',
-      'provider outage',
+      'delete-thumbnail',
     );
+  });
+
+  it('does not physically delete an old thumbnail still shared by another live asset, and does not enqueue it either', async () => {
+    mockPrisma.asset.findMany.mockResolvedValue([baseAsset]);
+    const legacySquareThumb = await png(256, 256);
+    const original = await png(800, 1000);
+    fetchMock
+      .mockResolvedValueOnce(fetchResponse(legacySquareThumb))
+      .mockResolvedValueOnce(fetchResponse(original));
+    // A second live asset still references this exact legacy thumbnail
+    // URL/key (dedup/cutover multi-asset scenario) — the shared-reference
+    // fence must refuse both the enqueue and the physical delete.
+    mockTx.$queryRawUnsafe.mockResolvedValue([{ shared: true }]);
+
+    const res = await GET(makeRequest());
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.regenerated).toBe(1);
+    expect(body.failed).toBe(0);
+    // The new thumbnail still commits normally.
+    expect(mockTx.assetStorageReplica.createMany).toHaveBeenCalledTimes(1);
+    // Deterministic proof of the fence: the old shared thumbnail is never
+    // physically deleted...
+    expect(mockDel).not.toHaveBeenCalledWith('https://blob.example/original-thumb.png');
+    // ...and never durably enqueued for cleanup either, since it is still
+    // legitimately referenced by the sibling asset.
+    const oldThumbInserts = (mockTx.$executeRawUnsafe as ReturnType<typeof vi.fn>).mock.calls.filter((call) =>
+      String(call[0]).includes('INSERT INTO storage_cleanup_outbox') && call[4] === 'delete-thumbnail',
+    );
+    expect(oldThumbInserts).toHaveLength(0);
   });
 
   it('preserves the original transaction error and durably enqueues the orphaned replica when cleanup-after-failure also fails', async () => {
@@ -264,16 +322,58 @@ describe('/api/cron/regenerate-thumbnails', () => {
     expect(body.failures[0].reason).toBe('permission denied');
     expect(body.failures[0].reason).not.toContain('cleanup provider outage');
     // The orphaned new replica that could not be deleted must be durably
-    // enqueued through the existing storage_cleanup_outbox seam — never
-    // silently dropped as a best-effort-only leak.
-    expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
+    // enqueued through the same shared-reference-aware outbox seam
+    // old-thumbnail cleanup uses — never silently dropped as a
+    // best-effort-only leak.
+    expect(mockTx.$executeRawUnsafe).toHaveBeenCalledWith(
       expect.any(String),
       'asset-1',
       'vercel',
       'user/original-thumb-new.png',
       'https://blob.example/original-thumb-new.png',
-      'cleanup provider outage',
+      'delete-thumbnail',
     );
+    // Cleanup succeeded via the durable outbox insert, so no double-failure
+    // signal was needed.
+    expect(mockLogError).not.toHaveBeenCalled();
+  });
+
+  it('emits an explicit structured signal (never masking the original error, never logging the delivery URL) when cleanup AND the durable outbox insert both fail', async () => {
+    mockPrisma.asset.findMany.mockResolvedValue([baseAsset]);
+    const legacySquareThumb = await png(256, 256);
+    const original = await png(800, 1000);
+    fetchMock
+      .mockResolvedValueOnce(fetchResponse(legacySquareThumb))
+      .mockResolvedValueOnce(fetchResponse(original));
+    mockTx.assetStorageReplica.createMany.mockRejectedValueOnce(new Error('permission denied'));
+    // Both the provider cleanup AND the durable outbox insert fail: the
+    // just-uploaded replica is now leaked with no retry path recorded
+    // anywhere unless an explicit signal is emitted.
+    mockDel.mockRejectedValueOnce(new Error('cleanup provider outage'));
+    mockTx.$executeRawUnsafe.mockRejectedValueOnce(new Error('outbox insert failed'));
+
+    const res = await GET(makeRequest());
+    const body = await res.json();
+
+    expect(body.failed).toBe(1);
+    // The original transaction failure is still what surfaces to the caller.
+    expect(body.failures[0].reason).toBe('permission denied');
+    expect(body.failures[0].reason).not.toContain('outbox insert failed');
+    // An explicit structured signal was emitted through the shared
+    // logger/Canary convention for the now-unrecorded leak.
+    expect(mockLogError).toHaveBeenCalledTimes(1);
+    const [context, error, metadata] = mockLogError.mock.calls[0];
+    expect(context).toBe('storage.regenerate-thumbnails.orphaned-replica-leak');
+    expect((error as Error).message).toBe('outbox insert failed');
+    expect(metadata).toMatchObject({
+      assetId: 'asset-1',
+      provider: 'vercel',
+      key: 'user/original-thumb-new.png',
+      cleanupError: 'cleanup provider outage',
+      originalError: 'permission denied',
+    });
+    // Never log the delivery URL alongside the leak signal.
+    expect(JSON.stringify(metadata)).not.toContain('https://blob.example/original-thumb-new.png');
   });
 
   it('rolls back the asset update when the replica ledger write fails, and cleans up the newly uploaded object', async () => {

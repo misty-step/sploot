@@ -8,6 +8,7 @@ import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
 import { ConfiguredStorageWriter, bodyToBuffer, ObjectNotFoundError } from '@/lib/storage/object-store';
 import { storageConfigFromEnv, storageConfigFingerprint } from '@/lib/storage/config';
+import { enqueueReplicaCleanup, markReplicaCleanupDone } from '@/lib/storage/permanent-delete';
 
 /**
  * GET /api/cron/regenerate-thumbnails?limit=25&cursor=<assetId>
@@ -32,10 +33,6 @@ import { storageConfigFromEnv, storageConfigFingerprint } from '@/lib/storage/co
 const ASPECT_TOLERANCE = 0.02;
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
-
-async function recordThumbnailCleanupFailure(assetId: string, provider: string, key: string, url: string, error: string): Promise<void> {
-  await prisma.$executeRawUnsafe(`INSERT INTO "storage_cleanup_outbox" ("id", "asset_id", "provider", "key", "url", "action", "status", "last_error", "updated_at") VALUES (gen_random_uuid()::text, $1, $2, $3, $4, 'delete-thumbnail', 'pending', $5, NOW())`, assetId, provider, key, url, error);
-}
 
 const SUPPORTED_THUMBNAIL_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
 
@@ -227,21 +224,56 @@ async function getHandler(request: NextRequest) {
           const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
           for (const replica of newReplicas) {
             try {
-              await recordThumbnailCleanupFailure(asset.id, replica.provider, replica.key, replica.url, cleanupMessage);
-            } catch {
-              // Best-effort enqueue; the original transaction error below is
-              // always what surfaces to the caller regardless.
+              // Reuse the same shared-reference-aware outbox seam
+              // old-thumbnail cleanup uses below, rather than a bespoke
+              // insert, so this orphan is retried by the same worker.
+              await prisma.$transaction((tx) => enqueueReplicaCleanup(tx, asset.id, replica, 'delete-thumbnail'));
+            } catch (enqueueError) {
+              // Both the provider cleanup AND the durable outbox insert
+              // failed: the just-uploaded object is now leaked with no
+              // retry path recorded anywhere. This must never mask
+              // `error` (thrown below, unchanged below) but it must also
+              // never be silent — emit one explicit structured signal
+              // through the shared logger/Canary convention. Never log the
+              // delivery URL (provider URLs may carry signed query
+              // parameters); key/provider/assetId are enough to locate it.
+              logger.logError('storage.regenerate-thumbnails.orphaned-replica-leak', enqueueError instanceof Error ? enqueueError : new Error(String(enqueueError)), {
+                assetId: asset.id,
+                provider: replica.provider,
+                key: replica.key,
+                cleanupError: cleanupMessage,
+                originalError: error instanceof Error ? error.message : String(error),
+              });
             }
           }
         }
         throw error;
       }
-      try {
-        await storage.deleteUrl(oldThumbUrl);
-      } catch (error) {
-        await recordThumbnailCleanupFailure(asset.id, oldThumb.provider, oldThumb.key, oldThumb.url, error instanceof Error ? error.message : String(error));
-        throw error;
+      // Route the old thumbnail through the same shared-reference-aware
+      // outbox seam permanent-delete uses: a legacy dedup/cutover asset can
+      // still share this exact URL/key with another live asset, and
+      // deleting it out from under that sibling would break it
+      // deterministically. enqueueReplicaCleanup durably enqueues (fenced,
+      // inside its own transaction) BEFORE the best-effort physical
+      // attempt, so even an unshared old thumbnail whose immediate delete
+      // fails still reaches durable cleanup/retry via process-storage-cleanup.
+      const oldThumbCleanupEnqueued = await prisma.$transaction((tx) => enqueueReplicaCleanup(tx, asset.id, oldThumb, 'delete-thumbnail'));
+      if (oldThumbCleanupEnqueued) {
+        try {
+          await storage.deleteUrl(oldThumbUrl);
+          await markReplicaCleanupDone(prisma, asset.id, [oldThumb], 'delete-thumbnail');
+        } catch (error) {
+          // Already durably enqueued above, so process-storage-cleanup will
+          // retry this with backoff regardless of the throw below (which
+          // still counts this asset as a batch failure, matching the prior
+          // best-effort-delete contract).
+          throw error;
+        }
       }
+      // else: hasLiveSharedReference fenced this object — another live
+      // asset still references the same legacy thumbnail URL/key, so
+      // physical deletion is correctly skipped rather than breaking that
+      // sibling asset. It will be cleaned up once nothing live shares it.
       regenerated++;
     } catch (error) {
       failed++;

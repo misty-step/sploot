@@ -1,7 +1,8 @@
+import { randomBytes } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createStorageConfig, storageConfigFingerprint } from '@/lib/storage/config';
-import { commitCutover, manifestSha256, restoreCutoverMappings } from '@/scripts/storage-portability';
+import { commitCutover, inventory, manifestSha256, restoreCutoverMappings } from '@/scripts/storage-portability';
 
 const hasAuthorityDatabase = Boolean(process.env.DATABASE_URL && process.env.STRIPE_LEDGER_ADMIN_DATABASE_URL);
 const describeWithDatabase = hasAuthorityDatabase ? describe.sequential : describe.skip;
@@ -499,5 +500,167 @@ describeWithDatabase('storage portability PostgreSQL authority', () => {
     const afterReplicas = await admin.assetStorageReplica.findMany({ where: { assetId }, orderBy: [{ rendition: 'asc' }, { generation: 'asc' }, { provider: 'asc' }], select: { rendition: true, provider: true, generation: true, active: true } });
     expect(afterReplicas).toEqual(beforeReplicas);
     expect(await admin.storageCutoverState.findUnique({ where: { id: 'default' }, select: { phase: true, generation: true } })).toEqual(beforeState);
+  });
+});
+
+describeWithDatabase('storage portability restricted sploot_storage_operator authority', () => {
+  let admin: PrismaClient;
+  let operator: PrismaClient;
+  let operatorPassword: string;
+  const userId = 'storage-portability-operator-user';
+  const assetId = 'storage-portability-operator-asset';
+
+  beforeAll(async () => {
+    admin = new PrismaClient({ datasources: { db: { url: process.env.STRIPE_LEDGER_ADMIN_DATABASE_URL! } } });
+    // Grant LOGIN for this test run only, so the connection below
+    // authenticates AS sploot_storage_operator over the wire -- proving the
+    // grants under real Postgres privilege enforcement, never a SET
+    // ROLE-from-superuser shortcut (which would retain the superuser's
+    // bypass) and never the STRIPE_LEDGER_ADMIN_DATABASE_URL superuser
+    // connection every other test in this file uses (that bypasses ALL
+    // privilege checks regardless of grants, which is exactly how the
+    // missing grant on `assets` stayed invisible).
+    operatorPassword = randomBytes(32).toString('hex');
+    await admin.$executeRawUnsafe(`ALTER ROLE sploot_storage_operator LOGIN PASSWORD '${operatorPassword}'`);
+    const operatorUrl = new URL(process.env.STRIPE_LEDGER_ADMIN_DATABASE_URL!);
+    operatorUrl.username = 'sploot_storage_operator';
+    operatorUrl.password = operatorPassword;
+    operator = new PrismaClient({ datasources: { db: { url: operatorUrl.toString() } } });
+  });
+
+  afterAll(async () => {
+    await operator.$disconnect();
+    await admin.$executeRawUnsafe('ALTER ROLE sploot_storage_operator NOLOGIN').catch(() => undefined);
+    await admin.$disconnect();
+  });
+
+  afterEach(async () => {
+    await admin.asset.deleteMany({ where: { id: assetId } });
+    await admin.user.deleteMany({ where: { id: userId } });
+    await admin.storageMigrationEntry.deleteMany({ where: { logicalKey: { startsWith: 'assets/storage-portability-operator' } } });
+    await admin.storageInventoryState.deleteMany({ where: { id: 'legacy-assets' } });
+    await admin.storageCutoverState.deleteMany({ where: { id: 'default' } });
+  });
+
+  it('runs as the real non-superuser, non-inheriting sploot_storage_operator identity -- never a superuser bypass', async () => {
+    const identity = await operator.$queryRawUnsafe<Array<{ sessionUser: string; isSuperuser: boolean; inherits: boolean }>>(
+      'SELECT current_user AS "sessionUser", rolsuper AS "isSuperuser", rolinherit AS "inherits" FROM pg_roles WHERE rolname = current_user',
+    );
+    expect(identity[0]).toEqual({ sessionUser: 'sploot_storage_operator', isSuperuser: false, inherits: false });
+  });
+
+  it('denies every unrelated assets column and the table broadly, while the enumerated storage-identity columns remain granted', async () => {
+    const tableGrants = await admin.$queryRawUnsafe<Array<{ hasSelect: boolean; hasUpdate: boolean; hasInsert: boolean; hasDelete: boolean }>>(
+      `SELECT has_table_privilege('sploot_storage_operator','public.assets','SELECT') AS "hasSelect", has_table_privilege('sploot_storage_operator','public.assets','UPDATE') AS "hasUpdate", has_table_privilege('sploot_storage_operator','public.assets','INSERT') AS "hasInsert", has_table_privilege('sploot_storage_operator','public.assets','DELETE') AS "hasDelete"`,
+    );
+    // No broad table-level grant -- only the enumerated columns below.
+    expect(tableGrants[0]).toEqual({ hasSelect: false, hasUpdate: false, hasInsert: false, hasDelete: false });
+
+    const deniedColumns = await admin.$queryRawUnsafe<Array<{ allDenied: boolean }>>(
+      `SELECT bool_and(NOT has_column_privilege('sploot_storage_operator', 'public.assets', column_name, 'SELECT') AND NOT has_column_privilege('sploot_storage_operator', 'public.assets', column_name, 'UPDATE')) AS "allDenied"
+       FROM (VALUES ('favorite'), ('checksum_sha256'), ('phash'), ('share_slug'), ('owner_user_id'), ('size'), ('width'), ('height'), ('shuffle_key'), ('createdAt')) AS unrelated(column_name)`,
+    );
+    expect(deniedColumns[0]?.allDenied).toBe(true);
+
+    const grantedColumns = await admin.$queryRawUnsafe<Array<{ allGranted: boolean }>>(
+      `SELECT bool_and(has_column_privilege('sploot_storage_operator', 'public.assets', column_name, 'SELECT')) AS "allGranted"
+       FROM (VALUES ('id'), ('deleted_at'), ('pathname'), ('mime'), ('storage_provider'), ('storage_key'), ('storage_source_key'), ('blob_url'), ('thumbnail_storage_key'), ('thumbnail_storage_source_key'), ('thumbnail_path'), ('thumbnail_url')) AS granted(column_name)`,
+    );
+    expect(grantedColumns[0]?.allGranted).toBe(true);
+
+    // "updatedAt" is UPDATE-granted (Prisma's @updatedAt auto-timestamp
+    // appends it to every Asset.update() SET clause regardless of what the
+    // caller writes) but deliberately NOT SELECT-granted -- it is never
+    // read by inventory/commitCutover/restoreCutoverMappings.
+    const updatedAtGrants = await admin.$queryRawUnsafe<Array<{ hasUpdate: boolean; hasSelect: boolean }>>(
+      `SELECT has_column_privilege('sploot_storage_operator', 'public.assets', 'updatedAt', 'UPDATE') AS "hasUpdate", has_column_privilege('sploot_storage_operator', 'public.assets', 'updatedAt', 'SELECT') AS "hasSelect"`,
+    );
+    expect(updatedAtGrants[0]).toEqual({ hasUpdate: true, hasSelect: false });
+
+    // A denied column really fails over the literal restricted connection,
+    // not just in the catalog: no has_column_privilege false negative.
+    await expect(operator.$queryRawUnsafe('SELECT favorite FROM assets LIMIT 1')).rejects.toThrow(/permission denied/i);
+    await expect(operator.$queryRawUnsafe("UPDATE assets SET favorite = true WHERE id = 'nonexistent'")).rejects.toThrow(/permission denied/i);
+  });
+
+  it('inventory reaches and commits under the real restricted operator role', async () => {
+    await admin.user.create({ data: { id: userId, email: userId + '@example.test' } });
+    await admin.asset.create({ data: {
+      id: assetId,
+      ownerUserId: userId,
+      blobUrl: 'https://source.public.blob.vercel-storage.com/uploads/operator-original.png',
+      pathname: 'uploads/operator-original.png',
+      storageProvider: 'vercel',
+      mime: 'image/png',
+      size: 3,
+      checksumSha256: 'storage-portability-operator-checksum',
+    } });
+    const originalBytes = Buffer.from('png-bytes-for-operator-grant-proof');
+    const fetchMock = vi.fn(async () => new Response(originalBytes, { status: 200, headers: { 'content-length': String(originalBytes.byteLength) } }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      // The real requireOperatorAuthority() gate, the assets SELECT/UPDATE
+      // grants, and the storage_migration_entries/storage_inventory_state
+      // CRUD grants ALL run for real against Postgres as literal
+      // sploot_storage_operator -- the exact combination that was
+      // previously proven only under the STRIPE_LEDGER_ADMIN_DATABASE_URL
+      // superuser connection everywhere else in this file.
+      await inventory(10, undefined, operator);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const updated = await admin.asset.findUniqueOrThrow({ where: { id: assetId }, select: { storageKey: true, storageSourceKey: true, storageSize: true, storageSha256: true } });
+    expect(updated.storageSourceKey).toBe('uploads/operator-original.png');
+    expect(updated.storageSize).toBe(originalBytes.byteLength);
+    expect(updated.storageSha256).toMatch(/^[a-f0-9]{64}$/);
+    const migrationEntry = await admin.storageMigrationEntry.findFirst({ where: { sourceKey: 'uploads/operator-original.png' } });
+    expect(migrationEntry).not.toBeNull();
+    const inventoryState = await admin.storageInventoryState.findUnique({ where: { id: 'legacy-assets' } });
+    expect(inventoryState?.cursor).toBe(assetId);
+  });
+
+  it('commitCutover and restoreCutoverMappings commit under the real restricted operator role, not superuser', async () => {
+    const config = createStorageConfig({
+      provider: 's3',
+      phase: 'dual-write',
+      endpoint: 'https://objects.example.test',
+      publicUrlBase: 'https://objects.example.test',
+      bucket: 'sploot',
+      accessKeyId: 'integration-id',
+      secretAccessKey: 'integration-secret',
+    });
+    const manifest = [
+      { logicalKey: 'assets/storage-portability-operator/original.png', sourceKey: 'uploads/operator-original.png', rendition: 'original' as const, sourceProvider: 'vercel', size: 3, sha256: 'a'.repeat(64), contentType: 'image/png' },
+    ];
+    const digest = manifestSha256(manifest);
+    await admin.user.create({ data: { id: userId, email: userId + '@example.test' } });
+    await admin.asset.create({ data: {
+      id: assetId,
+      ownerUserId: userId,
+      blobUrl: 'https://source.public.blob.vercel-storage.com/uploads/operator-original.png',
+      pathname: 'uploads/operator-original.png',
+      storageProvider: 'vercel',
+      storageKey: manifest[0]!.logicalKey,
+      storageSourceKey: manifest[0]!.sourceKey,
+      mime: 'image/png',
+      size: 3,
+      checksumSha256: 'storage-portability-operator-cutover-checksum',
+    } });
+    await admin.storageCutoverState.create({ data: { id: 'default', phase: 'dual-write', generation: 0, providerFingerprint: storageConfigFingerprint(config), manifestSha256: digest } });
+
+    // Both calls take `operator` (the literal restricted connection) as
+    // their `database` param instead of every other test's `admin`
+    // (superuser) -- this is the one substitution that turns "passes under
+    // a mocked sessionUser / superuser fallback" into a real proof.
+    await commitCutover(manifest, config, digest, operator);
+    expect(await admin.storageCutoverState.findUnique({ where: { id: 'default' }, select: { phase: true, generation: true } })).toEqual({ phase: 'target', generation: 1 });
+
+    await restoreCutoverMappings(config, digest, operator);
+    const asset = await admin.asset.findUniqueOrThrow({ where: { id: assetId }, select: { storageProvider: true, storageKey: true, storageSourceKey: true, blobUrl: true } });
+    expect(asset.storageProvider).toBe('vercel');
+    expect(asset.storageKey).toBe(manifest[0]!.logicalKey);
+    expect(asset.blobUrl).toBe('https://source.public.blob.vercel-storage.com/uploads/operator-original.png');
+    expect(await admin.storageCutoverState.findUnique({ where: { id: 'default' }, select: { phase: true, generation: true } })).toEqual({ phase: 'rollback', generation: 1 });
   });
 });
