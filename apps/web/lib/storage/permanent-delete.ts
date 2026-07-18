@@ -77,6 +77,34 @@ async function hasLiveSharedReference(
   return rows[0]?.shared === true;
 }
 
+/**
+ * Fence-check one replica and, if no other live asset still references it,
+ * durably enqueue its provider cleanup under `action`. This is the single
+ * shared-reference-aware outbox seam every deletion path (permanent-delete's
+ * multi-replica sweep below, and the old-thumbnail/orphaned-replica cleanup
+ * in the thumbnail regen cron) goes through — never a bespoke point-in-time
+ * check duplicated per caller. Returns whether the row was enqueued (false
+ * means fenced: another live asset still owns this physical object, so
+ * deletion is correctly skipped rather than breaking that sibling asset).
+ */
+export async function enqueueReplicaCleanup(
+  tx: CleanupTransaction,
+  assetId: string,
+  replica: StorageReplica,
+  action: string,
+): Promise<boolean> {
+  if (await hasLiveSharedReference(tx, assetId, replica)) return false;
+  await tx.$executeRawUnsafe(
+    "INSERT INTO storage_cleanup_outbox (id, asset_id, provider, key, url, action, status, updated_at) VALUES (md5(concat_ws(chr(0), $1, $2, $3, $4, $5)), $1, $2, $3, $4, $5, 'pending', NOW()) ON CONFLICT (id) DO NOTHING",
+    assetId,
+    replica.provider,
+    replica.key,
+    replica.url,
+    action,
+  );
+  return true;
+}
+
 export async function enqueueAssetReplicaCleanup(
   tx: CleanupTransaction,
   assetId: string,
@@ -89,16 +117,7 @@ export async function enqueueAssetReplicaCleanup(
   const candidates = replicasForPermanentDelete(rows, fallback);
   const replicas: StorageReplica[] = [];
   for (const replica of candidates) {
-    if (await hasLiveSharedReference(tx, assetId, replica)) continue;
-    replicas.push(replica);
-    await tx.$executeRawUnsafe(
-      "INSERT INTO storage_cleanup_outbox (id, asset_id, provider, key, url, action, status, updated_at) VALUES (md5(concat_ws(chr(0), $1, $2, $3, $4, $5)), $1, $2, $3, $4, $5, 'pending', NOW()) ON CONFLICT (id) DO NOTHING",
-      assetId,
-      replica.provider,
-      replica.key,
-      replica.url,
-      'permanent-delete',
-    );
+    if (await enqueueReplicaCleanup(tx, assetId, replica, 'permanent-delete')) replicas.push(replica);
   }
   return replicas;
 }
@@ -107,6 +126,7 @@ export async function markReplicaCleanupDone(
   db: Pick<Prisma.TransactionClient, '$executeRawUnsafe'>,
   assetId: string,
   replicas: StorageReplica[],
+  action: string = 'permanent-delete',
 ): Promise<void> {
   for (const replica of replicas) {
     await db.$executeRawUnsafe(
@@ -115,7 +135,7 @@ export async function markReplicaCleanupDone(
       replica.provider,
       replica.key,
       replica.url,
-      'permanent-delete',
+      action,
     );
   }
 }

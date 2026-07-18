@@ -71,6 +71,6 @@ Run inventory with the schema-migrator/operator `DATABASE_URL` only:
 STORAGE_PROVIDER=vercel pnpm --filter web storage:portability inventory --limit 100 --cursor <last-id>
 ```
 
-Inventory reads each legacy original and thumbnail, computes bounded size/SHA-256, persists metadata, advances a durable cursor, and records failures. It exits non-zero on any parity failure; repair the source and resume from the recorded cursor.
+Inventory reads each legacy original and thumbnail, computes bounded size/SHA-256, persists metadata, advances a durable cursor, and records failures. It exits non-zero on any parity failure; repair the source and resume from the recorded cursor. A cursor-resumed run only re-seeds the remaining suffix of assets and never prunes or emits the durable full manifest — those are gated on a subsequent fresh, cursor-less pass that re-visits every live asset from the start in one unbroken run. Treat a resumed run's own stdout as a non-authoritative progress marker, not a `manifest.json` input; always finish with one plain `inventory` call (no `--cursor`) before `verify`.
 
 Before verify, set `STORAGE_CUTOVER_MANIFEST_SHA256` to the exact manifest digest. The CLI records provider fingerprint/manifest/phase in `storage_cutover_state`, refuses drift, and exits non-zero unless every journal row is verified (or rolled back). The restricted application role has SELECT access only to `storage_cutover_state` for runtime fail-closed checks; it intentionally has no access to journal, migration-entry, or inventory tables.

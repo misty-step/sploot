@@ -13,8 +13,8 @@ const MAX_BATCH = 100;
 const INVENTORY_ID = 'legacy-assets';
 const OPERATOR_ROLES = new Set(['sploot_stripe_schema_migrator', 'sploot_storage_operator']);
 
-async function requireOperatorAuthority(): Promise<void> {
-  const rows = await prisma.$queryRaw<Array<{ sessionUser: string; isSuperuser: boolean }>>(Prisma.sql`SELECT current_user AS "sessionUser", rolsuper AS "isSuperuser" FROM pg_roles WHERE rolname = current_user`);
+async function requireOperatorAuthority(database: PrismaClient = prisma): Promise<void> {
+  const rows = await database.$queryRaw<Array<{ sessionUser: string; isSuperuser: boolean }>>(Prisma.sql`SELECT current_user AS "sessionUser", rolsuper AS "isSuperuser" FROM pg_roles WHERE rolname = current_user`);
   const authority = rows[0];
   if (!authority || (!OPERATOR_ROLES.has(authority.sessionUser) && !authority.isSuperuser)) throw new Error('Storage portability requires DATABASE_URL owned by the schema-migrator/operator authority');
 }
@@ -23,8 +23,8 @@ export function manifestSha256(manifest: MigrationManifestEntry[]): string {
   return createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
 }
 
-async function recordInventoryFailure(assetId: string, error: string): Promise<void> {
-  await prisma.$executeRaw(Prisma.sql`INSERT INTO "storage_inventory_failures" ("asset_id", "kind", "error", "attempts", "updated_at") VALUES (${assetId}, 'asset', ${error}, 1, NOW()) ON CONFLICT ("asset_id", "kind") DO UPDATE SET "error" = EXCLUDED."error", "attempts" = "storage_inventory_failures"."attempts" + 1, "updated_at" = NOW()`);
+async function recordInventoryFailure(database: PrismaClient, assetId: string, error: string): Promise<void> {
+  await database.$executeRaw(Prisma.sql`INSERT INTO "storage_inventory_failures" ("asset_id", "kind", "error", "attempts", "updated_at") VALUES (${assetId}, 'asset', ${error}, 1, NOW()) ON CONFLICT ("asset_id", "kind") DO UPDATE SET "error" = EXCLUDED."error", "attempts" = "storage_inventory_failures"."attempts" + 1, "updated_at" = NOW()`);
 }
 
 
@@ -64,9 +64,14 @@ export function renditionMime(key: string, bytes: Buffer, reported?: string, fal
   return byExtension[extension ?? ''] ?? (fallback && isValidMimeType(fallback) ? normalizeMimeType(fallback) : undefined);
 }
 
-async function inventory(limit: number, cursor?: string) {
-  await requireOperatorAuthority();
+export async function inventory(limit: number, cursor?: string, database: PrismaClient = prisma): Promise<void> {
+  await requireOperatorAuthority(database);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_BATCH) throw new Error('Inventory batch size must be 1-' + MAX_BATCH);
+  // Captured before `cursor`/`nextCursor` are consulted below: only a call
+  // that started with no cursor at all re-seeds every live asset from the
+  // absolute beginning in one unbroken pass, which is the only case safe to
+  // treat as complete/authoritative for pruning and full-manifest emission.
+  const isFreshPass = cursor === undefined;
   const config = storageConfigFromEnv();
   const fingerprint = storageConfigFingerprint(config);
   const source = new VercelObjectStore(config.legacyBaseUrl);
@@ -74,7 +79,7 @@ async function inventory(limit: number, cursor?: string) {
   let failures = 0;
   let nextCursor = cursor;
   while (true) {
-    const assets = await prisma.asset.findMany({ where: { deletedAt: null, ...(nextCursor ? { id: { gt: nextCursor } } : {}) }, orderBy: { id: 'asc' }, take: limit, select: { id: true, storageKey: true, storageSourceKey: true, pathname: true, thumbnailStorageKey: true, thumbnailStorageSourceKey: true, thumbnailPath: true, thumbnailUrl: true, mime: true } });
+    const assets = await database.asset.findMany({ where: { deletedAt: null, ...(nextCursor ? { id: { gt: nextCursor } } : {}) }, orderBy: { id: 'asc' }, take: limit, select: { id: true, storageKey: true, storageSourceKey: true, pathname: true, thumbnailStorageKey: true, thumbnailStorageSourceKey: true, thumbnailPath: true, thumbnailUrl: true, mime: true } });
     if (assets.length === 0) break;
     for (const asset of assets) {
       try {
@@ -83,28 +88,28 @@ async function inventory(limit: number, cursor?: string) {
         const bytes = await bodyToBuffer(original.body, 512 * 1024 * 1024);
         const sha256 = createHash('sha256').update(bytes).digest('hex');
         const logicalKey = inventoryLogicalKey(asset.id, sourceKey, 'original');
-        await prisma.asset.update({ where: { id: asset.id }, data: { storageKey: logicalKey, storageSourceKey: sourceKey, storageConfigFingerprint: fingerprint, storageSize: bytes.byteLength, storageSha256: sha256 } });
+        await database.asset.update({ where: { id: asset.id }, data: { storageKey: logicalKey, storageSourceKey: sourceKey, storageConfigFingerprint: fingerprint, storageSize: bytes.byteLength, storageSha256: sha256 }, select: { id: true } });
         const originalEntry = { logicalKey, sourceKey, rendition: 'original' as const, sourceProvider: 'vercel', size: bytes.byteLength, sha256, contentType: renditionMime(sourceKey, bytes, original.metadata.contentType, asset.mime) };
         manifest.push(originalEntry);
-        await seedMigrationManifest(prisma, [originalEntry], { source: 'vercel', target: 's3' });
+        await seedMigrationManifest(database, [originalEntry], { source: 'vercel', target: 's3' });
         const thumbnailKey = asset.thumbnailStorageSourceKey ?? asset.thumbnailStorageKey ?? asset.thumbnailPath;
         if (thumbnailKey && (asset.thumbnailUrl || asset.thumbnailStorageKey)) {
           const thumbnail = await source.getSourceKey(thumbnailKey);
           const thumbBytes = await bodyToBuffer(thumbnail.body, 512 * 1024 * 1024);
           const thumbSha = createHash('sha256').update(thumbBytes).digest('hex');
           const thumbLogicalKey = inventoryLogicalKey(asset.id, thumbnailKey, 'thumbnail');
-          await prisma.asset.update({ where: { id: asset.id }, data: { thumbnailStorageKey: thumbLogicalKey, thumbnailStorageSourceKey: thumbnailKey, thumbnailStorageSize: thumbBytes.byteLength, thumbnailStorageSha256: thumbSha } });
+          await database.asset.update({ where: { id: asset.id }, data: { thumbnailStorageKey: thumbLogicalKey, thumbnailStorageSourceKey: thumbnailKey, thumbnailStorageSize: thumbBytes.byteLength, thumbnailStorageSha256: thumbSha }, select: { id: true } });
           const thumbnailEntry = { logicalKey: thumbLogicalKey, sourceKey: thumbnailKey, rendition: 'thumbnail' as const, sourceProvider: 'vercel', size: thumbBytes.byteLength, sha256: thumbSha, contentType: renditionMime(thumbnailKey, thumbBytes, thumbnail.metadata.contentType) };
           manifest.push(thumbnailEntry);
-          await seedMigrationManifest(prisma, [thumbnailEntry], { source: 'vercel', target: 's3' });
+          await seedMigrationManifest(database, [thumbnailEntry], { source: 'vercel', target: 's3' });
         }
         nextCursor = asset.id;
-        await prisma.storageInventoryState.upsert({ where: { id: INVENTORY_ID }, update: { cursor: asset.id, providerFingerprint: fingerprint, lastError: null }, create: { id: INVENTORY_ID, cursor: asset.id, providerFingerprint: fingerprint, updatedAt: new Date() } });
+        await database.storageInventoryState.upsert({ where: { id: INVENTORY_ID }, update: { cursor: asset.id, providerFingerprint: fingerprint, lastError: null }, create: { id: INVENTORY_ID, cursor: asset.id, providerFingerprint: fingerprint, updatedAt: new Date() } });
       } catch (error) {
         failures++;
         const message = error instanceof Error ? error.message : String(error);
-        await recordInventoryFailure(asset.id, message);
-        await prisma.storageInventoryState.upsert({ where: { id: INVENTORY_ID }, update: { providerFingerprint: fingerprint, lastError: message }, create: { id: INVENTORY_ID, cursor: nextCursor, providerFingerprint: fingerprint, lastError: message, updatedAt: new Date() } });
+        await recordInventoryFailure(database, asset.id, message);
+        await database.storageInventoryState.upsert({ where: { id: INVENTORY_ID }, update: { providerFingerprint: fingerprint, lastError: message }, create: { id: INVENTORY_ID, cursor: nextCursor, providerFingerprint: fingerprint, lastError: message, updatedAt: new Date() } });
         break;
       }
     }
@@ -112,12 +117,22 @@ async function inventory(limit: number, cursor?: string) {
     if (assets.length < limit) break;
   }
   if (failures > 0) throw new Error('Inventory parity failed for ' + failures + ' asset(s); resume from the recorded cursor after repairing source objects');
-  // A full, uninterrupted pass above re-seeds every non-deleted asset's
-  // current original/thumbnail keys, so it is now safe to prune whatever no
-  // longer matches any live asset.
-  await pruneStaleMigrationEntries(prisma);
-  const durableManifest = await prisma.storageMigrationEntry.findMany({ orderBy: { logicalKey: 'asc' }, select: { logicalKey: true, sourceKey: true, rendition: true, sourceProvider: true, size: true, sha256: true, contentType: true } });
-  process.stdout.write(JSON.stringify(durableManifest) + '\n');
+  if (isFreshPass) {
+    // A full, uninterrupted pass above re-seeds every non-deleted asset's
+    // current original/thumbnail keys, so it is now safe to prune whatever
+    // no longer matches any live asset.
+    await pruneStaleMigrationEntries(database);
+    const durableManifest = await database.storageMigrationEntry.findMany({ orderBy: { logicalKey: 'asc' }, select: { logicalKey: true, sourceKey: true, rendition: true, sourceProvider: true, size: true, sha256: true, contentType: true } });
+    process.stdout.write(JSON.stringify(durableManifest) + '\n');
+    return;
+  }
+  // A cursor-resumed pass only re-seeds a SUFFIX of the live asset set — it
+  // must never be trusted as a complete inventory. Pruning and the durable
+  // full-manifest emission stay gated on a fresh, cursor-less pass that
+  // re-visits every live asset from the very beginning in one unbroken run;
+  // this run's output is explicitly non-authoritative.
+  process.stderr.write('Inventory resumed from cursor ' + cursor + '; seeded ' + manifest.length + ' entr' + (manifest.length === 1 ? 'y' : 'ies') + ' through ' + (nextCursor ?? cursor) + '. Re-run inventory WITHOUT --cursor for a complete, prunable, authoritative manifest before verify.\n');
+  process.stdout.write(JSON.stringify({ resumed: true, cursor: nextCursor ?? null, seeded: manifest.length }) + '\n');
 }
 
 /**
@@ -204,7 +219,7 @@ export async function commitCutover(manifest: MigrationManifestEntry[], config: 
         await tx.$executeRawUnsafe('UPDATE asset_storage_replicas SET active=false, updated_at=NOW() WHERE asset_id=$1 AND rendition=$2', asset.id, rendition);
         await tx.$executeRawUnsafe('INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, source_key, logical_key, delivery_url, size, sha256, content_type, generation, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false) ON CONFLICT (asset_id, rendition, generation, provider) DO UPDATE SET source_key=EXCLUDED.source_key, logical_key=EXCLUDED.logical_key, delivery_url=EXCLUDED.delivery_url, size=EXCLUDED.size, sha256=EXCLUDED.sha256, content_type=EXCLUDED.content_type, active=false, updated_at=NOW()', randomUUID(), asset.id, rendition, sourceProvider, oldKey, entry.logicalKey, oldUrl, entry.size, entry.sha256, entry.contentType ?? asset.mime, generation);
         await tx.$executeRawUnsafe('INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, source_key, logical_key, delivery_url, size, sha256, content_type, generation, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true) ON CONFLICT (asset_id, rendition, generation, provider) DO UPDATE SET source_key=EXCLUDED.source_key, logical_key=EXCLUDED.logical_key, delivery_url=EXCLUDED.delivery_url, size=EXCLUDED.size, sha256=EXCLUDED.sha256, content_type=EXCLUDED.content_type, active=true, updated_at=NOW()', randomUUID(), asset.id, rendition, config.provider, entry.sourceKey, entry.logicalKey, targetUrl, entry.size, entry.sha256, entry.contentType ?? asset.mime, generation);
-        await tx.asset.update({ where: { id: asset.id }, data: rendition === 'thumbnail' ? { storageProvider: config.provider, thumbnailStorageKey: entry.logicalKey, thumbnailStorageSourceKey: entry.sourceKey, thumbnailUrl: targetUrl, thumbnailStorageSize: entry.size, thumbnailStorageSha256: entry.sha256, storageConfigFingerprint: fingerprint } : { storageProvider: config.provider, storageKey: entry.logicalKey, storageSourceKey: entry.sourceKey, blobUrl: targetUrl, storageSize: entry.size, storageSha256: entry.sha256, storageConfigFingerprint: fingerprint } });
+        await tx.asset.update({ where: { id: asset.id }, data: rendition === 'thumbnail' ? { storageProvider: config.provider, thumbnailStorageKey: entry.logicalKey, thumbnailStorageSourceKey: entry.sourceKey, thumbnailUrl: targetUrl, thumbnailStorageSize: entry.size, thumbnailStorageSha256: entry.sha256, storageConfigFingerprint: fingerprint } : { storageProvider: config.provider, storageKey: entry.logicalKey, storageSourceKey: entry.sourceKey, blobUrl: targetUrl, storageSize: entry.size, storageSha256: entry.sha256, storageConfigFingerprint: fingerprint }, select: { id: true } });
       }
     }
     const updated = await tx.storageCutoverState.updateMany({ where: { id: 'default', phase: 'dual-write', generation: state.generation, providerFingerprint: fingerprint, manifestSha256: digest }, data: { phase: 'target', generation, verifiedAt: new Date(), updatedAt: new Date() } });
@@ -243,8 +258,8 @@ export async function restoreCutoverMappings(config: StorageConfig, digest: stri
       if (row.target_generation === null || row.provider === null) {
         throw new Error('Rollback cannot find a complete provider-paired replica generation for ' + row.asset_id + '/' + row.rendition + '; refusing to restore a stale or mixed-generation mapping');
       }
-      if (row.rendition === 'thumbnail') await tx.asset.update({ where: { id: row.asset_id }, data: { storageProvider: row.provider, thumbnailStorageKey: row.logical_key!, thumbnailStorageSourceKey: row.source_key, thumbnailUrl: row.delivery_url! } });
-      else await tx.asset.update({ where: { id: row.asset_id }, data: { storageProvider: row.provider, storageKey: row.logical_key!, storageSourceKey: row.source_key, blobUrl: row.delivery_url! } });
+      if (row.rendition === 'thumbnail') await tx.asset.update({ where: { id: row.asset_id }, data: { storageProvider: row.provider, thumbnailStorageKey: row.logical_key!, thumbnailStorageSourceKey: row.source_key, thumbnailUrl: row.delivery_url! }, select: { id: true } });
+      else await tx.asset.update({ where: { id: row.asset_id }, data: { storageProvider: row.provider, storageKey: row.logical_key!, storageSourceKey: row.source_key, blobUrl: row.delivery_url! }, select: { id: true } });
       // Deactivate every generation of this asset+rendition — mirrors
       // commitCutover's own blanket deactivate — then reactivate exactly the row
       // just restored onto the asset above. This keeps the ledger's `active`
@@ -255,7 +270,8 @@ export async function restoreCutoverMappings(config: StorageConfig, digest: stri
       await tx.$executeRawUnsafe('UPDATE asset_storage_replicas SET active=false, updated_at=NOW() WHERE asset_id=$1 AND rendition=$2', row.asset_id, row.rendition);
       await tx.$executeRawUnsafe('UPDATE asset_storage_replicas SET active=true, updated_at=NOW() WHERE asset_id=$1 AND rendition=$2 AND generation=$3 AND provider=$4', row.asset_id, row.rendition, row.old_generation, row.provider);
     }
-    await tx.storageCutoverState.updateMany({ where: { id: 'default', phase: 'target', generation: state.generation, providerFingerprint: fingerprint, manifestSha256: digest }, data: { phase: 'rollback', rollbackAt: new Date(), updatedAt: new Date() } });
+    const updated = await tx.storageCutoverState.updateMany({ where: { id: 'default', phase: 'target', generation: state.generation, providerFingerprint: fingerprint, manifestSha256: digest }, data: { phase: 'rollback', rollbackAt: new Date(), updatedAt: new Date() } });
+    if (updated.count !== 1) throw new Error('Rollback fence lost while restoring asset mappings');
   });
 }
 

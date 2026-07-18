@@ -463,6 +463,24 @@ DO $$ BEGIN
     GRANT SELECT (asset_id, provider, source_key, logical_key, delivery_url, active)
       ON TABLE public.asset_storage_replicas TO sploot_stripe_app;
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.storage_cutover_state, public.storage_migration_entries, public.storage_inventory_state, public.storage_inventory_failures, public.asset_storage_replicas, public.storage_cleanup_outbox TO sploot_storage_operator;
+    -- storage-portability.ts (inventory/commitCutover/restoreCutoverMappings)
+    -- reads and rewrites only the storage-identity columns on assets while
+    -- running as this role; every other column (favorite, checksum, phash,
+    -- share slug, owner, size, dimensions, timestamps, ...) stays denied.
+    -- Column set is the exact union of every WHERE/select/data clause those
+    -- three functions touch; their .update() calls are select-scoped to
+    -- `id` so no broader SELECT grant is required for the write-back
+    -- readback (Prisma's update() otherwise selects every scalar column).
+    GRANT SELECT (id, deleted_at, pathname, mime, storage_provider, storage_key, storage_source_key, blob_url, thumbnail_storage_key, thumbnail_storage_source_key, thumbnail_path, thumbnail_url)
+      ON TABLE public.assets TO sploot_storage_operator;
+    -- Prisma's `@updatedAt` auto-timestamp appends "updatedAt" to every
+    -- Asset.update() SET clause regardless of what the caller's `data`
+    -- contains, so it needs the same UPDATE grant as the columns actually
+    -- written (proven live: raw SQL against only the enumerated business
+    -- columns succeeds, but the Prisma-generated statement fails closed
+    -- with "permission denied for table assets" without this column).
+    GRANT UPDATE (storage_provider, storage_key, storage_source_key, storage_config_fingerprint, storage_size, storage_sha256, blob_url, thumbnail_storage_key, thumbnail_storage_source_key, thumbnail_storage_size, thumbnail_storage_sha256, thumbnail_url, "updatedAt")
+      ON TABLE public.assets TO sploot_storage_operator;
     GRANT SELECT, INSERT, UPDATE ON TABLE public.storage_cleanup_outbox TO sploot_stripe_app;
     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO sploot_storage_operator;
   END IF;
