@@ -53,7 +53,9 @@
     "e2e:public-truth": "playwright test --config playwright.config.ts --project=public-truth --grep \"public truth\"",
     "e2e:public-truth:build": "node scripts/build-public-truth.mjs",
     "e2e:public-truth:production-guard": "node scripts/verify-production-public-truth-guard.mjs",
-    "e2e:public-truth:serve": "node scripts/serve-public-truth.mjs"
+    "e2e:public-truth:serve": "node scripts/serve-public-truth.mjs",
+    "release:verify": "node scripts/verify-release.mjs",
+    "release:verify:test": "node --test scripts/verify-release.test.mjs"
   },
   "dependencies": {
     "@clerk/backend": "^2.33.4",
