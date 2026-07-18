@@ -8,9 +8,10 @@ import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 const SCRIPT = join(process.cwd(), 'scripts/verify-release.mjs');
-const OBSERVED_AT = new Date(Date.now() - 60_000).toISOString().replace(/\.\d{3}Z$/, '.000Z');
-const EXPIRES_AT = new Date(Date.now() + 4 * 60_000).toISOString().replace(/\.\d{3}Z$/, '.000Z');
-const HEALTH_TIMESTAMP = new Date(Date.now() - 30_000).toISOString().replace(/\.\d{3}Z$/, '.000Z');
+const TEST_NOW = Date.now();
+const OBSERVED_AT = new Date(TEST_NOW - 60_000).toISOString().replace(/\.\d{3}Z$/, '.000Z');
+const EXPIRES_AT = new Date(TEST_NOW + 3 * 60_000).toISOString().replace(/\.\d{3}Z$/, '.000Z');
+const HEALTH_TIMESTAMP = new Date(TEST_NOW - 30_000).toISOString().replace(/\.\d{3}Z$/, '.000Z');
 const TOKEN = 'bearer-test-value-that-must-not-leak';
 const targetArgs = [
   '--transaction-id', 'estate-tx-123',
@@ -221,6 +222,8 @@ describe('verify-release.mjs', () => {
     const futureArgs = await successfulArgs('forward', futureOrigin, file);
     const observedIndex = futureArgs.indexOf('--observed-at');
     futureArgs[observedIndex + 1] = new Date(Date.now() + 10 * 60_000).toISOString().replace(/\.\d{3}Z$/, '.000Z');
+    const expiresIndex = futureArgs.indexOf('--expires-at');
+    futureArgs[expiresIndex + 1] = new Date(Date.now() + 11 * 60_000).toISOString().replace(/\.\d{3}Z$/, '.000Z');
     const future = await run(futureArgs);
     assert.notEqual(future.code, 0);
   });
