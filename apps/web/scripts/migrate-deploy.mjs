@@ -120,6 +120,63 @@ export async function drainOwnerVisibilityBackfill(databaseUrl, options = {}) {
   }
 }
 
+const compatibilityPath = resolve(repoRoot, 'apps/web/prisma/migration-history-compatibility.json');
+
+/**
+ * check-migration-history.mjs's `approved` map satisfies ITS OWN immutable-
+ * history gate for a renamed already-applied migration, but Prisma's own
+ * migrate-deploy state tracking knows nothing about that map: it reads
+ * `_prisma_migrations` purely by folder name, sees the new name as
+ * unapplied, and tries to re-run its SQL against a database that already
+ * has the old name's effects (production incident 2026-07-23 -- the
+ * `approved` mechanism had never actually been exercised before this).
+ *
+ * For every approved rename whose OLD name is genuinely finished (not
+ * rolled back) and whose NEW name has no row yet, rename Prisma's own
+ * bookkeeping row in place (never re-running its SQL). This must be an
+ * in-place UPDATE, not `prisma migrate resolve --applied`: that command
+ * INSERTS a second row for the new name, leaving the old row behind, and
+ * check-migration-history.mjs's own gate then sees two applied identities
+ * for the same logical migration on every subsequent run and fails closed
+ * with "duplicate applied migration identity" forever after (caught by
+ * local reproduction against a real database before this shipped: renaming
+ * in place instead leaves exactly one row, matching `expected` directly).
+ */
+export async function resolveApprovedRenames(databaseUrl, options = {}) {
+  const compatibility = options.compatibility ?? JSON.parse(readFileSync(compatibilityPath, 'utf8'));
+  const entries = Object.entries(compatibility.approved ?? {});
+  if (entries.length === 0) return { resolved: [] };
+  const clientConfig = migrationHistoryClientConfig(databaseUrl);
+  const client = options.createClient ? options.createClient(clientConfig) : new (requirePg().Client)(clientConfig);
+  await client.connect();
+  const resolved = [];
+  try {
+    // A genuinely fresh database (first-ever migrate-deploy run, e.g. CI's
+    // ephemeral test database) has no _prisma_migrations table yet.
+    // check-migration-history.mjs already guards this the same way; a
+    // fresh install has nothing to reconcile a rename against.
+    const existsResult = await client.query("SELECT to_regclass('public._prisma_migrations')::text AS ledger");
+    if (!existsResult.rows[0]?.ledger) return { resolved: [] };
+    const names = entries.flatMap(([oldName, { replacement }]) => [oldName, replacement]);
+    const result = await client.query(
+      'SELECT migration_name, finished_at, rolled_back_at FROM "_prisma_migrations" WHERE migration_name = ANY($1)',
+      [names],
+    );
+    const byName = new Map(result.rows.map((row) => [row.migration_name, row]));
+    for (const [oldName, { replacement }] of entries) {
+      const oldRow = byName.get(oldName);
+      const newRow = byName.get(replacement);
+      if (oldRow?.finished_at && !oldRow.rolled_back_at && !newRow) {
+        await client.query('UPDATE "_prisma_migrations" SET migration_name = $1 WHERE migration_name = $2', [replacement, oldName]);
+        resolved.push(replacement);
+      }
+    }
+  } finally {
+    await client.end();
+  }
+  return { resolved };
+}
+
 export function isOwnerVisibilityEnforcementFailure(error) {
   const message = [error?.message, error?.stdout, error?.stderr].filter(Boolean).map(String).join('\n');
   if (!message.includes(OWNER_VISIBILITY_MIGRATION)) return false;
@@ -237,6 +294,10 @@ export async function runMigrateDeploy(env = process.env, options = {}) {
       stage = 'prisma-migrate';
       await historyCheck(migrationDatabaseUrl);
     }
+    stage = 'resolve-approved-renames';
+    const resolveRenames = options.resolveApprovedRenames ?? resolveApprovedRenames;
+    await resolveRenames(migrationDatabaseUrl);
+    stage = 'prisma-migrate';
     console.log('[migrate-deploy] running prisma migrate deploy...');
     const migrationEnv = {
       ...env,
