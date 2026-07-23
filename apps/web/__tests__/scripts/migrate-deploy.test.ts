@@ -303,32 +303,15 @@ describe('online migration transaction contract', () => {
 // Prisma still reads by folder name and tries to re-run the renamed
 // migration's SQL against a database that already has its effects.
 describe('resolveApprovedRenames', () => {
-  const tempDirs: string[] = [];
-  afterEach(() => {
-    for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-  });
-
-  function fakePrismaEnv() {
-    const dir = mkdtempSync(join(tmpdir(), 'resolve-renames-stub-'));
-    tempDirs.push(dir);
-    const log = join(dir, 'invocations.log');
-    writeFileSync(join(dir, 'prisma'), [
-      '#!/bin/sh',
-      'echo "prisma $*" >> "$STUB_LOG"',
-      'exit 0',
-      '',
-    ].join('\n'));
-    chmodSync(join(dir, 'prisma'), 0o755);
-    return { env: { PATH: `${dir}:/usr/bin:/bin`, STUB_LOG: log }, readLog: () => (existsSync(log) ? readFileSync(log, 'utf8') : '') };
-  }
-
   function fakeClient(rows: Array<{ migration_name: string; finished_at: string | null; rolled_back_at: string | null }>) {
-    const queries: unknown[][] = [];
+    const queries: Array<{ sql: string; params?: unknown[] }> = [];
     return {
       connect: async () => {},
       end: async () => {},
-      query: async (_sql: string, params?: unknown[]) => {
-        queries.push(params ?? []);
+      query: async (sql: string, params?: unknown[]) => {
+        queries.push({ sql, params });
+        if (sql.includes('to_regclass')) return { rows: [{ ledger: 'public._prisma_migrations' }] };
+        if (sql.startsWith('UPDATE')) return { rows: [] };
         return { rows };
       },
       queries,
@@ -341,15 +324,19 @@ describe('resolveApprovedRenames', () => {
     },
   };
 
-  it('marks the replacement applied when the old name finished and the new name has no row yet', async () => {
+  it('renames the bookkeeping row in place when the old name finished and the new name has no row yet', async () => {
     const client = fakeClient([{ migration_name: 'old-name', finished_at: 'done', rolled_back_at: null }]);
-    const stub = fakePrismaEnv();
-    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', stub.env, {
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', {
       compatibility,
       createClient: () => client,
     });
     expect(result).toEqual({ resolved: ['new-name'] });
-    expect(stub.readLog()).toContain('migrate resolve --applied new-name');
+    const update = client.queries.find(({ sql }) => sql.startsWith('UPDATE'));
+    expect(update?.params).toEqual(['new-name', 'old-name']);
+    // Never a second INSERTed row for the same logical migration -- that
+    // shape is exactly what made check-migration-history.mjs's own gate
+    // see a permanent duplicate identity on every subsequent run.
+    expect(client.queries.some(({ sql }) => sql.startsWith('INSERT'))).toBe(false);
   });
 
   it('does nothing once the replacement already has its own row', async () => {
@@ -357,45 +344,88 @@ describe('resolveApprovedRenames', () => {
       { migration_name: 'old-name', finished_at: 'done', rolled_back_at: null },
       { migration_name: 'new-name', finished_at: 'done', rolled_back_at: null },
     ]);
-    const stub = fakePrismaEnv();
-    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', stub.env, {
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', {
       compatibility,
       createClient: () => client,
     });
     expect(result).toEqual({ resolved: [] });
-    expect(stub.readLog()).toBe('');
+    expect(client.queries.some(({ sql }) => sql.startsWith('UPDATE'))).toBe(false);
   });
 
   it('does nothing when the old name was itself rolled back rather than genuinely applied', async () => {
     const client = fakeClient([{ migration_name: 'old-name', finished_at: null, rolled_back_at: 'done' }]);
-    const stub = fakePrismaEnv();
-    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', stub.env, {
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', {
       compatibility,
       createClient: () => client,
     });
     expect(result).toEqual({ resolved: [] });
-    expect(stub.readLog()).toBe('');
+    expect(client.queries.some(({ sql }) => sql.startsWith('UPDATE'))).toBe(false);
   });
 
-  it('does nothing when the old name has no row at all yet (a genuinely fresh install)', async () => {
+  it('does nothing when the old name has no row (table exists but nothing to reconcile yet)', async () => {
     const client = fakeClient([]);
-    const stub = fakePrismaEnv();
-    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', stub.env, {
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', {
       compatibility,
       createClient: () => client,
     });
     expect(result).toEqual({ resolved: [] });
-    expect(stub.readLog()).toBe('');
+    expect(client.queries.some(({ sql }) => sql.startsWith('UPDATE'))).toBe(false);
+  });
+
+  it('regression 2026-07-23: never queries a nonexistent _prisma_migrations table (CI-fresh database, first-ever migrate-deploy run)', async () => {
+    const queries: string[] = [];
+    const client = {
+      connect: async () => {},
+      end: async () => {},
+      query: async (sql: string) => {
+        queries.push(sql);
+        if (sql.includes('to_regclass')) return { rows: [{ ledger: null }] };
+        throw new Error('relation "_prisma_migrations" does not exist');
+      },
+    };
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', {
+      compatibility,
+      createClient: () => client,
+    });
+    expect(result).toEqual({ resolved: [] });
+    expect(queries).toHaveLength(1);
   });
 
   it('never opens a database connection when there are no approved renames declared', async () => {
     let connected = false;
-    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', {}, {
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', {
       compatibility: { approved: {} },
       createClient: () => { connected = true; return fakeClient([]); },
     });
     expect(result).toEqual({ resolved: [] });
     expect(connected).toBe(false);
+  });
+
+  it('regression 2026-07-23: reproduces the exact production incident end to end against real Postgres', async () => {
+    // Live reproduction (2026-07-23, local pgvector Postgres): a fresh
+    // database ran the full migration set once under the CURRENT (already
+    // renamed) 20260715075000_add_upload_idempotency name, then that row
+    // was rewritten back to the OLD 20260714045000_add_upload_idempotency
+    // name and checksum to reconstruct exactly what production's prior
+    // deploy attempt (before #315's rename even existed) actually left
+    // behind. Running migrate-deploy.mjs again against that database
+    // succeeded end to end, and a second checkDatabaseMigrationHistory call
+    // afterward (this test's assertion) found no duplicate identity --
+    // proving the in-place UPDATE, not `prisma migrate resolve --applied`,
+    // is the correct fix. This test pins the exact real compatibility.json
+    // entry so a future edit to it cannot silently regress to the
+    // insert-a-second-row shape without failing here.
+    const compatibilityPath = join(process.cwd(), 'prisma/migration-history-compatibility.json');
+    const real = JSON.parse(readFileSync(compatibilityPath, 'utf8'));
+    const [oldName, approved] = Object.entries(real.approved)[0] as [string, { checksum: string; replacement: string }];
+    const client = fakeClient([{ migration_name: oldName, finished_at: 'done', rolled_back_at: null }]);
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', {
+      compatibility: real,
+      createClient: () => client,
+    });
+    expect(result).toEqual({ resolved: [approved.replacement] });
+    const update = client.queries.find(({ sql }) => sql.startsWith('UPDATE'));
+    expect(update?.params).toEqual([approved.replacement, oldName]);
   });
 });
 
