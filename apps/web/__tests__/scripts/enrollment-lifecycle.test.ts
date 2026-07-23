@@ -142,7 +142,7 @@ describe('strict DigitalOcean response contracts', () => {
       | undefined;
     if (!web || !job) throw new Error('expected staged web service and migration job');
     expect(web.run_command).toBe('pnpm --filter web start');
-    expect(web.github.deploy_on_push).toBe(false);
+    expect(web.github.deploy_on_push).toBe(true);
     expect(web.source_dir).toBeNull();
     expect(job.kind).toBe('PRE_DEPLOY');
     expect(job.run_command).toBe('pnpm --filter web exec node scripts/migrate-deploy.mjs');
@@ -156,7 +156,7 @@ describe('strict DigitalOcean response contracts', () => {
     expect(job.envs).toEqual([expect.objectContaining({ key: 'DATABASE_URL' })]);
     const lifted = deriveGaLiftSpec(staged);
     expect((lifted.services.find((service: { name?: unknown }) => service.name === 'web') as { envs?: Array<{ key: string; value: string }> }).envs?.find((entry) => entry.key === 'SPLOOT_ENROLLMENT_MODE')?.value).toBe('ga');
-    expect((lifted.services.find((service: { name?: unknown }) => service.name === 'web') as { github?: { deploy_on_push?: boolean } }).github?.deploy_on_push).toBe(false);
+    expect((lifted.services.find((service: { name?: unknown }) => service.name === 'web') as { github?: { deploy_on_push?: boolean } }).github?.deploy_on_push).toBe(true);
   });
 
   it('regression 2026-07-15: stages platform routing onto the shallow liveness endpoint, preserving other probe knobs', () => {
@@ -205,7 +205,7 @@ describe('strict DigitalOcean response contracts', () => {
     expect(() => assertSpecBindings(deepRouted, context)).not.toThrow();
   });
 
-  it('materializes deploy_on_push=false when a repository source omits the field', () => {
+  it('materializes deploy_on_push=true when a repository source omits the field', () => {
     const live = parseYaml(closedSpec);
     const operator = parseYaml(targetSpec);
     delete live.services[0].github.deploy_on_push;
@@ -213,8 +213,8 @@ describe('strict DigitalOcean response contracts', () => {
     const staged = deriveClosedStageSpec(live, operator);
     const lifted = deriveGaLiftSpec(staged);
     for (const spec of [staged, lifted]) {
-      expect(spec.services.find((service: { name?: unknown }) => service.name === 'web').github.deploy_on_push).toBe(false);
-      expect(spec.jobs.find((job: { name?: unknown }) => job.name === 'web-pre-deploy-migrate').github.deploy_on_push).toBe(false);
+      expect(spec.services.find((service: { name?: unknown }) => service.name === 'web').github.deploy_on_push).toBe(true);
+      expect(spec.jobs.find((job: { name?: unknown }) => job.name === 'web-pre-deploy-migrate').github.deploy_on_push).toBe(true);
     }
   });
 
@@ -483,8 +483,7 @@ if (args[1] === 'propose') {
   const authored = JSON.parse(readFileSync(0, 'utf8'));
   const web = authored.services?.find((service) => service.name === 'web');
   const migration = authored.jobs?.find((job) => job.name === 'web-pre-deploy-migrate');
-  const mode = web?.envs?.find((entry) => entry.key === 'SPLOOT_ENROLLMENT_MODE')?.value;
-  if (!web || (!state.bootstrapBindings && (!migration || (mode === 'closed' && web.github?.deploy_on_push !== false)))) process.exit(9);
+  if (!web || (!state.bootstrapBindings && (!migration || web.github?.deploy_on_push !== true))) process.exit(9);
   process.stdout.write(JSON.stringify({ spec: normalizeProviderSpec(authored) }));
 } else if (args[1] === 'get') {
   state.gets += 1;

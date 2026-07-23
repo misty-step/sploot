@@ -83,8 +83,7 @@ function assertProviderNormalization(authored, proposed, path = 'spec') {
   if (authored && proposed && typeof authored === 'object' && typeof proposed === 'object') {
     for (const key of Object.keys(authored)) {
       const providerCanonicalOmission =
-        (key === 'type' && path.includes('.envs[') && authored[key] === 'GENERAL' && proposed[key] === undefined) ||
-        (key === 'deploy_on_push' && path.endsWith('.github') && authored[key] === false && proposed[key] === undefined);
+        key === 'type' && path.includes('.envs[') && authored[key] === 'GENERAL' && proposed[key] === undefined;
       if (!providerCanonicalOmission) {
         assertProviderNormalization(authored[key], proposed[key], `${path}.${key}`);
       }
@@ -228,8 +227,13 @@ export function productionSourceDescriptor(spec) {
 function applySourceDescriptor(component, descriptor) {
   for (const key of SOURCE_KEYS) delete component[key];
   const source = clone(descriptor.source);
+  // Sploot's `master` merges deploy to production automatically (2026-07-23
+  // auto-deploy decision): the deployment lifecycle owns this field and
+  // always forces it on, regardless of what the live spec or an operator
+  // packet proposed. Gate safety comes from the required `merge-gate` branch
+  // protection check on `master`, not from a manual release step.
   if (descriptor.source_key === 'github' && source && typeof source === 'object') {
-    source.deploy_on_push = false;
+    source.deploy_on_push = true;
   }
   component[descriptor.source_key] = source;
   if (descriptor.source_dir_present) component.source_dir = descriptor.source_dir;

@@ -171,7 +171,7 @@ Pre-commit runs gitleaks, secrets scan, web lint, extension lint, and typecheck 
 ## CI/CD
 
 - GitHub Actions: lint, type-check, test (with postgres service), extension build
-- DigitalOcean App Platform: manual web releases under Estate authority; merging `master` does not deploy production
+- DigitalOcean App Platform: `deploy_on_push` enabled (2026-07-23) — a green merge to `master` auto-deploys production; the `merge-gate` required status check on `master` (all 18 CI jobs) is the only pre-deploy gate, so no red or unreviewed commit reaches `master` and therefore none reaches production. See `apps/web/docs/DEPLOYMENT.md`.
 - Extension: Manual submission to Chrome Web Store from `apps/extension/.output/`
 
 ## Known Debt Map

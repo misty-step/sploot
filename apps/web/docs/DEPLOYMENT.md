@@ -117,30 +117,35 @@ verification, and diagnostics. It stays fail-closed (503 on database, schema,
 or required-bootstrap failure), shares one bounded database probe across
 concurrent requests, and never globally disconnects the shared Prisma client.
 
-## Manual DigitalOcean release boundary
+## Automatic DigitalOcean release on merge
 
-Merging `master` and publishing a GitHub release do not deploy production.
-Estate's `sploot-production` declaration sets `release.policy = "manual"`,
-and Estate is the sole DigitalOcean mutation authority. A green merge or a new
-release tag is therefore not production evidence.
+Merging `master` deploys production. The `web` service and the
+`web-pre-deploy-migrate` job both carry `github.deploy_on_push: true` on the
+live App Platform spec (set 2026-07-23; verified live via `doctl apps get
+29aea848-c348-4189-97ac-0ab2d7309567 --output json`), so a push to `master`
+starts a new App Platform deployment without any additional manual step.
 
-Before any deployed claim, compare the intended release commit with the active
-App Platform source commit and `GET /api/version`, and confirm whether a
-deployment is in progress. If the active source is stale and no deployment is
-running, the release has not started.
+The safety boundary is `master` branch protection, not a manual release
+gate: GitHub requires the `merge-gate` status check (the aggregate of all 18
+CI jobs, admins included) to pass before any commit can reach `master`. A
+merged PR is therefore evidence that CI was green at the merge commit; it is
+not yet evidence that the deployment finished. DigitalOcean typically takes a
+few minutes to build and cut over traffic.
 
-`pnpm --filter web enrollment:lifecycle` remains useful without `--apply` for
-product-owned dry-run validation and readback. Its direct `--apply` path is not
-an authorized agent entry point while Estate has no live DigitalOcean
-executor. Do not substitute `doctl`, the App Platform dashboard, an environment
-override, or conversational approval for an Estate-approved
-`deploy_release` artifact and receipt.
+`apps/web/scripts/deployment-provider-transaction.mjs` owns this invariant in
+code: `applySourceDescriptor` unconditionally forces `deploy_on_push: true`
+on the `web` service and the `web-pre-deploy-migrate` job every time the
+enrollment lifecycle stages, lifts, or rolls back a spec, so no lifecycle
+mutation can silently disable it again.
 
-Until that executor exists, an agent must report the production release as
-blocked rather than mutating the provider or claiming the merged commit is
-live. After an authorized release, verify the exact active source commit,
-`/api/version`, `/api/health/live`, `/api/health`, the public enrollment state,
-and production migration history before recording production acceptance.
+Before recording a deployed claim, compare the intended commit with the
+active App Platform source commit and `GET /api/version`, and confirm no
+deployment is still in progress. `pnpm --filter web enrollment:lifecycle`
+remains useful without `--apply` for enrollment-mode dry-run validation and
+readback (a separate concern from the deploy trigger above). Verify the
+exact active source commit, `/api/version`, `/api/health/live`,
+`/api/health`, the public enrollment state, and production migration history
+before recording production acceptance.
 
 
 ## deploy contract
