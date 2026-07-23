@@ -22,7 +22,7 @@ const buttonVariants = cva(
         // Primary actions are blue; attention uses the banger bubblegum fill.
         default: "sploot-press bg-sploot-blue text-sploot-on-blue sploot-shadow",
         primary: "sploot-press bg-sploot-blue text-sploot-on-blue sploot-shadow",
-        attention: "sploot-press bg-sploot-magenta text-sploot-ink sploot-shadow",
+        attention: "sploot-press bg-sploot-magenta text-sploot-on-magenta sploot-shadow",
         destructive: "sploot-press bg-sploot-red text-sploot-on-red sploot-shadow",
         // Secondary actions keep the shell and physics while staying quieter.
         ghost: "sploot-press bg-sploot-panel text-sploot-ink sploot-shadow",
@@ -31,7 +31,7 @@ const buttonVariants = cva(
         ink: "sploot-press bg-sploot-ink text-sploot-paper sploot-shadow",
         // Links are semantic flat affordances, not button toys.
         link: "border-0 bg-transparent px-0 text-sploot-ink shadow-none hover:bg-transparent hover:underline hover:underline-offset-4",
-        accent: "sploot-press bg-sploot-cyan text-sploot-ink sploot-shadow",
+        accent: "sploot-press bg-sploot-cyan text-sploot-on-cyan sploot-shadow",
         compact: "sploot-press-sm bg-sploot-panel text-sploot-ink sploot-shadow-sm",
       },
       size: {

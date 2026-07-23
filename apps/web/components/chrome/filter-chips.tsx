@@ -48,7 +48,7 @@ export function FilterChips({
         title="all"
         className={cn(
           'flex-1 justify-center gap-1.5 uppercase font-mono font-bold tracking-normal',
-          'data-[state=on]:bg-sploot-cyan data-[state=on]:text-sploot-ink'
+          'data-[state=on]:bg-sploot-cyan data-[state=on]:text-sploot-on-cyan'
         )}
       >
         {showLabels && <span>ALL</span>}
@@ -60,7 +60,7 @@ export function FilterChips({
         title="bangers"
         className={cn(
           'flex-1 justify-center gap-1.5 uppercase font-mono font-bold tracking-normal',
-          'data-[state=on]:bg-sploot-magenta data-[state=on]:text-sploot-ink'
+          'data-[state=on]:bg-sploot-magenta data-[state=on]:text-sploot-on-magenta'
         )}
       >
         <Heart
