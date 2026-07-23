@@ -1,10 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 import {
   assertMigrationHistory,
   assertUniqueMigrationPrefixes,
   checkDatabaseMigrationHistory,
+  currentMigrationChecksums,
   MIGRATION_HISTORY_CONNECT_TIMEOUT_MS,
   MIGRATION_HISTORY_QUERY_TIMEOUT_MS,
   migrationHistoryClientConfig,
@@ -145,4 +149,44 @@ test('duplicate prefixes require explicit identities and authority', () => {
       authority: 'historical identity',
     }],
   }), /does not match repository migration identities/);
+});
+
+test('regression 2026-07-23: the checked-in compatibility rename resolves the production reordering incident', () => {
+  // Production incident: apps/web/prisma/migrations/20260714045000_add_upload_idempotency
+  // was authored and named while a July 15-17 batch (ending in
+  // 20260717021000_backfill_asset_embedding_owner_visibility) was still
+  // unmerged. It landed and was first applied to production on 2026-07-23,
+  // long after that batch, but its own July-14 timestamp lexicographically
+  // sorts BEFORE it -- the immutable-history gate correctly rejected the
+  // resulting reordering. The fix renamed the folder to
+  // 20260715075000_add_upload_idempotency (the first free slot between the
+  // already-applied 070000 and the still-pending 080000) and recorded the
+  // rename in migration-history-compatibility.json under the OLD name, so
+  // production's existing applied row (which still carries the old name)
+  // resolves through the compatibility map instead of failing forever.
+  const expected = currentMigrationChecksums();
+  const compatibilityPath = fileURLToPath(new URL('../apps/web/prisma/migration-history-compatibility.json', import.meta.url));
+  const compatibility = JSON.parse(readFileSync(compatibilityPath, 'utf8'));
+  const oldName = '20260714045000_add_upload_idempotency';
+  const approved = compatibility.approved[oldName];
+  assert.ok(approved, 'expected an approved rename entry for the old migration name');
+  assert.ok(expected[approved.replacement], 'replacement must be a real, currently-declared migration');
+  assert.ok(!expected[oldName], 'the old name must no longer exist as its own migration folder');
+
+  // Every already-applied migration up to and including the July 15-17
+  // batch, in the exact chronological order production actually recorded
+  // them, plus the renamed migration's OLD name/checksum where it truly
+  // landed in that order (first among everything finished on 2026-07-23,
+  // by raw string sort of the old name against its same-instant peers).
+  const finished = { finishedAt: 'done', rolledBackAt: null };
+  const priorBatch = Object.keys(expected)
+    .filter((name) => name <= '20260715070000_harden_terminal_revival_exit')
+    .sort();
+  const rows = [
+    ...priorBatch.map((migrationName) => ({ migrationName, checksum: expected[migrationName], ...finished })),
+    { migrationName: oldName, checksum: approved.checksum, ...finished },
+    { migrationName: '20260715080000_add_library_exports', checksum: expected['20260715080000_add_library_exports'], ...finished },
+    { migrationName: '20260717021000_backfill_asset_embedding_owner_visibility', checksum: expected['20260717021000_backfill_asset_embedding_owner_visibility'], ...finished },
+  ];
+  assert.doesNotThrow(() => assertMigrationHistory(rows, expected, compatibility));
 });

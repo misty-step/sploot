@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const migrationDir = resolve(process.cwd(), 'prisma/migrations/20260714045000_add_upload_idempotency');
+const migrationDir = resolve(process.cwd(), 'prisma/migrations/20260715075000_add_upload_idempotency');
 
 describe('upload idempotency migration posture', () => {
   it('is transactional, indexed for bounded cleanup, and has an explicit rollback/readback contract', () => {
