@@ -133,7 +133,8 @@ export function isOwnerVisibilityEnforcementFailure(error) {
   // only failure mode is the backfill-remaining check, so treating the
   // cascade as equivalent evidence is safe.
   return message.includes('asset embedding visibility enforcement refused')
-    || message.includes('current transaction is aborted, commands ignored until end of transaction block');
+    || message.includes('current transaction is aborted, commands ignored until end of transaction block')
+    || message.includes('unfinished migration');
 }
 
 // Spawns apply-online-embedding-index.mjs as its own process (not an
@@ -218,11 +219,28 @@ export async function runMigrateDeploy(env = process.env, options = {}) {
     // default is the workspace pg-client readback (no psql binary needed in
     // the PRE_DEPLOY image). Any history failure pauses the deployment.
     const historyCheck = options.checkMigrationHistory ?? checkDatabaseMigrationHistory;
-    await historyCheck(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl);
+    const migrationDatabaseUrl = migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl;
+    try {
+      await historyCheck(migrationDatabaseUrl);
+    } catch (error) {
+      // A prior deploy attempt can leave the owner-visibility migration
+      // unfinished-but-not-rolled-back (production incident 2026-07-23): the
+      // history gate then fails closed on EVERY subsequent attempt, before
+      // applyMigrations() below ever runs, so its own retry path never gets
+      // a chance to self-heal. Resolve the same known-recoverable gate here
+      // too, then re-verify history before proceeding.
+      if (!isOwnerVisibilityEnforcementFailure(error)) throw error;
+      stage = 'owner-visibility-backfill-precheck';
+      const backfill = options.runOwnerVisibilityBackfill ?? drainOwnerVisibilityBackfill;
+      await backfill(migrationDatabaseUrl);
+      execFileSync('prisma', ['migrate', 'resolve', '--rolled-back', OWNER_VISIBILITY_MIGRATION], { stdio: 'inherit', env: { ...env, DATABASE_URL: migrationDatabaseUrl } });
+      stage = 'prisma-migrate';
+      await historyCheck(migrationDatabaseUrl);
+    }
     console.log('[migrate-deploy] running prisma migrate deploy...');
     const migrationEnv = {
       ...env,
-      DATABASE_URL: migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl,
+      DATABASE_URL: migrationDatabaseUrl,
       PGOPTIONS: [env.PGOPTIONS, '-c lock_timeout=5s', '-c statement_timeout=30s'].filter(Boolean).join(' '),
     };
     const applyMigrations = () => {
@@ -247,7 +265,7 @@ export async function runMigrateDeploy(env = process.env, options = {}) {
     }
     if (options.applyOnlineIndex ?? (env.NODE_ENV !== 'test' && process.env.NODE_ENV !== 'test')) {
       stage = 'online-indexes';
-      applyOnlineIndexes(migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl, env);
+      applyOnlineIndexes(migrationDatabaseUrl, env);
     }
     stage = 'post-bootstrap';
     if (bootstrapUrl) privileged(post);

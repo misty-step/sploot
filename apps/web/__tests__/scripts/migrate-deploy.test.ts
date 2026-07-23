@@ -420,10 +420,61 @@ describe('bootstrap failure handling with injected faults', () => {
     expect(harness.readReport()).toBeNull();
   });
 
+  it('regression 2026-07-23: self-heals a stale unfinished owner-visibility row before applyMigrations ever runs', async () => {
+    // Production incident: a PRIOR failed deploy attempt left the
+    // owner-visibility migration unfinished-but-not-rolled-back. Every
+    // subsequent attempt's own history pre-check (which runs BEFORE
+    // applyMigrations()) then fails closed with "unfinished migration",
+    // so the existing applyMigrations()-side retry above never gets a
+    // chance to run. The pre-check itself must now drain+resolve too.
+    const harness = makeHarness();
+    const backfillUrls: string[] = [];
+    let historyCallCount = 0;
+    const resolveCalls: string[] = [];
+    await runMigrateDeploy(harness.env, {
+      ...harness.runOptions,
+      checkMigrationHistory: async (url: string) => {
+        historyCallCount += 1;
+        if (historyCallCount === 1) {
+          throw new Error('[migration-history] unfinished migration 20260717022000_enforce_asset_embedding_owner_visibility; deployment is paused');
+        }
+        return { status: 'verified', checked: 44 };
+      },
+      runOwnerVisibilityBackfill: async (url: string) => { backfillUrls.push(url); },
+    });
+    const log = harness.readLog();
+    resolveCalls.push(...log.split('\n').filter((line) => line.includes('migrate resolve --rolled-back')));
+    expect(historyCallCount).toBe(2);
+    expect(backfillUrls).toEqual(['postgresql://migrator:secret@db.example.test/app']);
+    expect(resolveCalls).toHaveLength(1);
+    expect(log).toContain('prisma migrate deploy');
+    // The pre-check's own resolve must run before the first real
+    // "prisma migrate deploy" attempt, not after it.
+    expect(log.indexOf('migrate resolve --rolled-back')).toBeLessThan(log.indexOf('prisma migrate deploy'));
+    expect(harness.readReport()).toBeNull();
+  });
+
   it('recognizes only the owner enforcement gate as recoverable', () => {
     expect(isOwnerVisibilityEnforcementFailure(new Error('P3018 20260717022000_enforce_asset_embedding_owner_visibility: asset embedding visibility enforcement refused: 1 rows remain'))).toBe(true);
     expect(isOwnerVisibilityEnforcementFailure(new Error('P3018 20260717022000_enforce_asset_embedding_owner_visibility: lock timeout'))).toBe(false);
     expect(isOwnerVisibilityEnforcementFailure(new Error('asset embedding visibility enforcement refused'))).toBe(false);
+  });
+
+  it('regression 2026-07-23: recognizes the pre-check "unfinished migration" text a stale unresolved row leaves behind', () => {
+    expect(isOwnerVisibilityEnforcementFailure(new Error(
+      '[migration-history] unfinished migration 20260717022000_enforce_asset_embedding_owner_visibility; deployment is paused',
+    ))).toBe(true);
+    // A different unfinished migration must never be misclassified.
+    expect(isOwnerVisibilityEnforcementFailure(new Error(
+      '[migration-history] unfinished migration 20260101000000_unrelated_migration; deployment is paused',
+    ))).toBe(false);
+    // The compatibility-branch variant names a distinct condition
+    // ("unfinished compatibility migration") that does not contain the
+    // plain phrase as a contiguous substring, so it is not (yet) treated
+    // as this specific recoverable gate.
+    expect(isOwnerVisibilityEnforcementFailure(new Error(
+      '[migration-history] unfinished compatibility migration 20260717022000_enforce_asset_embedding_owner_visibility; deployment is paused',
+    ))).toBe(false);
   });
 
   it('regression 2026-07-23: recognizes the cascading transaction-aborted error Prisma actually surfaces when the RAISE fires mid-batch', () => {
