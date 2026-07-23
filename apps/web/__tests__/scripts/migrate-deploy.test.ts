@@ -417,6 +417,31 @@ describe('bootstrap failure handling with injected faults', () => {
     expect(isOwnerVisibilityEnforcementFailure(new Error('asset embedding visibility enforcement refused'))).toBe(false);
   });
 
+  it('regression 2026-07-23: recognizes the cascading transaction-aborted error Prisma actually surfaces when the RAISE fires mid-batch', () => {
+    // Production incident: schema-engine applies migration.sql as one
+    // multi-statement batch. The DO block's RAISE aborts the transaction,
+    // but the trailing ALTER TABLE statements in the same batch report
+    // Postgres's generic cascade error instead of the RAISE's own message,
+    // and only the last one reaches the thrown error.
+    const cascade = new Error('Command failed: prisma migrate deploy');
+    cascade.stderr = [
+      'Error: ERROR: current transaction is aborted, commands ignored until end of transaction block',
+      '   0: schema_commands::commands::apply_migrations::Applying migration',
+      '           with migration_name="20260717022000_enforce_asset_embedding_owner_visibility"',
+    ].join('\n');
+    expect(isOwnerVisibilityEnforcementFailure(cascade)).toBe(true);
+
+    // A different migration hitting the same generic cascade text must not
+    // be misclassified as the owner-visibility gate.
+    const unrelated = new Error('Command failed: prisma migrate deploy');
+    unrelated.stderr = [
+      'Error: ERROR: current transaction is aborted, commands ignored until end of transaction block',
+      '   0: schema_commands::commands::apply_migrations::Applying migration',
+      '           with migration_name="20260101000000_unrelated_migration"',
+    ].join('\n');
+    expect(isOwnerVisibilityEnforcementFailure(unrelated)).toBe(false);
+  });
+
   it('runs pre -> prisma migrate -> post with the declared version and writes no failure report', async () => {
     const harness = makeHarness();
     await runMigrateDeploy(harness.env, harness.runOptions);

@@ -122,8 +122,18 @@ export async function drainOwnerVisibilityBackfill(databaseUrl, options = {}) {
 
 export function isOwnerVisibilityEnforcementFailure(error) {
   const message = [error?.message, error?.stdout, error?.stderr].filter(Boolean).map(String).join('\n');
-  return message.includes(OWNER_VISIBILITY_MIGRATION)
-    && message.includes('asset embedding visibility enforcement refused');
+  if (!message.includes(OWNER_VISIBILITY_MIGRATION)) return false;
+  // Production incident 2026-07-23: the DO block's own RAISE EXCEPTION text
+  // ("asset embedding visibility enforcement refused: ...") is not always
+  // what Prisma surfaces. schema-engine applies a migration.sql file as one
+  // multi-statement batch; once the RAISE aborts the transaction, the two
+  // trailing ALTER TABLE statements each fail with Postgres's generic
+  // cascade error, and only the LAST one reaches this error's message. The
+  // migration-name anchor above already scopes this to the one file whose
+  // only failure mode is the backfill-remaining check, so treating the
+  // cascade as equivalent evidence is safe.
+  return message.includes('asset embedding visibility enforcement refused')
+    || message.includes('current transaction is aborted, commands ignored until end of transaction block');
 }
 
 // Spawns apply-online-embedding-index.mjs as its own process (not an
