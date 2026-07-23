@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { AssetSortBy, AssetSortDirection } from '@sploot/common';
 import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/sploot/icon-button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -94,43 +95,44 @@ export function MobileCommandDock({
   return (
     <div className="fixed inset-x-0 bottom-0 z-50 border-t-[3px] border-sploot-ink bg-background px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 md:hidden">
       <div className="mx-auto grid max-w-md grid-cols-5 gap-1.5">
-        <Button
-          variant={isUploadOpen ? 'accent' : 'outline'}
-          size="icon"
+        <IconButton
+          size="dock"
+          chip
+          pressed={isUploadOpen}
           onClick={onUploadClick}
-          className="h-12 w-full"
-          aria-pressed={isUploadOpen}
-          aria-label="UPLOAD"
+          className="w-full"
+          label="UPLOAD"
           data-upload-action-ready={isUploadActionReady ? 'true' : 'false'}
         >
-          <Upload className="h-5 w-5" />
-        </Button>
+          <Upload className="size-5" />
+        </IconButton>
 
-        <Button
-          variant={isSearchOpen ? 'accent' : 'outline'}
-          size="icon"
+        <IconButton
+          size="dock"
+          chip
+          pressed={isSearchOpen}
           onClick={onSearchToggle}
-          className="h-12 w-full"
-          aria-pressed={isSearchOpen}
-          aria-label={isSearchOpen ? 'hide search' : 'search memes'}
+          className="w-full"
+          label={isSearchOpen ? 'hide search' : 'search memes'}
         >
-          <Search className="h-5 w-5" />
-        </Button>
+          <Search className="size-5" />
+        </IconButton>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant={activeFilter === 'bangers' ? 'accent' : 'outline'}
-              size="icon"
-              className="h-12 w-full"
-              aria-label="filter memes"
+            <IconButton
+              size="dock"
+              chip
+              pressed={activeFilter === 'bangers'}
+              className="w-full"
+              label="filter memes"
             >
               {activeFilter === 'bangers' ? (
-                <Heart className="h-5 w-5 fill-current" />
+                <Heart className="size-5 fill-current" />
               ) : (
-                <SlidersHorizontal className="h-5 w-5" />
+                <SlidersHorizontal className="size-5" />
               )}
-            </Button>
+            </IconButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="center" side="top" className="w-44">
             <DropdownMenuLabel className="font-mono text-xs uppercase">filter</DropdownMenuLabel>
@@ -150,14 +152,14 @@ export function MobileCommandDock({
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-12 w-full"
-              aria-label={`sort memes by ${getSortLabel(sortBy)}`}
+            <IconButton
+              size="dock"
+              chip
+              className="w-full"
+              label={`sort memes by ${getSortLabel(sortBy)}`}
             >
               {renderSortIcon(sortBy, sortOrder)}
-            </Button>
+            </IconButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="center" side="top" className="w-44">
             <DropdownMenuLabel className="font-mono text-xs uppercase">sort</DropdownMenuLabel>
@@ -189,16 +191,16 @@ export function MobileCommandDock({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button
-          variant={isShuffleActive ? 'accent' : 'outline'}
-          size="icon"
+        <IconButton
+          size="dock"
+          chip
+          pressed={isShuffleActive}
           onClick={onShuffle}
-          className="h-12 w-full"
-          aria-pressed={isShuffleActive}
-          aria-label="shuffle memes"
+          className="w-full"
+          label="shuffle memes"
         >
-          <Shuffle className="h-5 w-5" />
-        </Button>
+          <Shuffle className="size-5" />
+        </IconButton>
       </div>
 
       {failedEmbeddingsCount > 0 && onRetryFailed && (

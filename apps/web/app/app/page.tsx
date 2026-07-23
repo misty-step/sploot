@@ -702,6 +702,8 @@ function AppPageClient() {
           searchCached={currentSearchMetadata?.cached}
           searchError={searchError}
           piles={automaticPiles}
+          activeFilter={bangersOnly ? 'bangers' : 'all'}
+          onFilterChange={handleBangersFilterChange}
           total={total}
           embeddedAssetCount={pileEmbeddedAssetCount}
           selectedPileId={selectedPileId}

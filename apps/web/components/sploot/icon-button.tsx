@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { controlFocusClasses } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 /**
@@ -38,19 +39,16 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
         aria-pressed={pressed}
         title={label}
         className={cn(
-          'sploot-ctl inline-grid place-items-center shrink-0 cursor-pointer',
-          'outline-none focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-[3px] focus-visible:outline-sploot-focus',
+          'sploot-ctl inline-grid place-items-center shrink-0 cursor-pointer disabled:cursor-not-allowed',
+          controlFocusClasses,
           '[&_svg]:pointer-events-none [&_svg]:size-[18px] [&_svg]:stroke-[2]',
           // compact is a desktop density; phones always get the 44px touch floor
           size === 'dock'
             ? 'size-[var(--sploot-touch-target)]'
-            : 'size-[34px] max-sm:size-[var(--sploot-touch-target)]',
+            : 'size-[var(--sploot-control-height-sm)] max-sm:size-[var(--sploot-touch-target)]',
           chip &&
-            'rounded-[var(--sploot-radius-pill)] bg-sploot-panel shadow-[0_2px_0_var(--sploot-shadow-color)] hover:shadow-[2px_4px_0_var(--sploot-shadow-color)] active:shadow-none',
-          // !important: .sploot-ctl's own background is declared later in the
-          // sheet and silently wins otherwise (the tile rails already work
-          // around this with ! overrides)
-          pressed && '!bg-sploot-yellow !text-[#1c1547]',
+            'rounded-[var(--sploot-radius-pill)] bg-sploot-panel sploot-shadow-sm active:shadow-none',
+          pressed && '!bg-sploot-yellow !text-sploot-ink',
           className
         )}
         {...props}

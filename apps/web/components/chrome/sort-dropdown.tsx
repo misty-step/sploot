@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { ArrowDown, ArrowUp, ArrowDownAZ, ArrowUpAZ, Heart } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { ArrowDown, ArrowUp, ArrowDownAZ, ArrowUpAZ, Heart, Shuffle } from 'lucide-react';
+import { IconButton } from '@/components/sploot/icon-button';
 import type { AssetSortBy, AssetSortDirection } from '@sploot/common';
 
 export type SortOption = AssetSortBy;
@@ -42,6 +43,7 @@ export function SortDropdown({
     { value: 'pathname', label: 'NAME' },
     { value: 'taste', label: 'TASTE' },
   ];
+  const selectedValue = value === 'shuffle' ? 'createdAt' : value;
 
   // Handle sort option selection
   const handleSortChange = (newValue: string) => {
@@ -52,7 +54,7 @@ export function SortDropdown({
     const newDirection =
       option === 'taste'
         ? 'desc'
-        : option === value
+        : option === selectedValue
         ? direction === 'desc' ? 'asc' : 'desc'
         : option === 'pathname' ? 'asc' : 'desc'; // Name defaults to A-Z, others to newest/largest first
 
@@ -63,21 +65,20 @@ export function SortDropdown({
 
   // Get display label for current sort
   const getCurrentLabel = () => {
-    const option = sortOptions.find((o) => o.value === value);
+    const option = sortOptions.find((o) => o.value === selectedValue);
     return option ? option.label : 'Recent';
   };
 
-  // Get arrow icon component for current direction
-  const ArrowIcon = value === 'taste' ? Heart : value === 'shuffle' ? Shuffle : direction === 'desc' ? ArrowDown : ArrowUp;
+  const ArrowIcon = selectedValue === 'taste' ? Heart : direction === 'desc' ? ArrowDown : ArrowUp;
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          size="lg"
+          size="sm"
           className={cn(
-            'gap-1 font-mono uppercase tracking-wider',
+            'min-w-0 gap-1 font-mono uppercase tracking-normal',
             className
           )}
           aria-label="Sort options"
@@ -90,7 +91,7 @@ export function SortDropdown({
       <DropdownMenuContent align="end" side="top" className="w-[160px]">
         <DropdownMenuLabel className="font-mono uppercase text-xs">SORT BY</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuRadioGroup value={value} onValueChange={handleSortChange}>
+        <DropdownMenuRadioGroup value={selectedValue} onValueChange={handleSortChange}>
           {sortOptions.map((option) => (
             <DropdownMenuRadioItem
               key={option.value}
@@ -98,7 +99,7 @@ export function SortDropdown({
               className="gap-2"
             >
               <span className="flex-1">{option.label}</span>
-              {value === option.value && option.value !== 'taste' && (
+              {selectedValue === option.value && option.value !== 'taste' && (
                 <span className="text-xs text-muted-foreground">
                   {direction === 'desc' ? '↓' : '↑'}
                 </span>
@@ -139,15 +140,13 @@ export function SortButtonCompact({
     : (value === 'pathname' ? ArrowUpAZ : ArrowUp);
 
   return (
-    <Button
-      variant="ghost"
-      size="icon"
+    <IconButton
+      label={`Sort by ${value}`}
+      size="compact"
       onClick={onClick}
       className={className}
-      aria-label={`Sort by ${value}`}
-      title={`Sort by ${value}`}
     >
-      <Icon className="h-4 w-4" />
-    </Button>
+      <Icon />
+    </IconButton>
   );
 }

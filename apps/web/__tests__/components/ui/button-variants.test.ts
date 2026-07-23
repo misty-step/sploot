@@ -29,6 +29,12 @@ describe('buttonVariants (toybox grammar)', () => {
     expect(cls).toContain('focus-visible:outline-sploot-focus');
   });
 
+  it('uses the shared control height ladder for action sizes', () => {
+    expect(buttonVariants({ size: 'sm' })).toContain('h-[var(--sploot-control-height-sm)]');
+    expect(buttonVariants({ size: 'default' })).toContain('min-h-[var(--sploot-control-height)]');
+    expect(buttonVariants({ size: 'lg' })).toContain('min-h-[var(--sploot-control-height-lg)]');
+  });
+
   it('link stays flat: no physics, no shell fill', () => {
     const cls = buttonVariants({ variant: 'link' });
     expect(cls).not.toContain('sploot-press');

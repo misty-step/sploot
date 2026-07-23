@@ -482,7 +482,7 @@ test('recommendations are derived from versioned rates and workloads', async () 
   free.sourceTrashStorageGb = 0.75;
   collector.priceUsd = 13;
 
-  const report = buildReport(changed, new Date('2026-07-17T18:00:00Z'));
+  const report = buildReport(changed, new Date(Date.parse(changed.liveUsage.capturedAt) + 3600_000));
   assert.match(report, /Rates were refreshed on 2026-07-15/);
   assert.match(report, /Cardless Free:\*\* 0\.75 GB/);
   assert.match(report, /Collector:\*\* \$13\/month/);
