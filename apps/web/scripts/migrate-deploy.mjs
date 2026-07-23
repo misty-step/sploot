@@ -141,6 +141,20 @@ const compatibilityPath = resolve(repoRoot, 'apps/web/prisma/migration-history-c
  * with "duplicate applied migration identity" forever after (caught by
  * local reproduction against a real database before this shipped: renaming
  * in place instead leaves exactly one row, matching `expected` directly).
+ *
+ * A prior deploy attempt can also have re-run the NEW name's SQL for real
+ * (not via `resolve --applied`) before this reconciliation step existed,
+ * inserting its own started-but-never-finished, never-rolled-back row
+ * (production incident 2026-07-23 follow-up: this is exactly what a
+ * database left mid-incident looks like). Every regular migration in this
+ * repo is wrapped in an explicit BEGIN/COMMIT transaction (enforced by the
+ * "online migration transaction contract" test in migrate-deploy.test.ts),
+ * so an unfinished, non-rolled-back row has no persisted schema effect --
+ * mark it rolled back first, then rename the old row into its name slot.
+ * Prisma's own retry workflow already relies on multiple rows sharing one
+ * migration_name (rolled-back ones are skipped by assertMigrationHistory's
+ * own leading `continue`), so this matches Prisma's supported pattern, not
+ * a new one.
  */
 export async function resolveApprovedRenames(databaseUrl, options = {}) {
   const compatibility = options.compatibility ?? JSON.parse(readFileSync(compatibilityPath, 'utf8'));
@@ -166,10 +180,19 @@ export async function resolveApprovedRenames(databaseUrl, options = {}) {
     for (const [oldName, { replacement }] of entries) {
       const oldRow = byName.get(oldName);
       const newRow = byName.get(replacement);
-      if (oldRow?.finished_at && !oldRow.rolled_back_at && !newRow) {
-        await client.query('UPDATE "_prisma_migrations" SET migration_name = $1 WHERE migration_name = $2', [replacement, oldName]);
-        resolved.push(replacement);
+      if (!oldRow?.finished_at || oldRow.rolled_back_at) continue;
+      // The new name is already a genuinely finished or rolled-back
+      // identity of its own; that is either already resolved or a real
+      // conflict deserving human review, not something to guess at here.
+      if (newRow?.finished_at || newRow?.rolled_back_at) continue;
+      if (newRow) {
+        await client.query(
+          'UPDATE "_prisma_migrations" SET rolled_back_at = NOW() WHERE migration_name = $1 AND finished_at IS NULL AND rolled_back_at IS NULL',
+          [replacement],
+        );
       }
+      await client.query('UPDATE "_prisma_migrations" SET migration_name = $1 WHERE migration_name = $2', [replacement, oldName]);
+      resolved.push(replacement);
     }
   } finally {
     await client.end();
@@ -277,6 +300,14 @@ export async function runMigrateDeploy(env = process.env, options = {}) {
     // the PRE_DEPLOY image). Any history failure pauses the deployment.
     const historyCheck = options.checkMigrationHistory ?? checkDatabaseMigrationHistory;
     const migrationDatabaseUrl = migrationAuthorityUrl ? deriveDirectUrl(migrationAuthorityUrl) : directUrl;
+    // Must run before historyCheck: a compat-approved rename the history
+    // gate has never seen resolved fails historyCheck closed (production
+    // incident 2026-07-23 follow-up) before this reconciliation step would
+    // otherwise get a chance to run.
+    stage = 'resolve-approved-renames';
+    const resolveRenames = options.resolveApprovedRenames ?? resolveApprovedRenames;
+    await resolveRenames(migrationDatabaseUrl);
+    stage = 'prisma-migrate';
     try {
       await historyCheck(migrationDatabaseUrl);
     } catch (error) {
@@ -294,10 +325,6 @@ export async function runMigrateDeploy(env = process.env, options = {}) {
       stage = 'prisma-migrate';
       await historyCheck(migrationDatabaseUrl);
     }
-    stage = 'resolve-approved-renames';
-    const resolveRenames = options.resolveApprovedRenames ?? resolveApprovedRenames;
-    await resolveRenames(migrationDatabaseUrl);
-    stage = 'prisma-migrate';
     console.log('[migrate-deploy] running prisma migrate deploy...');
     const migrationEnv = {
       ...env,
