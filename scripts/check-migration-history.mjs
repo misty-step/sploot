@@ -191,18 +191,31 @@ export async function checkDatabaseMigrationHistory(databaseUrl, options = {}) {
     if (!existsResult.rows[0]?.ledger) return { status: 'empty', checked: 0 };
 
     const historyResult = await client.query(
-      'SELECT migration_name, checksum, finished_at, rolled_back_at FROM "_prisma_migrations" ORDER BY COALESCE(finished_at, started_at), migration_name'
+      'SELECT migration_name, checksum, started_at, finished_at, rolled_back_at FROM "_prisma_migrations" ORDER BY COALESCE(finished_at, started_at), migration_name'
     );
     const rows = historyResult.rows.map((row) => ({
       migrationName: row.migration_name,
       checksum: row.checksum,
+      startedAt: row.started_at ?? null,
       finishedAt: row.finished_at ?? null,
       rolledBackAt: row.rolled_back_at ?? null,
     }));
     const compatibility = JSON.parse(readFileSync(compatibilityPath, 'utf8'));
     const expected = currentMigrationChecksums();
     assertUniqueMigrationPrefixes(expected, compatibility);
-    assertMigrationHistory(rows, expected, compatibility);
+    try {
+      assertMigrationHistory(rows, expected, compatibility);
+    } catch (error) {
+      // The gate's own error names only the one violating migration; dump
+      // the full non-secret row order (names/timestamps, no data) so an
+      // operator does not have to reconstruct DB state from deploy logs
+      // across multiple attempts (production incident 2026-07-23).
+      console.error('[migration-history] applied row order at failure:');
+      for (const row of rows) {
+        console.error(`  ${row.migrationName} started=${row.startedAt} finished=${row.finishedAt} rolledBack=${row.rolledBackAt}`);
+      }
+      throw error;
+    }
     return { status: 'verified', checked: rows.length };
   } finally {
     await client.end();
