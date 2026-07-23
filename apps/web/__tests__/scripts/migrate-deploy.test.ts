@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, it, expect } from 'vitest';
 // @ts-expect-error — .mjs script without type declarations; we test its pure helper.
-import { deriveDirectUrl, drainOwnerVisibilityBackfill, isOwnerVisibilityEnforcementFailure, OWNER_VISIBILITY_BATCH_SIZE, OWNER_VISIBILITY_BATCH_TIMEOUT_MS, runMigrateDeploy, readBootstrapVersion } from '../../scripts/migrate-deploy.mjs';
+import { deriveDirectUrl, drainOwnerVisibilityBackfill, isOwnerVisibilityEnforcementFailure, OWNER_VISIBILITY_BATCH_SIZE, OWNER_VISIBILITY_BATCH_TIMEOUT_MS, resolveApprovedRenames, runMigrateDeploy, readBootstrapVersion } from '../../scripts/migrate-deploy.mjs';
 
 // migrate-deploy.mjs derives a direct (non-pooler) connection for `prisma
 // migrate deploy`, because Prisma's advisory lock does not work through Neon's
@@ -296,6 +296,109 @@ describe('online migration transaction contract', () => {
   });
 });
 
+// Production incident 2026-07-23 follow-up: migration-history-
+// compatibility.json's `approved` map had never actually been exercised
+// (it was empty until #315's rename). Satisfying check-migration-history's
+// OWN gate says nothing about Prisma's own `_prisma_migrations` state --
+// Prisma still reads by folder name and tries to re-run the renamed
+// migration's SQL against a database that already has its effects.
+describe('resolveApprovedRenames', () => {
+  const tempDirs: string[] = [];
+  afterEach(() => {
+    for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function fakePrismaEnv() {
+    const dir = mkdtempSync(join(tmpdir(), 'resolve-renames-stub-'));
+    tempDirs.push(dir);
+    const log = join(dir, 'invocations.log');
+    writeFileSync(join(dir, 'prisma'), [
+      '#!/bin/sh',
+      'echo "prisma $*" >> "$STUB_LOG"',
+      'exit 0',
+      '',
+    ].join('\n'));
+    chmodSync(join(dir, 'prisma'), 0o755);
+    return { env: { PATH: `${dir}:/usr/bin:/bin`, STUB_LOG: log }, readLog: () => (existsSync(log) ? readFileSync(log, 'utf8') : '') };
+  }
+
+  function fakeClient(rows: Array<{ migration_name: string; finished_at: string | null; rolled_back_at: string | null }>) {
+    const queries: unknown[][] = [];
+    return {
+      connect: async () => {},
+      end: async () => {},
+      query: async (_sql: string, params?: unknown[]) => {
+        queries.push(params ?? []);
+        return { rows };
+      },
+      queries,
+    };
+  }
+
+  const compatibility = {
+    approved: {
+      'old-name': { checksum: 'abc', replacement: 'new-name' },
+    },
+  };
+
+  it('marks the replacement applied when the old name finished and the new name has no row yet', async () => {
+    const client = fakeClient([{ migration_name: 'old-name', finished_at: 'done', rolled_back_at: null }]);
+    const stub = fakePrismaEnv();
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', stub.env, {
+      compatibility,
+      createClient: () => client,
+    });
+    expect(result).toEqual({ resolved: ['new-name'] });
+    expect(stub.readLog()).toContain('migrate resolve --applied new-name');
+  });
+
+  it('does nothing once the replacement already has its own row', async () => {
+    const client = fakeClient([
+      { migration_name: 'old-name', finished_at: 'done', rolled_back_at: null },
+      { migration_name: 'new-name', finished_at: 'done', rolled_back_at: null },
+    ]);
+    const stub = fakePrismaEnv();
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', stub.env, {
+      compatibility,
+      createClient: () => client,
+    });
+    expect(result).toEqual({ resolved: [] });
+    expect(stub.readLog()).toBe('');
+  });
+
+  it('does nothing when the old name was itself rolled back rather than genuinely applied', async () => {
+    const client = fakeClient([{ migration_name: 'old-name', finished_at: null, rolled_back_at: 'done' }]);
+    const stub = fakePrismaEnv();
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', stub.env, {
+      compatibility,
+      createClient: () => client,
+    });
+    expect(result).toEqual({ resolved: [] });
+    expect(stub.readLog()).toBe('');
+  });
+
+  it('does nothing when the old name has no row at all yet (a genuinely fresh install)', async () => {
+    const client = fakeClient([]);
+    const stub = fakePrismaEnv();
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', stub.env, {
+      compatibility,
+      createClient: () => client,
+    });
+    expect(result).toEqual({ resolved: [] });
+    expect(stub.readLog()).toBe('');
+  });
+
+  it('never opens a database connection when there are no approved renames declared', async () => {
+    let connected = false;
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', {}, {
+      compatibility: { approved: {} },
+      createClient: () => { connected = true; return fakeClient([]); },
+    });
+    expect(result).toEqual({ resolved: [] });
+    expect(connected).toBe(false);
+  });
+});
+
 // Script-level failure injection: psql/prisma are stubbed via PATH so the
 // state machine (pre -> migrate -> post -> rollback/report) can be proven
 // without a live database. The DB-level counterpart runs in CI/db-authority.
@@ -348,6 +451,11 @@ describe('bootstrap failure handling with injected faults', () => {
         historyCalls.push(url);
         return { status: 'verified', checked: 0 };
       },
+      // Same reasoning: the default renames reconciler also opens a real pg
+      // connection. No test in this file exercises an approved rename
+      // against a live database; that lives in the dedicated unit tests for
+      // resolveApprovedRenames() below, which inject their own createClient.
+      resolveApprovedRenames: async () => ({ resolved: [] }),
     };
     return { env, readLog, readReport, historyCalls, runOptions };
   }

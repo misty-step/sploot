@@ -120,6 +120,52 @@ export async function drainOwnerVisibilityBackfill(databaseUrl, options = {}) {
   }
 }
 
+const compatibilityPath = resolve(repoRoot, 'apps/web/prisma/migration-history-compatibility.json');
+
+/**
+ * check-migration-history.mjs's `approved` map satisfies ITS OWN immutable-
+ * history gate for a renamed already-applied migration, but Prisma's own
+ * migrate-deploy state tracking knows nothing about that map: it reads
+ * `_prisma_migrations` purely by folder name, sees the new name as
+ * unapplied, and tries to re-run its SQL against a database that already
+ * has the old name's effects (production incident 2026-07-23 -- the
+ * `approved` mechanism had never actually been exercised before this).
+ *
+ * For every approved rename whose OLD name is genuinely finished (not
+ * rolled back) and whose NEW name has no row yet, mark the new name applied
+ * via `prisma migrate resolve --applied` -- never re-running its SQL.
+ */
+export async function resolveApprovedRenames(databaseUrl, env, options = {}) {
+  const compatibility = options.compatibility ?? JSON.parse(readFileSync(compatibilityPath, 'utf8'));
+  const entries = Object.entries(compatibility.approved ?? {});
+  if (entries.length === 0) return { resolved: [] };
+  const clientConfig = migrationHistoryClientConfig(databaseUrl);
+  const client = options.createClient ? options.createClient(clientConfig) : new (requirePg().Client)(clientConfig);
+  await client.connect();
+  let rows;
+  try {
+    const names = entries.flatMap(([oldName, { replacement }]) => [oldName, replacement]);
+    const result = await client.query(
+      'SELECT migration_name, finished_at, rolled_back_at FROM "_prisma_migrations" WHERE migration_name = ANY($1)',
+      [names],
+    );
+    rows = result.rows;
+  } finally {
+    await client.end();
+  }
+  const byName = new Map(rows.map((row) => [row.migration_name, row]));
+  const resolved = [];
+  for (const [oldName, { replacement }] of entries) {
+    const oldRow = byName.get(oldName);
+    const newRow = byName.get(replacement);
+    if (oldRow?.finished_at && !oldRow.rolled_back_at && !newRow) {
+      execFileSync('prisma', ['migrate', 'resolve', '--applied', replacement], { stdio: 'inherit', env: { ...env, DATABASE_URL: databaseUrl } });
+      resolved.push(replacement);
+    }
+  }
+  return { resolved };
+}
+
 export function isOwnerVisibilityEnforcementFailure(error) {
   const message = [error?.message, error?.stdout, error?.stderr].filter(Boolean).map(String).join('\n');
   if (!message.includes(OWNER_VISIBILITY_MIGRATION)) return false;
@@ -237,6 +283,10 @@ export async function runMigrateDeploy(env = process.env, options = {}) {
       stage = 'prisma-migrate';
       await historyCheck(migrationDatabaseUrl);
     }
+    stage = 'resolve-approved-renames';
+    const resolveRenames = options.resolveApprovedRenames ?? resolveApprovedRenames;
+    await resolveRenames(migrationDatabaseUrl, env);
+    stage = 'prisma-migrate';
     console.log('[migrate-deploy] running prisma migrate deploy...');
     const migrationEnv = {
       ...env,
