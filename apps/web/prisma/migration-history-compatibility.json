@@ -1,5 +1,10 @@
 {
-  "approved": {},
+  "approved": {
+    "20260714045000_add_upload_idempotency": {
+      "checksum": "a34162ae2207621c8150b06c2d6ccc147fb9e037eb2f4b93a7b52df3b9e26fa5",
+      "replacement": "20260715075000_add_upload_idempotency"
+    }
+  },
   "prefixExceptions": [
     {
       "prefix": "20260518",

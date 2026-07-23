@@ -98,6 +98,7 @@ describe('online migration transaction contract', () => {
       '20260715060000_update_embedding_attempt_ceiling',
       '20260715065000_validate_embedding_attempt_ceiling',
       '20260715070000_harden_terminal_revival_exit',
+      '20260715075000_add_upload_idempotency',
       '20260715080000_add_library_exports',
       '20260715120000_index_upload_receipt_processing_sweep',
       '20260715130000_add_provider_neutral_storage',
@@ -107,8 +108,16 @@ describe('online migration transaction contract', () => {
       '20260717022000_enforce_asset_embedding_owner_visibility',
       '20260717022100_finalize_asset_embedding_owner_visibility'
     ]);
+    // Both predate the transaction-header-comment convention this suite
+    // enforces below; add_upload_idempotency's own posture (transactional,
+    // indexed, explicit rollback/readback contract) is covered separately
+    // in upload-idempotency-migration.test.ts.
+    const uncommented: Record<string, true> = {
+      '20260715080000_add_library_exports': true,
+      '20260715075000_add_upload_idempotency': true,
+    };
     for (const name of names) {
-      if (name === '20260715080000_add_library_exports') continue;
+      if (uncommented[name]) continue;
       const sql = readFileSync(join(migrationRoot, name, 'migration.sql'), 'utf8');
       expect(sql.trimStart()).toMatch(/^--[\s\S]*?\nBEGIN;/);
       expect(sql.trimEnd()).toMatch(/COMMIT;$/);
