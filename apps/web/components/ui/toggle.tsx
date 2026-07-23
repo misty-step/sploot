@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/button"
 
 const toggleVariants = cva(
-  `${controlBaseClasses} ${controlFocusClasses} ${controlDisabledClasses} min-h-[var(--sploot-control-height)] px-3 font-sans font-bold transition-colors duration-150 data-[state=on]:bg-sploot-yellow data-[state=on]:text-sploot-on-yellow hover:bg-sploot-yellow hover:text-sploot-ink`,
+  `${controlBaseClasses} ${controlFocusClasses} ${controlDisabledClasses} min-h-[var(--sploot-control-height)] px-3 font-sans font-bold transition-colors duration-150 data-[state=on]:bg-sploot-yellow data-[state=on]:text-sploot-on-yellow data-[state=off]:hover:bg-sploot-yellow data-[state=off]:hover:text-sploot-ink`,
   {
     variants: {
       variant: {
