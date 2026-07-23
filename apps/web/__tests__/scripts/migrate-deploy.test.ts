@@ -352,6 +352,45 @@ describe('resolveApprovedRenames', () => {
     expect(client.queries.some(({ sql }) => sql.startsWith('UPDATE'))).toBe(false);
   });
 
+  it('regression 2026-07-23: rolls back a stray unfinished new-name row left by a prior failed re-application, then renames the old row into place', async () => {
+    // Production incident follow-up: a deploy attempt before this
+    // reconciliation step existed let Prisma re-run the replacement's SQL
+    // for real (not via `resolve --applied`), inserting a started-but-
+    // never-finished row. Every regular migration in this repo is
+    // transaction-wrapped, so that row has no persisted schema effect --
+    // it must be marked rolled back, not left to collide with the rename.
+    const client = fakeClient([
+      { migration_name: 'old-name', finished_at: 'done', rolled_back_at: null },
+      { migration_name: 'new-name', finished_at: null, rolled_back_at: null },
+    ]);
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', {
+      compatibility,
+      createClient: () => client,
+    });
+    expect(result).toEqual({ resolved: ['new-name'] });
+    const rollback = client.queries.find(({ sql }) => sql.startsWith('UPDATE') && sql.includes('rolled_back_at'));
+    expect(rollback?.params).toEqual(['new-name']);
+    const rename = client.queries.find(({ sql }) => sql.startsWith('UPDATE') && sql.includes('SET migration_name'));
+    expect(rename?.params).toEqual(['new-name', 'old-name']);
+    // The rollback must be issued before the rename, so a database read
+    // between the two statements never observes two live (non-rolled-back)
+    // rows sharing the replacement name.
+    expect(client.queries.indexOf(rollback!)).toBeLessThan(client.queries.indexOf(rename!));
+  });
+
+  it('leaves an already rolled-back new-name row alone rather than guessing at a second reconciliation', async () => {
+    const client = fakeClient([
+      { migration_name: 'old-name', finished_at: 'done', rolled_back_at: null },
+      { migration_name: 'new-name', finished_at: null, rolled_back_at: 'done' },
+    ]);
+    const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', {
+      compatibility,
+      createClient: () => client,
+    });
+    expect(result).toEqual({ resolved: [] });
+    expect(client.queries.some(({ sql }) => sql.startsWith('UPDATE'))).toBe(false);
+  });
+
   it('does nothing when the old name was itself rolled back rather than genuinely applied', async () => {
     const client = fakeClient([{ migration_name: 'old-name', finished_at: null, rolled_back_at: 'done' }]);
     const result = await resolveApprovedRenames('postgresql://u:p@db.example.test/app', {
@@ -592,6 +631,36 @@ describe('bootstrap failure handling with injected faults', () => {
     expect(harness.readReport()).toBeNull();
   });
 
+  it('regression 2026-07-23: runs resolveApprovedRenames before checkMigrationHistory, not after', async () => {
+    // Production incident follow-up: resolveApprovedRenames ran AFTER
+    // checkMigrationHistory, so a database left with both a compat-approved
+    // old row and the replacement's own row (from the prior INSERT-based
+    // bug, or any other stuck partial re-application) made the history
+    // gate throw "duplicate applied migration identity" before the renames
+    // reconciler -- whose entire purpose is to prevent exactly that -- ever
+    // got a chance to run. This harness's own checkMigrationHistory stub
+    // simulates that failure mode unless the rename call already landed.
+    const harness = makeHarness();
+    const calls: string[] = [];
+    let renamed = false;
+    await runMigrateDeploy(harness.env, {
+      ...harness.runOptions,
+      resolveApprovedRenames: async () => {
+        calls.push('resolveApprovedRenames');
+        renamed = true;
+        return { resolved: ['new-name'] };
+      },
+      checkMigrationHistory: async (url: string) => {
+        calls.push('checkMigrationHistory');
+        if (!renamed) {
+          throw new Error('[migration-history] duplicate applied migration identity new-name; deployment is paused');
+        }
+        return { status: 'verified', checked: 44 };
+      },
+    });
+    expect(calls).toEqual(['resolveApprovedRenames', 'checkMigrationHistory']);
+  });
+
   it('recognizes only the owner enforcement gate as recoverable', () => {
     expect(isOwnerVisibilityEnforcementFailure(new Error('P3018 20260717022000_enforce_asset_embedding_owner_visibility: asset embedding visibility enforcement refused: 1 rows remain'))).toBe(true);
     expect(isOwnerVisibilityEnforcementFailure(new Error('P3018 20260717022000_enforce_asset_embedding_owner_visibility: lock timeout'))).toBe(false);
@@ -663,6 +732,7 @@ describe('bootstrap failure handling with injected faults', () => {
   it('pauses the deployment and rolls back when the immutable-history gate rejects', async () => {
     const harness = makeHarness();
     await expect(runMigrateDeploy(harness.env, {
+      ...harness.runOptions,
       checkMigrationHistory: async () => {
         throw new Error('[migration-history] checksum mismatch for applied migration x; immutable history is paused');
       },
