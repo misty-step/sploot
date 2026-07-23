@@ -90,6 +90,7 @@
   --sploot-radius-inner: 10px;      /* media frames inside cards */
   --sploot-radius-ctl: 9px;         /* ink-mini icon controls */
   --sploot-radius-pill: 999px;      /* buttons, tabs, inputs, piles */
+  --sploot-radius-segment: 0px;     /* square interior edge inside a rounded segmented shell */
   --sploot-shadow: 0 5px 0 var(--sploot-shadow-color);      /* resting drop */
   --sploot-shadow-sm: 0 3px 0 var(--sploot-shadow-color);   /* compact drop */
   --sploot-shadow-lg: 0 9px 0 var(--sploot-shadow-color);   /* hero drop */
@@ -102,6 +103,9 @@
   --sploot-dot: rgba(255, 255, 255, 0.68);
   --sploot-grid-line: rgba(28, 21, 71, 0.05);
   --sploot-touch-target: 44px;
+  --sploot-control-height-sm: 36px;
+  --sploot-control-height: 44px;
+  --sploot-control-height-lg: 48px;
   --sploot-command-surface: var(--sploot-panel);
   --sploot-command-surface-contrast: var(--sploot-ink);
   --sploot-pile-surface: var(--sploot-panel);
@@ -484,6 +488,7 @@ select:focus-visible {
   --sploot-radius-inner: 10px;
   --sploot-radius-ctl: 9px;
   --sploot-radius-pill: 999px;
+  --sploot-radius-segment: 0px;
   --sploot-shadow: 0 5px 0 var(--sploot-shadow-color);
   --sploot-shadow-sm: 0 3px 0 var(--sploot-shadow-color);
   --sploot-shadow-lg: 0 9px 0 var(--sploot-shadow-color);

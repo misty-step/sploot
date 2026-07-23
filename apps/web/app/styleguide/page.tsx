@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
-import { Heart, Search, Trash2, Upload } from 'lucide-react';
+import { Heart, Search, Shuffle, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { FilterChips } from '@/components/chrome/filter-chips';
+import { SortDropdown } from '@/components/chrome/sort-dropdown';
 import {
   BangerStamp,
   ClusterPile,
@@ -191,6 +193,48 @@ export default function StyleguidePage() {
             <Button variant="compact">compact</Button>
             <Button variant="primary" disabled>disabled</Button>
             <Button variant="link">a flat link</Button>
+          </div>
+        </div>
+      </Section>
+
+      {/* 04a command controls */}
+      <Section idx="// 04a" title="command controls" desc="one control grammar: segmented filters, sort action, and icon-led shuffle stay on the same height ladder">
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div className="space-y-3">
+            <span className="block font-mono text-[0.62rem] lowercase tracking-normal text-sploot-ink/60">
+              segmented single-select · default + selected
+            </span>
+            <div className="flex flex-wrap gap-3">
+              <FilterChips activeFilter="all" size="sm" />
+              <FilterChips activeFilter="bangers" size="sm" />
+            </div>
+          </div>
+          <div className="space-y-3">
+            <span className="block font-mono text-[0.62rem] lowercase tracking-normal text-sploot-ink/60">
+              secondary action · default + pressed + disabled
+            </span>
+            <div className="flex flex-wrap items-center gap-3">
+              <SortDropdown value="createdAt" direction="desc" />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                aria-pressed="true"
+              >
+                <Shuffle className="size-4" /> shuffle selected
+              </Button>
+              <Button type="button" variant="outline" size="sm" disabled>
+                disabled
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="outline outline-4 outline-offset-[3px] outline-sploot-focus"
+              >
+                focus-visible
+              </Button>
+            </div>
           </div>
         </div>
       </Section>

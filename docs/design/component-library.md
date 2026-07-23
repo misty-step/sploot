@@ -15,6 +15,10 @@ primitives. It is not a separate package yet.
 | Stat block | Short machine/library readout | `apps/web/components/sploot/stat-block.tsx` | Mono label over Bungee value, 18px toy, 5px drop |
 | Status bar | Machinery on display | `apps/web/components/sploot/status-bar.tsx` | Ink row for index, scorer/model, route, and status |
 | Button | Product action toy | `apps/web/components/ui/button.tsx` | Pill, 3px shell, 5px drop, candy variants, hover-physics law |
+| Control foundation | Shared shell, size ladder, typography, focus, disabled, and press/lift states | `apps/web/components/ui/button.tsx`, `toggle.tsx`, `toggle-group.tsx` | Actions use the 3px pill shell; segmented controls keep the same height and focus contract while preserving single-select semantics |
+| Filter chips (segmented) | All / Bangers single-select gallery filter | `apps/web/components/chrome/filter-chips.tsx` | Radix single-select group; All uses cyan selected fill, Bangers uses magenta selected fill; labels remain explicit |
+| Sort command | Recent / Updated / Size / Name / Taste menu | `apps/web/components/chrome/sort-dropdown.tsx` | Secondary pill action on the shared height ladder; sort direction remains visible in the menu |
+| Shuffle command | Independent gallery reorder action | `apps/web/components/sploot/gallery-spine.tsx`, `apps/web/components/chrome/mobile-command-dock.tsx` | Button on desktop; canonical `IconButton` command on mobile; `aria-pressed` communicates active shuffle |
 | Pile filter / cluster | Automatic semantic group | `apps/web/components/sploot/pile-filter-rail.tsx`, `apps/web/components/sploot/cluster-pile.tsx` | Pill chips over the all-memes feed; selected fills banana; previews never replace browsing |
 | Sticker tab | Label, tag, status, callout | `apps/web/components/sploot/sticker-tab.tsx` | Pill candy chip, 2px shell, short lowercase text |
 | Pile mark | Compact brand/mechanic mark | `apps/web/components/sploot/pile-mark.tsx` | Pile cells, no abstract circles |
@@ -129,6 +133,25 @@ Rules:
 - The "ok/live" state can use an apple-green dot, with reduced-motion handled
   globally.
 - Avoid fake latency, fake corpus size, or implementation roadmap copy.
+
+### Control Taxonomy
+
+Purpose: keep gallery commands visually related without flattening their semantics.
+
+Rules:
+
+- Primary and secondary actions use `Button`; the shared foundation owns the
+  3px shell, height ladder, typography, focus ring, disabled state, and
+  press/lift physics.
+- Single-select filters use Radix `ToggleGroup` / `ToggleGroupItem` and expose
+  `data-state="on"` as the selected state. They are grouped segmented controls,
+  not links or list rows.
+- Icon-only commands use `IconButton` with a required accessible label. Mobile
+  dock commands use its 44px `dock`/`chip` size.
+- Semantic links, navigation anchors, and list-row affordances remain links or
+  rows. Do not restyle them as button variants merely to match chrome.
+- All/Bangers, Recent/sort, and shuffle share the height ladder and focus ring,
+  while selected/pressed semantics remain specific to each control family.
 
 ### Button
 

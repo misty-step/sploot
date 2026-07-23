@@ -4,41 +4,43 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
-// Toybox buttons (lab-034 AFD-8): pill toys with a 3px ink shell and
-// drop-height elevation. The shared physics utilities enforce the
-// hover-physics law: surface lifts / shadow anchors; press sinks /
-// shadow collapses. Icon sizes compose the flat ink-mini grammar instead.
+// Shared control grammar: actions use the 3px pill shell, tokenized height
+// ladder, common focus ring, and the toybox press/lift physics. Segmented and
+// icon-only controls reuse these state contracts without changing semantics.
+export const controlFocusClasses =
+  "outline-none focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-[3px] focus-visible:outline-sploot-focus"
+export const controlDisabledClasses =
+  "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+export const controlBaseClasses =
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[var(--sploot-radius-pill)] border-[3px] border-sploot-ink font-sans text-sm font-extrabold cursor-pointer [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0"
+
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[var(--sploot-radius-pill)] border-[3px] border-sploot-ink font-sans text-sm font-extrabold cursor-pointer disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-[3px] focus-visible:outline-sploot-focus aria-invalid:border-destructive",
+  `${controlBaseClasses} ${controlFocusClasses} ${controlDisabledClasses} aria-invalid:border-destructive`,
   {
     variants: {
       variant: {
-        // primary action: blue toy (on-color text flips with the theme for AA)
+        // Primary actions are blue; attention uses the banger bubblegum fill.
         default: "sploot-press bg-sploot-blue text-sploot-on-blue sploot-shadow",
         primary: "sploot-press bg-sploot-blue text-sploot-on-blue sploot-shadow",
-        // attention: bubblegum toy (bangers / favorites)
-        attention: "sploot-press bg-sploot-magenta text-[#1c1547] sploot-shadow",
+        attention: "sploot-press bg-sploot-magenta text-sploot-ink sploot-shadow",
         destructive: "sploot-press bg-sploot-red text-sploot-on-red sploot-shadow",
-        // ghost/outline: panel toy with the same shell + drop
+        // Secondary actions keep the shell and physics while staying quieter.
         ghost: "sploot-press bg-sploot-panel text-sploot-ink sploot-shadow",
         outline: "sploot-press bg-sploot-panel text-sploot-ink sploot-shadow",
-        secondary: "sploot-press bg-sploot-yellow text-[#1c1547] sploot-shadow",
-        // ink: the inverted toy (ink fill, shelf label)
+        secondary: "sploot-press bg-sploot-yellow text-sploot-on-yellow sploot-shadow",
         ink: "sploot-press bg-sploot-ink text-sploot-paper sploot-shadow",
-        // link stays flat — no shell, no drop, no press physics
-        link: "border-0 bg-transparent text-sploot-ink shadow-none underline-offset-4 hover:underline hover:bg-transparent",
-        accent: "sploot-press bg-sploot-cyan text-[#1c1547] sploot-shadow",
-        // compact: smaller drop, same law
+        // Links are semantic flat affordances, not button toys.
+        link: "border-0 bg-transparent px-0 text-sploot-ink shadow-none hover:bg-transparent hover:underline hover:underline-offset-4",
+        accent: "sploot-press bg-sploot-cyan text-sploot-ink sploot-shadow",
         compact: "sploot-press-sm bg-sploot-panel text-sploot-ink sploot-shadow-sm",
       },
       size: {
-        default: "min-h-[var(--sploot-touch-target)] px-5 py-2 has-[>svg]:px-4",
-        // phones get the 44px touch floor; desktop keeps the compact 36px
-        sm: "h-9 gap-1.5 px-3 text-xs has-[>svg]:px-2.5 max-sm:h-auto max-sm:min-h-[var(--sploot-touch-target)] max-sm:min-w-[var(--sploot-touch-target)]",
-        lg: "min-h-[var(--sploot-touch-target)] px-7 py-3 text-base has-[>svg]:px-5",
-        icon: "size-11",
-        "icon-sm": "size-9 max-sm:size-[var(--sploot-touch-target)]",
-        "icon-lg": "size-12",
+        default: "min-h-[var(--sploot-control-height)] px-5 has-[>svg]:px-4",
+        sm: "h-[var(--sploot-control-height-sm)] gap-1.5 px-3 text-xs has-[>svg]:px-2.5 max-sm:h-auto max-sm:min-h-[var(--sploot-touch-target)] max-sm:min-w-[var(--sploot-touch-target)]",
+        lg: "min-h-[var(--sploot-control-height-lg)] px-7 text-base has-[>svg]:px-5",
+        icon: "size-[var(--sploot-control-height)]",
+        "icon-sm": "size-[var(--sploot-control-height-sm)] max-sm:size-[var(--sploot-touch-target)]",
+        "icon-lg": "size-[var(--sploot-control-height-lg)]",
       },
     },
     defaultVariants: {

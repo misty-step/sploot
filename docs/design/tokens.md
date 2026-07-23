@@ -60,6 +60,7 @@ the `.dark` class; components never hardcode per-theme values.
 | `--sploot-radius-inner` | `10px` | Media frames inside cards |
 | `--sploot-radius-ctl` | `9px` | Ink-mini icon controls |
 | `--sploot-radius-pill` | `999px` | Buttons, tabs, inputs, pile chips |
+| `--sploot-radius-segment` | `0px` | Interior edges inside a rounded segmented-control shell |
 | `--sploot-shadow` | `0 5px 0 var(--sploot-shadow-color)` | Resting drop |
 | `--sploot-shadow-sm` | `0 3px 0 var(--sploot-shadow-color)` | Compact drop |
 | `--sploot-shadow-lg` | `0 9px 0 var(--sploot-shadow-color)` | Hero drop (search console) |
@@ -69,6 +70,9 @@ the `.dark` class; components never hardcode per-theme values.
 | `--sploot-sticker-shadow` | `0 3px 0 var(--sploot-shadow-color)` | Sticker tabs and chips |
 | `--sploot-match-ring` | 4px lime halo plus 9px drop | Found meme cell state |
 | `--sploot-touch-target` | `44px` | Minimum mobile target |
+| `--sploot-control-height-sm` | `36px` | Compact desktop command height |
+| `--sploot-control-height` | `44px` | Default command height and touch-safe control floor |
+| `--sploot-control-height-lg` | `48px` | Large action height |
 
 Elevation is drop height, straight down, never blurred. The hover-physics law
 binds every interactive surface: hover lifts the surface while the shadow

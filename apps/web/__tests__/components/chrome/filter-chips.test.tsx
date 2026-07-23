@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { FilterChips, FilterChip } from '@/components/chrome/filter-chips';
-import React from 'react';
+import { FilterChips } from '@/components/chrome/filter-chips';
 
 describe('FilterChips', () => {
   const mockOnFilterChange = vi.fn();
@@ -79,6 +78,14 @@ describe('FilterChips', () => {
       expect(allButton).toHaveAttribute('data-state', 'off');
     });
 
+    it('uses semantic selected fills for each filter family', () => {
+      const { rerender } = render(<FilterChips activeFilter="all" />);
+      expect(screen.getByLabelText('all')).toHaveClass('data-[state=on]:bg-sploot-cyan');
+
+      rerender(<FilterChips activeFilter="bangers" />);
+      expect(screen.getByLabelText('bangers')).toHaveClass('data-[state=on]:bg-sploot-magenta');
+    });
+
     it('should fill bangers icon when active', () => {
       const { container } = render(<FilterChips activeFilter="bangers" />);
 
@@ -135,24 +142,21 @@ describe('FilterChips', () => {
       render(<FilterChips size="sm" />);
 
       const allButton = screen.getByLabelText('all');
-      // shadcn ToggleGroup sm size applies h-8
-      expect(allButton).toHaveClass('h-8');
+      expect(allButton).toHaveClass('h-[var(--sploot-control-height-sm)]');
     });
 
-    it('should apply medium size classes by default', () => {
+    it('should apply the default control height token', () => {
       render(<FilterChips />);
 
       const allButton = screen.getByLabelText('all');
-      // shadcn ToggleGroup default size applies h-9
-      expect(allButton).toHaveClass('h-9');
+      expect(allButton).toHaveClass('h-[var(--sploot-control-height)]');
     });
 
-    it('should apply large size classes when size is "lg"', () => {
+    it('should apply the large control height token', () => {
       render(<FilterChips size="lg" />);
 
       const allButton = screen.getByLabelText('all');
-      // shadcn ToggleGroup lg size applies h-10
-      expect(allButton).toHaveClass('h-10');
+      expect(allButton).toHaveClass('h-[var(--sploot-control-height-lg)]');
     });
   });
 
@@ -180,102 +184,3 @@ describe('FilterChips', () => {
   });
 });
 
-describe('FilterChip', () => {
-  const mockOnClick = vi.fn();
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  describe('Rendering', () => {
-    it('should render chip with label', () => {
-      render(<FilterChip label="Test Filter" />);
-
-      expect(screen.getByText('Test Filter')).toBeInTheDocument();
-    });
-
-    it('should render with icon when provided', () => {
-      const icon = <svg data-testid="test-icon" />;
-      render(<FilterChip label="Test" icon={icon} />);
-
-      expect(screen.getByTestId('test-icon')).toBeInTheDocument();
-    });
-
-    it('should render without icon when not provided', () => {
-      const { container } = render(<FilterChip label="Test" />);
-
-      expect(container.querySelector('svg')).not.toBeInTheDocument();
-    });
-
-    it('should apply custom className', () => {
-      const { container } = render(<FilterChip label="Test" className="custom-class" />);
-
-      const group = container.querySelector('[data-slot="toggle-group"]');
-      expect(group).toHaveClass('custom-class');
-    });
-  });
-
-  describe('Active State', () => {
-    it('should not be active by default', () => {
-      const { container } = render(<FilterChip label="Test" />);
-
-      const button = container.querySelector('[data-slot="toggle-group-item"]');
-      expect(button).toHaveAttribute('data-state', 'off');
-    });
-
-    it('should show active state when isActive is true', () => {
-      const { container } = render(<FilterChip label="Test" isActive={true} />);
-
-      const button = container.querySelector('[data-slot="toggle-group-item"]');
-      expect(button).toHaveAttribute('data-state', 'on');
-    });
-  });
-
-  describe('Click Behavior', () => {
-    it('should call onClick when clicked', async () => {
-      const user = userEvent.setup();
-      const { container } = render(<FilterChip label="Test" onClick={mockOnClick} />);
-
-      const button = container.querySelector('[data-slot="toggle-group-item"]')!;
-      await user.click(button);
-
-      expect(mockOnClick).toHaveBeenCalledTimes(1);
-    });
-
-    it('should not error when onClick is not provided', async () => {
-      const user = userEvent.setup();
-      const { container } = render(<FilterChip label="Test" />);
-
-      const button = container.querySelector('[data-slot="toggle-group-item"]')!;
-
-      // Should not throw
-      await expect(user.click(button)).resolves.not.toThrow();
-    });
-  });
-
-  describe('Size Variants', () => {
-    it('should apply small size classes when size is "sm"', () => {
-      const { container } = render(<FilterChip label="Test" size="sm" />);
-
-      const button = container.querySelector('[data-slot="toggle-group-item"]');
-      // shadcn ToggleGroup sm size applies h-8
-      expect(button).toHaveClass('h-8');
-    });
-
-    it('should apply medium size classes by default', () => {
-      const { container } = render(<FilterChip label="Test" />);
-
-      const button = container.querySelector('[data-slot="toggle-group-item"]');
-      // shadcn ToggleGroup default size applies h-9
-      expect(button).toHaveClass('h-9');
-    });
-
-    it('should apply large size classes when size is "lg"', () => {
-      const { container } = render(<FilterChip label="Test" size="lg" />);
-
-      const button = container.querySelector('[data-slot="toggle-group-item"]');
-      // shadcn ToggleGroup lg size applies h-10
-      expect(button).toHaveClass('h-10');
-    });
-  });
-});

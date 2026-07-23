@@ -37,7 +37,9 @@ export function FilterChips({
           onFilterChange(value as FilterType);
         }
       }}
+      aria-label="filter memes"
       className={cn('gap-0', className)}
+      variant="segmented"
       size={toggleSize}
     >
       <ToggleGroupItem
@@ -45,10 +47,8 @@ export function FilterChips({
         aria-label="all"
         title="all"
         className={cn(
-          "gap-1.5 border border-r-0 uppercase tracking-wider font-bold font-mono",
-          activeFilter === 'all'
-            ? 'bg-sploot-cyan text-black border-sploot-cyan'
-            : 'bg-transparent text-foreground border-border hover:bg-muted'
+          'flex-1 justify-center gap-1.5 uppercase font-mono font-bold tracking-normal',
+          'data-[state=on]:bg-sploot-cyan data-[state=on]:text-sploot-ink'
         )}
       >
         {showLabels && <span>ALL</span>}
@@ -59,14 +59,12 @@ export function FilterChips({
         aria-label="bangers"
         title="bangers"
         className={cn(
-          "gap-1.5 border uppercase tracking-wider font-bold font-mono",
-          activeFilter === 'bangers'
-            ? 'bg-sploot-coral text-black border-sploot-coral'
-            : 'bg-transparent text-foreground border-border hover:bg-muted'
+          'flex-1 justify-center gap-1.5 uppercase font-mono font-bold tracking-normal',
+          'data-[state=on]:bg-sploot-magenta data-[state=on]:text-sploot-ink'
         )}
       >
         <Heart
-          className="h-4 w-4"
+          className="size-4"
           fill={activeFilter === 'bangers' ? 'currentColor' : 'none'}
           strokeWidth={2}
         />
@@ -76,41 +74,3 @@ export function FilterChips({
   );
 }
 
-/**
- * Single filter chip for custom layouts
- * Can be used independently for more flexible positioning
- * @deprecated Use ToggleGroup directly for better accessibility and state management
- */
-export function FilterChip({
-  label,
-  icon,
-  isActive = false,
-  onClick,
-  className,
-  size = 'md',
-}: {
-  label: string;
-  icon?: React.ReactNode;
-  isActive?: boolean;
-  onClick?: () => void;
-  className?: string;
-  size?: 'sm' | 'md' | 'lg';
-}) {
-  // Map custom size to ToggleGroup size prop
-  const toggleSize = size === 'md' ? 'default' : size === 'lg' ? 'lg' : 'sm';
-
-  return (
-    <ToggleGroup
-      type="single"
-      value={isActive ? 'active' : undefined}
-      onValueChange={onClick ? () => onClick() : undefined}
-      className={className}
-      size={toggleSize}
-    >
-      <ToggleGroupItem value="active" className="gap-1.5">
-        {icon && <span className="flex-shrink-0">{icon}</span>}
-        <span>{label}</span>
-      </ToggleGroupItem>
-    </ToggleGroup>
-  );
-}

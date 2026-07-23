@@ -4,6 +4,8 @@ import { RotateCcw, Shuffle, Upload } from 'lucide-react';
 import type { AssetSortBy, AssetSortDirection } from '@sploot/common';
 import type { SemanticPile } from '@/lib/types';
 import { Button } from '@/components/ui/button';
+import { FilterChips, type FilterType } from '@/components/chrome/filter-chips';
+import { SortDropdown } from '@/components/chrome/sort-dropdown';
 import { SearchBar } from '@/components/search';
 import { visiblePileFilters } from './pile-filter-rail';
 import { GalleryPipeline, type GalleryPipelineState } from './gallery-pipeline';
@@ -20,6 +22,8 @@ interface GallerySpineProps {
   searchCached?: boolean;
   searchError?: string | null;
   piles: SemanticPile[];
+  activeFilter: FilterType;
+  onFilterChange: (filter: FilterType) => void;
   total: number;
   embeddedAssetCount: number;
   selectedPileId: string | null;
@@ -47,6 +51,8 @@ export function GallerySpine({
   searchCached,
   searchError,
   piles,
+  activeFilter,
+  onFilterChange,
   total,
   embeddedAssetCount,
   selectedPileId,
@@ -146,7 +152,33 @@ export function GallerySpine({
           overlay (z-40, bottom-left) that would otherwise sit on top of this
           sidebar's own bottom-pinned footer and swallow pointer events aimed
           at the Upload button whenever an upload is queued. */}
-      <div className="relative z-50 mt-auto flex flex-col gap-2 p-3 bg-sploot-panel">
+      <div className="relative z-50 mt-auto flex flex-col gap-3 bg-sploot-panel p-3">
+        <div className="flex flex-col gap-2 border-b-[3px] border-sploot-ink pb-3">
+          <FilterChips
+            activeFilter={activeFilter}
+            onFilterChange={onFilterChange}
+            size="sm"
+            className="w-full"
+          />
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            <SortDropdown
+              value={sortBy}
+              direction={sortOrder}
+              onChange={onSortChange}
+              className="w-full"
+            />
+            <Button
+              type="button"
+              variant={sortBy === 'shuffle' ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={onShuffle}
+              aria-pressed={sortBy === 'shuffle'}
+              className="gap-1.5 px-3"
+            >
+              <Shuffle className="size-4" /> shuffle
+            </Button>
+          </div>
+        </div>
         <Button
           type="button"
           variant="primary"
@@ -155,27 +187,13 @@ export function GallerySpine({
           aria-label="UPLOAD"
           data-upload-action-ready={isUploadActionReady ? 'true' : 'false'}
         >
-          <Upload className="h-4 w-4" /> upload
+          <Upload className="size-4" /> upload
         </Button>
-        <div className="grid grid-cols-2 gap-2">
-          <Button type="button" variant="outline" onClick={onShuffle} className="gap-2">
-            <Shuffle className="h-4 w-4" /> shuffle
+        {retryCount > 0 && onRetry ? (
+          <Button type="button" variant="accent" onClick={onRetry} className="w-full gap-2">
+            <RotateCcw className="size-4" /> retry {retryCount}
           </Button>
-          {retryCount > 0 && onRetry ? (
-            <Button type="button" variant="accent" onClick={onRetry} className="gap-2">
-              <RotateCcw className="h-4 w-4" /> retry {retryCount}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onSortChange(sortBy === 'createdAt' ? 'updatedAt' : 'createdAt', sortOrder)}
-              className="justify-center font-mono text-xs lowercase"
-            >
-              sort
-            </Button>
-          )}
-        </div>
+        ) : null}
       </div>
     </aside>
   );
