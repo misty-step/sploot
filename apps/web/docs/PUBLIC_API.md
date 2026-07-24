@@ -224,13 +224,19 @@ curl -X POST https://www.sploot.app/api/search \
 
 ## Rate limits
 
-- Upload endpoints: 10 requests/minute
-- Search endpoint: 30 requests/minute
+There is no per-request rate limiter on `/api/upload`, `/api/upload/url`, or
+`/api/search` today — an accepted residual documented in
+[ADR-006](./adr/006-personal-upload-tokens.md#consequences). A leaked or
+abused token is bounded by storage quota (uploads) and revocation from
+Settings, not a request-rate throttle.
 
 Full error-code table: `API.md#error-codes`.
 
 ## Changelog
 
+- **2026-07-24 (sploot-share-revoke-minimum):** Corrected the rate-limits
+  section — the previously documented 10/30 requests-per-minute figures were
+  never implemented; replaced with the honest ADR-006 residual.
 - **2026-07-07 (sploot-071):** `POST /api/search` opted into personal API
   token auth (previously the token was upload-only). This file published as
   the token-scoped external contract; superseded the implicit "ask the

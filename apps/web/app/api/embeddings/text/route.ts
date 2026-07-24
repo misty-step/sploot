@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
+import { CostAdmissionError, costAdmissionErrorResponse } from '@/lib/cost';
 import {
   EmbeddingConfigurationError,
   embeddingConfigurationHeaders,
@@ -78,6 +79,10 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     }
     if (error instanceof EmbeddingConfigurationError) {
       await reportEmbeddingConfigurationErrorOnce(error, 'embeddings:text:configuration');
+    }
+
+    if (error instanceof CostAdmissionError) {
+      return costAdmissionErrorResponse(error);
     }
     // Error generating text embedding
 

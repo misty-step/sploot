@@ -33,10 +33,10 @@ export function SharePageCTA({ assetId, className }: SharePageCTAProps) {
         'select-none',
         className
       )}
-      aria-label="Create your collection on Sploot"
+      aria-label="Start your own pile on Sploot"
     >
       <Link href={signUpUrl}>
-        Create your collection
+        start your own pile
       </Link>
     </Button>
   );

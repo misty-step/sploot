@@ -48,6 +48,7 @@
     "db:fingerprint": "./scripts/db-fingerprint.sh",
     "db:drift": "./scripts/db-drift-check.sh",
     "storage:portability": "tsx scripts/storage-portability.ts",
+    "storage:ledger": "tsx scripts/storage-ledger.ts",
     "e2e:queue": "PLAYWRIGHT_PROJECT=queue playwright test --config playwright.config.ts --project=queue",
     "e2e:portable-telemetry": "PLAYWRIGHT_PROJECT=portable-telemetry playwright test --config playwright.config.ts --project=portable-telemetry",
     "e2e:public-truth": "playwright test --config playwright.config.ts --project=public-truth --grep \"public truth\"",

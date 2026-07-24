@@ -11,7 +11,7 @@ import { processStorageCleanup } from '../lib/storage/cleanup-outbox';
 
 const MAX_BATCH = 100;
 const INVENTORY_ID = 'legacy-assets';
-const OPERATOR_ROLES = new Set(['sploot_stripe_schema_migrator', 'sploot_storage_operator']);
+export const OPERATOR_ROLES = new Set(['sploot_stripe_schema_migrator', 'sploot_storage_operator']);
 
 async function requireOperatorAuthority(database: PrismaClient = prisma): Promise<void> {
   const rows = await database.$queryRaw<Array<{ sessionUser: string; isSuperuser: boolean }>>(Prisma.sql`SELECT current_user AS "sessionUser", rolsuper AS "isSuperuser" FROM pg_roles WHERE rolname = current_user`);

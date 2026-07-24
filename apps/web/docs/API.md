@@ -85,9 +85,21 @@ the route's `error` field, with optional diagnostic fields on some endpoints:
 
 ## Rate Limiting
 
-- Upload endpoints: 10 requests per minute
-- Search endpoints: 30 requests per minute
-- Other endpoints: 60 requests per minute
+There is no general per-request rate limiter on upload, search, share, or
+other product API routes — an accepted residual documented in
+[ADR-006](./adr/006-personal-upload-tokens.md#consequences): storage quota and
+revocable tokens/sessions are today's abuse control, not a request-rate
+throttle.
+
+Two routes do enforce a real, tested limit:
+
+- `POST /api/telemetry`: 60 requests per minute per authenticated user
+  (`lib/telemetry-rate-limit.ts`); exceeding it returns `429`.
+- `POST /api/assets/{id}/generate-embedding` and the embedding pipeline:
+  per-user and global concurrency/window admission control
+  (`lib/embedding-rate-limit.ts`), returning `429` with `status:
+  "provider_rate_limited"` or `503` with `status: "provider_backoff"` — this
+  protects the Replicate provider budget, not general API traffic.
 
 ---
 

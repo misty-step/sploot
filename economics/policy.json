@@ -10,6 +10,12 @@
     "freeFullAllowanceAccounts": 75,
     "admissionImplementation": "unimplemented; enrollment remains CLOSED"
   },
+  "planFileSizeCapBytes": {
+    "free": 1073741824,
+    "collector": 1073741824,
+    "archive": 1073741824,
+    "note": "Provisional per-file admission cap (1 GiB), identical across tiers until sploot-billing-entitlements differentiates plans; read by apps/web/lib/cost/policy.ts."
+  },
   "planBudgetSemantics": "monthlyInfrastructureUsd is a target direct-variable ceiling in unrounded USD for each scenario's high-sensitivity full allowance; it is not a currently enforced provider-dollar cap.",
   "sensitivity": {
     "low": {"renditionMultiplier": 1.05, "originMissRatio": 0.05, "inferenceAttemptMultiplier": 1, "databaseComputeMultiplier": 0.75, "stripeVariableSurcharge": 0},

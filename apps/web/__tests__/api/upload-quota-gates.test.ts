@@ -83,6 +83,7 @@ vi.mock('@/lib/runtime-gates', () => ({
 
 vi.mock('@/lib/quota/storage-quota-policy', () => ({
   reserveUploadBytes: mocks.reserveUploadBytes,
+  commitUploadBytes: vi.fn().mockImplementation((_userId: string, reservationId: string) => Promise.resolve({ id: reservationId, snapshot: {} })),
   releaseStorageQuotaReservation: vi.fn(),
   storageQuotaError: (snapshot: any) => ({
     success: false,

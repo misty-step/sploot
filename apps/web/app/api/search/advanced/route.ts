@@ -4,6 +4,7 @@ import { unstable_rethrow } from 'next/navigation';
 import { Prisma } from '@prisma/client';
 import { buildRankedEmbeddingCte, prisma, logSearch, queryHnswRanked } from '@/lib/db';
 import { CLIP_MODEL, createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
+import { CostAdmissionError, costAdmissionErrorResponse } from '@/lib/cost';
 import {
   EmbeddingConfigurationError,
   embeddingConfigurationHeaders,
@@ -420,6 +421,20 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     if (isEnrollmentIdentityConflictError(error)) return enrollmentIdentityConflictResponse();
     if (error instanceof EmbeddingConfigurationError) {
       await reportEmbeddingConfigurationErrorOnce(error, 'advanced-search:configuration');
+    }
+
+    if (error instanceof CostAdmissionError) {
+      const response = costAdmissionErrorResponse(error);
+      const body = await response.clone().json();
+      return NextResponse.json(
+        {
+          ...body,
+          results: [],
+          query: query || '',
+          pagination: { total: 0, limit: limit || 30, offset: offset || 0, hasMore: false },
+        },
+        { status: response.status, headers: response.headers }
+      );
     }
     // Error performing advanced search
 

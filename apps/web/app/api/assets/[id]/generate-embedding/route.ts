@@ -6,6 +6,7 @@ import {
   EmbeddingAdmissionError,
   EmbeddingError,
 } from '@/lib/embeddings';
+import { CostAdmissionError, costAdmissionRetryHeaders } from '@/lib/cost';
 import {
   embeddingConfigurationHeaders,
   embeddingRetryHeaders,
@@ -576,6 +577,20 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
       logger.logError('generate-embedding:failed', error as Error, {
         processingTimeMs: processingTime,
       });
+    }
+
+    if (error instanceof CostAdmissionError) {
+      return NextResponse.json(
+        {
+          success: false,
+          status: 'cost_admission_denied',
+          error: error.message,
+          reason: error.reason,
+          code: 'cost_admission_denied',
+          retryAfter: error.retryAfterSec,
+        },
+        { status: error.statusCode, headers: costAdmissionRetryHeaders(error) }
+      );
     }
 
     // Error generating embedding

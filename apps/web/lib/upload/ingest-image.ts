@@ -7,11 +7,13 @@ import { AssetRecorderService } from '@/lib/upload/asset-recorder-service';
 import { EmbeddingSchedulerService } from '@/lib/upload/embedding-scheduler-service';
 import { PerceptualHashService, type NearDuplicateAsset } from '@/lib/upload/perceptual-hash-service';
 import {
+  commitUploadBytes,
   releaseStorageQuotaReservation,
   reserveUploadBytes,
 } from '@/lib/quota/storage-quota-policy';
 import { prisma } from '@/lib/db';
 import { assertEnrolledUser } from '@/lib/enrollment/enrollment-policy';
+import { admitCost } from '@/lib/cost';
 
 /**
  * Shared server-side image ingestion pipeline.
@@ -68,6 +70,11 @@ export async function ingestImage({
   // This is the shared server-owned boundary for every ingestion surface.
   // It runs before image processing, Blob writes, or embedding scheduling.
   await assertEnrolledUser(userId, prisma);
+
+  // Cost admission: reject a file over the plan-tier per-file cap before
+  // any read, dedupe, or quota work. The cap is computed entirely
+  // server-side from file.size -- no request field can raise it.
+  await admitCost({ capability: 'upload', userId, bytes: file.size });
 
   const startTime = Date.now();
   let quotaReservationId: string | null = null;
@@ -177,6 +184,24 @@ export async function ingestImage({
       mainUrl: uploadResult.mainUrl,
       hasThumbnail: !!uploadResult.thumbnailUrl,
     });
+
+    // Step 6.5: Commit the reservation to the now-known physical total
+    // (original + rendition). The Step 4 reservation only covered the
+    // pre-processing original file size; a concurrent uploader must not
+    // see headroom this upload has already physically consumed by the
+    // time its Blob writes land. Any already-uploaded objects are cleaned
+    // up on failure, mirroring the Step 7 db-error cleanup below.
+    try {
+      const committed = await commitUploadBytes(
+        userId,
+        quotaReservationId,
+        uploadResult.mainSize + (uploadResult.thumbnailSize ?? 0),
+      );
+      quotaReservationId = committed.id;
+    } catch (commitError) {
+      await uploader.cleanup(uploadResult.mainUrl, uploadResult.thumbnailUrl, uploadResult.mainReplicas, uploadResult.thumbnailReplicas);
+      throw commitError;
+    }
 
     // Step 7: Record asset in database
     try {

@@ -9,6 +9,7 @@ import { logger } from '@/lib/observability-logger';
 import { ConfiguredStorageWriter, bodyToBuffer, ObjectNotFoundError } from '@/lib/storage/object-store';
 import { storageConfigFromEnv, storageConfigFingerprint } from '@/lib/storage/config';
 import { enqueueReplicaCleanup, markReplicaCleanupDone } from '@/lib/storage/permanent-delete';
+import { admitCost, CostAdmissionError, costAdmissionErrorResponse } from '@/lib/cost';
 
 /**
  * GET /api/cron/regenerate-thumbnails?limit=25&cursor=<assetId>
@@ -64,6 +65,19 @@ async function getHandler(request: NextRequest) {
   }
   if (!prisma) {
     return NextResponse.json({ error: 'Database unavailable' }, { status: 503 });
+  }
+
+  // System-triggered Blob spend, not attributable to one requesting user.
+  // Gated on the operator emergency-stop kill switch only (see
+  // apps/web/lib/cost/kernel.ts); a per-account budget does not apply to a
+  // cron sweep across every owner's assets.
+  try {
+    await admitCost({ capability: 'blob_write', userId: 'system:cron:regenerate-thumbnails' });
+  } catch (error) {
+    if (error instanceof CostAdmissionError) {
+      return costAdmissionErrorResponse(error);
+    }
+    throw error;
   }
 
   const params = request.nextUrl.searchParams;

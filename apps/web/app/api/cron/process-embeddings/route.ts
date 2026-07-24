@@ -4,6 +4,7 @@ import {
   createEmbeddingService,
   type EmbeddingService,
 } from '@/lib/embeddings';
+import { CostAdmissionError, costAdmissionRetryHeaders } from '@/lib/cost';
 import {
   EmbeddingError,
   hasEmbeddingConfigurationReport,
@@ -557,6 +558,19 @@ async function getHandler(request: NextRequest) {
         : undefined,
     });
   } catch (error) {
+    if (error instanceof CostAdmissionError) {
+      return NextResponse.json(
+        {
+          outcome: 'backoff' satisfies BatchOutcome,
+          status: 'cost_admission_denied',
+          error: error.message,
+          taxonomy: error.reason,
+          retryAfterSec: error.retryAfterSec,
+          stats,
+        },
+        { status: error.statusCode, headers: costAdmissionRetryHeaders(error) }
+      );
+    }
     if (error instanceof EmbeddingError) {
       const retryAfterSec = error.retryAfterSec;
       return NextResponse.json(

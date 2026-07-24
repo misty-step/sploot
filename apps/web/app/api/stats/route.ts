@@ -12,13 +12,17 @@ import { enrollmentResponseForError, enrollmentUnavailableResponse } from '@/lib
  *
  * Lightweight per-user stats:
  * - assetCount: total non-deleted assets
- * - storageBytes: sum of asset sizes
+ * - storageBytes: physical bytes billed against quota (ledger `usedBytes`:
+ *   active + trashed replicas — the same figure upload enforcement uses,
+ *   never a separate recomputation that could drift from it)
  * - storageLimitBytes: quota limit in bytes
  * - storageRemainingBytes: available storage in bytes
  * - storageUsagePercent: quota usage percentage
  * - lastUploadAt: ISO timestamp of most recent asset (or null)
  *
- * Single asset aggregate plus quota snapshot.
+ * One lightweight aggregate (count + last upload) plus the single
+ * authoritative quota snapshot — never a second, independently-computed
+ * storage byte figure that could disagree with what uploads enforce.
  */
 async function getHandler(_req: NextRequest) {
   try {
@@ -34,15 +38,14 @@ async function getHandler(_req: NextRequest) {
         deletedAt: null,
       },
       _count: { id: true },
-      _sum: { size: true },
       _max: { createdAt: true },
     });
 
     const assetCount = aggregate._count.id;
-    const storageBytes = aggregate._sum.size ?? 0;
     const quota = await getStorageQuotaSnapshot(userId);
+    const storageBytes = quota.usedBytes;
     const storageLimitBytes = quota.limitBytes;
-    const storageRemainingBytes = Math.max(0, quota.limitBytes - storageBytes - (quota.reservedBytes ?? 0));
+    const storageRemainingBytes = quota.remainingBytes;
     const storageUsagePercent = storageLimitBytes > 0
       ? Math.min(100, Math.round((storageBytes / storageLimitBytes) * 1000) / 10)
       : 0;

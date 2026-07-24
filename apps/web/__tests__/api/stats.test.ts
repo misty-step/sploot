@@ -23,10 +23,29 @@ vi.mock('@/lib/db', () => ({
   },
 }));
 
+// Mock lib/quota/storage-quota-policy: the route's storage byte figures come
+// exclusively from here (the physical AssetStorageReplica ledger), never a
+// second, independently-computed `asset.size` aggregate that could drift
+// from what upload enforcement actually counts.
+const mockGetStorageQuotaSnapshot = vi.fn();
+vi.mock('@/lib/quota/storage-quota-policy', () => ({
+  getStorageQuotaSnapshot: (...args: unknown[]) => mockGetStorageQuotaSnapshot(...args),
+}));
+
+function quotaSnapshot(usedBytes: number, limitBytes = 1073741824) {
+  return {
+    usedBytes,
+    limitBytes,
+    remainingBytes: Math.max(0, limitBytes - usedBytes),
+    reservedBytes: 0,
+  };
+}
+
 describe('/api/stats', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDatabaseAvailable = true;
+    mockGetStorageQuotaSnapshot.mockResolvedValue(quotaSnapshot(0));
   });
 
   describe('Success Path', () => {
@@ -34,12 +53,11 @@ describe('/api/stats', () => {
       // Mock auth
       mockRequireUserIdWithSync.mockResolvedValue('test-user-123');
 
-      // Mock Prisma aggregate response
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 42 },
-        _sum: { size: 1048576 },
         _max: { createdAt: new Date('2025-11-21T14:00:00Z') },
       });
+      mockGetStorageQuotaSnapshot.mockResolvedValue(quotaSnapshot(1048576));
 
       const response = await GET({} as NextRequest);
       const data = await response.json();
@@ -54,16 +72,18 @@ describe('/api/stats', () => {
         lastUploadAt: '2025-11-21T14:00:00.000Z',
       });
 
-      // Verify correct query parameters
+      // Verify correct query parameters — no `_sum: { size }`: the byte
+      // figure comes from the ledger-backed quota snapshot, not this
+      // aggregate.
       expect(mockPrisma.asset.aggregate).toHaveBeenCalledWith({
         where: {
           ownerUserId: 'test-user-123',
           deletedAt: null,
         },
         _count: { id: true },
-        _sum: { size: true },
         _max: { createdAt: true },
       });
+      expect(mockGetStorageQuotaSnapshot).toHaveBeenCalledWith('test-user-123');
     });
 
     it('should return correct stats for user with multiple assets', async () => {
@@ -71,9 +91,9 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 500 },
-        _sum: { size: 104857600 }, // 100 MB
         _max: { createdAt: new Date('2025-11-21T18:30:00Z') },
       });
+      mockGetStorageQuotaSnapshot.mockResolvedValue(quotaSnapshot(104857600)); // 100 MB
 
       const response = await GET({} as NextRequest);
       const data = await response.json();
@@ -85,6 +105,32 @@ describe('/api/stats', () => {
       expect(data.storageRemainingBytes).toBe(968884224);
       expect(data.storageUsagePercent).toBe(9.8);
       expect(data.lastUploadAt).toBe('2025-11-21T18:30:00.000Z');
+    });
+
+    it('counts trashed (soft-deleted) bytes still occupying storage toward storageBytes', async () => {
+      // The ledger keeps a soft-deleted asset's bytes counted as trash
+      // until purge/empty-trash — assetCount (deletedAt: null only) can
+      // disagree with the physical byte figure, and that's correct.
+      mockRequireUserIdWithSync.mockResolvedValue('trash-holding-user');
+
+      mockPrisma.asset.aggregate.mockResolvedValue({
+        _count: { id: 3 },
+        _max: { createdAt: new Date('2025-11-21T19:00:00Z') },
+      });
+      mockGetStorageQuotaSnapshot.mockResolvedValue({
+        usedBytes: 5000,
+        limitBytes: 1073741824,
+        remainingBytes: 1073736824,
+        reservedBytes: 0,
+        activeBytes: 3000,
+        trashBytes: 2000,
+      });
+
+      const response = await GET({} as NextRequest);
+      const data = await response.json();
+
+      expect(data.assetCount).toBe(3);
+      expect(data.storageBytes).toBe(5000);
     });
   });
 
@@ -110,7 +156,6 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 10 },
-        _sum: { size: 50000 },
         _max: { createdAt: new Date('2025-11-21T10:00:00Z') },
       });
 
@@ -156,9 +201,9 @@ describe('/api/stats', () => {
       // Mock empty aggregate result
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 0 },
-        _sum: { size: null },
         _max: { createdAt: null },
       });
+      mockGetStorageQuotaSnapshot.mockResolvedValue(quotaSnapshot(0));
 
       const response = await GET({} as NextRequest);
       const data = await response.json();
@@ -166,7 +211,7 @@ describe('/api/stats', () => {
       expect(response.status).toBe(200);
       expect(data).toEqual({
         assetCount: 0,
-        storageBytes: 0, // null coalesced to 0
+        storageBytes: 0,
         storageLimitBytes: 1073741824,
         storageRemainingBytes: 1073741824,
         storageUsagePercent: 0,
@@ -174,14 +219,14 @@ describe('/api/stats', () => {
       });
     });
 
-    it('should handle null size sum correctly', async () => {
+    it('should handle a zero-byte quota snapshot correctly', async () => {
       mockRequireUserIdWithSync.mockResolvedValue('user-with-zero-byte-assets');
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 5 },
-        _sum: { size: null }, // Can happen with zero-byte files
         _max: { createdAt: new Date('2025-11-21T12:00:00Z') },
       });
+      mockGetStorageQuotaSnapshot.mockResolvedValue(quotaSnapshot(0));
 
       const response = await GET({} as NextRequest);
       const data = await response.json();
@@ -196,7 +241,6 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 0 },
-        _sum: { size: 0 },
         _max: { createdAt: null },
       });
 
@@ -213,7 +257,6 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 25 },
-        _sum: { size: 2097152 },
         _max: { createdAt: new Date('2025-11-21T16:00:00Z') },
       });
 
@@ -229,7 +272,6 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 100 },
-        _sum: { size: 10485760 },
         _max: { createdAt: new Date('2025-11-21T20:00:00Z') },
       });
 
@@ -245,7 +287,6 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 15 },
-        _sum: { size: 524288 },
         _max: { createdAt: new Date('2025-11-21T11:30:00Z') },
       });
 
@@ -266,7 +307,6 @@ describe('/api/stats', () => {
       const testDate = new Date('2025-11-21T09:45:30.123Z');
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 1 },
-        _sum: { size: 1024 },
         _max: { createdAt: testDate },
       });
 
@@ -285,7 +325,6 @@ describe('/api/stats', () => {
       const utcDate = new Date('2025-11-21T00:00:00.000Z');
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 3 },
-        _sum: { size: 3072 },
         _max: { createdAt: utcDate },
       });
 
@@ -326,7 +365,6 @@ describe('/api/stats', () => {
       // Mock unexpected aggregate structure that will cause runtime error
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 'not-a-number' }, // Type violation
-        _sum: { size: undefined },
         _max: { createdAt: 'invalid-date' }, // This will fail .toISOString()
       } as any);
 
@@ -337,6 +375,26 @@ describe('/api/stats', () => {
       const data = await response.json();
 
       // Should return 500 error when data causes runtime error
+      expect(response.status).toBe(500);
+      expect(data.error).toBe('Failed to fetch stats');
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('should propagate a quota snapshot failure as a 500', async () => {
+      mockRequireUserIdWithSync.mockResolvedValue('quota-error-user');
+
+      mockPrisma.asset.aggregate.mockResolvedValue({
+        _count: { id: 1 },
+        _max: { createdAt: new Date('2025-11-21T08:00:00Z') },
+      });
+      mockGetStorageQuotaSnapshot.mockRejectedValue(new Error('quota read failed'));
+
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const response = await GET({} as NextRequest);
+      const data = await response.json();
+
       expect(response.status).toBe(500);
       expect(data.error).toBe('Failed to fetch stats');
 
@@ -370,14 +428,15 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 1000 },
-        _sum: { size: 1073741824 }, // 1 GB
         _max: { createdAt: new Date('2025-11-21T22:00:00Z') },
       });
+      mockGetStorageQuotaSnapshot.mockResolvedValue(quotaSnapshot(1073741824)); // 1 GB
 
       await GET({} as NextRequest);
 
       // Should only call aggregate once
       expect(mockPrisma.asset.aggregate).toHaveBeenCalledTimes(1);
+      expect(mockGetStorageQuotaSnapshot).toHaveBeenCalledTimes(1);
     });
 
     it('should not perform any joins or additional queries', async () => {
@@ -387,7 +446,6 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 50 },
-        _sum: { size: 5242880 },
         _max: { createdAt: new Date('2025-11-21T15:00:00Z') },
       });
 
@@ -408,7 +466,6 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 7 },
-        _sum: { size: 7168 },
         _max: { createdAt: new Date('2025-11-21T13:00:00Z') },
       });
 
@@ -430,7 +487,6 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 1 },
-        _sum: { size: 1024 },
         _max: { createdAt: new Date() },
       });
 
@@ -444,9 +500,9 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 99 },
-        _sum: { size: 999999 },
         _max: { createdAt: new Date('2025-11-21T17:00:00Z') },
       });
+      mockGetStorageQuotaSnapshot.mockResolvedValue(quotaSnapshot(999999));
 
       const response = await GET({} as NextRequest);
       const data = await response.json();
@@ -464,7 +520,6 @@ describe('/api/stats', () => {
 
       mockPrisma.asset.aggregate.mockResolvedValue({
         _count: { id: 0 },
-        _sum: { size: null },
         _max: { createdAt: null },
       });
 

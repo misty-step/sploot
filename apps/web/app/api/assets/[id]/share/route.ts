@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { unstable_rethrow } from 'next/navigation';
 import { prisma } from '@/lib/db';
-import { getOrCreateShareSlug, AssetNotFoundError } from '@/lib/share';
+import { getOrCreateShareSlug, revokeShareSlug, AssetNotFoundError } from '@/lib/share';
+import { invalidateSlugCache } from '@/lib/slug-cache';
 import { apiError } from '@/lib/api-error';
 import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
@@ -95,3 +96,78 @@ async function postHandler(
 }
 
 export const POST = withObservability(withAuthenticatedApi(postHandler), { operation: 'assets:share' });
+
+/**
+ * Revoke the share link for an asset
+ *
+ * DELETE /api/assets/[id]/share
+ *
+ * Authorization: Required - only asset owner can revoke
+ * Returns: { revoked: boolean } - true if a slug was cleared, false if the
+ * asset had no active share link (idempotent)
+ *
+ * Nulls the asset's shareSlug and invalidates the slug cache, so
+ * /s/[slug] and /m/[id] both fail closed for the previously-active link.
+ *
+ * Error responses:
+ * - 401: Unauthorized (not logged in)
+ * - 404: Asset not found or not owned by user
+ * - 500: Internal server error
+ */
+async function deleteHandler(
+  req: NextRequest,
+  context: RouteContext,
+  { principal }: AuthenticatedApiContext,
+) {
+  try {
+    const userId = principal.userId;
+
+    const params = await context.params;
+    const id = params?.id;
+
+    if (!id) {
+      return apiError('NOT_FOUND', 'Asset not found');
+    }
+
+    if (!prisma) {
+      return enrollmentUnavailableResponse();
+    }
+
+    const asset = await prisma.asset.findFirst({
+      where: {
+        id,
+        ownerUserId: userId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!asset) {
+      return apiError('NOT_FOUND', 'Asset not found');
+    }
+
+    const revokedSlug = await revokeShareSlug(id, userId);
+    if (revokedSlug) {
+      await invalidateSlugCache(revokedSlug);
+    }
+
+    return NextResponse.json({ revoked: revokedSlug !== null });
+  } catch (error) {
+    unstable_rethrow(error);
+
+    const enrollmentResponse = enrollmentResponseForError(error);
+    if (enrollmentResponse) return enrollmentResponse;
+
+    if (error instanceof AssetNotFoundError) {
+      return apiError('NOT_FOUND', 'Asset not found');
+    }
+
+    logError('assets:share-revoke-failed', error);
+
+    return apiError('INTERNAL_ERROR', 'Failed to revoke share link');
+  }
+}
+
+export const DELETE = withObservability(withAuthenticatedApi(deleteHandler), { operation: 'assets:share-revoke' });

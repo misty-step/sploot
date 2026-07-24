@@ -116,3 +116,43 @@ export async function getOrCreateShareSlug(assetId: string, ownerUserId?: string
   }
   return readOrCreate(prisma);
 }
+
+/**
+ * Revoke an asset's share link.
+ *
+ * Idempotent - revoking an asset with no active share slug is a no-op and
+ * returns null. The caller owns cache invalidation of the returned slug (if
+ * any) via `invalidateSlugCache` from `./slug-cache`.
+ *
+ * @param assetId - The ID of the asset to revoke sharing for
+ * @param ownerUserId - The owning user, for enrollment-identity-writer scoping
+ * @returns The share slug that was revoked, or null if the asset had none
+ * @throws {AssetNotFoundError} If the asset doesn't exist
+ */
+export async function revokeShareSlug(assetId: string, ownerUserId?: string): Promise<string | null> {
+  if (!prisma) {
+    throw new EnrollmentUnavailableError();
+  }
+
+  const clearSlug = async (db: Prisma.TransactionClient | typeof prisma): Promise<string | null> => {
+    const asset = await db.asset.findUnique({
+      where: { id: assetId },
+      select: { id: true, shareSlug: true },
+    });
+
+    if (!asset) throw new AssetNotFoundError(assetId);
+    if (!asset.shareSlug) return null;
+
+    await db.asset.update({
+      where: { id: assetId },
+      data: { shareSlug: null },
+    });
+
+    return asset.shareSlug;
+  };
+
+  if (ownerUserId) {
+    return withEnrollmentIdentityWriter(prisma, ownerUserId, (tx) => clearSlug(tx));
+  }
+  return clearSlug(prisma);
+}

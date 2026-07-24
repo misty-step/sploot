@@ -8,37 +8,41 @@ vi.mock('@/lib/db', () => ({
 
 import { invalidateSlugCache, resolveShareSlug } from '@/lib/slug-cache';
 
-describe('share slug cache', () => {
+describe('share slug resolve', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('warms a process-local cache from the authoritative database lookup', async () => {
+  it('resolves a live share slug from Postgres every time', async () => {
     findFirst.mockResolvedValue({ id: 'asset-1' });
 
     await expect(resolveShareSlug('warm-slug')).resolves.toBe('asset-1');
     await expect(resolveShareSlug('warm-slug')).resolves.toBe('asset-1');
 
-    expect(findFirst).toHaveBeenCalledOnce();
+    expect(findFirst).toHaveBeenCalledTimes(2);
     expect(findFirst).toHaveBeenCalledWith({
       where: { shareSlug: 'warm-slug', deletedAt: null },
       select: { id: true },
     });
   });
 
-  it('queries Postgres again after explicit invalidation', async () => {
+  it('returns null after revoke when shareSlug no longer matches', async () => {
     findFirst
-      .mockResolvedValueOnce({ id: 'asset-before' })
-      .mockResolvedValueOnce({ id: 'asset-after' });
+      .mockResolvedValueOnce({ id: 'asset-1' })
+      .mockResolvedValueOnce(null);
 
-    await expect(resolveShareSlug('changed-slug')).resolves.toBe('asset-before');
-    await invalidateSlugCache('changed-slug');
-    await expect(resolveShareSlug('changed-slug')).resolves.toBe('asset-after');
-
-    expect(findFirst).toHaveBeenCalledTimes(2);
+    await expect(resolveShareSlug('revoked-slug')).resolves.toBe('asset-1');
+    await expect(resolveShareSlug('revoked-slug')).resolves.toBeNull();
   });
 
-  it('does not cache a missing slug', async () => {
+  it('invalidateSlugCache is a stable no-op seam', async () => {
+    findFirst.mockResolvedValue({ id: 'asset-1' });
+    await invalidateSlugCache('any-slug');
+    await expect(resolveShareSlug('any-slug')).resolves.toBe('asset-1');
+    expect(findFirst).toHaveBeenCalledOnce();
+  });
+
+  it('does not invent a hit for a missing slug', async () => {
     findFirst.mockResolvedValue(null);
 
     await expect(resolveShareSlug('missing-slug')).resolves.toBeNull();

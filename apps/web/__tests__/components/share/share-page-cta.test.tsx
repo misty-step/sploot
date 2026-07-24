@@ -33,13 +33,13 @@ describe('SharePageCTA', () => {
     it('should render CTA button text', () => {
       render(<SharePageCTA assetId={mockAssetId} />);
 
-      expect(screen.getByText('Create your collection')).toBeInTheDocument();
+      expect(screen.getByText('start your own pile')).toBeInTheDocument();
     });
 
     it('should render with correct aria-label for accessibility', () => {
       render(<SharePageCTA assetId={mockAssetId} />);
 
-      const cta = screen.getByLabelText('Create your collection on Sploot');
+      const cta = screen.getByLabelText('Start your own pile on Sploot');
       expect(cta).toBeInTheDocument();
     });
 
@@ -57,7 +57,7 @@ describe('SharePageCTA', () => {
     it('should link to sign-up page with UTM parameters', () => {
       render(<SharePageCTA assetId={mockAssetId} />);
 
-      const link = screen.getByText('Create your collection').closest('a');
+      const link = screen.getByText('start your own pile').closest('a');
       expect(link).toHaveAttribute('href', `/sign-up?ref=share&id=${mockAssetId}`);
     });
 
@@ -65,14 +65,14 @@ describe('SharePageCTA', () => {
       const customAssetId = 'custom-asset-456';
       render(<SharePageCTA assetId={customAssetId} />);
 
-      const link = screen.getByText('Create your collection').closest('a');
+      const link = screen.getByText('start your own pile').closest('a');
       expect(link?.getAttribute('href')).toContain(`id=${customAssetId}`);
     });
 
     it('should include ref parameter for tracking', () => {
       render(<SharePageCTA assetId={mockAssetId} />);
 
-      const link = screen.getByText('Create your collection').closest('a');
+      const link = screen.getByText('start your own pile').closest('a');
       expect(link?.getAttribute('href')).toContain('ref=share');
     });
 
@@ -80,7 +80,7 @@ describe('SharePageCTA', () => {
       const assetIdWithAmpersand = 'id&foo=bar';
       render(<SharePageCTA assetId={assetIdWithAmpersand} />);
 
-      const link = screen.getByText('Create your collection').closest('a');
+      const link = screen.getByText('start your own pile').closest('a');
       // & should be encoded as %26
       expect(link).toHaveAttribute('href', '/sign-up?ref=share&id=id%26foo%3Dbar');
     });
@@ -89,7 +89,7 @@ describe('SharePageCTA', () => {
       const assetIdWithQuestion = 'asset?query=test';
       render(<SharePageCTA assetId={assetIdWithQuestion} />);
 
-      const link = screen.getByText('Create your collection').closest('a');
+      const link = screen.getByText('start your own pile').closest('a');
       // ? should be encoded as %3F
       expect(link).toHaveAttribute('href', '/sign-up?ref=share&id=asset%3Fquery%3Dtest');
     });
@@ -98,7 +98,7 @@ describe('SharePageCTA', () => {
       const assetIdWithSpace = 'asset with spaces';
       render(<SharePageCTA assetId={assetIdWithSpace} />);
 
-      const link = screen.getByText('Create your collection').closest('a');
+      const link = screen.getByText('start your own pile').closest('a');
       // Spaces should be encoded as %20
       expect(link).toHaveAttribute('href', '/sign-up?ref=share&id=asset%20with%20spaces');
     });
@@ -107,7 +107,7 @@ describe('SharePageCTA', () => {
       const assetIdWithHash = 'asset#fragment';
       render(<SharePageCTA assetId={assetIdWithHash} />);
 
-      const link = screen.getByText('Create your collection').closest('a');
+      const link = screen.getByText('start your own pile').closest('a');
       // # should be encoded as %23
       expect(link).toHaveAttribute('href', '/sign-up?ref=share&id=asset%23fragment');
     });
@@ -117,7 +117,7 @@ describe('SharePageCTA', () => {
       const simpleId = 'simple-asset-id-123';
       render(<SharePageCTA assetId={simpleId} />);
 
-      const link = screen.getByText('Create your collection').closest('a');
+      const link = screen.getByText('start your own pile').closest('a');
       expect(link).toHaveAttribute('href', `/sign-up?ref=share&id=${simpleId}`);
     });
   });
@@ -217,7 +217,7 @@ describe('SharePageCTA', () => {
     it('should handle empty asset ID gracefully', () => {
       render(<SharePageCTA assetId="" />);
 
-      const link = screen.getByText('Create your collection').closest('a');
+      const link = screen.getByText('start your own pile').closest('a');
       expect(link?.getAttribute('href')).toBe('/sign-up?ref=share&id=');
     });
 
@@ -225,7 +225,7 @@ describe('SharePageCTA', () => {
       const specialId = 'asset-123_ABC.xyz';
       render(<SharePageCTA assetId={specialId} />);
 
-      const link = screen.getByText('Create your collection').closest('a');
+      const link = screen.getByText('start your own pile').closest('a');
       expect(link?.getAttribute('href')).toContain(`id=${specialId}`);
     });
 
@@ -233,7 +233,7 @@ describe('SharePageCTA', () => {
       const idWithSpace = 'asset 123';
       render(<SharePageCTA assetId={idWithSpace} />);
 
-      const link = screen.getByText('Create your collection').closest('a');
+      const link = screen.getByText('start your own pile').closest('a');
       // Spaces should be encoded as %20
       expect(link?.getAttribute('href')).toBe('/sign-up?ref=share&id=asset%20123');
     });

@@ -1,25 +1,15 @@
-import { LRUCache } from 'lru-cache';
-
 import { prisma } from './db';
 
 /**
- * Resolve share slugs through a process-local hot cache and the authoritative
- * indexed Postgres row. A cold process performs one normal database lookup;
- * correctness never depends on a second remote cache service.
+ * Resolve a public share slug against authoritative Postgres.
+ *
+ * No process-local positive cache: multi-instance deploys cannot invalidate
+ * peer memory on revoke, and a short TTL would re-open short links after
+ * revoke+re-share. One indexed lookup is the correct cost.
  *
  * Node.js runtime only: this module imports Prisma Client.
  */
-const slugCache = new LRUCache<string, string>({
-  max: 100,
-  ttl: 5 * 60 * 1000,
-});
-
 export async function resolveShareSlug(slug: string): Promise<string | null> {
-  const cachedAssetId = slugCache.get(slug);
-  if (cachedAssetId) {
-    return cachedAssetId;
-  }
-
   if (!prisma) {
     console.error('Database not configured');
     return null;
@@ -30,13 +20,14 @@ export async function resolveShareSlug(slug: string): Promise<string | null> {
     select: { id: true },
   });
 
-  if (asset) {
-    slugCache.set(slug, asset.id);
-  }
-
   return asset?.id ?? null;
 }
 
-export async function invalidateSlugCache(slug: string): Promise<void> {
-  slugCache.delete(slug);
+/**
+ * No-op retained so callers (DELETE share, hard-delete) stay stable.
+ * Kept as a named seam if a shared cache returns later with real multi-node
+ * invalidation.
+ */
+export async function invalidateSlugCache(_slug: string): Promise<void> {
+  // Intentionally empty: resolveShareSlug is DB-authoritative.
 }

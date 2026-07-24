@@ -7,6 +7,7 @@ import {
   storageQuotaError,
   StorageQuotaExceededError,
 } from '@/lib/quota/storage-quota-policy';
+import { CostAdmissionError, costAdmissionErrorResponse } from '@/lib/cost';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/db';
 import { withObservability } from '@/lib/with-observability';
@@ -127,6 +128,10 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
 
     if (error instanceof StorageQuotaExceededError) {
       return NextResponse.json(storageQuotaError(error.snapshot), { status: 403 });
+    }
+
+    if (error instanceof CostAdmissionError) {
+      return costAdmissionErrorResponse(error);
     }
 
     if (error instanceof EmbeddingError) {

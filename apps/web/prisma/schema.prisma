@@ -332,6 +332,22 @@ model EmbeddingRateBucket {
   @@map("embedding_rate_buckets")
 }
 
+// Durable per-account daily/monthly counters for the cost admission kernel
+// (apps/web/lib/cost/). Generalizes the EmbeddingRateBucket pattern to any
+// capability key so image-indexing and novel-query inference spend are
+// tracked -- and budgeted -- separately per account. Not a dollar ledger;
+// attempt counts only, mutated under the same
+// pg_advisory_xact_lock-per-transaction idiom as EmbeddingRateBucket.
+model CostAdmissionCounter {
+  key       String   @id
+  count     Int
+  expiresAt DateTime @map("expires_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([expiresAt])
+  @@map("cost_admission_counters")
+}
+
 // One row per admitted embedding job. Explicit leases make release idempotent,
 // while expiresAt recovers capacity when a worker dies before releasing it.
 model EmbeddingRateLease {
