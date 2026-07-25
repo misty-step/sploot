@@ -411,6 +411,30 @@ async function getHandler(request: NextRequest) {
           break;
         }
 
+        if (error instanceof CostAdmissionError) {
+          // Budget denial is batch-level, not a per-asset poison failure.
+          // Defer this claim, stop the batch, and surface cost_admission_denied.
+          const deferReason =
+            error.reason === 'user_daily_budget'
+              ? 'daily_budget'
+              : error.reason === 'user_monthly_budget'
+                ? 'monthly_budget'
+                : 'limiter_unavailable';
+          await deferEmbeddingAdmission(
+            asset.id,
+            errorMessage,
+            deferReason,
+            error.retryAfterSec,
+            processingClaimToken,
+          );
+          stats.deferredCount++;
+          batchOutcome = 'backoff';
+          batchRetryAfterSec = error.retryAfterSec ?? 30;
+          batchOutcomeReason = deferReason;
+          // Re-throw so the outer handler returns the cost-admission JSON contract.
+          throw error;
+        }
+
         if (isEmbeddingAdmissionFailure(error)) {
           const retryAfterSec =
             typeof (error as { retryAfterSec?: unknown }).retryAfterSec === 'number'

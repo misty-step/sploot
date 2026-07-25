@@ -131,7 +131,12 @@ describe('ingestImage — derived-storage-aware quota commit', () => {
     // reservation-before-processing gap this commit step closes.
     expect(mocks.commitUploadBytes).toHaveBeenCalledWith('user-1', 'reservation-1', 1200);
     expect(mocks.commitUploadBytes.mock.invocationCallOrder[0]).toBeLessThan(mocks.recordAsset.mock.invocationCallOrder[0]);
-    expect(mocks.releaseStorageQuotaReservation).toHaveBeenCalledWith('reservation-1');
+    // Reservation is released inside recordAsset's transaction, not after.
+    expect(mocks.recordAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ releaseQuotaReservationId: 'reservation-1' }),
+      expect.anything(),
+    );
+    expect(mocks.releaseStorageQuotaReservation).not.toHaveBeenCalled();
   });
 
   it('commits only the original size on a rendition failure (no thumbnail produced)', async () => {

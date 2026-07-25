@@ -47,6 +47,12 @@ export interface AssetMetadata {
   checksumSha256: string;
   phash?: string | null;
   storageReplicas?: Array<StorageReplica & { rendition: 'original' | 'thumbnail'; size: number; sha256: string; contentType?: string; active?: boolean; generation?: number }>;
+  /**
+   * When set, delete this storage quota reservation in the same transaction
+   * that inserts the asset + replica rows so concurrent meters never see both
+   * physical bytes and the reservation for the same upload.
+   */
+  releaseQuotaReservationId?: string | null;
 }
 
 /**
@@ -160,6 +166,12 @@ export class AssetRecorderService {
           );
           tagsCreated = tagResult.tagsCreated;
           tagsAssociated = tagResult.tagsAssociated;
+        }
+
+        if (metadata.releaseQuotaReservationId) {
+          await tx.storageQuotaReservation.deleteMany({
+            where: { id: metadata.releaseQuotaReservationId },
+          });
         }
 
         logger.info('Asset recorded successfully', {

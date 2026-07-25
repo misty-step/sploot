@@ -210,7 +210,7 @@ describe('canary reporter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(CANARY_ERROR_THROTTLE_MAX + 1);
   });
 
-  it('refunds throttle slots when Canary POST fails', async () => {
+  it('keeps throttle slots when Canary POST is rejected by the sink', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 503 }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -229,7 +229,29 @@ describe('canary reporter', () => {
     for (let i = 0; i < CANARY_ERROR_THROTTLE_MAX + 2; i += 1) {
       await expect(reportCanaryError(payload)).resolves.toBe(false);
     }
-    // Every attempt failed delivery → refunded → still allowed to try (all called fetch)
+    // HTTP rejection does not refund — storm brake holds on a dead sink.
+    expect(fetchMock).toHaveBeenCalledTimes(CANARY_ERROR_THROTTLE_MAX);
+  });
+
+  it('refunds throttle slots only on transport failure', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const {
+      reportCanaryError,
+      CANARY_ERROR_THROTTLE_MAX,
+      __resetCanaryReporterForTests,
+    } = await import('@/lib/canary-reporter');
+    __resetCanaryReporterForTests();
+
+    const payload = {
+      context: 'request:error',
+      error: { name: 'Error', message: 'transport' },
+    };
+
+    for (let i = 0; i < CANARY_ERROR_THROTTLE_MAX + 2; i += 1) {
+      await expect(reportCanaryError(payload)).resolves.toBe(false);
+    }
     expect(fetchMock).toHaveBeenCalledTimes(CANARY_ERROR_THROTTLE_MAX + 2);
   });
 

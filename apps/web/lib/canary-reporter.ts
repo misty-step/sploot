@@ -185,7 +185,8 @@ export async function reportCanaryError(input: CanaryReportInput): Promise<boole
       signal: controller.signal,
     });
     if (!response.ok) {
-      refundCanaryErrorReport(fingerprint);
+      // Keep the throttle reservation when the sink rejects the payload.
+      // Only transport failures refund (storm brake must hold on a dead sink).
       return false;
     }
     return true;
@@ -225,7 +226,9 @@ export async function checkCanaryStatus(options?: {
       return status;
     })
     .finally(() => {
-      reachabilityInFlight = null;
+      if (reachabilityInFlight === probe) {
+        reachabilityInFlight = null;
+      }
     });
 
   if (!options?.bypassCache) {

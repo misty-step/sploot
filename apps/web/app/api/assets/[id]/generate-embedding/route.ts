@@ -6,7 +6,7 @@ import {
   EmbeddingAdmissionError,
   EmbeddingError,
 } from '@/lib/embeddings';
-import { CostAdmissionError, costAdmissionRetryHeaders } from '@/lib/cost';
+import { CostAdmissionError, costAdmissionErrorResponse } from '@/lib/cost';
 import {
   embeddingConfigurationHeaders,
   embeddingRetryHeaders,
@@ -580,16 +580,16 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
     }
 
     if (error instanceof CostAdmissionError) {
+      const response = costAdmissionErrorResponse(error);
+      const body = await response.clone().json();
       return NextResponse.json(
         {
+          ...body,
           success: false,
           status: 'cost_admission_denied',
-          error: error.message,
-          reason: error.reason,
-          code: 'cost_admission_denied',
           retryAfter: error.retryAfterSec,
         },
-        { status: error.statusCode, headers: costAdmissionRetryHeaders(error) }
+        { status: response.status, headers: response.headers },
       );
     }
 

@@ -199,7 +199,14 @@ export async function ingestImage({
       );
       quotaReservationId = committed.id;
     } catch (commitError) {
-      await uploader.cleanup(uploadResult.mainUrl, uploadResult.thumbnailUrl, uploadResult.mainReplicas, uploadResult.thumbnailReplicas);
+      try {
+        await uploader.cleanup(uploadResult.mainUrl, uploadResult.thumbnailUrl, uploadResult.mainReplicas, uploadResult.thumbnailReplicas);
+      } catch (cleanupError) {
+        logger.error('Failed to clean up blobs after quota commit failure', {
+          userId,
+          error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
       throw commitError;
     }
 
@@ -230,6 +237,7 @@ export async function ingestImage({
           size: file.size,
           checksumSha256: deduplicationResult.checksum,
           phash: perceptualResult.phash,
+          releaseQuotaReservationId: quotaReservationId,
         },
         tags
       );
@@ -242,7 +250,7 @@ export async function ingestImage({
         duration: Date.now() - startTime,
       });
 
-      await releaseStorageQuotaReservation(quotaReservationId);
+      // Reservation released inside the recordAsset transaction (B3).
       quotaReservationId = null;
 
       // Step 8: Schedule embedding generation
