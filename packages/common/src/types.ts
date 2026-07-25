@@ -15,6 +15,7 @@ export type SplootApiErrorCode =
   | 'enrollment_closed'
   | 'enrollment_unavailable'
   | 'enrollment_identity_conflict'
+  | 'cost_admission_denied'
   | 'server_error';
 
 export type SplootApiErrorActionType =
@@ -36,6 +37,15 @@ export interface StorageQuotaSnapshot {
   remainingBytes: number;
   reservedBytes?: number;
   incomingBytes?: number;
+  /**
+   * Physical byte breakdown of `usedBytes` (active AssetStorageReplica
+   * objects vs. soft-deleted assets still occupying storage in trash until
+   * the 30-day purge or an explicit permanent delete). Optional: callers on
+   * an older client build, or a snapshot degraded before the ledger read
+   * runs, may omit the split while `usedBytes` stays authoritative.
+   */
+  activeBytes?: number;
+  trashBytes?: number;
 }
 
 /**

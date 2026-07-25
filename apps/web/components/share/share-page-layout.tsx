@@ -10,12 +10,12 @@ interface SharePageLayoutProps {
 }
 
 /**
- * Mobile-first layout container for share pages with minimal, technical aesthetic.
+ * Mobile-first layout container for share pages, built from toybox tokens.
  *
  * Provides responsive three-section layout:
  * - Header: Logo and CTA bar
  * - Main: Centered meme content
- * - Footer: Metadata display
+ * - Footer: Brand tagline
  *
  * Handles iOS safe area insets for notch/bottom bar.
  */
@@ -29,7 +29,7 @@ export function SharePageLayout({
   return (
     <div
       className={cn(
-        'min-h-screen bg-sploot-void',
+        'min-h-screen bg-sploot-workbench text-sploot-ink',
         'flex flex-col',
         // Safe area insets for iOS notch/bottom bar
         'pb-[env(safe-area-inset-bottom)]',
@@ -43,7 +43,7 @@ export function SharePageLayout({
           'flex items-center justify-between',
           'px-4 py-3',
           'sm:px-6 sm:py-4',
-          'border-b border-white/10'
+          'border-b border-sploot-ink/15'
         )}
       >
         <div className="flex items-center gap-2">
@@ -66,14 +66,14 @@ export function SharePageLayout({
         {image}
       </main>
 
-      {/* Footer: Metadata */}
+      {/* Footer: Tagline */}
       {metadata && (
         <footer
           className={cn(
             'flex items-center justify-center',
             'px-4 py-3',
             'sm:px-6 sm:py-4',
-            'border-t border-white/10'
+            'border-t border-sploot-ink/15'
           )}
         >
           {metadata}

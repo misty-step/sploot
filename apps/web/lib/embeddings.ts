@@ -30,11 +30,25 @@ import {
   recordEmbeddingProviderSuccess,
   type EmbeddingProviderCircuitLease,
 } from './embedding-resilience';
+import { admitCost, type CostLease } from '@/lib/cost';
 
 // Updated to working CLIP model (SigLIP model was deprecated)
 export const CLIP_MODEL =
   'krthr/clip-embeddings:1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4';
 export const DEFAULT_TIMEOUT = 20000;
+
+/**
+ * True when admission was denied before the provider was ever invoked (a
+ * durably-open circuit, or a reservation/circuit-probe denial inside
+ * withPaidAdmission) -- the case where the cost-admission attempt slot must
+ * be refunded rather than treated as spent. Any other normalized error means
+ * operation() actually ran, so the attempt is consumed like a real provider
+ * call, matching ADR-010's "one admission maps to exactly one provider
+ * prediction attempt" contract.
+ */
+function isPreProviderDenial(error: EmbeddingError): boolean {
+  return error instanceof EmbeddingAdmissionError || error instanceof EmbeddingProviderCircuitOpenError;
+}
 
 export interface EmbeddingResult {
   embedding: number[];
@@ -121,6 +135,8 @@ class ReplicateEmbeddingService implements EmbeddingService {
       };
     }
 
+    const costLease: CostLease = await admitCost({ capability: 'embedding_query', userId: this.userId });
+
     try {
       const admitted = await this.withPaidAdmission(() =>
         this.withTimeout(
@@ -141,6 +157,7 @@ class ReplicateEmbeddingService implements EmbeddingService {
       const embedding = admitted.value;
 
       await recordEmbeddingProviderSuccess(admitted.lease);
+      await costLease.commit();
 
       // Cache the result
       await cache.setTextEmbedding(query, embedding, this.model);
@@ -153,6 +170,11 @@ class ReplicateEmbeddingService implements EmbeddingService {
       };
     } catch (error) {
       const normalized = this.normalizeError(error, 'text');
+      if (isPreProviderDenial(normalized)) {
+        await costLease.refund();
+      } else {
+        await costLease.commit();
+      }
       if (
         normalized instanceof EmbeddingAdmissionError &&
         isCircuitOpeningAdmissionReason(normalized.reason)
@@ -204,6 +226,8 @@ class ReplicateEmbeddingService implements EmbeddingService {
       }
     }
 
+    const costLease: CostLease = await admitCost({ capability: 'embedding_index', userId: this.userId });
+
     try {
       const admitted = await this.withPaidAdmission(() =>
         this.withTimeout(
@@ -224,6 +248,7 @@ class ReplicateEmbeddingService implements EmbeddingService {
       const embedding = admitted.value;
 
       await recordEmbeddingProviderSuccess(admitted.lease);
+      await costLease.commit();
 
       // Cache the result
       if (checksum) {
@@ -238,6 +263,11 @@ class ReplicateEmbeddingService implements EmbeddingService {
       };
     } catch (error) {
       const normalized = this.normalizeError(error, 'image');
+      if (isPreProviderDenial(normalized)) {
+        await costLease.refund();
+      } else {
+        await costLease.commit();
+      }
       if (
         normalized instanceof EmbeddingAdmissionError &&
         isCircuitOpeningAdmissionReason(normalized.reason)

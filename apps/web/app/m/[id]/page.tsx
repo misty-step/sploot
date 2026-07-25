@@ -1,9 +1,11 @@
 import { Metadata } from 'next';
 import Image from 'next/image';
+import { isVideoMimeType } from '@sploot/common';
+import { resolveQaSeedSrc } from '@/lib/qa/qa-image-loader';
 import { prisma } from '@/lib/db';
 import { SharePageLayout } from '@/components/share/share-page-layout';
 import { SharePageCTA } from '@/components/share/share-page-cta';
-import { SharePageMetadata } from '@/components/share/share-page-metadata';
+import { SharePageTagline } from '@/components/share/share-page-tagline';
 import { SharePageErrorBoundary } from '@/components/share/share-page-error-boundary';
 import { OverlappingCircles } from '@/components/landing/overlapping-circles';
 import { DeadShareLinkState } from '@/components/sploot/state-surface';
@@ -17,6 +19,12 @@ const deadMemeMetadata: Metadata = {
   description: 'A Sploot share URL no longer points at a saved meme.',
 };
 
+// Toybox voice-bar copy (DESIGN.md §7): lowercase, deadpan, "the pile" lexicon.
+// Same line for image and video shares — the mechanism doesn't change the pitch.
+const SHARE_TITLE = 'a banger from the pile | sploot';
+const SHARE_DESCRIPTION =
+  'no folders. just vibes. sploot sorts your camera roll into a pile you can actually search.';
+
 export async function generateMetadata({ params }: PublicMemePageProps): Promise<Metadata> {
   const { id } = (await params) ?? {};
 
@@ -29,61 +37,92 @@ export async function generateMetadata({ params }: PublicMemePageProps): Promise
   }
 
   const asset = await prisma.asset.findFirst({
-    where: { id, deletedAt: null },
-    select: { id: true, blobUrl: true, mime: true, width: true, height: true, createdAt: true, size: true },
+    where: { id, shareSlug: { not: null }, deletedAt: null },
+    select: {
+      id: true,
+      blobUrl: true,
+      thumbnailUrl: true,
+      mime: true,
+      width: true,
+      height: true,
+      createdAt: true,
+      size: true,
+    },
   });
 
   if (!asset) {
     return deadMemeMetadata;
   }
 
-  // Compelling brand-attributed copy
-  const title = 'From Sploot - Your personal meme library';
-  const description = 'Discover and curate your meme collection with lightning-fast semantic search. Save, organize, and share memes that matter.';
+  const isVideo = isVideoMimeType(asset.mime);
+  // A video file can't serve as og:image — unfurl the poster frame instead.
+  const ogImageUrl = isVideo && asset.thumbnailUrl ? asset.thumbnailUrl : asset.blobUrl;
 
   // Construct canonical URL
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://www.sploot.app';
   const canonicalUrl = `${baseUrl}/m/${id}`;
 
   // Schema.org structured data for SEO
-  const structuredData = {
-    '@context': 'https://schema.org',
-    '@type': 'ImageObject',
-    contentUrl: asset.blobUrl,
-    width: asset.width || 1200,
-    height: asset.height || 630,
-    datePublished: asset.createdAt.toISOString(),
-    author: {
-      '@type': 'Organization',
-      name: 'Sploot',
-      url: baseUrl,
-    },
-    description: 'Shared meme from Sploot - Your personal meme library',
-  };
+  const structuredData = isVideo
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'VideoObject',
+        name: 'a banger from the sploot pile',
+        description: 'A banger from the Sploot pile — no folders, just vibes.',
+        contentUrl: asset.blobUrl,
+        thumbnailUrl: ogImageUrl,
+        uploadDate: asset.createdAt.toISOString(),
+      }
+    : {
+        '@context': 'https://schema.org',
+        '@type': 'ImageObject',
+        contentUrl: asset.blobUrl,
+        width: asset.width || 1200,
+        height: asset.height || 630,
+        datePublished: asset.createdAt.toISOString(),
+        author: {
+          '@type': 'Organization',
+          name: 'Sploot',
+          url: baseUrl,
+        },
+        description: 'A banger from the Sploot pile — no folders, just vibes.',
+      };
 
   return {
-    title,
-    description,
+    title: SHARE_TITLE,
+    description: SHARE_DESCRIPTION,
     openGraph: {
-      title,
-      description,
+      title: SHARE_TITLE,
+      description: SHARE_DESCRIPTION,
       url: canonicalUrl,
       siteName: 'Sploot',
       type: 'website',
       images: [
         {
-          url: asset.blobUrl,
+          url: ogImageUrl,
           width: asset.width || 1200,
           height: asset.height || 630,
           alt: 'Shared meme from Sploot',
         },
       ],
+      ...(isVideo
+        ? {
+            videos: [
+              {
+                url: asset.blobUrl,
+                width: asset.width || 1200,
+                height: asset.height || 630,
+                type: asset.mime,
+              },
+            ],
+          }
+        : {}),
     },
     twitter: {
       card: 'summary_large_image',
-      title,
-      description,
-      images: [asset.blobUrl],
+      title: SHARE_TITLE,
+      description: SHARE_DESCRIPTION,
+      images: [ogImageUrl],
       site: '@sploot',
     },
     other: {
@@ -104,48 +143,68 @@ export default async function PublicMemePage({ params }: PublicMemePageProps) {
   }
 
   const asset = await prisma.asset.findFirst({
-    where: { id, deletedAt: null },
-    select: { id: true, blobUrl: true, mime: true, width: true, height: true, size: true },
+    where: { id, shareSlug: { not: null }, deletedAt: null },
+    select: {
+      id: true,
+      blobUrl: true,
+      thumbnailUrl: true,
+      mime: true,
+      width: true,
+      height: true,
+      size: true,
+    },
   });
 
   if (!asset) {
     return <DeadShareLinkState kind="meme" />;
   }
 
+  const isVideo = isVideoMimeType(asset.mime);
+
   return (
     <SharePageLayout
       logo={
         <div className="flex items-center gap-2">
           <OverlappingCircles className="w-8 h-8" strokeWidth={2} />
-          <span className="text-white font-medium text-sm sm:text-base">sploot</span>
+          <span className="text-sm font-medium text-sploot-ink sm:text-base">sploot</span>
         </div>
       }
       cta={<SharePageCTA assetId={id} />}
       image={
         <SharePageErrorBoundary>
-          <div className="touch-pinch-zoom">
-            <Image
-              src={asset.blobUrl}
-              alt="Shared meme from Sploot"
-              width={asset.width || 1200}
-              height={asset.height || 630}
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 1200px"
-              className="max-w-full max-h-[85vh] sm:max-h-[90vh] object-contain select-none"
-              priority
-              quality={90}
-              draggable={false}
-            />
+          <div className="sploot-card touch-pinch-zoom flex items-center justify-center overflow-hidden p-3 sm:p-4">
+            {isVideo ? (
+              <video
+                key={asset.blobUrl}
+                aria-label="Shared meme from Sploot"
+                className="max-h-[80vh] max-w-full rounded-[var(--sploot-radius-inner)] sm:max-h-[85vh]"
+                poster={asset.thumbnailUrl ? resolveQaSeedSrc(asset.thumbnailUrl) : undefined}
+                controls
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="metadata"
+              >
+                <source src={resolveQaSeedSrc(asset.blobUrl)} type={asset.mime} />
+              </video>
+            ) : (
+              <Image
+                src={resolveQaSeedSrc(asset.blobUrl)}
+                alt="Shared meme from Sploot"
+                width={asset.width || 1200}
+                height={asset.height || 630}
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 1200px"
+                className="max-h-[80vh] max-w-full select-none rounded-[var(--sploot-radius-inner)] object-contain sm:max-h-[85vh]"
+                priority
+                quality={90}
+                draggable={false}
+              />
+            )}
           </div>
         </SharePageErrorBoundary>
       }
-      metadata={
-        <SharePageMetadata
-          size={asset.size}
-          width={asset.width || undefined}
-          height={asset.height || undefined}
-          mime={asset.mime}
-        />
-      }
+      metadata={<SharePageTagline />}
     />
   );
 }

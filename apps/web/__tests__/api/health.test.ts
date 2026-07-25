@@ -17,6 +17,14 @@ vi.mock('@/lib/with-observability', () => ({
 
 vi.mock('@/lib/canary-reporter', () => ({
   canaryConfigured: vi.fn(() => false),
+  checkCanaryStatus: vi.fn(async () => ({
+    configured: false,
+    reachable: null,
+    status: 'not_configured',
+    message: 'Missing CANARY_ENDPOINT or CANARY_API_KEY',
+  })),
+  peekCanaryReachability: vi.fn(() => null),
+  HEALTH_PROBE_TIMEOUT_MS: 400,
   reportCanaryCheckIn: vi.fn(() => Promise.resolve()),
 }));
 
@@ -92,6 +100,7 @@ describe('/api/health', () => {
     expect(data.diagnostics.prisma_connection_test).toBe(true);
     expect(data.diagnostics.database_url_configured).toBe(true);
     expect(data.diagnostics.canary_configured).toBe(false);
+    expect(data.diagnostics.canary_reachable).toBeNull();
     expect(data.version).toBe('0.1.0');
     expect(res.headers.get('Cache-Control')).toBe('no-cache, no-store, must-revalidate');
   });

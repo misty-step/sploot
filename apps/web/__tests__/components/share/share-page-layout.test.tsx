@@ -92,7 +92,7 @@ describe('SharePageLayout', () => {
   });
 
   describe('Layout Structure', () => {
-    it('should apply black background', () => {
+    it('should apply toybox shelf background', () => {
       const { container } = render(
         <SharePageLayout
           logo={<div>Logo</div>}
@@ -102,7 +102,7 @@ describe('SharePageLayout', () => {
       );
 
       const wrapper = container.firstChild as HTMLElement;
-      expect(wrapper).toHaveClass('bg-sploot-void');
+      expect(wrapper).toHaveClass('bg-sploot-workbench', 'text-sploot-ink');
     });
 
     it('should apply flexbox column layout', () => {
@@ -231,7 +231,7 @@ describe('SharePageLayout', () => {
       );
 
       const header = container.querySelector('header');
-      expect(header).toHaveClass('border-b', 'border-white/10');
+      expect(header).toHaveClass('border-b', 'border-sploot-ink/15');
     });
   });
 
@@ -261,7 +261,7 @@ describe('SharePageLayout', () => {
       );
 
       const footer = container.querySelector('footer');
-      expect(footer).toHaveClass('border-t', 'border-white/10');
+      expect(footer).toHaveClass('border-t', 'border-sploot-ink/15');
     });
   });
 });

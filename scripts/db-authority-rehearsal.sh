@@ -260,7 +260,7 @@ app_bootstrap_marker="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT 
 # The production app role may read only the columns required to enqueue
 # permanent-delete receipts and insert immutable provider receipts; updates,
 # deletes, and unlisted columns remain denied.
-app_replica_columns="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT bool_and(has_column_privilege(current_user, 'public.asset_storage_replicas', column_name, 'SELECT')) FROM (VALUES ('asset_id'), ('provider'), ('source_key'), ('logical_key'), ('delivery_url'), ('active')) AS allowed(column_name)")"
+app_replica_columns="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT bool_and(has_column_privilege(current_user, 'public.asset_storage_replicas', column_name, 'SELECT')) FROM (VALUES ('asset_id'), ('provider'), ('source_key'), ('logical_key'), ('delivery_url'), ('active'), ('rendition'), ('size')) AS allowed(column_name)")"
 test "$app_replica_columns" = 't'
 app_replica_select="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'public.asset_storage_replicas', 'SELECT')")"
 test "$app_replica_select" = 'f'
@@ -270,7 +270,9 @@ app_replica_update="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT ha
 test "$app_replica_update" = 'f'
 app_replica_delete="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'public.asset_storage_replicas', 'DELETE')")"
 test "$app_replica_delete" = 'f'
-PGPASSWORD="$app_password" psql "$app_url" -v ON_ERROR_STOP=1 -c 'SELECT asset_id, provider, source_key, logical_key, delivery_url, active FROM public.asset_storage_replicas LIMIT 0'
+app_cost_counters_dml="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'public.cost_admission_counters', 'SELECT,INSERT,UPDATE,DELETE')")"
+test "$app_cost_counters_dml" = 't'
+PGPASSWORD="$app_password" psql "$app_url" -v ON_ERROR_STOP=1 -c 'SELECT asset_id, provider, source_key, logical_key, delivery_url, active, rendition, size FROM public.asset_storage_replicas LIMIT 0'
 
 test "$app_bootstrap_marker" = "ready:${bootstrap_version}"
 app_bootstrap_mutation="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'sploot_bootstrap.stripe_ledger_bootstrap_state', 'INSERT,UPDATE,DELETE') OR has_table_privilege(current_user, 'public._prisma_migrations', 'INSERT,UPDATE,DELETE')")"

@@ -24,6 +24,9 @@ const mocks = vi.hoisted(() => ({
   getEmbeddingProviderCircuit: vi.fn(),
   recordEmbeddingAdmissionFailure: vi.fn(),
   recordEmbeddingProviderFailure: vi.fn(),
+  admitCost: vi.fn(),
+  costLeaseCommit: vi.fn(),
+  costLeaseRefund: vi.fn(),
 }));
 
 vi.mock('replicate', () => ({
@@ -47,6 +50,10 @@ vi.mock('@/lib/embedding-rate-limit', () => ({
   acquireEmbeddingDailyBudget: mocks.acquireEmbeddingDailyBudget,
   refundEmbeddingAdmissionCapacity: mocks.refundEmbeddingAdmissionCapacity,
   releaseEmbeddingRateLimit: mocks.releaseEmbeddingRateLimit,
+}));
+
+vi.mock('@/lib/cost', () => ({
+  admitCost: mocks.admitCost,
 }));
 
 /* The default provider admission is open; individual tests can close it. */
@@ -107,6 +114,13 @@ describe('central Replicate admission boundary', () => {
     mocks.recordEmbeddingAdmissionFailure.mockResolvedValue(undefined);
     mocks.recordEmbeddingProviderFailure.mockResolvedValue(undefined);
     mocks.replicateRun.mockResolvedValue(new Array(EMBEDDING_DIMENSION).fill(0.1));
+    mocks.admitCost.mockImplementation(async ({ capability, userId }: { capability: string; userId: string }) => ({
+      capability,
+      userId,
+      warn: false,
+      commit: mocks.costLeaseCommit,
+      refund: mocks.costLeaseRefund,
+    }));
   });
 
   afterEach(() => {
@@ -439,6 +453,7 @@ describe('central Replicate admission boundary', () => {
     expect(mocks.replicateRun).not.toHaveBeenCalled();
     expect(mocks.releaseEmbeddingRateLimit).not.toHaveBeenCalled();
     expect(mocks.recordEmbeddingProviderSuccess).not.toHaveBeenCalled();
+    expect(mocks.admitCost).not.toHaveBeenCalled();
   });
 
   it('aborts one provider attempt before releasing its admission on timeout', async () => {
@@ -488,5 +503,109 @@ describe('central Replicate admission boundary', () => {
       'provider_unavailable',
       30
     );
+  });
+});
+
+describe('cost admission integration (embedText/embedImage generalize withPaidAdmission)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('REPLICATE_API_TOKEN', 'r8_test_token');
+    vi.stubEnv('SPLOOT_EMBEDDINGS_ENABLED', 'true');
+    mocks.acquireEmbeddingProviderAdmission.mockResolvedValue({
+      allowed: true,
+      lease: { generation: 0, probeGeneration: null, probeLeaseToken: null },
+    });
+    mocks.getEmbeddingProviderCircuit.mockResolvedValue({ available: true, open: false, generation: 0 });
+    mocks.getTextEmbedding.mockResolvedValue(null);
+    mocks.getImageEmbedding.mockResolvedValue(null);
+    mocks.acquireEmbeddingAdmissionReservation.mockResolvedValue({
+      allowed: true,
+      reservation: {
+        lease: { id: 'lease-1', userId: 'user-1', windowId: 1 },
+        dailyReservation: { dateKey: '2026-07-14' },
+        counts: { userWindow: 1, globalWindow: 1, dailyBudget: 1 },
+      },
+    });
+    mocks.releaseEmbeddingRateLimit.mockResolvedValue(undefined);
+    mocks.recordEmbeddingProviderSuccess.mockResolvedValue(true);
+    mocks.replicateRun.mockResolvedValue(new Array(EMBEDDING_DIMENSION).fill(0.1));
+    mocks.admitCost.mockImplementation(async ({ capability, userId }: { capability: string; userId: string }) => ({
+      capability,
+      userId,
+      warn: false,
+      commit: mocks.costLeaseCommit,
+      refund: mocks.costLeaseRefund,
+    }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('tags a novel search-query embedding as embedding_query and commits on success', async () => {
+    const service = createEmbeddingService('user-42');
+    await expect(service.embedText('a query')).resolves.toMatchObject({ dimension: EMBEDDING_DIMENSION });
+
+    expect(mocks.admitCost).toHaveBeenCalledWith({ capability: 'embedding_query', userId: 'user-42' });
+    expect(mocks.costLeaseCommit).toHaveBeenCalledOnce();
+    expect(mocks.costLeaseRefund).not.toHaveBeenCalled();
+  });
+
+  it('tags image indexing as embedding_index and commits on success', async () => {
+    const service = createEmbeddingService('user-42');
+    await service.embedImage('https://blob.example/cat.jpg', 'checksum-1');
+
+    expect(mocks.admitCost).toHaveBeenCalledWith({ capability: 'embedding_index', userId: 'user-42' });
+    expect(mocks.costLeaseCommit).toHaveBeenCalledOnce();
+    expect(mocks.costLeaseRefund).not.toHaveBeenCalled();
+  });
+
+  it('propagates a CostAdmissionError untouched and never reaches the existing rate limiter', async () => {
+    class FakeCostAdmissionError extends Error {
+      readonly reason = 'user_daily_budget';
+      readonly statusCode = 429;
+      readonly retryAfterSec = 3600;
+      constructor() {
+        super('Daily inference budget exceeded for this account');
+        this.name = 'CostAdmissionError';
+      }
+    }
+    mocks.admitCost.mockRejectedValueOnce(new FakeCostAdmissionError());
+    const service = createEmbeddingService('user-42');
+
+    await expect(service.embedText('over budget')).rejects.toMatchObject({
+      name: 'CostAdmissionError',
+      reason: 'user_daily_budget',
+      statusCode: 429,
+    });
+
+    expect(mocks.acquireEmbeddingAdmissionReservation).not.toHaveBeenCalled();
+    expect(mocks.replicateRun).not.toHaveBeenCalled();
+  });
+
+  it('refunds the cost lease when the existing admission layer denies before the provider is invoked', async () => {
+    mocks.acquireEmbeddingAdmissionReservation.mockResolvedValue({
+      allowed: false,
+      reason: 'daily_budget',
+      retryAfterSec: 3600,
+    });
+    const service = createEmbeddingService('user-42');
+
+    await expect(service.embedText('denied downstream')).rejects.toMatchObject({ name: 'EmbeddingAdmissionError' });
+
+    expect(mocks.costLeaseRefund).toHaveBeenCalledOnce();
+    expect(mocks.costLeaseCommit).not.toHaveBeenCalled();
+  });
+
+  it('commits (does not refund) the cost lease when the provider actually ran and failed', async () => {
+    mocks.replicateRun.mockRejectedValue({ status: 429, retryAfterSec: 5 });
+    const service = createEmbeddingService('user-42');
+
+    await expect(service.embedText('provider failed after admission')).rejects.toMatchObject({
+      name: 'EmbeddingProviderRateLimitError',
+    });
+
+    expect(mocks.costLeaseCommit).toHaveBeenCalledOnce();
+    expect(mocks.costLeaseRefund).not.toHaveBeenCalled();
   });
 });

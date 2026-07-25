@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
+import { CostAdmissionError, costAdmissionErrorResponse } from '@/lib/cost';
 import {
   embeddingConfigurationHeaders,
   embeddingRetryAfterHeader,
@@ -313,6 +314,10 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     // below; only genuine enrollment failures take this path.
     if (isEnrollmentUnavailableError(error) && !(error instanceof EmbeddingAdmissionError)) {
       return enrollmentUnavailableResponse();
+    }
+
+    if (error instanceof CostAdmissionError) {
+      return costAdmissionErrorResponse(error);
     }
     // Error generating image embedding
 

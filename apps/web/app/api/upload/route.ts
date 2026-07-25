@@ -13,6 +13,7 @@ import {
   storageQuotaError,
   StorageQuotaExceededError,
 } from '@/lib/quota/storage-quota-policy';
+import { CostAdmissionError, costAdmissionErrorResponse } from '@/lib/cost';
 import { withObservability } from '@/lib/with-observability';
 import type { RouteContext } from '@/lib/with-observability';
 import {
@@ -133,6 +134,10 @@ async function postHandler(req: NextRequest, _context: RouteContext, { principal
 
     if (error instanceof StorageQuotaExceededError) {
       return NextResponse.json(storageQuotaError(error.snapshot), { status: 403 });
+    }
+
+    if (error instanceof CostAdmissionError) {
+      return costAdmissionErrorResponse(error);
     }
 
     // Typed embedding outcomes keep their 429/503 + Retry-After contract and

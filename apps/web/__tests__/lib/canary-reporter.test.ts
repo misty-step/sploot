@@ -11,6 +11,7 @@ const originalEnv = {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  vi.resetModules();
   process.env.CANARY_ENDPOINT = 'https://canary.example.test';
   process.env.CANARY_API_KEY = 'test-canary-key';
   process.env.CANARY_SERVICE_NAME = 'sploot-test';
@@ -153,5 +154,188 @@ describe('canary reporter', () => {
         authorization: '[redacted]',
       },
     });
+  });
+
+  it('throttles identical error fingerprints within one window', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const {
+      reportCanaryError,
+      CANARY_ERROR_THROTTLE_MAX,
+      __resetCanaryReporterForTests,
+    } = await import('@/lib/canary-reporter');
+    __resetCanaryReporterForTests();
+
+    const payload = {
+      context: 'request:server-error-status',
+      error: { name: 'Error', message: 'Request completed with HTTP 500' },
+    };
+
+    for (let i = 0; i < CANARY_ERROR_THROTTLE_MAX; i += 1) {
+      await expect(reportCanaryError(payload)).resolves.toBe(true);
+    }
+    await expect(reportCanaryError(payload)).resolves.toBe(false);
+    await expect(reportCanaryError(payload)).resolves.toBe(false);
+
+    expect(fetchMock).toHaveBeenCalledTimes(CANARY_ERROR_THROTTLE_MAX);
+  });
+
+  it('allows a different fingerprint after the throttle fills', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const {
+      reportCanaryError,
+      CANARY_ERROR_THROTTLE_MAX,
+      __resetCanaryReporterForTests,
+    } = await import('@/lib/canary-reporter');
+    __resetCanaryReporterForTests();
+
+    const first = {
+      context: 'request:server-error-status',
+      error: { name: 'Error', message: 'Request completed with HTTP 500' },
+    };
+    for (let i = 0; i < CANARY_ERROR_THROTTLE_MAX; i += 1) {
+      await reportCanaryError(first);
+    }
+
+    await expect(
+      reportCanaryError({
+        context: 'db:query-failed',
+        error: { name: 'Error', message: 'connection reset' },
+      })
+    ).resolves.toBe(true);
+
+    expect(fetchMock).toHaveBeenCalledTimes(CANARY_ERROR_THROTTLE_MAX + 1);
+  });
+
+  it('keeps throttle slots when Canary POST is rejected by the sink', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const {
+      reportCanaryError,
+      CANARY_ERROR_THROTTLE_MAX,
+      __resetCanaryReporterForTests,
+    } = await import('@/lib/canary-reporter');
+    __resetCanaryReporterForTests();
+
+    const payload = {
+      context: 'request:error',
+      error: { name: 'Error', message: 'rejected' },
+    };
+
+    for (let i = 0; i < CANARY_ERROR_THROTTLE_MAX + 2; i += 1) {
+      await expect(reportCanaryError(payload)).resolves.toBe(false);
+    }
+    // HTTP rejection does not refund — storm brake holds on a dead sink.
+    expect(fetchMock).toHaveBeenCalledTimes(CANARY_ERROR_THROTTLE_MAX);
+  });
+
+  it('refunds throttle slots only on transport failure', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const {
+      reportCanaryError,
+      CANARY_ERROR_THROTTLE_MAX,
+      __resetCanaryReporterForTests,
+    } = await import('@/lib/canary-reporter');
+    __resetCanaryReporterForTests();
+
+    const payload = {
+      context: 'request:error',
+      error: { name: 'Error', message: 'transport' },
+    };
+
+    for (let i = 0; i < CANARY_ERROR_THROTTLE_MAX + 2; i += 1) {
+      await expect(reportCanaryError(payload)).resolves.toBe(false);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(CANARY_ERROR_THROTTLE_MAX + 2);
+  });
+
+  it('resets throttle after the window expires', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 201 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const {
+      reportCanaryError,
+      CANARY_ERROR_THROTTLE_MAX,
+      CANARY_ERROR_THROTTLE_WINDOW_MS,
+      __resetCanaryReporterForTests,
+    } = await import('@/lib/canary-reporter');
+    __resetCanaryReporterForTests();
+
+    const payload = {
+      context: 'request:server-error-status',
+      error: { name: 'Error', message: 'same' },
+    };
+
+    for (let i = 0; i < CANARY_ERROR_THROTTLE_MAX; i += 1) {
+      await reportCanaryError(payload);
+    }
+    await expect(reportCanaryError(payload)).resolves.toBe(false);
+
+    await vi.advanceTimersByTimeAsync(CANARY_ERROR_THROTTLE_WINDOW_MS + 1);
+    await expect(reportCanaryError(payload)).resolves.toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(CANARY_ERROR_THROTTLE_MAX + 1);
+    vi.useRealTimers();
+  });
+
+  it('reports healthy and degraded reachability and reuses cache', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+      .mockResolvedValueOnce(new Response('{}', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { checkCanaryStatus, __resetCanaryReporterForTests } = await import(
+      '@/lib/canary-reporter'
+    );
+    __resetCanaryReporterForTests();
+
+    await expect(checkCanaryStatus({ bypassCache: true })).resolves.toMatchObject({
+      configured: true,
+      reachable: true,
+      status: 'healthy',
+    });
+    // Cache hit — no second fetch
+    await expect(checkCanaryStatus()).resolves.toMatchObject({ reachable: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    __resetCanaryReporterForTests();
+    await expect(checkCanaryStatus({ bypassCache: true })).resolves.toMatchObject({
+      configured: true,
+      reachable: false,
+      status: 'degraded',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('single-flights concurrent reachability probes', async () => {
+    let resolveFetch: (value: Response) => void = () => {};
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { checkCanaryStatus, __resetCanaryReporterForTests } = await import(
+      '@/lib/canary-reporter'
+    );
+    __resetCanaryReporterForTests();
+
+    const a = checkCanaryStatus();
+    const b = checkCanaryStatus();
+    resolveFetch(new Response('{}', { status: 200 }));
+    await expect(Promise.all([a, b])).resolves.toEqual([
+      expect.objectContaining({ reachable: true }),
+      expect.objectContaining({ reachable: true }),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -12,6 +12,7 @@ import {
 } from '@/lib/db';
 import { toGridAsset, mapAssetTags } from '@/lib/asset-dto';
 import { CLIP_MODEL, createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
+import { CostAdmissionError, costAdmissionErrorResponse } from '@/lib/cost';
 import {
   EmbeddingConfigurationError,
   embeddingConfigurationHeaders,
@@ -267,6 +268,15 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
 
     if (error instanceof EmbeddingConfigurationError) {
       await reportEmbeddingConfigurationErrorOnce(error, 'search:configuration');
+    }
+
+    if (error instanceof CostAdmissionError) {
+      const response = costAdmissionErrorResponse(error);
+      const body = await response.clone().json();
+      return NextResponse.json(
+        { ...body, results: [], query: query || '', total: 0 },
+        { status: response.status, headers: response.headers }
+      );
     }
 
     if (error instanceof EmbeddingError) {

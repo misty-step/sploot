@@ -444,7 +444,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.user_storage_quotas, public.storage_quota_reservations,
   public.assets, public.asset_embeddings, public.tags, public.asset_tags,
   public.search_logs, public.text_embedding_cache, public.embedding_rate_buckets,
-  public.embedding_rate_leases, public.embedding_provider_circuits, public.library_exports, public.upload_idempotency
+  public.embedding_rate_leases, public.embedding_provider_circuits, public.library_exports, public.upload_idempotency,
+  public.cost_admission_counters
 TO sploot_stripe_app;
 -- Health may inspect migration names to bind the ready marker to the newest
 -- applied schema version. The runtime remains unable to mutate Prisma's ledger.
@@ -460,7 +461,8 @@ DO $$ BEGIN
     -- reserved for the storage operator role.
     REVOKE ALL ON TABLE public.asset_storage_replicas FROM sploot_stripe_app;
     GRANT INSERT ON TABLE public.asset_storage_replicas TO sploot_stripe_app;
-    GRANT SELECT (asset_id, provider, source_key, logical_key, delivery_url, active)
+    -- Runtime meter (getPhysicalStorageUsage) sums size by rendition+active.
+    GRANT SELECT (asset_id, provider, source_key, logical_key, delivery_url, active, rendition, size)
       ON TABLE public.asset_storage_replicas TO sploot_stripe_app;
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.storage_cutover_state, public.storage_migration_entries, public.storage_inventory_state, public.storage_inventory_failures, public.asset_storage_replicas, public.storage_cleanup_outbox TO sploot_storage_operator;
     -- storage-portability.ts (inventory/commitCutover/restoreCutoverMappings)

@@ -4,6 +4,7 @@ import {
   createEmbeddingService,
   type EmbeddingService,
 } from '@/lib/embeddings';
+import { CostAdmissionError, costAdmissionRetryHeaders } from '@/lib/cost';
 import {
   EmbeddingError,
   hasEmbeddingConfigurationReport,
@@ -410,6 +411,30 @@ async function getHandler(request: NextRequest) {
           break;
         }
 
+        if (error instanceof CostAdmissionError) {
+          // Budget denial is batch-level, not a per-asset poison failure.
+          // Defer this claim, stop the batch, and surface cost_admission_denied.
+          const deferReason =
+            error.reason === 'user_daily_budget'
+              ? 'daily_budget'
+              : error.reason === 'user_monthly_budget'
+                ? 'monthly_budget'
+                : 'limiter_unavailable';
+          await deferEmbeddingAdmission(
+            asset.id,
+            errorMessage,
+            deferReason,
+            error.retryAfterSec,
+            processingClaimToken,
+          );
+          stats.deferredCount++;
+          batchOutcome = 'backoff';
+          batchRetryAfterSec = error.retryAfterSec ?? 30;
+          batchOutcomeReason = deferReason;
+          // Re-throw so the outer handler returns the cost-admission JSON contract.
+          throw error;
+        }
+
         if (isEmbeddingAdmissionFailure(error)) {
           const retryAfterSec =
             typeof (error as { retryAfterSec?: unknown }).retryAfterSec === 'number'
@@ -557,6 +582,19 @@ async function getHandler(request: NextRequest) {
         : undefined,
     });
   } catch (error) {
+    if (error instanceof CostAdmissionError) {
+      return NextResponse.json(
+        {
+          outcome: 'backoff' satisfies BatchOutcome,
+          status: 'cost_admission_denied',
+          error: error.message,
+          taxonomy: error.reason,
+          retryAfterSec: error.retryAfterSec,
+          stats,
+        },
+        { status: error.statusCode, headers: costAdmissionRetryHeaders(error) }
+      );
+    }
     if (error instanceof EmbeddingError) {
       const retryAfterSec = error.retryAfterSec;
       return NextResponse.json(
