@@ -1,15 +1,15 @@
 {
   "schemaVersion": 1,
-  "capturedAt": "2026-07-23T18:00:00Z",
+  "capturedAt": "2026-07-25T20:14:11Z",
   "storage": {
-    "blobObjects": 6557,
-    "blobBytes": 534074133,
+    "blobObjects": 6568,
+    "blobBytes": 536668123,
     "databaseSourceBytesLive": 501508274,
     "databaseSourceBytesDeleted": 18827,
     "liveAssets": 3280,
     "deletedAssets": 1,
     "liveThumbnails": 3161,
-    "reconciliation": "The displayed gap is derived from Blob bytes minus live-plus-deleted Postgres source bytes; the residual may include thumbnails or unreferenced objects. Vercel Blob billing remains account-wide and unattributed at store level."
+    "reconciliation": "Blob object/byte counts refreshed 2026-07-25 via Vercel Blob list API. Postgres source-byte and asset counts are retained from the prior readback (production DATABASE_URL is not available through mint on this workstation). Vercel Blob billing remains account-wide and unattributed at store level."
   },
   "database": {
     "databaseBytes": 42156032,
@@ -24,11 +24,11 @@
   "inference": {
     "latestPredictionSample": {
       "size": 100,
-      "from": "2026-07-16T17:51:36.488000Z",
-      "to": "2026-07-17T16:28:43.289000Z",
-      "failed": 77,
-      "canceled": 1,
-      "succeeded": 22,
+      "from": "2026-07-16T18:16:00.220000Z",
+      "to": "2026-07-24T15:35:48.239994Z",
+      "failed": 52,
+      "canceled": 0,
+      "succeeded": 48,
       "model": "krthr/clip-embeddings",
       "modelVersion": "1c0371070cb827ec3c7f2f28adcdde54b50dcd239aa6faea0bc98b174ef03fb4"
     },
@@ -40,40 +40,61 @@
     "scheduledSmallJobs": 4,
     "embeddingJobSchedule": "three calls over about ten minutes every fifteen minutes",
     "embeddingJobEstimatedMonthlyUsd": 3.33,
-    "invoicePreviewUsd": 56.88,
-    "monthToDateUsageUsd": 62.27,
-    "namedVarianceUsd": 5.39,
-    "varianceExplanation": "The 2026-07-17 redacted account readback is $62.27 month-to-date versus a $56.88 invoice preview, a named $5.39 cadence/account-wide variance. Preview and balance endpoints update on different cadences and cover the entire account, which hosts multiple apps. DigitalOcean exposes no per-app accrued-transfer or invoice-preview allocation, so Sploot's exact July line item is not inferable from this authority."
+    "invoicePreviewUsd": 109.22,
+    "monthToDateUsageUsd": 113.62,
+    "namedVarianceUsd": 4.4,
+    "varianceExplanation": "The 2026-07-25 redacted account readback is $113.62 month-to-date versus a $109.22 invoice preview, a named $4.40 cadence/account-wide variance. Preview and balance endpoints update on different cadences and cover the entire account, which hosts multiple apps. DigitalOcean exposes no per-app accrued-transfer or invoice-preview allocation, so Sploot's exact July line item is not inferable from this authority."
   },
   "vercel": {
     "periodStart": "2026-07-01",
-    "periodEnd": "2026-07-17",
+    "periodEnd": "2026-07-25",
     "projectEffectiveUsageUsd": 1.6836573508,
     "allowanceAbsorbedUsd": null,
     "billedAfterAllowanceUsd": null,
     "categories": [
-      {"name": "build CPU", "effectiveUsageUsd": 0.778009},
-      {"name": "analytics", "effectiveUsageUsd": 0.45915},
-      {"name": "observability", "effectiveUsageUsd": 0.222658},
-      {"name": "provisioned memory", "effectiveUsageUsd": 0.067224},
-      {"name": "active CPU", "effectiveUsageUsd": 0.064374},
-      {"name": "origin transfer", "effectiveUsageUsd": 0.044212},
-      {"name": "invocations", "effectiveUsageUsd": 0.039175}
+      {
+        "name": "build CPU",
+        "effectiveUsageUsd": 0.778009
+      },
+      {
+        "name": "analytics",
+        "effectiveUsageUsd": 0.45915
+      },
+      {
+        "name": "observability",
+        "effectiveUsageUsd": 0.222658
+      },
+      {
+        "name": "provisioned memory",
+        "effectiveUsageUsd": 0.067224
+      },
+      {
+        "name": "active CPU",
+        "effectiveUsageUsd": 0.064374
+      },
+      {
+        "name": "origin transfer",
+        "effectiveUsageUsd": 0.044212
+      },
+      {
+        "name": "invocations",
+        "effectiveUsageUsd": 0.039175
+      }
     ],
     "subCentRemainderUsd": 0.0088553508,
-    "reconciliation": "Sploot project effective usage for the current period is attributed by project. The remaining categories are each below $0.01 and are retained as an aggregate sub-cent remainder; the provider readback describes usage as almost entirely absorbed by allowance and billed usage as almost $0, but does not provide exact post-allowance dollars.",
+    "reconciliation": "Sploot web runtime is on DigitalOcean App Platform; residual Vercel project effective-usage dollars below are retained from the last attributed project readback (usage API unavailable this cycle). Blob object counts were refreshed separately via the Blob list API. The provider previously described usage as almost entirely absorbed by allowance.",
     "blobAttribution": "Vercel Blob remains account-wide and unattributed at store level."
   },
   "telemetry": {
     "errors30d": 14683,
     "errorGroupsReturned": 50,
-    "reconciliation": "The 2026-07-17 readback came directly from Canary's authoritative production SQLite store while its public read API was unavailable. Canary is a self-hosted shared DigitalOcean component; this is event usage, not a separate vendor bill, so the model allocates fixed component cost instead of inventing a per-event price."
+    "reconciliation": "Canary timeline API is available via mint but rate-limited before a full 30d walk; errors30d retained from the prior authoritative SQLite readback (2026-07-17). Canary is a self-hosted shared DigitalOcean component; this is event usage, not a separate vendor bill."
   },
   "github": {
     "repositoryVisibility": "public",
-    "activeCacheCount": 14,
-    "activeCacheBytes": 6031395579,
-    "reconciliation": "5.62 GiB is below the separate 10 GiB per-repository cache allowance; standard public-repository runners are free."
+    "activeCacheCount": 1,
+    "activeCacheBytes": 439558396,
+    "reconciliation": "0.41 GiB is below the separate 10 GiB per-repository cache allowance; standard public-repository runners are free."
   },
   "unknowns": [
     {
@@ -100,6 +121,21 @@
       "name": "Sploot-only DigitalOcean invoice allocation",
       "value": null,
       "impact": "The account-level invoice preview includes unrelated apps; the app spec still proves Sploot's $25 service and prorated jobs."
+    },
+    {
+      "name": "Postgres live asset/embedding counters this capture cycle",
+      "value": null,
+      "impact": "Retained prior database.* and storage.databaseSourceBytes* figures; Blob growth is small (+11 objects) so the retained counters remain directionally consistent but are not a same-day SQL readback."
+    },
+    {
+      "name": "Canary full 30d error count this capture cycle",
+      "value": null,
+      "impact": "Mint timeline walk hit 429 after 150 events; errors30d retained from prior SQLite authority."
+    },
+    {
+      "name": "Vercel project effective usage dollars this capture cycle",
+      "value": null,
+      "impact": "Vercel usage API endpoints returned 404; retained last project-attributed category breakdown while refreshing Blob object counts independently."
     }
   ]
 }

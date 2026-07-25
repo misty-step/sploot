@@ -357,14 +357,14 @@ test('live usage reconciles without identifiers or silently-zero unknowns', asyn
   const inputs = await loadInputs();
   const serialized = JSON.stringify(inputs.liveUsage);
   assert.doesNotMatch(serialized, /token|secret|account[_ -]?id|invoice[_ -]?(id|uuid)/i);
-  assert.equal(inputs.liveUsage.storage.blobObjects, 6_557);
-  assert.equal(inputs.liveUsage.storage.blobBytes, 534_074_133);
+  assert.equal(inputs.liveUsage.storage.blobObjects, 6_568);
+  assert.equal(inputs.liveUsage.storage.blobBytes, 536_668_123);
   assert.equal(inputs.liveUsage.database.databaseBytes, 42_156_032);
-  assert.equal(inputs.liveUsage.inference.latestPredictionSample.failed, 77);
+  assert.equal(inputs.liveUsage.inference.latestPredictionSample.failed, 52);
   assert.equal(inputs.liveUsage.telemetry.errors30d, 14_683);
-  assert.equal(inputs.liveUsage.digitalOcean.monthToDateUsageUsd, 62.27);
-  assert.equal(inputs.liveUsage.digitalOcean.invoicePreviewUsd, 56.88);
-  assert.equal(inputs.liveUsage.digitalOcean.namedVarianceUsd, 5.39);
+  assert.equal(inputs.liveUsage.digitalOcean.monthToDateUsageUsd, 113.62);
+  assert.equal(inputs.liveUsage.digitalOcean.invoicePreviewUsd, 109.22);
+  assert.equal(inputs.liveUsage.digitalOcean.namedVarianceUsd, 4.4);
   const vercel = inputs.liveUsage.vercel;
   const vercelCategoryTotal = vercel.categories.reduce(
     (sum, category) => sum + category.effectiveUsageUsd,
@@ -431,7 +431,7 @@ test('known live costs reconcile to a named account-level remainder', async () =
   const inputs = await loadInputs();
   const floor = calculateLiveKnownFloor(inputs);
   assert.equal(floor.knownSplootFloorUsd, 28.36);
-  assert.equal(floor.accountPreviewDifferenceUsd, 28.52);
+  assert.equal(floor.accountPreviewDifferenceUsd, 80.86);
 });
 
 test('abusive and viral workloads trip explicit dollar budgets', async () => {
