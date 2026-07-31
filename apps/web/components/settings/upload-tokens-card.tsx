@@ -105,7 +105,7 @@ export function UploadTokensCard() {
     }
   };
 
-  const copyToken = async () => {
+  const copyMintedValue = async () => {
     if (!justMinted) return;
     try {
       await navigator.clipboard.writeText(justMinted.token);
@@ -161,7 +161,7 @@ export function UploadTokensCard() {
           <div className="flex items-center gap-2">
             <code className="flex-1 break-all font-mono text-sm text-foreground">{justMinted.token}</code>
             <button
-              onClick={copyToken}
+              onClick={copyMintedValue}
               className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
             >
               {copied ? 'copied' : 'copy'}
