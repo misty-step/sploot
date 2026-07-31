@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuthUser, useAuthActions } from '@/lib/auth/client';
 import { usePwaInstallPrompt } from '@/hooks/use-pwa-install';
+import { UploadTokensCard } from '@/components/settings/upload-tokens-card';
 import { cn } from '@/lib/utils';
 // Fallback while /api/version (latest landfall release tag) loads.
 const APP_VERSION_FALLBACK = process.env.NEXT_PUBLIC_APP_VERSION || 'v0';
@@ -135,6 +136,8 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      <UploadTokensCard />
+
       <section className="bg-card border border-border p-5 space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-foreground">Install as app</h2>
@@ -180,9 +183,9 @@ export default function SettingsPage() {
 
         <p className="text-xs text-muted-foreground">
           Heads up: sharing images into Sploot from other apps&apos; share
-          sheets works on Android. iPhones don&apos;t let web apps into the
-          share sheet — copy an image and paste it into the upload zone
-          instead.
+          sheets works on Android. iPhones can&apos;t put web apps in the share
+          sheet — mint an upload token above and wire up the &ldquo;Save to
+          Sploot&rdquo; shortcut to share images from any iOS app.
         </p>
       </section>
 

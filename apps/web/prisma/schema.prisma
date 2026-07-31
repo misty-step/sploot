@@ -30,8 +30,29 @@ model User {
   identities               UserIdentity[]
   storageQuota             UserStorageQuota?
   storageQuotaReservations StorageQuotaReservation[]
+  uploadTokens             UploadToken[]
 
   @@map("users")
+}
+
+// UploadToken model - hashed, revocable, upload-only personal access tokens.
+// Lets a non-session client (Apple Shortcut, CLI) authenticate upload-only API
+// calls. Only the sha256 of the token is stored; the plaintext is shown once at
+// mint time. See lib/auth/upload-token.ts.
+model UploadToken {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  name       String
+  tokenHash  String    @unique @map("token_hash")
+  prefix     String // Non-secret display prefix, e.g. "splt_ab12cd"
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("upload_tokens")
 }
 
 model UserIdentity {

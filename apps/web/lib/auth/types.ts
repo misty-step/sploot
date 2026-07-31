@@ -1,6 +1,6 @@
-export type AuthProvider = 'clerk' | 'qa-local';
-export type AuthSource = 'clerk-request' | 'qa-local';
-export type AuthCredentialKind = 'cookie-or-bearer' | 'qa-local';
+export type AuthProvider = 'clerk' | 'qa-local' | 'upload-token';
+export type AuthSource = 'clerk-request' | 'qa-local' | 'upload-token';
+export type AuthCredentialKind = 'cookie-or-bearer' | 'qa-local' | 'upload-token';
 export type AuthSyncStatus = 'success' | 'failed' | 'skipped';
 
 export interface AuthenticatedPrincipal {
@@ -38,6 +38,12 @@ export type RequestAuthResult =
 export interface AuthPolicy {
   allowClerk?: boolean;
   allowQaLocal?: boolean;
+  /**
+   * Accept a personal upload token (`Authorization: Bearer splt_…`).
+   * Defaults false — only the upload routes opt in, which is what makes the
+   * token upload-only. See lib/auth/upload-token.ts.
+   */
+  allowUploadToken?: boolean;
   requireUserSync?: boolean;
   env?: Record<string, string | undefined>;
 }
