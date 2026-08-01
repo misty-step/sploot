@@ -1,0 +1,24 @@
+{
+  "bundle_digest": "sha256:a5f14a6e0c26aa8e4b49dc183585f255305b45d920944311a6231432dafbea11",
+  "commits": [
+    "6d840f8ea25f3566af494ffaa6096d44daf6ebd0"
+  ],
+  "created_at": "2026-08-01T20:51:17Z",
+  "freeze_path": ".omp/review-freeze.json",
+  "kind": "freeze",
+  "new_oid": "6d840f8ea25f3566af494ffaa6096d44daf6ebd0",
+  "old_oid": "d421ba90b65c1bbc651e957f7e72381771d61bc9",
+  "paths": [
+    "apps/web/app/app/meme/[id]/page.tsx",
+    "apps/web/app/app/settings/page.tsx",
+    "apps/web/app/m/[id]/page.tsx",
+    "apps/web/app/not-found.tsx",
+    "apps/web/app/s/[slug]/page.tsx",
+    "apps/web/app/s/[slug]/route.ts",
+    "apps/web/components/share/share-page-error-boundary.tsx",
+    "apps/web/components/share/share-page-message.tsx",
+    "apps/web/components/share/share-page-not-found.tsx"
+  ],
+  "repository": "/Users/phaedrus/Development/sploot",
+  "schema": "omp.review-freeze.v2"
+}
