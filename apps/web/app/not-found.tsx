@@ -37,19 +37,19 @@ export default function NotFound() {
         </h2>
         
         <p className="text-muted-foreground text-lg mb-10 leading-relaxed">
-          The meme you are looking for has been deleted from the simulation or never existed in this timeline.
+          This one&apos;s not in the pile — deleted, expired, or it never existed. Zero regrets either way.
         </p>
 
         {/* Action */}
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <Button 
-            asChild 
-            variant="accent" 
+          <Button
+            asChild
+            variant="accent"
             size="lg"
             className="min-w-[200px]"
           >
             <Link href="/">
-              RETURN TO BASE
+              BACK TO THE PILE
             </Link>
           </Button>
         </div>

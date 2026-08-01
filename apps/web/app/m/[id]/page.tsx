@@ -1,12 +1,12 @@
 import { Metadata } from 'next';
 import Image from 'next/image';
-import Link from 'next/link';
 import { prisma } from '@/lib/db';
 import { SharePageLayout } from '@/components/share/share-page-layout';
 import { SharePageCTA } from '@/components/share/share-page-cta';
 import { SharePageMetadata } from '@/components/share/share-page-metadata';
 import { SharePageErrorBoundary } from '@/components/share/share-page-error-boundary';
 import { SharePageAnalytics } from '@/components/share/share-page-analytics';
+import { SharePageNotFound } from '@/components/share/share-page-not-found';
 import { OverlappingCircles } from '@/components/landing/overlapping-circles';
 
 interface PublicMemePageProps {
@@ -91,42 +91,16 @@ export async function generateMetadata({ params }: PublicMemePageProps): Promise
 export default async function PublicMemePage({ params }: PublicMemePageProps) {
   const { id } = (await params) ?? {};
 
-  if (!id) {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4">
-        <h1 className="text-white text-2xl mb-4">Meme not found</h1>
-        <Link href="/" className="text-gray-500 hover:text-gray-400">
-          Go to Sploot
-        </Link>
-      </div>
-    );
-  }
-
-  if (!prisma) {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4">
-        <h1 className="text-white text-2xl mb-4">Meme not found</h1>
-        <Link href="/" className="text-gray-500 hover:text-gray-400">
-          Go to Sploot
-        </Link>
-      </div>
-    );
-  }
-
-  const asset = await prisma.asset.findFirst({
-    where: { id, deletedAt: null },
-    select: { id: true, blobUrl: true, mime: true, width: true, height: true, size: true },
-  });
+  const asset =
+    id && prisma
+      ? await prisma.asset.findFirst({
+          where: { id, deletedAt: null },
+          select: { id: true, blobUrl: true, mime: true, width: true, height: true, size: true },
+        })
+      : null;
 
   if (!asset) {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4">
-        <h1 className="text-white text-2xl mb-4">Meme not found</h1>
-        <Link href="/" className="text-gray-500 hover:text-gray-400">
-          Go to Sploot
-        </Link>
-      </div>
-    );
+    return <SharePageNotFound />;
   }
 
   return (

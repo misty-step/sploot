@@ -147,12 +147,17 @@ export default function MemeDetailPage({ params }: MemeDetailPageProps) {
   // Not found
   if (!asset) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 text-center">
         <ImageOff className="h-16 w-16 text-muted-foreground" />
-        <h1 className="text-xl font-medium text-foreground">Meme not found</h1>
-        <Link href="/app" className="text-accent-cyan hover:underline text-sm">
-          Back to library
-        </Link>
+        <div className="space-y-1">
+          <h1 className="text-xl font-medium text-foreground">not in the pile.</h1>
+          <p className="max-w-xs text-sm text-muted-foreground">
+            deleted, moved, or a bad link — this one&apos;s gone.
+          </p>
+        </div>
+        <Button asChild variant="ghost" size="sm">
+          <Link href="/app">back to the pile</Link>
+        </Button>
       </div>
     );
   }

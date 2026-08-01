@@ -193,13 +193,6 @@ export default function SettingsPage() {
       </section>
 
       <section className="bg-card border border-border p-5 space-y-3">
-        <h2 className="text-lg font-semibold text-foreground">Coming soon™</h2>
-        <p className="text-muted-foreground text-sm">
-          Theme switching, notification spam, and squad-sharing are on the roadmap. Ping us with your wildest feature dreams.
-        </p>
-      </section>
-
-      <section className="bg-card border border-border p-5 space-y-3">
         <h2 className="text-lg font-semibold text-foreground">About</h2>
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground text-sm">Version</span>

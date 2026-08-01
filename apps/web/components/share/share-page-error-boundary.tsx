@@ -1,8 +1,9 @@
 'use client';
 
 import { Component, ReactNode } from 'react';
-import Link from 'next/link';
+import { ImageOff } from 'lucide-react';
 import { sendClientErrorTelemetry } from '@/lib/client-error-telemetry';
+import { SharePageMessage } from './share-page-message';
 
 interface SharePageErrorBoundaryProps {
   children: ReactNode;
@@ -46,47 +47,17 @@ export class SharePageErrorBoundary extends Component<
 
   render() {
     if (this.state.hasError) {
+      // Renders inside SharePageLayout's <main> — no full-page wrapper here,
+      // just the shared terminal-state panel (was previously duplicating a
+      // whole min-h-screen shell nested inside the layout's own main).
       return (
-        <div className="min-h-screen bg-black flex flex-col items-center justify-center p-4">
-          <div className="max-w-md text-center space-y-6">
-            {/* Error icon - terminal style */}
-            <div className="flex justify-center">
-              <div className="w-16 h-16 border-2 border-red-500 rounded-full flex items-center justify-center">
-                <span className="text-red-500 text-3xl font-bold">!</span>
-              </div>
-            </div>
-
-            {/* Error message */}
-            <div className="space-y-2">
-              <h1 className="text-white text-2xl font-medium">
-                Couldn&apos;t load this meme
-              </h1>
-              <p className="text-gray-400 text-sm">
-                The image failed to load. It may have been removed or the link is invalid.
-              </p>
-            </div>
-
-            {/* CTA - Explore Sploot */}
-            <div className="pt-4">
-              <Link
-                href="/"
-                className="inline-flex items-center justify-center px-6 py-3 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors font-medium"
-              >
-                Explore Sploot
-              </Link>
-            </div>
-
-            {/* Secondary link - monospace terminal style */}
-            <div className="pt-2">
-              <Link
-                href="/"
-                className="text-xs text-gray-500 hover:text-gray-400 font-jetbrains-mono"
-              >
-                sploot.vercel.app
-              </Link>
-            </div>
-          </div>
-        </div>
+        <SharePageMessage
+          icon={ImageOff}
+          heading="couldn't load this one."
+          body="the image bailed mid-load — dead link, bad wifi, pick one. try again in a sec."
+          ctaHref="/"
+          ctaLabel="go touch grass"
+        />
       );
     }
 
