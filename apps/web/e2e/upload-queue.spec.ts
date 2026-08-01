@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, test as base, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test as base, type APIRequestContext, type APIResponse, type BrowserContext, type Page } from '@playwright/test';
 import { zipSync } from 'fflate';
 import { createQaLocalAuthToken, getQaLocalAuthHeader } from '../lib/auth/qa-local';
 import { deriveUploadOwnerKey } from '../lib/upload/upload-owner';
@@ -63,16 +63,20 @@ async function tokenFor(userId: string): Promise<string> {
   });
 }
 
-async function openApp(page: Page, userId: string): Promise<void> {
+async function openApp(page: Page, userId: string, openUploadDeepLink = false): Promise<void> {
+  page.on('pageerror', (error) => console.log('[queue-pageerror]', error.message));
+  page.on('console', (message) => { if (message.type() === 'error') console.log('[queue-console-error]', message.text()); });
   await page.setExtraHTTPHeaders({ [qaHeader]: await tokenFor(userId) });
-  await page.goto('/app', { waitUntil: 'domcontentloaded', timeout: 75_000 });
+  await page.goto(openUploadDeepLink ? '/app?upload=1' : '/app', { waitUntil: 'domcontentloaded', timeout: 75_000 });
   await waitForUploadReady(page);
 }
 
 async function waitForUploadReady(page: Page): Promise<void> {
   const uploadButton = page.getByRole('button', { name: 'Choose files to upload' });
+  const uploadToggle = page.getByRole('button', { name: 'UPLOAD', exact: true });
+  await expect(uploadToggle).toHaveAttribute('data-upload-action-ready', 'true');
   if (!(await uploadButton.isVisible().catch(() => false))) {
-    await page.getByRole('button', { name: 'UPLOAD', exact: true }).click();
+    await uploadToggle.click();
   }
   await expect(uploadButton).toBeVisible();
   await expect(uploadButton).toHaveAttribute('data-upload-ready', 'true');
@@ -81,6 +85,13 @@ async function waitForUploadReady(page: Page): Promise<void> {
 async function establishOrigin(page: Page, userId: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [qaHeader]: await tokenFor(userId) });
   await page.goto('/app', { waitUntil: 'domcontentloaded', timeout: 75_000 });
+}
+
+async function expectEnrolled(page: Page, userId: string): Promise<void> {
+  const response = await page.request.get('/api/assets?limit=1', {
+    headers: { [qaHeader]: await tokenFor(userId) },
+  });
+  expect(response.status()).toBe(200);
 }
 
 async function waitForBrowserHealth(page: Page, timeoutMs = 10_000): Promise<void> {
@@ -94,6 +105,12 @@ async function waitForBrowserHealth(page: Page, timeoutMs = 10_000): Promise<voi
 async function openSignedOutApp(page: Page): Promise<void> {
   await waitForBrowserHealth(page);
   await page.goto('/app', { waitUntil: 'domcontentloaded', timeout: 75_000 });
+  await expect(page).toHaveURL(/\/sign-in/);
+  await expect(page.getByTestId('qa-local-signed-out-door')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'return to landing' })).toHaveAttribute('href', '/');
+  await expect(page.getByRole('button', { name: 'Choose files to upload' })).toHaveCount(0);
+  await expect(durableQueue(page)).toHaveCount(0);
+  await expect(page.locator('body')).not.toContainText('Application error');
 }
 
 function intentList(page: Page) {
@@ -212,6 +229,21 @@ function forwardHeaders(headers: Record<string, string>): Record<string, string>
   return Object.fromEntries(Object.entries(headers).filter(([name]) => !hopByHopHeaders.has(name.toLowerCase())));
 }
 
+async function fetchForBrowser(transport: APIRequestContext, targetURL: URL, method: string, headers: Record<string, string>, data: Buffer | undefined): Promise<APIResponse> {
+  // Preserve redirects for Chromium. Following them in Node and fulfilling the
+  // final response would leave the browser's logical URL at the original path.
+  // A restart briefly closes the child before the replacement binds the same
+  // port, so retry only that transport boundary rather than masking other errors.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await transport.fetch(targetURL.toString(), { method, headers, data, failOnStatusCode: false, maxRedirects: 0 });
+    } catch (error) {
+      if (attempt >= 40 || !(error instanceof Error) || !error.message.includes('ECONNREFUSED')) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+}
+
 /**
  * Keep the browser's logical origin stable while Node owns transport to the
  * current real Next server child. Playwright's route handler is the only
@@ -235,14 +267,18 @@ async function installPersistentRouteBridge(
     }
     const targetURL = new URL(browserURL.pathname + browserURL.search, targetBaseURL);
     forwardedRequestCount += 1;
-    const response = await transport.fetch(targetURL.toString(), {
-      method: browserRequest.method(),
-      headers: forwardHeaders(browserRequest.headers()),
-      data: browserRequest.postDataBuffer() ?? undefined,
-      failOnStatusCode: false,
-      maxRedirects: 0,
-    });
-    await route.fulfill({ response });
+    const response = await fetchForBrowser(
+      transport,
+      targetURL,
+      browserRequest.method(),
+      forwardHeaders(browserRequest.headers()),
+      browserRequest.postDataBuffer() ?? undefined,
+    );
+    try {
+      await route.fulfill({ response });
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes('Route is already handled')) throw error;
+    }
   });
   return {
     forwardedRequests: () => forwardedRequestCount,
@@ -270,7 +306,7 @@ async function waitForFixtureReady(baseURL: string, child: ChildProcess, output:
     if (child.exitCode !== null) throw new Error(`fixture server exited with code ${child.exitCode}: ${output.read()}`);
     try {
       const status = await new Promise<number>((resolve, reject) => {
-        const healthRequest = httpGet(new URL('/app', baseURL), (response) => {
+        const healthRequest = httpGet(new URL('/api/health', baseURL), (response) => {
           response.resume();
           response.once('end', () => resolve(response.statusCode ?? 0));
         });
@@ -343,7 +379,7 @@ async function stopFixtureChild(child: ChildProcess): Promise<void> {
 }
 
 async function startFixtureServer(): Promise<FixtureServer & { stop: () => Promise<void> }> {
-  const port = Number(process.env.PLAYWRIGHT_PORT ?? 3108);
+  const port = Number(process.env.PLAYWRIGHT_QUEUE_PORT ?? process.env.PLAYWRIGHT_PORT ?? 3138);
   const baseURL = String.raw`http://127.0.0.1:${port}`;
   const mode = process.env.PLAYWRIGHT_FIXTURE_SERVER_MODE === 'production' ? 'start' : 'dev';
   const repoRoot = join(__dirname, '../../..');
@@ -372,10 +408,12 @@ async function startFixtureServer(): Promise<FixtureServer & { stop: () => Promi
         SPLOOT_QA_ALLOW_LOCAL_URL_IMPORT: '1',
         SPLOOT_ENROLLMENT_MODE: 'ga',
         NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: 'enabled',
+        NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: 'true',
         NEXT_PUBLIC_SPLOOT_PWA_CAPTURE_MODE: 'enabled',
         NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID: 'local-pwa-capture-v1',
         NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ENV: 'local-qa',
         NEXT_PUBLIC_SPLOOT_QA_AUDIENCE: 'sploot-pwa-capture',
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? 'pk_test_MTI3LjAuMC4xOjMxMzgk',
         CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY ?? String.raw`sk_test_${Buffer.from('clerk-qa-local-secret').toString('base64')}`,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -443,6 +481,8 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     const accountATab = await context.newPage();
     const accountBTab = await context.newPage();
     await Promise.all([openApp(accountATab, accountA), openApp(accountBTab, accountB)]);
+    await expectEnrolled(accountATab, accountA);
+    await expectEnrolled(accountBTab, accountB);
 
     const forwardedBeforeRestart = routeBridge.forwardedRequests();
     const pageCountBeforeRestart = context.pages().length;
@@ -505,7 +545,9 @@ test('public upload surface durably enqueues metadata without materializing the 
   const context = await browser.newContext({ baseURL });
   const page = await context.newPage();
   try {
-    await openApp(page, 'qa-upload-queue-user');
+    await openApp(page, 'qa-upload-queue-user', true);
+    await expectEnrolled(page, 'qa-upload-queue-user');
+    await expect(page).toHaveURL(/\/app$/);
     await context.setOffline(true);
     await page.locator('input[type="file"]').setInputFiles({ name: 'browser-queue.png', mimeType: 'image/png', buffer: Buffer.from('png') });
     await expect(intentList(page).getByText('browser-queue.png', { exact: true })).toBeVisible();
@@ -556,6 +598,7 @@ test('live lease-expiry wakeup reclaims a durable URL claim without reload or ma
   });
   try {
     await establishOrigin(page, account);
+    await expectEnrolled(page, account);
     await seedUrlRow(page, row);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await waitForUploadReady(page);
@@ -584,6 +627,7 @@ test('permanent URL rejection is terminal and remount recovery does not issue a 
   });
   try {
     await openApp(page, account);
+    await expectEnrolled(page, account);
     await pasteUrl(page, fixture.url);
     await expect(durableQueue(page).getByText(fixture.url, { exact: true })).toBeVisible();
     await expect.poll(async () => (await readRows(page, await ownerKey(account)))[0]?.status, { timeout: 20_000 }).toBe('terminal');
@@ -613,6 +657,7 @@ test('real public URL route returns 409 for a concurrent durable-key race', asyn
   });
   try {
     await openApp(page, account);
+    await expectEnrolled(page, account);
     await seedUrlRow(page, {
       id: key,
       ownerKey: await ownerKey(account),

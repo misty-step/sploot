@@ -3,17 +3,45 @@ import { isQaLocalAuthEnabled } from './qa-local-enabled';
 
 export { isQaLocalAuthEnabled } from './qa-local-enabled';
 
+export const QA_LOCAL_DEPLOYMENT_ID = 'local-pwa-capture-v1';
+export const QA_LOCAL_DEPLOYMENT_ENV = 'local-qa';
+export const QA_LOCAL_AUDIENCE = 'sploot-pwa-capture';
+
+export interface QaLocalRequestBoundary {
+  peerAddress?: string | null;
+}
+
+export function validateQaLocalDeploymentConfig(env: Record<string, string | undefined> = process.env): { valid: boolean; reason?: string } {
+  const proofEnabled = env.SPLOOT_QA_AUTH_MODE === 'enabled' || env.SPLOOT_PWA_CAPTURE_MODE === 'enabled' || env.NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE === 'enabled';
+  if (!proofEnabled) return { valid: true };
+  if (env.SPLOOT_QA_DEPLOYMENT_ID !== QA_LOCAL_DEPLOYMENT_ID) return { valid: false, reason: 'qa-local deployment id is not allowlisted' };
+  if (env.SPLOOT_QA_DEPLOYMENT_ENV !== QA_LOCAL_DEPLOYMENT_ENV) return { valid: false, reason: 'qa-local deployment is not explicitly non-production' };
+  if (env.SPLOOT_QA_AUDIENCE !== QA_LOCAL_AUDIENCE) return { valid: false, reason: 'qa-local audience is not canonical' };
+  const deploymentMarker = env.SPLOOT_DEPLOYMENT_ENV?.trim().toLowerCase();
+  if (deploymentMarker !== 'development' && deploymentMarker !== 'test') return { valid: false, reason: 'qa-local proof authentication requires an explicit development/test SPLOOT_DEPLOYMENT_ENV marker' };
+  if (env.NODE_ENV === 'production' && env.DEPLOYMENT_ENV !== QA_LOCAL_DEPLOYMENT_ENV) return { valid: false, reason: 'production process must declare the local-qa deployment environment' };
+  if (env.DEPLOYMENT_ENV === 'production') return { valid: false, reason: 'qa-local proof authentication is forbidden in production deployment' };
+  if (env.DO_APP_PLATFORM || env.DIGITALOCEAN_APP_PLATFORM || env.DO_DEPLOYMENT_ENV) return { valid: false, reason: 'qa-local proof authentication is forbidden on DigitalOcean deployment infrastructure' };
+  if (env.NODE_ENV !== 'test' && env.SPLOOT_QA_BIND_HOST !== '127.0.0.1') return { valid: false, reason: 'qa-local proof authentication requires a loopback-only server bind' };
+  if (env.NODE_ENV !== 'test' && !/^[a-f0-9]{48,}$/.test(env.SPLOOT_QA_LOCAL_CAPABILITY ?? '')) return { valid: false, reason: 'qa-local process capability is missing or malformed' };
+  if (!env.SPLOOT_QA_AUTH_SECRET) return { valid: false, reason: 'qa-local proof secret is missing' };
+  return { valid: true };
+}
+
 const QA_LOCAL_AUTH_HEADER = 'x-sploot-qa-auth';
 const QA_LOCAL_AUTH_COOKIE = 'sploot_qa_auth';
 const TOKEN_VERSION = 1;
 const QA_USER_ID_PATTERN = /^qa-[a-z0-9-]{1,64}$/;
-const MAX_TOKEN_LIFETIME_SECONDS = 8 * 60 * 60;
+const MAX_TOKEN_LIFETIME_SECONDS = 15 * 60;
 
 interface QaLocalAuthPayload {
   v: typeof TOKEN_VERSION;
   userId: string;
   email?: string;
   sessionId?: string;
+  audience?: string;
+  deploymentId?: string;
+  deploymentEnv?: string;
   iat: number;
   exp: number;
 }
@@ -22,6 +50,9 @@ interface CreateQaLocalAuthTokenOptions {
   userId: string;
   email?: string;
   sessionId?: string;
+  audience?: string;
+  deploymentId?: string;
+  deploymentEnv?: string;
   secret: string;
   expiresInSeconds?: number;
   now?: Date;
@@ -50,15 +81,19 @@ export function hasQaLocalAuthInput(headers: Headers): boolean {
 export async function resolveQaLocalRequestAuth(
   headers: Headers,
   env: Record<string, string | undefined> = process.env,
+  boundary: QaLocalRequestBoundary = {},
 ): Promise<RequestAuthResult | null> {
   if (!hasQaLocalAuthInput(headers)) return null;
-  return verifyQaLocalAuthHeaders(headers, env);
+  return verifyQaLocalAuthHeaders(headers, env, boundary);
 }
 
 export async function createQaLocalAuthToken({
   userId,
   email,
   sessionId,
+  audience = QA_LOCAL_AUDIENCE,
+  deploymentId = QA_LOCAL_DEPLOYMENT_ID,
+  deploymentEnv = QA_LOCAL_DEPLOYMENT_ENV,
   secret,
   expiresInSeconds = 15 * 60,
   now = new Date(),
@@ -83,6 +118,9 @@ export async function createQaLocalAuthToken({
     userId,
     ...(email ? { email } : {}),
     ...(sessionId ? { sessionId } : {}),
+    audience,
+    deploymentId,
+    deploymentEnv,
     iat: issuedAt,
     exp: expiresAt,
   };
@@ -94,7 +132,8 @@ export async function createQaLocalAuthToken({
 
 export async function verifyQaLocalAuthHeaders(
   headers: Headers,
-  env: Record<string, string | undefined> = process.env
+  env: Record<string, string | undefined> = process.env,
+  boundary: QaLocalRequestBoundary = {},
 ): Promise<RequestAuthResult> {
   const cookieHeader = headers.get('cookie');
   const headerToken = headers.get(QA_LOCAL_AUTH_HEADER);
@@ -106,8 +145,13 @@ export async function verifyQaLocalAuthHeaders(
       : { status: 'unauthenticated', reason: 'qa-local-missing' };
   }
 
-  if (!isQaLocalAuthEnabled(env)) {
+  const deployment = validateQaLocalDeploymentConfig(env);
+  if (!deployment.valid || !isQaLocalAuthEnabled(env)) {
     return { status: 'forbidden', reason: 'qa-local-disabled' };
+  }
+
+  if (boundary.peerAddress && !isLoopbackAddress(boundary.peerAddress)) {
+    return { status: 'forbidden', reason: 'qa-local-boundary' };
   }
 
   const secret = env.SPLOOT_QA_AUTH_SECRET;
@@ -116,8 +160,17 @@ export async function verifyQaLocalAuthHeaders(
   }
 
   const payload = await verifyQaLocalAuthToken(token, secret);
+  const hasProviderCredential = Boolean(
+    headers.get('authorization') ||
+    hasCookie(cookieHeader, '__session'),
+  );
   if (!payload) {
-    return { status: 'unauthenticated', reason: 'qa-local-invalid' };
+    return hasProviderCredential
+      ? { status: 'forbidden', reason: 'qa-local-production-auth-coexistence' }
+      : { status: 'unauthenticated', reason: 'qa-local-invalid' };
+  }
+  if (hasProviderCredential) {
+    return { status: 'unauthenticated', reason: 'qa-local-production-auth-coexistence' };
   }
 
   return {
@@ -149,6 +202,12 @@ async function verifyQaLocalAuthToken(token: string, secret: string): Promise<Qa
     return null;
   }
 
+  if (payload.audience !== QA_LOCAL_AUDIENCE ||
+      payload.deploymentId !== QA_LOCAL_DEPLOYMENT_ID ||
+      payload.deploymentEnv !== QA_LOCAL_DEPLOYMENT_ENV) {
+    return null;
+  }
+
   const now = Math.floor(Date.now() / 1000);
   if (payload.iat > now || payload.exp <= now || payload.exp <= payload.iat) {
     return null;
@@ -158,6 +217,10 @@ async function verifyQaLocalAuthToken(token: string, secret: string): Promise<Qa
   }
 
   return payload;
+}
+
+function isLoopbackAddress(address: string): boolean {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 }
 
 function principalFromPayload(payload: QaLocalAuthPayload): AuthenticatedPrincipal {
@@ -275,7 +338,7 @@ function isBoundedQaPayload(payload: unknown): payload is QaLocalAuthPayload {
   }
 
   const record = payload as Record<string, unknown>;
-  const allowedKeys = new Set(['v', 'userId', 'iat', 'exp', 'email', 'sessionId']);
+  const allowedKeys = new Set(['v', 'userId', 'iat', 'exp', 'email', 'sessionId', 'audience', 'deploymentId', 'deploymentEnv']);
   if (Object.keys(record).some((key) => !allowedKeys.has(key))) {
     return false;
   }
@@ -288,5 +351,8 @@ function isBoundedQaPayload(payload: unknown): payload is QaLocalAuthPayload {
     typeof record.exp === 'number' &&
     Number.isSafeInteger(record.exp) &&
     (record.email === undefined || typeof record.email === 'string') &&
-    (record.sessionId === undefined || typeof record.sessionId === 'string');
+    (record.sessionId === undefined || typeof record.sessionId === 'string') &&
+    record.audience === QA_LOCAL_AUDIENCE &&
+    record.deploymentId === QA_LOCAL_DEPLOYMENT_ID &&
+    record.deploymentEnv === QA_LOCAL_DEPLOYMENT_ENV;
 }

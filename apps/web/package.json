@@ -13,7 +13,7 @@
     "test:ui": "vitest --ui",
     "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
-    "e2e:auth": "playwright test --config playwright.config.ts",
+    "e2e:auth": "PLAYWRIGHT_PROJECT=auth playwright test --config playwright.config.ts --project=auth",
     "e2e:public-truth": "playwright test --config playwright.config.ts --grep \"public truth\"",
     "e2e:public-truth:build": "node scripts/build-public-truth.mjs",
     "e2e:public-truth:production-guard": "node scripts/verify-production-public-truth-guard.mjs",
@@ -51,7 +51,8 @@
     "probe:enrollment": "node scripts/probe-enrollment.mjs",
     "enrollment:lifecycle": "node scripts/enrollment-lifecycle.mjs",
     "db:fingerprint": "./scripts/db-fingerprint.sh",
-    "db:drift": "./scripts/db-drift-check.sh"
+    "db:drift": "./scripts/db-drift-check.sh",
+    "e2e:queue": "PLAYWRIGHT_PROJECT=queue playwright test --config playwright.config.ts --project=queue"
   },
   "dependencies": {
     "@clerk/backend": "^2.33.4",

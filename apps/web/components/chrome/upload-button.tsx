@@ -1,6 +1,7 @@
 'use client';
 
 import { Upload } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -23,6 +24,9 @@ export function UploadButton({
   showLabel = true,
   size = 'md',
 }: UploadButtonProps) {
+  const [isActionReady, setIsActionReady] = useState(false);
+  useEffect(() => setIsActionReady(true), []);
+
   // Map custom size to Button size
   const buttonSize = size === 'md' ? 'default' : size;
 
@@ -38,6 +42,7 @@ export function UploadButton({
       )}
       aria-label={showLabel ? undefined : 'Upload'}
       title={showLabel ? undefined : 'Upload new meme'}
+      data-upload-action-ready={isActionReady ? 'true' : 'false'}
     >
       <Upload className="h-4 w-4" strokeWidth={2} />
       {showLabel && 'UPLOAD'}
