@@ -602,7 +602,6 @@ export function validateInputs(inputs) {
     const timestamp = typeof value === 'string' ? Date.parse(value) : Number.NaN;
     if (!Number.isFinite(timestamp)) {
       errors.push(`liveUsage.${path} must be a valid timestamp`);
-      continue;
     }
   }
   const sampleFrom = Date.parse(liveTimestampValues['inference.latestPredictionSample.from']);
