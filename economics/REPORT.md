@@ -1,6 +1,6 @@
 # Sploot economic safety envelope
 
-Generated deterministically from the versioned inputs in this directory. Rates were refreshed on 2026-07-15 and CI expires them after 30 days. This is a release gate, not a forecast: paid-tier margins are modeled at on-demand rates so shared included pools cannot make an unprofitable plan look safe.
+Generated deterministically from the versioned inputs in this directory. Merge CI validates structure, evidence, formulas, and report reproducibility without a wall clock. The daily/manual freshness monitor checks rate, live-usage, and verified provider evidence age and future dates. This is a release gate, not a forecast: paid-tier margins are modeled at on-demand rates so shared included pools cannot make an unprofitable plan look safe.
 
 ## Recommendation
 

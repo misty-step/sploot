@@ -317,7 +317,7 @@ function canonicalEvidenceDigest(evidence) {
     .digest('hex');
 }
 
-function validateEvidence(evidence, expected, path, errors, now, freshnessDays) {
+function validateEvidence(evidence, expected, path, errors) {
   if (!isRecord(evidence)) {
     errors.push(`${path} must be a complete machine-readable object`);
     return;
@@ -362,10 +362,6 @@ function validateEvidence(evidence, expected, path, errors, now, freshnessDays) 
     errors.push(`${path}.receiptClass requires receiptIdentifier`);
   }
   const observedAt = parseEvidenceTimestamp(evidence.observedAt, `${path}.observedAt`, errors);
-  if (Number.isFinite(observedAt)) {
-    if (observedAt > now.getTime()) errors.push(`${path}.observedAt is future-dated`);
-    if (now.getTime() - observedAt > freshnessDays * 86_400_000) errors.push(`${path}.observedAt is stale`);
-  }
   if (evidence.provider !== expected.provider) errors.push(`${path}.provider does not match the evidence contract`);
   if (evidence.account !== expected.account) errors.push(`${path}.account does not match the evidence contract`);
   if (evidence.control !== expected.control) errors.push(`${path}.control does not match the evidence contract`);
@@ -396,7 +392,7 @@ export async function loadInputs() {
   return { rates: rates.rates, rateCurrency: rates.currency, liveUsage, scenarios: workloads.scenarios, policy };
 }
 
-export function validateInputs(inputs, now = new Date()) {
+export function validateInputs(inputs) {
   const errors = [];
   if (!inputs || typeof inputs !== 'object' || Array.isArray(inputs)) {
     return ['inputs object is required'];
@@ -454,8 +450,8 @@ export function validateInputs(inputs, now = new Date()) {
       if (rate.sourceEvidenceType !== (contract.sourceEvidenceType ?? 'provider_price_page')) {
         errors.push(`rate ${rate.id}.sourceEvidenceType must match the policy evidence contract`);
       }
-      const observedAt = validateEvidence(rate.sourceEvidence, expected,
-        `rate ${rate.id}.sourceEvidence`, errors, now, inputs.policy.rateFreshnessDays);
+      const observedAt = validateEvidence(rate.sourceEvidence,
+        expected, `rate ${rate.id}.sourceEvidence`, errors);
       if (Number.isFinite(observedAt) && rate.retrievedAt !== new Date(observedAt).toISOString().slice(0, 10)) {
         errors.push(`rate ${rate.id}.sourceEvidence.observedAt must match retrievedAt`);
       }
@@ -469,10 +465,6 @@ export function validateInputs(inputs, now = new Date()) {
     const retrievedAt = Date.parse(`${rate.retrievedAt}T00:00:00Z`);
     if (!Number.isFinite(retrievedAt)) {
       errors.push(`invalid retrieval date: ${rate.id}`);
-    } else if (Number.isFinite(inputs.policy.rateFreshnessDays)) {
-      const ageDays = (now.getTime() - retrievedAt) / 86_400_000;
-      if (ageDays > inputs.policy.rateFreshnessDays) errors.push(`rate sheet expired: ${rate.id}`);
-      if (ageDays < 0) errors.push(`rate sheet is future-dated: ${rate.id}`);
     }
   }
   for (const rateId of REQUIRED_RATE_IDS) {
@@ -610,14 +602,7 @@ export function validateInputs(inputs, now = new Date()) {
     const timestamp = typeof value === 'string' ? Date.parse(value) : Number.NaN;
     if (!Number.isFinite(timestamp)) {
       errors.push(`liveUsage.${path} must be a valid timestamp`);
-      continue;
     }
-    if (timestamp > now.getTime() + 300_000) errors.push(`liveUsage.${path} is future-dated`);
-  }
-  const capturedAt = Date.parse(liveTimestampValues.capturedAt);
-  if (Number.isFinite(capturedAt) && Number.isFinite(inputs.policy.liveUsageFreshnessHours)) {
-    const ageHours = (now.getTime() - capturedAt) / 3_600_000;
-    if (ageHours > inputs.policy.liveUsageFreshnessHours) errors.push('liveUsage.capturedAt is stale');
   }
   const sampleFrom = Date.parse(liveTimestampValues['inference.latestPredictionSample.from']);
   const sampleTo = Date.parse(liveTimestampValues['inference.latestPredictionSample.to']);
@@ -774,15 +759,11 @@ export function validateInputs(inputs, now = new Date()) {
         errors.push(`policy.providerHardCaps[${index}] verified evidence requires lastVerifiedAt and complete evidence`);
       }
       if (cap.evidenceStatus === 'verified' && typeof cap.lastVerifiedAt === 'string') {
-        const verifiedAt = parseEvidenceTimestamp(
+        parseEvidenceTimestamp(
           cap.lastVerifiedAt,
           `policy.providerHardCaps[${index}].lastVerifiedAt`,
           errors,
         );
-        if (Number.isFinite(verifiedAt)) {
-          if (verifiedAt > now.getTime()) errors.push(`policy.providerHardCaps[${index}].lastVerifiedAt is future-dated`);
-          if (now.getTime() - verifiedAt > inputs.policy.rateFreshnessDays * 86_400_000) errors.push(`provider cap evidence stale: ${cap.provider}`);
-        }
       }
       if (cap.evidenceStatus === 'verified' && isRecord(cap.evidence)) {
         const contract = PROVIDER_EVIDENCE_CONTRACTS[cap.provider];
@@ -803,7 +784,7 @@ export function validateInputs(inputs, now = new Date()) {
             sourceOrigins: contract.sourceOrigins,
             receiptClasses: contract.receiptClasses,
             reviewers: contract.reviewers,
-          }, `policy.providerHardCaps[${index}].evidence`, errors, now, inputs.policy.rateFreshnessDays);
+          }, `policy.providerHardCaps[${index}].evidence`, errors);
         }
       }
       if (cap.evidenceStatus === 'unverified' && cap.evidence !== null) {
@@ -821,8 +802,65 @@ export function validateInputs(inputs, now = new Date()) {
   return errors;
 }
 
-function assertValidInputs(inputs, now = new Date()) {
-  const errors = validateInputs(inputs, now);
+function checkTimestampFreshness(timestamp, nowMs, path, errors, {
+  futureGraceMs = 0,
+  maxAgeMs,
+  futureMessage = `${path} is future-dated`,
+  staleMessage = `${path} is stale`,
+} = {}) {
+  if (timestamp > nowMs + futureGraceMs) errors.push(futureMessage);
+  if (maxAgeMs !== undefined && nowMs - timestamp > maxAgeMs) errors.push(staleMessage);
+}
+
+export function validateFreshness(inputs, now) {
+  const errors = validateInputs(inputs);
+  if (errors.length > 0) return errors;
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
+    return ['now must be a valid Date'];
+  }
+
+  const nowMs = now.getTime();
+  const rateAgeMs = inputs.policy.rateFreshnessDays * 86_400_000;
+  for (const rate of inputs.rates) {
+    const retrievedAt = Date.parse(`${rate.retrievedAt}T00:00:00Z`);
+    checkTimestampFreshness(retrievedAt, nowMs, `rate ${rate.id}`, errors, {
+      maxAgeMs: rateAgeMs,
+      futureMessage: `rate sheet is future-dated: ${rate.id}`,
+      staleMessage: `rate sheet expired: ${rate.id}`,
+    });
+    const observedAt = Date.parse(rate.sourceEvidence.observedAt);
+    checkTimestampFreshness(observedAt, nowMs, `rate ${rate.id}.sourceEvidence.observedAt`, errors, {
+      maxAgeMs: rateAgeMs,
+    });
+  }
+
+  const liveAgeMs = inputs.policy.liveUsageFreshnessHours * 3_600_000;
+  for (const path of REQUIRED_LIVE_TIMESTAMP_PATHS) {
+    const timestamp = Date.parse(getPath(inputs.liveUsage, path));
+    checkTimestampFreshness(timestamp, nowMs, `liveUsage.${path}`, errors, {
+      futureGraceMs: 300_000,
+      ...(path === 'capturedAt' ? { maxAgeMs: liveAgeMs } : {}),
+    });
+  }
+
+  inputs.policy.providerHardCaps.forEach((cap, index) => {
+    if (cap.evidenceStatus !== 'verified') return;
+    const prefix = `policy.providerHardCaps[${index}]`;
+    const verifiedAt = Date.parse(cap.lastVerifiedAt);
+    checkTimestampFreshness(verifiedAt, nowMs, `${prefix}.lastVerifiedAt`, errors, {
+      maxAgeMs: rateAgeMs,
+      staleMessage: `provider cap evidence stale: ${cap.provider}`,
+    });
+    const observedAt = Date.parse(cap.evidence.observedAt);
+    checkTimestampFreshness(observedAt, nowMs, `${prefix}.evidence.observedAt`, errors, {
+      maxAgeMs: rateAgeMs,
+    });
+  });
+  return errors;
+}
+
+function assertValidInputs(inputs) {
+  const errors = validateInputs(inputs);
   if (errors.length > 0) throw new Error(errors.join('\n'));
 }
 
@@ -862,8 +900,8 @@ function calculateScenarioRaw(inputs, workload, sensitivity) {
   return { infrastructure, predictions, infrastructureCostUsd, paymentFeeUsd, totalCostUsd, grossMarginPct };
 }
 
-export function calculateScenario(inputs, scenarioId, sensitivityId = 'base', now = new Date()) {
-  assertValidInputs(inputs, now);
+export function calculateScenario(inputs, scenarioId, sensitivityId = 'base') {
+  assertValidInputs(inputs);
   const workload = inputs.scenarios.find((scenario) => scenario.id === scenarioId);
   if (!workload) throw new Error(`unknown scenario: ${scenarioId}`);
   const sensitivity = inputs.policy.sensitivity[sensitivityId];
@@ -883,8 +921,8 @@ export function calculateScenario(inputs, scenarioId, sensitivityId = 'base', no
   };
 }
 
-export function minimumPriceForMargin(inputs, scenarioId, targetMargin = 0.7, now = new Date()) {
-  assertValidInputs(inputs, now);
+export function minimumPriceForMargin(inputs, scenarioId, targetMargin = 0.7) {
+  assertValidInputs(inputs);
   const workload = inputs.scenarios.find((scenario) => scenario.id === scenarioId);
   if (!workload) throw new Error(`unknown scenario: ${scenarioId}`);
   const result = calculateScenarioRaw(inputs, workload, inputs.policy.sensitivity.high);
@@ -897,8 +935,8 @@ export function minimumPriceForMargin(inputs, scenarioId, targetMargin = 0.7, no
   );
 }
 
-export function calculateLiveKnownFloor(inputs, now = new Date()) {
-  assertValidInputs(inputs, now);
+export function calculateLiveKnownFloor(inputs) {
+  assertValidInputs(inputs);
   const rates = rateMap(inputs);
   const live = inputs.liveUsage;
   const blobStorage = live.storage.blobBytes / 1_000_000_000 * rates['vercel-blob-storage'].value;
@@ -919,11 +957,11 @@ export function calculateLiveKnownFloor(inputs, now = new Date()) {
   };
 }
 
-function scenarioTable(inputs, now = new Date()) {
+function scenarioTable(inputs) {
   return inputs.scenarios.map((scenario) => {
-    const low = calculateScenario(inputs, scenario.id, 'low', now);
-    const base = calculateScenario(inputs, scenario.id, 'base', now);
-    const high = calculateScenario(inputs, scenario.id, 'high', now);
+    const low = calculateScenario(inputs, scenario.id, 'low');
+    const base = calculateScenario(inputs, scenario.id, 'base');
+    const high = calculateScenario(inputs, scenario.id, 'high');
     return `| ${scenario.label} | ${money(scenario.priceUsd)} | ${money(low.totalCostUsd)} | ${money(base.totalCostUsd)} | ${money(high.totalCostUsd)} | ${percent(high.grossMarginPct)} |`;
   }).join('\n');
 }
@@ -939,18 +977,17 @@ const budgetTable = (inputs) => Object.entries(inputs.policy.planBudgets)
   .map(([plan, budget]) => `| ${plan} | ${money(budget.monthlyInfrastructureUsd)} | ${money(budget.dailyInferenceUsd)} (${budget.dailyInferenceAttempts} attempts) | ${money(budget.monthlyInferenceUsd)} (${budget.monthlyInferenceAttempts} attempts) |`)
   .join('\n');
 
-export function buildReport(inputs, now = new Date()) {
-  assertValidInputs(inputs, now);
-  const freeHigh = calculateScenario(inputs, 'free', 'high', now);
-  const collectorHigh = calculateScenario(inputs, 'collector', 'high', now);
-  const archiveHigh = calculateScenario(inputs, 'archive', 'high', now);
-  const collectorFloor = minimumPriceForMargin(inputs, 'collector', 0.7, now);
-  const archiveFloor = minimumPriceForMargin(inputs, 'archive', 0.7, now);
-  const liveFloor = calculateLiveKnownFloor(inputs, now);
+export function buildReport(inputs) {
+  assertValidInputs(inputs);
+  const freeHigh = calculateScenario(inputs, 'free', 'high');
+  const collectorHigh = calculateScenario(inputs, 'collector', 'high');
+  const archiveHigh = calculateScenario(inputs, 'archive', 'high');
+  const collectorFloor = minimumPriceForMargin(inputs, 'collector', 0.7);
+  const archiveFloor = minimumPriceForMargin(inputs, 'archive', 0.7);
+  const liveFloor = calculateLiveKnownFloor(inputs);
   const freePool = freeHigh.totalCostUsd * inputs.policy.freeFullAllowanceAccounts;
   const live = inputs.liveUsage;
   const plans = Object.fromEntries(inputs.scenarios.map((scenario) => [scenario.id, scenario]));
-  const refreshDate = inputs.rates[0].retrievedAt;
   const providerCaps = inputs.policy.providerHardCaps
     .map((cap) => `- **${cap.provider}:** target ${cap.amountUsd === null ? 'amount unknown' : money(cap.amountUsd)} per ${cap.period}; action: ${cap.action}; enforcement: ${cap.enforcementStatus}; evidence: ${cap.evidenceStatus} (${cap.evidenceNote}).`)
     .join('\n');
@@ -971,7 +1008,7 @@ export function buildReport(inputs, now = new Date()) {
   const storageGapPct = sourceBytesTotal > 0 ? storageGapBytes / sourceBytesTotal * 100 : null;
   return `# Sploot economic safety envelope
 
-Generated deterministically from the versioned inputs in this directory. Rates were refreshed on ${refreshDate} and CI expires them after ${inputs.policy.rateFreshnessDays} days. This is a release gate, not a forecast: paid-tier margins are modeled at on-demand rates so shared included pools cannot make an unprofitable plan look safe.
+Generated deterministically from the versioned inputs in this directory. Merge CI validates structure, evidence, formulas, and report reproducibility without a wall clock. The daily/manual freshness monitor checks rate, live-usage, and verified provider evidence age and future dates. This is a release gate, not a forecast: paid-tier margins are modeled at on-demand rates so shared included pools cannot make an unprofitable plan look safe.
 
 ## Recommendation
 
@@ -992,7 +1029,7 @@ Low/base/high vary ${sensitivitySummary}. Storage includes retained trash.
 
 | Workload | Revenue | Low COGS | Base COGS | High COGS | High gross margin |
 |---|---:|---:|---:|---:|---:|
-${scenarioTable(inputs, now)}
+${scenarioTable(inputs)}
 
 The abusive and viral rows deliberately exceed their account/global budgets; they prove quotas must cover novel inference, bytes, and request delivery rather than storage alone.
 
@@ -1034,6 +1071,12 @@ ${rateTable(inputs)}
 
 async function main() {
   const inputs = await loadInputs();
+  if (process.argv.includes('--check-freshness')) {
+    const errors = validateFreshness(inputs, new Date());
+    if (errors.length > 0) throw new Error(errors.join('\n'));
+    process.stdout.write('economics freshness is current\n');
+    return;
+  }
   const errors = validateInputs(inputs);
   if (errors.length > 0) throw new Error(errors.join('\n'));
   const report = buildReport(inputs);

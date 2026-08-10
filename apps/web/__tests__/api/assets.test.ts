@@ -139,6 +139,8 @@ describe("GET /api/assets", () => {
     ]);
     // 048: the shuffle mapping must carry the stored thumbnail through to the grid.
     expect(body.assets[0].thumbnailUrl).toBe("https://blob.test/thumb-b.png");
+    expect(body.assets[0].filename).toBe("b.png");
+    expect(body.assets[1].filename).toBe("a.png");
     // sploot-049: the shuffle raw SQL selects a."updatedAt", but the
     // pre-canonicalization list response never surfaced it on any mode --
     // it must not leak into the shuffle-only shape now.

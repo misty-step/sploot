@@ -51,7 +51,7 @@ export function DeleteConfirmationModal({
 
   return (
     <AlertDialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <AlertDialogContent>
+      <AlertDialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
@@ -94,7 +94,7 @@ export function DeleteConfirmationModal({
           </div>
         )}
 
-        <AlertDialogFooter>
+        <AlertDialogFooter className="sticky bottom-0 bg-background pt-2">
           <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onClick={handleConfirm}

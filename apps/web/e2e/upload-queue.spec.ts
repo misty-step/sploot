@@ -212,6 +212,7 @@ async function pasteUrl(page: Page, url: string): Promise<void> {
 type PersistentRouteBridge = {
   forwardedRequests: () => number;
   setTargetBaseURL: (targetBaseURL: string) => void;
+  setRestarting: (restarting: boolean) => void;
   close: () => Promise<void>;
 };
 
@@ -231,7 +232,7 @@ function forwardHeaders(headers: Record<string, string>): Record<string, string>
   return Object.fromEntries(Object.entries(headers).filter(([name]) => !hopByHopHeaders.has(name.toLowerCase())));
 }
 
-async function fetchForBrowser(transport: APIRequestContext, targetURL: URL, method: string, headers: Record<string, string>, data: Buffer | undefined): Promise<APIResponse> {
+async function fetchForBrowser(transport: APIRequestContext, targetURL: URL, method: string, headers: Record<string, string>, data: Buffer | undefined, isRestarting: () => boolean): Promise<APIResponse> {
   // Preserve redirects for Chromium. Following them in Node and fulfilling the
   // final response would leave the browser's logical URL at the original path.
   // A restart briefly closes the child before the replacement binds the same
@@ -240,7 +241,7 @@ async function fetchForBrowser(transport: APIRequestContext, targetURL: URL, met
     try {
       return await transport.fetch(targetURL.toString(), { method, headers, data, failOnStatusCode: false, maxRedirects: 0 });
     } catch (error) {
-      if (attempt >= 40 || !(error instanceof Error) || !error.message.includes('ECONNREFUSED')) throw error;
+      if (attempt >= 40 || !isRestarting() || !(error instanceof Error) || !/ECONN(?:REFUSED|RESET)|socket hang up/.test(error.message)) throw error;
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
@@ -258,6 +259,7 @@ async function installPersistentRouteBridge(
 ): Promise<PersistentRouteBridge> {
   const logicalOrigin = new URL(logicalBaseURL).origin;
   let targetBaseURL = initialTargetBaseURL;
+  let restarting = false;
   let forwardedRequestCount = 0;
   const transport: APIRequestContext = context.request;
   await context.route('**/*', async (route) => {
@@ -275,6 +277,7 @@ async function installPersistentRouteBridge(
       browserRequest.method(),
       forwardHeaders(browserRequest.headers()),
       browserRequest.postDataBuffer() ?? undefined,
+      () => restarting,
     );
     try {
       await route.fulfill({ response });
@@ -285,8 +288,9 @@ async function installPersistentRouteBridge(
   return {
     forwardedRequests: () => forwardedRequestCount,
     setTargetBaseURL: (nextTargetBaseURL) => { targetBaseURL = nextTargetBaseURL; },
+    setRestarting: (nextRestarting) => { restarting = nextRestarting; },
     close: async () => {
-      await context.unroute('**/*');
+      await context.unrouteAll({ behavior: 'ignoreErrors' });
     },
   };
 }
@@ -489,9 +493,14 @@ test('persistent Chromium restart preserves URL and file intent while A, B, and 
     const forwardedBeforeRestart = routeBridge.forwardedRequests();
     const pageCountBeforeRestart = context.pages().length;
     await waitForBrowserHealth(accountATab);
-    await fixtureServer.restart();
-    routeBridge.setTargetBaseURL(fixtureServer.baseURL);
-    await waitForBrowserHealth(accountATab);
+    routeBridge.setRestarting(true);
+    try {
+      await fixtureServer.restart();
+      routeBridge.setTargetBaseURL(fixtureServer.baseURL);
+      await waitForBrowserHealth(accountATab);
+    } finally {
+      routeBridge.setRestarting(false);
+    }
     await accountATab.reload({ waitUntil: 'domcontentloaded' });
     await waitForUploadReady(accountATab);
     expect(context.pages()).toHaveLength(pageCountBeforeRestart);

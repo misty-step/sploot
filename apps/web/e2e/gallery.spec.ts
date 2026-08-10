@@ -98,7 +98,6 @@ async function assertA11y(page: import('@playwright/test').Page) {
     (0, eval)(source);
   }, axeSource);
   const result = await page.evaluate(async () => {
-    // eslint-disable-next-line no-undef
     return (window as any).axe.run(document, {
       runOnly: ['wcag2a', 'wcag2aa'],
     });
@@ -192,15 +191,26 @@ test.describe('authenticated seeded gallery', () => {
           if (response.status() >= 400) httpFailures.push(`${response.status()} ${response.request().method()} ${response.url()}`);
         });
 
+        let imageFilename: string | undefined;
+        let videoFilename: string | undefined;
         // Keep the visual/a11y pass representative without rendering all 100
         // seeded records at once; the direct API loop below proves the full
         // deterministic result set and honest total.
         await page.route('**/api/assets**', async (route) => {
           const response = await route.fetch();
-          const body = await response.json() as { assets?: unknown[] };
+          const body = await response.json() as {
+            assets?: Array<{ id?: string; filename?: string; mime?: string }>;
+          };
+          const visibleAssets = body.assets?.slice(0, 24) ?? [];
+          const videoAsset = body.assets?.find(({ mime }) => mime?.startsWith('video/'));
+          if (videoAsset && !visibleAssets.some(({ id }) => id === videoAsset.id)) {
+            visibleAssets[visibleAssets.length - 1] = videoAsset;
+          }
+          imageFilename = visibleAssets.find(({ mime }) => mime?.startsWith('image/'))?.filename;
+          videoFilename = videoAsset?.filename;
           await route.fulfill({
             response,
-            body: JSON.stringify({ ...body, assets: body.assets?.slice(0, 24) ?? [] }),
+            body: JSON.stringify({ ...body, assets: visibleAssets }),
           });
         });
         await page.goto('/api/qa-auth/login', { waitUntil: 'domcontentloaded', timeout: 90_000 });
@@ -215,14 +225,38 @@ test.describe('authenticated seeded gallery', () => {
         await page.screenshot({ path: testInfo.outputPath(`${theme}-${viewport.label}-browse.png`) });
         const browseCards = await page.getByRole('list', { name: 'meme results' }).getByRole('listitem').count();
 
-        const firstOpen = page.getByRole('button', { name: /^open / }).first();
+        expect(imageFilename, 'visible asset response did not include an image').toBeTruthy();
+        const firstOpen = page.getByRole('button', { name: `open ${imageFilename}`, exact: true });
         await firstOpen.focus();
         await firstOpen.press('Enter');
         const dialog = page.getByRole('dialog');
         await expect(dialog).toBeVisible();
-        await expect(dialog.getByText('cosine')).toBeVisible();
-        await expect(dialog.getByText(/match/i)).toBeVisible();
-        await expect(dialog.getByRole('definition').first()).toBeVisible();
+        await expect(dialog.getByRole('heading', { name: /^meme preview/i })).toBeVisible();
+        await expect(dialog.getByLabel('selected meme')).toBeVisible();
+        await expect(dialog.getByRole('img', { name: /^Selected meme preview:/ })).toBeVisible();
+        await expect(dialog).not.toContainText(/index|cosine|mime/i);
+        const detailGeometry = await dialog.evaluate((node) => {
+          const dialogRect = node.getBoundingClientRect();
+          const mediaRect = node.querySelector('[aria-label="selected meme"]')?.getBoundingClientRect();
+          return {
+            dialog: {
+              top: dialogRect.top,
+              right: dialogRect.right,
+              bottom: dialogRect.bottom,
+              left: dialogRect.left,
+              width: dialogRect.width,
+            },
+            mediaHeight: mediaRect?.height ?? 0,
+          };
+        });
+        expect(detailGeometry.dialog.top).toBeGreaterThanOrEqual(-1);
+        expect(detailGeometry.dialog.left).toBeGreaterThanOrEqual(-1);
+        expect(detailGeometry.dialog.right).toBeLessThanOrEqual(viewport.width + 1);
+        expect(detailGeometry.dialog.bottom).toBeLessThanOrEqual(viewport.height + 1);
+        expect(detailGeometry.dialog.width).toBeGreaterThanOrEqual(
+          viewport.width < 640 ? viewport.width - 2 : viewport.width * 0.78
+        );
+        expect(detailGeometry.mediaHeight).toBeGreaterThan(viewport.height * 0.55);
         const dialogButtons = dialog.getByRole('button');
         const firstDialogButton = dialogButtons.first();
         const lastDialogButton = dialogButtons.last();
@@ -238,9 +272,138 @@ test.describe('authenticated seeded gallery', () => {
         expect(touchTargets.every(({ width, height }) => width >= 44 && height >= 44)).toBe(true);
         await assertA11y(page);
         await page.screenshot({ path: testInfo.outputPath(`${theme}-${viewport.label}-detail.png`) });
-        await page.keyboard.press('Escape');
-        await expect(dialog).toBeHidden();
-        await expect(firstOpen).toBeFocused();
+
+        const previewImage = dialog.getByRole('img', { name: /^Selected meme preview:/ });
+        await previewImage.evaluate((image) => image.dispatchEvent(new Event('error', { bubbles: true })));
+        await expect(dialog.getByText('this meme slipped off the shelf.')).toBeVisible();
+        const retryButton = dialog.getByRole('button', { name: 'try again' });
+        const retryBox = await retryButton.boundingBox();
+        expect(retryBox).not.toBeNull();
+        expect(retryBox!.height).toBeGreaterThanOrEqual(44);
+        await retryButton.click();
+        await expect.poll(
+          async () => previewImage.evaluate((image) => {
+            const candidate = image as HTMLImageElement;
+            return candidate.complete && candidate.naturalWidth > 0;
+          }),
+          { message: 'meme preview did not recover after retry' }
+        ).toBe(true);
+
+        const deleteButton = dialog.getByRole('button', { name: 'Delete meme' });
+        await deleteButton.click();
+        const deleteDialog = page.getByRole('alertdialog');
+        await expect(deleteDialog).toBeVisible();
+        await expect(deleteDialog).not.toContainText('qa-design-user/');
+        const cancelDeleteButton = deleteDialog.getByRole('button', { name: 'Cancel' });
+        const compactDeleteCheck = theme === 'light' && viewport.label === '390x844';
+        if (compactDeleteCheck) {
+          await page.setViewportSize({ width: 568, height: 320 });
+          await expect.poll(
+            async () => deleteDialog.evaluate((node) => {
+              const rect = node.getBoundingClientRect();
+              return rect.top >= 0 && rect.bottom <= 320;
+            }),
+            { message: 'delete confirmation did not settle inside the compact viewport' }
+          ).toBe(true);
+          await expect(cancelDeleteButton).toBeVisible();
+          await page.screenshot({ path: testInfo.outputPath(`${theme}-568x320-delete.png`) });
+        }
+        await cancelDeleteButton.click();
+        await expect(deleteDialog).toBeHidden();
+        if (compactDeleteCheck) {
+          await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        }
+        await expect(deleteButton).toBeFocused();
+
+        if (theme === 'light' && viewport.label === '1440x900') {
+          let deleteAttempt = 0;
+          let expectedDeleteFailureUrl = '';
+          await page.route('**/api/assets/*', async (route) => {
+            if (route.request().method() === 'DELETE') {
+              deleteAttempt += 1;
+              if (deleteAttempt === 1) {
+                expectedDeleteFailureUrl = route.request().url();
+              }
+              await route.fulfill({
+                status: deleteAttempt === 1 ? 500 : 200,
+                contentType: 'application/json',
+                body: deleteAttempt === 1 ? '{"error":"forced delete failure"}' : '{}',
+              });
+              return;
+            }
+            await route.fallback();
+          });
+          await deleteButton.click();
+          await deleteDialog.getByRole('button', { name: 'Delete' }).click();
+          await expect(deleteDialog).toBeHidden();
+          await expect(page.getByText('Failed to delete asset')).toBeVisible();
+          await expect(deleteButton).toBeFocused();
+          const expectedDeleteHttpFailure = `500 DELETE ${expectedDeleteFailureUrl}`;
+          expect(httpFailures).toContain(expectedDeleteHttpFailure);
+          httpFailures.splice(httpFailures.indexOf(expectedDeleteHttpFailure), 1);
+          const expectedDeleteConsoleErrors = consoleErrors.filter((error) =>
+            (error.includes(expectedDeleteFailureUrl) && /status of 500/i.test(error)) ||
+            error.includes('[ERROR] Failed to delete asset:')
+          );
+          expect(expectedDeleteConsoleErrors).toHaveLength(2);
+          for (const error of expectedDeleteConsoleErrors) {
+            consoleErrors.splice(consoleErrors.indexOf(error), 1);
+          }
+          await deleteButton.click();
+          await page.getByRole('alertdialog').getByRole('button', { name: 'Delete' }).click();
+          await expect(dialog).toBeHidden();
+          const remainingOpen = page.getByRole('button', { name: /^open / }).first();
+          await expect(remainingOpen).toBeFocused();
+        } else {
+          await page.keyboard.press('Escape');
+          await expect(dialog).toBeHidden();
+          await expect(firstOpen).toBeFocused();
+        }
+        if (theme === 'light' && viewport.label === '1440x900') {
+          expect(videoFilename, 'visible asset response did not include a video').toBeTruthy();
+          const videoOpen = page.getByRole('button', { name: `open ${videoFilename}`, exact: true });
+          await videoOpen.click();
+          const videoDialog = page.getByRole('dialog');
+          const previewVideo = videoDialog.locator('video');
+          await expect(previewVideo).toBeVisible();
+          const videoPolicy = await previewVideo.evaluate((node) => {
+            const video = node as HTMLVideoElement;
+            const mediaRect = video.getBoundingClientRect();
+            const dialogRect = video.closest('[role="dialog"]')!.getBoundingClientRect();
+            return {
+              muted: video.muted,
+              controls: video.controls,
+              autoplay: video.autoplay,
+              loop: video.loop,
+              playsInline: video.playsInline,
+              contained:
+                mediaRect.left >= dialogRect.left &&
+                mediaRect.right <= dialogRect.right &&
+                mediaRect.top >= dialogRect.top &&
+                mediaRect.bottom <= dialogRect.bottom,
+            };
+          });
+          expect(videoPolicy).toEqual({
+            muted: true,
+            controls: true,
+            autoplay: true,
+            loop: true,
+            playsInline: true,
+            contained: true,
+          });
+          await previewVideo.dispatchEvent('error');
+          await expect(videoDialog.getByText('this meme slipped off the shelf.')).toBeVisible();
+          await videoDialog.getByRole('button', { name: 'try again' }).click();
+          await expect(previewVideo).toBeVisible();
+          await expect.poll(
+            async () => previewVideo.evaluate((node) => (node as HTMLVideoElement).readyState),
+            { message: 'video preview did not recover after retry' }
+          ).toBeGreaterThanOrEqual(2);
+          await page.keyboard.press('Escape');
+          await expect(videoDialog).toBeHidden();
+          await expect(videoOpen).toBeFocused();
+        }
+
         console.log(`[gallery] detail checked ${theme} ${viewport.label}`);
 
         const uploadButton = viewport.width < 768
