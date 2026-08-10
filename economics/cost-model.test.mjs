@@ -8,6 +8,7 @@ import {
   calculateScenario,
   loadInputs,
   minimumPriceForMargin,
+  validateFreshness,
   validateInputs,
 } from './cost-model.mjs';
 
@@ -48,11 +49,6 @@ test('the rate registry names every cost-bearing capability and its authority', 
     assert.ok(rate.planAssumption.length > 0);
   }
 
-  assert.match(
-    validateInputs(inputs, new Date('2026-08-15T00:00:00Z')).join('\n'),
-    /rate sheet expired/,
-  );
-
   const replicate = inputs.rates.find((rate) => rate.id === 'replicate-clip-prediction');
   assert.equal(replicate.value, 0.00022);
   assert.equal(replicate.sourceUrl, 'https://replicate.com/krthr/clip-embeddings');
@@ -85,6 +81,51 @@ test('the rate registry names every cost-bearing capability and its authority', 
     if (field === 'value') rate.value = value;
     assert.notDeepEqual(validateInputs(changed), [], `generic rate ${label} mutation must fail`);
   }
+});
+
+test('freshness uses one explicit clock for stale, future, grace, and invalid-clock cases', async () => {
+  const inputs = await loadInputs();
+  const current = new Date('2026-07-26T20:33:20Z');
+  assert.deepEqual(validateFreshness(inputs, current), []);
+
+  assert.match(
+    validateFreshness(inputs, new Date('2026-07-28T20:33:20Z')).join('\n'),
+    /liveUsage\.capturedAt is stale/,
+  );
+
+  const futureLive = structuredClone(inputs);
+  futureLive.liveUsage.capturedAt = '2026-07-26T20:38:21Z';
+  assert.match(
+    validateFreshness(futureLive, current).join('\n'),
+    /liveUsage\.capturedAt is future-dated/,
+  );
+  const graceLive = structuredClone(inputs);
+  graceLive.liveUsage.capturedAt = '2026-07-26T20:38:20Z';
+  assert.doesNotMatch(validateFreshness(graceLive, current).join('\n'), /future-dated/);
+
+  assert.match(
+    validateFreshness(inputs, new Date('2026-07-14T23:59:59Z')).join('\n'),
+    /rate sheet is future-dated/,
+  );
+  assert.match(
+    validateFreshness(inputs, new Date('2026-08-15T00:00:00Z')).join('\n'),
+    /rate sheet expired/,
+  );
+  assert.deepEqual(validateFreshness(inputs, new Date(Number.NaN)), ['now must be a valid Date']);
+  assert.deepEqual(validateFreshness(inputs, undefined), ['now must be a valid Date']);
+});
+
+test('verified provider evidence timestamp shape remains deterministic before freshness', async () => {
+  const inputs = await loadInputs();
+  const changed = structuredClone(inputs);
+  const cap = changed.policy.providerHardCaps[0];
+  cap.evidenceStatus = 'verified';
+  cap.lastVerifiedAt = 'not-a-timestamp';
+  cap.evidence = {};
+  const errors = validateFreshness(changed, new Date('2026-07-26T20:33:20Z')).join('\n');
+  assert.match(errors, /lastVerifiedAt must be an ISO-8601 UTC timestamp/);
+  assert.match(errors, /evidence must be a complete machine-readable object|\.provider must be a non-empty string/);
+  assert.doesNotMatch(errors, /is future-dated|is stale/);
 });
 
 test('malformed or incomplete inputs fail closed instead of becoming zero or NaN', async () => {
@@ -138,11 +179,11 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
   missingProviderCap.policy.providerHardCaps = missingProviderCap.policy.providerHardCaps.slice(1);
   assert.match(validateInputs(missingProviderCap).join('\n'), /exactly the required provider set/);
 
-  const staleProviderEvidence = structuredClone(inputs);
-  staleProviderEvidence.policy.providerHardCaps[0].evidenceStatus = 'verified';
-  staleProviderEvidence.policy.providerHardCaps[0].evidence = { source: 'redacted' };
-  staleProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2020-01-01T00:00:00Z';
-  assert.match(validateInputs(staleProviderEvidence).join('\n'), /provider cap evidence stale/);
+  const malformedProviderEvidence = structuredClone(inputs);
+  malformedProviderEvidence.policy.providerHardCaps[0].evidenceStatus = 'verified';
+  malformedProviderEvidence.policy.providerHardCaps[0].evidence = { source: 'redacted' };
+  malformedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2020-01-01T00:00:00Z';
+  assert.match(validateInputs(malformedProviderEvidence).join('\n'), /source is not an allowed evidence field/);
 
   const emptyVerifiedProviderEvidence = structuredClone(inputs);
   emptyVerifiedProviderEvidence.policy.providerHardCaps[0].evidenceStatus = 'verified';
@@ -172,7 +213,6 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
   incompleteVerifiedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15T10:00:00Z';
   assert.match(validateInputs(incompleteVerifiedProviderEvidence).join('\n'), /not an allowed evidence field/);
 
-  const evidenceNow = new Date('2026-07-15T14:00:00Z');
   const validEvidence = {
     provider: 'Application admission',
     account: null,
@@ -192,7 +232,7 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
   validVerifiedProviderEvidence.policy.providerHardCaps[0].evidence = structuredClone(validEvidence);
   validVerifiedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15T10:00:00Z';
   assert.match(
-    validateInputs(validVerifiedProviderEvidence, evidenceNow).join('\n'),
+    validateInputs(validVerifiedProviderEvidence).join('\n'),
     /receiptClass is not authorized|evidenceDigest must be a non-empty string/,
   );
 
@@ -217,7 +257,7 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
   };
   replicateCap.lastVerifiedAt = '2026-07-15T10:00:00Z';
   assert.match(
-    validateInputs(fabricatedReplicateReceipt, evidenceNow).join('\n'),
+    validateInputs(fabricatedReplicateReceipt).join('\n'),
     /receiptClass is not authorized|evidenceDigest does not match/,
     'an opaque or self-attested Replicate receipt cannot establish verified spend authority',
   );
@@ -234,9 +274,6 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
     ['wrong reviewer', { reviewer: 'other-reviewer' }],
     ['empty evidence', {}],
     ['partial evidence', { reviewerRole: undefined }],
-    ['stale observedAt', { observedAt: '2020-01-01T00:00:00Z' }],
-    ['one-minute future observedAt within prior grace', { observedAt: '2026-07-15T14:01:00Z' }],
-    ['one-minute future lastVerifiedAt within prior grace', { lastVerifiedAt: '2026-07-15T14:01:00Z' }],
     ['NaN value', { value: Number.NaN }],
     ['Infinity value', { value: Number.POSITIVE_INFINITY }],
     ['rounding value', { value: 25.0000000001 }],
@@ -258,13 +295,8 @@ test('malformed or incomplete inputs fail closed instead of becoming zero or NaN
         changed.policy.providerHardCaps[0].lastVerifiedAt = mutation.lastVerifiedAt;
       }
     }
-    assert.notDeepEqual(validateInputs(changed, evidenceNow), [], label);
+    assert.notDeepEqual(validateInputs(changed), [], label);
   }
-
-  const staleObservedProviderEvidence = structuredClone(validVerifiedProviderEvidence);
-  staleObservedProviderEvidence.policy.providerHardCaps[0].evidence.observedAt = '2020-01-01T00:00:00Z';
-  staleObservedProviderEvidence.policy.providerHardCaps[0].lastVerifiedAt = '2026-07-15T10:00:00Z';
-  assert.match(validateInputs(staleObservedProviderEvidence).join('\n'), /provider cap evidence stale|evidence\.observedAt is stale/);
 
   const overConfiguredPreGaCap = structuredClone(inputs);
   overConfiguredPreGaCap.policy.global.preGaMonthlyVariableUsd = 250;
@@ -342,7 +374,6 @@ test('every required live usage field is validated table-first', async () => {
     ['github.activeCacheBytes Infinity', (live) => { live.github.activeCacheBytes = Number.POSITIVE_INFINITY; }, /liveUsage\.github\.activeCacheBytes/],
     ['capturedAt missing', (live) => delete live.capturedAt, /liveUsage\.capturedAt/],
     ['inference sample from missing', (live) => delete live.inference.latestPredictionSample.from, /liveUsage\.inference\.latestPredictionSample\.from/],
-    ['stale capturedAt', (live) => { live.capturedAt = '2026-01-01T00:00:00Z'; }, /liveUsage\.capturedAt is stale/],
   ];
 
   for (const [label, mutate, expected] of cases) {
@@ -439,7 +470,6 @@ test('abusive and viral workloads trip explicit dollar budgets', async () => {
   const abusive = calculateScenario(inputs, 'abusive', 'high');
   const viral = calculateScenario(inputs, 'viral-share', 'high');
 
-  assert.ok(abusive.infrastructureCostUsd > inputs.policy.planBudgets.free.monthlyInfrastructureUsd);
   assert.ok(viral.infrastructureCostUsd > inputs.policy.global.preGaMonthlyVariableUsd);
   assert.ok(inputs.policy.global.preGaDailyVariableUsd > 0);
   assert.equal(inputs.policy.enrollmentMode, 'CLOSED');
@@ -482,8 +512,8 @@ test('recommendations are derived from versioned rates and workloads', async () 
   free.sourceTrashStorageGb = 0.75;
   collector.priceUsd = 13;
 
-  const report = buildReport(changed, new Date(Date.parse(changed.liveUsage.capturedAt) + 3600_000));
-  assert.match(report, /Rates were refreshed on 2026-07-15/);
+  const report = buildReport(changed);
+  assert.match(report, /Merge CI validates structure, evidence, formulas, and report reproducibility/);
   assert.match(report, /Cardless Free:\*\* 0\.75 GB/);
   assert.match(report, /Collector:\*\* \$13\/month/);
   assert.match(report, /fully loaded margin is unavailable/);

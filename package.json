@@ -39,6 +39,7 @@
     "prisma:migration-prefixes:test": "node --test scripts/check-prisma-migration-prefixes.test.mjs",
     "test": "turbo run test",
     "economics": "node economics/cost-model.mjs",
+    "economics:freshness": "node economics/cost-model.mjs --check-freshness",
     "test:economics": "node --test economics/cost-model.test.mjs",
     "secrets:check": "node scripts/check-secrets.mjs",
     "secrets:gitleaks": "gitleaks dir --redact=100 --config .gitleaks.toml .",

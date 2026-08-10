@@ -5,7 +5,15 @@ This directory is Sploot's versioned economic safety input, calculator, and gene
 ```bash
 pnpm test:economics
 pnpm economics -- --write
+pnpm economics:freshness
 ```
+
+`pnpm test:economics` is the deterministic merge gate. It validates structure,
+evidence, formulas, budgets, and report reproducibility without reading the
+wall clock. `pnpm economics:freshness` is the daily/manual operational monitor;
+it validates the deterministic contract first, then checks current age and
+future-date rules with the process clock. A stale checked-in usage snapshot
+must fail that monitor without making merge CI depend on today's date.
 
 `rates.json` records official list prices and assumptions. The Replicate
 `krthr/clip-embeddings` page currently estimates about `$0.00022/run` (about
