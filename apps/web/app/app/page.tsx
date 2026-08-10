@@ -17,10 +17,10 @@ import { AssetIntegrityBanner } from '@/components/library/asset-integrity-banne
 import { SearchBar, SimilarityScoreLegend } from '@/components/search';
 import { cn } from '@/lib/utils';
 import { UploadZone } from '@/components/upload/upload-zone';
-import { Heart } from 'lucide-react';
+import { Heart, ImageOff, Loader2, RotateCcw, Share2, Trash2, X } from 'lucide-react';
 import { showToast } from '@/components/ui/toast';
 import { getEmbeddingQueueManager } from '@/lib/embedding-queue';
-import { ShareButton } from '@/components/library/share-button';
+import { useShareMeme } from '@/components/library/share-button';
 import { error as logError } from '@/lib/logger';
 import type { EmbeddingQueueItem } from '@/lib/embedding-queue';
 import { useSearchShortcut, useSlashSearchShortcut } from '@/hooks/use-keyboard-shortcut';
@@ -42,7 +42,6 @@ import {
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { X, Trash2 } from 'lucide-react';
 import { DeleteConfirmationModal, useDeleteConfirmation } from '@/components/ui/delete-confirmation-modal';
 import { track } from '@/lib/analytics';
 import { logger } from '@/lib/observability-logger';
@@ -70,6 +69,15 @@ function AppPageClient() {
 
   const [selectedAsset, setSelectedAsset] = useState<any>(null);
   const detailReturnFocusRef = useRef<HTMLElement | null>(null);
+  const detailDeleteButtonRef = useRef<HTMLButtonElement | null>(null);
+  const deleteWasConfirmedRef = useRef(false);
+  const [detailMediaState, setDetailMediaState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const { share: shareSelectedAsset, loading: isSharingSelectedAsset } = useShareMeme({
+    assetId: selectedAsset?.id ?? '',
+    blobUrl: selectedAsset?.blobUrl,
+    filename: selectedAsset?.filename,
+    mimeType: selectedAsset?.mime,
+  });
 
   // Command palette state
   const { isOpen: isCommandPaletteOpen, openPalette, closePalette } = useCommandPalette();
@@ -591,6 +599,7 @@ function AppPageClient() {
       detailReturnFocusRef.current = document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
+      setDetailMediaState('loading');
       setSelectedAsset(asset);
     },
     [filteredSearchAssets, isSearching]
@@ -621,6 +630,9 @@ function AppPageClient() {
       } catch (error) {
         logError('Failed to delete asset:', error);
         showToast('Failed to delete asset', 'error');
+        if (selectedAsset?.id === assetId) {
+          requestAnimationFrame(() => detailDeleteButtonRef.current?.focus());
+        }
       } finally {
         setIsDeleting(false);
       }
@@ -855,23 +867,107 @@ function AppPageClient() {
             onEscapeKeyDown={() => setSelectedAsset(null)}
             onCloseAutoFocus={(event) => {
               event.preventDefault();
-              detailReturnFocusRef.current?.focus();
+              const returnTarget = detailReturnFocusRef.current;
+              requestAnimationFrame(() => {
+                const fallbackTarget = document.querySelector<HTMLElement>(
+                  '[role="list"][aria-label="meme results"] button'
+                );
+                (returnTarget?.isConnected ? returnTarget : fallbackTarget)?.focus();
+              });
             }}
-            className="relative max-h-[calc(100vh-2rem)] max-w-6xl overflow-auto bg-sploot-panel p-0 sm:rounded-[var(--sploot-radius)]"
+            className="h-[100dvh] max-h-none w-screen max-w-none gap-0 overflow-hidden rounded-[var(--sploot-radius)] border-x-0 bg-sploot-panel p-0 sm:h-[min(90dvh,56rem)] sm:max-h-[calc(100dvh-2rem)] sm:w-[min(94vw,80rem)] sm:max-w-6xl sm:border-x"
           >
-            <DialogTitle className="sr-only">{selectedAsset.filename}</DialogTitle>
-            <DialogDescription className="sr-only">Meme detail and actions</DialogDescription>
-            <div className="flex w-full min-w-0 flex-col">
-              <div className="flex items-center justify-between gap-3 border-b-[3px] border-sploot-ink px-4 py-3 pr-16">
-                <div className="min-w-0">
-                  <p className="truncate font-display text-lg font-normal lowercase">{selectedAsset.filename}</p>
-                  <p className="font-mono text-[0.65rem] lowercase text-muted-foreground">detail · esc closes</p>
+            <div className="flex min-h-0 w-full min-w-0 flex-col">
+              <header className="flex shrink-0 items-center justify-between gap-3 border-b-[3px] border-sploot-ink bg-sploot-panel pb-2.5 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[max(0.625rem,env(safe-area-inset-top))] sm:px-4 sm:py-2.5">
+                <DialogTitle className="font-display text-xl font-normal lowercase sm:text-2xl">
+                  meme preview
+                  <span className="sr-only">{`: ${selectedAsset.filename}`}</span>
+                </DialogTitle>
+                <DialogDescription className="sr-only">
+                  View, favorite, share, or delete this meme.
+                </DialogDescription>
+                <IconButton
+                  label="Close preview"
+                  size="dock"
+                  onClick={() => setSelectedAsset(null)}
+                >
+                  <X />
+                </IconButton>
+              </header>
+
+              <div
+                role="group"
+                aria-label="selected meme"
+                aria-busy={detailMediaState === 'loading'}
+                className="relative min-h-0 flex-1 overflow-hidden bg-sploot-paper-warm p-2 sm:p-4"
+              >
+                <div className="relative h-full w-full overflow-hidden rounded-[var(--sploot-radius-inner)] border-2 border-sploot-ink bg-sploot-void/5">
+                  {detailMediaState === 'error' ? (
+                    <div
+                      role="status"
+                      className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center"
+                    >
+                      <ImageOff className="size-12 text-sploot-red" aria-hidden="true" />
+                      <p className="font-display text-xl lowercase">this meme slipped off the shelf.</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="min-h-[var(--sploot-touch-target)] gap-2"
+                        onClick={() => setDetailMediaState('loading')}
+                      >
+                        <RotateCcw className="size-4" />
+                        try again
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      {isVideoMimeType(selectedAsset.mime) ? (
+                        <video
+                          src={resolveQaSeedSrc(selectedAsset.blobUrl)}
+                          poster={selectedAsset.thumbnailUrl ? resolveQaSeedSrc(selectedAsset.thumbnailUrl) : undefined}
+                          controls
+                          autoPlay
+                          muted
+                          loop
+                          playsInline
+                          aria-label={`Selected meme preview: ${selectedAsset.filename}`}
+                          className="block h-full w-full object-contain"
+                          onLoadedData={() => setDetailMediaState('ready')}
+                          onError={() => setDetailMediaState('error')}
+                        />
+                      ) : (
+                        <Image
+                          src={resolveQaSeedSrc(selectedAsset.blobUrl)}
+                          alt={`Selected meme preview: ${selectedAsset.filename}`}
+                          fill
+                          sizes="(max-width: 640px) 100vw, 94vw"
+                          className="object-contain"
+                          priority
+                          unoptimized={isAnimatedImageMimeType(selectedAsset.mime)}
+                          onLoad={() => setDetailMediaState('ready')}
+                          onError={() => setDetailMediaState('error')}
+                        />
+                      )}
+                      {detailMediaState === 'loading' && (
+                        <div
+                          role="status"
+                          aria-label="Loading meme"
+                          className="pointer-events-none absolute inset-0 grid place-items-center bg-sploot-paper-warm"
+                        >
+                          <Loader2 className="size-8 animate-spin text-sploot-purple" />
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)]"
+              </div>
+
+              <footer className="flex shrink-0 items-center justify-between border-t-[3px] border-sploot-ink bg-sploot-panel pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 sm:px-4 sm:py-2.5">
+                <div className="flex items-center gap-2" role="group" aria-label="meme actions">
+                  <IconButton
+                    label={selectedAsset.favorite ? 'Remove from bangers' : 'Add to bangers'}
+                    size="dock"
+                    pressed={selectedAsset.favorite}
                     onClick={async () => {
                       try {
                         const favorite = !selectedAsset.favorite;
@@ -888,24 +984,26 @@ function AppPageClient() {
                         logError('Failed to toggle favorite:', error);
                       }
                     }}
-                    aria-label={selectedAsset.favorite ? 'Remove from bangers' : 'Add to bangers'}
                   >
-                    <Heart className={cn('h-5 w-5', selectedAsset.favorite && 'fill-current text-sploot-magenta')} />
-                  </Button>
-                  <ShareButton
-                    assetId={selectedAsset.id}
-                    blobUrl={selectedAsset.blobUrl}
-                    filename={selectedAsset.filename}
-                    mimeType={selectedAsset.mime}
-                    variant="ghost"
-                    size="icon"
-                    className="min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)]"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)] hover:bg-sploot-red"
+                    <Heart className={cn(selectedAsset.favorite && 'fill-current text-sploot-magenta')} />
+                  </IconButton>
+                  <IconButton
+                    label="Share meme"
+                    size="dock"
+                    onClick={shareSelectedAsset}
+                    disabled={isSharingSelectedAsset}
+                  >
+                    {isSharingSelectedAsset ? <Loader2 className="animate-spin" /> : <Share2 />}
+                  </IconButton>
+                </div>
+                <div className="border-l-2 border-sploot-ink/20 pl-3">
+                  <IconButton
+                    ref={detailDeleteButtonRef}
+                    label="Delete meme"
+                    size="dock"
+                    className="!text-sploot-red hover:!bg-sploot-red hover:!text-white"
                     onClick={() => {
+                      deleteWasConfirmedRef.current = false;
                       const shouldSkip = openDeleteConfirmation({
                         id: selectedAsset.id,
                         imageUrl: selectedAsset.thumbnailUrl || selectedAsset.blobUrl,
@@ -913,55 +1011,11 @@ function AppPageClient() {
                       });
                       if (shouldSkip) handleDeleteAsset(selectedAsset.id);
                     }}
-                    aria-label="Delete meme"
                   >
-                    <Trash2 className="h-5 w-5" />
-                  </Button>
+                    <Trash2 />
+                  </IconButton>
                 </div>
-              </div>
-              <div className="grid w-full min-w-0 gap-4 p-4 md:grid-cols-[minmax(0,1fr)_16rem]">
-                <div className="relative flex min-h-[min(60vh,38rem)] min-w-0 w-full max-w-full items-center justify-center overflow-hidden rounded-[var(--sploot-radius-inner)] border-2 border-sploot-ink bg-sploot-paper-warm p-3">
-                  {isVideoMimeType(selectedAsset.mime) ? (
-                    <video
-                      src={resolveQaSeedSrc(selectedAsset.blobUrl)}
-                      poster={selectedAsset.thumbnailUrl ? resolveQaSeedSrc(selectedAsset.thumbnailUrl) : undefined}
-                      controls
-                      autoPlay
-                      loop
-                      playsInline
-                      className="block h-auto w-auto max-h-full max-w-full object-contain"
-                    />
-                  ) : (
-                    <Image
-                      src={resolveQaSeedSrc(selectedAsset.blobUrl)}
-                      alt={selectedAsset.filename}
-                      fill
-                      sizes="(max-width: 768px) 100vw, 70vw"
-                      className="object-contain p-3"
-                      priority
-                      unoptimized={isAnimatedImageMimeType(selectedAsset.mime)}
-                    />
-                  )}
-                </div>
-                <dl aria-label="meme metadata" className="min-w-0 max-w-full self-start overflow-hidden rounded-[var(--sploot-radius-inner)] border-2 border-dashed border-sploot-ink p-3 font-mono text-xs lowercase">
-                  <div className="flex justify-between gap-3 border-b border-dashed border-sploot-ink/50 py-2"><dt>index</dt><dd>—</dd></div>
-                  <div className="flex justify-between gap-3 border-b border-dashed border-sploot-ink/50 py-2"><dt>match</dt><dd>{typeof selectedAsset.relevance === 'number' ? `${Math.round(selectedAsset.relevance)}%` : '—'}</dd></div>
-                  <div className="flex justify-between gap-3 border-b border-dashed border-sploot-ink/50 py-2"><dt>cosine</dt><dd>{typeof selectedAsset.similarity === 'number' ? selectedAsset.similarity.toFixed(2) : '—'}</dd></div>
-                  <div className="flex justify-between gap-3 border-b border-dashed border-sploot-ink/50 py-2"><dt>size</dt><dd>{selectedAsset.width && selectedAsset.height ? `${selectedAsset.width}×${selectedAsset.height}` : '—'}</dd></div>
-                  <div className="flex justify-between gap-3 py-2"><dt>mime</dt><dd>{selectedAsset.mime}</dd></div>
-                </dl>
-              </div>
-              {/* Keep the visible close control last in DOM order so the dialog's
-                  native media controls remain keyboard reachable without stealing
-                  the reverse-tab boundary from the primary dismissal action. */}
-              <IconButton
-                label="Close preview"
-                size="dock"
-                className="absolute right-4 top-3 z-10 min-h-[var(--sploot-touch-target)] min-w-[var(--sploot-touch-target)]"
-                onClick={() => setSelectedAsset(null)}
-              >
-                <X className="h-5 w-5" />
-              </IconButton>
+              </footer>
             </div>
           </DialogContent>
         )}
@@ -1051,8 +1105,15 @@ function AppPageClient() {
       {/* Delete Confirmation Modal */}
       <DeleteConfirmationModal
         isOpen={isDeleteModalOpen}
-        onClose={closeDeleteConfirmation}
+        onClose={() => {
+          closeDeleteConfirmation();
+          if (!deleteWasConfirmedRef.current) {
+            requestAnimationFrame(() => detailDeleteButtonRef.current?.focus());
+          }
+          deleteWasConfirmedRef.current = false;
+        }}
         onConfirm={() => {
+          deleteWasConfirmedRef.current = true;
           if (deleteTargetAsset) {
             handleDeleteAsset(deleteTargetAsset.id);
           }

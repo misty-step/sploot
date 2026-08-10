@@ -497,7 +497,7 @@ async function getHandler(req: NextRequest) {
 
     const formattedAssets: Asset[] = assets.map((asset) =>
       toGridAsset(
-        { ...stripUpdatedAt(asset), filename: asset.pathname },
+        stripUpdatedAt(asset),
         includeTags ? { tags: tagsByAssetId[asset.id] || [] } : {},
       ),
     );

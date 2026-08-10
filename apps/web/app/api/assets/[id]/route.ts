@@ -64,7 +64,7 @@ async function getHandler(
 
     return NextResponse.json({
       asset: toGridAsset(
-        { ...asset, filename: asset.pathname },
+        asset,
         { tags: mapAssetTags(asset.tags) },
       ),
     });
@@ -156,7 +156,7 @@ async function patchHandler(
 
     return NextResponse.json({
       asset: toGridAsset(
-        { ...updatedAssetRow, filename: updatedAssetRow.pathname },
+        updatedAssetRow,
         { tags: mapAssetTags(updatedAssetRow.tags) },
       ),
       message: 'Asset updated successfully',

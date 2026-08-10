@@ -102,6 +102,7 @@ describe('GET /api/assets/:id', () => {
     // sploot-049: the detail route hand-rolled its response and dropped
     // thumbnailUrl entirely, the same field-drop bug 048 fixed elsewhere.
     expect(body.asset.thumbnailUrl).toBe('https://blob/thumb-a.png');
+    expect(body.asset.filename).toBe('a.png');
     expect(body.asset.tags).toEqual([{ id: 'tag-1', name: 'reaction' }]);
     expect(body.asset.embedding).toEqual({
       assetId: 'asset-1',
@@ -167,6 +168,7 @@ describe('PATCH /api/assets/:id', () => {
 
     expect(res.status).toBe(200);
     expect(body.asset.thumbnailUrl).toBe('https://blob/thumb-a.png');
+    expect(body.asset.filename).toBe('a.png');
     expect(body.asset.embedding).toEqual({
       assetId: 'asset-1',
       modelName: 'clip',
