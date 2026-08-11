@@ -185,6 +185,63 @@ not a verified deployment. the deployed smoke also asserts `/api/health/live`
 answers `alive` — the platform routing probe is explicitly shallow, and the
 deep `/api/health` contract above remains the readiness authority.
 
+## sploot release verification
+
+`release:verify` is a read-only product-runtime proof for an Estate release transaction. it never invokes `doctl`, reads provider state, writes a database/storage surface, or performs compensation. Estate remains the authority for provider readback, rollback, and quarantine.
+
+forward mode probes the exact `/api/health/live`, `/api/health`, and `/api/health/enrollment` routes. `rollback_safety` repeats those probes, then reads the bearer only from `SPLOOT_RELEASE_VERIFIER_BEARER_TOKEN` and posts valid JSON to `/api/embeddings/text`; only the exact HTTP 503 typed `embeddings_disabled` response is accepted. redirects, non-HTTPS URLs (outside explicit local test mode), malformed/unknown/oversized/stale responses, and 401/403 responses fail closed.
+ordinary probe failures still emit a signed closed packet with `ok: false`, the affected check set to `false`, and generic redacted failure observations; the process exits nonzero so automation cannot mistake it for a green run. malformed authority/input, missing bearer, invalid signing key, and expired evidence windows produce no packet.
+
+```bash
+pnpm --filter web release:verify -- \
+  --transaction-id "$ESTATE_TRANSACTION_ID" \
+  --mode forward \
+  --target-commit "$TARGET_COMMIT" \
+  --target-deployment-id "$TARGET_DEPLOYMENT_ID" \
+  --target-change-id "$TARGET_CHANGE_ID" \
+  --target-marker "$TARGET_MARKER" \
+  --base-url "$EXACT_DEPLOYMENT_URL" \
+  --observed-at "$OBSERVED_AT" --expires-at "$EXPIRES_AT" \
+  --signing-key-file "$SIGNING_KEY_FILE" \
+  --checks liveness,health,enrollment
+```
+
+for a local HTTP fixture only, add `--test-mode`; never use that switch for a deployed URL. rollback safety uses the same command with `--mode rollback_safety` and the bearer environment reference. the token is never accepted as a flag and never appears in evidence, signatures, errors, or logs.
+
+evidence is closed JSON under `sploot.release-verification.v1`. observed/expiry timestamps must be current, ordered, and no more than five minutes apart. the optional `--checks` list must exactly match Estate's declared required checks (the default public set is `liveness,health,enrollment`; rollback mode also requires `rollback_safety`). the signature is detached Ed25519 over canonical UTF-8 JSON of the `evidence` object (recursively sorted object keys, array order preserved, no whitespace). the outer packet contains only `schema`, `evidence`, `signature` (base64url without padding), and `public_key` (raw 32-byte Ed25519 public key, base64url without padding). `evidence.verifier_identity` is `ed25519:<sha256(raw-public-key)>`; Estate uses that identity to select the trusted key. requested target metadata—including the base URL—is signed request binding, not an observed commit claim. `target_change_id` remains an independent caller-supplied binding; the verifier never derives it from health/version output.
+
+```json
+{
+  "schema": "sploot.release-verification.v1",
+  "evidence": {
+    "schema": "sploot.release-verification.v1",
+    "verifier_identity": "ed25519:<sha256-of-raw-public-key>",
+    "transaction_id": "estate-tx-123",
+    "mode": "forward",
+    "requested": {
+      "target_commit": "<requested-commit>",
+      "target_deployment_id": "<requested-deployment>",
+      "target_change_id": "<requested-change>",
+      "target_marker": "<requested-marker>",
+      "base_url": "https://example.invalid"
+    },
+    "ok": true,
+    "observed_at": "2026-07-18T12:00:00.000Z",
+    "expires_at": "2026-07-18T12:04:00.000Z",
+    "checks": { "liveness": true, "health": true, "enrollment": true },
+    "runtime": {
+      "liveness": { "http_status": 200, "status": "alive", "service": "sploot-web" },
+      "readiness": { "http_status": 200, "status": "ok", "timestamp": "2026-07-18T12:01:00.000Z", "version": "0.1.0", "dependencies": { "database": "up", "embedding_limiter": "up", "share_slug_cache": "local" } },
+      "enrollment": { "http_status": 200, "configuration": "valid", "mode": "closed", "status": "paused" }
+    },
+    "safety": null,
+    "redaction": "provider secrets, bearer credentials, and signing private bytes omitted"
+  },
+  "signature": "<base64url-ed25519-signature>",
+  "public_key": "<base64url-raw-ed25519-public-key>"
+}
+```
+
 ## rollback
 
 for a deliberate application rollback, first set
