@@ -88,7 +88,8 @@ function deriveFilename(pathname: string, filename?: string | null): string {
 
 /** Shared `{ id, name }` tag mapper, deduplicating the identical inline
  * `.map((at) => ({ id: at.tag.id, name: at.tag.name }))` repeated across every
- * asset read path that embeds an asset's tags. */
+ * asset read path that embeds an asset's tags. Batch-load those rows with
+ * `loadTagsByAssetId` in `asset-tags.ts` rather than querying per asset. */
 export function mapAssetTags(rows: Array<{ tag: { id: string; name: string } }>): AssetTag[] {
   return rows.map((row) => ({ id: row.tag.id, name: row.tag.name }));
 }

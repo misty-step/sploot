@@ -37,8 +37,9 @@ import {
   MIN_TASTE_BANGER_EMBEDDINGS,
   type TasteAssetRow,
 } from "@/lib/taste/taste-engine";
-import { toGridAsset, mapAssetTags } from "@/lib/asset-dto";
-import type { Asset, AssetTag } from "@/lib/types";
+import { toGridAsset } from "@/lib/asset-dto";
+import { loadTagsByAssetId } from "@/lib/asset-tags";
+import type { Asset } from "@/lib/types";
 import {
   assertEnrolledUser,
   enrollmentDeniedResponse,
@@ -474,31 +475,14 @@ async function getHandler(req: NextRequest) {
           prisma.asset.count({ where }),
         ])) as [FormattableAssetRow[], number];
 
-    let tagsByAssetId: Record<string, AssetTag[]> = {};
-
-    if (includeTags && assets.length > 0) {
-      const assetIds = assets.map((asset) => asset.id);
-      const tagRows = await prisma!.assetTag.findMany({
-        where: { assetId: { in: assetIds } },
-        select: {
-          assetId: true,
-          tag: { select: { id: true, name: true } },
-        },
-      });
-
-      const rowsByAssetId: Record<string, Array<{ tag: { id: string; name: string } }>> = {};
-      for (const row of tagRows) {
-        (rowsByAssetId[row.assetId] ??= []).push(row);
-      }
-      tagsByAssetId = Object.fromEntries(
-        Object.entries(rowsByAssetId).map(([assetId, rows]) => [assetId, mapAssetTags(rows)]),
-      );
-    }
+    const tagsByAssetId = includeTags
+      ? await loadTagsByAssetId(assets.map((asset) => asset.id))
+      : {};
 
     const formattedAssets: Asset[] = assets.map((asset) =>
       toGridAsset(
         stripUpdatedAt(asset),
-        includeTags ? { tags: tagsByAssetId[asset.id] || [] } : {},
+        includeTags ? { tags: tagsByAssetId[asset.id] ?? [] } : {},
       ),
     );
 
