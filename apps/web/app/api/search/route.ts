@@ -10,7 +10,8 @@ import {
   VECTOR_SEARCH_CURSOR_CONTEXT_ERROR,
   type VectorSearchRow,
 } from '@/lib/db';
-import { toGridAsset, mapAssetTags } from '@/lib/asset-dto';
+import { toGridAsset } from '@/lib/asset-dto';
+import { loadTagsByAssetId } from '@/lib/asset-tags';
 import { CLIP_MODEL, createEmbeddingService, EmbeddingAdmissionError, EmbeddingError } from '@/lib/embeddings';
 import { CostAdmissionError, costAdmissionErrorResponse } from '@/lib/cost';
 import {
@@ -200,20 +201,12 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
     );
     const searchResults = searchPage.results;
 
-    // Format results with additional metadata
-    const formattedResults = await Promise.all(
-      searchResults.map(async (result: VectorSearchRow) => {
-        // Get tags for each asset
-        const assetTags = await prisma!.assetTag.findMany({
-          where: { assetId: result.id },
-          include: { tag: true },
-        });
-
-        return toGridAsset(result, {
-          tags: mapAssetTags(assetTags),
-          belowThreshold: false,
-        });
-      })
+    const tagsByAssetId = await loadTagsByAssetId(searchResults.map((result) => result.id));
+    const formattedResults = searchResults.map((result: VectorSearchRow) =>
+      toGridAsset(result, {
+        tags: tagsByAssetId[result.id] ?? [],
+        belowThreshold: false,
+      }),
     );
 
     const queryTime = Date.now() - startTime;

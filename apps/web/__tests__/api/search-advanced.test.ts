@@ -137,6 +137,15 @@ describe('POST /api/search/advanced', () => {
     expect(body.results[0].similarity).toBeCloseTo(0.87);
     expect(body.results[0].relevance).toBe(87);
 
+    expect(mocks.findManyAssetTags).toHaveBeenCalledTimes(1);
+    expect(mocks.findManyAssetTags).toHaveBeenCalledWith({
+      where: { assetId: { in: ['asset-1'] } },
+      select: {
+        assetId: true,
+        tag: { select: { id: true, name: true } },
+      },
+    });
+
     const [sqlObject] = mocks.queryRaw.mock.calls[0];
     const sql = sqlObject.text;
     expect(sql).toContain('a.thumbnail_url');
