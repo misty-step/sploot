@@ -15,7 +15,7 @@ import {
   EmbeddingProviderUnavailableError,
   EmbeddingConfigurationError,
 } from '@/lib/embedding-errors';
-import { headers } from 'next/headers';
+import { withCronAuth } from '@/lib/auth/with-cron-auth';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
 import { getRuntimeGate, runtimeGateError } from '@/lib/runtime-gates';
@@ -69,7 +69,7 @@ type BatchOutcome = 'success' | 'no_work' | 'partial' | 'backoff' | 'configurati
  * Cron job endpoint to process assets that need embeddings.
  * Can be triggered by the production scheduler or manually.
  *
- * Authorization: Uses Bearer token from CRON_SECRET environment variable
+ * Authorization: Bearer token from CRON_SECRET (withCronAuth)
  */
 async function getHandler(request: NextRequest) {
   const startTime = Date.now();
@@ -88,21 +88,6 @@ async function getHandler(request: NextRequest) {
   let configurationCanaryOwned = false;
 
   try {
-    // Verify cron authorization - required in all environments
-    const authHeader = (await headers()).get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret) {
-      return NextResponse.json(
-        { error: 'CRON_SECRET not configured' },
-        { status: 500 }
-      );
-    }
-
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     if (!prisma) {
       return NextResponse.json(
         { error: 'Database unavailable' },
@@ -628,6 +613,6 @@ async function getHandler(request: NextRequest) {
 // variant — it would just duplicate GET and invite an "options" knob, and the
 // only knob worth having (re-embed everything) is the runaway this route must
 // never expose. See ADR-008.
-export const GET = withObservability(getHandler, {
+export const GET = withObservability(withCronAuth(getHandler), {
   operation: 'cron:process-embeddings',
 });

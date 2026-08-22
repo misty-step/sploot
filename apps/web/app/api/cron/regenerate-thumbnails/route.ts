@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { headers } from 'next/headers';
 import { createHash, randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { prisma } from '@/lib/db';
 import { generateThumbnail } from '@/lib/image-processing';
+import { withCronAuth } from '@/lib/auth/with-cron-auth';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
 import { ConfiguredStorageWriter, bodyToBuffer, ObjectNotFoundError } from '@/lib/storage/object-store';
@@ -26,9 +26,10 @@ import { admitCost, CostAdmissionError, costAdmissionErrorResponse } from '@/lib
  * best-effort. Idempotent: already-correct thumbnails are skipped, so
  * repeated runs converge to all-skips.
  *
- * Authorization: Bearer token from CRON_SECRET (same contract as the other
- * cron routes; triggerable as a DigitalOcean job where $CRON_SECRET
- * resolves). Batched via limit/cursor so a driver loops until done.
+ * Authorization: Bearer token from CRON_SECRET via withCronAuth (same contract
+ * as the other cron routes; triggerable as a DigitalOcean job where
+ * $CRON_SECRET resolves). Batched via limit/cursor so a driver loops until
+ * done.
  */
 
 const ASPECT_TOLERANCE = 0.02;
@@ -54,15 +55,6 @@ function thumbPathname(pathname: string, format: OutputFormat): string {
 }
 
 async function getHandler(request: NextRequest) {
-  const authHeader = (await headers()).get('authorization');
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (!cronSecret) {
-    return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 });
-  }
-  if (authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
   if (!prisma) {
     return NextResponse.json({ error: 'Database unavailable' }, { status: 503 });
   }
@@ -311,6 +303,6 @@ async function getHandler(request: NextRequest) {
   return NextResponse.json(summary);
 }
 
-export const GET = withObservability(getHandler, {
+export const GET = withObservability(withCronAuth(getHandler), {
   operation: 'cron:regenerate-thumbnails',
 });
