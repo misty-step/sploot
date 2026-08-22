@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { ConfiguredStorageWriter } from '@/lib/storage/object-store';
 import { enqueueAssetReplicaCleanup, markReplicaCleanupDone } from '@/lib/storage/permanent-delete';
-import { headers } from 'next/headers';
+import { withCronAuth } from '@/lib/auth/with-cron-auth';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
 
@@ -25,7 +25,7 @@ interface PurgeStats {
  * 2. Delete associated blobs from Vercel Blob storage
  * 3. Delete database records (cascades to embeddings and tags)
  *
- * Authorization: Uses Bearer token from CRON_SECRET environment variable
+ * Authorization: Bearer token from CRON_SECRET (withCronAuth)
  * Schedule: Daily via the production scheduler (declared in cron-schedules.json)
  */
 async function getHandler(request: NextRequest) {
@@ -39,25 +39,7 @@ async function getHandler(request: NextRequest) {
   };
 
   try {
-    // Verify cron authorization - required in all environments
-    const authHeader = (await headers()).get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret) {
-      return NextResponse.json(
-        { error: 'CRON_SECRET not configured' },
-        { status: 500 }
-      );
-    }
-
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    if ( !prisma) {
+    if (!prisma) {
       return NextResponse.json(
         { error: 'Database unavailable' },
         { status: 503 }
@@ -185,6 +167,6 @@ async function getHandler(request: NextRequest) {
   }
 }
 
-export const GET = withObservability(getHandler, {
+export const GET = withObservability(withCronAuth(getHandler), {
   operation: 'cron:purge-deleted-assets',
 });

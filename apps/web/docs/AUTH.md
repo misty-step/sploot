@@ -129,3 +129,13 @@ pnpm --filter web auth:guard
 ```
 
 to catch new direct imports of Clerk or legacy auth helpers from API routes.
+
+## Cron jobs
+
+Scheduler routes under `app/api/cron/` are not user sessions. They wrap the
+handler with `withCronAuth` (`lib/auth/with-cron-auth.ts`):
+`Authorization: Bearer $CRON_SECRET`, timing-safe compare, `500` if the secret
+is missing, `401` if it does not match. Do not compare `CRON_SECRET` in the
+route. Database-unavailable `503` bodies stay per-route — those strings are
+not one contract (`Database unavailable` vs `Database not configured`).
+`auth:guard` rejects cron routes that skip the wrapper.

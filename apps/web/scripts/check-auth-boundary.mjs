@@ -59,6 +59,23 @@ for (const file of routeEntrypoints) {
       }
     }
   }
+
+  if (rel.includes('/api/cron/')) {
+    if (!source.includes('withCronAuth(')) {
+      violations.push(`${rel}: cron entrypoint is not gated by withCronAuth`);
+    }
+    if (source.includes('process.env.CRON_SECRET')) {
+      violations.push(`${rel}: cron route compares CRON_SECRET locally instead of withCronAuth`);
+    }
+    const cronWrappedHandlers = new Set([...source.matchAll(/(?:const|let|function)\s+(\w+)\s*=\s*(?:withObservability\()?withCronAuth\(/g)].map(match => match[1]));
+    const exportedMethods = [...source.matchAll(/export\s+const\s+(GET|POST|PUT|PATCH|DELETE)\s*=([\s\S]*?);/g)];
+    for (const [, method, declaration] of exportedMethods) {
+      const dominated = declaration.includes('withCronAuth(') || [...cronWrappedHandlers].some(handler => declaration.includes(handler));
+      if (!dominated) {
+        violations.push(`${rel}: ${method} is not dominated by withCronAuth`);
+      }
+    }
+  }
 }
 
 if (violations.length > 0) {
