@@ -49,14 +49,12 @@ const nextConfig: NextConfig = {
     ? { output: 'standalone' }
     : {}),
   webpack(config) {
-    const middlewareRuntime = resolve(__dirname, qaLocalAuthBuild ? 'middleware-runtime-qa.ts' : 'middleware-runtime.ts');
     config.resolve.alias = {
       ...config.resolve.alias,
       "@/lib/auth/qa-client": qaClientModule,
       "@/lib/auth/qa-evidence": resolve(__dirname, qaLocalAuthBuild ? "lib/auth/qa-evidence.ts" : "lib/auth/qa-evidence-production.ts"),
       "@/lib/auth/qa-request-auth": resolve(__dirname, qaLocalAuthBuild ? "lib/auth/qa-request-auth.ts" : "lib/auth/qa-request-auth-production.ts"),
       "@/lib/auth/qa-server": resolve(__dirname, qaLocalAuthBuild ? "lib/auth/qa-server.ts" : "lib/auth/qa-server-production.ts"),
-      '@/middleware-runtime$': middlewareRuntime,
     };
     return config;
   },

@@ -146,7 +146,13 @@ describe('public truth contracts', () => {
     expect(read('middleware.ts')).toContain('NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E');
     expect(read('middleware.ts')).not.toContain('qa-local');
     expect(read('middleware-runtime.ts')).not.toContain('qa-local');
-    expect(read('next.config.ts')).toContain("middleware-runtime-qa.ts");
+    // The seam must stay a compile-time-gated dynamic import, not a bundler
+    // alias: Turbopack ignores next.config's webpack(), and next@16 does not
+    // apply webpack resolve.alias to the middleware compilation either.
+    expect(read('middleware.ts')).toContain("from './middleware-runtime'");
+    expect(read('next.config.ts')).not.toContain('middleware-runtime');
+    expect(read('middleware-runtime.ts')).toContain("process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true'");
+    expect(read('middleware-runtime.ts')).toContain("await import('./lib/middleware-local')");
     expect(read('middleware.ts')).toContain('SPLOOT_DEPLOYMENT_ENV === \'test\'');
     expect(read('playwright.config.ts')).toContain('e2e:public-truth:serve');
     expect(read('playwright.config.ts')).not.toContain('next dev');

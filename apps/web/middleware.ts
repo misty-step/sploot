@@ -1,9 +1,13 @@
-import runtimeMiddleware from '@/middleware-runtime'
+import runtimeMiddleware from './middleware-runtime'
 import { getCanonicalWebRedirectUrl, isProtectedRoute, publicTruthSignedOutMiddleware } from './lib/middleware-shared'
 
 // Public truth is selected at build time for the signed-out artifact. The
-// runtime auth implementation is webpack-selected independently so production
-// never imports the QA credential machinery.
+// local-auth seam is selected inside middleware-runtime by the inlined
+// NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD flag, so production never imports the QA
+// credential machinery. Do NOT reintroduce a bundler alias for that seam:
+// Turbopack (the `next dev` default) ignores next.config's webpack() entirely,
+// and next@16 no longer applies webpack resolve.alias to the middleware
+// compilation either, so an aliased seam silently degrades to Clerk.
 const isPublicTruthSignedOutBuild =
   process.env.NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E === 'true' &&
   (process.env.SPLOOT_DEPLOYMENT_ENV === 'test' || process.env.SPLOOT_DEPLOYMENT_ENV === 'evidence')
