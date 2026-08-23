@@ -171,11 +171,13 @@ function runStep(name: string, command: string, commandArgs: string[], env: Node
   });
 }
 
-const PROBE_TIMEOUT_MS = 5_000;
-// A wedged server answers nothing, so the 5s abort — not a 5xx — is what a
-// middleware self-proxy loop actually looks like from out here. Three in a row
-// is a hang, not a slow compile: a compile wait refuses the connection.
-const MAX_CONSECUTIVE_HANGS = 3;
+// A wedged dev server is self-limiting: next's dev proxy gives up on the
+// self-rewrite loop after its own timeout and answers 500. Waiting past that
+// point is what makes the two cases distinguishable by RESPONSE rather than by
+// timing — a slow first compile also holds the socket open (next binds the port
+// before it compiles a route), so any "no answer within Ns" heuristic would
+// fail healthy boots on a cold cache.
+const PROBE_TIMEOUT_MS = 45_000;
 
 // Probes the loopback address the server is actually bound to, not `localhost`.
 // The two are not interchangeable here: `next dev -H 127.0.0.1` keeps the
@@ -185,28 +187,21 @@ const MAX_CONSECUTIVE_HANGS = 3;
 // itself a client of the bug it is supposed to detect.
 async function waitForServer(probeUrl: string, timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs;
-  const wedged = (detail: string) => new Error(
-    `dev server at ${probeUrl} is up but not serving — ${detail}. This is not a slow compile. ` +
-    `Check the dev server output above: repeated "Failed to proxy ... ECONNRESET" means middleware ` +
-    `is rewriting to itself (vercel/next.js#94745), which happens when Clerk owns middleware under ` +
-    `the -H ${BIND_HOST} bind.`
-  );
   let lastFailure = 'no response yet';
-  let consecutiveHangs = 0;
   while (Date.now() < deadline) {
     try {
       const response = await fetch(probeUrl, { redirect: 'manual', signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
       if (response.status < 500) return;
-      throw wedged(`it answered HTTP ${response.status}`);
+      // It answered, so it is compiled and listening: this is a failing route
+      // or middleware, never a compile wait. Name it instead of retrying.
+      throw new Error(
+        `dev server at ${probeUrl} is up but answered HTTP ${response.status}. This is not a slow compile. ` +
+        `Check the dev server output above: repeated "Failed to proxy ... ECONNRESET" means middleware is ` +
+        `rewriting to itself (vercel/next.js#94745), which happens when Clerk owns middleware under the ` +
+        `-H ${BIND_HOST} bind.`
+      );
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('dev server at')) throw error;
-      // A timeout means the TCP connect succeeded and no response followed, so
-      // the process is listening and stuck. Connection refused is the ordinary
-      // "still starting" and must keep waiting.
-      consecutiveHangs = error instanceof Error && error.name === 'TimeoutError' ? consecutiveHangs + 1 : 0;
-      if (consecutiveHangs >= MAX_CONSECUTIVE_HANGS) {
-        throw wedged(`it accepted the connection but sent no response within ${PROBE_TIMEOUT_MS / 1000}s on ${consecutiveHangs} consecutive probes`);
-      }
       lastFailure = error instanceof Error ? error.message : String(error);
     }
     await new Promise((r) => setTimeout(r, 1000));
