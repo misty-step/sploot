@@ -38,6 +38,10 @@ const IMAGE = 'pgvector/pgvector:pg16';
 const QA_USER_ID = 'qa-design-user';
 const SEARCH_PROBE_QUERY = 'reaction face meme'; // a PILE_ANCHORS query: qa:seed caches its embedding
 const MIN_SEEDED_ASSETS = 20;
+// One owner for the bind address: it is simultaneously the `-H` flag, the
+// readiness probe host, and the SPLOOT_QA_BIND_HOST marker that
+// lib/auth/qa-local.ts refuses local auth without. They must never drift.
+const BIND_HOST = '127.0.0.1';
 const APP_ROOT = process.cwd();
 const LOCAL_STATE_DIR = join(APP_ROOT, '..', '..', '.sploot-local');
 // Persisted so a separate process (e.g. `pnpm qa:evidence --base-url`) can
@@ -167,18 +171,47 @@ function runStep(name: string, command: string, commandArgs: string[], env: Node
   });
 }
 
-async function waitForServer(baseUrl: string, timeoutMs = 120_000) {
+const PROBE_TIMEOUT_MS = 5_000;
+// A wedged server answers nothing, so the 5s abort — not a 5xx — is what a
+// middleware self-proxy loop actually looks like from out here. Three in a row
+// is a hang, not a slow compile: a compile wait refuses the connection.
+const MAX_CONSECUTIVE_HANGS = 3;
+
+// Probes the loopback address the server is actually bound to, not `localhost`.
+// The two are not interchangeable here: `next dev -H 127.0.0.1` keeps the
+// literal hostname while NextURL normalizes middleware URLs to `localhost`, and
+// a mismatch turns any middleware rewrite into a self-proxy loop
+// (vercel/next.js#94745) — so a `localhost` probe against a `127.0.0.1` bind is
+// itself a client of the bug it is supposed to detect.
+async function waitForServer(probeUrl: string, timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs;
+  const wedged = (detail: string) => new Error(
+    `dev server at ${probeUrl} is up but not serving — ${detail}. This is not a slow compile. ` +
+    `Check the dev server output above: repeated "Failed to proxy ... ECONNRESET" means middleware ` +
+    `is rewriting to itself (vercel/next.js#94745), which happens when Clerk owns middleware under ` +
+    `the -H ${BIND_HOST} bind.`
+  );
+  let lastFailure = 'no response yet';
+  let consecutiveHangs = 0;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(baseUrl, { redirect: 'manual' });
+      const response = await fetch(probeUrl, { redirect: 'manual', signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
       if (response.status < 500) return;
-    } catch {
-      // not up yet
+      throw wedged(`it answered HTTP ${response.status}`);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('dev server at')) throw error;
+      // A timeout means the TCP connect succeeded and no response followed, so
+      // the process is listening and stuck. Connection refused is the ordinary
+      // "still starting" and must keep waiting.
+      consecutiveHangs = error instanceof Error && error.name === 'TimeoutError' ? consecutiveHangs + 1 : 0;
+      if (consecutiveHangs >= MAX_CONSECUTIVE_HANGS) {
+        throw wedged(`it accepted the connection but sent no response within ${PROBE_TIMEOUT_MS / 1000}s on ${consecutiveHangs} consecutive probes`);
+      }
+      lastFailure = error instanceof Error ? error.message : String(error);
     }
     await new Promise((r) => setTimeout(r, 1000));
   }
-  throw new Error(`dev server at ${baseUrl} not ready within ${timeoutMs / 1000}s`);
+  throw new Error(`dev server at ${probeUrl} not ready within ${timeoutMs / 1000}s (last probe: ${lastFailure})`);
 }
 
 async function hasAgentBrowser(): Promise<boolean> {
@@ -362,7 +395,7 @@ async function main() {
     SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
     SPLOOT_QA_DEPLOYMENT_ENV: QA_LOCAL_DEPLOYMENT_ENV,
     SPLOOT_QA_AUDIENCE: QA_LOCAL_AUDIENCE,
-    SPLOOT_QA_BIND_HOST: '127.0.0.1',
+    SPLOOT_QA_BIND_HOST: BIND_HOST,
     SPLOOT_QA_LOCAL_CAPABILITY: randomBytes(24).toString('hex'),
     NEXT_PUBLIC_SPLOOT_QA_AUTH_MODE: 'enabled',
     NEXT_PUBLIC_SPLOOT_QA_DEPLOYMENT_ID: QA_LOCAL_DEPLOYMENT_ID,
@@ -374,9 +407,12 @@ async function main() {
   await runStep('migrate', 'pnpm', ['db:migrate'], env);
   await runStep('seed', 'pnpm', ['qa:seed'], env);
 
+  // baseUrl is what the operator types and what the doctor exercises; probeUrl
+  // is the address the server is actually bound to. Keep them distinct.
   const baseUrl = `http://localhost:${args.port}`;
+  const probeUrl = `http://${BIND_HOST}:${args.port}`;
   log(`starting dev server on ${baseUrl}...`);
-  const server: ChildProcess = spawn('pnpm', ['dev', '-H', '127.0.0.1'], { env, cwd: APP_ROOT, stdio: 'inherit' });
+  const server: ChildProcess = spawn('pnpm', ['dev', '-H', BIND_HOST], { env, cwd: APP_ROOT, stdio: 'inherit' });
   const serverExit = new Promise<number | null>((resolvePromise) => {
     server.on('close', (code) => resolvePromise(code));
   });
@@ -388,7 +424,7 @@ async function main() {
   process.on('SIGTERM', stop);
 
   try {
-    await waitForServer(baseUrl);
+    await waitForServer(probeUrl);
   } catch (error) {
     stop();
     fail(error instanceof Error ? error.message : String(error));

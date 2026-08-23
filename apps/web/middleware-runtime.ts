@@ -15,19 +15,24 @@ const clerkRuntimeMiddleware = clerkMiddleware(async (auth: any, req: NextReques
 // NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD, so a production build folds this branch to
 // `false`, drops the dynamic import, and never ships the QA credential
 // machinery (proven by the production public-truth guard on every CI run).
-// It must NOT also require NODE_ENV === 'production': `pnpm dev:local` is a
-// development-mode QA build, and gating on NODE_ENV left Clerk owning
-// middleware there — which, under the `-H 127.0.0.1` loopback bind the local
-// auth boundary requires, turns Clerk's rewrite-to-self into an infinite
-// dev-server proxy loop (vercel/next.js#94745).
+//
+// Two properties are load-bearing and neither may be weakened:
+//
+// 1. It must NOT also require NODE_ENV === 'production'. `pnpm dev:local` is a
+//    development-mode QA build, and that conjunct left Clerk owning middleware
+//    for the entire local flow.
+// 2. When the flag is on, the seam is TERMINAL — Clerk is unreachable. Such a
+//    build is by next.config's own gate a development/test deployment on a
+//    loopback-only bind, where Clerk's rewrite-to-self is judged an external
+//    rewrite and proxied back into the same listener until the dev proxy
+//    resets (vercel/next.js#94745). Falling through to Clerk on a
+//    misconfigured local environment reintroduces exactly that hang.
 export default async function runtimeMiddleware(...args: Parameters<typeof clerkRuntimeMiddleware>) {
-  const req = args[0] as NextRequest
   if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
     // Dynamic import required: a static import would put the QA credential
     // machinery in the production module graph even though the branch is dead.
     const { handleLocalMiddleware } = await import('./lib/middleware-local')
-    const localResult = await handleLocalMiddleware(req)
-    if (localResult.handled) return localResult.response
+    return handleLocalMiddleware(args[0] as NextRequest)
   }
   return clerkRuntimeMiddleware(...args)
 }
