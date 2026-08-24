@@ -407,7 +407,10 @@ async function main() {
   const baseUrl = `http://localhost:${args.port}`;
   const probeUrl = `http://${BIND_HOST}:${args.port}`;
   log(`starting dev server on ${baseUrl}...`);
-  const server: ChildProcess = spawn('pnpm', ['dev', '-H', BIND_HOST], { env, cwd: APP_ROOT, stdio: 'inherit' });
+  // detached gives the wrapper chain its own process group, so stop() can
+  // signal every layer (pnpm -> sh -> next) at once instead of hoping each
+  // wrapper forwards the signal down.
+  const server: ChildProcess = spawn('pnpm', ['dev', '-H', BIND_HOST], { env, cwd: APP_ROOT, stdio: 'inherit', detached: true });
   const serverExit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolvePromise) => {
     server.on('close', (code, signal) => resolvePromise({ code, signal }));
   });
@@ -417,8 +420,24 @@ async function main() {
   // so only our own stop() may mark an exit as deliberate.
   let stopRequested = false;
   const stop = () => {
+    if (stopRequested) return;
     stopRequested = true;
-    if (!server.killed) server.kill('SIGINT');
+    if (!server.pid) return;
+    try {
+      process.kill(-server.pid, 'SIGINT');
+    } catch {
+      return; // group already gone
+    }
+    // Wrappers can ignore or swallow SIGINT; bound the graceful attempt and
+    // escalate to SIGKILL so an operator never waits on a zombie stack.
+    const escalation = setTimeout(() => {
+      try {
+        process.kill(-server.pid!, 'SIGKILL');
+      } catch {
+        /* already gone */
+      }
+    }, 8_000);
+    server.once('close', () => clearTimeout(escalation));
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
