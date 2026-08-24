@@ -408,8 +408,8 @@ async function main() {
   const probeUrl = `http://${BIND_HOST}:${args.port}`;
   log(`starting dev server on ${baseUrl}...`);
   const server: ChildProcess = spawn('pnpm', ['dev', '-H', BIND_HOST], { env, cwd: APP_ROOT, stdio: 'inherit' });
-  const serverExit = new Promise<number | null>((resolvePromise) => {
-    server.on('close', (code) => resolvePromise(code));
+  const serverExit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolvePromise) => {
+    server.on('close', (code, signal) => resolvePromise({ code, signal }));
   });
 
   const stop = () => {
@@ -425,9 +425,9 @@ async function main() {
   function guardServerLife<T>(phase: Promise<T>): Promise<T> {
     return Promise.race([
       phase,
-      serverExit.then((code) => {
+      serverExit.then(({ code, signal }) => {
         throw new Error(
-          `dev server exited before its work completed (code ${code ?? 'signal'}). ` +
+          `dev server exited before its work completed (code ${code ?? '-'}, signal ${signal ?? '-'}). ` +
           `If ${probeUrl} was already in use, stop that listener first: pnpm dev:local:down`
         );
       }),
@@ -456,12 +456,14 @@ async function main() {
   log(`teardown later with: pnpm dev:local:down`);
   log('Ctrl-C stops the server; the database container keeps running for fast restarts.');
 
-  // A crash after readiness must not look like success. Operator Ctrl-C
-  // surfaces as a signal (code null) or a graceful 0 and stays a clean exit;
-  // any numeric nonzero code means the server died on its own.
-  const exitCode = await serverExit;
-  if (typeof exitCode === 'number' && exitCode !== 0) {
-    fail(`dev server exited unexpectedly after startup (code ${exitCode}).`);
+  // A crash after readiness must not look like success. Only deliberate
+  // teardown passes: our stop() sends SIGINT (operator Ctrl-C included), and
+  // a graceful code 0. An unexpected signal (SIGKILL, SIGTERM from outside)
+  // or a nonzero code fails the script.
+  const exit = await serverExit;
+  const deliberate = exit.code === 0 || exit.signal === 'SIGINT';
+  if (!deliberate) {
+    fail(`dev server exited unexpectedly after startup (code ${exit.code ?? '-'}, signal ${exit.signal ?? '-'}).`);
   }
 }
 
