@@ -439,14 +439,12 @@ async function main() {
     ]);
   }
 
-  // Neither pnpm nor next reports a SIGKILLed worker as a failed exit: both
-  // exit 0 (measured on next@16.2.10), so the close event cannot carry
-  // crashes. After readiness, watch the probe URL instead: if the port stops
-  // answering while this script is alive, the server is dead no matter what
-  // its eventual exit code claims.
+  // Response boundary matches waitForServer: a compiling server can hold a
+  // request far longer than a few seconds, so one slow answer is not death.
   const LIVENESS_INTERVAL_MS = 2_000;
-  const LIVENESS_TIMEOUT_MS = 5_000;
+  const LIVENESS_MAX_CONSECUTIVE_FAILURES = 3;
   async function superviseUntilOperatorStops(): Promise<void> {
+    let consecutiveFailures = 0;
     for (;;) {
       const settled = await Promise.race([
         serverExit.then((exit) => ({ kind: 'exit' as const, exit })),
@@ -459,14 +457,20 @@ async function main() {
         return;
       }
       try {
-        const response = await fetch(probeUrl, { redirect: 'manual', signal: AbortSignal.timeout(LIVENESS_TIMEOUT_MS) });
+        const response = await fetch(probeUrl, { redirect: 'manual', signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+        consecutiveFailures = 0;
         if (response.status >= 500) {
           stop();
           fail(`dev server started answering HTTP ${response.status} after readiness — see output above.`);
         }
       } catch {
-        stop();
-        fail(`dev server stopped answering ${probeUrl} after readiness.`);
+        // One refused or timed-out probe can be a rebuild stall; only a
+        // sustained outage means the server died.
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= LIVENESS_MAX_CONSECUTIVE_FAILURES) {
+          stop();
+          fail(`dev server stopped answering ${probeUrl} after readiness.`);
+        }
       }
     }
   }
