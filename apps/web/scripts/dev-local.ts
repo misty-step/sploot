@@ -456,7 +456,13 @@ async function main() {
   log(`teardown later with: pnpm dev:local:down`);
   log('Ctrl-C stops the server; the database container keeps running for fast restarts.');
 
-  await serverExit;
+  // A crash after readiness must not look like success. Operator Ctrl-C
+  // surfaces as a signal (code null) or a graceful 0 and stays a clean exit;
+  // any numeric nonzero code means the server died on its own.
+  const exitCode = await serverExit;
+  if (typeof exitCode === 'number' && exitCode !== 0) {
+    fail(`dev server exited unexpectedly after startup (code ${exitCode}).`);
+  }
 }
 
 main().catch((error) => {
