@@ -412,7 +412,12 @@ async function main() {
     server.on('close', (code, signal) => resolvePromise({ code, signal }));
   });
 
+  // Shutdown intent belongs to this script, not to exit codes: pnpm and next
+  // both report a SIGKILLed worker as a clean 0 (measured on next@16.2.10),
+  // so only our own stop() may mark an exit as deliberate.
+  let stopRequested = false;
   const stop = () => {
+    stopRequested = true;
     if (!server.killed) server.kill('SIGINT');
   };
   process.on('SIGINT', stop);
@@ -432,6 +437,38 @@ async function main() {
         );
       }),
     ]);
+  }
+
+  // Neither pnpm nor next reports a SIGKILLed worker as a failed exit: both
+  // exit 0 (measured on next@16.2.10), so the close event cannot carry
+  // crashes. After readiness, watch the probe URL instead: if the port stops
+  // answering while this script is alive, the server is dead no matter what
+  // its eventual exit code claims.
+  const LIVENESS_INTERVAL_MS = 2_000;
+  const LIVENESS_TIMEOUT_MS = 5_000;
+  async function superviseUntilOperatorStops(): Promise<void> {
+    for (;;) {
+      const settled = await Promise.race([
+        serverExit.then((exit) => ({ kind: 'exit' as const, exit })),
+        new Promise<{ kind: 'tick' }>((resolve) => setTimeout(() => resolve({ kind: 'tick' }), LIVENESS_INTERVAL_MS)),
+      ]);
+      if (settled.kind === 'exit') {
+        if (!stopRequested) {
+          fail(`dev server exited on its own after startup (code ${settled.exit.code ?? '-'}, signal ${settled.exit.signal ?? '-'}).`);
+        }
+        return;
+      }
+      try {
+        const response = await fetch(probeUrl, { redirect: 'manual', signal: AbortSignal.timeout(LIVENESS_TIMEOUT_MS) });
+        if (response.status >= 500) {
+          stop();
+          fail(`dev server started answering HTTP ${response.status} after readiness — see output above.`);
+        }
+      } catch {
+        stop();
+        fail(`dev server stopped answering ${probeUrl} after readiness.`);
+      }
+    }
   }
 
   try {
@@ -456,15 +493,9 @@ async function main() {
   log(`teardown later with: pnpm dev:local:down`);
   log('Ctrl-C stops the server; the database container keeps running for fast restarts.');
 
-  // A crash after readiness must not look like success. Only deliberate
-  // teardown passes: our stop() sends SIGINT (operator Ctrl-C included), and
-  // a graceful code 0. An unexpected signal (SIGKILL, SIGTERM from outside)
-  // or a nonzero code fails the script.
-  const exit = await serverExit;
-  const deliberate = exit.code === 0 || exit.signal === 'SIGINT';
-  if (!deliberate) {
-    fail(`dev server exited unexpectedly after startup (code ${exit.code ?? '-'}, signal ${exit.signal ?? '-'}).`);
-  }
+  // Stay here until the operator stops the script or the server dies; the
+  // supervisor above turns any self-initiated death into a failure.
+  await superviseUntilOperatorStops();
 }
 
 main().catch((error) => {
