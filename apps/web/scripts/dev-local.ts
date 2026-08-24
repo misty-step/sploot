@@ -407,13 +407,37 @@ async function main() {
   const baseUrl = `http://localhost:${args.port}`;
   const probeUrl = `http://${BIND_HOST}:${args.port}`;
   log(`starting dev server on ${baseUrl}...`);
-  const server: ChildProcess = spawn('pnpm', ['dev', '-H', BIND_HOST], { env, cwd: APP_ROOT, stdio: 'inherit' });
-  const serverExit = new Promise<number | null>((resolvePromise) => {
-    server.on('close', (code) => resolvePromise(code));
+  // detached gives the wrapper chain its own process group, so stop() can
+  // signal every layer (pnpm -> sh -> next) at once instead of hoping each
+  // wrapper forwards the signal down.
+  const server: ChildProcess = spawn('pnpm', ['dev', '-H', BIND_HOST], { env, cwd: APP_ROOT, stdio: 'inherit', detached: true });
+  const serverExit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolvePromise) => {
+    server.on('close', (code, signal) => resolvePromise({ code, signal }));
   });
 
+  // Shutdown intent belongs to this script, not to exit codes: pnpm and next
+  // both report a SIGKILLed worker as a clean 0 (measured on next@16.2.10),
+  // so only our own stop() may mark an exit as deliberate.
+  let stopRequested = false;
   const stop = () => {
-    if (!server.killed) server.kill('SIGINT');
+    if (stopRequested) return;
+    stopRequested = true;
+    if (!server.pid) return;
+    try {
+      process.kill(-server.pid, 'SIGINT');
+    } catch {
+      return; // group already gone
+    }
+    // Wrappers can ignore or swallow SIGINT; bound the graceful attempt and
+    // escalate to SIGKILL so an operator never waits on a zombie stack.
+    const escalation = setTimeout(() => {
+      try {
+        process.kill(-server.pid!, 'SIGKILL');
+      } catch {
+        /* already gone */
+      }
+    }, 8_000);
+    server.once('close', () => clearTimeout(escalation));
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
@@ -425,13 +449,48 @@ async function main() {
   function guardServerLife<T>(phase: Promise<T>): Promise<T> {
     return Promise.race([
       phase,
-      serverExit.then((code) => {
+      serverExit.then(({ code, signal }) => {
         throw new Error(
-          `dev server exited before its work completed (code ${code ?? 'signal'}). ` +
+          `dev server exited before its work completed (code ${code ?? '-'}, signal ${signal ?? '-'}). ` +
           `If ${probeUrl} was already in use, stop that listener first: pnpm dev:local:down`
         );
       }),
     ]);
+  }
+
+  // Response boundary matches waitForServer: a compiling server can hold a
+  // request far longer than a few seconds, so one slow answer is not death.
+  const LIVENESS_INTERVAL_MS = 2_000;
+  const LIVENESS_MAX_CONSECUTIVE_FAILURES = 3;
+  async function superviseUntilOperatorStops(): Promise<void> {
+    let consecutiveFailures = 0;
+    for (;;) {
+      const settled = await Promise.race([
+        serverExit.then((exit) => ({ kind: 'exit' as const, exit })),
+        new Promise<{ kind: 'tick' }>((resolve) => setTimeout(() => resolve({ kind: 'tick' }), LIVENESS_INTERVAL_MS)),
+      ]);
+      if (settled.kind === 'exit') {
+        if (!stopRequested) {
+          fail(`dev server exited on its own after startup (code ${settled.exit.code ?? '-'}, signal ${settled.exit.signal ?? '-'}).`);
+        }
+        return;
+      }
+      try {
+        // Any HTTP answer — including a 500 from an operator's in-progress
+        // edit — proves the process is alive. Only transport failure counts
+        // toward death.
+        await fetch(probeUrl, { redirect: 'manual', signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+        consecutiveFailures = 0;
+      } catch {
+        // One refused or timed-out probe can be a rebuild stall; only a
+        // sustained outage means the server died.
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= LIVENESS_MAX_CONSECUTIVE_FAILURES) {
+          stop();
+          fail(`dev server stopped answering ${probeUrl} after readiness.`);
+        }
+      }
+    }
   }
 
   try {
@@ -456,7 +515,9 @@ async function main() {
   log(`teardown later with: pnpm dev:local:down`);
   log('Ctrl-C stops the server; the database container keeps running for fast restarts.');
 
-  await serverExit;
+  // Stay here until the operator stops the script or the server dies; the
+  // supervisor above turns any self-initiated death into a failure.
+  await superviseUntilOperatorStops();
 }
 
 main().catch((error) => {
