@@ -1,16 +1,32 @@
-import runtimeMiddleware from '@/middleware-runtime'
+import type { NextFetchEvent, NextRequest } from 'next/server'
 import { getCanonicalWebRedirectUrl, isProtectedRoute, publicTruthSignedOutMiddleware } from './lib/middleware-shared'
 
 // Public truth is selected at build time for the signed-out artifact. The
-// runtime auth implementation is webpack-selected independently so production
-// never imports the QA credential machinery.
+// local-auth seam is selected here by the inlined
+// NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD flag: production never imports the QA
+// credential machinery, and a QA build never constructs the Clerk wrapper.
+// Do NOT reintroduce a bundler alias for that seam:
+// Turbopack (the `next dev` default) ignores next.config's webpack() entirely,
+// and next@16 no longer applies webpack resolve.alias to the middleware
+// compilation either, so an aliased seam silently degrades to Clerk.
 const isPublicTruthSignedOutBuild =
   process.env.NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E === 'true' &&
   (process.env.SPLOOT_DEPLOYMENT_ENV === 'test' || process.env.SPLOOT_DEPLOYMENT_ENV === 'evidence')
 
-export default isPublicTruthSignedOutBuild
-  ? publicTruthSignedOutMiddleware
-  : runtimeMiddleware
+async function authMiddleware(req: NextRequest, event: NextFetchEvent) {
+  if (process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true') {
+    // Dynamic imports required: static imports would put the QA credential
+    // machinery into the production graph or construct Clerk inside QA builds
+    // even though exactly one branch is ever live.
+    const { handleLocalMiddleware } = await import('./lib/middleware-local')
+    return handleLocalMiddleware(req)
+  }
+  // Static import cannot work: it would construct Clerk inside every QA build.
+  const clerkRuntimeMiddleware = (await import('./middleware-clerk')).default
+  return clerkRuntimeMiddleware(req, event)
+}
+
+export default isPublicTruthSignedOutBuild ? publicTruthSignedOutMiddleware : authMiddleware
 
 export const config = {
   matcher: [
