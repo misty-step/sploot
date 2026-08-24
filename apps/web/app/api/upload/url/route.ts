@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import { ingestImage } from '@/lib/upload/ingest-image';
+import { ingestResultToUploadResponse } from '@/lib/upload/ingest-http';
 import { validateImportUrl, fetchRemoteImage } from '@/lib/upload/url-import';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 import {
@@ -32,7 +33,7 @@ import {
 /**
  * URL import endpoint: POST { url } fetches a remote image server-side and
  * ingests it through the shared pipeline (same dedupe/quota semantics and
- * response contracts as /api/upload).
+ * response contracts as /api/upload, via ingestResultToUploadResponse).
  */
 
 export const maxDuration = 60;
@@ -84,34 +85,7 @@ const postHandler = withAuthenticatedApi(async (req: NextRequest, _context, { pr
       ? await runIdempotentUpload(userId, idempotencyKey, executeImport)
       : await executeImport();
 
-    if (result.kind === 'invalid') {
-      return NextResponse.json(
-        { success: false, error: result.error.userMessage },
-        { status: result.error.statusCode }
-      );
-    }
-
-    if (result.kind === 'duplicate') {
-      return NextResponse.json(
-        {
-          success: true,
-          isDuplicate: true,
-          asset: result.asset,
-          message: 'This image already exists in your library',
-        },
-        { status: 409 }
-      );
-    }
-
-    return NextResponse.json(
-      {
-        success: true,
-        isDuplicate: false,
-        asset: result.asset,
-        message: 'Upload successful',
-      },
-      { status: 201 }
-    );
+    return ingestResultToUploadResponse(result);
   } catch (error) {
     if (error instanceof UploadIdempotencyInProgressError) {
       return NextResponse.json(
