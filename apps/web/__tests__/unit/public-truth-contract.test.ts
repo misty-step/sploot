@@ -145,16 +145,16 @@ describe('public truth contracts', () => {
     expect(read('lib/auth/server.ts')).toContain('isCompiledPublicTruthE2EBuild');
     expect(read('middleware.ts')).toContain('NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E');
     expect(read('middleware.ts')).not.toContain('qa-local');
-    expect(read('middleware-runtime.ts')).not.toContain('qa-local');
-    // The seam must stay a compile-time-gated dynamic import, not a bundler
-    // alias: Turbopack ignores next.config's webpack(), and next@16 does not
-    // apply webpack resolve.alias to the middleware compilation either.
-    expect(read('middleware.ts')).toContain("from './middleware-runtime'");
-    // Match the alias entry itself, not the bare identifier: forbidding the
-    // substring would fail CI on a comment documenting why the alias is banned.
+    // The seam must stay a compile-time-gated dynamic import inside
+    // middleware.ts itself, not a bundler alias: Turbopack ignores
+    // next.config's webpack(), and next@16 does not apply webpack
+    // resolve.alias to the middleware compilation either. Match the alias
+    // entry itself, not the bare identifier: forbidding the substring would
+    // fail CI on a comment documenting why the alias is banned.
     expect(read('next.config.ts')).not.toMatch(/['"]@\/middleware-runtime\$?['"]\s*:/);
-    expect(read('middleware-runtime.ts')).toContain("process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true'");
-    expect(read('middleware-runtime.ts')).toContain("await import('./lib/middleware-local')");
+    expect(read('middleware.ts')).toContain("process.env.NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD === 'true'");
+    expect(read('middleware.ts')).toContain("await import('./lib/middleware-local')");
+    expect(read('middleware.ts')).toContain("await import('./middleware-clerk')");
     expect(read('middleware.ts')).toContain('SPLOOT_DEPLOYMENT_ENV === \'test\'');
     expect(read('playwright.config.ts')).toContain('e2e:public-truth:serve');
     expect(read('playwright.config.ts')).not.toContain('next dev');
