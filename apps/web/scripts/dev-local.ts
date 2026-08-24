@@ -418,8 +418,24 @@ async function main() {
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 
+  // The probe and doctor are only meaningful while OUR spawned server is the
+  // process answering on the port. If it exits early (port already in use,
+  // crash), some other listener could satisfy them and we would grade a
+  // stranger, so every supervised phase fails fast on child exit.
+  function guardServerLife<T>(phase: Promise<T>): Promise<T> {
+    return Promise.race([
+      phase,
+      serverExit.then((code) => {
+        throw new Error(
+          `dev server exited before its work completed (code ${code ?? 'signal'}). ` +
+          `If ${probeUrl} was already in use, stop that listener first: pnpm dev:local:down`
+        );
+      }),
+    ]);
+  }
+
   try {
-    await waitForServer(probeUrl);
+    await guardServerLife(waitForServer(probeUrl));
   } catch (error) {
     stop();
     fail(error instanceof Error ? error.message : String(error));
@@ -427,7 +443,7 @@ async function main() {
 
   let healthy = true;
   if (args.doctor) {
-    healthy = await runDoctor(baseUrl, secret);
+    healthy = await guardServerLife(runDoctor(baseUrl, secret));
     if (!healthy) {
       stop();
       await serverExit;
