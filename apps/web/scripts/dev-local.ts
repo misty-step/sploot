@@ -457,12 +457,11 @@ async function main() {
         return;
       }
       try {
-        const response = await fetch(probeUrl, { redirect: 'manual', signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+        // Any HTTP answer — including a 500 from an operator's in-progress
+        // edit — proves the process is alive. Only transport failure counts
+        // toward death.
+        await fetch(probeUrl, { redirect: 'manual', signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
         consecutiveFailures = 0;
-        if (response.status >= 500) {
-          stop();
-          fail(`dev server started answering HTTP ${response.status} after readiness — see output above.`);
-        }
       } catch {
         // One refused or timed-out probe can be a rebuild stall; only a
         // sustained outage means the server died.
