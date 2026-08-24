@@ -161,4 +161,49 @@ describe('ingestImage — derived-storage-aware quota commit', () => {
     // reservation so it doesn't leak until TTL expiry.
     expect(mocks.releaseStorageQuotaReservation).toHaveBeenCalledWith('reservation-1');
   });
+
+  it('maps an existing checksum hit onto IngestedAsset without spending quota or blob writes', async () => {
+    const createdAt = new Date('2026-08-24T12:00:00.000Z');
+    mocks.checkDuplicate.mockResolvedValue({
+      isDuplicate: true,
+      checksum: 'checksum-from-buffer',
+      existingAsset: {
+        id: 'asset-existing',
+        blobUrl: 'https://blob.example.test/existing.png',
+        thumbnailUrl: null,
+        pathname: 'user/existing.png',
+        mime: 'image/png',
+        size: 512,
+        width: 32,
+        height: 32,
+        checksumSha256: 'checksum-from-buffer',
+        favorite: false,
+        createdAt,
+        hasEmbedding: true,
+      },
+    });
+
+    const result = await ingestImage({ userId: 'user-1', file: fakeFile('meme.png', 900) });
+
+    expect(result).toEqual({
+      kind: 'duplicate',
+      asset: {
+        id: 'asset-existing',
+        blobUrl: 'https://blob.example.test/existing.png',
+        thumbnailUrl: null,
+        pathname: 'user/existing.png',
+        filename: 'meme.png',
+        mimeType: 'image/png',
+        size: 512,
+        checksum: 'checksum-from-buffer',
+        phash: null,
+        nearDuplicate: null,
+        createdAt,
+        needsEmbedding: false,
+      },
+    });
+    expect(mocks.reserveUploadBytes).not.toHaveBeenCalled();
+    expect(mocks.upload).not.toHaveBeenCalled();
+    expect(mocks.recordAsset).not.toHaveBeenCalled();
+  });
 });
