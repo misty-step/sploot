@@ -53,16 +53,22 @@ if (qaOmission.status === 0 || !qaOmission.output.includes('SPLOOT_QA_AUTH_MODE=
 }
 
 rmSync(resolve(webRoot, distDir), { recursive: true, force: true });
+// Compile the optimized production bundle under the staging deployment marker.
+// Both deployed markers omit QA auth; only a real production release requires
+// Sentry upload credentials. The rejection cases above remain production-marked.
 const production = runBuild({
   ...process.env,
   NODE_ENV: 'production',
-  SPLOOT_DEPLOYMENT_ENV: 'production',
+  SPLOOT_DEPLOYMENT_ENV: 'staging',
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: `pk_test_${Buffer.from('clerk.example.com$').toString('base64url')}`,
   SPLOOT_PUBLIC_TRUTH_E2E_BUILD: undefined,
   NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E: undefined,
   SPLOOT_QA_AUTH_MODE: undefined,
   NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: undefined,
   NEXT_DIST_DIR: distDir,
+  SENTRY_AUTH_TOKEN: '',
+  SENTRY_DSN: '',
+  NEXT_PUBLIC_SENTRY_DSN: '',
 });
 
 if (production.status !== 0) {

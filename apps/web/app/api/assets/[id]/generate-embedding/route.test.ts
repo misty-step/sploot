@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => ({
   wrapperLogInfo: vi.fn(),
   wrapperLogTiming: vi.fn(),
   wrapperLogError: vi.fn(),
-  reportCanaryError: vi.fn(() => Promise.resolve()),
+  captureOperationalError: vi.fn(() => true),
   withTraceId: vi.fn(),
   measureAsync: vi.fn(async (_operation: string, run: () => Promise<unknown>) => run()),
   nanoid: vi.fn(() => 'trace-test'),
@@ -98,8 +98,8 @@ vi.mock('@/lib/observability-logger', async () => {
   };
 });
 
-vi.mock('@/lib/canary-reporter', () => ({
-  reportCanaryError: mocks.reportCanaryError,
+vi.mock('@/lib/sentry', () => ({
+  captureOperationalError: mocks.captureOperationalError,
 }));
 
 import { POST } from '@/app/api/assets/[id]/generate-embedding/route';
@@ -159,14 +159,14 @@ describe('POST /api/assets/[id]/generate-embedding observability composition', (
     vi.restoreAllMocks();
   });
 
-  it('emits exactly one Canary report for a generic failure across route and wrapper', async () => {
+  it('emits exactly one Sentry event for a generic failure across route and wrapper', async () => {
     const response = await POST(request('asset-generic-failure'), {
       params: Promise.resolve({ id: 'asset-generic-failure' }),
     });
 
     expect(response.status).toBe(500);
-    expect(response.headers.get('X-Sploot-Canary-Owner')).toBeNull();
-    await vi.waitFor(() => expect(mocks.reportCanaryError).toHaveBeenCalledTimes(1));
+    expect(response.headers.get('X-Sploot-Observability-Owner')).toBeNull();
+    expect(mocks.captureOperationalError).toHaveBeenCalledTimes(1);
     expect(routeLogger.logError).toHaveBeenCalledWith(
       'generate-embedding:failed',
       expect.any(Error),
@@ -200,7 +200,7 @@ describe('POST /api/assets/[id]/generate-embedding observability composition', (
       'claim-1',
     );
     expect(mocks.recordEmbeddingAttemptFailure).not.toHaveBeenCalled();
-    await vi.waitFor(() => expect(mocks.reportCanaryError).toHaveBeenCalledTimes(1));
+    expect(mocks.captureOperationalError).toHaveBeenCalledTimes(1);
     expect(routeLogger.logError).not.toHaveBeenCalledWith(
       'generate-embedding:failed',
       expect.anything(),

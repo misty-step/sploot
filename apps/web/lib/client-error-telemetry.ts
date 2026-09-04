@@ -1,5 +1,6 @@
 'use client';
 
+import * as Sentry from '@sentry/nextjs';
 import type { ErrorInfo } from 'react';
 import { postClientError } from '@/lib/telemetry-client';
 import type { ErrorTelemetryPayload } from '@/lib/telemetry-contract';
@@ -18,12 +19,21 @@ export function sendClientErrorTelemetry(
   }
 
   try {
+    Sentry.withScope((scope) => {
+      scope.setTag('sploot.boundary', sanitizeErrorName(boundary));
+      Sentry.captureException(error);
+    });
+  } catch {
+    // Error reporting must not turn an error boundary into another error.
+  }
+
+  try {
     const payload = buildPayload(boundary, error, options);
     void postClientError(payload).catch(() => {
       /* telemetry is best effort */
     });
   } catch {
-    // A telemetry failure must not turn an error boundary into another error.
+    // Structured logging is independent from Sentry delivery.
   }
 }
 

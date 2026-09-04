@@ -1,24 +1,36 @@
 # observability
 
 Sploot emits provider-neutral JSON logs from `lib/observability-logger.ts`.
-server errors and health check-ins are forwarded to Canary when these variables
-are configured:
+Handled server errors and client error boundaries also report to Sentry project
+`misty-step/sploot`. Sentry failure never affects request status, routing, or
+dependency readiness.
 
 ```env
-CANARY_ENDPOINT=https://canary.mistystep.io
-CANARY_API_KEY=
-CANARY_SERVICE_NAME=sploot-web
-DEPLOYMENT_ENV=production
+NEXT_PUBLIC_SENTRY_DSN=
+SENTRY_DSN=
+SENTRY_AUTH_TOKEN=
+SENTRY_TRACES_SAMPLE_RATE=0.1
+SPLOOT_DEPLOYMENT_ENV=production
+SPLOOT_DEPLOYMENT_COMMIT=${_self.COMMIT_HASH}
 ```
 
-browser product events use the authenticated first-party `/api/telemetry`
-route through one typed client. non-success responses are treated as transport
-failures instead of being silently accepted. the route validates and sanitizes
-payloads, drops untrusted client error messages/stacks in favor of bounded
-structural fields, then writes the same structured logs. public share pages do
-not expose an unauthenticated analytics ingest surface.
+`SENTRY_AUTH_TOKEN` is build-only. Production builds fail closed when the DSN,
+source-map token, or exact deployment commit is absent. The SDK sends no user
+identity, cookies, headers, bodies, query strings, source context, browser
+replays, or SDK logs. Production trace sampling defaults to 10% and is capped
+at 20%.
+`@sentry/nextjs` is exact-pinned at 10.71.0 because 10.72–10.73 crash
+under jsdom ([upstream #23789](https://github.com/getsentry/sentry-javascript/issues/23789)).
+Lift the pin only after the upstream module-load regression is fixed.
 
-runtime proof:
+
+Browser product events use the authenticated first-party `/api/telemetry`
+route through one typed client. The route accepts only bounded structural
+fields and writes provider-neutral JSON logs. Browser error boundaries capture
+the exception in Sentry and send only boundary/name/stack-presence fields to
+the first-party route, so the server does not create a duplicate Sentry event.
+
+Runtime proof:
 
 ```bash
 curl -fsS https://www.sploot.app/api/health/live | jq
@@ -27,9 +39,7 @@ curl -fsS https://www.sploot.app/api/health/services | jq
 DEPLOYMENT_URL=https://www.sploot.app pnpm validate:deployment
 ```
 
-`/api/health/live` is the shallow process-liveness probe DigitalOcean routes
-on; it must stay `alive` even while dependencies are degraded. `/api/health`
-is the deep readiness oracle and must report database `up`, embedding limiter
-`up`, share-slug cache `local`, and whether Canary is configured. raw request
-logs live in the DigitalOcean component runtime; Canary is the agent-facing
-error and check-in surface.
+`/api/health/live` is the provider-free routing probe. `/api/health` is the
+database/schema readiness oracle. Neither endpoint calls or reports Sentry.
+Use [`docs/runbooks/sentry-error-response.md`](docs/runbooks/sentry-error-response.md)
+for alert ownership and incident response.

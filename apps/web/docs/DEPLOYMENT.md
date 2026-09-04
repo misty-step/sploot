@@ -11,7 +11,7 @@ trigger the configured source deployment.
   data-plane dependency);
 - Clerk identity;
 - Replicate embeddings;
-- Canary diagnostics.
+- Sentry error and performance diagnostics.
 
 the embedding limiter and daily/monthly provider-attempt ceilings live in
 Postgres. These counters are provider-rate safety, not durable dollar admission
@@ -30,9 +30,10 @@ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
 CLERK_SECRET_KEY=
 BLOB_READ_WRITE_TOKEN=
 REPLICATE_API_TOKEN=
-CANARY_ENDPOINT=https://canary.mistystep.io
-CANARY_API_KEY=
-CANARY_SERVICE_NAME=sploot-web
+NEXT_PUBLIC_SENTRY_DSN=
+SENTRY_DSN=
+SENTRY_AUTH_TOKEN=
+SENTRY_TRACES_SAMPLE_RATE=0.1
 SPLOOT_ENROLLMENT_MODE=closed
 SPLOOT_ENROLLMENT_MAX_ACCOUNTS=
 SPLOOT_DEPLOYMENT_APP_ID=${APP_ID}
@@ -71,11 +72,13 @@ and CI both read the file — an unset variable is a hard failure). Both fault
 paths can be rehearsed with
 `PGOPTIONS="-c sploot.stripe_bootstrap_fault=pre|post"`.
 
-`SPLOOT_DEPLOYMENT_ENV` is the deterministic runtime marker. Production and
-staging deployments must set it explicitly; missing or ambiguous markers fail
-closed and are rejected by `pnpm validate:env` before the build.
-The App Platform spec must bind `SPLOOT_DEPLOYMENT_APP_ID` to `${APP_ID}` and
-`SPLOOT_DEPLOYMENT_COMMIT` to `${_self.COMMIT_HASH}`. Set
+`SPLOOT_DEPLOYMENT_ENV` is the deterministic deployment marker. Production and
+staging deployments must set it explicitly. Bind it and
+`SPLOOT_DEPLOYMENT_COMMIT=${_self.COMMIT_HASH}` with scope
+`RUN_AND_BUILD_TIME`: Sentry compiles the browser environment and release into
+the build. Runtime-only bindings cannot repair an already compiled browser.
+Keep `SPLOOT_DEPLOYMENT_APP_ID=${APP_ID}` and `SPLOOT_DEPLOYMENT_CHANGE_ID`
+at `RUN_TIME`. Set
 `SPLOOT_DEPLOYMENT_CHANGE_ID` to a nonempty immutable operator-generated
 change ID. DigitalOcean assigns the provider deployment ID after the update;
 record it in the proof packet, never in the public health contract. The public
@@ -102,7 +105,7 @@ DB-backed oracle `/api/health`. Incident 2026-07-15: production routed on
 `/api/health`, a database stall made it 503 at its 5s timeout, and
 DigitalOcean removed the only web instance from routing
 (`no_healthy_upstream`) until a scoped restart. Liveness has no database,
-provider, Clerk, Canary, or model dependency, so a dependency failure can
+provider, Clerk, telemetry, network, or model dependency, so a dependency failure can
 never evict the process from routing.
 
 The repo-owned lifecycle enforces this: `deriveClosedStageSpec` installs
@@ -157,18 +160,26 @@ pnpm --filter web start
 ```
 
 The build is compilation-only and intentionally needs no runtime database or
-secret bindings. DigitalOcean owns production migration: the singleton
-`web-pre-deploy-migrate` `PRE_DEPLOY` job runs `pnpm --filter web exec node
-scripts/migrate-deploy.mjs` before replacing the service, while the service run
-command remains start-only. CI applies migrations only to its pgvector test
-database and never owns production credentials. Migrations are forward-only
-and additive unless their own SQL says otherwise.
+application secret bindings. Bind `NEXT_PUBLIC_SENTRY_DSN` at
+`RUN_AND_BUILD_TIME` and `SENTRY_AUTH_TOKEN` as an encrypted `BUILD_TIME`
+secret. The production build requires these bindings and uploads source maps
+under `SPLOOT_DEPLOYMENT_COMMIT`, then deletes local source maps.
+`SENTRY_DSN`, if set separately, is runtime-only. The local/CI
+`pnpm deployment:build` command deliberately clears all Sentry bindings; it
+proves compilation without sending events or uploading source maps, not a
+production Sentry release. DigitalOcean owns
+production migration: the singleton `web-pre-deploy-migrate` `PRE_DEPLOY` job
+runs `pnpm --filter web exec node scripts/migrate-deploy.mjs` before replacing
+the service, while the service run command remains start-only. CI applies
+migrations only to its pgvector test database and never owns production
+credentials. Migrations are forward-only and additive unless their own SQL
+says otherwise.
 
 ## verification
 
 ```bash
 DEPLOYMENT_URL=https://www.sploot.app pnpm --filter web validate:deployment
-EXPECT_CANARY_CONFIGURED=1 pnpm --filter web smoke:deployed
+pnpm --filter web smoke:deployed
 ```
 
 Enrollment proof must target the exact active deployment URL:

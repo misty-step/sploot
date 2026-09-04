@@ -9,7 +9,7 @@ vi.mock('@ducanh2912/next-pwa', () => ({
 
 describe('next config auth-sensitive pwa caching', () => {
   it('does not cache the auth-dependent start url document', async () => {
-    const config = (await import('../next.config')).default as {
+    const config = (await import('../next.config')).default('phase-production-server') as unknown as {
       __pwaOptions: {
         cacheStartUrl?: boolean;
         dynamicStartUrl?: boolean;

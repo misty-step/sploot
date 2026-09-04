@@ -36,7 +36,7 @@ import {
 } from '@/lib/embedding-errors';
 
 const providerRun = vi.hoisted(() => vi.fn());
-const reportCanaryError = vi.hoisted(() => vi.fn(() => Promise.resolve()));
+const captureOperationalError = vi.hoisted(() => vi.fn(() => true));
 const authUser = vi.hoisted(() => ({ current: 'embedding-resilience-unauthenticated' }));
 
 vi.mock('@/lib/auth/server', () => ({
@@ -71,8 +71,8 @@ vi.mock('next/headers', () => ({
   })),
 }));
 
-vi.mock('@/lib/canary-reporter', () => ({
-  reportCanaryError,
+vi.mock('@/lib/sentry', () => ({
+  captureOperationalError,
 }));
 
 const describeWithDatabase = process.env.DATABASE_URL && prisma
@@ -115,7 +115,7 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     vi.stubEnv('REPLICATE_API_TOKEN', 'r8_isolated_test_token');
     vi.stubEnv('SPLOOT_EMBEDDINGS_ENABLED', 'true');
     providerRun.mockReset();
-    reportCanaryError.mockClear();
+    captureOperationalError.mockClear();
     authUser.current = 'embedding-resilience-unauthenticated';
   });
 
@@ -249,8 +249,8 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       lastAlertedAt: new Date(nowMs),
       openUntil: new Date(nowMs + 60_000),
     });
-    await vi.waitFor(() => expect(reportCanaryError).toHaveBeenCalledTimes(1));
-    expect(reportCanaryError).toHaveBeenCalledWith(
+    expect(captureOperationalError).toHaveBeenCalledTimes(1);
+    expect(captureOperationalError).toHaveBeenCalledWith(
       expect.objectContaining({
         context: 'embedding-provider.circuit-open',
         error: expect.objectContaining({
@@ -259,7 +259,7 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
         metadata: expect.objectContaining({ reason: 'global_rate' }),
       }),
     );
-    expect(JSON.stringify(reportCanaryError.mock.calls[0][0])).not.toContain('raw');
+    expect(JSON.stringify(captureOperationalError.mock.calls[0][0])).not.toContain('raw');
     expect(providerRun).not.toHaveBeenCalled();
   }, 30_000);
 
@@ -299,7 +299,7 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
       nextAttemptAt: new Date(nowMs + 180_000),
       terminalAt: null,
     });
-    expect(reportCanaryError).not.toHaveBeenCalled();
+    expect(captureOperationalError).not.toHaveBeenCalled();
 
     // The moment in-flight work completes, admission recovers for other assets.
     await prisma.embeddingRateLease.deleteMany({
@@ -699,7 +699,7 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
     ).resolves.toMatchObject({ generation: 1, lastReason: 'provider_unavailable' });
   }, 30_000);
 
-  it('emits one Canary interval for a cron circuit response without a generic observability duplicate', async () => {
+  it('emits one Sentry event for a cron circuit response without a generic duplicate', async () => {
     const nowMs = Date.UTC(2026, 6, 14, 21, 0, 0);
     vi.useFakeTimers();
     vi.setSystemTime(nowMs);
@@ -711,8 +711,8 @@ describeWithDatabase('embedding resilience against isolated pgvector Postgres', 
 
     expect(response.status).toBe(503);
     expect(response.headers.get('X-Sploot-Embedding-Outcome')).toBe('provider_circuit_open');
-    await vi.waitFor(() => expect(reportCanaryError).toHaveBeenCalledTimes(1));
-    expect(JSON.stringify(reportCanaryError.mock.calls[0]?.[0])).not.toContain('raw');
+    expect(captureOperationalError).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(captureOperationalError.mock.calls[0]?.[0])).not.toContain('raw');
     expect(providerRun).not.toHaveBeenCalled();
   }, 30_000);
 

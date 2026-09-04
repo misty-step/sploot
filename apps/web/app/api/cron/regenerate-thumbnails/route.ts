@@ -243,14 +243,11 @@ async function getHandler(request: NextRequest) {
               // insert, so this orphan is retried by the same worker.
               await prisma.$transaction((tx) => enqueueReplicaCleanup(tx, asset.id, replica, 'delete-thumbnail'));
             } catch (enqueueError) {
-              // Both the provider cleanup AND the durable outbox insert
-              // failed: the just-uploaded object is now leaked with no
-              // retry path recorded anywhere. This must never mask
-              // `error` (thrown below, unchanged below) but it must also
-              // never be silent — emit one explicit structured signal
-              // through the shared logger/Canary convention. Never log the
-              // delivery URL (provider URLs may carry signed query
-              // parameters); key/provider/assetId are enough to locate it.
+              // The provider cleanup and durable outbox insert both failed.
+              // The uploaded object is leaked with no retry path. Preserve
+              // the original error thrown below, and emit one structured
+              // error. Delivery URLs may contain signed query parameters;
+              // key, provider, and assetId are sufficient.
               logger.logError('storage.regenerate-thumbnails.orphaned-replica-leak', enqueueError instanceof Error ? enqueueError : new Error(String(enqueueError)), {
                 assetId: asset.id,
                 provider: replica.provider,
