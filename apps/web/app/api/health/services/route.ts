@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { clerkConfigured, blobConfigured, databaseConfigured, replicateConfigured } from '@/lib/env';
 import { prisma } from '@/lib/db';
 import { getAuthWithUser } from '@/lib/auth/server';
-import { canaryConfigured, checkCanaryStatus } from '@/lib/canary-reporter';
 import { withObservability } from '@/lib/with-observability';
 import {
   enrollmentDeniedResponse,
@@ -156,33 +155,8 @@ async function getHandler(req: NextRequest) {
     };
   }
 
-  // Check Canary (agent-facing observability, optional)
-  try {
-    const canary = await checkCanaryStatus();
-    services.canary = {
-      name: 'Agent Observability (Canary)',
-      status: canary.status,
-      configured: canary.configured,
-      message: canary.message,
-      details: {
-        reachable: canary.reachable,
-      },
-    };
-  } catch (error) {
-    services.canary = {
-      name: 'Agent Observability (Canary)',
-      status: 'degraded',
-      configured: canaryConfigured(),
-      message: 'Error checking Canary status',
-      details: process.env.NODE_ENV === 'development' ? String(error) : undefined,
-    };
-  }
 
-  // Calculate overall health
-  const requiredServices = Object.entries(services)
-    .filter(([key]) => key !== 'canary')
-    .map(([, service]) => service);
-  const statuses = requiredServices.map(s => s.status);
+  const statuses = Object.values(services).map((service) => service.status);
   const overallHealth = statuses.every(s => s === 'healthy') ? 'healthy' :
                         statuses.some(s => s === 'unavailable') ? 'unhealthy' :
                         statuses.some(s => s === 'degraded' || s === 'not_configured') ? 'degraded' :

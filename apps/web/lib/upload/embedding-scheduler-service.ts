@@ -291,7 +291,7 @@ export class EmbeddingSchedulerService {
       embeddingService = createEmbeddingService(ownerUserId);
     } catch (error) {
       // Configuration failures are reported by the shared typed policy below;
-      // this local diagnostic must not become a second Canary owner.
+      // this local diagnostic must not become a second Sentry event.
       logger.info('Failed to initialize embedding service', {
         assetId,
         error: error instanceof Error ? error.message : String(error),

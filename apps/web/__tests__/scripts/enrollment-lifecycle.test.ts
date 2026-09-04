@@ -236,7 +236,9 @@ describe('strict DigitalOcean response contracts', () => {
     for (const key of ['SPLOOT_DEPLOYMENT_ENV', 'SPLOOT_DEPLOYMENT_APP_ID', 'SPLOOT_DEPLOYMENT_COMMIT', 'SPLOOT_DEPLOYMENT_CHANGE_ID']) {
       expect(stagedWeb.envs.find((entry: { key?: string }) => entry.key === key)).toMatchObject({
         key,
-        scope: 'RUN_TIME',
+        scope: key === 'SPLOOT_DEPLOYMENT_ENV' || key === 'SPLOOT_DEPLOYMENT_COMMIT'
+          ? 'RUN_AND_BUILD_TIME'
+          : 'RUN_TIME',
         type: 'GENERAL',
       });
     }

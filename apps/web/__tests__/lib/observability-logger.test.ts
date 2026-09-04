@@ -1,22 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const FIXED_DATE = new Date('2024-04-20T16:20:42.000Z');
-const originalEnv = {
-  NODE_ENV: process.env.NODE_ENV,
-  CANARY_ENABLE_IN_TEST: process.env.CANARY_ENABLE_IN_TEST,
-};
+const originalNodeEnv = process.env.NODE_ENV;
 
 type ConsoleSpy = ReturnType<typeof vi.spyOn>;
 
 let consoleLogSpy: ConsoleSpy;
 let consoleErrorSpy: ConsoleSpy;
 
-async function importLogger(canaryFactory?: () => unknown) {
+async function importLogger(sentryFactory?: () => unknown) {
   vi.doMock(
-    '@/lib/canary-reporter',
-    canaryFactory ??
+    '@/lib/sentry',
+    sentryFactory ??
       (() => ({
-        reportCanaryError: vi.fn(),
+        captureOperationalError: vi.fn(),
       }))
   );
 
@@ -28,12 +25,6 @@ function parseCall(spy: ConsoleSpy, index = 0) {
   return JSON.parse(payload as string);
 }
 
-async function flushAsync() {
-  await Promise.resolve();
-  if (typeof vi.advanceTimersByTimeAsync === 'function') {
-    await vi.advanceTimersByTimeAsync(0);
-  }
-}
 
 beforeEach(() => {
   vi.resetModules();
@@ -52,19 +43,13 @@ afterEach(() => {
   consoleLogSpy.mockRestore();
   consoleErrorSpy.mockRestore();
 
-  if (originalEnv.NODE_ENV === undefined) {
+  if (originalNodeEnv === undefined) {
     delete process.env.NODE_ENV;
   } else {
-    process.env.NODE_ENV = originalEnv.NODE_ENV;
+    process.env.NODE_ENV = originalNodeEnv;
   }
 
-  if (originalEnv.CANARY_ENABLE_IN_TEST === undefined) {
-    delete process.env.CANARY_ENABLE_IN_TEST;
-  } else {
-    process.env.CANARY_ENABLE_IN_TEST = originalEnv.CANARY_ENABLE_IN_TEST;
-  }
-
-  vi.doUnmock('@/lib/canary-reporter');
+  vi.doUnmock('@/lib/sentry');
 });
 
 describe('observability logger', () => {
@@ -109,26 +94,22 @@ describe('observability logger', () => {
     expect(entry.error.stack).toContain('Error: the vibes imploded');
   });
 
-  it('pipes server-side errors into Canary with sanitized context metadata', async () => {
-    process.env.CANARY_ENABLE_IN_TEST = '1';
+  it('forwards server errors to Sentry with their bounded context', async () => {
     const { logger } = await importLogger();
-    const canary = await import('@/lib/canary-reporter');
+    const sentry = await import('@/lib/sentry');
     const err = new Error('upload queue failed');
 
-    logger.logError('canary-signal', err, { requestId: 'req-123' });
-    await flushAsync();
+    logger.logError('upload:failed', err, { requestId: 'req-123' });
 
-    expect(vi.mocked(canary.reportCanaryError)).toHaveBeenCalledWith(
-      expect.objectContaining({
-        context: 'canary-signal',
-        traceId: undefined,
-        metadata: { requestId: 'req-123' },
-        error: expect.objectContaining({
-          name: 'Error',
-          message: 'upload queue failed',
-        }),
-      })
-    );
+    expect(vi.mocked(sentry.captureOperationalError)).toHaveBeenCalledWith({
+      context: 'upload:failed',
+      traceId: undefined,
+      metadata: { requestId: 'req-123' },
+      error: expect.objectContaining({
+        name: 'Error',
+        message: 'upload queue failed',
+      }),
+    });
   });
 
   it('logs timing entries with duration and success fields', async () => {
@@ -157,7 +138,6 @@ describe('observability logger', () => {
     tracedLogger.logInfo('info-trace');
     tracedLogger.logTiming('timing-trace', 69, false);
     tracedLogger.logError('error-trace', 'string failure');
-    await flushAsync();
 
     expect(parseCall(consoleLogSpy).traceId).toBe('trace-hyperpop');
     expect(parseCall(consoleLogSpy, 1).traceId).toBe('trace-hyperpop');
@@ -199,19 +179,17 @@ describe('observability logger', () => {
     });
   });
 
-  it('falls back to console logging when Canary import explodes', async () => {
-    const { logger } = await importLogger(() => {
-      throw new Error('canary unplugged');
-    });
+  it('keeps structured logging when Sentry rejects capture', async () => {
+    const { logger } = await importLogger(() => ({
+      captureOperationalError: vi.fn(() => false),
+    }));
     const kaboom = new Error('goodbye telemetry');
 
-    expect(() => logger.logError('canary-offline', kaboom)).not.toThrow();
+    expect(() => logger.logError('sentry-offline', kaboom)).not.toThrow();
 
     expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
     const entry = parseCall(consoleErrorSpy);
     expect(entry.error.message).toBe('goodbye telemetry');
-
-    await flushAsync();
   });
 
   it('falls back to minimal payload when metadata serialization fails', async () => {

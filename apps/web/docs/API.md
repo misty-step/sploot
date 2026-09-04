@@ -111,8 +111,8 @@ Two routes do enforce a real, tested limit:
 
 Process-liveness probe dedicated to platform routing (DigitalOcean routes the
 web service on this path). It proves only that the Next process/deployment
-artifact is responding: no database, provider, Clerk, Canary, or model
-dependency, and no sensitive output. It must never be used as a readiness or
+artifact is responding: no database, provider, Clerk, telemetry, network, or
+model dependency, and no sensitive output. It must never be used as a
 dependency oracle.
 
 **Authentication:** Not required

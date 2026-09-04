@@ -2,13 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import pkg from '@/package.json';
 import {
-  canaryConfigured,
-  checkCanaryStatus,
-  HEALTH_PROBE_TIMEOUT_MS,
-  peekCanaryReachability,
-  reportCanaryCheckIn,
-} from '@/lib/canary-reporter';
-import {
   checkDatabaseReadiness,
   type DatabaseHealth,
 } from '@/lib/health/database-readiness';
@@ -41,8 +34,6 @@ interface HealthStatus {
     database_url_configured: boolean;
     connection_latency_ms?: number;
     env_vars: Record<string, 'configured' | 'missing'>;
-    canary_configured: boolean;
-    canary_reachable: boolean | null;
   };
   version?: string;
   error?: string;
@@ -58,16 +49,12 @@ function dependenciesFor(database: DatabaseHealth): HealthDependencies {
   };
 }
 
-async function diagnosticsFor(database: DatabaseHealth): Promise<HealthStatus['diagnostics']> {
-  // Bounded OpenAPI probe only — does not prove authenticated ingest (see canary-reporter).
-  const canary = await checkCanaryStatus({ timeoutMs: HEALTH_PROBE_TIMEOUT_MS });
+function diagnosticsFor(database: DatabaseHealth): HealthStatus['diagnostics'] {
   return {
     prisma_connection_test: database.prisma_test,
     embedding_limiter_schema: database.limiterSchema,
     database_url_configured: Boolean(process.env.DATABASE_URL),
     connection_latency_ms: database.latency_ms,
-    canary_configured: canaryConfigured(),
-    canary_reachable: canary.reachable,
     env_vars: {
       DATABASE_URL: process.env.DATABASE_URL ? 'configured' : 'missing',
     },
@@ -89,7 +76,7 @@ async function getHandler(_request: NextRequest) {
     if (timeoutId) clearTimeout(timeoutId);
 
     const dependencies = dependenciesFor(database);
-    const diagnostics = await diagnosticsFor(database);
+    const diagnostics = diagnosticsFor(database);
     const healthy = database.success && database.limiterSchema;
     if (healthy) {
       const payload: HealthStatus = {
@@ -100,13 +87,6 @@ async function getHandler(_request: NextRequest) {
         version: pkg.version,
       };
 
-      // Best-effort; must not extend the readiness budget (void, not awaited).
-      void reportHealthCheckIn('alive', 'sploot-web health route ok', {
-        database: dependencies.database,
-        embedding_limiter: dependencies.embedding_limiter,
-        share_slug_cache: dependencies.share_slug_cache,
-        connection_latency_ms: database.latency_ms,
-      });
 
       return json(payload, 200);
     }
@@ -126,10 +106,6 @@ async function getHandler(_request: NextRequest) {
       diagnostics,
     };
 
-    void reportHealthCheckIn('error', 'sploot-web health route degraded', {
-      ...dependencies,
-      error: payload.error,
-    });
     return json(payload, 503);
   } catch (error) {
     if (timeoutId) clearTimeout(timeoutId);
@@ -145,17 +121,12 @@ async function getHandler(_request: NextRequest) {
       error: message,
       diagnostics: {
         database_url_configured: Boolean(process.env.DATABASE_URL),
-        canary_configured: canaryConfigured(),
-        canary_reachable: peekCanaryReachability(),
         env_vars: {
           DATABASE_URL: process.env.DATABASE_URL ? 'configured' : 'missing',
         },
       },
     };
 
-    void reportHealthCheckIn('error', 'sploot-web health route failed', {
-      error: message,
-    });
     return json(payload, 503);
   }
 }
@@ -178,18 +149,6 @@ async function headHandler(request: NextRequest) {
   });
 }
 
-async function reportHealthCheckIn(
-  status: 'alive' | 'error',
-  summary: string,
-  context: Record<string, unknown>
-) {
-  await reportCanaryCheckIn({
-    status,
-    summary,
-    ttlMs: 300_000,
-    context: { route: '/api/health', ...context },
-  });
-}
 
 export const GET = withObservability(getHandler, {
   operation: 'health:check',

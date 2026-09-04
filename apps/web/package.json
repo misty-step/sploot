@@ -76,6 +76,7 @@
     "@radix-ui/react-toggle": "^1.1.10",
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@sentry/nextjs": "10.71.0",
     "@sploot/common": "workspace:*",
     "@tanstack/react-virtual": "^3.13.26",
     "@vercel/blob": "^1.1.1",
@@ -121,10 +122,10 @@
     "sharp": "^0.34.5",
     "tailwindcss": "^4.3.0",
     "tsx": "^4.22.3",
-    "yaml": "^2.9.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7",
-    "webpack": "^5.107.2"
+    "webpack": "^5.107.2",
+    "yaml": "^2.9.0"
   },
   "packageManager": "pnpm@10.22.0"
 }

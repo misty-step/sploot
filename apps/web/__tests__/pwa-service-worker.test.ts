@@ -9,7 +9,7 @@ vi.mock('@ducanh2912/next-pwa', () => ({
 
 describe('production PWA service worker lifecycle', () => {
   it('generates a registered worker that takes control and owns the product caches', async () => {
-    const config = (await import('../next.config')).default as {
+    const config = (await import('../next.config')).default('phase-production-server') as unknown as {
       __pwaOptions: {
         register?: boolean;
         workboxOptions?: {
