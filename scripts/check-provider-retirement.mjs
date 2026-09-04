@@ -4,16 +4,17 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-const POLICY_FILES = new Set([
-  'scripts/check-provider-retirement.mjs',
-  'scripts/check-provider-retirement.test.mjs',
-]);
+const POLICY_FILES = {
+  'scripts/check-provider-retirement.mjs': true,
+  'scripts/check-provider-retirement.test.mjs': true,
+};
 
 const HISTORICAL_PATHS = [
   /^CHANGELOG\.md$/,
   /^docs\/adr\//,
   /^docs\/qa\//,
   /^docs\/auth-agent-readiness-decision-/,
+  /^docs\/auth-agent-readiness-plan-/,
   /^explorations\//,
   /^\.evidence\//,
   /^\.spellbook\/tailor\/audit\//,
@@ -22,6 +23,7 @@ const HISTORICAL_PATHS = [
   /^apps\/web\/docs\/adr\//,
   /^apps\/web\/docs\/NEON_BRANCH_CLEANUP_SUMMARY\.md$/,
   /^apps\/web\/docs\/deployed-smoke-report\.json$/,
+  /^apps\/web\/public\/screenshots\/capture-manifest\.json$/,
 ];
 
 const FORBIDDEN_PATHS = [
@@ -29,6 +31,7 @@ const FORBIDDEN_PATHS = [
   { rule: 'local compute link', pattern: /(^|\/)\.vercel(\/|$)/i },
   { rule: 'provider-branded runtime module', pattern: /(^|\/)vercel-(?!blob)[^/]*\.(?:ts|tsx|js|mjs)$/i },
   { rule: 'provider compute asset', pattern: /(^|\/)vercel\.svg$/i },
+  { rule: 'retired Canary integration artifact', pattern: /(^|\/)\.canary(\/|$)/i },
 ];
 
 const FORBIDDEN_CONTENT = [
@@ -48,6 +51,13 @@ const FORBIDDEN_CONTENT = [
     rule: 'Vercel compute doctrine',
     pattern: /\bVercel(?:-first|\s+(?:hosting|deployments?|compute|serverless|functions?|analytics|speed insights|KV|runtime|release posture|web deploy|production environment|dashboard))\b/i,
   },
+  { rule: 'retired Canary environment', pattern: /\b(?:[A-Z0-9_]*CANARY_[A-Z0-9_]+)\b/ },
+  { rule: 'retired Canary reporter', pattern: /canary-reporter/i },
+  {
+    rule: 'retired Canary endpoint',
+    pattern: /(?:canary\.mistystep\.io|canary-obs\.fly\.dev)/i,
+  },
+  { rule: 'retired Canary ownership header', pattern: /X-Sploot-Canary-Owner/i },
 ];
 
 export function isHistoricalPath(file) {
@@ -58,7 +68,7 @@ export function findProviderRetirementViolations(files) {
   const violations = [];
 
   for (const { path, content } of files) {
-    if (POLICY_FILES.has(path) || isHistoricalPath(path)) continue;
+    if (POLICY_FILES[path] || isHistoricalPath(path)) continue;
 
     for (const { rule, pattern } of FORBIDDEN_PATHS) {
       if (pattern.test(path)) {
@@ -83,13 +93,17 @@ export function findIgnoredEnvironmentViolations(files) {
 
   for (const { path, content } of files) {
     for (const [index, line] of content.split(/\r?\n/).entries()) {
-      const match = line.match(/^\s*(?:export\s+)?(VERCEL_[A-Z0-9_]+)\s*=/);
+      const match = line.match(
+        /^\s*(?:export\s+)?(VERCEL_[A-Z0-9_]+|[A-Z0-9_]*CANARY_[A-Z0-9_]+)\s*=/,
+      );
       if (!match) continue;
 
       violations.push({
         path,
         line: index + 1,
-        rule: 'Vercel runtime environment',
+        rule: match[1].includes('CANARY')
+          ? 'retired Canary environment'
+          : 'Vercel runtime environment',
         identifier: match[1],
       });
     }
@@ -146,7 +160,7 @@ function main() {
     ...findIgnoredEnvironmentViolations(ignoredEnvironmentFiles()),
   ];
   if (violations.length === 0) {
-    console.log('provider retirement check passed (Vercel Blob is the only active exception)');
+    console.log('provider retirement check passed (retired Vercel compute and Canary surfaces absent)');
     return;
   }
 

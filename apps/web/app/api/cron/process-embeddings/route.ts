@@ -14,6 +14,7 @@ import {
   EmbeddingProviderRateLimitError,
   EmbeddingProviderUnavailableError,
   EmbeddingConfigurationError,
+  OBSERVABILITY_OWNER_HEADER,
 } from '@/lib/embedding-errors';
 import { headers } from 'next/headers';
 import { withObservability } from '@/lib/with-observability';
@@ -85,7 +86,7 @@ async function getHandler(request: NextRequest) {
   let batchOutcome: BatchOutcome = 'success';
   let batchRetryAfterSec: number | undefined;
   let batchOutcomeReason: EmbeddingOutcome | undefined;
-  let configurationCanaryOwned = false;
+  let configurationReportOwned = false;
 
   try {
     // Verify cron authorization - required in all environments
@@ -317,7 +318,7 @@ async function getHandler(request: NextRequest) {
               configurationError,
               processingClaimToken,
             );
-            configurationCanaryOwned = hasEmbeddingConfigurationReport(configurationError);
+            configurationReportOwned = hasEmbeddingConfigurationReport(configurationError);
             stats.failureCount++;
             stats.errors.push({
               assetId: asset.id,
@@ -575,8 +576,8 @@ async function getHandler(request: NextRequest) {
         : batchOutcomeReason
               ? {
               'X-Sploot-Embedding-Outcome': batchOutcomeReason,
-              ...(batchOutcomeReason === 'embedding_configuration' && configurationCanaryOwned
-                ? { 'X-Sploot-Canary-Owner': 'route' }
+              ...(batchOutcomeReason === 'embedding_configuration' && configurationReportOwned
+                ? { [OBSERVABILITY_OWNER_HEADER]: 'route' }
                 : {}),
             }
         : undefined,

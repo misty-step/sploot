@@ -1,4 +1,4 @@
-import { reportCanaryError } from './canary-reporter';
+import { captureOperationalError } from './sentry';
 
 /** Errors crossing every embedding entrypoint. Keep policy and provider
  * outcomes distinct so callers can persist the right state and HTTP status. */
@@ -14,6 +14,8 @@ export const EMBEDDING_DEFAULT_RETRY_AFTER_SECONDS = 30;
 // ordinary application policy must never shorten it.
 export const EMBEDDING_MAX_RETRY_AFTER_SECONDS = 8_000_000_000_000;
 export const EMBEDDING_MAX_MONTHLY_RETRY_AFTER_SECONDS = 32 * 24 * 60 * 60;
+export const OBSERVABILITY_OWNER_HEADER = 'X-Sploot-Observability-Owner';
+
 
 /** The only response marker understood by the request observability boundary. */
 export const EMBEDDING_OUTCOMES = [
@@ -142,7 +144,6 @@ export class EmbeddingConfigurationError extends EmbeddingError {
 }
 
 const configurationReports = new WeakSet<object>();
-const configurationReportPromises = new WeakMap<object, Promise<boolean>>();
 
 function isConfigurationErrorLike(error: unknown): error is {
   message: string;
@@ -173,28 +174,21 @@ export async function reportEmbeddingConfigurationErrorOnce(
     current = current.cause;
   }
 
-  const existing = configurationReportPromises.get(reportTarget);
-  if (existing) return existing;
-
-  const reportPromise = (async () => {
-    const emitted = await reportCanaryError({
-      context,
-      error: {
-        name: reportTarget.name ?? 'EmbeddingConfigurationError',
-        message: reportTarget.message,
-        stack: reportTarget.stack,
-      },
-      metadata: {
-        ...metadata,
-        retryable: false,
-        providerAttempt: false,
-      },
-    });
-    if (emitted) configurationReports.add(reportTarget);
-    return emitted;
-  })();
-  configurationReportPromises.set(reportTarget, reportPromise);
-  return reportPromise;
+  const emitted = captureOperationalError({
+    context,
+    error: {
+      name: reportTarget.name ?? 'EmbeddingConfigurationError',
+      message: reportTarget.message,
+      stack: reportTarget.stack,
+    },
+    metadata: {
+      ...metadata,
+      retryable: false,
+      providerAttempt: false,
+    },
+  });
+  if (emitted) configurationReports.add(reportTarget);
+  return emitted;
 }
 
 export function hasEmbeddingConfigurationReport(error: unknown): boolean {
@@ -232,7 +226,7 @@ export function embeddingConfigurationHeaders(error: EmbeddingError): HeadersIni
   if (reason !== 'embedding_configuration' || !hasEmbeddingConfigurationReport(error)) {
     return headers;
   }
-  return { ...(headers ?? {}), 'X-Sploot-Canary-Owner': 'route' };
+  return { ...(headers ?? {}), [OBSERVABILITY_OWNER_HEADER]: 'route' };
 }
 
 export function embeddingRetryAfterHeader(value: unknown): HeadersInit {

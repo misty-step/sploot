@@ -338,7 +338,10 @@ export function deriveLegacyBindingBootstrapSpec(liveSpec, { marker, changeId })
     ['SPLOOT_DEPLOYMENT_CHANGE_ID', changeId],
   ];
   for (const [key, value] of bindings) {
-    web.envs.push({ key, value, scope: 'RUN_TIME', type: 'GENERAL' });
+    const scope = key === 'SPLOOT_DEPLOYMENT_ENV' || key === 'SPLOOT_DEPLOYMENT_COMMIT'
+      ? 'RUN_AND_BUILD_TIME'
+      : 'RUN_TIME';
+    web.envs.push({ key, value, scope, type: 'GENERAL' });
   }
   assertSpecBindings(next, { mode: 'closed', marker, changeId });
   return next;
@@ -475,6 +478,9 @@ export function deriveClosedStageSpec(liveSpec, operatorSpec = liveSpec) {
   if (!web) throw new Error('spec must contain exactly one services[name=web] component');
   if (!Array.isArray(web.envs)) throw new Error('services[name=web].envs must be an array');
   const operatorBindings = allowlistedClosedOperatorSpec(liveSpec, operatorSpec);
+  for (const key of ['SPLOOT_DEPLOYMENT_ENV', 'SPLOOT_DEPLOYMENT_COMMIT']) {
+    operatorBindings.get(key).scope = 'RUN_AND_BUILD_TIME';
+  }
   const installed = new Set();
   web.envs = web.envs.map((entry) => {
     if (!entry || typeof entry !== 'object' || !CLOSED_ALLOWLIST_BINDINGS.has(entry.key)) return entry;

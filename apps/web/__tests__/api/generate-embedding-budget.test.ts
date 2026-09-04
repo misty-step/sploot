@@ -164,7 +164,7 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
     expect(mocks.markEmbeddingFailed).not.toHaveBeenCalled();
   });
 
-  it('leaves generic 5xx Canary ownership to observability', async () => {
+  it('leaves generic 5xx ownership to the observability boundary', async () => {
     mocks.createEmbeddingService.mockReturnValue({
       embedImage: vi.fn().mockRejectedValue(new Error('unexpected provider shape')),
     });
@@ -174,7 +174,7 @@ describe('POST /api/assets/[id]/generate-embedding daily budget', () => {
     });
 
     expect(response.status).toBe(500);
-    expect(response.headers.get('X-Sploot-Canary-Owner')).toBeNull();
+    expect(response.headers.get('X-Sploot-Observability-Owner')).toBeNull();
     expect(mocks.logError).toHaveBeenCalledWith(
       'generate-embedding:failed',
       expect.any(Error),

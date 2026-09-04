@@ -138,7 +138,7 @@ describe('/api/telemetry', () => {
     expect(body).toEqual({ success: false, message: 'invalid payload' });
   });
 
-  it('forwards error telemetry to Canary through the logger', async () => {
+  it('forwards bounded error telemetry to structured logs', async () => {
     const payload = {
       type: 'error' as const,
       payload: {
@@ -156,9 +156,8 @@ describe('/api/telemetry', () => {
 
     expect(response.status).toBe(200);
     expect(body).toEqual({ success: true });
-    expect(mockLogger.logError).toHaveBeenCalledWith(
+    expect(mockLogger.logInfo).toHaveBeenCalledWith(
       'client:error',
-      expect.any(Error),
       expect.objectContaining({
         name: payload.payload.name,
         boundary: payload.payload.boundary,
@@ -186,9 +185,8 @@ describe('/api/telemetry', () => {
 
     expect(response.status).toBe(200);
     expect(body).toEqual({ success: true });
-    expect(mockLogger.logError).toHaveBeenCalledWith(
+    expect(mockLogger.logInfo).toHaveBeenCalledWith(
       'client:error',
-      expect.any(Error),
       expect.objectContaining({
         boundary: 'image-tile-error-boundary',
         hasStack: true,
@@ -245,13 +243,13 @@ describe('/api/telemetry', () => {
       message: 'invalid payload',
     });
     expect(
-      mockLogger.logError.mock.calls.some(([eventName]) => eventName === 'client:error')
+      mockLogger.logInfo.mock.calls.some(([eventName]) => eventName === 'client:error')
     ).toBe(false);
   });
 
-  it('logs when Canary forwarding fails but still returns success', async () => {
-    mockLogger.logError.mockImplementationOnce(() => {
-      throw new Error('canary unavailable');
+  it('logs when structured error forwarding fails but still returns success', async () => {
+    mockLogger.logInfo.mockImplementation(() => {
+      throw new Error('structured logger unavailable');
     });
 
     const payload = {
@@ -272,7 +270,7 @@ describe('/api/telemetry', () => {
     expect(response.status).toBe(200);
     expect(body).toEqual({ success: true });
     expect(mockLogger.logError).toHaveBeenCalledWith(
-      'telemetry:canary-forwarding-failed',
+      'telemetry:structured-log-failed',
       expect.any(Error),
       { name: payload.payload.name }
     );

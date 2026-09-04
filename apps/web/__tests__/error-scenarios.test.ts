@@ -2,7 +2,6 @@
  * Error Scenario Tests
  *
  * Validates graceful degradation when external services fail:
- * - Canary unavailable
  * - Network offline
  * - Database connection lost
  * - External APIs down (Vercel Blob, Replicate)
@@ -22,38 +21,6 @@ describe('Error Scenarios - System Resilience', () => {
     vi.clearAllMocks();
   });
 
-  describe('Canary unavailable', () => {
-    it('should not crash when Canary is down', () => {
-      // Simulate Canary failure by creating a mock that throws
-      const mockCaptureException = () => {
-        throw new Error('Canary service unavailable');
-      };
-
-      // Application code should handle Canary failures gracefully
-      const testError = new Error('Test error');
-
-      expect(() => {
-        try {
-          mockCaptureException();
-        } catch (err) {
-          // Canary failure should be caught and logged, not re-thrown
-          console.error('[Canary] Failed to capture exception:', err);
-        }
-      }).not.toThrow();
-    });
-
-    it('should continue logging to console when Canary fails', () => {
-      const consoleSpy = vi.spyOn(console, 'error');
-
-      logger.logError('test-operation', new Error('Test error'), {
-        context: 'error-scenario-test',
-      });
-
-      // Logger should still work even if Canary fails
-      expect(consoleSpy).toHaveBeenCalled();
-      consoleSpy.mockRestore();
-    });
-  });
 
   describe('Network offline', () => {
     it('should handle fetch failures gracefully', async () => {

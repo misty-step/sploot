@@ -7,7 +7,7 @@ symlink to this file — they are identical by construction.
 ## Project Overview
 
 Sploot is a pnpm Turborepo monorepo consolidating:
-- **apps/web** — Next.js 16 meme library: text→image semantic search (CLIP/SigLIP embeddings, pgvector), App Router API routes, Clerk auth, Prisma/Neon pgvector, Vercel Blob, Replicate embeddings, Canary diagnostics, deployed smoke, and DigitalOcean release posture.
+- **apps/web** — Next.js 16 meme library: text→image semantic search (CLIP/SigLIP embeddings, pgvector), App Router API routes, Clerk auth, Prisma/Neon pgvector, Vercel Blob, Replicate embeddings, Sentry diagnostics, deployed smoke, and DigitalOcean release posture.
 - **apps/extension** — Chrome extension (WXT + React) for one-click image saving: popup/background capture, Clerk extension auth, API client, store assets, and Chrome Web Store release packet.
 - **apps/mcp** — `@sploot/mcp` (`sploot-mcp` bin): MCP server exposing save + search as agent tools over the published token-scoped API contract. Companion skill: `.agents/skills/misty-sploot/`.
 - **packages/common** — `@sploot/common`, shared upload constants and API types consumed by both apps.
@@ -137,7 +137,7 @@ pnpm --filter web db:studio       # Open Prisma Studio
 - `DATABASE_URL` - Neon postgres with pooler
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY`
 - `BLOB_READ_WRITE_TOKEN` - Vercel Blob
-- `CANARY_ENDPOINT` / `CANARY_API_KEY` / `CANARY_SERVICE_NAME`
+- `NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_DSN` / `SENTRY_AUTH_TOKEN`
 
 **Extension** (`.env` for dev, `.env.production` for prod):
 - `VITE_CLERK_PUBLISHABLE_KEY` - Must match environment (pk_test_ vs pk_live_)
@@ -180,7 +180,7 @@ Pre-commit runs gitleaks, secrets scan, web lint, extension lint, and typecheck 
 |---|---|---|
 | Powder card `sploot-007` | `apps/extension`, Chrome Web Store | Current unpacked build is loaded, but authenticated right-click upload/duplicate proof and Web Store dashboard receipt remain. |
 | PR #151 | `apps/web/app/api/health/route.ts` | Stale Prisma serverless connections need runtime health evidence on future DB health changes. |
-| PR #142, bounded further by PR #251 (sploot-050) and ADR-010 | `apps/web/lib/upload/embedding-scheduler-service.ts`, `apps/web/lib/embedding-rate-limit.ts` | Duplicate/concurrent job pressure is bounded by the DB processing lock plus Postgres-backed per-user/global leases, minute windows, and `EMBEDDING_DAILY_BUDGET`. Global breaches report to Canary. The cron (`process-embeddings`) remains bounded separately by ADR-008; the manual route has its own rate-limit call. |
+| PR #142, bounded further by PR #251 (sploot-050) and ADR-010 | `apps/web/lib/upload/embedding-scheduler-service.ts`, `apps/web/lib/embedding-rate-limit.ts` | Duplicate/concurrent job pressure is bounded by the DB processing lock plus Postgres-backed per-user/global leases, minute windows, and `EMBEDDING_DAILY_BUDGET`. Global breaches report to Sentry. The cron (`process-embeddings`) remains bounded separately by ADR-008; the manual route has its own rate-limit call. |
 | PR #153 | `.github/workflows/release.yml` | Semantic-release depends on `GH_RELEASE_TOKEN`; release fixes must prove token path without weakening permissions. |
 | Powder card links required | `apps/web/docs/API.md` | API docs are hand maintained and can drift from route behavior. |
 

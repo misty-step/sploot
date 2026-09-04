@@ -6,7 +6,7 @@ Sploot is a personal meme library for people with saved images scattered across 
 
 ## Stack & Boundaries
 
-Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 16 app on DigitalOcean, App Router API routes, Clerk auth, Prisma/Neon Postgres with pgvector, Vercel Blob, Replicate embeddings, Canary diagnostics, and deployed smoke. `apps/extension` owns the WXT/React Chrome extension, popup, background context-menu capture, Clerk extension auth, API upload client, store listing assets, and Chrome Web Store release packet. `packages/common` owns shared upload constants and API types consumed by web and extension.
+Sploot is a pnpm Turborepo monorepo. `apps/web` owns the Next.js 16 app on DigitalOcean, App Router API routes, Clerk auth, Prisma/Neon Postgres with pgvector, Vercel Blob, Replicate embeddings, Sentry diagnostics, and deployed smoke. `apps/extension` owns the WXT/React Chrome extension, popup, background context-menu capture, Clerk extension auth, API upload client, store listing assets, and Chrome Web Store release packet. `packages/common` owns shared upload constants and API types consumed by web and extension.
 
 ## Load-Bearing Gate
 
@@ -37,4 +37,4 @@ Use web app for `apps/web`, extension for `apps/extension`, common package for `
 
 ## Session Signal
 
-Recurring corrections: use Computer Use for real Chrome UI including `chrome://extensions`; do not stop at signed-out checks when authenticated production QA is the real oracle; do not call GitHub Issues the tracker; do not claim DB-backed paths without pgvector evidence; do not conflate web deploy with extension release. Validated patterns: pnpm-first commands, Powder card lifecycle, master as base, Canary/deployed smoke as production inputs, release checker as local Chrome Web Store gate, and explicit blocker reporting when credentials or dashboard access are needed.
+Recurring corrections: use Computer Use for real Chrome UI including `chrome://extensions`; do not stop at signed-out checks when authenticated production QA is the real oracle; do not call GitHub Issues the tracker; do not claim DB-backed paths without pgvector evidence; do not conflate web deploy with extension release. Validated patterns: pnpm-first commands, Powder card lifecycle, master as base, Sentry/deployed smoke as production inputs, release checker as local Chrome Web Store gate, and explicit blocker reporting when credentials or dashboard access are needed.

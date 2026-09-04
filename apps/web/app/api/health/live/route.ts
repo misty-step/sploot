@@ -13,7 +13,7 @@ import { NextResponse } from 'next/server';
  * a full outage. Deep readiness stays on /api/health.
  *
  * Invariants, enforced by __tests__/api/health-live.test.ts:
- * - no database, provider, Clerk, Canary/network, or model dependency;
+ * - no database, provider, Clerk, telemetry, network, or model dependency;
  * - no awaited work: a hung pool or event-loop-heavy request cannot delay it
  *   beyond scheduling;
  * - no sensitive output (no env values, no configuration echo).
