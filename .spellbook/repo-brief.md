@@ -18,14 +18,14 @@ Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web t
 - Use pnpm 10; do not add npm/yarn flows.
 - Use `DATABASE_URL` for Prisma. Do not invent aliases for DB-backed tests or migrations.
 - `@sploot/common` is the source of truth for upload limits, MIME validation, and shared API types.
-- Work tracking lives in Powder via the registered MCP/API/CLI, not GitHub Issues or repository-local ticket files.
-- Closure is a Powder card status update with proof, links, and acceptance-criterion evidence.
+- Work from the current operator request; check current code and overlapping work. Historical issues provide context, not a required queue.
+- Report the result in the session or PR with proof, links, and acceptance-criterion evidence.
 - Web deploy and Chrome extension release are separate surfaces with separate evidence.
-- The legacy harness has been removed from this repo; do not require legacy harness config or evidence directories. Powder card evidence and the maintained repo rules are the harness.
+- The legacy harness has been removed from this repo; do not require legacy harness config or evidence directories. Use current request evidence and the maintained repo rules.
 
 ## Known Debts
 
-- Powder card `sploot-007`: active release blocker. Current worktree extension is loaded in Chrome, but authenticated upload/duplicate QA needs a fresh login and Chrome Web Store dashboard receipt.
+- Extension release verification: check current evidence before shipping. Current worktree extension is loaded in Chrome, but authenticated upload/duplicate QA needs a fresh login and Chrome Web Store dashboard receipt.
 - PR #151: stale Prisma serverless connection risk around `apps/web/app/api/health/route.ts`; future DB health changes need runtime proof.
 - Embedding scheduler/rate-limit pressure around `apps/web/lib/embeddings.ts`, embedding guard/rate-limit modules, and scheduler routes; cost and duplicate jobs are production risks.
 - Release automation depends on `GH_RELEASE_TOKEN` in `.github/workflows/release.yml`; fixes must prove the token path without weakening permissions.
@@ -37,4 +37,4 @@ Use web app for `apps/web`, extension for `apps/extension`, common package for `
 
 ## Session Signal
 
-Recurring corrections: use Computer Use for real Chrome UI including `chrome://extensions`; do not stop at signed-out checks when authenticated production QA is the real oracle; do not call GitHub Issues the tracker; do not claim DB-backed paths without pgvector evidence; do not conflate web deploy with extension release. Validated patterns: pnpm-first commands, Powder card lifecycle, master as base, Canary/deployed smoke as production inputs, release checker as local Chrome Web Store gate, and explicit blocker reporting when credentials or dashboard access are needed.
+Recurring corrections: use Computer Use for real Chrome UI including `chrome://extensions`; do not stop at signed-out checks when authenticated production QA is the real oracle; do not call GitHub Issues the tracker; do not claim DB-backed paths without pgvector evidence; do not conflate web deploy with extension release. Validated patterns: pnpm-first commands, current-request delivery, master as base, Canary/deployed smoke as production inputs, release checker as local Chrome Web Store gate, and explicit blocker reporting when credentials or dashboard access are needed.

@@ -17,7 +17,7 @@ The meme app that **knows your taste**: search naturally, shuffle endlessly, and
 eventually generate new memes tailored to your humor. "Knows your taste" is the
 soul and the long arc — be honest that today it's only a first cut: the library
 sorts into fixed categories and ranks off a single averaged signal, not genuine
-per-user taste yet (the real version is ahead — Powder card `sploot-037`). Don't
+per-user taste yet (the real version remains an idea to assess). Don't
 describe the aspiration as if it shipped.
 
 ## What we're chasing now: make the basics irresistible and safe to open
@@ -71,7 +71,7 @@ Sploot is built to be **run end-to-end by an AI agent**. Schema-to-prod is one
 merge (migrations ride the deploy), operations are token-on-disk commands rather
 than dashboard clicks, and the agent can verify and recover what it ships.
 Sequestered secrets and manual deploy steps are bugs to fix, not facts of life.
-This is a first-class constraint — see `AGENTS.md` and Powder cards 036/041.
+This is a first-class constraint — see `AGENTS.md`.
 
 The current implementation is evidence and migration material, not an
 architectural constraint. Provider and homegrown alternatives compete on cost,

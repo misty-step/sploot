@@ -36,7 +36,6 @@ near every turn so they survive long sessions.
 - `/typecheck` — monorepo `tsc --noEmit` triage
 - `/test-web` — web Vitest via the CI `test` script (`CI=1`, run-once)
 - `/db` — Prisma/Neon ops with the `DATABASE_URL` guardrail
-- `/backlog` — inspect Powder cards and their proof/claim state
 - `/ext-release` — Chrome Web Store release-packet validation
 
 **Search.** Exa (root `.mcp.json`, native to omp) + Brave (`BRAVE_API_KEY`).
