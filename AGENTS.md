@@ -22,7 +22,7 @@ Sploot is a pnpm Turborepo monorepo consolidating:
 - Prisma schema/migrations: `apps/web/prisma`
 - CI: `.github/workflows/ci.yml`; release: `.github/workflows/release.yml`
 - Extension release packet: `apps/extension/STORE_LISTING.md`, `apps/extension/scripts/validate-store-release.mjs`, `apps/extension/store-assets/`
-- Tracker: Powder cards via the registered MCP/API/CLI; card IDs and audit history are the source of truth for work.
+- Work: the current operator request, checked against live code and overlapping work; result and verification evidence in the session or PR.
 
 ## Development Commands
 
@@ -155,10 +155,10 @@ pnpm --filter web db:studio       # Open Prisma Studio
 - Default base branch is `origin/master`.
 - Use `DATABASE_URL` for Prisma; do not invent env aliases.
 - `@sploot/common` is the source of truth for upload limits, MIME validation, and shared API types.
-- Source of truth for work tracking is Powder (MCP/API/CLI), not GitHub Issues or repository-local ticket files.
-- Work closure requires updating the Powder card status and attaching the exact proof, links, and acceptance-criterion evidence there.
+- Work from the current operator request. Historical issues are context, not a required queue; do not maintain a replacement backlog.
+- Work closure requires reporting the exact proof, links, and acceptance-criterion evidence in the session or PR.
 - Web deploy and extension release are separate surfaces.
-- The legacy harness has been removed. Do not require legacy harness config, schemas, evidence directories, or repo-local lifecycle skill catalogs; use globally installed Harness Kit skills plus Powder card evidence unless a future Sploot-specific exception is explicitly justified.
+- The legacy harness has been removed. Do not require legacy harness config, schemas, evidence directories, or repo-local lifecycle skill catalogs; use globally installed Harness Kit skills plus current request evidence unless a future Sploot-specific exception is explicitly justified.
 
 ## Gate Contract
 
@@ -178,11 +178,11 @@ Pre-commit runs gitleaks, secrets scan, web lint, extension lint, and typecheck 
 
 | Tracker | Surface | Debt |
 |---|---|---|
-| Powder card `sploot-007` | `apps/extension`, Chrome Web Store | Current unpacked build is loaded, but authenticated right-click upload/duplicate proof and Web Store dashboard receipt remain. |
+| Extension release verification | `apps/extension`, Chrome Web Store | Current unpacked build is loaded, but authenticated right-click upload/duplicate proof and Web Store dashboard receipt remain. |
 | PR #151 | `apps/web/app/api/health/route.ts` | Stale Prisma serverless connections need runtime health evidence on future DB health changes. |
 | PR #142, bounded further by PR #251 (sploot-050) and ADR-010 | `apps/web/lib/upload/embedding-scheduler-service.ts`, `apps/web/lib/embedding-rate-limit.ts` | Duplicate/concurrent job pressure is bounded by the DB processing lock plus Postgres-backed per-user/global leases, minute windows, and `EMBEDDING_DAILY_BUDGET`. Global breaches report to Canary. The cron (`process-embeddings`) remains bounded separately by ADR-008; the manual route has its own rate-limit call. |
 | PR #153 | `.github/workflows/release.yml` | Semantic-release depends on `GH_RELEASE_TOKEN`; release fixes must prove token path without weakening permissions. |
-| Powder card links required | `apps/web/docs/API.md` | API docs are hand maintained and can drift from route behavior. |
+| Change and evidence links required | `apps/web/docs/API.md` | API docs are hand maintained and can drift from route behavior. |
 
 ## Harness Routing
 
@@ -191,7 +191,7 @@ catalogs, generated skill references, provider adapters, or cross-harness skill
 symlinks into this repo unless the behavior is an extreme Sploot-specific
 exception that cannot live in Harness Kit. If such an exception is needed,
 document the narrow surface here and keep the bridge/config pointing only at
-Substantive work should start from the Powder cards/docs anchors
+Substantive work should start from the current request and docs anchors
 above, respect the web/extension/common boundary, and close with CI-parity
 evidence plus any surface-specific DB, deployed-smoke, or extension-release
 proof named by the ticket.
