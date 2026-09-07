@@ -11,7 +11,7 @@ import {
   releaseStorageQuotaReservation,
   reserveUploadBytes,
 } from '@/lib/quota/storage-quota-policy';
-import { prisma } from '@/lib/db';
+import { prisma, type ExistingAssetMetadata } from '@/lib/db';
 import { assertEnrolledUser } from '@/lib/enrollment/enrollment-policy';
 import { admitCost } from '@/lib/cost';
 
@@ -58,6 +58,28 @@ export interface IngestImageOptions {
    * call, rate-limit lease, or daily attempt-ceiling slot is spent on the asset.
    */
   scheduleEmbeddings?: boolean;
+}
+
+/** ExistingAssetMetadata → IngestedAsset. Both checksum-hit sites (eager
+ *  lookup and unique-constraint race) must emit the same ingest shape. */
+function toDuplicateIngestedAsset(
+  existing: ExistingAssetMetadata,
+  filename: string,
+): IngestedAsset {
+  return {
+    id: existing.id,
+    blobUrl: existing.blobUrl,
+    thumbnailUrl: existing.thumbnailUrl ?? null,
+    pathname: existing.pathname,
+    filename,
+    mimeType: existing.mime,
+    size: existing.size,
+    checksum: existing.checksumSha256,
+    phash: null,
+    nearDuplicate: null,
+    createdAt: existing.createdAt,
+    needsEmbedding: !existing.hasEmbedding,
+  };
 }
 
 export async function ingestImage({
@@ -139,20 +161,7 @@ export async function ingestImage({
 
     return {
       kind: 'duplicate',
-      asset: {
-        id: deduplicationResult.existingAsset.id,
-        blobUrl: deduplicationResult.existingAsset.blobUrl,
-        thumbnailUrl: deduplicationResult.existingAsset.thumbnailUrl ?? null,
-        pathname: deduplicationResult.existingAsset.pathname,
-        filename: file.name,
-        mimeType: deduplicationResult.existingAsset.mime,
-        size: deduplicationResult.existingAsset.size,
-        checksum: deduplicationResult.checksum,
-        phash: null,
-        nearDuplicate: null,
-        createdAt: deduplicationResult.existingAsset.createdAt,
-        needsEmbedding: !deduplicationResult.existingAsset.hasEmbedding,
-      },
+      asset: toDuplicateIngestedAsset(deduplicationResult.existingAsset, file.name),
     };
   }
 
@@ -313,20 +322,7 @@ export async function ingestImage({
 
           return {
             kind: 'duplicate',
-            asset: {
-              id: existingAsset.id,
-              blobUrl: existingAsset.blobUrl,
-              thumbnailUrl: existingAsset.thumbnailUrl ?? null,
-              pathname: existingAsset.pathname,
-              filename: file.name,
-              mimeType: existingAsset.mime,
-              size: existingAsset.size,
-              checksum: existingAsset.checksumSha256,
-              phash: null,
-              nearDuplicate: null,
-              createdAt: existingAsset.createdAt,
-              needsEmbedding: !existingAsset.hasEmbedding,
-            },
+            asset: toDuplicateIngestedAsset(existingAsset, file.name),
           };
         }
       }

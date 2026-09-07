@@ -6,6 +6,7 @@ import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api'
 import { blobConfigured } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { ingestImage } from '@/lib/upload/ingest-image';
+import { ingestResultToUploadResponse } from '@/lib/upload/ingest-http';
 import { prisma } from '@/lib/db';
 import { getRuntimeGate, runtimeGateResponse } from '@/lib/runtime-gates';
 import { UPLOAD } from '@sploot/common';
@@ -41,10 +42,12 @@ export const maxDuration = 60;
 /**
  * Direct file upload endpoint - handles file upload server-side
  *
- * The route handler parses the request and maps results to the API's JSON
- * contracts; the actual pipeline (validate → dedupe → quota → process →
- * blob upload → record → embedding) lives in lib/upload/ingest-image.ts and
- * is shared with every other ingestion surface (share-target, URL import).
+ * The route handler parses the request and maps catch-path errors; the
+ * 201 / 409 / invalid JSON lives in lib/upload/ingest-http.ts so bytes
+ * and URL save cannot drift. The actual pipeline (validate → dedupe →
+ * quota → process → blob upload → record → embedding) lives in
+ * lib/upload/ingest-image.ts and is shared with every other ingestion
+ * surface (share-target, URL import).
  */
 async function postHandler(req: NextRequest, _context: RouteContext, { principal }: AuthenticatedApiContext) {
   const startTime = Date.now();
@@ -97,34 +100,7 @@ async function postHandler(req: NextRequest, _context: RouteContext, { principal
       ? await runIdempotentUpload(userId, idempotencyKey, ingest)
       : await ingest();
 
-    if (result.kind === 'invalid') {
-      return NextResponse.json(
-        { success: false, error: result.error.userMessage },
-        { status: result.error.statusCode }
-      );
-    }
-
-    if (result.kind === 'duplicate') {
-      return NextResponse.json(
-        {
-          success: true,
-          isDuplicate: true,
-          asset: result.asset,
-          message: 'This image already exists in your library',
-        },
-        { status: 409 }
-      );
-    }
-
-    return NextResponse.json(
-      {
-        success: true,
-        isDuplicate: false,
-        asset: result.asset,
-        message: 'Upload successful',
-      },
-      { status: 201 }
-    );
+    return ingestResultToUploadResponse(result);
   } catch (error) {
     unstable_rethrow(error);
 
