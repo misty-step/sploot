@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { headers } from 'next/headers';
 import { prisma } from '@/lib/db';
+import { withCronAuth } from '@/lib/auth/with-cron-auth';
 import { processStorageCleanup } from '@/lib/storage/cleanup-outbox';
 import { withObservability } from '@/lib/with-observability';
 
@@ -12,10 +12,6 @@ const MAX_BATCH = 100;
  * an inactive legacy replica to the configured target store.
  */
 async function getHandler(request: NextRequest) {
-  const authHeader = (await headers()).get('authorization');
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 });
-  if (authHeader !== 'Bearer ' + cronSecret) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   if (!prisma) return NextResponse.json({ error: 'Database unavailable' }, { status: 503 });
 
   const requested = new URL(request.url).searchParams.get('limit');
@@ -32,4 +28,4 @@ async function getHandler(request: NextRequest) {
   }
 }
 
-export const GET = withObservability(getHandler, { operation: 'cron:process-storage-cleanup' });
+export const GET = withObservability(withCronAuth(getHandler), { operation: 'cron:process-storage-cleanup' });

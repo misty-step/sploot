@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { timingSafeEqual } from 'crypto';
-import { headers } from 'next/headers';
 import { prisma } from '@/lib/db';
+import { withCronAuth } from '@/lib/auth/with-cron-auth';
 import { withObservability } from '@/lib/with-observability';
 import { logger } from '@/lib/observability-logger';
 
@@ -9,35 +8,12 @@ import { logger } from '@/lib/observability-logger';
  * GET /api/cron/purge-search-logs
  *
  * Deletes search_logs older than 30 days.
- * Authorization: Bearer token via CRON_SECRET env.
+ * Authorization: Bearer token via CRON_SECRET (withCronAuth).
  */
 async function getHandler(_req: NextRequest) {
   const start = Date.now();
 
   try {
-    const authHeader = (await headers()).get('authorization');
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret) {
-      return NextResponse.json(
-        { error: 'CRON_SECRET not configured' },
-        { status: 500 }
-      );
-    }
-
-    const expected = `Bearer ${cronSecret}`;
-    const isValid =
-      typeof authHeader === 'string' &&
-      authHeader.length === expected.length &&
-      timingSafeEqual(Buffer.from(authHeader), Buffer.from(expected));
-
-    if (!isValid) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
     if (!prisma) {
       return NextResponse.json(
         { error: 'Database not configured' },
@@ -78,6 +54,6 @@ async function getHandler(_req: NextRequest) {
   }
 }
 
-export const GET = withObservability(getHandler, {
+export const GET = withObservability(withCronAuth(getHandler), {
   operation: 'cron:purge-search-logs',
 });
