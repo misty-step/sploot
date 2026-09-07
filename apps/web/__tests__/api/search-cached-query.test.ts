@@ -135,6 +135,14 @@ describe('/api/search with a cached query embedding', () => {
       expect.objectContaining({ limit: 30 })
     );
     expect(mocks.createEmbeddingService).not.toHaveBeenCalled();
+    expect(mocks.findManyAssetTags).toHaveBeenCalledTimes(1);
+    expect(mocks.findManyAssetTags).toHaveBeenCalledWith({
+      where: { assetId: { in: ['asset-1'] } },
+      select: {
+        assetId: true,
+        tag: { select: { id: true, name: true } },
+      },
+    });
   });
 
   it('still reports 503 for uncached queries when the service is unconfigured', async () => {

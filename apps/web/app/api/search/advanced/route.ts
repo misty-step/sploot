@@ -13,6 +13,7 @@ import {
 } from '@/lib/embedding-errors';
 import { getCacheService } from '@/lib/cache';
 import { toGridAsset, mapAssetTags } from '@/lib/asset-dto';
+import { loadTagsByAssetId } from '@/lib/asset-tags';
 import { withObservability } from '@/lib/with-observability';
 import { withAuthenticatedApi } from '@/lib/auth/with-authenticated-api';
 import type { AuthenticatedApiContext } from '@/lib/auth/with-authenticated-api';
@@ -341,24 +342,7 @@ async function postHandler(req: NextRequest, _context: unknown, { principal }: A
     // Tag membership was applied before LIMIT/OFFSET in SQL.
     const filteredResults = results;
 
-    // Get tags for all results
-    const resultIds = filteredResults.map((r: any) => r.id);
-    const allTags = await prisma!.assetTag.findMany({
-      where: { assetId: { in: resultIds } },
-      include: { tag: true },
-    });
-
-    // Group tags by asset
-    const tagsByAsset: Record<string, ReturnType<typeof mapAssetTags>> = {};
-    const rowsByAsset: Record<string, Array<{ tag: { id: string; name: string } }>> = {};
-    for (const at of allTags) {
-      (rowsByAsset[at.assetId] ??= []).push(at);
-    }
-    for (const [assetId, rows] of Object.entries(rowsByAsset)) {
-      tagsByAsset[assetId] = mapAssetTags(rows);
-    }
-
-    // Format results
+    const tagsByAsset = await loadTagsByAssetId(filteredResults.map((r: { id: string }) => r.id));
     const formattedResults = filteredResults.map((result: AdvancedSearchRow) =>
       toGridAsset(result, { tags: tagsByAsset[result.id] || [] }),
     );
