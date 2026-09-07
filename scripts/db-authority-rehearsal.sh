@@ -277,13 +277,24 @@ PGPASSWORD="$app_password" psql "$app_url" -v ON_ERROR_STOP=1 -c 'SELECT asset_i
 test "$app_bootstrap_marker" = "ready:${bootstrap_version}"
 app_bootstrap_mutation="$(PGPASSWORD="$app_password" psql "$app_url" -Atc "SELECT has_table_privilege(current_user, 'sploot_bootstrap.stripe_ledger_bootstrap_state', 'INSERT,UPDATE,DELETE') OR has_table_privilege(current_user, 'public._prisma_migrations', 'INSERT,UPDATE,DELETE')")"
 test "$app_bootstrap_mutation" = 'f'
+kill_tree() {
+  local pid="$1"
+  if [[ -n "$pid" ]]; then
+    pkill -TERM -P "$pid" 2>/dev/null || true
+    kill -TERM "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    pkill -KILL -P "$pid" 2>/dev/null || true
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+}
+
 health_port="$((3100 + $PG_VERSION))"
 DATABASE_URL="$app_url" \
 STRIPE_LEDGER_BOOTSTRAP_REQUIRED=true \
 SPLOOT_DEPLOYMENT_ENV=test \
 pnpm --filter web exec next dev --hostname 127.0.0.1 --port "$health_port" >/tmp/sploot-health-$PG_VERSION.log 2>&1 &
 health_pid=$!
-trap 'kill "$health_pid" 2>/dev/null || true' EXIT
+trap 'kill_tree "$health_pid"' EXIT
 health_json=''
 for _ in $(seq 1 60); do
   if health_json="$(curl --fail --silent --show-error "http://127.0.0.1:${health_port}/api/health" 2>/dev/null)"; then break; fi
@@ -291,8 +302,7 @@ for _ in $(seq 1 60); do
 done
 if [[ -z "$health_json" ]]; then echo "health readiness never returned HTTP 200 on port $health_port" >&2; cat "/tmp/sploot-health-$PG_VERSION.log" >&2; exit 1; fi
 HEALTH_JSON="$health_json" node -e 'try { const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") { console.error("unexpected health payload:", process.env.HEALTH_JSON); process.exit(1); } } catch (error) { console.error("invalid health payload:", process.env.HEALTH_JSON, error); process.exit(1); }'
-kill "$health_pid"
-wait "$health_pid" 2>/dev/null || true
+kill_tree "$health_pid"
 trap - EXIT
 
 # Flag-absent app-role readback: production runs without
@@ -306,7 +316,7 @@ DATABASE_URL="$app_url" \
 SPLOOT_DEPLOYMENT_ENV=test \
 pnpm --filter web exec next dev --hostname 127.0.0.1 --port "$absent_port" >/tmp/sploot-health-absent-$PG_VERSION.log 2>&1 &
 absent_pid=$!
-trap 'kill "$absent_pid" 2>/dev/null || true' EXIT
+trap 'kill_tree "$absent_pid"' EXIT
 absent_json=''
 for _ in $(seq 1 60); do
   if absent_json="$(curl --fail --silent --show-error "http://127.0.0.1:${absent_port}/api/health" 2>/dev/null)"; then break; fi
@@ -321,8 +331,7 @@ for _ in $(seq 1 30); do
 done
 if [[ -z "$absent_live_json" ]]; then echo "absent-flag live readiness never returned HTTP 200 on port $absent_port" >&2; cat "/tmp/sploot-health-absent-$PG_VERSION.log" >&2; exit 1; fi
 HEALTH_JSON="$absent_live_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="alive"||h.service!=="sploot-web") process.exit(1)'
-kill "$absent_pid"
-wait "$absent_pid" 2>/dev/null || true
+kill_tree "$absent_pid"
 trap - EXIT
 
 # Fresh/no-bootstrap production shape: flag absent AND no Stripe
@@ -343,7 +352,7 @@ DATABASE_URL="$plain_url" \
 SPLOOT_DEPLOYMENT_ENV=test \
 pnpm --filter web exec next dev --hostname 127.0.0.1 --port "$plain_port" >/tmp/sploot-health-plain-$PG_VERSION.log 2>&1 &
 plain_pid=$!
-trap 'kill "$plain_pid" 2>/dev/null || true' EXIT
+trap 'kill_tree "$plain_pid"' EXIT
 plain_json=''
 for _ in $(seq 1 60); do
   if plain_json="$(curl --fail --silent --show-error "http://127.0.0.1:${plain_port}/api/health" 2>/dev/null)"; then break; fi
@@ -358,8 +367,7 @@ for _ in $(seq 1 30); do
 done
 if [[ -z "$plain_live_json" ]]; then echo "plain live readiness never returned HTTP 200 on port $plain_port" >&2; cat "/tmp/sploot-health-plain-$PG_VERSION.log" >&2; exit 1; fi
 HEALTH_JSON="$plain_live_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="alive"||h.service!=="sploot-web") process.exit(1)'
-kill "$plain_pid"
-wait "$plain_pid" 2>/dev/null || true
+kill_tree "$plain_pid"
 trap - EXIT
 legacy_owner="$(psql "$admin_url" -Atc "SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid='public.users'::regclass")"
 test "$legacy_owner" = 'sploot_stripe_schema_migrator'
