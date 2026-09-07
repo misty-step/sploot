@@ -1,8 +1,3 @@
-Type-check the whole monorepo and triage failures.
-
-Run `pnpm type-check` (Turbo fans out to web `tsc --noEmit`, extension `tsc
---noEmit`, and `@sploot/common`).
-
-If it fails, group errors by package, show the file:line for each, and fix the
-root cause — do not silence with `any`, `@ts-ignore`, or by relaxing
-`tsconfig`. Re-run until clean.
+Run `pnpm type-check` from the repository root (Turbo type-checks web,
+extension, and `@sploot/common`). Group failures by package and fix their root
+cause; do not hide them with `any`, `@ts-ignore`, or relaxed tsconfig settings.

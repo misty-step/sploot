@@ -118,8 +118,8 @@ export default async function Help() {
               cluster your library automatically as it grows — no folders to
               maintain by hand. That clustering is a first cut today: it
               sorts into fixed categories and ranks off one averaged signal,
-              not a model of your personal taste yet. Real per-user taste is
-              tracked as backlog 037, not shipped today.
+              not a model of your personal taste yet. Real per-user taste
+              remains an idea to assess, not shipped today.
             </p>
           </section>
 

@@ -25,7 +25,7 @@ Ship gate equals CI parity: `pnpm lint && pnpm type-check && pnpm --filter web t
 
 ## Known Debts
 
-- Extension release verification: check current evidence before shipping. Current worktree extension is loaded in Chrome, but authenticated upload/duplicate QA needs a fresh login and Chrome Web Store dashboard receipt.
+- Before an extension release, check authenticated upload/duplicate behavior and the Chrome Web Store dashboard receipt against current state.
 - PR #151: stale Prisma serverless connection risk around `apps/web/app/api/health/route.ts`; future DB health changes need runtime proof.
 - Embedding scheduler/rate-limit pressure around `apps/web/lib/embeddings.ts`, embedding guard/rate-limit modules, and scheduler routes; cost and duplicate jobs are production risks.
 - Release automation depends on `GH_RELEASE_TOKEN` in `.github/workflows/release.yml`; fixes must prove the token path without weakening permissions.

@@ -3,7 +3,7 @@
  *
  * Composes the existing QA harness (qa:seed fixtures + qa-local auth from
  * docs/AUTH.md) with test runs and authenticated agent-browser walks, then
- * writes a structured evidence packet to docs/qa/evidence/<date>-<slug>/:
+ * writes a fresh packet under .sploot-local/qa-evidence/<date>-<slug>-<unique>/:
  * packet.md, screenshots, and full command transcripts.
  *
  * Usage (from apps/web, local pgvector postgres running):
@@ -13,6 +13,7 @@
  *
  * Flags:
  *   --slug <slug>        required; packet directory suffix
+ *   --out-dir <path>    exact new packet directory (relative to apps/web or absolute)
  *   --intent <text>      what this run is meant to prove
  *   --routes <csv>       routes to walk (default: /app)
  *   --viewports <csv>    WxH list (default: 1440x900,390x844)
@@ -33,8 +34,8 @@
 
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { createQaLocalAuthToken, QA_LOCAL_AUDIENCE, QA_LOCAL_DEPLOYMENT_ENV, QA_LOCAL_DEPLOYMENT_ID } from '../lib/auth/qa-local';
 import {
@@ -79,6 +80,7 @@ async function resolveAuthSecret(baseUrl: string | undefined): Promise<string> {
 
 interface Args {
   slug: string;
+  outDir?: string;
   intent: string;
   routes: string[];
   viewports: string[];
@@ -113,6 +115,14 @@ function parseArgs(argv: string[]): Args {
     const next = () => argv[++i];
     switch (argv[i]) {
       case '--slug': args.slug = next() ?? ''; break;
+      case '--out-dir': {
+        const value = next();
+        if (!value || value.startsWith('--')) {
+          throw new Error('--out-dir requires an exact new packet directory');
+        }
+        args.outDir = value;
+        break;
+      }
       case '--intent': args.intent = next() ?? ''; break;
       case '--routes': args.routes = (next() ?? '').split(',').filter(Boolean); break;
       case '--viewports': args.viewports = (next() ?? '').split(',').filter(Boolean); break;
@@ -272,9 +282,19 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const now = new Date();
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const packetDir = join(REPO_ROOT, 'docs', 'qa', 'evidence', `${date}-${args.slug}`);
+  let packetDir: string;
+  if (args.outDir) {
+    packetDir = resolve(args.outDir);
+    await mkdir(dirname(packetDir), { recursive: true });
+    // Exclusive creation protects both complete packets and interrupted runs.
+    await mkdir(packetDir);
+  } else {
+    const outputRoot = join(REPO_ROOT, '.sploot-local', 'qa-evidence');
+    await mkdir(outputRoot, { recursive: true });
+    packetDir = await mkdtemp(join(outputRoot, `${date}-${args.slug}-`));
+  }
   const transcriptsDir = join(packetDir, 'transcripts');
-  await mkdir(transcriptsDir, { recursive: true });
+  await mkdir(transcriptsDir);
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
