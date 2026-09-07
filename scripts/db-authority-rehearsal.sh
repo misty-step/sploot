@@ -314,7 +314,12 @@ for _ in $(seq 1 60); do
 done
 if [[ -z "$absent_json" ]]; then echo "absent-flag health readiness never returned HTTP 200 on port $absent_port" >&2; cat "/tmp/sploot-health-absent-$PG_VERSION.log" >&2; exit 1; fi
 HEALTH_JSON="$absent_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") process.exit(1)'
-absent_live_json="$(curl --fail --silent --show-error "http://127.0.0.1:${absent_port}/api/health/live")"
+absent_live_json=''
+for _ in $(seq 1 30); do
+  if absent_live_json="$(curl --fail --silent --show-error "http://127.0.0.1:${absent_port}/api/health/live" 2>/dev/null)"; then break; fi
+  sleep 1
+done
+if [[ -z "$absent_live_json" ]]; then echo "absent-flag live readiness never returned HTTP 200 on port $absent_port" >&2; cat "/tmp/sploot-health-absent-$PG_VERSION.log" >&2; exit 1; fi
 HEALTH_JSON="$absent_live_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="alive"||h.service!=="sploot-web") process.exit(1)'
 kill "$absent_pid"
 wait "$absent_pid" 2>/dev/null || true
@@ -346,7 +351,12 @@ for _ in $(seq 1 60); do
 done
 if [[ -z "$plain_json" ]]; then echo "plain health readiness never returned HTTP 200 on port $plain_port" >&2; cat "/tmp/sploot-health-plain-$PG_VERSION.log" >&2; exit 1; fi
 HEALTH_JSON="$plain_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="ok"||h.dependencies?.database!=="up"||h.dependencies?.embedding_limiter!=="up") process.exit(1)'
-plain_live_json="$(curl --fail --silent --show-error "http://127.0.0.1:${plain_port}/api/health/live")"
+plain_live_json=''
+for _ in $(seq 1 30); do
+  if plain_live_json="$(curl --fail --silent --show-error "http://127.0.0.1:${plain_port}/api/health/live" 2>/dev/null)"; then break; fi
+  sleep 1
+done
+if [[ -z "$plain_live_json" ]]; then echo "plain live readiness never returned HTTP 200 on port $plain_port" >&2; cat "/tmp/sploot-health-plain-$PG_VERSION.log" >&2; exit 1; fi
 HEALTH_JSON="$plain_live_json" node -e 'const h=JSON.parse(process.env.HEALTH_JSON); if(h.status!=="alive"||h.service!=="sploot-web") process.exit(1)'
 kill "$plain_pid"
 wait "$plain_pid" 2>/dev/null || true
