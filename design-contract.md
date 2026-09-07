@@ -1,12 +1,18 @@
-# Sploot Design Contract
+# Sploot Design Provenance
 
-This file records where durable design facts came from. `DESIGN.md` is the
-usable contract; this file is the provenance ledger.
+This file records where design facts and decisions came from. `DESIGN.md` is the
+usable current contract; this file is the historical provenance ledger.
+
+Read each observation at its recorded pass. The original `keep`/`change` labels,
+capture paths, and implementation descriptions below are not current-state
+claims, an active work queue, or a reusable capture inventory. The July 10 toybox
+decision supersedes the older square/neo-brutalist and Swiss-substrate recipes.
+Linear owns current priorities and selected unresolved work.
 
 | Source | Fact | Provenance | Confidence | Use | Evidence / Notes |
 |---|---|---|---|---|---|
-| `vision.md` | Sploot is a personal meme library for semantic search, shuffle, bangers, related items, and future taste-based generation. | observed | high | keep | Product vision names the core jobs and target user. |
-| `vision.md` | The product vibe is goofy, fun, personal, and not too serious. | observed | high | keep | This is the strongest product-owned voice signal. |
+| `VISION.md` | Sploot is a personal meme library for semantic search, shuffle, bangers, related items, and future taste-based generation. | observed | high | keep | Optional product context names the core jobs and target user; generation is not a shipped claim. |
+| `VISION.md` | The product vibe is goofy, fun, personal, and not too serious. | observed | high | keep | Product-owned voice context, not a required work gate. |
 | `apps/web/app/globals.css` | Existing visual base uses square radius, off-white/black, cyan primary accent, coral/violet secondary accents, grid/stripe patterns, and Bebas/Geist/JetBrains font roles. | observed | high | keep | Current CSS token layer and utility classes already encode most of this. |
 | `apps/web/components.json` | The component base is shadcn New York with CSS variables and lucide icons. | observed | high | keep | Keep the primitive library; adapt component grammar through local wrappers and tokens. |
 | Live screenshot `/var/folders/jr/0kj0xfdd4s1ggs921sr2d7f80000gn/T/sploot-landing-desktop.png` | Current landing is clean and legible but structurally close to a centered SaaS hero. | observed | medium | change | Future landing should show the product mechanism in the first viewport. |
@@ -32,10 +38,12 @@ usable contract; this file is the provenance ledger.
 | Design lab 034 round 4, July 10, 2026 | FINAL LOCK: AFD-8 "toybox ink minis" is the production design system; AFD-9's candy-chip drop-height adopted for the 44px mobile dock only. Markers must move with the card on hover (render inside the transformed cell). | provided | high | keep | Supersedes the neo-brutalist visual system (square slabs, 8px diagonal ink shadows, mono-default chrome). DESIGN.md §§3-6, 8-9 and anti-patterns rewritten 2026-07-10; token VALUES in `apps/web/app/globals.css` moved to the toybox palette while token names stayed stable. |
 | `apps/web/app/globals.css` + `apps/web/app/layout.tsx`, July 10, 2026 | Committed toybox tokens: ink `#1c1547`/`#fff3dc`, shelf `#cfe7ff`/`#19143d`, candy palette, radius scale 18/10/9/pill, drop heights 5/3/9px with hover/press states, motion 130/150/200/300ms; type is Bungee / Baloo 2 / Space Mono behind the stable font slots. | observed | high | keep | These committed values are the contract; the lab builder in `explorations/lab-034-hypermax/lanes/afd.js` (AFD-8 section) is the visual reference. |
 
-## Migration Exceptions
+## Migration Exceptions (historical provenance, superseded)
 
-These are known places where the current repo does not yet satisfy the full
-design contract. They are allowed for now, but new work should not copy them.
+These were migration exceptions recorded during the earlier design pass. They
+are retained provenance, not current waivers or verified outstanding tasks.
+Do not copy their old recipes or re-import the table as tickets; compare any
+currently affected surface with `DESIGN.md`.
 
 | Path / Pattern | Exception | Exit Criteria |
 |---|---|---|

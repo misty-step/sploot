@@ -1,11 +1,11 @@
 # gallery-lab-001 · sploot gallery design lab
 
-Pre-implementation design lab for Powder card `sploot-gallery-design-pass`:
-structurally distinct directions for the `/app` gallery workbench (browse,
-search, filter, select, detail) so the lead can lock ONE direction before any
-production UI work. **Nothing in this directory ships**; it is a decision
-artifact. No production routes are exposed — the lab is a static, self-owned
-HTML surface under `docs/`.
+Retained pre-implementation design lab for historical Powder card
+`sploot-gallery-design-pass`: structurally distinct directions for the `/app`
+gallery workbench (browse, search, filter, select, detail). Powder is retired;
+this snapshot and its verdicts are not a current work queue. **Nothing in this
+directory ships**; it is decision material. No production routes are exposed —
+the lab is a static, self-owned HTML surface under `docs/`.
 
 ## Run it
 
@@ -48,8 +48,8 @@ node docs/design-labs/gallery-lab-001/qa-sweep.mjs --out /tmp/lab001-evidence
 
 ## Source material and constraints
 
-- `DESIGN.md` (toybox grammar, operator rules from lab-034) and `VISION.md`
-  (capture→retrieval arc) are live authority.
+- `DESIGN.md` owns the current toybox grammar. `VISION.md` provides optional
+  capture/retrieval intent context, not a required work gate or higher authority.
 - PR #274 was inspected read-only as source material (stale/conflicting; its
   neo-brutalist shadow language is dead). Ideas carried in as product facts:
   never cover the artwork; human-readable relevance ("match 91%"); the
@@ -145,8 +145,10 @@ Scoring notes:
   candidates); a real focus-trap dialog to replace the shipped blur lightbox,
   which every candidate retires.
 
-## Verdict state
+## Recorded round-one status
 
-Round 1 complete · awaiting lead verdicts (kill / mutate / lock per option).
-Mutations return to the originating lane's philosophy under new IDs; the
-catalog refills toward the Law after kills.
+At this lab pass: round 1 complete, awaiting lead verdicts (kill / mutate / lock
+per option), with mutations returning to their original lane under new IDs.
+That is historical selection state, not a current instruction to refill the
+catalog. Current requests and Linear govern any new exploration; the shipped
+design belongs in `DESIGN.md`.

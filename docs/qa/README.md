@@ -1,9 +1,18 @@
 # QA Evidence
 
-`docs/qa/evidence/<date>-<slug>/` holds evidence packets: the verification
-receipts for changes to the web app. Each packet is produced by one command
-and contains `packet.md` (scope, checks, verdict, residual risk), screenshots
-of authenticated browser walks, and full command transcripts.
+QA packets are per-run output: `packet.md` (scope, checks, verdict, residual
+risk), authenticated screenshots, and full command transcripts. They are not
+fixtures and are **not committed by default**.
+
+`qa:evidence` writes a fresh directory under the gitignored
+`.sploot-local/qa-evidence/<date>-<slug>-<unique>/`. `--out-dir <path>` chooses an
+exact new packet directory instead; relative paths resolve from `apps/web`.
+An existing output directory is an error, even if its prior run was incomplete.
+Packet filenames and relative links are unchanged.
+
+The historical `docs/qa/evidence/` collection remains in place. A selected
+screenshot consumed by README or a shipped demo is a public product asset,
+not permission to commit every future run bundle.
 
 ## Producing a packet
 
@@ -37,6 +46,25 @@ captures `pile-filter-selected-1440x900.png`; `--expect-taste` records and
 validates that taste-ranked assets differ from seeded shuffle and that
 `/api/taste/profile` is ready; `--viewports 1440x900,390x844` is the default.
 
+Use `--out-dir` when an approved retained artifact location is available:
+
+```bash
+pnpm qa:evidence \
+  --slug share-target \
+  --intent "share-target POST saves an image into the library" \
+  --out-dir /approved-artifacts/new-share-target-run \
+  --routes /app \
+  --risk "real-device share sheet not exercised"
+```
+
+Replace that illustrative path with an authorized, new directory. The runner
+only writes local files: it does not upload, redact, set access controls, or
+guarantee retention. Keep new raw output outside tracked source directories.
+Local ignored output is not durable evidence until retained appropriately.
+`pnpm dev:local:down` removes `.sploot-local/`, including these default packets.
+Retain any needed output before teardown, or select an approved path outside
+that runtime directory with `--out-dir`.
+
 ## Reading a packet
 
 - **Verdict: PASS** with no warnings — checks green, no page/console errors.
@@ -45,6 +73,28 @@ validates that taste-ranked assets differ from seeded shuffle and that
 - **Verdict: FAIL** — the packet names the failing check (last transcript
   lines inline) or the page errors.
 
-Packets are committed with the change they verify; they are the "live
-evidence" half of a completion claim. Auth/seeding internals are documented
-in `apps/web/docs/AUTH.md`.
+## Ownership and safe handling
+
+- **Repository inputs and product assets:** the QA harness, deterministic seed
+  data, curated evaluation fixtures (including intentionally precomputed
+  embeddings), portable procedures, and selected sanitized public/demo/PWA
+  screenshots with their required publishing manifests.
+- **Linear:** the current work's intent, a concise result and residual risk,
+  source revision, exercised environment/surface, and a link to retained
+  evidence. A packet's PASS is not proof of deployment or unexercised devices.
+- **Approved retained artifact storage:** full packets, screenshots, traces,
+  and transcripts, with access and retention appropriate to their contents.
+  Existing CI artifact consumers keep their own output paths; the gallery
+  workflow uses `apps/web/test-results/` and its `.next` provenance, not this
+  packet directory.
+
+Default seeding is a useful safety boundary, not a sanitization guarantee.
+`--no-seed` and `--base-url` may expose existing authenticated library data.
+Inspect/redact output before sharing; never publish credentials, private memes,
+request headers, or unrestricted raw transcripts to a public PR or Linear item.
+Use a sanitized conclusion and permission-appropriate link instead.
+
+Do not relocate or delete historical packets as part of a new run. Preserve
+README/demo consumers and their provenance; promoting a new selected asset
+requires deliberate content/privacy review, not wholesale packet commitment.
+Auth/seeding internals are documented in `apps/web/docs/AUTH.md`.

@@ -1,5 +1,12 @@
 # Vision
 
+Optional product context: goals, non-goals, and economic constraints, not a
+roadmap, work queue, required first read, or higher authority than the current
+request. [README.md](README.md) describes the current product and
+[DESIGN.md](DESIGN.md) its design contract. Linear owns current work,
+prioritization, and selected unresolved opportunities. Aspirations below are
+not claims of shipped capability.
+
 ## One-liner
 A personal multimedia meme library you can capture from anywhere, search with
 words instead of folders, and that, over time, learns what you find funny.
@@ -19,8 +26,10 @@ soul and the long arc — be honest that today it's only a first cut: the librar
 sorts into fixed categories and ranks off a single averaged signal, not genuine
 per-user taste yet (the real version remains an idea to assess). Don't
 describe the aspiration as if it shipped.
+Generation stays unplanned until genuine taste is demonstrated; both must stay
+inside the same economic boundary.
 
-## What we're chasing now: make the basics irresistible and safe to open
+## Core jobs and release constraints
 Capture and retrieval come first. The product wins or loses on two everyday
 moments:
 - **Capture** — a meme I see anywhere lands in sploot in one tap, deduped, from
@@ -57,21 +66,12 @@ plan's enforceable usage envelope.
   30 days. Public sharing is explicit, revocable, delivery-bounded, and backed
   by reporting and takedown controls; Sploot never becomes a discovery feed.
 
-## The arc
-1. **Now** — prove an economically safe architecture, then open the delightful
-   basics: effortless capture, instant accurate retrieval, and frictionless
-   sharing *back out* to a group chat.
-2. **Next** — real taste: cluster a library by *your* humor and rank by it, once
-   the added cost stays inside the same economic boundary.
-3. **Someday** — generate new memes from your taste profile and existing meme
-   graph. Downstream of #2; not planned around until taste is real.
-
 ## How we build it
 Sploot is built to be **run end-to-end by an AI agent**. Schema-to-prod is one
 merge (migrations ride the deploy), operations are token-on-disk commands rather
 than dashboard clicks, and the agent can verify and recover what it ships.
-Sequestered secrets and manual deploy steps are bugs to fix, not facts of life.
-This is a first-class constraint — see `AGENTS.md`.
+Automation should make approved operations repeatable without weakening secret
+custody or explicit live-operation authority; see `AGENTS.md` for those boundaries.
 
 The current implementation is evidence and migration material, not an
 architectural constraint. Provider and homegrown alternatives compete on cost,

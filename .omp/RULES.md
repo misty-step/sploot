@@ -7,7 +7,7 @@ Read `AGENTS.md` for the repository map. Keep these invariants visible while wor
 - Keep every gate intact. Diagnose environment, database, migration, WXT, and auth failures instead of weakening checks or hiding skips.
 - `@sploot/common` owns shared upload limits, MIME validation, and API types. Update both web and extension consumers when it changes.
 - Web deploy (DigitalOcean) and extension release (Chrome Web Store) are separate surfaces.
-- Work from the operator's current request, check current code and overlapping work, and report exact proof, links, and acceptance evidence in the session or PR. Do not maintain a replacement backlog.
+- Work from the operator's current request, check current code and overlapping work, and report exact proof, links, and acceptance evidence. Linear owns current work and prioritization; the session and PR record execution. Do not maintain a replacement backlog in repository docs.
 
 ## Local gate
 

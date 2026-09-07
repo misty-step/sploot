@@ -19,9 +19,10 @@ describing what's in it — no tags, no folders, no remembering filenames.
 
 ![Search results for "reaction face meme" returning four ranked matches with confidence scores](./docs/qa/evidence/2026-07-07-sploot-051-readme-frontdoor/app-search-in-action-1440x900.png)
 
-*Search-in-action against a seeded local library — type a description, get
-ranked matches with confidence scores. Full walk:
-[QA evidence](./docs/qa/evidence/2026-07-07-sploot-051-readme-frontdoor/).*
+*Historical, seeded-local search walkthrough from 2026-07-07, not current hosted
+verification. This selected screenshot remains a public documentation asset;
+its retained [source packet](./docs/qa/evidence/2026-07-07-sploot-051-readme-frontdoor/)
+records the original exercise.*
 
 ## ✨ What it does today
 
@@ -32,8 +33,9 @@ ranked matches with confidence scores. Full walk:
 - **Bangers and piles**: favorite the ones you'll reuse; automatic piles
   group your library by rough theme.
 
-Sploot does not yet learn *your* taste or generate new memes — see
-[VISION.md](./VISION.md) for what's shipped versus what's ahead.
+Sploot does not yet learn *your* taste or generate new memes.
+[VISION.md](./VISION.md) records optional product intent and economic constraints,
+not a delivery roadmap or evidence that those ambitions shipped.
 
 ## 🧩 Browser extension
 
@@ -98,7 +100,8 @@ doctor pass that writes an evidence packet (health, signed-in `/app`, seeded
 grid, search response) to `.sploot-local/doctor/`. When it finishes, open
 `http://localhost:3001/api/qa-auth/login` to land signed-in on `/app`.
 
-Teardown (removes the database container and generated files):
+Teardown removes the database container and `.sploot-local/`, including default
+QA packets. Retain needed output first (see [QA ownership](./docs/qa/README.md)):
 
 ```bash
 pnpm dev:local:down
@@ -149,7 +152,17 @@ Each app has its own env setup:
 
 ### Documentation
 
-- [Developer Guide](./CLAUDE.md) - Guidelines for AI agents and developers.
+The repository owns version-bound product/system knowledge, accepted decisions,
+portable procedures, curated fixtures, and shipped assets. Linear owns current
+work and prioritization; current requests authorize changes. Raw or sensitive
+run output belongs in approved retained artifact storage, with a sanitized
+revision/scope/verdict link in the work item. Runtime and release ledgers retain
+their native authority; historical files are not an automatic intake queue.
+
+- [QA procedure and evidence ownership](./docs/qa/README.md)
+- [Design contract](./DESIGN.md)
+
+- [Contributor instructions](./AGENTS.md) - Repository guidance for agents and developers.
 - [Web App Docs](./apps/web/README.md)
 - [Extension Docs](./apps/extension/README.md)
 - [Architecture](./ARCHITECTURE.md)

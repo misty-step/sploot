@@ -3,7 +3,7 @@
  *
  * Pure functions only: the orchestrator (scripts/qa-evidence.ts) gathers
  * results from seed, test, and browser walks, then renders one markdown
- * packet per run under docs/qa/evidence/<date>-<slug>/.
+ * packet per run; output storage and retention are owned outside this renderer.
  */
 
 export type CheckStatus = 'pass' | 'fail' | 'skip';

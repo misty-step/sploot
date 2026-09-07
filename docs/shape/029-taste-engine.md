@@ -1,5 +1,12 @@
 # Context Packet: taste engine v1
 
+Historical design input for retired Powder card `sploot-029`, not a current
+implementation queue, API reference, or runbook. Preserve the alternatives and
+rationale; use [API.md](../../apps/web/docs/API.md) for supported behavior and
+[the QA procedure](../qa/README.md) for current evidence commands/output.
+Linear owns any selected follow-on work. This first-cut centroid proposal is
+not evidence that genuine per-user taste or generation has shipped.
+
 ## Goal
 
 Sploot surfaces memes that are semantically close to a user's marked bangers

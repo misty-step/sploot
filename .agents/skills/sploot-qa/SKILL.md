@@ -56,8 +56,17 @@ pnpm --filter web qa:evidence --slug <slug> --intent "<what this proves>" \
 
 It seeds, boots a random-port server, authenticates, walks routes with
 `agent-browser`, and writes screenshots/transcripts to
-`docs/qa/evidence/<date>-<slug>/`. Read those artifacts; the command alone is
-not evidence. `pnpm --filter web e2e:auth` is auth-only (port 3108).
+`.sploot-local/qa-evidence/<date>-<slug>-<unique>/` (gitignored). Use
+`--out-dir <path>` for an exact new packet directory; relative paths resolve
+from `apps/web` and existing directories fail rather than overwrite. Read the
+artifacts; the command alone is not evidence. `pnpm --filter web e2e:auth` is
+auth-only (port 3108).
+
+Do not commit raw packets by default. Retain them in approved storage with
+appropriate access/retention, then link a sanitized revision/scope/verdict from
+Linear or the PR. The runner does not upload or redact. Historical
+`docs/qa/evidence/` packets, curated fixtures, and selected public demo assets
+remain in place; see `docs/qa/README.md` for the input/output boundary.
 
 Check one relevant edge: empty query, no auth, or a bad file type. A red console
 or failed request fails QA even when the page loads. DB paths require pgvector;

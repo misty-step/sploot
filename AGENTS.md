@@ -8,8 +8,8 @@ Sploot is a pnpm Turborepo for a personal meme library: save images, find them w
 - `apps/extension` owns the WXT/React Chrome extension, popup/background capture, Clerk extension auth, API client, store listing, and Chrome Web Store release packet.
 - `apps/mcp` owns `@sploot/mcp` / `sploot-mcp`, exposing token-scoped save and search tools.
 - `packages/common` owns shared upload limits, MIME validation, and API response types used by web and extension. Put shared code in `packages/common/src/`, export it from `index.ts`, then import it through `@sploot/common`.
-- Read `VISION.md` for product direction, `ARCHITECTURE.md` plus each app's architecture file for boundaries, and `docs/five-faces.md` for the status ledger.
-- Work from the operator's current request. Check current code and overlapping work; historical issues are context, not a required queue.
+- Use `README.md` for current product scope, `DESIGN.md` for design constraints, `ARCHITECTURE.md` plus each app's architecture file for boundaries, and `docs/five-faces.md` for the surface ledger. `VISION.md` is optional intent/economic context, not a mandatory workflow or work gate.
+- Work from the operator's current request. Linear owns current work, prioritization, and selected unresolved opportunities. Check current code and overlapping work; historical issues are context, not a required queue.
 
 ## Commands
 
@@ -45,7 +45,7 @@ Web runtime values belong in the web environment/secret manager: `DATABASE_URL`,
 - Prisma reads `DATABASE_URL` when its Rust engine initializes. Do not add aliases such as `POSTGRES_URL`. A pooled Neon URL uses a `-pooler` host and `pgbouncer=true`; schema changes that ship use named migrations, and CI deploys them against `pgvector/pgvector:pg15`.
 - Treat `@sploot/common` as the single shared upload/MIME/API source. Update both consumers and `apps/web/docs/API.md` when route behavior changes.
 - Keep web deploy and extension release as separate surfaces with separate evidence. A matching Clerk key is required: `pk_test_*` with localhost for dev and `pk_live_*` with `https://www.sploot.app` for production.
-- Report completed work in the session or PR with exact proof, links, and acceptance-criterion evidence.
+- Report completed work with exact proof and acceptance scope; link the PR and a sanitized conclusion from the Linear work item or session. Raw QA packets belong in approved retained artifact storage, not in Git by default; keep fixtures and selected public demo assets versioned. See `docs/qa/README.md`.
 - The legacy harness and repo-local lifecycle catalogs are retired. Use globally installed Harness Kit skills; add a local exception only when it is specific to Sploot and keep the bridge narrow.
 
 ## Gates, hooks, and release

@@ -48,9 +48,9 @@ a Clerk session.
   (sploot-071) — so a token presented anywhere else returns the stable `401`.
   The `lib/auth/server.ts` auth path (`getAuth*`, used by most read/delete
   routes) never calls the verifier at all; `POST /api/search` itself moved off
-  that path onto `withAuthenticatedApi` to make the opt-in possible (partial,
-  route-scoped step toward the full migration tracked in
-  `Powder card sploot-035`).
+  that path onto `withAuthenticatedApi` to make the opt-in possible. Historical
+  Powder card `sploot-035` recorded the broader migration proposal; Powder is
+  retired, and any selected remaining work belongs in Linear.
 - Verification is throw-safe: a DB error (including a not-yet-migrated table)
   resolves to `401`, never `500`. Revoked and unknown tokens are
   indistinguishable.
@@ -104,8 +104,12 @@ and generated files.
 
 `pnpm --filter web qa:evidence` composes the auth harness and the seed into a
 one-command verification run: tests, an authenticated dev server, browser
-walks with screenshots, and a structured packet under `docs/qa/evidence/`.
-See `docs/qa/README.md` (repo root) for usage and how to read a packet.
+walks with screenshots, and a fresh packet under the gitignored
+`.sploot-local/qa-evidence/`. `--out-dir <path>` selects an exact new packet
+directory (relative to `apps/web` or absolute); existing directories fail.
+The runner does not upload, redact, or retain output on an external service.
+See `docs/qa/README.md` (repo root) for usage, safe retention, and the distinction
+between generated run output, curated inputs, and selected public assets.
 
 ## Route Migration
 

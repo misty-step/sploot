@@ -1,5 +1,11 @@
 # lab 034 · hypermax system lab · round 1
 
+Closed historical lab and selection record. The dated rounds below led to the
+toybox decision now owned by [DESIGN.md](../../DESIGN.md); their baseline,
+capture inventory, and early-round instructions are not current production
+truth or a work queue. Retain the sources and verdicts without restarting the
+selection process. New run output follows [QA ownership](../../docs/qa/README.md).
+
 A holistic design-system lab for Sploot: full re-derivation of every token and
 every component under a new fence — **hypermaximalist, fun, yet clean and
 smooth**. Each option is one complete candidate system rendered through the

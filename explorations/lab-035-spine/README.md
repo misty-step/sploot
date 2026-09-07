@@ -1,5 +1,11 @@
 # lab 035 · the spine · round 2
 
+Closed historical convergence lab. The captures, sweep results, and round
+verdicts below describe that source revision, not current hosted verification.
+[DESIGN.md](../../DESIGN.md) owns the current design. Old `backlog.d` references
+are retired work history, not live routing or automatic Linear intake; current
+requests and Linear govern any new work.
+
 Content/layout/structure/hierarchy redesign of each core view WITHIN the
 locked toybox system (lab-034 AFD-8). The system is law: frame.css carries
 the shipped tokens/kit verbatim; lanes composed the kit and varied only
