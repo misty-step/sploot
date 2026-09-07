@@ -1,5 +1,5 @@
 ---
-description: Prisma / Neon / pgvector database invariants for apps/web
+description: Prisma, Neon, and pgvector invariants for the web app
 globs:
   - "apps/web/prisma/**"
   - "apps/web/lib/db*"
@@ -8,18 +8,15 @@ globs:
 alwaysApply: false
 ---
 
-# Database (apps/web)
+# Web database
 
-- Prisma's Rust engine reads **`DATABASE_URL`** at init, before Node runs. Never
-  introduce alias env names (`POSTGRES_URL`, etc.) — they are read too late in
-  serverless and silently break.
-- The pooled Neon connection string needs `-pooler` in the host and
-  `pgbouncer=true` in the query string; direct (migration) URLs do not.
-- Schema changes ship as **named migrations** (`pnpm --filter web db:migrate:dev`),
-  not `db:push`. CI applies `prisma migrate deploy` against
+- Prisma's Rust engine reads `DATABASE_URL` before Node starts. Keep that name;
+  aliases such as `POSTGRES_URL` arrive too late in serverless.
+- Pooled Neon URLs require `-pooler` in the host and `pgbouncer=true`; migration
+  URLs are direct. Use `pnpm --filter web db:migrate:dev` for named migrations,
+  not `db:push` for shipping schema changes. CI deploys against
   `pgvector/pgvector:pg15`.
-- Vector search uses pgvector. Embedding-writing paths (scheduler / rate-limit)
-  are a known production risk — test scheduling and cost controls directly, do
-  not mock them away.
-- Serverless connection health: stale Prisma connections have caused health
-  incidents — surface runtime evidence when touching DB health paths.
+- Vector search depends on pgvector. Exercise embedding scheduler and rate-limit
+  paths directly; do not mock away their cost or concurrency controls.
+- When changing DB health paths, include runtime evidence for stale Prisma
+  connection behavior.

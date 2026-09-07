@@ -20,7 +20,7 @@ curl -fsS https://www.sploot.app/api/health | jq        # deep readiness oracle
 
 ## diagnose
 
-1. read the matching Canary group and DigitalOcean runtime log by timestamp;
+1. read the matching Sentry issue and DigitalOcean runtime log by timestamp;
 2. validate the connection string locally without printing it:
    `DATABASE_URL=... pnpm validate:env`;
 3. run `DATABASE_URL=... pnpm db:migrate` from `apps/web`;

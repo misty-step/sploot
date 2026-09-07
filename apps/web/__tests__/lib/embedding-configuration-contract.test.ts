@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const reportCanaryError = vi.hoisted(() => vi.fn(() => Promise.resolve(true)));
+const captureOperationalError = vi.hoisted(() => vi.fn(() => true));
 
-vi.mock('@/lib/canary-reporter', () => ({ reportCanaryError }));
+vi.mock('@/lib/sentry', () => ({ captureOperationalError }));
 
 import {
   EmbeddingConfigurationError,
@@ -25,8 +25,8 @@ const entrypoints = [
 
 describe('deterministic embedding configuration public contract', () => {
   beforeEach(() => {
-    reportCanaryError.mockClear();
-    reportCanaryError.mockResolvedValue(true);
+    captureOperationalError.mockClear();
+    captureOperationalError.mockReturnValue(true);
   });
 
   it.each(entrypoints)('%s owns exactly one terminal signal after reporting', async (_name, context) => {
@@ -34,8 +34,8 @@ describe('deterministic embedding configuration public contract', () => {
 
     const unowned = new Headers(embeddingRetryHeaders(error));
     expect(unowned.get('Retry-After')).toBeNull();
-    expect(unowned.get('X-Sploot-Canary-Owner')).toBeNull();
-    expect(new Headers(embeddingConfigurationHeaders(error)).get('X-Sploot-Canary-Owner'))
+    expect(unowned.get('X-Sploot-Observability-Owner')).toBeNull();
+    expect(new Headers(embeddingConfigurationHeaders(error)).get('X-Sploot-Observability-Owner'))
       .toBeNull();
 
     await expect(reportEmbeddingConfigurationErrorOnce(error, context)).resolves.toBe(true);
@@ -47,9 +47,9 @@ describe('deterministic embedding configuration public contract', () => {
     expect(error.retryAfterSec).toBeUndefined();
     expect(headers.get('Retry-After')).toBeNull();
     expect(headers.get('X-Sploot-Embedding-Outcome')).toBe('embedding_configuration');
-    expect(headers.get('X-Sploot-Canary-Owner')).toBe('route');
-    expect(reportCanaryError).toHaveBeenCalledTimes(1);
-    expect(reportCanaryError).toHaveBeenCalledWith(expect.objectContaining({
+    expect(headers.get('X-Sploot-Observability-Owner')).toBe('route');
+    expect(captureOperationalError).toHaveBeenCalledTimes(1);
+    expect(captureOperationalError).toHaveBeenCalledWith(expect.objectContaining({
       context,
       metadata: expect.objectContaining({ retryable: false, providerAttempt: false }),
     }));
@@ -66,20 +66,20 @@ describe('deterministic embedding configuration public contract', () => {
 
     await expect(reportEmbeddingConfigurationErrorOnce(cause, 'scheduler')).resolves.toBe(true);
     await expect(reportEmbeddingConfigurationErrorOnce(wrapper, 'route')).resolves.toBe(false);
-    expect(new Headers(embeddingConfigurationHeaders(wrapper as never)).get('X-Sploot-Canary-Owner'))
+    expect(new Headers(embeddingConfigurationHeaders(wrapper as never)).get('X-Sploot-Observability-Owner'))
       .toBe('route');
-    expect(reportCanaryError).toHaveBeenCalledTimes(1);
+    expect(captureOperationalError).toHaveBeenCalledTimes(1);
   });
 
   it.each([
-    ['Canary is unconfigured', false],
-    ['Canary rejects the report', false],
+    ['Sentry is unconfigured', false],
+    ['Sentry rejects the event', false],
   ])('%s never earns route ownership without confirmed emission', async (_label, emitted) => {
-    reportCanaryError.mockResolvedValue(emitted);
+    captureOperationalError.mockReturnValue(emitted);
     const error = new EmbeddingConfigurationError('provider configuration is missing');
 
     await expect(reportEmbeddingConfigurationErrorOnce(error, 'falsifier')).resolves.toBe(false);
-    expect(new Headers(embeddingConfigurationHeaders(error)).get('X-Sploot-Canary-Owner')).toBeNull();
+    expect(new Headers(embeddingConfigurationHeaders(error)).get('X-Sploot-Observability-Owner')).toBeNull();
     expect(new Headers(embeddingConfigurationHeaders(error)).get('X-Sploot-Embedding-Outcome'))
       .toBe('embedding_configuration');
   });

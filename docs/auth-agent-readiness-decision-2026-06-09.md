@@ -1,6 +1,11 @@
 # Auth Agent-Readiness Decision
 
-Powder card: `sploot-018`
+Historical Powder card: `sploot-018` (Powder is retired).
+
+Accepted rationale for the recorded boundary slice, not a current replacement
+roadmap. Alternative-provider verdicts below are unselected proposals; consult
+[AUTH.md](../apps/web/docs/AUTH.md) for supported behavior and Linear for any
+selected unresolved work.
 
 ## Decision
 

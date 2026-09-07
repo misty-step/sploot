@@ -65,7 +65,7 @@ describe('privacy copy contract', () => {
     expect(privacy).toContain('DigitalOcean');
     expect(privacy).toContain('Vercel Blob');
     expect(privacy).toContain('First-party telemetry');
-    expect(privacy).toContain('Canary');
+    expect(privacy).toContain('Sentry');
     expect(privacy).toContain('Shareable through public links when you choose to share them');
   });
 

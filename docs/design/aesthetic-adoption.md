@@ -1,5 +1,12 @@
 # @misty-step/aesthetic adoption — token mapping & declared deviations
 
+**Superseded design recipe.** The current toybox contract in
+[DESIGN.md](../../DESIGN.md) and tokens in `apps/web/app/globals.css` supersede
+this earlier Swiss-chrome/neo-brutalist mapping. The card, pin, deviations, and
+verification description below are retained historical provenance, not current
+upgrade instructions or permission to reskin Sploot. Component-system adoption
+is a separate decision; this record does not mandate the old aesthetic package.
+
 Card sploot-032, ADR 0005 (`docs/adr/0005-close-pr-228-redo-aesthetic-adoption.md`).
 Substrate: `github:misty-step/aesthetic#v2.24.0` (pinned tag; upgrades are
 ordinary dependency bumps audited against this document).

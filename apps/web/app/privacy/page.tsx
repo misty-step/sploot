@@ -111,7 +111,7 @@ export default function PrivacyPolicy() {
               <li><strong>First-party telemetry</strong>: Authenticated product usage and performance events written to Sploot application logs</li>
               <li><strong>Neon</strong>: Database (see <a href="https://neon.tech/privacy" className="sploot-public-link" target="_blank" rel="noopener noreferrer">Neon Privacy Policy</a>)</li>
               <li><strong>Replicate</strong>: AI embedding generation for image and text search</li>
-              <li><strong>Canary</strong>: Error monitoring, health checks, and diagnostics</li>
+              <li><strong>Sentry</strong>: Privacy-filtered error and performance diagnostics</li>
             </ul>
           </section>
 

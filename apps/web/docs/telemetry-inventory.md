@@ -14,7 +14,7 @@ and never part of the product control flow.
 | upload queue, asset interactions, search interactions | browser product events | portable first-party telemetry; counts, durations, positions, scores, and booleans only |
 | error boundaries | browser error signal | portable first-party telemetry; boundary/name and stack-presence booleans only |
 | image failures and web vitals | browser health/performance | portable first-party telemetry; metric enum plus bounded metric tags |
-| `/api/telemetry` | server telemetry sink | structured application logger; logger/Canary configuration remains the server observability authority |
+| `/api/telemetry` | server telemetry sink | structured application logger; browser error boundaries report independently to the Sentry SDK |
 | `/api/search` and `/api/search/advanced` `logSearch` | product search observability | intentional Postgres `searchLog` persistence; not a browser telemetry sink and not removed |
 | `/api/analytics/usage` | authenticated usage reporting | intentional Postgres aggregate query; not a browser telemetry sink and not removed |
 | retired browser Analytics/Speed Insights adapters and `/_vercel/*` | provider-only adapters | deliberate removal; no package, source, or production bundle may contain them |
@@ -52,6 +52,6 @@ not an authority and is not accepted as a fallback.
 
 server acceptance is bounded: 16 KiB body cap and a per-user 60/min fixed
 window at `/api/telemetry`; observer-driven browser metrics emit at most once
-per metric per page load. forwarded telemetry lands in DigitalOcean structured
-logs and Canary, whose retention/TTL are provider-managed — the app has no
-deletion authority over forwarded telemetry and the docs do not claim one.
+per metric per page load. accepted first-party telemetry lands in DigitalOcean
+structured logs; browser and server errors land in Sentry. provider retention
+is outside application deletion authority and the docs do not claim otherwise.

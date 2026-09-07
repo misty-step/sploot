@@ -366,9 +366,10 @@ as the brand.
 
 Current design direction is based on:
 
-- `vision.md`, especially the personal meme library, semantic search, shuffle,
-  bangers, and goofy/private positioning, plus the Meme Atlas mechanics and
-  No Folders Just Vibes lineage recorded in `design-contract.md`.
+- Optional intent context in `VISION.md`: the personal meme library, semantic
+  search, shuffle, bangers, and goofy/private positioning. The Meme Atlas and
+  No Folders Just Vibes lineage is historical provenance in `design-contract.md`,
+  not a second design contract or a required product-work gate.
 - Design lab 034 (`explorations/lab-034-hypermax/`): round 1 (2026-07-09)
   picked AFD-1 overprint and AFD-3 toybox as co-winners; round 3 (2026-07-09)
   locked AFD-3 toybox; round 4 (2026-07-10) locked AFD-8 "ink minis" as the

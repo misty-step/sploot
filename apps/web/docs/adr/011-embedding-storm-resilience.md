@@ -31,9 +31,8 @@ stops the current batch after the first global admission denial. A successful
 provider attempt clears the open interval only through a generation- and
 unique-probe-lease-token-matched lease; a stale success cannot close a newer
 circuit. Cache hits do not acquire a lease and never count as provider success.
-Admission/provider failure recurrence emits one structured Canary error per
-open interval; limiter and route layers do not emit independent Canary
-failures.
+Admission/provider failure recurrence emits one structured Sentry event per
+open interval; limiter and route layers do not emit independent Sentry events.
 
 `apps/web/lib/embeddings.ts` is the provider boundary: it performs the durable
 cache lookup, provider-circuit admission, user/global rate and concurrency
@@ -154,7 +153,7 @@ as a lower bound rather than shortened by local circuit policy, while budget
 denials point to their UTC reset. Typed embedding responses carry
 `X-Sploot-Embedding-Outcome`, allowing
 `withObservability` to record the classification without emitting a second
-generic 5xx Canary event.
+generic 5xx Sentry event.
 
 ## Rollback
 

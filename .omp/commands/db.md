@@ -1,18 +1,14 @@
-Prisma / Neon database operations for apps/web.
+Use Prisma/Neon operations through `pnpm --filter web <script>`. Prisma reads
+`DATABASE_URL` before Node starts; keep the variable name, and use a pooled Neon
+host containing `-pooler` plus `pgbouncer=true` for runtime connections.
 
-CRITICAL: Prisma's Rust engine reads `DATABASE_URL` before Node starts —
-runtime env edits are too late in serverless. Never use an alias like
-`POSTGRES_URL`. The pooled Neon URL must include `-pooler` host + `pgbouncer=true`.
+- `db:migrate:dev` — create and apply a named development migration
+- `db:migrate` — apply migrations in deploy mode
+- `db:push` — prototyping only; do not use for shipping schema changes
+- `db:generate` — regenerate the Prisma client
+- `db:studio` — open Prisma Studio
+- `db:seed` — seed data
+- `db:sync`, `db:fingerprint`, `db:drift` — inspect environment and drift
 
-Available scripts (run via `pnpm --filter web <script>`):
-- `db:migrate:dev`  — create + apply a dev migration (`prisma migrate dev`)
-- `db:migrate`      — apply migrations in deploy mode (`prisma migrate deploy`)
-- `db:push`         — push schema without a migration (prototyping only)
-- `db:generate`     — regenerate the Prisma client
-- `db:studio`       — open Prisma Studio
-- `db:seed`         — seed data
-- `db:sync` / `db:fingerprint` / `db:drift` — env sync + drift checks
-
-Tell me which operation you want. Before any schema change, confirm
-`DATABASE_URL` is set and pointed at the intended environment, and prefer a
-named migration (`db:migrate:dev`) over `db:push` for anything that ships.
+Check `DATABASE_URL` points at the intended environment before a schema or
+migration operation. CI uses `pgvector/pgvector:pg15`.

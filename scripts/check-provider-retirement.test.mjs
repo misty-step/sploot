@@ -107,6 +107,60 @@ test('scans ordinary files while preserving historical records elsewhere', () =>
   assert.deepEqual(violations.map(({ rule }) => rule), ['Vercel compute CLI']);
 });
 
+test('rejects retired Canary paths and runtime markers', () => {
+  const violations = findProviderRetirementViolations([
+    {
+      path: '.canary/integration.json',
+      content: '{}',
+    },
+    {
+      path: 'apps/web/lib/legacy-observability.ts',
+      content: [
+        'process.env.CANARY_API_KEY;',
+        "import './canary-reporter';",
+        "fetch('https://canary.mistystep.io');",
+        "headers.set('X-Sploot-Canary-Owner', 'route');",
+      ].join('\n'),
+    },
+  ]);
+
+  assert.deepEqual(
+    violations.map(({ rule }) => rule),
+    [
+      'retired Canary integration artifact',
+      'retired Canary environment',
+      'retired Canary reporter',
+      'retired Canary endpoint',
+      'retired Canary ownership header',
+    ],
+  );
+});
+
+test('keeps immutable screenshot capture provenance readable', () => {
+  const violations = findProviderRetirementViolations([{
+    path: 'apps/web/public/screenshots/capture-manifest.json',
+    content: 'apps/web/lib/canary-reporter.ts',
+  }]);
+
+  assert.deepEqual(violations, []);
+});
+
+test('reports retired Canary env names without exposing values', () => {
+  const sensitiveValue = 'another-sensitive-value';
+  const violations = findIgnoredEnvironmentViolations([{
+    path: 'apps/web/.env.local',
+    content: `SAFE=value\nCANARY_API_KEY=${sensitiveValue}\n`,
+  }]);
+
+  assert.deepEqual(violations, [{
+    path: 'apps/web/.env.local',
+    line: 2,
+    rule: 'retired Canary environment',
+    identifier: 'CANARY_API_KEY',
+  }]);
+  assert.doesNotMatch(JSON.stringify(violations), new RegExp(sensitiveValue));
+});
+
 test('reports forbidden identifiers in ignored environment files without values', () => {
   const sensitiveValue = 'sensitive-value-that-must-never-appear';
   const violations = findIgnoredEnvironmentViolations([{

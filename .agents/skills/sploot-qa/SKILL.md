@@ -1,109 +1,81 @@
 ---
 name: sploot-qa
-description: |
-  QA Sploot changes by exercising the real running app, not just tests. Sploot is
-  a Next.js 15 meme library (web UI + App Router API in apps/web) with text→image
-  semantic search, plus a WXT Chrome extension in apps/extension. "Tests pass" is
-  not QA. Use when: "QA this", "verify the feature", "smoke test", "check the
-  app", "test sploot". Trigger: /sploot-qa.
+description: Exercise a running Sploot web, API, or extension surface and report observable evidence. Use for "QA this", "verify the feature", "smoke test", or "test Sploot".
 argument-hint: "[web|api|extension|route|feature]"
 ---
 
-# sploot-qa
+# Sploot QA
 
-QA in Sploot means walking the surface that changed against a running app. The
-deterministic gate is CI parity — `pnpm lint && pnpm type-check && pnpm --filter
-web test && pnpm --filter extension build` (root `AGENTS.md` Gate Contract) — and
-it is **necessary but not sufficient**: `pnpm --filter web test` is vitest in
-jsdom, so green proves units, not that the grid renders, text→image search
-returns results, or upload persists. Those need the running app on a pgvector DB.
+Invoke as `/sploot-qa`. Exercise the changed surface against a running app. Unit-test
+success does not prove that the web grid renders, semantic search returns
+results, or upload persists.
 
-## Surfaces
+## Surface map
 
-| Changed area | Surface | QA path |
-|---|---|---|
-| `apps/web/app/app/**`, `apps/web/components/**` | Web UI | Boot app, land on `/app` logged-in, walk the golden path the change touched; watch console + network |
-| `apps/web/app/api/**` | API routes | Replay the route against the running server with a qa-local token; check status + JSON shape + a 401/400 edge |
-| `apps/extension/**` | Chrome extension | `pnpm --filter extension build`; for behavior, load unpacked in Chrome, test popup/background capture |
-| `packages/common/**` | Shared contract | Rebuild both consumers: `pnpm --filter web type-check && pnpm --filter extension build` |
+- Web UI (`apps/web/app/app/**`, `components/**`): sign in, open `/app`, walk
+  the changed flow, and inspect DOM, network, console, and failed requests.
+- API (`apps/web/app/api/**`): call the route with a QA-local token; check status,
+  JSON shape, and one unauthenticated or malformed request.
+- Extension (`apps/extension/**`): run its WXT build; for behavior, load the
+  unpacked extension and exercise popup/background capture.
+- Common package (`packages/common/**`): type-check web and build extension.
 
-Golden path (product): sign in → `/app` grid → search or upload → asset embeds →
-text→image search finds it → favorite/tag. Web routes: `/app`, `/app/search`,
-`/app/upload`, `/app/settings`, `/app/tags`, `/app/meme`.
+The product path is sign in → `/app` grid → search or upload → embedding →
+text-to-image result → favorite/tag. Relevant routes include `/app/search`,
+`/app/upload`, `/app/settings`, `/app/tags`, and `/app/meme`.
 
-## Start local runtime
+## Local runtime
+
+Preferred deterministic setup:
 
 ```sh
-pnpm install
-pnpm dev:local      # push-button: docker pgvector + migrate + qa:seed + qa-local
-                    # auth + dev server + doctor evidence (.sploot-local/doctor/);
-                    # sign in via http://localhost:3001/api/qa-auth/login;
-                    # teardown: pnpm dev:local:down
-# — or against real services —
-cp apps/web/.env.example apps/web/.env.local   # fill required vars (below)
-pnpm dev            # web: http://localhost:3001  (turbo runs all apps)
-pnpm dev:web        # web only, same port
+pnpm dev:local
+# Docker pgvector + migrate + qa:seed + QA auth/server; teardown:
+pnpm dev:local:down
 ```
 
-- Env (`apps/web/.env.example`, required for real behavior): `DATABASE_URL`
-  (pgvector Postgres), `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY`,
-  `BLOB_READ_WRITE_TOKEN`, `REPLICATE_API_TOKEN`. Local QA DB default (no cloud):
-  `postgresql://test:test@localhost:5432/sploot_test` against a local pgvector
-  Postgres — `qa:seed` writes deterministic embeddings so search/piles work
-  offline without Replicate.
-- Auth without Clerk (non-prod only): set `SPLOOT_QA_AUTH_MODE=enabled` and
-  `SPLOOT_QA_AUTH_SECRET=<32+ char secret>`, then present a signed token via the
-  `x-sploot-qa-auth` header or `sploot_qa_auth` cookie (`apps/web/lib/auth/qa-local.ts`).
-- Seed a usable library: `pnpm --filter web qa:seed` → user `qa-design-user` + 24
-  assets (incl. GIF/video); `--teardown` to clean. Refuses non-localhost `DATABASE_URL`.
+Or configure `apps/web/.env.local` from `.env.example` and run `pnpm dev` or
+`pnpm dev:web` (the web app uses port 3001 unless a harness chooses another).
+The local QA database is pgvector Postgres, normally
+`postgresql://test:test@localhost:5432/sploot_test`; `qa:seed` creates user
+`qa-design-user` and 24 deterministic assets and refuses non-localhost URLs.
 
-## Web UI QA — golden path
+For non-production QA auth, set `SPLOOT_QA_AUTH_MODE=enabled` and a 32+ character
+`SPLOOT_QA_AUTH_SECRET`; send the signed token in `x-sploot-qa-auth` or the
+`sploot_qa_auth` cookie. This mode is rejected in production. Real uploads and
+search also need `BLOB_READ_WRITE_TOKEN` and `REPLICATE_API_TOKEN`.
 
-Reach a seeded, logged-in state (qa-local auth + `qa:seed`), then:
+## Evidence
 
-1. Open `/app` with the qa-local cookie set — grid must render seeded memes (not a
-   sign-in wall, not an empty state).
-2. Exercise the flow the diff touched: type a query in the search bar (semantic
-   text→image search, POST `/api/search`); drag a file into the upload zone
-   (`/api/upload` → `/api/embeddings`); or toggle a favorite / pile filter.
-3. Confirm the DOM result AND the network call (ranked results, asset created +
-   embedding kicked) — not just that the page loaded.
-4. Watch **console errors and failed requests** the whole walk — a green grid with
-   a red console is a FAIL. Try one edge: empty query, unauth (no cookie →
-   `/sign-in`), or a bad file type.
-
-### One-command evidence harness (preferred)
-
-`qa:evidence` seeds, boots `next dev` (random port ~3100–3499), sets the qa-local
-cookie, walks routes via `agent-browser`, captures screenshots + console/errors,
-and writes a packet to `docs/qa/evidence/<date>-<slug>/`:
+Use the one-command harness when possible:
 
 ```sh
 pnpm --filter web qa:evidence --slug <slug> --intent "<what this proves>" \
   --routes /app,/app/search --gates
-# reuse a server you already started: --base-url http://localhost:3001
-# feature probes: --expect-piles  --expect-taste  --exercise-pile-filter
 ```
 
-Read the packet's screenshots and transcripts — the run is not the QA, the
-evidence is. Playwright auth smoke only: `pnpm --filter web e2e:auth` (port 3108).
+It seeds, boots a random-port server, authenticates, walks routes with
+`agent-browser`, and writes screenshots/transcripts to
+`.sploot-local/qa-evidence/<date>-<slug>-<unique>/` (gitignored). Use
+`--out-dir <path>` for an exact new packet directory; relative paths resolve
+from `apps/web` and existing directories fail rather than overwrite. Read the
+artifacts; the command alone is not evidence. `pnpm --filter web e2e:auth` is
+auth-only (port 3108).
 
-## Gotchas
+Do not commit raw packets by default. Retain them in approved storage with
+appropriate access/retention, then link a sanitized revision/scope/verdict from
+Linear or the PR. The runner does not upload or redact. Historical
+`docs/qa/evidence/` packets, curated fixtures, and selected public demo assets
+remain in place; see `docs/qa/README.md` for the input/output boundary.
 
-- `SPLOOT_QA_AUTH_MODE` is hard-refused when `NODE_ENV=production` — local
-  only, never against a deployment. And seeded images 404
-  unless it is `enabled` (the QA image loader maps the blob host to
-  `public/qa-blob-seed/` only in that mode).
-- No fixed dev port: `pnpm dev` uses 3001, `qa:evidence` a random 3100–3499,
-  Playwright 3108. Don't hardcode a port when a harness booted the server.
-- DB paths need a **pgvector** Postgres (plain Postgres fails the vector columns);
-  `qa:evidence` needs the `agent-browser` CLI on PATH; real (non-seed)
-  upload/search also need `BLOB_READ_WRITE_TOKEN` + `REPLICATE_API_TOKEN`.
+Check one relevant edge: empty query, no auth, or a bad file type. A red console
+or failed request fails QA even when the page loads. DB paths require pgvector;
+`qa:evidence` requires `agent-browser`; seeded image URLs require QA auth mode.
+Do not hardcode a port chosen by a harness.
 
 ## Report
 
-Return: **verdict** (PASS / FAIL / UNVERIFIED) · exact commands run · surfaces
-exercised · evidence inspected (packet path under `docs/qa/evidence/`,
-screenshots, network/console) · what was NOT covered (e.g. "seed data only, no
-live Replicate search") and whether a deployed smoke (`pnpm --filter web
-smoke:deployed`) is owed.
+Return `PASS`, `FAIL`, or `UNVERIFIED`; exact commands; surfaces exercised;
+evidence paths and observed DOM/network/console behavior; uncovered paths (for
+example, no live Replicate search); and whether deployed smoke
+(`pnpm --filter web smoke:deployed`) remains owed.

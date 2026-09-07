@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 // The liveness route is DigitalOcean's routing probe. It must answer from the
-// Next process alone: no database, provider, Clerk, Canary/network, or model
+// Next process alone. No database, provider, Clerk, telemetry, or model
 // dependency may be able to take the process out of routing (incident
 // 2026-07-15: deep /api/health 503'd under DB workload and DigitalOcean
 // removed the only web instance -> no_healthy_upstream for ~24 minutes).
@@ -13,8 +13,8 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/db', () => {
   throw new Error('liveness route must not import the database client');
 });
-vi.mock('@/lib/canary-reporter', () => {
-  throw new Error('liveness route must not import the Canary reporter');
+vi.mock('@sentry/nextjs', () => {
+  throw new Error('liveness route must not import Sentry');
 });
 vi.mock('@/lib/with-observability', () => {
   throw new Error('liveness route must not import the observability wrapper');
@@ -39,7 +39,7 @@ describe('/api/health/live', () => {
       expect(['next/server']).toContain(specifier);
     }
     for (const forbidden of [
-      'prisma', '@/lib/db', 'canary', 'clerk', 'replicate', 'observability',
+      'prisma', '@/lib/db', 'sentry', 'clerk', 'replicate', 'observability',
       'process.env.DATABASE_URL', 'fetch(',
     ]) {
       expect(routeSource).not.toContain(forbidden);

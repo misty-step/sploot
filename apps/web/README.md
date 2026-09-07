@@ -33,10 +33,11 @@ BLOB_READ_WRITE_TOKEN=vercel_blob_...
 # AI (Replicate)
 REPLICATE_API_TOKEN=r8_...
 
-# Agent observability (Canary, optional but expected in production)
-CANARY_ENDPOINT=https://canary.mistystep.io
-CANARY_API_KEY=<ingest-scoped key>
-CANARY_SERVICE_NAME=sploot-web
+# Error diagnostics (Sentry; required in production)
+NEXT_PUBLIC_SENTRY_DSN=https://<public-key>@<org>.ingest.sentry.io/<project-id>
+SENTRY_DSN=https://<public-key>@<org>.ingest.sentry.io/<project-id>
+SENTRY_AUTH_TOKEN=<release-upload token>
+SENTRY_TRACES_SAMPLE_RATE=0.1
 ```
 
 ### 2. Development

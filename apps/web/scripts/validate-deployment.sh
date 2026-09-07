@@ -61,7 +61,6 @@ console.log(JSON.stringify({
   database: payload.dependencies.database,
   embedding_limiter: payload.dependencies.embedding_limiter,
   share_slug_cache: payload.dependencies.share_slug_cache,
-  canary_configured: payload.diagnostics?.canary_configured ?? null,
   version: payload.version ?? null,
 }));
 NODE

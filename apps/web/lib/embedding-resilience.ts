@@ -567,7 +567,7 @@ export function normalizeEmbeddingConfigurationError(error: unknown): EmbeddingC
 /**
  * Shared deterministic-initialization policy. Configuration failures are
  * terminal without incrementing the provider-attempt counter. The claim is
- * cleared atomically, and the shared reporter forwards one Canary signal.
+ * cleared atomically, and the shared reporter forwards one Sentry event.
  */
 export async function recordEmbeddingConfigurationFailure(
   assetId: string,
@@ -600,10 +600,10 @@ export async function recordEmbeddingConfigurationFailure(
     `);
     return updated === 1;
   } catch (persistenceError) {
-    // The deterministic configuration report is the sole Canary owner. A
-    // claim-clear failure must not replace the typed public outcome with a
-    // generic exception, which would cause observability to emit a second
-    // alert. The stale claim remains fenced by the database TTL/reclaim path.
+    // The deterministic configuration event has one owner. A claim-clear
+    // failure must not replace the typed public outcome with a generic
+    // exception, which would emit a second alert. The stale claim remains
+    // fenced by the database TTL/reclaim path.
     logger.logInfo('embedding.configuration-persist-failed', {
       assetId,
       error: persistenceError instanceof Error ? persistenceError.message : String(persistenceError),

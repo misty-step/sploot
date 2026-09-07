@@ -1,3 +1,4 @@
+import { captureOperationalError } from './sentry';
 type LogLevel = 'info' | 'error' | 'timing';
 
 interface BaseLogEntry {
@@ -38,7 +39,7 @@ interface SerializedError {
 type ConsoleWriter = ((message?: any, ...optionalParams: any[]) => void) | undefined;
 
 /**
- * Structured logger that writes JSON logs, forwards errors to Canary, and preserves trace context.
+ * Structured logger that writes provider-neutral JSON and forwards errors to Sentry.
  *
  * @public
  */
@@ -113,18 +114,12 @@ class ObservabilityLoggerImpl implements ObservabilityLogger {
 
     this.emit(entry, getConsoleWriter('error'));
 
-    void import('./canary-reporter')
-      .then(({ reportCanaryError }) =>
-        reportCanaryError({
-          context,
-          error: serializedError,
-          traceId: this.traceId,
-          metadata,
-        })
-      )
-      .catch(() => {
-        // Canary forwarding is best-effort and must never affect callers.
-      });
+    void captureOperationalError({
+      context,
+      error,
+      traceId: this.traceId,
+      metadata,
+    });
   }
 
   logTiming(
@@ -212,7 +207,7 @@ export function logInfo(context: string, metadata?: Record<string, any>): void {
 }
 
 /**
- * Log an error, serialize it for JSON output, and forward it to Canary.
+ * Log an error, serialize it for JSON output, and forward it to Sentry.
  *
  * @param context - Short description of the failure.
  * @param error - Error object or primitive describing the failure.

@@ -158,18 +158,15 @@ function forwardErrorTelemetry(payload: ErrorPayload): void {
   try {
     // Browser error text and stacks are untrusted free text. Preserve only
     // bounded structural signal; never forward their raw contents to logs.
-    const error = new Error('Client-reported error');
-    error.name = sanitizeErrorIdentifier(payload.name) ?? 'ClientError';
-
-    logger.logError('client:error', error, {
-      name: error.name,
+    logger.logInfo('client:error', {
+      name: sanitizeErrorIdentifier(payload.name) ?? 'ClientError',
       boundary: sanitizeErrorIdentifier(payload.boundary),
       timestamp: payload.timestamp,
       hasStack: payload.hasStack,
       hasComponentStack: payload.hasComponentStack,
     });
   } catch (error) {
-    logger.logError('telemetry:canary-forwarding-failed', error, {
+    logger.logError('telemetry:structured-log-failed', error, {
       name: sanitizeErrorIdentifier(payload.name) ?? 'ClientError',
     });
   }
@@ -339,7 +336,7 @@ function isAnalyticsPayload(value: unknown): value is AnalyticsPayload {
   const requiredProperties = requiredByEvent[payload.name] ?? [];
   // Free-form strings are not part of the analytics contract: every property
   // must be a finite number, a boolean, or a member of a bounded enum, so no
-  // URL, token, or other attacker-chosen text can reach the logger or Canary.
+  // URL, token, or other attacker-chosen text can reach server telemetry.
   const spec = getAnalyticsPropertySpec(payload.name);
   if (!spec) return false;
   return entries.length <= 30 &&

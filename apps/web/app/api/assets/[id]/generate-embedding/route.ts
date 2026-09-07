@@ -572,8 +572,8 @@ async function postHandler(req: NextRequest, context: RouteContext, { principal 
         processingTimeMs: processingTime,
       });
     } else {
-      // The route owns the generic Canary report and marks the response so the
-      // observability wrapper stays out of the generic 5xx path.
+      // The route owns generic error capture and marks the response so the
+      // request boundary does not emit the same failure.
       logger.logError('generate-embedding:failed', error as Error, {
         processingTimeMs: processingTime,
       });

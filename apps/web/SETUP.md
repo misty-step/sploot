@@ -25,7 +25,7 @@ core variables:
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`: identity;
 - `BLOB_READ_WRITE_TOKEN`: Vercel Blob storage;
 - `REPLICATE_API_TOKEN`: embedding generation;
-- `CANARY_*`: optional agent-facing diagnostics.
+- `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_DSN`, and `SENTRY_AUTH_TOKEN`: error diagnostics and build-time source-map upload.
 
 there is no secondary remote cache or retired compute-provider configuration. see
 `docs/DEPLOYMENT.md` for the production contract and ADR-010 for the provider

@@ -360,7 +360,7 @@ describe('/api/cron/regenerate-thumbnails', () => {
     expect(body.failures[0].reason).toBe('permission denied');
     expect(body.failures[0].reason).not.toContain('outbox insert failed');
     // An explicit structured signal was emitted through the shared
-    // logger/Canary convention for the now-unrecorded leak.
+    // observability boundary for the now-unrecorded leak.
     expect(mockLogError).toHaveBeenCalledTimes(1);
     const [context, error, metadata] = mockLogError.mock.calls[0];
     expect(context).toBe('storage.regenerate-thumbnails.orphaned-replica-leak');

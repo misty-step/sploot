@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const executeRaw = vi.hoisted(() => vi.fn());
-const reportCanaryError = vi.hoisted(() => vi.fn(() => Promise.resolve(true)));
+const captureOperationalError = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock('@/lib/db', () => ({
   prisma: { $executeRaw: executeRaw },
 }));
-vi.mock('@/lib/canary-reporter', () => ({ reportCanaryError }));
+vi.mock('@/lib/sentry', () => ({ captureOperationalError }));
 vi.mock('@/lib/observability-logger', () => ({
   logger: { logInfo: vi.fn(), logError: vi.fn(), logTiming: vi.fn(), getTraceId: vi.fn() },
 }));
@@ -21,8 +21,8 @@ describe('configuration failure persistence ownership', () => {
   beforeEach(() => {
     executeRaw.mockReset();
     executeRaw.mockRejectedValue(new Error('claim persistence unavailable'));
-    reportCanaryError.mockClear();
-    reportCanaryError.mockResolvedValue(true);
+    captureOperationalError.mockClear();
+    captureOperationalError.mockReturnValue(true);
   });
 
   it('keeps the typed terminal outcome when claim clearing fails and emits one signal', async () => {
@@ -31,9 +31,9 @@ describe('configuration failure persistence ownership', () => {
     await expect(recordEmbeddingConfigurationFailure('asset-1', error, 'claim-1')).resolves.toBe(false);
     await expect(recordEmbeddingConfigurationFailure('asset-1', error, 'claim-1')).resolves.toBe(false);
     expect(executeRaw).toHaveBeenCalledTimes(2);
-    expect(reportCanaryError).toHaveBeenCalledTimes(1);
+    expect(captureOperationalError).toHaveBeenCalledTimes(1);
     await expect(reportEmbeddingConfigurationErrorOnce(error, 'route-after-persistence-failure')).resolves.toBe(false);
-    expect(reportCanaryError).toHaveBeenCalledTimes(1);
+    expect(captureOperationalError).toHaveBeenCalledTimes(1);
     expect(error.statusCode).toBe(503);
     expect(error.retryable).toBe(false);
     expect(error.retryAfterSec).toBeUndefined();

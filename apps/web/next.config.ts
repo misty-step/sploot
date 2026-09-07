@@ -1,16 +1,26 @@
 import type { NextConfig } from "next";
+import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import { resolve } from "node:path";
 import withPWA from "@ducanh2912/next-pwa";
+import { withSentryConfig } from "@sentry/nextjs";
 import {
   IMAGE_DEVICE_SIZES,
   IMAGE_IMAGE_SIZES,
   IMAGE_FORMATS,
   IMAGE_MINIMUM_CACHE_TTL,
 } from "./lib/image-config";
+import { SENTRY_ORG, SENTRY_PROJECT, resolveSentryRelease } from "./lib/sentry";
 import { assertPublicTruthE2EBuildAllowed, isPublicTruthE2EBuild } from "./lib/public-truth-e2e";
 
 assertPublicTruthE2EBuildAllowed(process.env);
 const publicTruthE2EBuild = isPublicTruthE2EBuild(process.env);
+const sentryRelease = resolveSentryRelease();
+const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN?.trim();
+const sentryDeploymentEnvironment =
+  process.env.SPLOOT_DEPLOYMENT_ENV?.trim() ||
+  process.env.DEPLOYMENT_ENV?.trim() ||
+  '';
+const productionDeployment = sentryDeploymentEnvironment === 'production';
 const QA_BUILD_PUBLISHABLE_KEY = 'pk_test_Y2xlcmsuZXhhbXBsZS5jb20k';
 const qaEvidenceBuildSafe = !process.env.CLERK_SECRET_KEY &&
   (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY === QA_BUILD_PUBLISHABLE_KEY);
@@ -33,6 +43,8 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_SPLOOT_PUBLIC_TRUTH_E2E: publicTruthE2EBuild ? 'true' : 'false',
     NEXT_PUBLIC_SPLOOT_QA_AUTH_BUILD: qaLocalAuthBuild ? 'true' : 'false',
+    NEXT_PUBLIC_SPLOOT_DEPLOYMENT_ENV: sentryDeploymentEnvironment,
+    NEXT_PUBLIC_SPLOOT_DEPLOYMENT_COMMIT: sentryRelease ?? '',
   },
   // The local QA browser loop must not mount Next's dev-tools portal into
   // captured evidence. Production is unaffected because the portal is dev
@@ -185,4 +197,31 @@ const pwaConfig = withPWA({
   },
 })(nextConfig);
 
-export default pwaConfig;
+export default (phase: string) => {
+  if (phase === PHASE_PRODUCTION_BUILD && productionDeployment &&
+    (!process.env.NEXT_PUBLIC_SENTRY_DSN?.trim() || !sentryAuthToken ||
+      !process.env.SPLOOT_DEPLOYMENT_COMMIT?.trim() || !sentryRelease)) {
+    throw new Error(
+      'Production Sentry build requires NEXT_PUBLIC_SENTRY_DSN, SENTRY_AUTH_TOKEN, and SPLOOT_DEPLOYMENT_COMMIT',
+    );
+  }
+  return withSentryConfig(pwaConfig, {
+  org: SENTRY_ORG,
+  project: SENTRY_PROJECT,
+  authToken: sentryAuthToken,
+  silent: !process.env.CI,
+  telemetry: false,
+  widenClientFileUpload: Boolean(sentryAuthToken),
+  sourcemaps: sentryAuthToken
+    ? { deleteSourcemapsAfterUpload: true }
+    : { disable: true },
+  release: {
+    name: sentryRelease,
+    create: Boolean(sentryAuthToken),
+    finalize: Boolean(sentryAuthToken),
+  },
+  bundleSizeOptimizations: {
+    excludeDebugStatements: true,
+  },
+});
+};

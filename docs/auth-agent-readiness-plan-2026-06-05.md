@@ -1,5 +1,12 @@
 # Auth Agent-Readiness Plan - 2026-06-05
 
+Historical research and proposed sequence from 2026-06-05, retained rather than
+used as a current task queue or code map. The selected boundary rationale is in
+[the 2026-06-09 decision](auth-agent-readiness-decision-2026-06-09.md); current
+supported auth and QA behavior belongs in [AUTH.md](../apps/web/docs/AUTH.md).
+Powder references below identify the retired work record, not live routing.
+Linear owns any selected unresolved follow-on work.
+
 ## Objective
 
 Redesign Sploot authentication so agents and CI can exercise authenticated web,
