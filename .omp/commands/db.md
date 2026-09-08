@@ -1,14 +1,1 @@
-Use Prisma/Neon operations through `pnpm --filter web <script>`. Prisma reads
-`DATABASE_URL` before Node starts; keep the variable name, and use a pooled Neon
-host containing `-pooler` plus `pgbouncer=true` for runtime connections.
-
-- `db:migrate:dev` — create and apply a named development migration
-- `db:migrate` — apply migrations in deploy mode
-- `db:push` — prototyping only; do not use for shipping schema changes
-- `db:generate` — regenerate the Prisma client
-- `db:studio` — open Prisma Studio
-- `db:seed` — seed data
-- `db:sync`, `db:fingerprint`, `db:drift` — inspect environment and drift
-
-Check `DATABASE_URL` points at the intended environment before a schema or
-migration operation. CI uses `pgvector/pgvector:pg15`.
+Prisma/Neon operations go through `pnpm --filter web`. Prisma reads `DATABASE_URL` when its Rust engine initializes; keep that name. Runtime pooled Neon URLs need `-pooler` plus `pgbouncer=true`. Shipping schema uses named migrations; `db:push` is prototyping only. Inspect environment drift with `db:fingerprint` and `db:drift`. Privileged deploy authority is `apps/web/scripts/migrate-deploy.mjs`. CI uses `pgvector/pgvector:pg15`. Check `DATABASE_URL` points at the intended environment before a schema or migration operation.

@@ -10,8 +10,8 @@ alwaysApply: false
 
 # Web database
 
-- Prisma's Rust engine reads `DATABASE_URL` before Node starts. Keep that name;
-  aliases such as `POSTGRES_URL` arrive too late in serverless.
+- Prisma's Rust engine reads `DATABASE_URL` at initialization. Keep that name;
+  aliases such as `POSTGRES_URL` are not used.
 - Pooled Neon URLs require `-pooler` in the host and `pgbouncer=true`; migration
   URLs are direct. Use `pnpm --filter web db:migrate:dev` for named migrations,
   not `db:push` for shipping schema changes. CI deploys against

@@ -73,7 +73,7 @@ next-env.d.ts
 # Clerk
 .clerk/
 
-# Harness Kit runtime traces (delegation receipts) — local-only, not committed
+# Local harness traces — not committed
 .harness-kit/traces/*.jsonl
 .harness-kit/traces/provider-lanes/
 .spellbook/traces/prompts/
