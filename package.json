@@ -25,10 +25,12 @@
     ]
   },
   "scripts": {
-    "dev": "PORT=${PORT:-3001} VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001} turbo run dev",
+    "dev": "pnpm dev:local",
     "dev:web": "turbo run dev --filter=web",
-    "dev:local": "pnpm --filter web dev:local",
-    "dev:local:down": "pnpm --filter web dev:local:down",
+    "dev:local": "pnpm --filter server dev:local",
+    "dev:local:down": "pnpm --filter server dev:local --down",
+    "dev:server": "pnpm --filter server dev",
+    "build:server": "pnpm --filter server build",
     "dev:extension": "turbo run dev --filter=extension",
     "build": "turbo run build",
     "lint": "pnpm stripe:sandbox:check && pnpm provider:check && pnpm provider:test && turbo run lint",

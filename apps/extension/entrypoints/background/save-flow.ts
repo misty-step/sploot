@@ -30,6 +30,8 @@ export interface SaveOptions {
   /** When present, upload is fenced to this stable Clerk account identity. */
   owner?: AuthAuthority;
   signal?: AbortSignal;
+  /** Stable per retained capture, including retries after a worker restart. */
+  idempotencyKey?: string;
 }
 
 export type SaveOutcome =
@@ -71,12 +73,12 @@ export async function saveToSploot(
       }
       const result = await uploadImage(blob, filename, {
         getToken: signal => getAuthTokenForAuthority(owner, signal),
-      }, options.signal);
+      }, options.signal, options.idempotencyKey);
       showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
       return { ok: true, filename, isDuplicate: result.isDuplicate };
     }
 
-    const result = await uploadImage(blob, filename, undefined, options.signal);
+    const result = await uploadImage(blob, filename, undefined, options.signal, options.idempotencyKey);
     showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
     return { ok: true, filename, isDuplicate: result.isDuplicate };
   } catch (error) {

@@ -6,8 +6,8 @@ A Chrome Extension built with WXT and React that integrates seamlessly with the 
 
 ## ✨ Key Features
 
-- **Context Menu**: Right-click any image → "Save to Sploot".
-- **Durable Save Recovery**: Context-menu saves survive worker restarts with bounded backoff and retry attempts. A terminal failure stays in the popup until you explicitly retry or discard it.
+- **Context Menu**: Right-click an image or direct MP4/WebM video → "Save to Sploot". GIFs and videos keep their original bytes. Streaming players and arbitrary social-page downloading are not supported; capture limits come from `@sploot/common`.
+- **Durable Save Recovery**: Context-menu saves retain immutable bytes and an idempotency key across worker restarts, with bounded backoff and retry attempts. Receipts distinguish saved, already in the library, and failure. A terminal failure stays in the popup until you explicitly retry or discard it.
 - **Popup UI**: View status, open web sign-in, sign out.
 - **Auth**: Seamless Clerk integration sharing session with web app.
 - **Tech**: WXT (Vite-based), React 19, TypeScript.

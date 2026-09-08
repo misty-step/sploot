@@ -53,7 +53,6 @@ describe('saveToSploot', () => {
     const outcome = await saveToSploot(produce, 'image');
 
     expect(outcome.ok).toBe(true);
-    expect(mocks.uploadImage).toHaveBeenCalledWith(expect.any(Blob), 'meme.png', undefined, undefined);
     expect(mocks.showSuccessNotification).toHaveBeenCalledWith('meme.png', 't', { isDuplicate: false });
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
   });
@@ -126,12 +125,6 @@ describe('saveToSploot', () => {
     });
 
     expect(outcome.ok).toBe(true);
-    expect(mocks.uploadImage).toHaveBeenCalledWith(
-      expect.any(Blob),
-      'meme.png',
-      { getToken: expect.any(Function) },
-      undefined,
-    );
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
   });
 });

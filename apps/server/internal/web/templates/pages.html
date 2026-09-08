@@ -1,0 +1,82 @@
+{{define "app"}}
+{{template "head" .}}{{template "shell-open" .}}
+<main id="main" class="app-main" tabindex="-1">
+{{if .Principal}}
+  <div class="feed-heading"><h1>{{if .FavoriteOnly}}Favorites{{else}}All your memes{{end}}</h1><span>Shuffled</span></div>
+  {{if and (not .Assets) (not .Error)}}
+  <section class="empty-state"><h2>{{if .FavoriteOnly}}Keep the good ones close.{{else}}Your next favorite belongs here.{{end}}</h2><p>{{if .FavoriteOnly}}Tap the heart on a meme to find it here.{{else}}Save an image, GIF, or video. Browse it here, find it with words, and send the actual file.{{end}}</p>{{if .FavoriteOnly}}<a class="button button-primary" href="{{browseURL . false}}" data-nav hx-boost="true" hx-target="#shell" hx-select="#shell" hx-swap="outerHTML">Browse all memes</a>{{else}}<button class="button button-primary" type="button" data-action="upload" {{if not .UploadsEnabled}}disabled{{end}}>Save your first meme</button>{{if not .UploadsEnabled}}<p class="help-text">Saving is currently unavailable. Your existing library is unchanged.</p>{{end}}{{end}}</section>
+  {{end}}
+  <div id="feed" class="media-feed" aria-label="{{if .FavoriteOnly}}Favorite memes{{else}}All memes{{end}}">{{template "feed" .}}</div>
+{{else}}{{template "signed-out" .}}{{end}}
+</main>
+</div>{{template "foot" .}}
+{{end}}
+
+{{define "search"}}
+{{template "head" .}}{{template "shell-open" .}}
+<main id="main" class="app-main" tabindex="-1">
+{{if .Principal}}
+  <div class="search-heading"><a class="back-link" href="{{browseURL . .FavoriteOnly}}" data-nav hx-boost="true" hx-target="#shell" hx-select="#shell" hx-swap="outerHTML"><svg class="icon" aria-hidden="true"><use href="#icon-previous"/></svg>Back to {{if .FavoriteOnly}}favorites{{else}}your library{{end}}</a><h1>{{if .Query}}“{{.Query}}”{{else}}Find a meme{{end}}</h1>{{if and .Query (not .Error)}}<p>{{.Total}} {{if eq .Total 1}}match{{else}}matches{{end}}{{if .FavoriteOnly}} in favorites{{end}}</p>{{end}}</div>
+  {{if and (not .Assets) (not .Error)}}<section class="empty-state"><h2>{{if .Query}}Not this time.{{else}}What do you remember?{{end}}</h2><p>{{if .Query}}Try the scene, the feeling, or a few words from the meme. Newly saved media may take a moment to appear in search.{{else}}Describe a scene, a feeling, or the thing you want to say.{{end}}</p><button class="button" type="button" data-action="focus-search">{{if .Query}}Try another description{{else}}Describe a meme{{end}}</button></section>{{end}}
+  <div id="feed" class="media-feed" aria-label="Search matches">{{template "results" .}}</div>
+{{else}}{{template "signed-out" .}}{{end}}
+</main>
+</div>{{template "foot" .}}
+{{end}}
+
+{{define "settings"}}
+{{template "head" .}}{{template "shell-open" .}}
+<main id="main" class="app-main settings-main" tabindex="-1">
+{{if .Principal}}
+  <a class="back-link" href="{{browseURL . false}}" data-nav hx-boost="true" hx-target="#shell" hx-select="#shell" hx-swap="outerHTML"><svg class="icon" aria-hidden="true"><use href="#icon-previous"/></svg>Back to your library</a>
+  <h1>Settings</h1>
+  {{if .Error}}<p class="inline-error" role="alert">{{.Error}}</p>{{end}}
+  <section class="settings-section" aria-labelledby="account-title"><h2 id="account-title">Your account</h2><p data-account-label>Signed in to your library.</p><div class="button-row"><button class="button" type="button" data-action="manage-account" hidden>Manage account</button><button class="button" type="button" data-action="sign-out" hidden>Sign out</button></div></section>
+  <section class="settings-section" aria-labelledby="library-title"><h2 id="library-title">Your library</h2><div id="library-stats" role="status"><p class="muted">Loading library details…</p></div><a class="button" href="/api/library/export" download>Export library</a><p class="help-text">The export contains your library data. Download an individual original from its Share or Details menu.</p></section>
+  <section class="settings-section" aria-labelledby="tokens-title">
+    <h2 id="tokens-title">Personal access tokens</h2>
+    <p>Connect a Shortcut or an API client to this library. Each token can save media and search your collection. It cannot manage your account or other tokens.</p>
+    <div id="token-list" class="token-list" aria-live="polite"><p class="muted">Loading tokens…</p></div>
+    <form id="token-create-form" class="stack-form"><label for="token-name">Name this connection</label><div class="input-action"><input id="token-name" name="name" type="text" placeholder="My iPhone" maxlength="64" autocomplete="off" required><button class="button" type="submit">Create token</button></div><p id="token-error" class="form-error" role="alert" hidden></p></form>
+    <div id="new-token" class="token-secret" hidden><h3>Copy this token now</h3><p>This is the only time it is shown. Paste it into your Shortcut or client. Don’t share it or put it in a public file.</p><label class="sr-only" for="new-token-value">New personal access token</label><input id="new-token-value" type="text" readonly autocomplete="off" spellcheck="false"><div class="button-row"><button class="button button-primary" type="button" data-action="copy-token">Copy token</button><button class="button" type="button" data-action="dismiss-token">I’ve saved it</button></div></div>
+    <p class="help-text">Revoke a token below if a device is lost or a connection is no longer needed. Revocation does not remove your saved media.</p>
+  </section>
+  <section class="settings-section" aria-labelledby="iphone-title"><h2 id="iphone-title">Save from your iPhone</h2><p>The Shortcut accepts shared images, GIFs, videos, and direct media URLs. Use a separate token for your phone so you can revoke it independently.</p><a class="button" href="/static/shortcuts/save-to-sploot.unsigned.shortcut" download>Shortcut source — Apple signing required</a><p class="help-text">This is not an install link. The source must be signed on a Mac before iPhone installation. Its setup stores your token in a plain-text file in iCloud Drive, not in Keychain. Keep that file private.</p></section>
+  <section class="settings-section" aria-labelledby="browsing-title"><h2 id="browsing-title">Browsing</h2><label class="check-label"><input id="autoplay-setting" type="checkbox">Play the visible video automatically, muted</label><p class="help-text">Only one video plays at a time. Automatic video playback is off by default when your device requests reduced motion. GIFs keep their animation.</p><details class="keyboard-help"><summary>Keyboard controls</summary><dl class="metadata"><dt>Next / previous</dt><dd><kbd>J</kbd> / <kbd>K</kbd> or arrow keys</dd><dt>Favorite</dt><dd><kbd>F</kbd></dd><dt>Open viewer</dt><dd><kbd>Enter</kbd> on a meme</dd><dt>Find a meme</dt><dd><kbd>/</kbd></dd><dt>Close panel</dt><dd><kbd>Esc</kbd></dd></dl></details></section>
+{{else}}{{template "signed-out" .}}{{end}}
+</main>
+</div>{{template "foot" .}}
+{{end}}
+
+{{define "signed-out"}}
+<section class="signed-out-state"><h1>Your memes, within reach.</h1><p>Sign in to save, find, and reuse your collection. Your library stays yours.</p><a class="button button-primary" href="/sign-in">Sign in to your library</a>{{if .Error}}<p class="inline-error" role="alert">{{.Error}}</p>{{end}}</section>
+{{end}}
+
+{{define "sign-in"}}
+{{template "head" .}}{{template "shell-open" .}}
+<main id="main" class="app-main sign-in-main" tabindex="-1">
+  <section class="sign-in-intro"><h1>Back to the good stuff.</h1><p>Sign in to your personal meme library.</p></section>
+  {{if .Error}}<p class="inline-error" role="alert">{{.Error}}</p>{{end}}
+  <div id="sign-in-status" role="status">Loading secure sign-in…</div>
+  <div id="clerk-sign-in"></div>
+  <button class="button" id="retry-sign-in" type="button" data-action="reload" hidden>Retry sign-in</button>
+  <p class="sign-in-note">Use the same account as your existing Sploot library.</p>
+</main>
+</div>{{template "foot" .}}
+{{end}}
+
+{{define "share"}}
+{{template "head" .}}{{template "shell-open" .}}
+<main id="main" class="app-main shared-main" tabindex="-1">
+  <div class="feed-heading"><h1>A meme, shared with you.</h1></div>
+  {{if .Asset}}<div id="feed" class="media-feed">{{template "media-card" (card .Asset .)}}</div>{{else}}<section class="empty-state"><h2>This link is no longer available.</h2><p>The owner may have removed the meme or revoked its public link.</p></section>{{end}}
+  {{if .Error}}<p class="inline-error" role="alert">{{.Error}}</p>{{end}}
+</main>
+</div>{{template "foot" .}}
+{{end}}
+
+{{define "not-found"}}
+{{template "head" .}}{{template "shell-open" .}}
+<main id="main" class="app-main" tabindex="-1"><section class="empty-state"><h1>This page isn’t here.</h1><p>{{if .Error}}{{.Error}}{{else}}The link may have changed, or the owner may have revoked it.{{end}}</p><a class="button button-primary" href="{{browseURL . false}}">{{if .Principal}}Back to your library{{else}}Open Sploot{{end}}</a></section></main>
+</div>{{template "foot" .}}
+{{end}}

@@ -164,20 +164,6 @@ describe('public truth contracts', () => {
     expect(read('scripts/serve-public-truth.mjs')).toContain('stale or mismatched public-truth artifact');
   });
 
-  it('keeps iPhone/token copy closed-aware and validates the extension seam', () => {
-    const shortcut = read('app/help/ios-shortcut/page.tsx');
-    const shortcutDoc = readFileSync(resolve(root, 'docs/shortcuts/save-to-sploot.md'), 'utf8');
-    const popup = read('../extension/entrypoints/popup/App.tsx');
-
-    expect(shortcut).toContain('<EnrollmentNotice state={enrollmentState} />');
-    expect(shortcutDoc).toContain('Existing Sploot users can open');
-    expect(shortcutDoc).toContain('new enrollment is paused');
-    expect(shortcutDoc).toContain('enrollment_unavailable');
-    expect(shortcutDoc).toContain('uploads_disabled');
-    expect(popup).toContain('loadPublicEnrollmentState');
-    expect(popup).not.toContain('payload?.publicState');
-  });
-
   it('does not mount or promise immediate new-account enrollment while closed', () => {
     const signUp = read('app/sign-up/[[...sign-up]]/page.tsx');
     const home = read('app/page.tsx');

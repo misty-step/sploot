@@ -1,8 +1,8 @@
 /**
  * Context Menu Handler
  *
- * Registers right-click "Save to Sploot" menu item for images.
- * Handles image capture and upload coordination.
+ * Registers right-click "Save to Sploot" for images and direct video sources.
+ * Handles media capture and upload coordination.
  */
 
 import { IS_DEV_BUILD } from '../../shared/build-mode';
@@ -38,8 +38,16 @@ export function ensureContextMenus() {
     chrome.contextMenus.create({
       id: MENU_ID_SAVE,
       title: 'Save to Sploot',
-      contexts: ['image'],
-    }, () => void chrome.runtime.lastError); // ignore duplicate errors
+      contexts: ['image', 'video'],
+    }, () => {
+      if (chrome.runtime.lastError) {
+        // Existing installations keep menu definitions across worker restarts.
+        chrome.contextMenus.update(MENU_ID_SAVE, {
+          title: 'Save to Sploot',
+          contexts: ['image', 'video'],
+        }, () => void chrome.runtime.lastError);
+      }
+    });
 
     if (IS_DEV_BUILD) {
       // Dev-build-only diagnostics; production ships no debug menu items.
@@ -196,7 +204,7 @@ async function handleImageSave(
   tab: Pick<chrome.tabs.Tab, 'title'> | undefined,
 ): Promise<void> {
   if (!imageUrl) {
-    showErrorNotification('No image URL found');
+    showErrorNotification('No direct media URL found. Streaming players may not expose a downloadable file.');
     return;
   }
 
@@ -226,12 +234,7 @@ function extractFilename(url: string, tabTitle?: string): string {
   try {
     const urlObj = new URL(url);
     const pathname = urlObj.pathname;
-    const filename = pathname.split('/').pop() || 'image.jpg';
-
-    // If filename doesn't have extension, infer from URL or default
-    if (!filename.includes('.')) {
-      return `${filename}.jpg`;
-    }
+    const filename = pathname.split('/').pop() || 'media';
 
     return filename;
   } catch {
@@ -241,9 +244,9 @@ function extractFilename(url: string, tabTitle?: string): string {
         .replace(/[^a-z0-9]/gi, '-')
         .toLowerCase()
         .substring(0, 50);
-      return `${sanitized}.jpg`;
+      return sanitized || 'media';
     }
 
-    return `image-${Date.now()}.jpg`;
+    return `media-${Date.now()}`;
   }
 }

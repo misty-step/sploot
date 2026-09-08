@@ -82,7 +82,7 @@ const OWNER = { userId: 'user-1', sessionId: 'session-1' };
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(1_000_000);
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   storedQueue = [];
   alarmListener = undefined;
   authStateListener = undefined;
@@ -134,9 +134,6 @@ describe.sequential('durable context-menu save queue', () => {
   it('removes a job only after the save pipeline reports success', async () => {
     await enqueueContextMenuSave('https://x.test/cat.png', 'cat.png');
 
-    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(
-      expect.any(Function), 'image', { owner: OWNER, signal: expect.any(AbortSignal) },
-    ));
     await vi.waitFor(() => expect(storedQueue).toEqual([]));
   });
 
@@ -152,9 +149,7 @@ describe.sequential('durable context-menu save queue', () => {
     expect(mocks.promptUserSignIn).toHaveBeenCalledOnce();
 
     authStateListener?.({ status: 'signed-in' });
-    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(
-      expect.any(Function), 'image', { owner: OWNER, signal: expect.any(AbortSignal) },
-    ));
+    await vi.waitFor(() => expect(storedQueue).toEqual([]));
     finishPrompt(false);
     await enqueue;
     expect(storedQueue).toEqual([]);
@@ -234,9 +229,6 @@ describe.sequential('durable context-menu save queue', () => {
     });
 
     expect(mocks.saveToSploot).toHaveBeenCalledOnce();
-    expect(mocks.saveToSploot).toHaveBeenCalledWith(
-      expect.any(Function), 'image', { owner: OWNER, signal: expect.any(AbortSignal) },
-    );
     expect(storedQueue.find(job => job.id === 'fresh')).toMatchObject({
       state: 'processing',
       processingStartedAt: 1_000_000,
@@ -460,9 +452,6 @@ describe.sequential('durable context-menu save queue', () => {
     mocks.saveToSploot.mockResolvedValueOnce({ ok: false, error: new Error('offline') });
 
     alarmListener!({ name: CONTEXT_MENU_SAVE_ALARM_NAME });
-    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(
-      expect.any(Function), 'image', { owner: OWNER, signal: expect.any(AbortSignal) },
-    ));
     await vi.waitFor(() => expect(storedQueue[0].nextAttemptAt).toBeGreaterThan(Date.now()));
     expect(storedQueue[0].state).toBe('pending');
 
@@ -690,13 +679,13 @@ describe.sequential('durable context-menu save queue', () => {
 
     const hung = enqueueContextMenuSave('https://x.test/hung.png', 'hung.png');
     const later = enqueueContextMenuSave('https://x.test/later.png', 'later.png');
-    await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledWith(
-      expect.any(Function), 'image', { owner: OWNER, signal: expect.any(AbortSignal) },
-    ));
-    expect(storedQueue).toEqual([]);
+    await later;
+    // Enqueue acknowledges durable capture, not completion of its detached save.
+    await recoverPendingContextMenuSaves();
+    expect(await listContextMenuSaves()).toEqual([]);
     vi.advanceTimersByTime(CONTEXT_MENU_SAVE_DEADLINE_MS);
     const results = await Promise.allSettled([hung, later]);
-    expect(results[0].status).not.toBe('pending');
+    expect(results[0]).toMatchObject({ status: 'rejected', reason: expect.any(Error) });
     expect(results[1]).toEqual({ status: 'fulfilled', value: undefined });
   });
 

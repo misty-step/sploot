@@ -1,82 +1,115 @@
 # Save to Sploot — iPhone Share-Sheet Shortcut
 
-> This walkthrough is also published where users can actually find it:
-> `/help/ios-shortcut` on the live product, linked from Settings and the
-> Getting Started guide (`/help`). This file is the source copy for
-> repo/operator reference — keep both in sync if you edit either.
+## Release status
 
-iOS (WebKit) does not implement the Web Share Target API, so an installed Sploot
-PWA can never appear in the iPhone share sheet the way it does on Android. The
-sanctioned workaround is an **Apple Shortcut**: it can sit in the share sheet,
-accept an image, and make an authenticated HTTP request.
+**Unsigned workflow source exists; an installable iPhone integration is not
+accepted.** Apple signing and real iPhone saved/duplicate/failure verification
+have not been performed. There is no verified iCloud install link to publish.
 
-Shortcuts can't carry your Clerk login, so existing Sploot users authenticate
-with a **personal upload token** instead — a credential that can *only* upload
-to their library (never read or delete it). The public state is closed: new enrollment is paused; this guide does not mint a new account or promise immediate token availability.
+- [Unsigned workflow source](../../../server/internal/web/static/shortcuts/save-to-sploot.unsigned.shortcut)
+- [Packaging and Apple-signing script](../../../server/scripts/shortcut-release.py)
+- The Go candidate serves that source at
+  `/static/shortcuts/save-to-sploot.unsigned.shortcut`, linked from its Settings
+  page as **Shortcut source — Apple signing required**. It is not an install link.
 
-## 1. Use an existing account's upload token
+The deployed Next.js predecessor's `/help/ios-shortcut` page describes manual
+action assembly. That legacy walkthrough is not proof of a packaged release,
+nor is it the generated workflow's source. The Go candidate is not a production
+cutover; keep hosted and candidate behavior distinct.
 
-1. Existing Sploot users can open Sploot → **Settings** → **Upload tokens**.
-2. Name a token (e.g. `iphone`) and tap **mint token**.
-3. Copy the `splt_…` value. **It is shown only once.** If you lose it, revoke it
-   and mint a new one.
+iPhone does not offer the PWA Web Share Target behavior used on supported
+Android browsers. The candidate integration uses Apple Shortcuts to accept
+shared media and call Sploot's existing authenticated save API.
 
-## 2. Build the Shortcut
+## Personal token scope and storage
 
-In the **Shortcuts** app, create a new shortcut with these actions:
+Existing account holders create a token in `/app/settings` under **Upload
+tokens** in the predecessor or **Personal access tokens** in the Go candidate.
+Name it for the phone, copy the `splt_…` plaintext shown once, and revoke/remint
+if it is lost. Closed enrollment is unchanged; the Shortcut does not create an
+account or confer new enrollment.
 
-1. **Get Contents of URL**
-   - **URL:** `https://www.sploot.app/api/upload`
-   - **Method:** `POST`
-   - **Headers:** add one — `Authorization` = `Bearer splt_…` (your token, with
-     the word `Bearer` and a space before it).
-   - **Request Body:** `Form`
-   - Add a form field:
-     - **Key:** `file`
-     - **Type:** `File`
-     - **Value:** `Shortcut Input` (the shared image)
-2. (Optional) **Show Result** / **Show Notification** of the response so you get
-   a "saved" confirmation.
+The token permits **save and search**, not only upload:
 
-Then open the shortcut's settings (the ⓘ / share icon):
+- `POST /api/upload` saves bytes.
+- `POST /api/upload/url` saves a direct media URL.
+- `POST /api/search` can return matching library assets.
+- It cannot authenticate library listing, direct asset-management APIs,
+  export, deletion, or token-management requests.
 
-- Turn on **Show in Share Sheet**.
-- Under **Share Sheet Types**, accept **Images** (and **Media** if you want to
-  share from Photos).
-- Name it **Save to Sploot**.
+Only a hash is stored by Sploot. The workflow source, however, deliberately
+stores the phone's plaintext credential in
+**iCloud Drive/Shortcuts/sploot-upload-token.txt**, not Keychain. Anyone able
+to read that file can save and search as its owner. First setup explains this
+and asks for a token. Running the workflow without shared input offers
+**Replace token**, media selection, a direct URL, or opening the library.
+Replace the stored token after revoking an exposed credential in Sploot.
 
-## 3. Use it
+Never distribute a personal token, the token file, an authenticated screenshot,
+or a workflow with a credential embedded in its actions. Each person uses their
+own token. See [PUBLIC_API.md](../PUBLIC_API.md) for the maintained external
+save/search contract.
 
-From any app, tap **Share → Save to Sploot**. The image lands in your library.
+## Package the source
 
-Sploot deduplicates by content hash, so re-sharing the same image is harmless —
-it returns the existing asset rather than creating a duplicate.
+From the repository root, with Python 3 and no third-party Python dependencies:
 
-## Responses the Shortcut may see
+```bash
+python3 apps/server/scripts/shortcut-release.py \
+  --output-dir /tmp/sploot-shortcut-unsigned
+```
 
-| Status | Meaning |
+Choose a new output directory on each release attempt. This emits
+`Save to Sploot.unsigned.shortcut` and `distribution.json` with source hash,
+action count, `status: "unsigned-source"`, `deviceVerified: false`, and
+`icloudImportURL: null`. The binary plist is **source, not installable
+distribution**; renaming it does not sign it.
+
+On a Mac with Apple's `shortcuts` CLI and signing service available:
+
+```bash
+python3 apps/server/scripts/shortcut-release.py \
+  --output-dir /tmp/sploot-shortcut-signed --sign
+```
+
+The script invokes `shortcuts sign --mode anyone`, sending the token-free
+workflow to Apple, and emits `Save to Sploot.shortcut` plus its hash. It does not
+import the workflow, inspect a library, retrieve a token, create an iCloud link,
+or perform device acceptance. Even successful signing records
+`status: "apple-signed-device-verification-required"` and `deviceVerified: false`.
+
+Apple documents [command-line signing](https://support.apple.com/guide/shortcuts-mac/run-shortcuts-from-the-command-line-apd455c82f02/mac)
+and [sharing Shortcuts](https://support.apple.com/guide/shortcuts-mac/share-shortcuts-apdf01f8c054/mac).
+Native signing is an unavailable prerequisite in the current Linux work; an
+unsigned artifact must never be presented as ready to install.
+
+## Workflow behavior and iPhone acceptance
+
+The source accepts original JPEG, PNG, WebP, GIF, MP4, and WebM files, or direct
+HTTP/HTTPS media URLs. It posts bytes as multipart `file` to
+`https://www.sploot.app/api/upload` or a URL to `/api/upload/url`, with the
+personal token sent only to Sploot. It does not scrape pages or download social
+video players, and does not intentionally transcode animated input into stills.
+
+The workflow branches on JSON `success`, `asset`, and `isDuplicate`; Apple's
+**Get Contents of URL** action does not expose a separate HTTP status variable.
+Its intended receipt behavior is:
+
+| API outcome | Workflow behavior to verify on iPhone |
 |---|---|
-| `201` | Saved. Response includes the new `asset`. |
-| `409` | Already in your library (duplicate). The existing `asset` is returned. |
-| `401` | `{"error":"Unauthorized"}` — token missing, mistyped, or revoked. |
-| `403` | `code: "quota_exceeded"` — you're out of storage. |
-| `413` | The image is larger than the upload limit. |
-| `503` | `code: "enrollment_unavailable"` — the enrollment/configuration or database boundary is unavailable; try again later. |
-| `503` | `code: "uploads_disabled"` — the independent upload runtime gate is paused; try again later. |
+| `201`, complete successful receipt | **Saved to Sploot**, with the saved asset identity. Confirm it in the library and download the stored media. |
+| `409`, successful receipt with `isDuplicate: true` | **Already in Sploot**, with the same asset identity and no second asset. |
+| `401` revoked/invalid token | Failure, never a saved confirmation. Replace the token through setup. |
+| `403` quota denial, `413` oversized media, or a save-disabled/unavailable response | Failure with the returned error, not a successful save. |
+| `409` with `code: "UPLOAD_IN_PROGRESS"`, timeout, malformed/incomplete JSON, or network failure | No saved confirmation; inspect the library before retrying. Earlier confirmed items in a batch remain saved. |
 
-## Security
+After signing, inspect/import the signed artifact in Apple Shortcuts and
+exercise it **on an iPhone**: share a supported image, animated GIF, and video;
+verify playback and receipt identity; repeat an input for duplicate behavior;
+and exercise invalid/revoked-token plus network/service failure. Confirm
+token replacement and the plaintext-file disclosure. A browser/API smoke or
+successful plist packaging cannot substitute for these device interactions.
 
-- The token is **upload-only**: presenting it to any read or delete endpoint
-  returns `401`. It cannot list, view, or remove your memes.
-- Only a hash of the token is stored server-side; the plaintext is shown once.
-- If a token leaks (lost phone, shared screenshot), open **Settings → Upload
-  tokens** and **revoke** it. Revocation is immediate.
-- "Last used" is shown per token so you can spot one that's being used
-  unexpectedly.
-
-## Sharing your shortcut (optional)
-
-Apple shortcuts are device-signed, so a ready-made `.shortcut` file can only be
-produced and shared from an Apple device. If you want to share your build with
-someone else, open the shortcut → **Share → Copy iCloud Link** and send that.
-Each person still mints and pastes their **own** token; never share a token.
+Only after this acceptance should an operator publish the signed artifact or
+an Apple-created iCloud sharing link, with its artifact hash and sanitized
+device evidence. No such acceptance or distribution is claimed here.
