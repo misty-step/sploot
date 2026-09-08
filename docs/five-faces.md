@@ -3,16 +3,38 @@
 Status ledger for the Misty Step application-floor "five faces" doctrine
 (one core, every face: **API + CLI + MCP server + shipped skill + UI**, SDK
 where external consumers exist; a face counts only if it covers the core
-verbs — **save** and **search** — not partial credit). Updated with each
-face-completing change; treat a stale entry here as a bug.
+verbs — **save** and **search**, not partial credit). Historical shipping
+evidence and replacement acceptance are distinct; source code, local proof, a
+hosted deployment, and a device/store release are not interchangeable.
 
 | Face | Status | Evidence |
 |---|---|---|
-| **UI** | ✅ Shipped | `apps/web` (Next.js app: `/app` grid, search, upload) + `apps/extension` (Chrome right-click save) + PWA share target. Pre-existing, strongest face. |
-| **API** | ✅ Shipped, published 2026-07-07 | `apps/web/docs/API.md` (full session-authenticated surface) + **`apps/web/docs/PUBLIC_API.md`** (the published, token-scoped external contract: save bytes, save by URL, search — sploot-071). Previously existed only as an internal dev doc with no token-scoped external surface named. |
-| **MCP** | ✅ Shipped 2026-07-07 | `apps/mcp` (`@sploot/mcp`, bin `sploot-mcp`): `sploot_search` + `sploot_save` tools over `PUBLIC_API.md`. Covers both core verbs — capture (save) and retrieval (search) — not a read-only partial. Live-instance evidence: sploot-071 completion proof. |
-| **Skill** | ✅ Shipped 2026-07-07 | `.agents/skills/misty-sploot/SKILL.md` — teaches the two verbs, setup, and failure modes; rides with the MCP server. |
-| **CLI** | **Waived** (see below) | No standalone `sploot` CLI binary. |
+| **UI** | Deployed predecessor; replacement candidate | `apps/web` retains the deployed Next.js library. `apps/server` is the Go HTML/HTMX personal replacement, runnable locally but not cut over. `apps/extension` is a TypeScript/WXT Chrome capture candidate with no current Web Store submission/publication claim. The [iPhone Shortcut](../apps/web/docs/shortcuts/save-to-sploot.md) is unsigned source, not an installable release. |
+| **API** | Published save/search contract; candidate implementation | [`PUBLIC_API.md`](../apps/web/docs/PUBLIC_API.md) owns token-scoped save bytes, save by URL, and search (published 2026-07-07, sploot-071). [`API.md`](../apps/web/docs/API.md) distinguishes current candidate routes from the deployed session-authenticated predecessor surface; not every legacy route is retained. |
+| **MCP** | Shipped record, 2026-07-07 | `apps/mcp` (`@sploot/mcp`, bin `sploot-mcp`) exposes `sploot_search` and `sploot_save` over the published API. The sploot-071 completion record is historical live-instance evidence, not a new Go/production acceptance receipt. |
+| **Skill** | Shipped record, 2026-07-07 | `.agents/skills/misty-sploot/SKILL.md` teaches save/search, setup, and failure modes with the MCP server. The runtime replacement does not imply a new skill release. |
+| **CLI** | **Waived** (see below) | No standalone consumer `sploot` CLI. The new operator `library-backup` recovery utility is not a substitute save/search face. |
+
+## Replacement acceptance boundary
+
+The candidate retains existing Postgres/pgvector, Clerk identities, Blob media,
+Replicate CLIP revision, quotas/attempt ceilings, Sentry, and public share slugs.
+Personal tokens permit **save and search**, not library listing, export,
+deletion, or token management. The candidate owner ZIP download intentionally
+replaces the predecessor UI's multipart export workflow.
+
+`pnpm dev:local` and `pnpm --filter server smoke` own the disposable
+provider-free Go loop. Cached fixture retrieval is not live indexing proof.
+Current production authority/current-library access is unavailable, so no
+current real-library backup or Go production cutover is claimed. Isolated
+fixture restoration cannot establish those facts. Keep `apps/web`, named
+Prisma migrations, and the rollback artifact until real acceptance.
+
+The [deployment/recovery procedure](../apps/web/docs/DEPLOYMENT.md) owns the
+operating commands rather than duplicating them here. The
+[Shortcut source and release script](../apps/web/docs/shortcuts/save-to-sploot.md)
+still require Apple signing and real iPhone saved/duplicate/failure verification.
+There is no verified iCloud install link or completed packaged-device claim.
 
 ## CLI waiver
 

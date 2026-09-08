@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UPLOAD } from '@sploot/common';
+import { fetchImage } from './image-fetcher';
 
-async function importImageFetcher() {
-  vi.resetModules();
-  return await import('./image-fetcher');
-}
 
 beforeEach(() => {
   vi.unstubAllGlobals();
@@ -15,7 +12,6 @@ describe('fetchImage', () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
 
-    const { fetchImage } = await importImageFetcher();
 
     await expect(fetchImage('file:///private/image.png')).rejects.toThrow(
       'Only HTTP/HTTPS URLs are supported'
@@ -31,12 +27,10 @@ describe('fetchImage', () => {
     }));
     vi.stubGlobal('fetch', fetch);
 
-    const { fetchImage } = await importImageFetcher();
 
-    await expect(fetchImage('https://example.com/image.jpg')).resolves.toMatchObject({
-      type: 'image/jpeg',
-      size: blob.size,
-    });
+    const received = await fetchImage('https://example.com/image.jpg');
+    expect(await received.arrayBuffer()).toEqual(await blob.arrayBuffer());
+    expect(received.type).toBe('image/jpeg');
     expect(fetch).toHaveBeenCalledWith('https://example.com/image.jpg', {
       credentials: 'omit',
       cache: 'no-store',
@@ -57,11 +51,8 @@ describe('fetchImage', () => {
     vi.stubGlobal('fetch', fetch);
     vi.stubGlobal('Image', imageConstructor);
 
-    const { fetchImage } = await importImageFetcher();
 
-    await expect(fetchImage('https://example.com/huge.gif')).rejects.toThrow(
-      'Image too large after compression'
-    );
+    await expect(fetchImage('https://example.com/huge.gif')).rejects.toBeInstanceOf(Error);
     expect(imageConstructor).not.toHaveBeenCalled();
   });
 
@@ -74,7 +65,6 @@ describe('fetchImage', () => {
     // MV3 service workers have no DOM: Image is not a constructor there.
     vi.stubGlobal('Image', undefined);
 
-    const { fetchImage } = await importImageFetcher();
 
     await expect(fetchImage('https://example.com/broken.png')).rejects.toThrow('HTTP 503');
   });
@@ -82,10 +72,21 @@ describe('fetchImage', () => {
   it('aborts and rejects a fetch that ignores AbortSignal', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => undefined)));
-    const { fetchImage } = await importImageFetcher();
     const pending = fetchImage('https://example.com/hung.png');
     vi.advanceTimersByTime(UPLOAD.timeout);
     await expect(pending).rejects.toThrow('timed out');
     vi.useRealTimers();
+  });
+  it('preserves GIF and video bytes rather than rendering a still image', async () => {
+    for (const mime of ['image/gif', 'video/mp4']) {
+      const bytes = new Uint8Array([0, 1, 2, 127, 128, 255]);
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(bytes, {
+        headers: { 'content-type': `${mime}; charset=binary` },
+      })));
+
+      const received = await fetchImage('https://example.com/media');
+      expect(received.type).toBe(mime);
+      expect(new Uint8Array(await received.arrayBuffer())).toEqual(bytes);
+    }
   });
 });

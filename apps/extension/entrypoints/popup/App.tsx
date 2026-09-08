@@ -308,7 +308,7 @@ function SignedInPanel() {
       {!hasUsedExtension && (
         <div className="onboarding-tip">
           <h3>You're all set!</h3>
-          <p>Right-click any image and select "Save to Sploot"</p>
+          <p>Right-click an image or direct video and select "Save to Sploot"</p>
         </div>
       )}
       <p>

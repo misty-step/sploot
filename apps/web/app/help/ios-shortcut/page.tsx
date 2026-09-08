@@ -44,8 +44,8 @@ export default async function IosShortcutHelp() {
         <p className="text-muted-foreground mb-8">
           Shortcuts can&apos;t carry your Sploot login, so they authenticate
           with a <strong className="text-foreground">personal upload token</strong> instead
-          — a credential that can only upload to your library, never read or
-          delete it.
+          — a credential that can save and search your library, but cannot
+          list, export, edit, or delete it.
         </p>
         <EnrollmentNotice state={enrollmentState} />
 
@@ -170,9 +170,9 @@ export default async function IosShortcutHelp() {
             <h2 className="text-xl font-semibold mb-4">Security</h2>
             <ul className="list-disc pl-6 space-y-2 text-muted-foreground">
               <li>
-                The token is upload-only: presenting it to any read or delete
-                endpoint returns 401. It cannot list, view, or remove your
-                memes.
+                The token permits saves and semantic search, including matching
+                media URLs. It cannot list the library, export it, edit metadata,
+                or delete memes. Treat it as a private library credential.
               </li>
               <li>Only a hash of the token is stored server-side; the plaintext is shown once.</li>
               <li>

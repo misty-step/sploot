@@ -1,0 +1,51 @@
+{{define "media-card"}}
+<article class="media-card" id="asset-{{.Asset.ID}}" tabindex="-1" data-asset-id="{{.Asset.ID}}" data-filename="{{.Asset.Filename}}" data-mime="{{.Asset.MIME}}" data-source="{{.Source}}" data-poster="{{.Poster}}" data-download="{{.Download}}" data-favorite="{{.Asset.Favorite}}" data-size="{{.Asset.Size}}" data-created="{{isoDate .Asset.CreatedAt}}" data-width="{{with .Asset.Width}}{{.}}{{end}}" data-height="{{with .Asset.Height}}{{.}}{{end}}" data-public="{{.Public}}" data-share-slug="{{with .Asset.ShareSlug}}{{.}}{{end}}" aria-label="{{.Asset.Filename}}">
+  <div class="media-stage">
+    {{if video .Asset.MIME}}
+    <video class="original-media" controls muted playsinline loop preload="none" {{if .Poster}}poster="{{.Poster}}"{{end}} aria-label="{{.Asset.Filename}}"><source src="{{.Source}}" type="{{.Asset.MIME}}"><a href="{{.Download}}">Download video</a></video>
+    {{else}}
+    <a class="media-open" href="{{.Source}}" data-action="open" aria-label="Open {{.Asset.Filename}} full screen"><img class="original-media" src="{{.Source}}" alt="{{.Asset.Filename}}" loading="lazy" decoding="async" {{with .Asset.Width}}width="{{.}}"{{end}} {{with .Asset.Height}}height="{{.}}"{{end}}></a>
+    {{end}}
+    <p class="media-error" hidden>The original could not load. <a href="{{.Download}}">Try downloading it</a>.</p>
+  </div>
+  <footer class="media-footer">
+    <div class="media-caption"><button class="filename-button" type="button" data-action="open" title="{{.Asset.Filename}}">{{.Asset.Filename}}</button>{{if video .Asset.MIME}}<span class="media-kind">Video</span>{{else if gif .Asset.MIME}}<span class="media-kind">GIF</span>{{end}}</div>
+    <div class="media-actions">
+      {{if not .Public}}<button class="icon-button favorite-button" type="button" data-action="favorite" aria-pressed="{{.Asset.Favorite}}" aria-label="{{if .Asset.Favorite}}Remove from favorites{{else}}Add to favorites{{end}}"><svg class="icon" aria-hidden="true"><use href="#icon-heart"/></svg></button>{{end}}
+      {{if video .Asset.MIME}}<button class="icon-button sound-button" type="button" data-action="sound" aria-pressed="false" aria-label="Turn sound on"><svg class="icon" aria-hidden="true"><use href="#icon-sound"/></svg></button>{{end}}
+      <button class="button share-button" type="button" data-action="share"><svg class="icon" aria-hidden="true"><use href="#icon-share"/></svg>Share</button>
+      <button class="icon-button" type="button" data-action="details" aria-label="Details and options for {{.Asset.Filename}}"><svg class="icon" aria-hidden="true"><use href="#icon-more"/></svg></button>
+    </div>
+  </footer>
+  <noscript><p><a href="{{.Download}}" download>Download original</a></p></noscript>
+</article>
+{{end}}
+
+{{define "pagination"}}
+{{if .HasMore}}
+  {{if .NextCursor}}
+  <div class="page-loader" id="load-more" data-next-fragment="{{nextURL . true}}">
+    <a class="button load-more-button" href="{{nextURL . false}}" hx-get="{{nextURL . true}}" hx-trigger="revealed, click" hx-target="#load-more" hx-swap="outerHTML" hx-sync="this:drop" hx-indicator="#load-more"><span class="load-label">Load more</span><span class="loading-label" role="status">Loading more…</span></a>
+    <p class="load-error help-text" hidden>Could not load more memes. Use Load more to try again.</p>
+  </div>
+  {{else}}
+  <p class="feed-end">More memes could not be loaded. <a href="{{browseURL . .FavoriteOnly}}">Reload your library</a>.</p>
+  {{end}}
+{{else if .Assets}}<p class="feed-end">{{if eq .Page "search"}}End of these matches.{{else}}You’re all caught up. <a href="{{browseURL . .FavoriteOnly}}" data-action="shuffle">Shuffle again</a>.{{end}}</p>{{end}}
+{{end}}
+
+{{define "feed"}}
+{{if .Error}}<div class="inline-error" role="alert"><p>{{.Error}}</p><a class="button" href="{{browseURL . .FavoriteOnly}}">Try your library again</a></div>{{else}}
+<span hidden data-page-marker></span>
+{{range .Assets}}{{template "media-card" (card . $)}}{{end}}
+{{template "pagination" .}}
+{{end}}
+{{end}}
+
+{{define "results"}}
+{{if .Error}}<div class="inline-error" role="alert"><p>{{.Error}}</p><p>Your saved media is still in your library. <a href="{{browseURL . .FavoriteOnly}}">Keep browsing</a>.</p></div>{{else}}
+<span hidden data-page-marker></span>
+{{range .Assets}}{{template "media-card" (card . $)}}{{end}}
+{{template "pagination" .}}
+{{end}}
+{{end}}

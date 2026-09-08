@@ -8,8 +8,15 @@ export interface UploadResult {
 }
 
 export function toUploadResult(response: SplootApiUploadResponse): UploadResult {
-  if (!response.success || !response.asset) {
-    throw new Error(response.error || 'Upload failed');
+  if (response?.success !== true || !response.asset) {
+    throw new Error(response?.error || 'Sploot did not confirm this save. Check your library before retrying.');
+  }
+  if (
+    typeof response.asset.id !== 'string' || !response.asset.id
+    || typeof response.asset.blobUrl !== 'string' || !response.asset.blobUrl
+    || (response.isDuplicate !== undefined && typeof response.isDuplicate !== 'boolean')
+  ) {
+    throw new Error('Sploot returned an incomplete save receipt. Check your library before retrying.');
   }
 
   return {

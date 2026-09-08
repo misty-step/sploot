@@ -584,7 +584,7 @@ async function processJob(job: ContextMenuSaveJob, sweep: PauseSweep = { pauseNo
   const operationPromise = Promise.resolve().then(() => saveToSploot(
     async () => ({ blob: sourceBlob, filename: processing.filename }),
     'image',
-    { owner: processing.owner, signal: controller.signal },
+    { owner: processing.owner, signal: controller.signal, idempotencyKey: processing.id },
   ));
   let outcome: Awaited<ReturnType<typeof saveToSploot>>;
   let timedOut = false;
@@ -642,7 +642,7 @@ async function processJob(job: ContextMenuSaveJob, sweep: PauseSweep = { pauseNo
   }
 
   if (outcome.ok) {
-    // The API checksum makes a post-upload worker crash safe to replay.
+    // The durable API receipt replays the original outcome after a worker restart.
     await mutateJobs(async () => {
       const latest = await readJobs();
       const activeLatest = latest.find(candidate => (

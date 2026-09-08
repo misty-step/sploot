@@ -7,6 +7,7 @@
 
 import {
   UPLOAD,
+  normalizeMimeType,
   type SplootApiError,
   type SplootApiErrorCode,
   type SplootApiUploadResponse,
@@ -50,8 +51,9 @@ export class SplootApiClient {
     blob: Blob,
     filename?: string,
     signal?: AbortSignal,
+    idempotencyKey?: string,
   ): Promise<UploadResult> {
-    return uploadImageWithTokenProvider(this.authTokenProvider, blob, filename, signal);
+    return uploadImageWithTokenProvider(this.authTokenProvider, blob, filename, signal, idempotencyKey);
   }
 }
 
@@ -102,7 +104,7 @@ async function parseErrorResponse(
   }
 
   if (response.status === 413) {
-    return new SplootApiClientError('Image too large after compression.', response.status, 'invalid_upload');
+    return new SplootApiClientError('Media exceeds the upload size limit.', response.status, 'invalid_upload');
   }
 
   if (response.status === 429) {
@@ -131,8 +133,9 @@ export async function uploadImage(
   filename?: string,
   authTokenProvider: AuthTokenProvider = clerkAuthTokenProvider,
   signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<UploadResult> {
-  return uploadImageWithTokenProvider(authTokenProvider, blob, filename, signal);
+  return uploadImageWithTokenProvider(authTokenProvider, blob, filename, signal, idempotencyKey);
 }
 
 async function uploadImageWithTokenProvider(
@@ -140,6 +143,7 @@ async function uploadImageWithTokenProvider(
   blob: Blob,
   filename?: string,
   signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<UploadResult> {
   assertExtensionConfig();
 
@@ -151,8 +155,15 @@ async function uploadImageWithTokenProvider(
 
   // Create FormData
   const formData = new FormData();
-  const file = new File([blob], filename || 'image.jpg', {
-    type: blob.type || 'image/jpeg',
+  const mime = normalizeMimeType(blob.type || 'image/jpeg');
+  const extension = mime.split('/')[1] === 'jpeg' ? 'jpg' : mime.split('/')[1];
+  const name = filename || 'media';
+  const uploadFilename = name.toLowerCase().endsWith(`.${extension}`)
+    || (mime === 'image/jpeg' && name.toLowerCase().endsWith('.jpeg'))
+    ? name
+    : `${name.replace(/\.[^./\\]+$/, '')}.${extension}`;
+  const file = new File([blob], uploadFilename, {
+    type: mime,
   });
   formData.append('file', file);
 
@@ -185,16 +196,25 @@ async function uploadImageWithTokenProvider(
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
+        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       },
       body: formData,
       signal: controller.signal,
     });
 
-    clearTimeout(timeoutId);
+    let data: SplootApiUploadResponse | null;
+    try {
+      data = await response.json() as SplootApiUploadResponse;
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
+      if (!response.ok) throw await parseErrorResponse(response, null);
+      throw new SplootApiClientError(
+        'Sploot did not return a save receipt. Check your library before retrying.',
+        response.status,
+      );
+    }
 
-    const data = (await response.json()) as SplootApiUploadResponse;
-
-    if (response.status === 409 && data.success && data.asset && data.isDuplicate) {
+    if (response.status === 409 && data?.success === true && data.asset && data.isDuplicate === true) {
       const uploadResult = toUploadResult(data);
       console.log('[ApiClient] Duplicate upload', {
         assetId: uploadResult.assetId,
@@ -207,6 +227,12 @@ async function uploadImageWithTokenProvider(
       throw await parseErrorResponse(response, data);
     }
 
+    if (!data) {
+      throw new SplootApiClientError(
+        'Sploot did not return a save receipt. Check your library before retrying.',
+        response.status,
+      );
+    }
     // Parse successful response
     const uploadResult = toUploadResult(data);
 
