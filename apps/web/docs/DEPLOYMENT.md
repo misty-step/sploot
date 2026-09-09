@@ -67,6 +67,53 @@ the library or cache.** Restart with the same data directory to retain accounts,
 media, shares, tokens and pending indexing work.
 The retired `--session`/`--down` disposable launcher is not an operating path.
 
+### Acceptance gates
+
+Hosted GitHub [`merge-gate`](../../../.github/workflows/ci.yml) is the ship
+authority. Keep both runtimes' gates until a verified production cutover.
+From the repository root, run these local checks in order and record every exit:
+
+```sh
+pnpm lint
+pnpm type-check
+pnpm lint:design
+pnpm test:economics
+CI=1 pnpm --filter web test
+pnpm --filter web eval:search
+pnpm --filter extension lint
+pnpm --filter extension test
+pnpm --filter extension build
+```
+
+DB-backed predecessor tests require `DATABASE_URL` pointing to isolated pgvector
+Postgres, prepared with the owned `pnpm --filter web db:migrate` procedure. Never
+use production data for acceptance. A skipped DB path is **DB path unverified**,
+not a pass. CI additionally owns frozen installation, restricted-role migrations,
+web build/browser checks and the required aggregate; this local subset is not
+hosted CI parity.
+
+The Go product additionally requires actual SQLite, native inference and browser
+acceptance:
+
+```sh
+pnpm --filter server test:integration
+pnpm --filter server build
+pnpm --filter server models:prepare
+pnpm --filter server exec playwright install chromium
+pnpm --filter server smoke --binary build/sploot
+pnpm --filter extension build:e2e
+xvfb-run -a pnpm --filter server smoke --extension --binary build/sploot
+docker build --tag sploot-local apps/server
+```
+
+The gauntlet allocates new private libraries and uses actual pinned CPU CLIP.
+It never seeds or deletes the ordinary `.sploot-local/library`. Linux native
+extension capture needs `xdotool`; the shared Chromium launcher selects X11
+under Xvfb without changing the caller's Wayland environment. A prepared model
+cache can be reused; downloads are needed only for missing pinned artifacts.
+Keep local evidence separate from production migration, Apple device/signing
+and Chrome Web Store release receipts.
+
 ### Configuration and private-directory lifetime
 
 CLI flags override process settings; process settings take precedence over an

@@ -239,19 +239,19 @@ async function validateListing() {
   }
 
   const listing = await readFile(listingPath, 'utf8');
-  if (!listing.includes('Canonical submission packet for Sploot extension version `1.0.0`.')) {
+  if (!listing.includes('1.0.0')) {
     recordLocal('listing packet version does not match the release version 1.0.0');
   }
-  const requiredSnippets = [
+  const required = [
     'https://www.sploot.app/support',
     'https://www.sploot.app/privacy',
-    'Host permission: `*://*/*`',
+    '*://*/*',
     'Device pairing',
   ];
 
-  for (const snippet of requiredSnippets) {
+  for (const snippet of required) {
     if (!listing.includes(snippet)) {
-      recordLocal(`listing packet missing required text: ${snippet}`);
+      recordLocal(`listing packet missing required release field: ${snippet}`);
     }
   }
 

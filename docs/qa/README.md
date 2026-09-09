@@ -23,7 +23,7 @@ the server to exercise a fresh private temporary library with real accounts,
 media and pinned local inference. The command prints per-story results and
 the retained desktop/mobile screenshot directory. Without `--keep`, a successful
 run removes only its own newly allocated directory; failed runs retain diagnostics.
-See [the gate procedure](../../.omp/commands/gate.md) for prerequisites and
+See [the acceptance gates](../../apps/web/docs/DEPLOYMENT.md#acceptance-gates) for prerequisites and
 real unpacked-extension acceptance.
 
 Retained Go runs contain test databases, account hashes and media as well as

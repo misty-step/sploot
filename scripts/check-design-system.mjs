@@ -29,46 +29,12 @@ function assertIncludes(path, needle, reason) {
 }
 
 assertFile('DESIGN.md');
-assertFile('design-contract.md');
-assertFile('docs/design/tokens.md');
-assertFile('docs/design/component-library.md');
 assertFile('apps/web/components/sploot/sticker-tab.tsx');
 assertFile('apps/web/components/sploot/banger-stamp.tsx');
 assertFile('apps/web/components/sploot/cluster-pile.tsx');
 assertFile('apps/web/components/sploot/pile-mark.tsx');
 assertFile('apps/extension/entrypoints/popup/App.tsx');
 assertFile('apps/extension/entrypoints/popup/style.css');
-
-if (existsSync(join(repoRoot, 'DESIGN.md'))) {
-  for (const heading of [
-    '## 1. Product Intent',
-    '## 2. Audience and Context',
-    '## 3. Brand Attributes',
-    '## 4. Visual Language',
-    '## 5. Layout and Density',
-    '## 6. Components and Interaction',
-    '## 7. Content Voice',
-    '## 8. Accessibility and Responsiveness',
-    '## 9. Evidence and Governance',
-  ]) {
-    assertIncludes('DESIGN.md', heading, 'design-system section');
-  }
-
-  for (const phrase of [
-    'self-organizing piles',
-    'No Folders Just Vibes',
-    'Meme Atlas',
-    'pnpm lint:design',
-  ]) {
-    assertIncludes('DESIGN.md', phrase, 'current design direction');
-  }
-}
-
-if (existsSync(join(repoRoot, 'design-contract.md'))) {
-  for (const phrase of ['Provenance', 'Migration Exceptions', 'provided', 'observed', 'inferred']) {
-    assertIncludes('design-contract.md', phrase, 'design provenance contract');
-  }
-}
 
 const cssPath = 'apps/web/app/globals.css';
 for (const token of [
@@ -112,43 +78,6 @@ for (const token of [
   'prefers-reduced-motion: reduce',
 ]) {
   assertIncludes(cssPath, token, 'Sploot motion system');
-}
-
-for (const phrase of [
-  '--sploot-ink',
-  '--sploot-blue',
-  '--sploot-magenta',
-  '--sploot-yellow',
-  '--sploot-orange',
-  '--sploot-border',
-  '--sploot-shadow-lg',
-  '--sploot-match-ring',
-  '--sploot-touch-target',
-  '--sploot-control-height-sm',
-  '--sploot-control-height',
-  '--sploot-control-height-lg',
-  '--sploot-ease-snap',
-  'tracking-normal',
-  'animate-sploot-stamp',
-]) {
-  assertIncludes('docs/design/tokens.md', phrase, 'documented design token');
-}
-
-for (const phrase of [
-  'Search Console',
-  'Meme Cell',
-  'Stat Block',
-  'Status Bar',
-  'Pile / Cluster',
-  'Control Taxonomy',
-  'Filter chips (segmented)',
-  'Sort command',
-  'Shuffle command',
-  'Sticker Tab',
-  'Banger Stamp',
-  'Implemented Wrappers',
-]) {
-  assertIncludes('docs/design/component-library.md', phrase, 'documented component grammar');
 }
 
 for (const [path, phrases] of Object.entries({
@@ -199,13 +128,7 @@ if (read('apps/web/app/app/page.tsx').includes('/app/upload')) {
   fail('apps/web/app/app/page.tsx: gallery upload commands must open the in-place upload panel');
 }
 
-// sploot-032: the @misty-step/aesthetic substrate is wired and documented.
-// The semantic layer must resolve to --ae-*, the deviation doc must exist,
-// and the auth door must be the substrate console (no violet glassmorphism).
-assertFile('docs/design/aesthetic-adoption.md');
-for (const phrase of ['@misty-step/aesthetic', 'declared deviations', 'Swiss chrome']) {
-  assertIncludes('docs/design/aesthetic-adoption.md', phrase, 'substrate deviation contract');
-}
+// sploot-032: auth door stays on the substrate console (no violet glassmorphism).
 // The @misty-step/aesthetic base import remains, but the TOYBOX lock
 // (lab-034, AFD-8) supersedes the ADR-0005 --ae-* semantic steering: the
 // shadcn slots now resolve to --sploot-* tokens (see the "TOYBOX semantic

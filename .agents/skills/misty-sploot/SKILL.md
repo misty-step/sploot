@@ -6,7 +6,7 @@ argument-hint: "[save <url-or-path> | search <description>]"
 
 # Sploot MCP
 
-Invoke as `/sploot`. The `sploot-mcp` server (`apps/mcp`) exposes the published
+Invoke the `misty-sploot` skill. The `sploot-mcp` server (`apps/mcp`) exposes the published
 token-scoped contract in `apps/web/docs/PUBLIC_API.md`:
 
 - `sploot_search({ query })` finds images by plain-language visual description,

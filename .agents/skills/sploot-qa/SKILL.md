@@ -44,7 +44,7 @@ pnpm --filter server smoke --keep --binary build/sploot
 
 It allocates a private temporary library, registers actual accounts and indexes
 new media with pinned local CLIP. Host prerequisites and real extension
-acceptance are maintained in `.omp/commands/gate.md`. There is no Go QA-auth
+acceptance are maintained in `apps/web/docs/DEPLOYMENT.md#acceptance-gates`. There is no Go QA-auth
 door or mandatory Clerk/Neon/Blob/Replicate credential.
 
 The retained Next application remains separately available through
