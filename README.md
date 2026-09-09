@@ -1,21 +1,23 @@
-# Sploot 🏷️
+# Sploot
 
 > **A private library for your memes and screenshots.** Save from anywhere in
 > one click, then find any of them by typing what's in the picture.
 
 **[sploot.app](https://www.sploot.app)**
 
-Type words. Get the picture — a stranger goes from the landing page to a real
-semantic search in about half a minute (opt-in starter pile with precomputed
-CLIP vectors; see `docs/design/lab-053-stranger-aha.html`):
+The deployed predecessor's historical starter-pile walkthrough uses precomputed
+CLIP vectors (see `docs/design/lab-053-stranger-aha.html`); it is not the local
+runtime's startup or acceptance path:
 
 ![Stranger to aha: landing → starter pile → plain-words search locks the right meme](./docs/demo/stranger-to-aha.gif)
 
-This monorepo consolidates the Sploot web application, browser extension, and shared packages.
+This monorepo contains the self-contained local Go product, the unchanged
+deployed Next.js predecessor, the WXT Chrome extension, MCP server, and shared
+contracts.
 
 Sploot is a personal meme library with text→image semantic search: save a
-meme once (right-click, share sheet, or iOS shortcut) and later find it by
-describing what's in it — no tags, no folders, no remembering filenames.
+meme once and later find it by describing what's in it — no remembering
+filenames.
 
 ![Search results for "reaction face meme" returning four ranked matches with confidence scores](./docs/qa/evidence/2026-07-07-sploot-051-readme-frontdoor/app-search-in-action-1440x900.png)
 
@@ -24,39 +26,59 @@ verification. This selected screenshot remains a public documentation asset;
 its retained [source packet](./docs/qa/evidence/2026-07-07-sploot-051-readme-frontdoor/)
 records the original exercise.*
 
-## ✨ What it does today
+## What it does today
 
-- **Save from anywhere**: right-click → "Save to Sploot" (Chrome extension),
-  iOS share sheet / shortcut, or drag-and-drop upload on the web app.
-- **Find by description**: type what's in the image — text→image semantic
-  search (pgvector + CLIP embeddings), not keyword/tag matching.
-- **Bangers and piles**: favorite the ones you'll reuse; automatic piles
-  group your library by rough theme.
+- **Capture originals**: upload JPEG, PNG, WebP, GIF, MP4, or WebM from a desktop
+  or mobile browser; use the device-paired Chrome extension for right-click
+  capture and visible-tab screenshots.
+- **Find by description**: new captures and new queries use real local CPU
+  CLIP inference and SQLite vector retrieval, not a seeded-only search cache.
+- **Keep a private library**: real accounts, favorites, tags, shuffle, trash and
+  restore, original downloads, explicit revocable sharing, and owner ZIP export.
+- **Keep your data**: accounts, media, and indexing state survive shutdown and
+  restart; an operator backup/verify/restore tool covers the full local library.
 
-Sploot does not yet learn *your* taste or generate new memes.
-[VISION.md](./VISION.md) records optional product intent and economic constraints,
-not a delivery roadmap or evidence that those ambitions shipped.
+Sploot does not learn your taste or generate new memes. Automatic piles belong
+to the Next.js predecessor, not the local Go route surface.
 
-## 🧩 Browser extension
+[`apps/server`](./apps/server) owns local accounts, SQLite, private filesystem
+media, and pinned local inference. **Existing production and the old real library
+are unchanged and have not been migrated.** This is a separate persistent local
+product, not a Go-on-Postgres deployment or a production cutover. See
+[runtime operations and recovery](./apps/web/docs/DEPLOYMENT.md).
 
-Chrome extension (WXT) for one-click "Save to Sploot" from a right-click
-context menu. The candidate in `apps/extension/dist/` is **not submitted or
-published** in the Chrome Web Store; no live listing URL or receipt is claimed.
-Source: [`apps/extension`](./apps/extension).
+Responsive mobile-browser capture, playback, and download have been exercised;
+that is not physical iPhone or Apple Shortcuts acceptance. The
+[iPhone Shortcut procedure](./apps/web/docs/shortcuts/save-to-sploot.md) explains
+instance-specific unsigned source, reachable HTTPS origins, and the separate
+Apple signing/device requirements. There is no verified install link.
+[VISION.md](./VISION.md) is optional product intent, not a delivery roadmap.
 
-## 🛠️ For developers
+## Browser extension
 
-This is a Turborepo/pnpm monorepo: web app, browser extension, and shared
-packages.
+The WXT extension pairs with the selected self-contained Sploot instance using
+a revocable device credential. Passwords stay on the instance's browser sign-in
+page; the extension does not use Clerk or inherit the browser's session.
+See the [run/load procedure](./apps/extension/README.md).
+
+An unpacked Chromium build and local pairing/capture proof are not a Chrome Web
+Store release. No current submission, live listing, or publication receipt is
+claimed.
+
+## For developers
+
+This is a Turborepo/pnpm workspace with a persistent Go runtime and retained
+TypeScript clients and predecessor.
 
 | Workspace | Path | Description |
 |-----------|------|-------------|
-| **Web App** | [`apps/web`](./apps/web) | Next.js 16 App Router on DigitalOcean, Vercel Blob, pgvector, Clerk Auth. |
+| **Go Server** | [`apps/server`](./apps/server) | Persistent Go HTTP + HTML/HTMX, local accounts, SQLite/sqlite-vec, private media, CPU CLIP. |
+| **Web Predecessor** | [`apps/web`](./apps/web) | Unchanged deployed Next.js app; its Prisma migrations, pgvector gates, and deployment remain separate. |
 | **Extension** | [`apps/extension`](./apps/extension) | Chrome Extension (WXT) for one-click saving. |
 | **MCP Server** | [`apps/mcp`](./apps/mcp) | `sploot-mcp` — save + search as agent tools over the [published API](./apps/web/docs/PUBLIC_API.md). |
 | **Common** | [`packages/common`](./packages/common) | Shared constants, types, and utilities. |
 
-## 🤖 Agent access
+## Agent access
 
 Agents (and the operator's agent fleet) save and search Sploot without a
 browser: the **sploot MCP server** (`apps/mcp`) exposes `sploot_search` and
@@ -64,8 +86,10 @@ browser: the **sploot MCP server** (`apps/mcp`) exposes `sploot_search` and
 **`misty-sploot`** skill teaches the verbs. See
 [`apps/web/docs/PUBLIC_API.md`](./apps/web/docs/PUBLIC_API.md) for the
 published contract and [`docs/five-faces.md`](./docs/five-faces.md) for
-Sploot's face-by-face status (UI/API/MCP/skill shipped; CLI explicitly
-waived, rationale in that doc).
+Sploot's surface boundaries. Local clients must target the selected instance
+origin; personal `splt_` tokens permit save/search, not private media or account
+management. The operator `sploot` binary is not a consumer save/search CLI
+(that face remains waived).
 
 ![Sploot Architecture](https://img.shields.io/badge/Architecture-Monorepo-black?style=flat-square&logo=turborepo)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)
@@ -75,51 +99,99 @@ waived, rationale in that doc).
 ### Quick Start
 
 #### Prerequisites
-- Node.js 20+
-- pnpm 10+ (`npm i -g pnpm`)
 
-#### Installation
+- Node.js 22+ and the pinned pnpm 10.22.0 (via Corepack).
+- Go 1.26+ as declared in `apps/server/go.mod`, with CGO, a C compiler, and
+  SQLite development headers (`sqlite` on Arch; `libsqlite3-dev` on Debian/Ubuntu).
+- FFmpeg and ffprobe on `PATH`.
+- glibc Linux or macOS on amd64/arm64 for the pinned native ONNX Runtime.
+  Alpine/musl and Windows are not supported by the current model bundle.
+- Internet access for the first model/runtime download; no SaaS credentials,
+  GPU, external inference daemon, Docker, Postgres, or Prisma setup is required
+  for the host runtime. A [container alternative](./apps/web/docs/DEPLOYMENT.md#container-runtime)
+  supplies the Go build and media prerequisites.
 
-```bash
-pnpm install
-```
+#### Start a real local library
 
-#### Local loop, no vendor credentials (recommended first run)
+From the repository root:
 
-One command from clone to a signed-in, seeded, searchable library — no
-Clerk/Neon/Blob/Replicate keys. Requires Docker for the local pgvector
-Postgres:
-
-```bash
-pnpm dev:local
-```
-
-It provisions the database, applies migrations, seeds 24 browsable assets,
-boots the web app with qa-local auth (see `apps/web/docs/AUTH.md`), and runs a
-doctor pass that writes an evidence packet (health, signed-in `/app`, seeded
-grid, search response) to `.sploot-local/doctor/`. When it finishes, open
-`http://localhost:3001/api/qa-auth/login` to land signed-in on `/app`.
-
-Teardown removes the database container and `.sploot-local/`, including default
-QA packets. Retain needed output first (see [QA ownership](./docs/qa/README.md)):
-
-```bash
-pnpm dev:local:down
-```
-
-#### Development against real services
-
-Run all apps simultaneously (Web: localhost:3001, Extension: hot-reload) —
-requires `apps/web/.env.local` with real vendor credentials
-(`apps/web/.env.example`):
-
-```bash
+```sh
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Or run specific apps:
+`pnpm dev:local` is the same persistent launcher. Wait for **Sploot ready**, open
+`http://127.0.0.1:3001`, and register a real account at `/sign-up` (passwords are
+12–128 characters). No QA login, pre-created user, seeded media, or provider key
+is required. Upload something new and search for it after indexing becomes ready.
 
-```bash
+The launcher stores the library in **`.sploot-local/library` at the repository
+root**, including `library.sqlite`, private `media/`, and `signing.key`.
+**Ctrl-C/SIGTERM stops the service and never deletes accounts or media.** Run the
+same command to reopen that library. Model/runtime artifacts live separately in
+the operating-system cache under `sploot/models`; the manifest in
+[`bundle.json`](./apps/server/internal/inference/bundle.json) pins their sizes,
+SHA-256 hashes, 512-D CLIP projections, and CPU runtime. Missing artifacts download
+automatically on first startup; verified artifacts are reused offline.
+The library opens while preparation runs. If inference cannot initialize, saves,
+browsing, downloads and export remain available; search reports its actual
+unavailable state. Repair the model installation and restart to resume indexing.
+
+Choose a different persistent library or port explicitly:
+
+```sh
+pnpm dev:local --data-dir "$HOME/.local/share/sploot/library" --port 3002
+```
+
+Relative command-line paths are resolved by the server process, whose pnpm
+launcher runs in `apps/server`; use absolute paths for overrides.
+Storage admission is instance-wide, not a per-account plan: the default has no
+artificial capacity ceiling and preserves 1 GiB of free disk. Operators can set
+`SPLOOT_STORAGE_LIMIT_BYTES` and `SPLOOT_STORAGE_RESERVE_BYTES`. Settings shows
+your retained bytes and lets you explicitly delete unwanted trash permanently;
+ordinary trash still occupies disk.
+
+#### Prepare, inspect, and build
+
+In a second terminal while the app runs:
+
+```sh
+pnpm --filter server run doctor
+pnpm --filter server run doctor --url http://127.0.0.1:3002
+```
+
+Doctor reads the selected running instance's readiness endpoint; it does not
+create an account, perform a save, or prove retrieval quality.
+
+Preparation is optional because startup does it automatically. To prepare the
+default cache before starting, or build the two operator binaries:
+
+```sh
+pnpm --filter server models:prepare
+pnpm --filter server build
+apps/server/build/sploot serve --data-dir "$PWD/.sploot-local/library"
+```
+
+Stop the earlier instance before starting the binary on the same port. The
+build emits `apps/server/build/sploot` and `apps/server/build/library-backup`.
+The binary embeds the UI and initializes/migrates its SQLite schema itself.
+Use [runtime configuration and backup/verify/restore](./apps/web/docs/DEPLOYMENT.md#self-contained-go-runtime)
+for private-directory requirements, custom model caches, container persistence,
+and recovery credential invalidation.
+
+The finite `pnpm --filter server smoke` command owns a separate temporary
+acceptance library and exercises the real app in Chromium; it does not reset
+the ordinary library. Go integration tests use isolated SQLite state, not a
+`DATABASE_URL`. The retained Next.js database paths still require their own
+pgvector evidence and unchanged gates.
+
+#### Other surfaces
+
+Next.js development and extension development remain separate commands. Next.js
+still needs its existing service configuration; it is not the default local
+product. Do not bind it and Go to the same port:
+
+```sh
 pnpm dev:web
 pnpm dev:extension
 ```
@@ -137,10 +209,11 @@ We use **Turborepo** to orchestrate tasks.
 ### Architecture
 
 - **Monorepo Tooling**: Turborepo + pnpm workspaces.
-- **Shared Code**: `@sploot/common` is consumed by both `web` and `extension`.
+- **Shared Code**: `@sploot/common` owns upload/MIME/API contracts; Go generates its bounds from common and takes model identity from its local inference bundle.
 - **CI/CD**: GitHub Actions (Lint, Test, Type-check).
 - **Deployment**: 
-  - Web: Automatic via DigitalOcean App Platform.
+  - Local Go: persistent data directory and separate reusable model cache.
+  - Deployed Next.js predecessor: DigitalOcean App Platform, unchanged; data migration and production cutover are separate, unperformed work.
   - Extension: Manual submission to Chrome Web Store.
 - **Details**: See [ARCHITECTURE.md](./ARCHITECTURE.md).
 
@@ -148,6 +221,7 @@ We use **Turborepo** to orchestrate tasks.
 
 Each app has its own env setup:
 - Web app: see [`apps/web/README.md`](./apps/web/README.md)
+- Self-contained Go: [runtime, deployment, and recovery](./apps/web/docs/DEPLOYMENT.md)
 - Extension: see [`apps/extension/README.md`](./apps/extension/README.md)
 
 ### Documentation

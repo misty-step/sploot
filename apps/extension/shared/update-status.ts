@@ -1,5 +1,4 @@
 import { IS_DEV_BUILD } from './build-mode';
-import { E2E_AUTH_MODE } from './env';
 
 export const UPDATE_STATUS_STORAGE_KEY = 'sploot:update-status';
 export const UPDATE_MESSAGES = {
@@ -43,7 +42,7 @@ export function isNewerVersion(candidate: string, installed: string): boolean {
 }
 
 async function installedVersion(): Promise<string | null> {
-  if (IS_DEV_BUILD || E2E_AUTH_MODE) {
+  if (IS_DEV_BUILD) {
     try {
       const stored = await chrome.storage.local.get(TEST_INSTALLED_VERSION_KEY);
       const testVersion = normalizeVersion(stored[TEST_INSTALLED_VERSION_KEY]);

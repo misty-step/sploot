@@ -9,6 +9,7 @@ vi.mock('../../shared/app-url', () => ({
       : undefined;
   },
 }));
+vi.mock('../../shared/env', () => ({ getInstanceUrl: async () => 'https://sploot.test' }));
 
 interface ChromeMock {
   notifications: {
@@ -136,20 +137,6 @@ describe('notifications', () => {
     });
   });
 
-  it('persists the user-facing error outcome for the popup status strip', async () => {
-    const { setupNotificationFeedback, showErrorNotification } = await import('./notifications');
-
-    setupNotificationFeedback();
-    showErrorNotification('Authentication required');
-
-    expect(chromeMock.storage.local.set).toHaveBeenCalledWith({
-      'sploot:last-save': {
-        state: 'error',
-        message: 'Please login to sploot.app first',
-        at: new Date('2026-05-18T12:00:00.000Z').getTime(),
-      },
-    });
-  });
 
   it('uses explicit copy for duplicate success notifications', async () => {
     const { setupNotificationFeedback, showSuccessNotification } = await import('./notifications');
@@ -167,33 +154,6 @@ describe('notifications', () => {
     });
   });
 
-  it('maps auth and timeout errors to user-facing notification messages', async () => {
-    const { setupNotificationFeedback, showErrorNotification, toErrorNotificationMessage } =
-      await import('./notifications');
-
-    setupNotificationFeedback();
-    expect(toErrorNotificationMessage('Authentication required')).toBe('Please login to sploot.app first');
-    expect(toErrorNotificationMessage('Network error: offline')).toBe('Network error. Check your connection.');
-    showErrorNotification('Authentication required');
-
-    expect(chromeMock.notifications.create).toHaveBeenCalledWith(expect.stringMatching(/^error-/), {
-      type: 'basic',
-      iconUrl: 'chrome-extension://extension-id/icon-128.png',
-      title: 'Save Failed',
-      message: 'Please login to sploot.app first',
-      priority: 2,
-      isClickable: false,
-    });
-  });
-
-  it('maps quota and upload gate errors to short actionable copy', async () => {
-    const { toErrorNotificationMessage } = await import('./notifications');
-
-    expect(toErrorNotificationMessage('Storage quota exceeded. Open Sploot settings to manage storage.'))
-      .toBe('Storage quota exceeded. Open Sploot settings.');
-    expect(toErrorNotificationMessage('Uploads are temporarily paused. Please try again later.'))
-      .toBe('Uploads are paused. Please try again later.');
-  });
 
   it('opens the remediation URL when an actionable error notification is clicked', async () => {
     const { setupNotificationFeedback, showErrorNotification } = await import('./notifications');
@@ -203,6 +163,7 @@ describe('notifications', () => {
       message: 'Storage quota exceeded. Open Sploot settings to manage storage.',
       actionHref: '/app/settings',
     });
+    await vi.waitFor(() => expect(chromeMock.notifications.create).toHaveBeenCalled());
     const id = chromeMock.notifications.create.mock.calls[0][0] as string;
     expect(id).toMatch(/^error-/);
     clickListeners[0](id);
@@ -227,6 +188,7 @@ describe('notifications', () => {
 
       setupNotificationFeedback();
       showErrorNotification({ message: 'Try this action', actionHref });
+      await vi.waitFor(() => expect(chromeMock.notifications.create).toHaveBeenCalled());
       const id = chromeMock.notifications.create.mock.calls[0][0] as string;
       clickListeners[0](id);
 

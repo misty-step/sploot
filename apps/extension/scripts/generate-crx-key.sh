@@ -61,11 +61,8 @@ else
 # Chrome Extension CRX ID (auto-generated)
 CRX_PUBLIC_KEY="$PUBLIC_KEY"
 
-# Clerk Configuration (local/test)
-VITE_CLERK_PUBLISHABLE_KEY=
-CLERK_SECRET_KEY=
-# Optional API override
-# VITE_API_BASE_URL=http://localhost:3001
+# Optional default instance; editable in the extension popup.
+# VITE_API_BASE_URL=http://127.0.0.1:3001
 EOF
   echo "✓ Created $ENV_FILE with CRX_PUBLIC_KEY"
 fi
@@ -74,5 +71,5 @@ echo ""
 echo "📝 Next Steps:"
 echo "1. Extension ID will remain stable across builds"
 echo "2. Run 'pnpm build' for local/test or 'pnpm build:prod' for chrome-store builds"
-echo "3. Add extension ID to Clerk: pnpm setup:clerk"
+echo "3. Load the unpacked extension and connect it to your instance from the popup"
 echo ""

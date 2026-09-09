@@ -25,10 +25,11 @@
     ]
   },
   "scripts": {
-    "dev": "PORT=${PORT:-3001} VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:3001} turbo run dev",
+    "dev": "pnpm dev:local",
     "dev:web": "turbo run dev --filter=web",
-    "dev:local": "pnpm --filter web dev:local",
-    "dev:local:down": "pnpm --filter web dev:local:down",
+    "dev:local": "pnpm --filter server dev:local",
+    "dev:server": "pnpm --filter server dev",
+    "build:server": "pnpm --filter server build",
     "dev:extension": "turbo run dev --filter=extension",
     "build": "turbo run build",
     "lint": "pnpm stripe:sandbox:check && pnpm provider:check && pnpm provider:test && turbo run lint",
@@ -37,6 +38,7 @@
     "type-check": "turbo run type-check",
     "prisma:migration-prefixes": "node scripts/check-prisma-migration-prefixes.mjs",
     "prisma:migration-prefixes:test": "node --test scripts/check-prisma-migration-prefixes.test.mjs",
+    "test:local": "pnpm --filter server smoke",
     "test": "turbo run test",
     "economics": "node economics/cost-model.mjs",
     "economics:freshness": "node economics/cost-model.mjs --check-freshness",

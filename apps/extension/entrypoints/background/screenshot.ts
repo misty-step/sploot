@@ -10,6 +10,7 @@
 
 import { CAPTURE_MESSAGES } from '../../shared/capture-messages';
 import { UPLOAD, prepareImageForUpload } from '@sploot/common';
+import { readCaptureContext } from './auth-manager';
 import { enqueueCapturedSave } from './context-menu-save-queue';
 import { showErrorNotification } from './notifications';
 
@@ -74,9 +75,10 @@ export function setupScreenshotCapture(): void {
 export function captureAndSaveVisibleTab() {
   return (async () => {
     try {
+      const context = await withDeadline(readCaptureContext());
       const prepared = await captureVisibleTabImage();
       try {
-        await enqueueCapturedSave(prepared.blob, prepared.filename, `captured://${prepared.filename}`);
+        await enqueueCapturedSave(prepared.blob, prepared.filename, context, `captured://${prepared.filename}`);
       } catch (error) {
         throw new ScreenshotFailure(
           error instanceof Error ? error.message : 'Screenshot queue persistence failed.',

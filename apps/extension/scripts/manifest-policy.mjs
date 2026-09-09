@@ -4,15 +4,11 @@ export const REQUIRED_PERMISSIONS = [
   'activeTab',
   'contextMenus',
   'notifications',
-  'cookies',
   'alarms',
 ];
 
 export const REQUIRED_PRODUCTION_HOSTS = [
   '*://*/*',
-  'https://www.sploot.app/*',
-  'https://sploot.app/*',
-  'https://clerk.sploot.app/*',
 ];
 
 /**
@@ -82,7 +78,7 @@ export function validateManifest(manifest, { production = false } = {}) {
     }
 
     for (const host of hosts) {
-      if (host.includes('localhost') || host.includes('clerk.accounts.dev')) {
+      if (host.includes('localhost') || host.includes('127.0.0.1')) {
         errors.push(`production manifest contains development host ${host}`);
       }
       if (!REQUIRED_PRODUCTION_HOSTS.includes(host)) {

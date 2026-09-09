@@ -14,10 +14,16 @@ const requiredMessages = [
   'sploot:update-status:request-check',
 ];
 const forbidden = [
+  'Sploot Debug: Dump Auth State',
+  'Debug Auth',
   'sploot:update-status:test-set-available',
   'sploot:update-status:test-set-installed',
   'sploot:e2e-auth-authority',
   'VITE_E2E_AUTH_MODE',
+  'sploot:e2e:context-menu-save',
+  '@clerk/',
+  'clerk.browser.js',
+  '__clerk_db_jwt',
 ];
 const files = [];
 async function walk(directory) {
@@ -35,7 +41,7 @@ const missingUi = requiredUi.filter(value => !popupBundle.includes(value));
 const missingMessages = requiredMessages.filter(value => !bundle.includes(value));
 const missing = [...missingUi, ...missingMessages];
 const leaked = forbidden.filter(value => bundle.includes(value));
-if (/pk_test_[A-Za-z0-9_-]{20,}/.test(bundle)) leaked.push('pk_test_actual');
+if (/pk_(?:test|live)_[A-Za-z0-9_-]{20,}/.test(bundle)) leaked.push('hosted_publishable_key');
 if (missing.length || leaked.length) {
   console.error(JSON.stringify({ root, missing, leaked }, null, 2));
   process.exit(1);

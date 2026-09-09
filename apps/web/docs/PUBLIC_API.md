@@ -1,62 +1,107 @@
 # Sploot Public API (Personal API Token)
 
-This is the **published, token-scoped external API contract** — the surface
-Sploot supports for programmatic clients that are not a browser holding a
-Clerk session: agents, automations, the iPhone "Save to Sploot" shortcut, and
-the [sploot MCP server](../../mcp/README.md). If you are building an
-integration against Sploot, start here, not `API.md` (which documents the
-full session-authenticated product surface consumed by the web app and
-extension).
+This is the **published, personal-token-scoped save/search contract** for agents,
+automations, the iPhone Shortcut source, and the
+[Sploot MCP server](../../mcp/README.md). `@sploot/common` owns the shared
+upload/MIME/response types. The full route and credential-scope inventory is in
+[API.md](./API.md).
+
+The self-contained local Go product and deployed Next.js predecessor are
+separate instances. Local Go owns password accounts, SQLite/sqlite-vec, private
+media, and CPU CLIP; production still uses its existing Clerk/Postgres/Blob/
+Replicate stack. Running locally does not migrate the old library, and a token
+from one instance does not authenticate another.
 
 ## Auth: personal API token
 
-Every call in this doc authenticates with a **personal API token** —
-`Authorization: Bearer splt_…`. Mint one from a signed-in session:
-**Settings → Upload tokens** in the web app, or `POST /api/upload-tokens`
-(session-authenticated; see `API.md#personal-upload-tokens`). The plaintext
-token is shown exactly once at mint time; only its hash is ever stored.
+Every save/search call in this contract authenticates with a **personal API token** —
+`Authorization: Bearer splt_…`. Mint one from a signed-in **browser session on
+the selected instance**: **Settings → Personal access tokens** in Go, or
+**Settings → Upload tokens** in the predecessor. `POST /api/upload-tokens` is
+browser-session-only; see [token management](./API.md#personal-upload-tokens).
+The plaintext token is shown once at mint time; only its hash is stored.
 
 - Format: `splt_` + 32 random bytes, base64url-encoded.
 - Hashed at rest (`sha256`); revoked and unknown tokens are indistinguishable
   (no timing or error-message tell).
-- Not a session cookie: it has no CSRF exposure and never expires on its own —
-  revoke it from Settings when it's no longer needed.
+- Not a browser/device session: it has no cookie-CSRF exposure and does not
+  expire on a timer. Revoke it in Settings when no longer needed.
+- In local Go, a password change revokes personal tokens, and portable
+  backup/restore removes them from the restored copy. Sign in with the preserved
+  password and mint a new token after restore; source credentials are untouched.
 
 ### Scope: what a token can call today
 
-Scope is enforced **per route by an explicit opt-in policy**
-(`allowUploadToken`), not by a scope field baked into the token — every route
-either accepts a token or it doesn't, and the default is closed. As of this
-contract, three routes opt in, covering the product's two core agent-facing
-verbs, **save** and **search**:
+Scope is enforced by explicit per-route opt-in, not by a caller-provided scope
+or user ID. Exactly three routes accept a personal token, covering the core
+verbs **save** and **search**:
 
 | Verb | Route | Notes |
 |---|---|---|
 | Save (bytes) | `POST /api/upload` | multipart form upload |
-| Save (URL) | `POST /api/upload/url` | server fetches and ingests a remote image |
+| Save (URL) | `POST /api/upload/url` | server fetches and ingests a direct media URL |
 | Search | `POST /api/search` | semantic text→image search |
 
-Every other route (`/api/assets`, `/api/tags`, `/api/stats`, token
-management, …) is Clerk/qa-local session-only and returns the stable
-`401 {"error":"Unauthorized"}` for a token, by design — a personal API token
-cannot read your full library, delete anything, or manage other tokens. See
-`AUTH.md` for the auth-door architecture this is built on.
+Every other protected route rejects a personal-token-only request. A personal
+token cannot list the full library, fetch private local media, delete assets,
+export, pair devices, or manage credentials. Search necessarily returns matching
+asset metadata; it does not grant a new media-download capability.
 
-New account enrollment is a separate server-owned boundary. Signed-out public
-surfaces and token-scoped save/search calls never mint a new account or token;
-existing users can continue using their already-issued personal token. When
-the boundary is paused or unavailable, save/search return the documented
-`403 enrollment_closed` or `503 enrollment_unavailable` response. A configured
-runtime gate can independently return `503 uploads_disabled` for save or
-`503 embeddings_disabled` for a search that needs a new embedding; those are
-operational pauses, not enrollment/configuration failures.
+Local Go's paired `spld_` device token is a **different, broader credential**.
+Extensions obtain it only through browser-approved device pairing, not by
+minting a personal token or borrowing browser cookies. Its scope and the
+predecessor's Clerk/session boundary are documented separately in
+[API.md](./API.md#authentication). Invalid/revoked personal tokens return `401`;
+Go includes `code: "unauthorized"` alongside `error: "Unauthorized"`.
+
+New account admission is separate from save/search. On local Go, register or
+sign in through the selected instance's browser UI; a closed registration policy
+does not revoke existing users or tokens. Only the predecessor uses the
+Clerk/enrollment errors `enrollment_closed`, `enrollment_unavailable`, and
+`enrollment_identity_conflict` described below. Neither token clients nor device
+clients create accounts or bypass registration.
+
+Both runtimes can independently pause saves with `SPLOOT_UPLOADS_ENABLED=false`
+(`503 uploads_disabled`) or inference with `SPLOOT_EMBEDDINGS_ENABLED=false`.
+Local Go rejects search with `503 embeddings_disabled` while inference is
+disabled even if a query vector was cached; it never disguises a disabled engine
+with seeded retrieval.
 
 ## Base URL
 
+```text
+Self-contained local Go: http://127.0.0.1:3001/api
+Deployed Next.js predecessor: https://www.sploot.app/api
 ```
-Production: https://www.sploot.app/api
-Development: http://localhost:3001/api
+
+Use the exact configured origin for the intended library. Local Go defaults to
+`http://127.0.0.1:3001`; custom off-loopback instances require HTTPS. For the
+recipes below, set the origin without `/api`, and supply `SPLOOT_API_TOKEN`
+from your private client configuration, not a checked-in file:
+
+```sh
+SPLOOT_ORIGIN=http://127.0.0.1:3001
 ```
+
+Production clients deliberately choose `https://www.sploot.app` instead.
+[Startup and recovery](./DEPLOYMENT.md#self-contained-go-runtime) owns the local
+account/data/cache setup.
+
+### Private media references
+
+The `blobUrl` field name is retained for contract compatibility. In local Go,
+its value is `/media/{assetID}` and a thumbnail reference is
+`/media/{assetID}?thumbnail=1`, **relative to the selected instance**, not a
+public Blob URL. Resolve relative references only against that instance.
+
+`GET`/`HEAD /media/{assetID}` requires the owner's browser cookie or paired
+device bearer; a personal `splt_` token cannot fetch those bytes. Extensions
+must use a same-instance authenticated fetch with cookies omitted rather than
+an unauthenticated image URL. Never append a credential to a media URL or send
+it to an arbitrary returned host. A user can open the library in their signed-in
+browser; public `/s/{slug}` sharing is a separate explicit owner operation.
+Predecessor results may still contain absolute Blob delivery URLs; that does not
+make local relative media public.
 
 ## Save — upload bytes
 
@@ -69,14 +114,13 @@ Accepted media types: JPEG, PNG, WebP, GIF, MP4, WebM.
 - `file` (required) — the image/video bytes.
 - `tags` (optional) — JSON array of tag name strings.
 
-Optional `Idempotency-Key` header: use the same 1–128 character key for every
-retry of one queued file. A completed key replays the original result; a live
-concurrent request returns `409` with `code: "UPLOAD_IN_PROGRESS"`. The server
-keeps this receipt durably so a second tab cannot re-run the vendor-costing
-ingestion pipeline. The browser's durable claim lease is two minutes, longer
-than its ten-second network timeout. Receipts are retained for seven days and
-then cleaned up only after that replay window. The key fences request replay;
-checksum uniqueness remains the server-side asset deduplication oracle.
+Optional `Idempotency-Key` header: use the same 1–128 character key for each
+retry of one captured original (letters, digits, `.`, `_`, `:`, or `-`). A
+completed key replays its original receipt; a live concurrent request returns
+`409` with `code: "UPLOAD_IN_PROGRESS"` and a retry hint. Keep the original bytes
+and key rather than refetching a mutable source after an uncertain response.
+The server keeps durable receipts for seven days; the key fences replay and
+owner/content-checksum uniqueness remains the deduplication authority.
 
 **`201` (created):**
 
@@ -86,7 +130,7 @@ checksum uniqueness remains the server-side asset deduplication oracle.
   "isDuplicate": false,
   "asset": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
-    "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+    "blobUrl": "/media/550e8400-e29b-41d4-a716-446655440000",
     "filename": "funny-meme.jpg",
     "mimeType": "image/jpeg",
     "size": 2048576,
@@ -102,15 +146,17 @@ checksum uniqueness remains the server-side asset deduplication oracle.
 `needsEmbedding: false`.
 
 **Errors:** `400` missing/invalid file · `401` bad or missing token ·
-`403 {"code":"quota_exceeded"}` storage quota exceeded or
-`{"code":"enrollment_closed"}` new-account admission paused · `503
-{"code":"enrollment_unavailable"}` enrollment/configuration or database boundary unavailable · `413` file too
-large · `429` rate limited · `503 {"code":"uploads_disabled"}` the independent
-upload runtime gate is paused.
+`403 {"code":"quota_exceeded"}` storage quota exceeded · `413` file too large ·
+`409 {"code":"UPLOAD_IN_PROGRESS"}` retained work still processing ·
+`429` busy/rate-limited operation · `503 {"code":"uploads_disabled"}` saves
+paused or another required operation unavailable.
+
+Predecessor-only admission errors additionally include `403 enrollment_closed`
+and `503 enrollment_unavailable`; these are not local Go registration errors.
 
 ```bash
-curl -X POST https://www.sploot.app/api/upload \
-  -H "Authorization: Bearer splt_…" \
+curl -X POST "$SPLOOT_ORIGIN/api/upload" \
+  -H "Authorization: Bearer $SPLOOT_API_TOKEN" \
   -F "file=@meme.png"
 ```
 
@@ -118,8 +164,11 @@ curl -X POST https://www.sploot.app/api/upload \
 
 `POST /api/upload/url` · `application/json`
 
-Fetches a remote image server-side and ingests it through the same
-dedupe/quota pipeline as bytes upload.
+Fetches direct media server-side through the same shared MIME/size,
+deduplication, quota, and receipt boundary as byte upload. This is not arbitrary
+page scraping or streaming-player extraction. Private/loopback destinations and
+unsafe redirects are rejected; the ordinary local product has no general SSRF
+bypass for URLs on the operator's LAN.
 
 **Request:**
 
@@ -130,15 +179,13 @@ dedupe/quota pipeline as bytes upload.
 **Response contract:** identical `201`/`409` asset shape as bytes upload above.
 
 **Errors:** `400` missing/invalid/private URL · `401` bad or missing token ·
-`422` remote fetch failed or was not an image · `403` quota exceeded or
-`{"code":"enrollment_closed"}` new-account admission paused · `503
-{"code":"enrollment_unavailable"}` enrollment/configuration or database boundary
-unavailable · `503 {"code":"uploads_disabled"}` the independent upload
-runtime gate is paused.
+`422` remote fetch failed or unsupported media · `403 quota_exceeded` ·
+`409 UPLOAD_IN_PROGRESS` · `503 uploads_disabled` or another required operation
+unavailable. Predecessor-only enrollment errors are the same as byte upload.
 
 ```bash
-curl -X POST https://www.sploot.app/api/upload/url \
-  -H "Authorization: Bearer splt_…" \
+curl -X POST "$SPLOOT_ORIGIN/api/upload/url" \
+  -H "Authorization: Bearer $SPLOOT_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com/meme.png"}'
 ```
@@ -147,9 +194,14 @@ curl -X POST https://www.sploot.app/api/upload/url \
 
 `POST /api/search` · `application/json`
 
-Semantic text→image search over the token owner's library (CLIP/SigLIP
-embeddings, pgvector cosine similarity). Same route and response contract the
-web app itself calls.
+Semantic text→image search over the token owner's library. Local Go uses the
+SHA-pinned quantized CLIP text/vision encoders and normalized 512-D projections
+in [`bundle.json`](../../server/internal/inference/bundle.json), executed by
+ONNX Runtime on the CPU with sqlite-vec retrieval. New media and new queries
+are computed locally; the reusable model cache is not a seeded-vector library.
+The predecessor retains its existing Replicate CLIP/pgvector implementation.
+Both serve the published request/result shape, without promising numerically
+identical rankings from different model artifacts.
 
 **Request:**
 
@@ -164,10 +216,8 @@ web app itself calls.
   beyond the legacy offset window.
 - `offset` (number, optional, default 0, max 500) — retained for backwards
   compatibility on the first 500 results; do not combine it with `cursor`.
-- `threshold` (number, optional, 0–1, default 0.12; see
-  `apps/web/lib/search-config.ts`) — results below this
-  similarity are not returned; a real miss is an empty `results` array, never
-  low-similarity padding.
+- `threshold` (number, optional, 0–1, default 0.12) — results below it are not
+  returned; a real miss is an empty `results` array, never low-similarity padding.
 - `favoriteOnly` (boolean, optional, default `false`) — restrict results to
   favorited assets.
 - `tagId` (string, optional) — restrict results to assets carrying this tag.
@@ -175,9 +225,11 @@ web app itself calls.
 Semantic results are always ordered by descending vector relevance, with asset
 id as the deterministic tie-breaker. The gallery shuffle seed is not part of
 this endpoint. Each opaque cursor is cryptographically signed by the server
- and binds the authenticated token owner, embedding-model revision, normalized
- query, threshold, relevance order, favorite/tag filters, and page size; a
-tampered, cross-user, or cross-context replay returns `400 {"error":"Search cursor does not match search context"}` before vector or database work.
+and binds the authenticated token owner, embedding-model revision, normalized
+query, threshold, relevance order, favorite/tag filters, and page size.
+A tampered, cross-owner, or cross-context cursor returns `400`; local Go uses
+`code: "invalid_search_cursor"`. Cursors are opaque and not portable between
+instances or model revisions.
 
 **`200`:**
 
@@ -186,7 +238,7 @@ tampered, cross-user, or cross-context replay returns `400 {"error":"Search curs
   "results": [
     {
       "id": "550e8400-e29b-41d4-a716-446655440000",
-      "blobUrl": "https://blob.vercel-storage.com/abc123/funny-meme.jpg",
+      "blobUrl": "/media/550e8400-e29b-41d4-a716-446655440000",
       "filename": "funny-meme.jpg",
       "mime": "image/jpeg",
       "favorite": false,
@@ -207,30 +259,37 @@ tampered, cross-user, or cross-context replay returns `400 {"error":"Search curs
 When `hasMore` is true, the response also includes `nextCursor`; send it as
 `cursor` on the next request.
 
-**Errors:** `400` missing/invalid/too-long query · `401` bad or missing token ·
-`403 {"code":"enrollment_closed"}` admission paused ·
-`409 {"code":"enrollment_identity_conflict"}` identity repair required ·
-`503 {"code":"enrollment_unavailable"}` admission boundary unavailable or
-embedding admission limiter unavailable · `503 {"code":"embeddings_disabled"}`
-the embedding runtime gate is paused. A provider configuration failure without
-a stable code remains a generic 503.
+**Common errors:** `400` missing/invalid/too-long query or invalid cursor ·
+`401` bad or missing token · `503 embeddings_disabled` inference paused.
+Local Go also returns `429 embedding_busy` with `Retry-After` when local compute
+is occupied, or `503 embedding_inference_failed` when a real query cannot be
+encoded. Neither is a successful empty result.
+
+**Predecessor-only errors:** `403 enrollment_closed` admission paused ·
+`409 enrollment_identity_conflict` identity repair required ·
+`503 enrollment_unavailable` admission/limiter unavailable. A predecessor
+provider-configuration failure without a stable code remains a generic `503`.
 
 ```bash
-curl -X POST https://www.sploot.app/api/search \
-  -H "Authorization: Bearer splt_…" \
+curl -X POST "$SPLOOT_ORIGIN/api/search" \
+  -H "Authorization: Bearer $SPLOOT_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"query":"distracted boyfriend"}'
 ```
 
 ## Rate limits
 
-There is no per-request rate limiter on `/api/upload`, `/api/upload/url`, or
-`/api/search` today — an accepted residual documented in
-[ADR-006](./adr/006-personal-upload-tokens.md#consequences). A leaked or
-abused token is bounded by storage quota (uploads) and revocation from
-Settings, not a request-rate throttle.
+There is no general per-request rate throttle on these three published routes.
+Storage quota and revocation remain important controls for leaked/abused tokens;
+the predecessor's accepted residual is documented in
+[ADR-006](./adr/006-personal-upload-tokens.md#consequences). Local Go also bounds
+local inference concurrency and can return `429 embedding_busy`; that is not a
+claim of a per-minute request quota. Account/device-protocol rate limits belong
+to their separate auth routes.
 
-Full error-code table: `API.md#error-codes`.
+Treat `Retry-After`, failed receipts, quota, and inference errors honestly rather
+than presenting them as saved/search-success states. See the full
+[error reference](./API.md#error-codes) and [credential scopes](./API.md#authentication).
 
 ## Changelog
 

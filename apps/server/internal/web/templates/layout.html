@@ -1,0 +1,153 @@
+{{define "head"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#e9f3ff">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="same-origin">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="htmx-config" content='{"historyCacheSize":0,"selfRequestsOnly":true,"includeIndicatorStyles":false,"scrollIntoViewOnBoost":false}'>
+  <title>{{.Title}}</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/vendor/htmx.min.js" defer></script>
+  <script src="/static/upload-store.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body hx-history="false">
+  <a class="skip-link" href="#main">Skip to your memes</a>
+  {{template "icons"}}
+{{end}}
+
+{{define "shell-open"}}
+<div id="shell" class="app-shell" hx-history-elt>
+  <div id="page-state" hidden data-page="{{.Page}}" data-user-id="{{if .Principal}}{{.Principal.UserID}}{{end}}" data-account-email="{{.AccountEmail}}" data-seed="{{.Seed}}" data-favorite="{{.FavoriteOnly}}" data-return-url="{{.ReturnURL}}" data-uploads-enabled="{{.UploadsEnabled}}"></div>
+  {{template "chrome" .}}
+{{end}}
+
+{{define "chrome"}}
+<header class="chrome">
+  <a class="wordmark" href="{{browseURL . false}}" aria-label="Sploot, all memes" {{if .Principal}}data-nav hx-boost="true" hx-target="#shell" hx-select="#shell" hx-swap="outerHTML"{{end}}>
+    <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="12" cy="16" r="9"/><circle cx="20" cy="16" r="9"/></svg><span>sploot</span>
+  </a>
+  {{if .Principal}}
+  <form class="search-form" action="/app/search" method="get" role="search" hx-get="/app/search" hx-target="#shell" hx-select="#shell" hx-swap="outerHTML" hx-push-url="true" data-search-form>
+    <label class="sr-only" for="search-input">Describe a meme</label>
+    <svg class="icon" aria-hidden="true"><use href="#icon-search"/></svg>
+    <input id="search-input" name="q" type="search" placeholder="Describe a meme…" value="{{.Query}}" maxlength="1000" autocomplete="off" enterkeyhint="search" required>
+    {{if .FavoriteOnly}}<input type="hidden" name="favorite" value="true">{{end}}
+    <input type="hidden" name="seed" value="{{.Seed}}">
+    <button class="search-submit" type="submit" aria-label="Search your library"><svg class="icon" aria-hidden="true"><use href="#icon-enter"/></svg></button>
+  </form>
+  <nav class="library-nav" aria-label="Library">
+    <a href="{{browseURL . false}}" data-nav data-feed-nav="all" hx-boost="true" hx-target="#shell" hx-select="#shell" hx-swap="outerHTML" {{if and (eq .Page "app") (not .FavoriteOnly)}}aria-current="page"{{end}}>All</a>
+    <a href="{{browseURL . true}}" data-nav data-feed-nav="favorites" hx-boost="true" hx-target="#shell" hx-select="#shell" hx-swap="outerHTML" {{if and (eq .Page "app") .FavoriteOnly}}aria-current="page"{{end}}><svg class="icon" aria-hidden="true"><use href="#icon-heart"/></svg>Favorites</a>
+    <a class="shuffle-control" href="/app{{if .FavoriteOnly}}?favorite=true{{end}}" data-action="shuffle" title="Shuffle your library"><svg class="icon" aria-hidden="true"><use href="#icon-shuffle"/></svg><span class="desktop-label">Shuffle</span><span class="sr-only mobile-label">Shuffle</span></a>
+  </nav>
+  <div class="chrome-actions">
+    <button class="button button-primary save-control" type="button" data-action="upload" aria-label="Save" {{if not .UploadsEnabled}}disabled title="Saving is currently unavailable"{{end}}><svg class="icon" aria-hidden="true"><use href="#icon-plus"/></svg><span>Save</span></button>
+    <a class="icon-button settings-control" href="/app/settings" data-nav hx-boost="true" hx-target="#shell" hx-select="#shell" hx-swap="outerHTML" aria-label="Settings" {{if eq .Page "settings"}}aria-current="page"{{end}}><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span class="desktop-label">Settings</span></a>
+  </div>
+  <div class="rail-account"><a href="/app/settings" data-nav hx-boost="true" hx-target="#shell" hx-select="#shell" hx-swap="outerHTML" data-account-label>{{.AccountEmail}}</a><button class="button" type="button" data-action="sign-out">Sign out</button></div>
+  <p class="rail-note">Your memes.<br>Ready when you need them.</p>
+  {{else}}
+  <a class="button signed-out-link" href="/sign-in">Sign in</a>
+  {{end}}
+</header>
+{{end}}
+
+{{define "foot"}}
+<div class="session-notice" id="session-notice" role="status" hidden><span data-session-message></span> <a href="/sign-in" data-session-link hidden>Sign in again</a></div>
+<div class="session-lock" id="session-lock" role="alert" hidden><h2 id="session-lock-title">Your session ended</h2><p id="session-lock-message">Pending captures stay on this device, under their original account.</p><a class="button button-primary" href="/sign-in" id="session-lock-link">Sign in again</a><button class="button" type="button" data-action="review-pending" id="review-pending" hidden>Review pending captures</button></div>
+<div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="notifications" class="notifications" aria-label="Recent actions"></div>
+<div class="drop-target" id="drop-target" hidden><span>Drop to save to your library</span></div>
+{{template "dialogs" .}}
+<noscript><p class="noscript-note">Browsing and downloads work without JavaScript. Enable JavaScript to create an account, sign in, save, favorite, or share files.</p></noscript>
+</body>
+</html>{{end}}
+
+{{define "dialogs"}}
+<dialog id="upload-dialog" class="sheet" aria-labelledby="upload-title">
+  <header class="sheet-heading"><h2 id="upload-title">Save a meme</h2><button class="icon-button" type="button" data-close="upload-dialog" aria-label="Close save panel"><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button></header>
+  <p>Images, GIFs, and videos. Originals stay original.</p>
+  <label class="file-picker button button-primary" for="upload-files"><svg class="icon" aria-hidden="true"><use href="#icon-plus"/></svg>Choose files</label>
+  <input id="upload-files" class="sr-only" type="file" multiple accept="{{uploadAccept}}" data-max-bytes="{{uploadMaxBytes}}" data-timeout="{{uploadTimeout}}">
+  <p class="help-text">Up to {{bytes uploadMaxBytes}} each. You can also paste an image or drop files anywhere.</p>
+  <p class="help-text">Pending captures are kept in this browser until saved or explicitly removed. Clearing browser data removes those pending copies.</p>
+  <p class="form-error" id="upload-capability" role="alert" hidden>Durable capture needs browser storage and a secure connection. Open this instance over HTTPS, or use its loopback address on the same device. Browsing and downloads still work.</p>
+  <form id="url-save-form" class="stack-form">
+    <label for="save-url">Or paste a direct media URL</label>
+    <div class="input-action"><input id="save-url" type="url" name="url" placeholder="https://…" inputmode="url" autocomplete="off" required><button class="button" type="submit">Save URL</button></div>
+    <p class="help-text">Use the image or video URL, not the page containing it.</p>
+  </form>
+  <section class="receipt-section" aria-labelledby="receipts-title" hidden><h3 id="receipts-title">Saves on this device</h3><ol id="upload-receipts" class="receipt-list" aria-live="polite" aria-relevant="additions text"></ol></section>
+</dialog>
+
+<dialog id="viewer" class="viewer" aria-labelledby="viewer-title">
+  <header class="viewer-heading"><h2 id="viewer-title" class="truncate"></h2><button class="icon-button" type="button" data-close="viewer" aria-label="Close viewer"><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button></header>
+  <div id="viewer-stage" class="viewer-stage"></div>
+  <footer class="viewer-actions">
+    <button class="icon-button" type="button" data-action="previous" aria-label="Previous meme"><svg class="icon" aria-hidden="true"><use href="#icon-previous"/></svg></button>
+    <button class="icon-button" type="button" data-action="favorite" aria-label="Favorite" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#icon-heart"/></svg></button>
+    <button class="icon-button" type="button" data-action="sound" aria-label="Turn sound on" aria-pressed="false" hidden><svg class="icon" aria-hidden="true"><use href="#icon-sound"/></svg></button>
+    <button class="icon-button" type="button" data-action="zoom" aria-label="Toggle original-size image" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#icon-search"/></svg></button>
+    <button class="button" type="button" data-action="share"><svg class="icon" aria-hidden="true"><use href="#icon-share"/></svg>Share</button>
+    <button class="icon-button" type="button" data-action="details" aria-label="Meme details and options"><svg class="icon" aria-hidden="true"><use href="#icon-more"/></svg></button>
+    <button class="icon-button" type="button" data-action="next" aria-label="Next meme"><svg class="icon" aria-hidden="true"><use href="#icon-next"/></svg></button>
+  </footer>
+</dialog>
+
+<dialog id="share-dialog" class="sheet" aria-labelledby="share-title">
+  <header class="sheet-heading"><h2 id="share-title">Share the actual file</h2><button class="icon-button" type="button" data-close="share-dialog" aria-label="Close sharing"><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button></header>
+  <p id="share-filename" class="filename"></p>
+  <p id="share-status" role="status">Preparing the original file…</p>
+  <div class="share-actions">
+    <button id="native-share" class="button button-primary" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#icon-share"/></svg>Share file</button>
+    <button id="copy-media" class="button" type="button" disabled>Copy image</button>
+    <a id="download-media" class="button" download>Download original</a>
+  </div>
+  <p class="help-text">No public link is created. GIFs and videos keep their original format.</p>
+</dialog>
+
+<dialog id="details-dialog" class="sheet" aria-labelledby="details-title">
+  <header class="sheet-heading"><h2 id="details-title">Meme details</h2><button class="icon-button" type="button" data-close="details-dialog" aria-label="Close details"><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button></header>
+  <p id="details-filename" class="filename"></p>
+  <dl id="details-metadata" class="metadata"></dl>
+  <a id="details-download" class="button" download>Download original</a>
+  <section class="tags-section" data-private-action aria-labelledby="asset-tags-title">
+    <h3 id="asset-tags-title">Tags</h3>
+    <div id="asset-tags" class="tag-list" aria-live="polite"></div>
+    <form id="asset-tag-form" class="stack-form"><label for="asset-tag-name">Add a tag</label><div class="input-action"><input id="asset-tag-name" name="name" type="text" maxlength="{{tagMaxNameLength}}" list="existing-tags" autocomplete="off" required><button class="button" type="submit">Add tag</button></div><datalist id="existing-tags"></datalist><p id="asset-tag-error" class="form-error" role="alert" hidden></p></form>
+  </section>
+  <section class="indexing-section" data-private-action aria-labelledby="indexing-title"><h3 id="indexing-title">Search</h3><p id="asset-indexing-status" role="status">Checking search availability…</p><button class="button" type="button" data-action="retry-indexing" id="retry-indexing" hidden>Retry search indexing</button></section>
+  <section class="public-link-section" data-private-action>
+    <h3>Public link</h3>
+    <p class="help-text">Only create one if you want anyone with the link to see and download this meme. You can revoke it here.</p>
+    <div id="public-link-output" hidden><label class="sr-only" for="public-link">Public share URL</label><input id="public-link" type="url" readonly><div class="button-row"><button class="button" type="button" data-action="copy-public-link">Copy public link</button><button class="button" type="button" data-action="revoke-public-link">Revoke link</button></div></div>
+    <button id="create-public-link" class="button" type="button" data-action="create-public-link">Create public link</button>
+  </section>
+  <section class="delete-section" data-private-action><button class="button button-danger" type="button" data-action="delete">Move to trash</button><p class="help-text">Removes this meme from browsing and search. Restore it from Trash in Settings.</p></section>
+</dialog>
+{{end}}
+
+{{define "icons"}}
+<svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+  <symbol id="icon-heart" viewBox="0 0 24 24"><path d="M20.5 4.7a5.6 5.6 0 0 0-8.5.7 5.6 5.6 0 0 0-8.5-.7C-1 9.2 5.5 16 12 21c6.5-5 13-11.8 8.5-16.3Z"/></symbol>
+  <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+  <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="icon-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="icon-share" viewBox="0 0 24 24"><path d="M12 15V3m-4 4 4-4 4 4M6 11H4v10h16V11h-2"/></symbol>
+  <symbol id="icon-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="icon-sound" viewBox="0 0 24 24"><path d="m11 4-6 5H2v6h3l6 5V4Zm4 4c3 2 3 6 0 8m3-11c5 4 5 10 0 14"/></symbol>
+  <symbol id="icon-play" viewBox="0 0 24 24"><path d="m8 4 12 8-12 8V4Z"/></symbol>
+  <symbol id="icon-next" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="icon-previous" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7"/></symbol>
+  <symbol id="icon-enter" viewBox="0 0 24 24"><path d="M19 5v9H5m5-5-5 5 5 5"/></symbol>
+  <symbol id="icon-shuffle" viewBox="0 0 24 24"><path d="M3 6h3c5 0 7 12 12 12h3M17 14l4 4-4 4M3 18h3c2 0 4-3 5-5m2-3c1-2 3-4 5-4h3m-4-4 4 4-4 4"/></symbol>
+  <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></symbol>
+</defs></svg>
+{{end}}

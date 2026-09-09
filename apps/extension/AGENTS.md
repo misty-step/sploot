@@ -4,12 +4,14 @@ Canonical repo instructions are `../../AGENTS.md`.
 
 ## Auth and identity
 
-The background owns one long-lived Clerk client for the service-worker lifecycle (`clerkClientPromise` in `entrypoints/background/auth-manager.ts`) and a WebSSO cookie listener. It publishes sanitized auth metadata only; tokens never cross runtime messages. Recreating a Clerk client per call is wrong. Sign-in happens on the web app. URLs live in `shared/app-url.ts`.
+The background owns device pairing and durable capture; the popup owns instance selection and React UI. `shared/` owns transport, URL and receipt helpers. See `ARCHITECTURE.md` for boundaries and `README.md` for commands.
 
-`pnpm generate:crx-key` produces a stable extension ID used by Clerk allowed origins. Do not rotate that key as routine distribution hygiene; rotation is an explicit compatibility operation. `pnpm setup:clerk` registers the origin.
+The popup selects HTTPS remote origins or loopback HTTP (default `http://127.0.0.1:3001`). Device approval uses the real instance page and persisted bounded polling. Credentials stay in trusted local extension storage, never runtime messages or Chrome sync. Account ownership includes the instance origin; requests reject redirects, omit cookies and use destination-fenced tokens.
 
-Clerk keys must match the target: `pk_test_*` with localhost for development, `pk_live_*` with `https://www.sploot.app` for production (`VITE_CLERK_PUBLISHABLE_KEY`, `VITE_API_BASE_URL`, `VITE_CLERK_SYNC_HOST`). Production API base is `https://www.sploot.app`.
+Disconnect revokes the device before changing instances; a failed revocation stays visible. Same-account re-pairing can resume queued bytes. Different accounts/instances cannot inspect or submit them. Preserve original bytes, immutable retry digests and explicit saved/duplicate/failure receipts. There is no Clerk client, cookie synchronization or E2E authentication bypass.
 
 ## Release
 
-WXT writes `dist/` (`dist/chrome-mv3` unpacked). Web deploy and this Chrome Web Store packet are separate. `pnpm release:check` (or `release:structural`) plus `STORE_LISTING.md` and `store-assets/` are the local packet; hosted `merge-gate` is still required for repository ship. Shared upload, MIME, and API types come from `@sploot/common`.
+WXT writes `dist/` (`dist/chrome-mv3` unpacked). `build:prod` produces release-mode output; `zip:prod` creates the provenance-bound packet. `release:structural` does not replace `release:check`, the dashboard receipt or hosted `merge-gate`. Private CRX keys stay untracked; rotation is an explicit compatibility decision.
+
+Keep lint, unit tests, actual Chromium layout/lifecycle/update checks, manifest policy, release provenance and operator-evidence checks intact. `test:mv3` uses a real Go instance with local inference and unique accounts. `test:mv3:fixture` uses a controlled API, not backend acceptance. Linux native controls require xdotool and a display or Xvfb.

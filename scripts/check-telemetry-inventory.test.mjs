@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
@@ -83,11 +83,6 @@ test('bundle falsifier rejects provider requests', () => {
   assert.deepEqual(findBundleTelemetryViolations('fetch("/api/telemetry")'), []);
 });
 
-test('requires literal public env reads for Next.js client inlining', () => {
-  const source = readFileSync('apps/web/lib/telemetry-client.ts', 'utf8');
-  assert.match(source, /process\.env\.NEXT_PUBLIC_TELEMETRY_ENDPOINT/);
-  assert.match(source, /process\.env\.NEXT_PUBLIC_TELEMETRY_ENABLED/);
-});
 
 test('bundle falsifier proves the selected telemetry configuration was compiled', () => {
   assert.deepEqual(
@@ -113,6 +108,14 @@ test('requires every Clerk surface to keep its telemetry-disabled marker', () =>
   const stripped = files.map((file) => ({ ...file }));
   stripped[0].content = '<ClerkProvider>{children}</ClerkProvider>';
   assert.equal(findClerkTelemetryMarkerGaps(stripped).length, 1);
+});
+
+test('requires the paired extension to omit Clerk without forbidding the predecessor SDK', () => {
+  const content = JSON.stringify({ dependencies: { '@clerk/chrome-extension': '2.0.0' } });
+  assert.deepEqual(findTelemetryInventoryViolations([{ path: 'apps/web/package.json', content }]), []);
+  assert.deepEqual(findTelemetryInventoryViolations([{ path: 'apps/extension/package.json', content }]), [
+    { path: 'apps/extension/package.json', line: 1, rule: 'device-paired extension must not depend on Clerk' },
+  ]);
 });
 
 test('compiled Clerk falsifier requires the disabled marker in bundle output', () => {

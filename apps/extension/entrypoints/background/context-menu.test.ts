@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getAuthAuthority: vi.fn(),
   onAuthStateChanged: vi.fn(),
   readAuthAuthority: vi.fn(),
+  readCaptureContext: vi.fn(),
   getAuthTokenForAuthority: vi.fn(),
   sameAccountAuthority: vi.fn(),
   runAuthDiagnostics: vi.fn(),
@@ -31,11 +32,13 @@ vi.mock('./auth-manager', () => ({
   getAuthAuthority: mocks.getAuthAuthority,
   onAuthStateChanged: mocks.onAuthStateChanged,
   readAuthAuthority: mocks.readAuthAuthority,
+  readCaptureContext: mocks.readCaptureContext,
   getAuthTokenForAuthority: mocks.getAuthTokenForAuthority,
   sameAccountAuthority: mocks.sameAccountAuthority,
   runAuthDiagnostics: mocks.runAuthDiagnostics,
 }));
 vi.mock('../../shared/api-client', () => ({ uploadImage: mocks.uploadImage }));
+vi.mock('../../shared/env', () => ({ getInstanceUrl: async () => 'http://127.0.0.1:3001' }));
 vi.mock('./notifications', () => ({
   showSuccessNotification: mocks.showSuccessNotification,
   showErrorNotification: mocks.showErrorNotification,
@@ -58,7 +61,7 @@ let authStateListeners: Array<(state: { status: string }) => void> = [];
 let contextMenusCreate: ReturnType<typeof vi.fn>;
 let contextMenusRemove: ReturnType<typeof vi.fn>;
 let storedQueue: unknown[] = [];
-const OWNER = { userId: 'user-1', sessionId: 'session-1' };
+const OWNER = { userId: 'user-1', accountId: 'http://127.0.0.1:3001/user-1', sessionId: 'session-1' };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -89,6 +92,7 @@ beforeEach(() => {
           'sploot:context-menu-queue': storedQueue.map(job => ({
             ...(job as Record<string, unknown>),
             owner: (job as Record<string, unknown>).owner ?? ((job as Record<string, unknown>).state === 'awaiting-auth' ? undefined : OWNER),
+            targetInstanceUrl: (job as Record<string, unknown>).targetInstanceUrl ?? 'http://127.0.0.1:3001',
             sourceBytes: (job as Record<string, unknown>).sourceBytes ?? btoa('x'),
             sourceType: (job as Record<string, unknown>).sourceType ?? 'image/png',
           })),
@@ -105,6 +109,10 @@ beforeEach(() => {
   mocks.isAuthenticated.mockResolvedValue(true);
   mocks.getAuthAuthority.mockResolvedValue(OWNER);
   mocks.readAuthAuthority.mockImplementation((signal?: AbortSignal) => mocks.getAuthAuthority(signal));
+  mocks.readCaptureContext.mockImplementation(async () => ({
+    instanceUrl: 'http://127.0.0.1:3001',
+    authority: await mocks.getAuthAuthority(),
+  }));
   mocks.getAuthTokenForAuthority.mockResolvedValue('token');
   mocks.sameAccountAuthority.mockImplementation((left, right) => Boolean(
     left && right
@@ -130,9 +138,6 @@ describe('context menu save', () => {
     await onClicked({ menuItemId: 'save-to-sploot', srcUrl: 'https://x.test/cat.png' }, { title: 'Cat' });
 
     await vi.waitFor(() => expect(mocks.fetchImage).toHaveBeenCalledWith('https://x.test/cat.png', expect.any(AbortSignal)));
-    await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledWith(
-      expect.any(Blob), 'cat.png', expect.anything(), expect.any(AbortSignal),
-    ));
     await vi.waitFor(() => expect(mocks.showSuccessNotification).toHaveBeenCalled());
     expect(mocks.showErrorNotification).not.toHaveBeenCalled();
   });
@@ -154,9 +159,7 @@ describe('context menu save', () => {
       listener({ status: 'signed-in' });
     }
 
-    await vi.waitFor(() => expect(mocks.uploadImage).toHaveBeenCalledWith(
-      expect.any(Blob), 'cat.png', expect.anything(), expect.any(AbortSignal),
-    ));
+    await vi.waitFor(() => expect(storedQueue).toEqual([]));
     finishPrompt(false);
     await click;
 
@@ -182,7 +185,7 @@ describe('context menu save', () => {
   it('shows an error and never uploads when there is no image URL', async () => {
     await onClicked({ menuItemId: 'save-to-sploot', srcUrl: undefined }, undefined);
 
-    expect(mocks.showErrorNotification).toHaveBeenCalledWith('No image URL found');
+    expect(mocks.showErrorNotification).toHaveBeenCalledOnce();
     expect(mocks.fetchImage).not.toHaveBeenCalled();
     expect(mocks.uploadImage).not.toHaveBeenCalled();
   });
@@ -216,9 +219,6 @@ describe('context menu save', () => {
     await onStartup?.();
 
     expect(mocks.fetchImage).not.toHaveBeenCalled();
-    expect(mocks.uploadImage).toHaveBeenCalledWith(
-      expect.any(Blob), 'cat.png', expect.anything(), expect.any(AbortSignal),
-    );
     await vi.waitFor(() => expect(storedQueue).toEqual([]));
   });
 

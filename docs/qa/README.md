@@ -14,7 +14,23 @@ The historical `docs/qa/evidence/` collection remains in place. A selected
 screenshot consumed by README or a shipped demo is a public product asset,
 not permission to commit every future run bundle.
 
-## Producing a packet
+## Local Go acceptance
+
+The persistent local application is not a disposable fixture. `pnpm dev` keeps
+accounts and media in `.sploot-local/library`; shutdown never deletes them.
+Use `pnpm --filter server smoke --keep --binary build/sploot` after building
+the server to exercise a fresh private temporary library with real accounts,
+media and pinned local inference. The command prints per-story results and
+the retained desktop/mobile screenshot directory. Without `--keep`, a successful
+run removes only its own newly allocated directory; failed runs retain diagnostics.
+See [the acceptance gates](../../apps/web/docs/DEPLOYMENT.md#acceptance-gates) for prerequisites and
+real unpacked-extension acceptance.
+
+Retained Go runs contain test databases, account hashes and media as well as
+screenshots. Share selected sanitized evidence, not the entire private directory.
+They do not establish production or physical-device acceptance.
+
+## Producing a predecessor packet
 
 From `apps/web`, with the local pgvector container running
 (`sploot-test-postgres` on 5432; `DATABASE_URL` defaults to
@@ -61,9 +77,9 @@ Replace that illustrative path with an authorized, new directory. The runner
 only writes local files: it does not upload, redact, set access controls, or
 guarantee retention. Keep new raw output outside tracked source directories.
 Local ignored output is not durable evidence until retained appropriately.
-`pnpm dev:local:down` removes `.sploot-local/`, including these default packets.
-Retain any needed output before teardown, or select an approved path outside
-that runtime directory with `--out-dir`.
+The retired `dev:local:down` command is not a cleanup procedure. Never delete
+`.sploot-local/` to remove a packet: it now also contains the persistent local
+library. Retain needed evidence, then remove only the exact run-owned directory.
 
 ## Reading a packet
 

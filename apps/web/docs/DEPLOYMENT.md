@@ -1,23 +1,297 @@
-# deployment
+# Runtime operations, recovery, and deployment
 
-the web application runs as a long-lived DigitalOcean App Platform service.
-the canonical public origin is `https://www.sploot.app`; merges to `master`
-trigger the configured source deployment.
+`apps/server` is the self-contained persistent local Sploot product.
+`apps/web` remains the deployed Next.js predecessor at
+`https://www.sploot.app`. **Existing production and the old real library are
+unchanged, not migrated, and not backed up by the local acceptance exercise.**
+Do not apply the predecessor's database/provider settings to Go or replace the
+DigitalOcean service as part of a local startup.
 
-## runtime dependencies
+## Self-contained Go runtime
+
+The [root quick start](../../../README.md#quick-start) owns installation and the
+ordinary `pnpm dev` / `pnpm dev:local` loop. It opens
+`http://127.0.0.1:3001`, stores a persistent library at repository
+`.sploot-local/library`, and lets users register real email/password accounts.
+There is no seeded-only mode, QA login, Clerk, Neon, Blob, or Replicate prerequisite.
+Email is an account identifier; email delivery/verification and password-reset
+service are not implemented.
+
+### Host prerequisites and commands
+
+Building/running from source requires Go 1.26+ (see `apps/server/go.mod`), CGO,
+a C compiler, SQLite development headers, and FFmpeg/ffprobe. On Arch, `sqlite`
+supplies the headers; on Debian/Ubuntu, install `libsqlite3-dev`. Workspace
+commands additionally require Node.js 22+ and pinned pnpm 10.22.0. The compiled
+binary does not need Node, Postgres, Prisma, or an external inference daemon.
+
+The model bundle supports glibc Linux and macOS on amd64/arm64. Its Linux
+native runtime needs libstdc++/libgcc; musl/Alpine and Windows are unsupported.
+Use the [Dockerfile](../../server/Dockerfile) for the container alternative.
+
+From the repository root:
+
+```sh
+pnpm --filter server models:prepare
+pnpm --filter server build
+apps/server/build/sploot serve \
+  --data-dir "$PWD/.sploot-local/library"
+```
+
+Preparation is optional: normal startup serves the library while downloading and
+verifying missing artifacts. Indexing/search becomes ready only after successful
+native initialization. The build emits `apps/server/build/sploot` and
+`apps/server/build/library-backup`; UI/static assets and SQLite migrations are
+embedded. Do not start another process on an already-used listen port.
+
+Inspect the running instance from another terminal:
+
+```sh
+pnpm --filter server run doctor
+apps/server/build/sploot doctor --url http://127.0.0.1:3001 --json
+```
+
+Doctor calls `/api/health/services` with a bounded HTTP request. It reports
+SQLite/schema and actual inference readiness without account or media data.
+It does not upload media, test account access, or prove retrieval quality.
+`/api/health/live` is shallow liveness. `/api/health` remains HTTP 200 for a healthy
+library even when search is loading/unavailable, with `status: "degraded"`,
+`libraryReady: true`, `searchReady: false` and an exact `dependencies.search` state.
+`/api/health/services` returns 503 while enabled inference is loading/unavailable;
+explicitly disabled inference is a configured pause, not a model-ready claim.
+
+Ctrl-C/SIGTERM stops HTTP and joins model preparation, requests and indexing
+before destroying native state. Native execution is not preemptible and can
+extend shutdown beyond the HTTP grace period. **Ordinary shutdown never deletes
+the library or cache.** Restart with the same data directory to retain accounts,
+media, shares, tokens and pending indexing work.
+The retired `--session`/`--down` disposable launcher is not an operating path.
+
+### Acceptance gates
+
+Hosted GitHub [`merge-gate`](../../../.github/workflows/ci.yml) is the ship
+authority. Keep both runtimes' gates until a verified production cutover.
+From the repository root, run these local checks in order and record every exit:
+
+```sh
+pnpm lint
+pnpm type-check
+pnpm lint:design
+pnpm test:economics
+CI=1 pnpm --filter web test
+pnpm --filter web eval:search
+pnpm --filter extension lint
+pnpm --filter extension test
+pnpm --filter extension build
+```
+
+DB-backed predecessor tests require `DATABASE_URL` pointing to isolated pgvector
+Postgres, prepared with the owned `pnpm --filter web db:migrate` procedure. Never
+use production data for acceptance. A skipped DB path is **DB path unverified**,
+not a pass. CI additionally owns frozen installation, restricted-role migrations,
+web build/browser checks and the required aggregate; this local subset is not
+hosted CI parity.
+
+The Go product additionally requires actual SQLite, native inference and browser
+acceptance:
+
+```sh
+pnpm --filter server test:integration
+pnpm --filter server build
+pnpm --filter server models:prepare
+pnpm --filter server exec playwright install chromium
+pnpm --filter server smoke --binary build/sploot
+pnpm --filter extension build:e2e
+xvfb-run -a pnpm --filter server smoke --extension --binary build/sploot
+docker build --tag sploot-local apps/server
+```
+
+The gauntlet allocates new private libraries and uses actual pinned CPU CLIP.
+It never seeds or deletes the ordinary `.sploot-local/library`. Linux native
+extension capture needs `xdotool`; the shared Chromium launcher selects X11
+under Xvfb without changing the caller's Wayland environment. A prepared model
+cache can be reused; downloads are needed only for missing pinned artifacts.
+Keep local evidence separate from production migration, Apple device/signing
+and Chrome Web Store release receipts.
+
+### Configuration and private-directory lifetime
+
+CLI flags override process settings; process settings take precedence over an
+explicit optional `--env-file`. No checkout `.env` file is auto-discovered.
+An environment file must be a private regular file (mode `0600`) containing
+supported `KEY=value` assignments, not a shell script or provider credentials:
+
+```sh
+apps/server/build/sploot serve \
+  --env-file "$HOME/.config/sploot/server.env"
+```
+
+| Setting / CLI | Local runtime behavior |
+|---|---|
+| `SPLOOT_DATA_DIR` / `--data-dir` | Library root; pnpm's launcher supplies repository `.sploot-local/library`. The binary's fallback is `.sploot-local/library` relative to its working directory. Use an absolute path for overrides. |
+| `SPLOOT_MODEL_DIR` / `--model-dir` | Separate reusable artifact cache; default OS user-cache directory plus `sploot/models`. It is not a library or a backup destination. |
+| `SPLOOT_LISTEN_ADDR` / `--listen` | Default `127.0.0.1:3001`. `--port` selects another loopback port and cannot be combined with `--listen`; `PORT` supplies the fallback port when no listen address is set. |
+| `SPLOOT_BASE_URL` / `--base-url` | Exact canonical browser/API origin. Derived from a loopback listen address by default. Off-loopback access requires explicit HTTPS; hosted environments require HTTPS even on loopback. Preserve this Host through a proxy. |
+| `SPLOOT_REGISTRATION_OPEN` | `true` by default only for loopback development/test. Nonlocal/hosted access requires an explicit `true` or `false`. Closing registration does not revoke existing accounts. |
+| `SPLOOT_UPLOADS_ENABLED` | `true` by default; `false` pauses saves, not metadata edits, deletion, downloads, or export. |
+| `SPLOOT_EMBEDDINGS_ENABLED` | `true` by default; `false` disables new local indexing/query embeddings. It is an explicit operational pause, not the ordinary startup mode. |
+| `SPLOOT_STORAGE_LIMIT_BYTES` | Nonnegative instance-wide retained-media ceiling; `0` (default) means no artificial limit. Includes originals, previews, trash and unfinished reclamation. |
+| `SPLOOT_STORAGE_RESERVE_BYTES` | Nonnegative minimum free disk after a worst-case save reservation; default `1073741824` (1 GiB). `0` removes the extra reserve, not the incoming-write space check. |
+| `SPLOOT_DEPLOYMENT_ENV` | `development` by default; accepts `development`, `test`, `staging`, or `production`. It controls exposure policy, not vendor selection. |
+| `SPLOOT_DEPLOYMENT_COMMIT` | Optional immutable revision for diagnostics; otherwise the executable derives available build revision metadata. |
+| `SENTRY_DSN` | Optional diagnostics. No telemetry credential is required. |
+
+The pnpm launcher runs the server with `apps/server` as its working directory;
+relative overrides resolve there. Vendor/database variables are not local Go
+authority, and the optional environment-file parser rejects unsupported keys.
+`DATABASE_URL`, Clerk keys, Blob tokens, and Replicate tokens configure only the
+retained predecessor.
+
+Keep the live data directory current-user-owned and mode `0700`, including when
+supplying a pre-existing path. `library.sqlite`, its WAL/SHM companions, `media/`,
+and the generated private 32-byte `signing.key` form the library. The key is a
+private regular file, not a value to paste into an environment file. Do not
+delete it to repair a startup error. Filesystem privacy is not encryption;
+protect the host and backups accordingly. Never copy only a live SQLite file
+while ignoring its WAL; use the recovery commands below.
+
+### Storage admission and permanent trash reclamation
+
+These settings are operator policy, not user plans. Saves serialize their
+worst-case spool/publication reservation across processes sharing the library,
+check filesystem availability before reading media, then enforce the instance
+ceiling transactionally. Unknown free space fails closed. Disk reserve includes
+space consumed outside the media ledger, such as SQLite, models and other files.
+An instance limit is not a disk-size limit or a backup-retention policy.
+
+Settings reports only the signed-in owner's retained bytes, including trash;
+it does not disclose another account's usage or invent a remaining allowance.
+Moving a meme to trash revokes its public share but keeps its original and preview.
+The browser's separately confirmed **Delete permanently** action reclaims those
+files. Paired-device and personal-token credentials cannot perform this action.
+Deletion does not erase copies already present in backups.
+
+A durable owner-fenced purge intent is committed before physical deletion.
+Startup completes interrupted purges; retries never remove a restored/live asset
+or replay a purged upload receipt. Retained tombstones are not a trash-restore path.
+Capacity/reserve failures return 507 and require storage management, not automatic
+retries; inability to inspect disk returns 503 `storage_unavailable`.
+
+### Pinned local inference
+
+[`apps/server/internal/inference/bundle.json`](../../server/internal/inference/bundle.json)
+is the model, preprocessing, runtime, license, size, and SHA-256 authority.
+It pins `Xenova/clip-vit-base-patch32` revision
+`d15189d7028b43f1d3e65039190477f6af591c2a`, separate quantized text/vision ONNX
+encoders, aligned normalized 512-D projections, and ONNX Runtime 1.22.0's CPU
+execution provider. There is no GPU requirement or fake/cached-fixture fallback.
+
+The first preparation fetches public weights/tokenizer/preprocessing from the
+pinned Hugging Face revision and a matching native runtime from GitHub.
+Incomplete or mismatched artifacts are not loaded. Subsequent starts verify
+and reuse the installed bundle; complete caches support offline indexing and
+search. The immutable version directory and install lock belong to the cache,
+not to an account. Recovering a library can reuse or re-download that cache.
+Preparation failure leaves HTTP, account access, saved media, saves and export
+available and leaves pending indexing untouched. Inspect the logged failure,
+repair permissions/artifacts/native libraries and restart; there is no automatic
+initialization retry loop or fallback to old cached vectors.
+
+One native executor prioritizes FIFO interactive queries over queued indexing.
+At most eight queries wait, for at most 15 seconds; a waiting indexer gets a turn
+after four queries. Queue overflow/expiry returns 429 `embedding_busy` with
+`Retry-After: 1`. Loading returns 503 `embedding_loading` with `Retry-After: 2`;
+unavailable/disabled states require operator action rather than automatic retry.
+
+Use the same explicit directory for preparation and runtime when overriding it;
+the standalone preparation helper takes `-directory`, not the server's
+`--model-dir`:
+
+```sh
+pnpm --filter server models:prepare -directory "$HOME/.cache/sploot/models"
+apps/server/build/sploot serve \
+  --data-dir "$PWD/.sploot-local/library" \
+  --model-dir "$HOME/.cache/sploot/models"
+```
+
+The preparation helper also accepts `-text "a description"` and
+`-image "/absolute/path/to/poster.png"` to run actual CPU inference and report
+vector dimensions/norms and, when both inputs are supplied, cosine similarity.
+Preparation alone proves artifact installation, not a successful library search.
+Resolve network, permissions, disk-space, unsupported-platform, and native
+library errors rather than substituting fabricated vectors or disabling a gate.
+
+### Container runtime
+
+The existing `apps/server/Dockerfile` builds the CGO application and recovery
+binaries and supplies FFmpeg/ffprobe. Build context is `apps/server`:
+
+```sh
+docker build --tag sploot-local apps/server
+```
+
+The image runs as UID/GID `10001`, binds container `0.0.0.0:3001`, and defaults
+to production exposure rules. It needs a durable volume at
+`/var/lib/sploot/library` and a separate cache volume at
+`/var/cache/sploot/models`. Bind mounts must be writable by that user and keep
+the library private; an ephemeral container layer is not library storage.
+
+For an operator-provided HTTPS reverse proxy, replace the example origin below
+with the actual reachable origin before running. The proxy must preserve the
+canonical Host and terminate HTTPS; this command does not provision DNS/TLS:
+
+```sh
+docker run --name sploot-local \
+  --publish 127.0.0.1:3001:3001 \
+  --mount type=volume,source=sploot-library,target=/var/lib/sploot/library \
+  --mount type=volume,source=sploot-models,target=/var/cache/sploot/models \
+  --env SPLOOT_BASE_URL=https://sploot.example.net \
+  --env SPLOOT_REGISTRATION_OPEN=true \
+  sploot-local
+```
+
+Choose registration policy deliberately. HTTP on a private container port is
+not permission to advertise an off-loopback HTTP origin. Use `docker stop
+sploot-local` and `docker start --attach sploot-local` to stop/reopen it; neither
+removes the named volumes. Never remove a library volume as routine cleanup.
+No DigitalOcean change or container deployment receipt is implied by this recipe.
+
+### Local acceptance versus predecessor gates
+
+`pnpm --filter server smoke` owns a fresh temporary acceptance library and
+Chromium process; it does not seed or reset the ordinary library. It covers
+real accounts, new local inference, media, browser/mobile-viewport behavior,
+restart, export, and isolated recovery. It requires Playwright Chromium and the
+host media/build prerequisites. `pnpm --filter server test:integration` uses
+isolated SQLite state with the race detector; no `DATABASE_URL` is required.
+
+The [extension procedure](../../extension/README.md) distinguishes real-backend
+device-pairing/capture checks from deterministic API fixtures. A responsive
+mobile browser exercise is not physical iPhone, Apple signing, or Chrome Web
+Store proof. Those release boundaries remain in their owning procedures.
+Run conclusions belong in the work record, not in this operating manual.
+
+## Deployed Next.js predecessor
+
+Everything below through [predecessor rollback](#rollback--deployed-nextjs-predecessor)
+describes the unchanged Next.js deployment, not the local Go product.
+
+### Runtime dependencies — deployed Next.js predecessor
 
 - Neon Postgres with pgvector, supplied as `DATABASE_URL`;
-- Vercel Blob, supplied as `BLOB_READ_WRITE_TOKEN` (the one intentional Vercel
-  data-plane dependency);
+- Vercel Blob, supplied as `BLOB_READ_WRITE_TOKEN`;
 - Clerk identity;
 - Replicate embeddings;
 - Sentry error and performance diagnostics.
 
-the embedding limiter and daily/monthly provider-attempt ceilings live in
+The embedding limiter and daily/monthly provider-attempt ceilings live in
 Postgres. These counters are provider-rate safety, not durable dollar admission
 or reconciliation. There is no KV, Redis, or Upstash runtime dependency.
+Prisma/pgvector-backed migration and CI gates remain mandatory for this surface;
+without their database evidence, report **DB path unverified**.
 
-## required environment
+
+## required environment — deployed Next.js predecessor
 
 ```env
 NODE_ENV=production
@@ -96,7 +370,7 @@ insert. `closed` pauses new accounts. Missing or malformed values fail closed
 in production. Existing users do not pass through this admission check, so
 reads, downloads/exports, and deletes remain available.
 
-## Platform routing health vs deep readiness
+## Platform routing health vs deep readiness — deployed Next.js predecessor
 
 DigitalOcean routes the web service on
 `services[name=web].health_check.http_path`, and that path MUST be the
@@ -117,23 +391,25 @@ that runtime cannot serve the liveness route yet.
 
 `/api/health` remains the deep readiness oracle for operators, deployed
 verification, and diagnostics. It stays fail-closed (503 on database, schema,
-or required-bootstrap failure), shares one bounded database probe across
-concurrent requests, and never globally disconnects the shared Prisma client.
+or required-bootstrap failure) and shares one bounded database probe across
+concurrent requests. A request timeout never launches duplicate database work.
+Next.js uses its shared Prisma client and never disconnects the runtime pool
+globally on a readiness failure. The separate Go runtime probes SQLite and
+sqlite-vec; it does not implement this predecessor limiter/bootstrap probe.
 
-## Automatic DigitalOcean release on merge
+## Automatic DigitalOcean release on merge — predecessor
 
-Merging `master` deploys production. The `web` service and the
-`web-pre-deploy-migrate` job both carry `github.deploy_on_push: true` on the
-live App Platform spec (set 2026-07-23; verified live via `doctl apps get
-29aea848-c348-4189-97ac-0ab2d7309567 --output json`), so a push to `master`
-starts a new App Platform deployment without any additional manual step.
+The recorded predecessor configuration has `github.deploy_on_push: true` on
+both the `web` service and `web-pre-deploy-migrate` job. That binding was set
+and verified on 2026-07-23 for App Platform app
+`29aea848-c348-4189-97ac-0ab2d7309567`. This historical receipt is not a current
+deployment readback and does not switch the service to Go.
 
 The safety boundary is `master` branch protection, not a manual release
-gate: GitHub requires the `merge-gate` status check (the aggregate of all 18
-CI jobs, admins included) to pass before any commit can reach `master`. A
-merged PR is therefore evidence that CI was green at the merge commit; it is
-not yet evidence that the deployment finished. DigitalOcean typically takes a
-few minutes to build and cut over traffic.
+gate: GitHub's required `merge-gate` aggregate must pass before a commit can
+reach protected `master`. A merged PR is not evidence that the provider
+deployment finished; compare the actual source and running artifact after
+DigitalOcean completes the deployment.
 
 `apps/web/scripts/deployment-provider-transaction.mjs` owns this invariant in
 code: `applySourceDescriptor` unconditionally forces `deploy_on_push: true`
@@ -142,16 +418,17 @@ enrollment lifecycle stages, lifts, or rolls back a spec, so no lifecycle
 mutation can silently disable it again.
 
 Before recording a deployed claim, compare the intended commit with the
-active App Platform source commit and `GET /api/version`, and confirm no
-deployment is still in progress. `pnpm --filter web enrollment:lifecycle`
-remains useful without `--apply` for enrollment-mode dry-run validation and
-readback (a separate concern from the deploy trigger above). Verify the
-exact active source commit, `/api/version`, `/api/health/live`,
-`/api/health`, the public enrollment state, and production migration history
-before recording production acceptance.
+active App Platform source commit and confirm no deployment is in progress.
+The predecessor's `GET /api/version` returns the latest release tag (or `null`),
+not the running commit; it cannot prove source identity by itself.
+`pnpm --filter web enrollment:lifecycle` remains useful without `--apply` for
+predecessor enrollment-mode dry-run validation and readback. Verify the active
+source commit, `/api/version`, `/api/health/live`, `/api/health`, enrollment state,
+and production migration history before recording acceptance. The separate Go
+route contracts are explicit in [`API.md`](./API.md).
 
 
-## deploy contract
+## deploy contract — deployed Next.js predecessor
 
 ```bash
 pnpm install --frozen-lockfile
@@ -175,7 +452,7 @@ migrations only to its pgvector test database and never owns production
 credentials. Migrations are forward-only and additive unless their own SQL
 says otherwise.
 
-## verification
+## verification — deployed Next.js predecessor
 
 ```bash
 DEPLOYMENT_URL=https://www.sploot.app pnpm --filter web validate:deployment
@@ -196,7 +473,7 @@ not a verified deployment. the deployed smoke also asserts `/api/health/live`
 answers `alive` — the platform routing probe is explicitly shallow, and the
 deep `/api/health` contract above remains the readiness authority.
 
-## rollback
+## Rollback — deployed Next.js predecessor
 
 for a deliberate application rollback, first set
 `SPLOOT_EMBEDDINGS_ENABLED=false` on the web service and verify the deployed
@@ -226,3 +503,132 @@ and CI post-bootstrap read back the full circuit columns, attempt ceiling,
 both required indexes, both validated constraints, and
 `asset_embeddings_revival_budget` before
 declaring the bootstrap ready.
+
+## Production migration boundary
+
+The self-contained Go product is **not** a drop-in runtime replacement on the
+existing Postgres/Clerk/Blob authorities. Its SQLite schema, password accounts,
+private media, local model identity, and device protocol are different. There
+is no supported command here to import the old real library or rebind existing
+identities. The former Go-on-Postgres spec-edit procedure is obsolete.
+
+Keep the existing DigitalOcean service, Next.js artifact, Node PRE_DEPLOY job,
+named Prisma migrations, and vendor data intact. A production migration requires
+separate authorization, source access, an identity/data conversion contract,
+verified original-media recovery, acceptance on the intended origin, and a
+rollback strategy that preserves writes. A local SQLite backup or a green
+browser smoke is not evidence for any of those source-library obligations.
+The existing deployment lifecycle automation remains predecessor-specific.
+
+## Library backup and isolated restore
+
+This procedure recovers the **local SQLite product only**, not the deployed
+Postgres/Blob library. `library-backup` is an operator full-library utility,
+distinct from the per-owner `/api/library/export` ZIP. The same subcommands
+are available as `sploot backup/resume/verify/restore`.
+
+### Snapshot contents and credential lifetime
+
+Backup uses SQLite's online backup API for a consistent committed database,
+including WAL state, then copies immutable referenced originals and posters
+with byte-count and SHA-256 verification. The portable copy retains all
+accounts and password hashes, asset IDs/original filenames, metadata, vectors,
+tags, favorites, trash, public share slugs, completed receipts, and indexing
+state. Interrupted indexing claims become pending; in-progress upload leases
+are not portable completed receipts.
+
+**Portable recovery deliberately invalidates credentials on the restored
+copy.** Browser/device sessions, pairing requests, personal upload tokens, and
+authentication attempts are removed; `signing.key` is excluded. Users retain
+their passwords but must sign in, mint new `splt_` tokens, and pair devices
+again. The restored server creates a fresh signing key. Source accounts and
+credentials are untouched by backup/restore. Model files are a separately
+reusable cache, not private-library backup contents.
+
+Snapshots still contain private media and password hashes. Keep them in
+approved private storage and restore only trusted snapshots. Hash parity is
+integrity evidence, not encryption or a guarantee that an untrusted snapshot
+is safe.
+
+### Capture, resume, and verify
+
+Build the tools with `pnpm --filter server build`. No database URL, `pg_dump`,
+`pg_restore`, remote storage token, or provider account is needed.
+
+Use a current-user-owned mode-`0700` source directory. Snapshot and restore
+destinations must be outside Git repositories, separate from the source and
+each other, with an existing private parent. A snapshot destination must be
+new; a restore target must be absent or an empty mode-`0700` directory.
+Allow space for the full database/media snapshot and a second restored copy.
+
+From the repository root, choose unused destination names on every new capture:
+
+```sh
+umask 077
+mkdir -p -m 0700 "$HOME/.local/share/sploot/recovery"
+DATA_DIR="$PWD/.sploot-local/library"
+SNAPSHOT="$HOME/.local/share/sploot/recovery/snapshot-001"
+RESTORED="$HOME/.local/share/sploot/recovery/restored-001"
+
+apps/server/build/library-backup backup \
+  --data-dir "$DATA_DIR" --directory "$SNAPSHOT"
+apps/server/build/library-backup verify --directory "$SNAPSHOT"
+```
+
+For a custom live library, set `DATA_DIR` to its actual absolute path. Backup
+uses SQLite's online snapshot and holds a shared media-coordination lock until
+all referenced files are copied and verified. Saves can continue; permanent
+deletion requires the exclusive lock and waits. Upload/embedding switches are
+not a full write freeze. Never declare an incomplete media copy a complete backup.
+
+If the frozen database manifest exists but copying media was interrupted:
+
+```sh
+apps/server/build/library-backup resume \
+  --data-dir "$DATA_DIR" --directory "$SNAPSHOT"
+apps/server/build/library-backup verify --directory "$SNAPSHOT"
+```
+
+Resume retains that frozen database, reuses verified objects, and repairs
+missing/corrupt copies from the same live media root; it does not recapture
+newer metadata. If the database phase did not complete, use a new snapshot
+directory. `verify` alone requires no source-library authority. Optional bounds
+are `--max-object-bytes`, `--object-timeout` (default `5m`, range `1s`–`1h`),
+and `--timeout` (default `2h`, maximum seven days). Diagnose real copy, privacy,
+integrity, and disk-space failures rather than bypassing safety guards.
+An interrupted backup no longer holds its media lock. Keep permanent deletion
+paused until resume succeeds: a subsequently purged original that was never
+copied cannot be recovered from that frozen snapshot. Use another verified
+recovery copy or create a new current snapshot; do not discard the verification
+failure or substitute newer metadata.
+
+### Restore, prove parity, then reopen
+
+Do not run a service against the restore target during these commands:
+
+```sh
+apps/server/build/library-backup restore \
+  --directory "$SNAPSHOT" --target-data-dir "$RESTORED"
+apps/server/build/library-backup verify \
+  --directory "$SNAPSHOT" --target-data-dir "$RESTORED"
+
+apps/server/build/sploot serve --data-dir "$RESTORED" --port 3002
+```
+
+Restore stages the verified SQLite database and media beside the target, then
+publishes atomically. It never replaces an existing library or retries into a
+populated target. `restore.json` records snapshot identity, verified database/
+object parity, and credential policy. Target verification is **before startup**:
+once the app writes sessions, indexing state, or library changes, the target is
+intentionally no longer byte-identical to the snapshot.
+
+Open `http://127.0.0.1:3002`, sign in with a restored account's password, and
+check its expected media, metadata, playback, and downloads. Pair devices and
+mint personal tokens afresh. Reuse the original model cache or pass an explicit
+`--model-dir`; recovery never needs the source account's old session credential.
+Keep the source and snapshot intact while proving restored behavior.
+
+Keep raw snapshots and private receipts out of Git. The
+[QA evidence lifecycle](../../../docs/qa/README.md) owns retained run evidence;
+link a sanitized scope/revision/verdict from the work record. This procedure
+does not establish recovery or migration of the unchanged old real library.

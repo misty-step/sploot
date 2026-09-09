@@ -1,0 +1,176 @@
+{
+  "modelVersion": "xenova-clip-vit-base-patch32-d15189d7028b43f1d3e65039190477f6af591c2a-quantized-clip-v1",
+  "dimension": 512,
+  "model": {
+    "repository": "Xenova/clip-vit-base-patch32",
+    "revision": "d15189d7028b43f1d3e65039190477f6af591c2a",
+    "source": "https://huggingface.co/Xenova/clip-vit-base-patch32/tree/d15189d7028b43f1d3e65039190477f6af591c2a",
+    "upstream": "https://github.com/openai/CLIP",
+    "license": "MIT (upstream CLIP code and weights)",
+    "licenseSource": "https://github.com/openai/CLIP/blob/main/LICENSE",
+    "notice": "CLIP-LICENSE.txt",
+    "conversionLicense": "Xenova does not declare a separate license at the pinned revision."
+  },
+  "preprocessing": {
+    "identity": "clip-v1",
+    "text": "Pinned tokenizer.json: NFC, Unicode whitespace folding, Unicode lowercase, byte-level BPE, BOS 49406, EOS/padding 49407, 77 tokens including specials; truncate after 75 content tokens.",
+    "image": "RGB (drop alpha); Pillow-compatible antialiased bicubic shortest edge 224, floor-scaled long edge, floor-centered 224x224 crop; float32 CHW; rescale 1/255; normalize with pinned preprocessor_config.json; upright posters supplied by ingest.",
+    "projection": "text_embeds and image_embeds, 512 float32 values, L2 normalized.",
+    "samplingReference": "https://github.com/python-pillow/Pillow/blob/11.3.0/src/libImaging/Resample.c",
+    "samplingLicense": "MIT-CMU",
+    "samplingNotice": "PILLOW-LICENSE.txt"
+  },
+  "runtimeVersion": "1.22.0",
+  "runtime": {
+    "source": "https://github.com/microsoft/onnxruntime/releases/tag/v1.22.0",
+    "license": "MIT; bundled dependencies retain their licenses in ThirdPartyNotices.txt",
+    "provider": "CPUExecutionProvider",
+    "abi": "ONNX Runtime C API 22",
+    "goBinding": "github.com/yalue/onnxruntime_go v1.22.0 (MIT)",
+    "linuxRequirement": "glibc-based Linux, libstdc++ and libgcc; musl/Alpine is not supported"
+  },
+  "artifacts": [
+    {
+      "name": "text_model_quantized.onnx",
+      "size": 64504507,
+      "sha256": "73baab855d406190da9faa498cfedf65f15cf309f4cc7385b7b032e6d08e5c3a",
+      "url": "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/d15189d7028b43f1d3e65039190477f6af591c2a/onnx/text_model_quantized.onnx"
+    },
+    {
+      "name": "vision_model_quantized.onnx",
+      "size": 89117001,
+      "sha256": "583fd1110a514667812fee7d684952aaf82a99b959760c8d7dca7e0ab9839299",
+      "url": "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/d15189d7028b43f1d3e65039190477f6af591c2a/onnx/vision_model_quantized.onnx"
+    },
+    {
+      "name": "tokenizer.json",
+      "size": 2224119,
+      "sha256": "f7f3b7af117d467b58374797691a6438d3e6b9e9cef800dfd5dced7f697a90cd",
+      "url": "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/d15189d7028b43f1d3e65039190477f6af591c2a/tokenizer.json"
+    },
+    {
+      "name": "preprocessor_config.json",
+      "size": 520,
+      "sha256": "6f638fb9401a6d6296feff533ee7efe657b787c49f954f82f5906b36ef2a1b1f",
+      "url": "https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/d15189d7028b43f1d3e65039190477f6af591c2a/preprocessor_config.json"
+    }
+  ],
+  "platforms": {
+    "linux/amd64": {
+      "archive": {
+        "name": "onnxruntime-linux-x64-1.22.0.tgz",
+        "size": 7798730,
+        "sha256": "8344d55f93d5bc5021ce342db50f62079daf39aaafb5d311a451846228be49b3",
+        "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-x64-1.22.0.tgz"
+      },
+      "library": "runtime/linux-amd64/lib/libonnxruntime.so.1.22.0",
+      "files": [
+        {
+          "name": "runtime/linux-amd64/lib/libonnxruntime.so.1.22.0",
+          "member": "onnxruntime-linux-x64-1.22.0/lib/libonnxruntime.so.1.22.0",
+          "size": 21042416,
+          "sha256": "3da6146e14e7b8aaec625dde11d6114c7457c87a5f93d744897da8781e35c673"
+        },
+        {
+          "name": "runtime/linux-amd64/LICENSE",
+          "member": "onnxruntime-linux-x64-1.22.0/LICENSE",
+          "size": 1073,
+          "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+        },
+        {
+          "name": "runtime/linux-amd64/ThirdPartyNotices.txt",
+          "member": "onnxruntime-linux-x64-1.22.0/ThirdPartyNotices.txt",
+          "size": 326866,
+          "sha256": "e9e90971a8e75a9a8ac0c6412e29c1202d079998389915aa485f46c816c3b4cc"
+        }
+      ]
+    },
+    "linux/arm64": {
+      "archive": {
+        "name": "onnxruntime-linux-aarch64-1.22.0.tgz",
+        "size": 6849865,
+        "sha256": "bb76395092d150b52c7092dc6b8f2fe4d80f0f3bf0416d2f269193e347e24702",
+        "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-linux-aarch64-1.22.0.tgz"
+      },
+      "library": "runtime/linux-arm64/lib/libonnxruntime.so.1.22.0",
+      "files": [
+        {
+          "name": "runtime/linux-arm64/lib/libonnxruntime.so.1.22.0",
+          "member": "onnxruntime-linux-aarch64-1.22.0/lib/libonnxruntime.so.1.22.0",
+          "size": 17643256,
+          "sha256": "0afd69a0ae38c5099fd0e8604dda398ac43dee67cd9c6394b5142b19e82528de"
+        },
+        {
+          "name": "runtime/linux-arm64/LICENSE",
+          "member": "onnxruntime-linux-aarch64-1.22.0/LICENSE",
+          "size": 1073,
+          "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+        },
+        {
+          "name": "runtime/linux-arm64/ThirdPartyNotices.txt",
+          "member": "onnxruntime-linux-aarch64-1.22.0/ThirdPartyNotices.txt",
+          "size": 326866,
+          "sha256": "e9e90971a8e75a9a8ac0c6412e29c1202d079998389915aa485f46c816c3b4cc"
+        }
+      ]
+    },
+    "darwin/arm64": {
+      "archive": {
+        "name": "onnxruntime-osx-arm64-1.22.0.tgz",
+        "size": 25943843,
+        "sha256": "cab6dcbd77e7ec775390e7b73a8939d45fec3379b017c7cb74f5b204c1a1cc07",
+        "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-osx-arm64-1.22.0.tgz"
+      },
+      "library": "runtime/darwin-arm64/lib/libonnxruntime.1.22.0.dylib",
+      "files": [
+        {
+          "name": "runtime/darwin-arm64/lib/libonnxruntime.1.22.0.dylib",
+          "member": "onnxruntime-osx-arm64-1.22.0/lib/libonnxruntime.1.22.0.dylib",
+          "size": 33481272,
+          "sha256": "2b885992d3d6fa4130d39ec84a80d7504ff52750027c547bb22c86165f19406a"
+        },
+        {
+          "name": "runtime/darwin-arm64/LICENSE",
+          "member": "onnxruntime-osx-arm64-1.22.0/LICENSE",
+          "size": 1073,
+          "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+        },
+        {
+          "name": "runtime/darwin-arm64/ThirdPartyNotices.txt",
+          "member": "onnxruntime-osx-arm64-1.22.0/ThirdPartyNotices.txt",
+          "size": 326866,
+          "sha256": "e9e90971a8e75a9a8ac0c6412e29c1202d079998389915aa485f46c816c3b4cc"
+        }
+      ]
+    },
+    "darwin/amd64": {
+      "archive": {
+        "name": "onnxruntime-osx-x86_64-1.22.0.tgz",
+        "size": 27889590,
+        "sha256": "e4ec94a7696de74fb1b12846569aa94e499958af6ffa186022cfde16c9d617f0",
+        "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.22.0/onnxruntime-osx-x86_64-1.22.0.tgz"
+      },
+      "library": "runtime/darwin-amd64/lib/libonnxruntime.1.22.0.dylib",
+      "files": [
+        {
+          "name": "runtime/darwin-amd64/lib/libonnxruntime.1.22.0.dylib",
+          "member": "onnxruntime-osx-x86_64-1.22.0/lib/libonnxruntime.1.22.0.dylib",
+          "size": 37411816,
+          "sha256": "283e595e61cf65df7a6b1d59a1616cbd35c8b6399dd90d799d99b71a3ff83160"
+        },
+        {
+          "name": "runtime/darwin-amd64/LICENSE",
+          "member": "onnxruntime-osx-x86_64-1.22.0/LICENSE",
+          "size": 1073,
+          "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+        },
+        {
+          "name": "runtime/darwin-amd64/ThirdPartyNotices.txt",
+          "member": "onnxruntime-osx-x86_64-1.22.0/ThirdPartyNotices.txt",
+          "size": 326866,
+          "sha256": "e9e90971a8e75a9a8ac0c6412e29c1202d079998389915aa485f46c816c3b4cc"
+        }
+      ]
+    }
+  }
+}

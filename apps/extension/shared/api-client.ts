@@ -7,26 +7,21 @@
 
 import {
   UPLOAD,
+  normalizeMimeType,
   type SplootApiError,
   type SplootApiErrorCode,
   type SplootApiUploadResponse,
 } from '@sploot/common';
-import { getAuthToken } from '../entrypoints/background/auth-manager';
-import { assertExtensionConfig, CLERK_ENVIRONMENT, SPLOOT_API_BASE_URL } from './env';
+import { getAuthToken, invalidateAuthToken } from '../entrypoints/background/auth-manager';
+import { getInstanceUrl } from './env';
 import { toUploadResult, type UploadResult } from './upload-response';
 
-const API_BASE_URL = SPLOOT_API_BASE_URL;
-
-console.log('[ApiClient] Initialized', {
-  apiBaseUrl: API_BASE_URL,
-  environment: CLERK_ENVIRONMENT,
-});
 
 export interface AuthTokenProvider {
-  getToken(signal?: AbortSignal): Promise<string | null>;
+  getToken(signal?: AbortSignal, instanceUrl?: string): Promise<string | null>;
 }
 
-const clerkAuthTokenProvider: AuthTokenProvider = {
+const deviceAuthTokenProvider: AuthTokenProvider = {
   getToken: getAuthToken,
 };
 
@@ -44,14 +39,15 @@ export class SplootApiClientError extends Error {
 }
 
 export class SplootApiClient {
-  constructor(private readonly authTokenProvider: AuthTokenProvider = clerkAuthTokenProvider) {}
+  constructor(private readonly authTokenProvider: AuthTokenProvider = deviceAuthTokenProvider) {}
 
   async uploadImage(
     blob: Blob,
     filename?: string,
     signal?: AbortSignal,
+    idempotencyKey?: string,
   ): Promise<UploadResult> {
-    return uploadImageWithTokenProvider(this.authTokenProvider, blob, filename, signal);
+    return uploadImageWithTokenProvider(this.authTokenProvider, blob, filename, signal, idempotencyKey);
   }
 }
 
@@ -72,9 +68,11 @@ async function parseErrorResponse(
     }
   }
 
-  if (errorData?.code === 'quota_exceeded') {
+  if (errorData?.code === 'quota_exceeded'
+    || errorData?.code === 'storage_limit_exceeded'
+    || errorData?.code === 'storage_reserve_exceeded') {
     return new SplootApiClientError(
-      'Storage quota exceeded. Open Sploot settings to manage storage.',
+      'Storage is full. Open Sploot settings to manage storage.',
       response.status,
       errorData.code,
       false,
@@ -102,7 +100,7 @@ async function parseErrorResponse(
   }
 
   if (response.status === 413) {
-    return new SplootApiClientError('Image too large after compression.', response.status, 'invalid_upload');
+    return new SplootApiClientError('Media exceeds the upload size limit.', response.status, 'invalid_upload');
   }
 
   if (response.status === 429) {
@@ -129,10 +127,11 @@ async function parseErrorResponse(
 export async function uploadImage(
   blob: Blob,
   filename?: string,
-  authTokenProvider: AuthTokenProvider = clerkAuthTokenProvider,
+  authTokenProvider: AuthTokenProvider = deviceAuthTokenProvider,
   signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<UploadResult> {
-  return uploadImageWithTokenProvider(authTokenProvider, blob, filename, signal);
+  return uploadImageWithTokenProvider(authTokenProvider, blob, filename, signal, idempotencyKey);
 }
 
 async function uploadImageWithTokenProvider(
@@ -140,19 +139,25 @@ async function uploadImageWithTokenProvider(
   blob: Blob,
   filename?: string,
   signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<UploadResult> {
-  assertExtensionConfig();
-
-  // Get auth token
-  const token = await authTokenProvider.getToken(signal);
+  const instanceUrl = await getInstanceUrl();
+  const token = await authTokenProvider.getToken(signal, instanceUrl);
   if (!token) {
     throw new Error('Authentication required');
   }
 
   // Create FormData
   const formData = new FormData();
-  const file = new File([blob], filename || 'image.jpg', {
-    type: blob.type || 'image/jpeg',
+  const mime = normalizeMimeType(blob.type || 'image/jpeg');
+  const extension = mime.split('/')[1] === 'jpeg' ? 'jpg' : mime.split('/')[1];
+  const name = filename || 'media';
+  const uploadFilename = name.toLowerCase().endsWith(`.${extension}`)
+    || (mime === 'image/jpeg' && name.toLowerCase().endsWith('.jpeg'))
+    ? name
+    : `${name.replace(/\.[^./\\]+$/, '')}.${extension}`;
+  const file = new File([blob], uploadFilename, {
+    type: mime,
   });
   formData.append('file', file);
 
@@ -178,23 +183,36 @@ async function uploadImageWithTokenProvider(
     console.log('[ApiClient] Upload starting', {
       filename: file.name,
       size: file.size,
-      apiBaseUrl: API_BASE_URL,
+      apiBaseUrl: instanceUrl,
     });
 
-    const response = await fetch(`${API_BASE_URL}/api/upload`, {
+    const response = await fetch(`${instanceUrl}/api/upload`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
+        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       },
       body: formData,
       signal: controller.signal,
+      credentials: 'omit',
+      redirect: 'error',
     });
 
-    clearTimeout(timeoutId);
+    if (response.status === 401) await invalidateAuthToken(token, instanceUrl);
 
-    const data = (await response.json()) as SplootApiUploadResponse;
+    let data: SplootApiUploadResponse | null;
+    try {
+      data = await response.json() as SplootApiUploadResponse;
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
+      if (!response.ok) throw await parseErrorResponse(response, null);
+      throw new SplootApiClientError(
+        'Sploot did not return a save receipt. Check your library before retrying.',
+        response.status,
+      );
+    }
 
-    if (response.status === 409 && data.success && data.asset && data.isDuplicate) {
+    if (response.status === 409 && data?.success === true && data.asset && data.isDuplicate === true) {
       const uploadResult = toUploadResult(data);
       console.log('[ApiClient] Duplicate upload', {
         assetId: uploadResult.assetId,
@@ -207,6 +225,12 @@ async function uploadImageWithTokenProvider(
       throw await parseErrorResponse(response, data);
     }
 
+    if (!data) {
+      throw new SplootApiClientError(
+        'Sploot did not return a save receipt. Check your library before retrying.',
+        response.status,
+      );
+    }
     // Parse successful response
     const uploadResult = toUploadResult(data);
 

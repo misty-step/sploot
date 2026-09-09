@@ -74,11 +74,13 @@ export function getUploadErrorDetails(
   const errorMessage = typeof error === 'string' ? error : error.message;
   const lowerMessage = errorMessage.toLowerCase();
 
-  if (errorCode === 'quota_exceeded') {
+  if (errorCode === 'quota_exceeded'
+    || errorCode === 'storage_limit_exceeded'
+    || errorCode === 'storage_reserve_exceeded') {
     return {
       type: UploadErrorType.QUOTA_EXCEEDED,
       message: errorMessage,
-      userMessage: 'Storage quota exceeded',
+      userMessage: 'Storage is full',
       action: {
         label: 'Manage storage',
         type: 'upgrade',

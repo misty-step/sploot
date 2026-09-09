@@ -7,10 +7,14 @@ alwaysApply: false
 
 # Chrome extension
 
-- Clerk keys must match the target: `pk_test_*` with localhost for dev;
-  `pk_live_*` with `https://www.sploot.app` for production. Dev/prod values live
-  in `.env` / `.env.production` as `VITE_CLERK_PUBLISHABLE_KEY`,
-  `VITE_API_BASE_URL`, and `VITE_CLERK_SYNC_HOST`.
+- The current WXT extension connects to a selected Go instance through browser-approved
+  device pairing, not Clerk. `VITE_API_BASE_URL` sets the initial instance URL;
+  the popup stores the selected canonical origin and its private device credential.
+- Never send a credential or retained capture to another instance/account. Queue
+  ownership is captured before asynchronous source work and survives re-pairing
+  to the same account; a session ID is provenance, not durable account ownership.
+- Media URLs are private and may be relative. Resolve them against the paired
+  instance, fetch with bearer auth, and revoke preview object URLs on disconnect.
 - Build with WXT: `build`, `build:prod` or `build:prod:unpacked`, then `zip:prod`
   for a release. The release packet is gated by
   `pnpm --filter extension release:check` and includes `STORE_LISTING.md` plus

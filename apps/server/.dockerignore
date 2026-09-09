@@ -1,0 +1,30 @@
+# This image accepts only the Go module and its compile-time embedded inputs.
+# Build with: docker build -f apps/server/Dockerfile apps/server
+**
+!go.mod
+!go.sum
+!cmd/
+!cmd/**/
+!cmd/**/*.go
+!internal/
+!internal/**/
+!internal/**/*.go
+!internal/database/migrations/*.sql
+!internal/inference/*.json
+!internal/inference/*.txt
+!internal/web/templates/*.html
+!internal/web/static/*.js
+!internal/web/static/*.css
+!internal/web/static/*.svg
+!internal/web/static/*.png
+!internal/web/static/vendor/htmx.min.js
+!internal/web/static/vendor/htmx.LICENSE
+!internal/web/templates/*.shortcut
+**/*_test.go
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/node_modules/**
+**/.git/**
+**/testdata/**

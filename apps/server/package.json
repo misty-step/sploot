@@ -1,0 +1,31 @@
+{
+  "name": "server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "tsx scripts/generate-contract.ts",
+    "check:contracts": "tsx scripts/generate-contract.ts --check",
+    "dev": "tsx scripts/dev-local.ts",
+    "dev:local": "tsx scripts/dev-local.ts",
+    "build": "pnpm check:contracts && go build -trimpath -o build/sploot ./cmd/sploot && go build -trimpath -o build/library-backup ./cmd/library-backup",
+    "start": "./build/sploot",
+    "lint": "pnpm check:contracts && go vet ./...",
+    "type-check": "tsc --noEmit && go vet ./...",
+    "test": "go test ./...",
+    "test:race": "go test -race ./...",
+    "test:integration": "go test -race -p 1 -tags=integration ./...",
+    "doctor": "go run ./cmd/sploot doctor --json",
+    "models:prepare": "go run ./internal/inference/cmd/prepare",
+    "smoke": "tsx scripts/local-gauntlet.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@sploot/common": "workspace:*",
+    "@types/node": "^22.20.0",
+    "fflate": "^0.8.3",
+    "htmx.org": "2.0.10",
+    "tsx": "4.22.3",
+    "typescript": "6.0.3"
+  }
+}

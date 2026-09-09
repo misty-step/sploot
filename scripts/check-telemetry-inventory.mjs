@@ -37,19 +37,15 @@ const POLICY_FILES = new Set([
   'scripts/check-telemetry-inventory.test.mjs',
 ]);
 
-// Clerk SDK telemetry must stay disabled at every surface that has a typed
-// option, and the one surface without a typed option (the extension
-// background client) must keep its documented no-knob rationale. Removing
-// either literal fails the source gate.
+// The retained Next predecessor still embeds Clerk and must disable its
+// collector. The paired-device extension has no Clerk dependency or SDK.
 export const CLERK_TELEMETRY_MARKERS = [
   ['apps/web/lib/auth/client.tsx', 'telemetry={{ disabled: true }}'],
-  ['apps/extension/entrypoints/popup/App.tsx', 'telemetry={{ disabled: true }}'],
-  ['apps/extension/entrypoints/background/auth-manager.ts', 'no telemetry option'],
 ];
 
 // How the literal telemetry={{ disabled: true }} provider prop survives
-// minification in compiled artifacts (verified against real .next/static and
-// WXT dist output): property may be quoted and true may become !0.
+// minification in compiled Next.js artifacts: property may be quoted and true
+// may become !0.
 const COMPILED_CLERK_DISABLED_MARKER = /["']?telemetry["']?\s*:\s*\{\s*["']?disabled["']?\s*:\s*(?:true|!0)\b/;
 
 export function findTelemetryInventoryViolations(files) {
@@ -73,6 +69,10 @@ export function findTelemetryInventoryViolations(files) {
         violations.push({ path: webPackage.path, line: 1, rule: `retired dependency ${dependency}` });
       }
     }
+  }
+  const extensionPackage = files.find(({ path }) => path === 'apps/extension/package.json');
+  if (extensionPackage && /"@clerk\/[^"]+"\s*:/.test(extensionPackage.content)) {
+    violations.push({ path: extensionPackage.path, line: 1, rule: 'device-paired extension must not depend on Clerk' });
   }
   return violations;
 }

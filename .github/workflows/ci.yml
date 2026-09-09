@@ -47,6 +47,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: apps/server/go.sum
+      - name: Install SQLite development headers
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
       - run: pnpm install --frozen-lockfile
       - run: pnpm stripe:sandbox:check
       - run: node --test scripts/check-stripe-sandbox.test.mjs
@@ -68,6 +74,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: apps/server/go.sum
+      - name: Install SQLite development headers
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run type-check
 
@@ -268,11 +280,9 @@ jobs:
       - name: Validate production manifest policy before release build
         run: pnpm --filter extension build:manifest-check && pnpm --filter extension manifest:check
       - name: Build production extension release artifacts
-        env:
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
         run: pnpm --filter extension zip:prod
-      - name: Scan compiled extension for provider residue and Clerk telemetry
-        run: pnpm telemetry:check -- --bundle-dir apps/extension/dist/chrome-mv3 --expect-clerk-disabled
+      - name: Scan compiled extension for retired provider residue
+        run: pnpm telemetry:check -- --bundle-dir apps/extension/dist/chrome-mv3
       - name: Validate candidate release structure and provenance
         env:
           RELEASE_CANDIDATE_SHA: ${{ github.sha }}
@@ -312,11 +322,15 @@ jobs:
             ${{ runner.temp }}/extension-release-provenance.json
           retention-days: 7
       - name: Build real unpacked MV3 lifecycle harness
-        env:
-          VITE_CLERK_PUBLISHABLE_KEY: pk_test_ci_lifecycle
-          VITE_API_BASE_URL: http://127.0.0.1:3345
-          VITE_CLERK_SYNC_HOST: http://127.0.0.1:3345
         run: pnpm --filter extension build:e2e
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: apps/server/go.sum
+      - name: Install SQLite development headers and media tools
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev ffmpeg
+      - name: Prepare real local inference and service
+        run: pnpm --filter server build && pnpm --filter server models:prepare
       - name: Install real Chromium for MV3 acceptance
         run: pnpm --filter extension exec playwright install chromium
       - name: Exercise real popup owner isolation in Chromium
@@ -328,7 +342,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xdotool
       - name: Exercise real unpacked MV3 lifecycle in Chromium
-        run: xvfb-run -a pnpm --filter extension test:mv3
+        run: xvfb-run -a pnpm --filter server smoke --extension --binary build/sploot
       - name: Upload real MV3 browser diagnostics
         if: always()
         uses: actions/upload-artifact@v7
@@ -608,18 +622,49 @@ jobs:
           retention-days: 7
 
 
+  go-server:
+    name: Go library integration
+    runs-on: ubuntu-latest
+    env:
+      SPLOOT_DEPLOYMENT_ENV: test
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: apps/server/go.sum
+      - run: pnpm install --frozen-lockfile
+      - name: Install SQLite development headers and media tools
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev ffmpeg
+      - name: Install browser for actual local application acceptance
+        run: pnpm --filter server exec playwright install --with-deps chromium
+      - name: Exercise real database, ownership, durable saves and indexing fences
+        run: pnpm --filter server test:integration
+      - name: Build service and recovery command from owned contracts
+        run: pnpm --filter server build
+      - name: Exercise isolated application boot, capture and search
+        run: pnpm --filter server smoke --binary build/sploot
+      - name: Build deployable self-contained Go image
+        run: docker build --tag sploot-go-ci apps/server
+
   merge-gate:
     name: merge-gate
     if: always()
-    needs: [secrets, lint, type-check, web-build, design, economics, test, extension, verify-extension-dist, auth-browser, queue-browser, public-truth, public-truth-production-guard, db-authority, gallery-browser]
+    needs: [secrets, lint, type-check, web-build, design, economics, test, extension, verify-extension-dist, auth-browser, queue-browser, public-truth, public-truth-production-guard, db-authority, gallery-browser, go-server]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.economics.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.verify-extension-dist.result }}" "${{ needs.auth-browser.result }}" "${{ needs.queue-browser.result }}" "${{ needs.public-truth.result }}" "${{ needs.public-truth-production-guard.result }}" "${{ needs.db-authority.result }}" "${{ needs.gallery-browser.result }}")
+          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.economics.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.verify-extension-dist.result }}" "${{ needs.auth-browser.result }}" "${{ needs.queue-browser.result }}" "${{ needs.public-truth.result }}" "${{ needs.public-truth-production-guard.result }}" "${{ needs.db-authority.result }}" "${{ needs.gallery-browser.result }}" "${{ needs.go-server.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" ]]; then
-              echo "One or more jobs failed: secrets=${{ needs.secrets.result }} lint=${{ needs.lint.result }} type-check=${{ needs.type-check.result }} web-build=${{ needs.web-build.result }} design=${{ needs.design.result }} economics=${{ needs.economics.result }} test=${{ needs.test.result }} extension=${{ needs.extension.result }} verify-extension-dist=${{ needs.verify-extension-dist.result }} auth-browser=${{ needs.auth-browser.result }} queue-browser=${{ needs.queue-browser.result }} public-truth=${{ needs.public-truth.result }} public-truth-production-guard=${{ needs.public-truth-production-guard.result }} db-authority=${{ needs.db-authority.result }} gallery-browser=${{ needs.gallery-browser.result }}"
+              echo "One or more required jobs failed. Go integration: ${{ needs.go-server.result }}. See each required job above for its failure evidence."
               exit 1
             fi
           done

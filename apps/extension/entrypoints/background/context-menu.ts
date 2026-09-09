@@ -1,19 +1,18 @@
 /**
  * Context Menu Handler
  *
- * Registers right-click "Save to Sploot" menu item for images.
- * Handles image capture and upload coordination.
+ * Registers right-click "Save to Sploot" for images and direct video sources.
+ * Handles media capture and upload coordination.
  */
 
 import { IS_DEV_BUILD } from '../../shared/build-mode';
-import { E2E_AUTH_MODE } from '../../shared/env';
 import {
   CONTEXT_MENU_SAVE_MESSAGES,
   type QueueActionResponse,
   type QueueErrorCode,
   type QueueListResponse,
 } from '../../shared/context-menu-save-messages';
-import { getAuthAuthority, runAuthDiagnostics } from './auth-manager';
+import { getAuthAuthority, readCaptureContext, runAuthDiagnostics } from './auth-manager';
 import {
   ContextMenuSaveQueueError,
   discardContextMenuSave,
@@ -38,8 +37,16 @@ export function ensureContextMenus() {
     chrome.contextMenus.create({
       id: MENU_ID_SAVE,
       title: 'Save to Sploot',
-      contexts: ['image'],
-    }, () => void chrome.runtime.lastError); // ignore duplicate errors
+      contexts: ['image', 'video'],
+    }, () => {
+      if (chrome.runtime.lastError) {
+        // Existing installations keep menu definitions across worker restarts.
+        chrome.contextMenus.update(MENU_ID_SAVE, {
+          title: 'Save to Sploot',
+          contexts: ['image', 'video'],
+        }, () => void chrome.runtime.lastError);
+      }
+    });
 
     if (IS_DEV_BUILD) {
       // Dev-build-only diagnostics; production ships no debug menu items.
@@ -85,17 +92,6 @@ export function setupContextMenu() {
   });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (E2E_AUTH_MODE && message?.type === CONTEXT_MENU_SAVE_MESSAGES.E2E_SAVE) {
-      if (typeof message.imageUrl !== 'string' || typeof message.filename !== 'string') {
-        sendResponse({ ok: false, error: 'Invalid E2E save request.' });
-        return true;
-      }
-      void handleImageSave(message.imageUrl, { title: message.filename }).then(
-        () => sendResponse({ ok: true }),
-        error => sendResponse({ ok: false, error: error instanceof Error ? error.message : 'Save failed.' }),
-      );
-      return true;
-    }
 
     const listType = message?.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_QUEUE
       || message?.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED;
@@ -196,12 +192,13 @@ async function handleImageSave(
   tab: Pick<chrome.tabs.Tab, 'title'> | undefined,
 ): Promise<void> {
   if (!imageUrl) {
-    showErrorNotification('No image URL found');
+    showErrorNotification('No direct media URL found. Streaming players may not expose a downloadable file.');
     return;
   }
 
   try {
-    await enqueueContextMenuSave(imageUrl, extractFilename(imageUrl, tab?.title));
+    const context = await readCaptureContext();
+    await enqueueContextMenuSave(imageUrl, extractFilename(imageUrl, tab?.title), context);
   } catch (error) {
     console.error('[Background][ContextMenu] Save failed', error);
     showErrorNotification(error instanceof Error ? error.message : 'Could not save to Sploot.');
@@ -226,12 +223,7 @@ function extractFilename(url: string, tabTitle?: string): string {
   try {
     const urlObj = new URL(url);
     const pathname = urlObj.pathname;
-    const filename = pathname.split('/').pop() || 'image.jpg';
-
-    // If filename doesn't have extension, infer from URL or default
-    if (!filename.includes('.')) {
-      return `${filename}.jpg`;
-    }
+    const filename = pathname.split('/').pop() || 'media';
 
     return filename;
   } catch {
@@ -241,9 +233,9 @@ function extractFilename(url: string, tabTitle?: string): string {
         .replace(/[^a-z0-9]/gi, '-')
         .toLowerCase()
         .substring(0, 50);
-      return `${sanitized}.jpg`;
+      return sanitized || 'media';
     }
 
-    return `image-${Date.now()}.jpg`;
+    return `media-${Date.now()}`;
   }
 }

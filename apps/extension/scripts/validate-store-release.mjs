@@ -162,12 +162,8 @@ async function validateZip() {
     )
   ).join('\n');
 
-  if (!/pk_live_[A-Za-z0-9_-]{20,}/.test(javascriptBundle)) {
-    recordLocal('release zip JavaScript does not contain a live Clerk publishable key');
-  }
-
-  if (/pk_test_[A-Za-z0-9_-]{20,}/.test(javascriptBundle)) {
-    recordLocal('release zip JavaScript contains a test Clerk publishable key');
+  if (/pk_(?:live|test)_[A-Za-z0-9_-]{20,}|sploot:e2e-auth-authority|sploot:e2e:context-menu-save/.test(javascriptBundle)) {
+    recordLocal('release zip JavaScript contains obsolete hosted credentials or an authentication bypass');
   }
 
   if (localBlockers.length === 0) {
@@ -250,7 +246,7 @@ async function validateListing() {
     'https://www.sploot.app/support',
     'https://www.sploot.app/privacy',
     '*://*/*',
-    'https://clerk.sploot.app/*',
+    'Device pairing',
   ];
 
   for (const snippet of required) {

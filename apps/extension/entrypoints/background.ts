@@ -4,7 +4,6 @@ import { setupNotificationFeedback } from './background/notifications';
 import { setupScreenshotCapture } from './background/screenshot';
 import { checkApiHealth } from '../shared/api-health';
 import { IS_DEV_BUILD } from '../shared/build-mode';
-import { E2E_AUTH_MODE } from '../shared/env';
 import { UPDATE_TEST_MESSAGES } from '../shared/update-test-messages';
 import { setupUpdateStatus, setInstalledVersionForTesting, setUpdateAvailableForTesting } from '../shared/update-status';
 
@@ -28,7 +27,7 @@ export default defineBackground(() => {
   try {
     // Fire-and-forget health and update checks; neither may block startup.
     setupUpdateStatus();
-    if (IS_DEV_BUILD || E2E_AUTH_MODE) {
+    if (IS_DEV_BUILD) {
       chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (typeof message?.version !== 'string') return undefined;
         if (message.type === UPDATE_TEST_MESSAGES.SET_AVAILABLE) {

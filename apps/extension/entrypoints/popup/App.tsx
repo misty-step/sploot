@@ -1,119 +1,58 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import ReactDOM from 'react-dom/client'
-import {
-  ClerkProvider,
-  SignedIn,
-  SignedOut,
-  SignOutButton,
-  useAuth,
-  useClerk,
-  useSession,
-  useUser,
-} from '@clerk/chrome-extension'
-import type { SplootEnrollmentPublicState } from '@sploot/common'
-import { installPopupAuthSync } from '../../shared/auth-sync'
-import { AUTH_MESSAGES } from '../../shared/auth-messages'
-import { IS_DEV_BUILD } from '../../shared/build-mode'
+import { AUTH_MESSAGES, type AuthState, type AuthResponse } from '../../shared/auth-messages'
 import { requestVisibleTabCapture } from '../../shared/capture-messages'
 import { CONTEXT_MENU_SAVE_MESSAGES, type ContextMenuSaveJobSummary } from '../../shared/context-menu-save-messages'
 import { getSaveStatus, onSaveStatusChanged, type SaveStatus } from '../../shared/save-status'
-import { E2E_AUTH_MODE, EXTENSION_CONFIG_ERROR, CLERK_PUBLISHABLE_KEY, CLERK_SYNC_HOST } from '../../shared/env'
-import { getSplootAppUrl, getSplootEnrollmentUrl, getSplootSignInUrl } from '../../shared/app-url'
+import { EXTENSION_CONFIG_ERROR, SPLOOT_API_BASE_URL } from '../../shared/env'
+import { getSplootAppUrl } from '../../shared/app-url'
 import { runBestEffort } from '../../shared/best-effort'
 import { requestDismissUpdate, requestUpdateNotice, onUpdateStatusChanged, openUpdatePage, type UpdateNotice } from '../../shared/update-status'
 import { performContextMenuSaveAction, requestContextMenuSaveQueue } from './queue-recovery'
-import { loadPublicEnrollmentState } from '../../shared/enrollment-state'
 import './style.css'
 
-const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
-const E2E_AUTH_KEY = 'sploot:e2e-auth-authority'
-
-type E2EAuthority = {
-  userId: string
-  accountId: string
-  sessionId: string
-}
 
 function App() {
-  if (EXTENSION_CONFIG_ERROR) {
-    return <ConfigErrorPanel message={EXTENSION_CONFIG_ERROR} />
-  }
-
-  if (E2E_AUTH_MODE) {
-    return <PopupContent><E2EAuthPanel /></PopupContent>
-  }
-
-  return (
-    <ClerkProvider
-      publishableKey={PUBLISHABLE_KEY}
-      syncHost={CLERK_SYNC_HOST}
-      telemetry={{ disabled: true }}
-      __experimental_syncHostListener
-    >
-      <AuthStateSync />
-      <PopupContent>
-        <SignedOut>
-          <SignedOutPanel />
-        </SignedOut>
-        <SignedIn>
-          <SignedInPanel />
-        </SignedIn>
-      </PopupContent>
-    </ClerkProvider>
-  )
-}
-
-/**
- * Test-only auth state. The E2E build uses this durable authority instead of
- * Clerk, but it still renders the exact PopupContent used by production,
- * including the update notice and message-driven actions.
- */
-function E2EAuthPanel() {
-  const [authority, setAuthority] = useState<E2EAuthority | null>(null)
+  const [auth, setAuth] = useState<AuthState>({ status: 'unknown', instanceUrl: SPLOOT_API_BASE_URL })
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    const readAuthority = () => {
-      void chrome.storage.local.get(E2E_AUTH_KEY).then(stored => {
-        const value = stored[E2E_AUTH_KEY]
-        if (!value || typeof value !== 'object') {
-          setAuthority(null)
-          return
-        }
-        const candidate = value as Partial<E2EAuthority>
-        setAuthority(
-          typeof candidate.userId === 'string' && typeof candidate.sessionId === 'string'
-            ? {
-                userId: candidate.userId,
-                accountId: typeof candidate.accountId === 'string' ? candidate.accountId : candidate.userId,
-                sessionId: candidate.sessionId,
-              }
-            : null,
-        )
-      })
+    let active = true
+    const listener = (message: { type?: string; payload?: AuthState }, sender: chrome.runtime.MessageSender) => {
+      if (sender.id === chrome.runtime.id && message.type === AUTH_MESSAGES.STATE_CHANGED && message.payload && active) {
+        setAuth(message.payload)
+      }
     }
-    readAuthority()
-    chrome.storage.onChanged.addListener(readAuthority)
-    return () => chrome.storage.onChanged.removeListener(readAuthority)
+    chrome.runtime.onMessage.addListener(listener)
+    void chrome.runtime.sendMessage({ type: AUTH_MESSAGES.REQUEST_STATE }).then((response: AuthResponse) => {
+      if (active && response?.state) setAuth(response.state)
+    }).catch(() => { if (active) setError('Cannot reach the extension worker. Close and reopen the popup.') })
+    return () => { active = false; chrome.runtime.onMessage.removeListener(listener) }
   }, [])
 
-  return authority ? (
-    <div className="signed-in-panel">
-      <p>Signed in as <strong>{authority.userId}</strong></p>
-      <div className="actions">
-        <button onClick={() => void requestVisibleTabCapture()}>Screenshot this tab</button>
-      </div>
-    </div>
-  ) : <SignedOutPanel />
-}
+  const requestAuth = async (type: string, instanceUrl?: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const response: AuthResponse = await chrome.runtime.sendMessage({ type, instanceUrl })
+      if (response?.state) setAuth(response.state)
+      if (response?.error) setError(response.error)
+    } catch { setError('Connection request failed. Check your instance and try again.') }
+    finally { setBusy(false) }
+  }
 
-function PopupContent({ children }: { children: ReactNode }) {
+  if (EXTENSION_CONFIG_ERROR) return <ConfigErrorPanel message={EXTENSION_CONFIG_ERROR} />
   return (
     <PopupShell>
-      {children}
-      <LastSaveStrip />
+      <ConnectionPanel auth={auth} busy={busy} request={requestAuth} />
+      {(error || auth.error) && <p className="connection-error" role="alert">{error || auth.error}</p>}
+      {auth.status === 'signed-in' && <LastSaveStrip key={auth.instanceUrl + '/' + auth.userId} />}
     </PopupShell>
   )
 }
+
+
 
 function PopupShell({ children }: { children: ReactNode }) {
   return (
@@ -138,37 +77,6 @@ function PopupShell({ children }: { children: ReactNode }) {
   )
 }
 
-/**
- * The truthful signed-out states, kept distinct: before the readback resolves
- * the popup only claims it is checking; a failed or database-unavailable
- * readback is reported as unknown, never mislabeled as an ordinary policy
- * pause. Every state keeps existing-user sign-in available and none promises
- * immediate account creation.
- */
-type SignedOutEnrollment = SplootEnrollmentPublicState | { status: 'checking' } | { status: 'unreachable' }
-
-const SIGNED_OUT_COPY: Record<'checking' | 'unreachable' | 'unknown' | 'paused' | 'open', { heading: string; body: string }> = {
-  checking: {
-    heading: 'sign in on sploot',
-    body: 'Checking new-account availability… Existing users can sign in now, then return here to save images from the web.',
-  },
-  unreachable: {
-    heading: 'enrollment status unavailable',
-    body: 'Sploot could not confirm new-account availability. Existing users can still sign in, then return here to save images from the web.',
-  },
-  unknown: {
-    heading: 'enrollment status unavailable',
-    body: 'Sploot cannot confirm new-account availability right now, so sign-up stays closed until it can. Existing users can still sign in, then return here to save images from the web.',
-  },
-  paused: {
-    heading: 'new enrollment is paused',
-    body: 'New accounts are not being accepted right now. Existing users can still sign in, then return here to save images from the web.',
-  },
-  open: {
-    heading: 'sign in on sploot',
-    body: 'Use the full Sploot sign-in page, then return here to save images from the web.',
-  },
-}
 
 function UpdateNoticePanel() {
   const [notice, setNotice] = useState<UpdateNotice | null>(null)
@@ -213,34 +121,55 @@ function UpdateNoticePanel() {
 }
 
 
-function SignedOutPanel() {
-  const [enrollmentState, setEnrollmentState] = useState<SignedOutEnrollment>({ status: 'checking' })
+function ConnectionPanel({ auth, busy, request }: {
+  auth: AuthState
+  busy: boolean
+  request: (type: string, instanceUrl?: string) => Promise<void>
+}) {
+  const [instanceUrl, setInstanceUrl] = useState(auth.instanceUrl)
+  useEffect(() => { setInstanceUrl(auth.instanceUrl) }, [auth.instanceUrl])
+  const changed = instanceUrl.trim().replace(/\/$/, '') !== auth.instanceUrl
 
-  useEffect(() => {
-    loadPublicEnrollmentState(getSplootEnrollmentUrl())
-      .then(state => {
-        setEnrollmentState(state ?? { status: 'unreachable' })
-      })
-      .catch(() => {
-        setEnrollmentState({ status: 'unreachable' })
-      })
-  }, [])
-
-  const handleSignIn = () => {
-    runBestEffort('tabs.create sign-in', () => chrome.tabs.create({ url: getSplootSignInUrl() }))
-  }
-
-  const copy = SIGNED_OUT_COPY[enrollmentState.status]
+  if (auth.status === 'unknown') return <p role="status">Checking device connection…</p>
+  if (auth.status === 'signed-in') return (
+    <div className="signed-in-panel">
+      <p>Connected as <strong>{auth.email}</strong></p>
+      <p className="meta">{auth.instanceUrl}</p>
+      <p>Right-click an image or direct video and choose “Save to Sploot”.</p>
+      <div className="actions">
+        <button onClick={() => runBestEffort('tabs.create library', () => chrome.tabs.create({ url: getSplootAppUrl('/app', auth.instanceUrl) }))}>View My Library</button>
+        <button className="secondary" onClick={() => void requestVisibleTabCapture()}>Screenshot this tab</button>
+        <button className="secondary" disabled={busy} onClick={() => void request(AUTH_MESSAGES.DISCONNECT)}>Disconnect</button>
+      </div>
+      <p className="meta">Disconnect revokes this device. Retained captures stay private to this account and instance.</p>
+    </div>
+  )
 
   return (
     <div className="auth-panel">
       <div className="auth-header">
-        <h2>{copy.heading}</h2>
-        <p>{copy.body}</p>
+        <h2>Connect to Sploot</h2>
+        <p>Approve this device in your instance. Your password stays in the browser sign-in page.</p>
       </div>
-      <div className="actions">
-        <button onClick={handleSignIn}>Sign In</button>
-      </div>
+      <form className="instance-form" onSubmit={event => { event.preventDefault(); void request(AUTH_MESSAGES.SET_INSTANCE, instanceUrl) }}>
+        <label htmlFor="instance-url">Instance URL</label>
+        <input id="instance-url" type="url" value={instanceUrl} spellCheck={false} autoComplete="url"
+          disabled={busy || Boolean(auth.pending)} onChange={event => setInstanceUrl(event.target.value)} />
+        {changed && <button className="secondary" disabled={busy} type="submit">Use instance</button>}
+      </form>
+      {auth.pending ? (
+        <div className="pairing-panel">
+          <p>Confirm this code on Sploot:</p>
+          <output className="pairing-code" aria-label="Connection code">{auth.pending.userCode}</output>
+          <p className="meta" role="status">Waiting for approval. Expires at {new Date(auth.pending.expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. You can close this popup.</p>
+          <div className="actions">
+            <button disabled={busy} onClick={() => void request(AUTH_MESSAGES.OPEN_VERIFICATION)}>Open approval page</button>
+            <button className="secondary" disabled={busy} onClick={() => void request(AUTH_MESSAGES.CANCEL)}>Cancel connection</button>
+          </div>
+        </div>
+      ) : (
+        <button disabled={busy || changed} onClick={() => void request(AUTH_MESSAGES.CONNECT)}>{busy ? 'Connecting…' : 'Connect device'}</button>
+      )}
     </div>
   )
 }
@@ -272,73 +201,6 @@ function ConfigErrorPanel({ message }: { message: string }) {
   )
 }
 
-function SignedInPanel() {
-  const { user } = useUser()
-  const { session } = useSession()
-  const [hasUsedExtension, setHasUsedExtension] = useState(
-    localStorage.getItem('sploot-has-used') === 'true'
-  )
-
-  const handleViewLibrary = () => {
-    // Mark as used when opening library
-    localStorage.setItem('sploot-has-used', 'true')
-    setHasUsedExtension(true)
-    runBestEffort('tabs.create library', () => chrome.tabs.create({ url: getSplootAppUrl() }))
-  }
-
-  const handleScreenshot = () => {
-    // The capture + upload runs in the background worker (the popup closes the
-    // moment it loses focus). Outcome is confirmed via badge + notification.
-    void requestVisibleTabCapture().catch(error => {
-      console.error('[Popup] Screenshot dispatch failed', error)
-    })
-  }
-
-  const handleDiagnostics = () => {
-    runBestEffort('runtime.sendMessage diagnostics', () => chrome.runtime.sendMessage({ type: AUTH_MESSAGES.RUN_DIAGNOSTICS }))
-  }
-
-  // Calculate session expiry time remaining (in seconds)
-  const expiresIn = session?.expireAt ? (session.expireAt.getTime() - Date.now()) / 1000 : null
-  const hoursLeft = expiresIn ? Math.floor(expiresIn / 3600) : null
-  const showExpiryWarning = hoursLeft !== null && hoursLeft < 24
-
-  return (
-    <div className="signed-in-panel">
-      {!hasUsedExtension && (
-        <div className="onboarding-tip">
-          <h3>You're all set!</h3>
-          <p>Right-click any image and select "Save to Sploot"</p>
-        </div>
-      )}
-      <p>
-        Signed in as{' '}
-        <strong>
-          {user?.primaryEmailAddress?.emailAddress || user?.username || 'Sploot user'}
-        </strong>
-      </p>
-      {showExpiryWarning && (
-        <p className="meta warning">
-          ⚠ Session expires in {hoursLeft} hour{hoursLeft === 1 ? '' : 's'}
-        </p>
-      )}
-      <div className="actions">
-        <button onClick={handleViewLibrary}>View My Library</button>
-        <button className="secondary" onClick={handleScreenshot}>
-          Screenshot this tab
-        </button>
-        {IS_DEV_BUILD && (
-          <button className="debug" onClick={handleDiagnostics}>
-            Debug Auth
-          </button>
-        )}
-        <SignOutButton>
-          <button className="secondary">Sign Out</button>
-        </SignOutButton>
-      </div>
-    </div>
-  )
-}
 
 /**
  * Persistent last-save outcome. OS notifications get suppressed and the badge
@@ -482,19 +344,6 @@ function SaveStatusStrip({ status }: { status: SaveStatus }) {
   )
 }
 
-function AuthStateSync() {
-  const { isLoaded } = useAuth()
-  const clerk = useClerk()
-
-  useEffect(() => {
-    if (!isLoaded) {
-      return
-    }
-    return installPopupAuthSync(clerk)
-  }, [clerk, isLoaded])
-
-  return null
-}
 
 // Render app
 const root = document.getElementById('root')

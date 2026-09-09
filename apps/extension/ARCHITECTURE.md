@@ -1,99 +1,29 @@
-# Architecture Decision: Separate Repository
+# Extension architecture
 
-> **Status**: Superseded (2025-12-01). The extension now lives in this monorepo at
-> `apps/extension` with shared code in `packages/common`. See
-> `docs/adr/0002-move-extension-into-monorepo.md` and `ARCHITECTURE.md` at the repo root.
+The WXT/React extension lives in this pnpm monorepo but ships independently through the Chrome Web Store. The self-contained Go application owns accounts, original media, persistent indexing, and local semantic inference. The predecessor Next app is a separate surface; extension device pairing does not silently fall back to a hosted identity provider.
 
-## Decision: Keep Extension Separate from Main App
+## Boundaries
 
-**Date**: 2025-11-08
-**Status**: Accepted
-**Context**: Phase 1 MVP (3-week timeline)
+- `entrypoints/background/auth-manager.ts` owns the persistent device protocol, credential storage, same-origin checks, sanitized auth events, expiration and revocation. `sploot:connection` is one atomically replaced local-storage record containing the selected origin plus either a pending request or a device session. Poll mutations serialize in the worker; deadlines and Chrome alarms survive its termination.
+- `entrypoints/popup/App.tsx` consumes public auth metadata only. It selects an instance, shows the user-facing code, opens approval, disconnects, and displays the current owner's retained save summaries. It never receives the device code or bearer token in runtime messages.
+- `entrypoints/background/context-menu.ts` and `screenshot.ts` receive real Chrome user actions. `image-fetcher.ts` retains originals under the shared MIME/upload contract. `context-menu-save-queue.ts` persists bytes, source digest, target instance, idempotency key, and stable account ownership before network upload.
+- `shared/api-client.ts` captures the request origin before asking for a credential for that exact origin. Credentials are bearer-only; requests omit cookies and reject redirects. A late 401 invalidates only its exact credential, not a newer pairing.
+- Local media is private: receipts expose relative `/media/{id}` references, not public storage URLs. Device-authenticated media fetches resolve only against the selected instance and omit cookies; bare image/notification URLs cannot attach a bearer credential. The browser's library session remains separate.
+- `notifications.ts`, `shared/save-status.ts`, and popup queue recovery expose saved/duplicate/retry/failure outcomes. Notification actions are revalidated against the selected origin when clicked, including after worker restart.
+- `@sploot/common` remains the source of truth for upload limits, MIME validation, and public upload response types. Do not fork these contracts into the extension.
 
-### Rationale
+## Persistence and authority
 
-**Separate repository wins because:**
-1. **Deployment Independence**: Chrome Web Store (1-3 day review) vs Vercel (instant)
-2. **Code Duplication Minimal**: Only ~10 lines (constants + 1 interface)
-3. **Build Isolation**: WXT + Chrome extension build vs Next.js App Router
-4. **Development Velocity**: No monorepo setup overhead (saves 1 day)
-5. **Team Size**: Single developer (monorepo shines with 3+ engineers)
+The stable owner is an instance origin plus user ID. Device-session IDs are non-secret provenance, not ownership: reconnecting the same account to the same instance can resume captured work. Equal user IDs at different instances are different owners. Pending ownerless captures can only be adopted on their recorded target instance; captures from older builds without a target are not automatically assigned to an unrelated instance.
 
-### Code Shared with Main App
+The queue retains immutable bytes, caps aggregate storage/concurrency/attempts, rejects replay drift, and never refetches a mutable source during recovery. Failed/paused work has finite retention and is owner-filtered in the popup. Configuration changes never copy a credential to another origin. Disconnect must revoke remotely before the UI claims completion; offline startup alone does not erase durable work.
 
-**Shared Constants**:
-```typescript
-// Source of truth: @sploot/common
-MAX_FILE_SIZE = 10 * 1024 * 1024  // 10MB
-ALLOWED_MIME_TYPES = [
-  'image/jpeg',
-  'image/jpg',
-  'image/png',
-  'image/webp',
-  'image/gif',
-  'video/mp4',
-  'video/webm',
-]
-```
+Device authentication permits only HTTPS remote instances and loopback HTTP. The extension has no cookie permission or hosted identity SDK. Local storage is restricted to trusted extension contexts; no content script or externally connectable auth bridge is installed. Passwords remain on the instance's browser-origin sign-in page.
 
-**Duplicated Types** (intentional):
-```typescript
-// Keep synced with API response from /api/upload
-interface UploadResult {
-  assetId: string;
-  blobUrl: string;
-  thumbnailUrl: string;
-}
-```
+The instance grants `spld_` device sessions owner-library/save/search/media/export authority, but approval, password changes, and credential management require the browser's `sploot_session`. Personal `splt_` tokens opt in only to the published save/search routes and cannot be substituted for a device session. These scope checks live in the Go auth boundary, not in popup visibility or a claimed user ID.
 
-**Validation**: Extension calls existing `/api/upload` endpoint - server validates inputs. Client-side validation is defensive but non-authoritative.
+The app's persistent `.sploot-local/library` survives ordinary shutdown independently of Chrome storage. Its portable backup preserves passwords/library data but scrubs browser/device/PAT credentials and pending pairing requests. A restored instance requires sign-in and fresh pairing; it does not inherit a usable device secret from the snapshot. [Runtime recovery](../web/docs/DEPLOYMENT.md#library-backup-and-isolated-restore) owns that lifecycle.
 
-### When to Migrate to Monorepo
+## Evidence and releases
 
-**Trigger conditions:**
-1. Adding mobile app (React Native) → 3+ apps benefit from shared packages
-2. Shared code exceeds 500 LOC → ROI of monorepo setup positive
-3. Constants drift causes bugs → Type safety across boundary needed
-4. Team grows to 2+ full-time devs → Shared workspace reduces duplication pain
-
-**Migration effort**: ~1 day (pnpm workspaces + Turborepo setup)
-
-### Mitigation: Preventing Drift
-
-1. **Documentation**: Constants documented in both repos
-2. **Integration Tests**: Extension tests hit real `/api/upload` (catches mismatches)
-3. **Code Review**: PR template reminds to check constant sync
-4. **Version Pinning**: Extension version tracks compatible server version
-
-### Future Architecture (If Monorepo Needed)
-
-```
-sploot-monorepo/
-├── apps/
-│   ├── web/              # Next.js (current sploot/)
-│   ├── extension/        # Chrome extension (current sploot-extension/)
-│   └── mobile/           # React Native (future)
-├── packages/
-│   ├── shared-types/     # UploadResult, constants
-│   ├── shared-ui/        # React components
-│   └── shared-utils/     # Validation, formatting
-└── pnpm-workspace.yaml
-```
-
-**Estimated migration time**: 4-6 hours setup + 2-3 hours migration + 2 hours testing
-
-### References
-
-- Main app: `/Users/phaedrus/Development/sploot/`
-- Extension: `/Users/phaedrus/Development/sploot-extension/`
-- Server constants: `sploot/lib/blob.ts`
-- Extension constants: `sploot-extension/entrypoints/background/image-fetcher.ts`
-
-### Reviewers
-
-This decision documented after thorough analysis of:
-- Current code duplication (7 occurrences)
-- Build system complexity (WXT vs Next.js)
-- Deployment constraints (Chrome Web Store process)
-- Team size and velocity needs
-- Future mobile app timeline (6+ months)
+[README.md](README.md) is the run/load/runtime procedure. `playwright/mv3-lifecycle.e2e.ts` exercises the real backend; `mv3-api-fixture.e2e.ts` is explicitly a controlled fault fixture. The production artifact, manifest policy, exact-provenance operator evidence, and manually authorized Web Store upload remain separate release gates. Test builds contain no alternate authentication authority.

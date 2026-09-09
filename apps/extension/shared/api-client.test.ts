@@ -1,21 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SplootApiUploadResponse } from '@sploot/common';
 
-vi.mock('@clerk/chrome-extension/background', () => ({
-  createClerkClient: vi.fn(async () => ({
-    session: {
-      id: 'session_123',
-      user: { id: 'user_123' },
-      expireAt: new Date('2026-05-14T12:00:00.000Z'),
-      getToken: vi.fn(async () => 'session-token'),
-    },
-  })),
+vi.mock('../entrypoints/background/auth-manager', () => ({
+  getAuthToken: vi.fn(async () => 'spld_test-device'),
+  invalidateAuthToken: vi.fn(async () => undefined),
 }));
+vi.mock('./env', () => ({ getInstanceUrl: async () => 'https://sploot.test' }));
 
 beforeEach(() => {
   vi.resetModules();
-  vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_contract');
-  vi.stubEnv('VITE_CLERK_SYNC_HOST', 'https://sploot.test');
   vi.stubEnv('VITE_API_BASE_URL', 'https://sploot.test');
 });
 
