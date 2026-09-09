@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import type { BrowserContext, Page, TestInfo, Worker } from '@playwright/test';
+import { chromium, type BrowserContext, type Page, type TestInfo, type Worker } from '@playwright/test';
 
 export type Mv3Step = <T>(title: string, body: () => Promise<T>) => Promise<T>;
 
@@ -7,6 +7,23 @@ const SERVICE_WORKER_TIMEOUT_MS = 15_000;
 const POPUP_TIMEOUT_MS = 15_000;
 const CLEANUP_TIMEOUT_MS = 5_000;
 const MESSAGE_TIMEOUT_MS = 15_000;
+
+export async function launchMv3Context(extensionPath: string) {
+  // Linux native controls use xdotool, including under Xvfb on Wayland hosts.
+  // Select X11 for this browser without changing the test worker's environment.
+  return chromium.launchPersistentContext('', {
+    channel: 'chromium',
+    headless: false,
+    ignoreDefaultArgs: ['--disable-extensions'],
+    args: [
+      `--disable-extensions-except=${extensionPath}`,
+      `--load-extension=${extensionPath}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+      ...(process.platform === 'linux' ? ['--ozone-platform=x11'] : []),
+    ],
+  });
+}
 
 export async function runMv3Step<T>(
   context: BrowserContext | undefined,

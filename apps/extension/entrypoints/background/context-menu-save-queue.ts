@@ -1,6 +1,6 @@
 import { UPLOAD } from '@sploot/common';
 import { setSaveStatus } from '../../shared/save-status';
-import { getAuthAuthority, onAuthStateChanged, promptUserSignIn, readAuthAuthority, sameAccountAuthority, type AuthAuthority } from './auth-manager';
+import { getAuthAuthority, onAuthStateChanged, promptUserSignIn, readAuthAuthority, sameAccountAuthority, type AuthAuthority, type CaptureContext } from './auth-manager';
 import { fetchImage } from './image-fetcher';
 import { showErrorNotification } from './notifications';
 import { saveToSploot } from './save-flow';
@@ -32,6 +32,8 @@ export interface ContextMenuSaveJob {
   id: string;
   imageUrl: string;
   filename: string;
+  /** Prevents an unpaired capture from being adopted by another instance. */
+  targetInstanceUrl?: string;
   state: ContextMenuSaveJobState;
   createdAt: number;
   attempts: number;
@@ -45,7 +47,7 @@ export interface ContextMenuSaveJob {
   /** When the job was paused for an owner change; bounds terminal retention. */
   pausedAt?: number;
   /**
-   * Stable Clerk ACCOUNT identity that owns the durable job (the recorded
+   * Stable instance/account identity that owns the durable job (the recorded
    * sessionId is credential provenance only — ownership checks compare
    * account identity via sameAccountAuthority). Never shown in popup summaries.
    */
@@ -169,6 +171,9 @@ function normalizeJob(job: unknown): ContextMenuSaveJob | null {
 
   if (validAuthority(candidate.owner)) {
     normalized.owner = candidate.owner;
+  }
+  if (typeof candidate.targetInstanceUrl === 'string') {
+    normalized.targetInstanceUrl = candidate.targetInstanceUrl;
   }
   if (typeof candidate.processingStartedAt === 'number' && Number.isFinite(candidate.processingStartedAt)) {
     normalized.processingStartedAt = candidate.processingStartedAt;
@@ -546,7 +551,7 @@ async function processJob(job: ContextMenuSaveJob, sweep: PauseSweep = { pauseNo
   }
 
   // Owner fencing is authoritative even when retry backoff has not elapsed.
-  // A restart must pause a job for the wrong Clerk authority immediately;
+  // A restart must pause a job for the wrong account authority immediately;
   // otherwise a future-dated job can remain pending and leak across accounts.
   if (current.nextAttemptAt > Date.now()) {
     return;
@@ -719,7 +724,9 @@ async function recoverPendingSavesLocked(
       // A signed-out right-click is durably retained without an owner while the
       // web sign-in tab is open. The first signed-in authority claims it before
       // the job becomes eligible for upload; this is the restart boundary.
-      if (job.state === 'awaiting-auth' && !job.owner && currentAuthority) {
+      if (job.state === 'awaiting-auth' && !job.owner && currentAuthority
+        && job.targetInstanceUrl
+        && currentAuthority.accountId === `${job.targetInstanceUrl}/${currentAuthority.userId}`) {
         return {
           ...job,
           owner: currentAuthority,
@@ -781,7 +788,7 @@ export function setupContextMenuSaveQueue(): void {
     });
   });
 
-  // The auth bridge and queue share this worker, so a signed-in Clerk resource
+  // The auth bridge and queue share this worker, so a signed-in device
   // transition is the reliable wakeup for an ownerless prepared save. Runtime
   // messages are popup-facing and never loop back to their background sender.
   removeAuthStateListener?.();
@@ -864,18 +871,11 @@ function reclaimQueueCapacity(
   return { admitted: true, jobs: retained, evictedCount };
 }
 
-/** Persist captured bytes before any potentially long web sign-in wait. */
-export function enqueueCapturedSave(blob: Blob, filename: string, imageUrl = 'captured://visible-tab'): Promise<void> {
+/** Persist bytes with the immutable context captured before their production began. */
+export function enqueueCapturedSave(blob: Blob, filename: string, context: CaptureContext, imageUrl = 'captured://visible-tab'): Promise<void> {
+  const { authority: owner, instanceUrl: targetInstanceUrl } = context;
   return withDeadline(() => blobToStoredSource(blob), 'Image preparation timed out; save was not queued.')
-    .then(async retained => {
-      // Throwing read: a transient auth failure surfaces as its own error instead
-      // of masquerading as "signed out". Signed-out admission is deliberately
-      // ownerless and durable; it must not hold the image only in worker memory
-      // while promptUserSignIn waits for a cookie transition.
-      const owner = await withDeadline(
-        signal => readAuthAuthority(signal),
-        'Auth check timed out; save was not queued.',
-      );
+    .then(retained => {
       return exclusively(async () => {
         const jobs = await readJobs();
         const now = Date.now();
@@ -896,6 +896,7 @@ export function enqueueCapturedSave(blob: Blob, filename: string, imageUrl = 'ca
           id: crypto.randomUUID(),
           imageUrl,
           filename,
+          targetInstanceUrl,
           ...(owner ? { owner } : {}),
           ...retained,
           state: owner ? 'pending' : 'awaiting-auth',
@@ -930,11 +931,11 @@ export function enqueueCapturedSave(blob: Blob, filename: string, imageUrl = 'ca
 }
 
 /** Fetch once with a deadline, then enqueue immutable bytes; retries never refetch. */
-export function enqueueContextMenuSave(imageUrl: string, filename: string): Promise<void> {
+export function enqueueContextMenuSave(imageUrl: string, filename: string, context: CaptureContext): Promise<void> {
   return fetchAdmission.run(() => withDeadline(
     signal => fetchImage(imageUrl, signal),
     'Image fetch timed out; retry scheduled without blocking other saves.',
-  )).then(blob => enqueueCapturedSave(blob, filename, imageUrl));
+  )).then(blob => enqueueCapturedSave(blob, filename, context, imageUrl));
 }
 
 export function recoverPendingContextMenuSaves(trigger: RecoveryTrigger = 'alarm', onlyJobId?: string): Promise<void> {

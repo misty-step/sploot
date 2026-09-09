@@ -27,16 +27,13 @@ func (s *Service) Fetch(ctx context.Context, rawURL string) (io.ReadCloser, stri
 	if !s.enabled {
 		return nil, "", "", &model.APIError{Status: 503, Code: "uploads_disabled", Message: "Uploads are temporarily disabled"}
 	}
-	response, err := s.OpenRemote(ctx, rawURL, "")
+	response, err := s.fetchRemote(ctx, rawURL)
 	if err != nil {
 		return nil, "", "", err
 	}
 	fail := func(err error) (io.ReadCloser, string, string, error) {
 		_ = response.Body.Close()
 		return nil, "", "", err
-	}
-	if response.StatusCode != http.StatusOK {
-		return fail(invalid(fmt.Sprintf("The media URL answered HTTP %d", response.StatusCode)))
 	}
 	contentType := normalizeMIME(response.Header.Get("Content-Type"))
 	if !contract.IsAllowedMIME(contentType) {
@@ -53,17 +50,12 @@ func (s *Service) Fetch(ctx context.Context, rawURL string) (io.ReadCloser, stri
 	return response.Body, filename, contentType, nil
 }
 
-// OpenRemote streams an owner-authorized delivery URL, including one byte range.
-// The caller owns authorization, response headers, and closing Body. Availability
-// does not depend on UploadsEnabled: a read-only library still serves its media.
-// Successful statuses are 200, 206, and 416; other upstream statuses are errors.
-func (s *Service) OpenRemote(ctx context.Context, rawURL, rangeHeader string) (*http.Response, error) {
+// fetchRemote is only the safe URL-capture transport. Retained media is served
+// from private local originals and never fetched through a delivery provider.
+func (s *Service) fetchRemote(ctx context.Context, rawURL string) (*http.Response, error) {
 	target, err := validateRemoteURL(rawURL, s.localImportOrigin)
 	if err != nil {
 		return nil, err
-	}
-	if rangeHeader != "" && !validRange(rangeHeader) {
-		return nil, &model.APIError{Status: 416, Code: "INVALID_RANGE", Message: "Use one valid byte range"}
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(contract.UploadTimeoutMS)*time.Millisecond)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
@@ -72,9 +64,6 @@ func (s *Service) OpenRemote(ctx context.Context, rawURL, rangeHeader string) (*
 		return nil, err
 	}
 	setFetchHeaders(request)
-	if rangeHeader != "" {
-		request.Header.Set("Range", rangeHeader)
-	}
 	response, err := s.fetchClient.Do(request)
 	if err != nil {
 		cancel()
@@ -85,7 +74,7 @@ func (s *Service) OpenRemote(ctx context.Context, rawURL, rangeHeader string) (*
 		return nil, &model.APIError{Status: 400, Code: "invalid_upload", Message: "The remote media could not be fetched"}
 	}
 	fail := func(err error) (*http.Response, error) { _ = response.Body.Close(); cancel(); return nil, err }
-	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent && response.StatusCode != http.StatusRequestedRangeNotSatisfiable {
+	if response.StatusCode != http.StatusOK {
 		return fail(invalid(fmt.Sprintf("The media URL answered HTTP %d", response.StatusCode)))
 	}
 	if encoding := response.Header.Get("Content-Encoding"); encoding != "" && !strings.EqualFold(strings.TrimSpace(encoding), "identity") {
@@ -96,38 +85,6 @@ func (s *Service) OpenRemote(ctx context.Context, rawURL, rangeHeader string) (*
 	}
 	response.Body = &boundedBody{body: response.Body, cancel: cancel, remaining: int64(contract.UploadMaxBytes)}
 	return response, nil
-}
-
-func validRange(value string) bool {
-	if len(value) > 128 || !strings.HasPrefix(value, "bytes=") {
-		return false
-	}
-	start, end, found := strings.Cut(strings.TrimPrefix(value, "bytes="), "-")
-	if !found || start == "" && end == "" {
-		return false
-	}
-	parse := func(value string) (int64, bool) {
-		for _, digit := range value {
-			if digit < '0' || digit > '9' {
-				return 0, false
-			}
-		}
-		number, err := strconv.ParseInt(value, 10, 64)
-		return number, err == nil
-	}
-	if start == "" {
-		suffix, ok := parse(end)
-		return ok && suffix > 0
-	}
-	first, ok := parse(start)
-	if !ok {
-		return false
-	}
-	if end == "" {
-		return true
-	}
-	last, ok := parse(end)
-	return ok && last >= first
 }
 
 func validateLocalImportOrigin(value string, nonproduction bool) (string, error) {
@@ -236,9 +193,6 @@ func newFetchClient(localOrigin string) *http.Client {
 		// forwarding cookies, credentials, or a sensitive Referer to any host.
 		request.Header = make(http.Header)
 		setFetchHeaders(request)
-		if len(via) > 0 && via[0].Header.Get("Range") != "" {
-			request.Header.Set("Range", via[0].Header.Get("Range"))
-		}
 		return nil
 	}}
 }

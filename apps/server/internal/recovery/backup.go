@@ -4,128 +4,74 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"reflect"
+	"path/filepath"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/misty-step/sploot/apps/server/internal/contract"
+	"github.com/misty-step/sploot/apps/server/internal/medialock"
 )
 
 func normalizedOptions(options Options) (Options, error) {
-	if options.Workers == 0 {
-		options.Workers = 4
-	}
 	if options.MaxObjectBytes == 0 {
-		options.MaxObjectBytes = 1 << 30
+		options.MaxObjectBytes = int64(contract.UploadMaxBytes) + 2*1024*1024
 	}
 	if options.ObjectTimeout == 0 {
 		options.ObjectTimeout = 5 * time.Minute
 	}
-	if options.Workers < 1 || options.Workers > 16 || options.MaxObjectBytes < 1 || options.MaxObjectBytes > 1<<40 || options.ObjectTimeout < time.Second || options.ObjectTimeout > time.Hour {
-		return options, failure("configuration", "workers must be 1..16, object bytes 1..1TiB, and object timeout 1s..1h")
+	if options.MaxObjectBytes < 1 || options.MaxObjectBytes > 1<<40 || options.ObjectTimeout < time.Second || options.ObjectTimeout > time.Hour {
+		return options, failure("configuration", "object bytes must be 1..1TiB and timeout 1s..1h")
 	}
+	canonical, err := canonicalDirectory(options.DataDirectory)
+	if err != nil {
+		return options, err
+	}
+	options.DataDirectory = canonical
 	return options, nil
 }
 
-// Backup freezes every database table and all asset source metadata under the
-// same exported snapshot consumed by pg_dump. The source transaction ends before
-// any media is fetched. Object checksums detect bytes changed after that point.
 func Backup(ctx context.Context, options Options) (Manifest, error) {
 	var manifest Manifest
 	options, err := normalizedOptions(options)
 	if err != nil {
 		return manifest, err
 	}
-	database, err := parseDatabase(options.DatabaseURL)
+	source, err := openDirectory(options.DataDirectory, false)
 	if err != nil {
 		return manifest, err
 	}
+	defer source.close()
+	// Hold the source lock from the SQLite snapshot through verified media
+	// publication. Saves may proceed; no permanent deletion may unlink originals.
+	lock, err := medialock.Acquire(ctx, options.DataDirectory, false)
+	if err != nil {
+		return manifest, failure("backup", "cannot acquire the source media lock")
+	}
+	defer lock.Close()
 	dir, err := newDirectory(options.Directory)
 	if err != nil {
 		return manifest, err
 	}
 	defer dir.close()
-	manifest, err = captureDatabase(ctx, database, dir)
-	if err != nil {
+	if err := snapshotDatabase(ctx, source, dir); err != nil {
 		return manifest, err
 	}
-	return finishBackup(ctx, dir, options, manifest)
-}
-
-func captureDatabase(ctx context.Context, database *databaseConnection, dir *snapshotDirectory) (Manifest, error) {
-	manifest := Manifest{Format: Format, Version: Version, State: "database-ready", CreatedAt: time.Now().UTC()}
 	id, err := randomID()
 	if err != nil {
 		return manifest, err
 	}
-	manifest.ID = id
-	conn, err := database.connect(ctx, true)
+	database, err := dir.hashFile(ctx, "library.sqlite")
 	if err != nil {
 		return manifest, err
 	}
-	defer conn.Close(context.Background())
-	tx, err := conn.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return manifest, databaseError("database-snapshot", err)
-	}
-	defer tx.Rollback(context.Background())
-	var snapshot string
-	if err := tx.QueryRow(ctx, `SELECT pg_export_snapshot()`).Scan(&snapshot); err != nil {
-		return manifest, databaseError("database-snapshot", err)
-	}
-	manifest.Source, err = database.identity(ctx, tx)
-	if err != nil {
-		return manifest, err
-	}
-	inventory, err := collectInventory(ctx, tx)
-	if err != nil {
-		return manifest, err
-	}
-	for _, required := range []string{"_prisma_migrations", "users", "user_identities", "assets", "asset_embeddings", "asset_storage_replicas"} {
-		found := false
-		for _, table := range inventory.Tables {
-			if table.Schema == "public" && table.Name == required {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return manifest, failure("database-snapshot", "source is not the complete migrated Sploot schema; required recovery tables are absent")
-		}
-	}
-	manifest.Assets, manifest.Sources, manifest.AssetCount, manifest.ObjectCount, err = captureAssets(ctx, tx, dir)
-	if err != nil {
-		return manifest, err
-	}
-	manifest.Database, err = dir.writeFile("database.dump", func(w io.Writer) error {
-		return database.command(ctx, "pg_dump", []string{"--format=custom", "--compress=6", "--no-password", "--lock-wait-timeout=10s", "--snapshot=" + snapshot}, nil, w, true)
-	})
-	if err != nil {
-		return manifest, err
-	}
-	// Sequences are not MVCC. Refuse a snapshot whose sequence state moved
-	// during pg_dump rather than claim inventory fidelity that we cannot prove.
-	sequences, err := collectSequences(ctx, tx)
-	if err != nil {
-		return manifest, err
-	}
-	if !reflect.DeepEqual(sequences, inventory.Sequences) {
-		return manifest, failure("database-snapshot", "sequence values changed during pg_dump; quiesce source writers and create a new snapshot")
-	}
-	manifest.Inventory, err = dir.writeJSON("inventory.json", inventory)
-	if err != nil {
-		return manifest, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return manifest, databaseError("database-snapshot", err)
-	}
+	manifest = Manifest{Format: Format, Version: Version, ID: id, Phase: "database-ready", SourceID: digest([]byte(options.DataDirectory)), CreatedAt: time.Now().UTC(), Database: database, Credentials: credentialPolicy}
 	if _, err := dir.writeJSON("manifest.json", manifest); err != nil {
 		return manifest, err
 	}
-	return manifest, nil
+	return finishBackup(ctx, source, dir, options, manifest)
 }
 
-// Resume does not use DATABASE_URL or contact the source database. A failed
-// database phase has no durable manifest and must use a fresh destination.
+// Resume verifies the frozen database first, then repairs only missing or
+// corrupt media. It never recaptures newer metadata from the live database.
 func Resume(ctx context.Context, options Options) (Manifest, error) {
 	var manifest Manifest
 	options, err := normalizedOptions(options)
@@ -141,52 +87,50 @@ func Resume(ctx context.Context, options Options) (Manifest, error) {
 	if err != nil {
 		return manifest, err
 	}
-	if err := verifyCore(dir, manifest); err != nil {
+	if manifest.SourceID != digest([]byte(options.DataDirectory)) {
+		return manifest, failure("resume", "source data directory differs from the frozen snapshot")
+	}
+	if err := verifyCore(ctx, dir, manifest); err != nil {
 		return manifest, err
 	}
-	if manifest.State == "complete" {
-		return manifest, verifyMedia(ctx, dir, manifest)
+	source, err := openDirectory(options.DataDirectory, false)
+	if err != nil {
+		return manifest, err
 	}
-	return finishBackup(ctx, dir, options, manifest)
+	defer source.close()
+	lock, err := medialock.Acquire(ctx, options.DataDirectory, false)
+	if err != nil {
+		return manifest, failure("resume", "cannot acquire the source media lock")
+	}
+	defer lock.Close()
+	return finishBackup(ctx, source, dir, options, manifest)
 }
 
-func finishBackup(ctx context.Context, dir *snapshotDirectory, options Options, manifest Manifest) (Manifest, error) {
-	if err := downloadObjects(ctx, dir, options); err != nil {
+func finishBackup(ctx context.Context, source, dir *snapshotDirectory, options Options, manifest Manifest) (Manifest, error) {
+	db, err := openDatabase(ctx, dir, true)
+	if err != nil {
 		return manifest, err
 	}
-	var count, bytes int64
-	media, err := dir.writeFile("media.ndjson", func(w io.Writer) error {
-		encoder := json.NewEncoder(w)
-		return scanRecords[objectSource](dir, "sources.ndjson", func(source objectSource) error {
-			if ctx.Err() != nil {
-				return contextFailure(ctx, "media-finalize")
+	defer db.Close()
+	buffer := make([]byte, 64<<10)
+	media, err := dir.writeFile("media.ndjson", func(writer io.Writer) error {
+		encoder := json.NewEncoder(writer)
+		var err error
+		manifest.AssetCount, manifest.ObjectCount, manifest.MediaBytes, err = walkMedia(ctx, db, func(entry MediaEntry) error {
+			if err := copyMediaObject(ctx, source, dir, entry, options, buffer); err != nil {
+				return err
 			}
-			var receipt MediaEntry
-			if err := dir.readJSON(source.Path+".receipt.json", &receipt); err != nil || !validReceipt(source, receipt) {
-				return assetFailure("media-finalize", source.AssetID, "verified object receipt is missing or inconsistent")
-			}
-			if err := encoder.Encode(receipt); err != nil {
-				return assetFailure("media-finalize", source.AssetID, "cannot persist media manifest")
-			}
-			count++
-			bytes += receipt.Bytes
-			return nil
+			return encoder.Encode(entry)
 		})
+		return err
 	})
 	if err != nil {
 		return manifest, err
 	}
-	if count != manifest.ObjectCount {
-		return manifest, failure("media-finalize", "complete object count differs from snapshot")
-	}
 	manifest.Media = &media
-	manifest.MediaBytes = bytes
-	manifest.State = "complete"
+	manifest.Phase = "complete"
 	now := time.Now().UTC()
 	manifest.CompletedAt = &now
-	if err := verifyCore(dir, manifest); err != nil {
-		return manifest, err
-	}
 	if err := verifyMedia(ctx, dir, manifest); err != nil {
 		return manifest, err
 	}
@@ -199,28 +143,43 @@ func finishBackup(ctx context.Context, dir *snapshotDirectory, options Options, 
 func readManifest(dir *snapshotDirectory, complete bool) (Manifest, error) {
 	var manifest Manifest
 	if err := dir.readJSON("manifest.json", &manifest); err != nil {
-		return manifest, failure("snapshot", "durable manifest is missing or invalid; incomplete database phases require a new destination")
+		return manifest, err
 	}
-	if manifest.Format != Format || manifest.Version != Version || !validSnapshotID(manifest.ID) || manifest.Source.Name == "" || manifest.Source.ServerVersion < 100000 || !validSHA(manifest.Source.EndpointSHA256) || manifest.AssetCount < 0 || manifest.ObjectCount < manifest.AssetCount || manifest.ObjectCount > 2*manifest.AssetCount || manifest.Database.Path != "database.dump" || manifest.Inventory.Path != "inventory.json" || manifest.Assets.Path != "assets.ndjson" || manifest.Sources.Path != "sources.ndjson" {
-		return manifest, failure("snapshot", "unsupported or inconsistent snapshot manifest")
+	if manifest.Format != Format || manifest.Version != Version || !validSnapshotID(manifest.ID) || !validSHA(manifest.SourceID) || manifest.CreatedAt.IsZero() || manifest.Database.Path != "library.sqlite" || manifest.Database.Bytes <= 0 || !validSHA(manifest.Database.SHA256) || manifest.Credentials != credentialPolicy || manifest.Phase != "database-ready" && manifest.Phase != "complete" || manifest.AssetCount < 0 || manifest.ObjectCount < 0 || manifest.MediaBytes < 0 {
+		return manifest, failure("snapshot", "invalid or unsupported portable snapshot manifest")
 	}
-	if manifest.State != "database-ready" && manifest.State != "complete" {
-		return manifest, failure("snapshot", "snapshot has no resumable database-ready fence")
-	}
-	if complete && manifest.State != "complete" {
-		return manifest, failure("verify", "media snapshot is incomplete; run resume before verify or restore")
-	}
-	if manifest.State == "complete" && (manifest.Media == nil || manifest.Media.Path != "media.ndjson" || manifest.CompletedAt == nil || manifest.MediaBytes < 0) {
-		return manifest, failure("snapshot", "complete snapshot is missing media integrity metadata")
+	if manifest.Phase == "complete" && (manifest.CompletedAt == nil || manifest.Media == nil || manifest.Media.Path != "media.ndjson") || complete && manifest.Phase != "complete" {
+		return manifest, failure("snapshot", "snapshot is incomplete; resume it before restore")
 	}
 	return manifest, nil
 }
 
-func verifyCore(dir *snapshotDirectory, manifest Manifest) error {
-	for _, artifact := range []Artifact{manifest.Database, manifest.Inventory, manifest.Assets, manifest.Sources} {
-		if err := dir.verifyArtifact(artifact); err != nil {
-			return failure("verify-database", "database archive or metadata failed byte/SHA-256 verification")
+func verifyCore(ctx context.Context, dir *snapshotDirectory, manifest Manifest) error {
+	if err := dir.verifyArtifact(ctx, manifest.Database); err != nil {
+		return failure("verify-database", "portable database byte count or SHA-256 differs")
+	}
+	// A portable snapshot cannot depend on sidecars accidentally left alongside
+	// the database. Only a standalone sealed database can be verified or restored.
+	for _, name := range []string{"library.sqlite-wal", "library.sqlite-journal"} {
+		if info, err := dir.root.Lstat(name); err == nil && info.Size() > 0 {
+			return failure("verify-database", "portable database has an unexpected live journal")
 		}
+	}
+	db, err := openDatabase(ctx, dir, true)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return verifyDatabase(ctx, db)
+}
+
+func separateTarget(sourceID, snapshotPath, targetPath string) error {
+	if digest([]byte(targetPath)) == sourceID {
+		return failure("restore", "target is the original live data directory")
+	}
+	relative, err := filepath.Rel(snapshotPath, targetPath)
+	if err != nil || relative == "." || filepath.IsLocal(relative) {
+		return failure("restore", "target must be separate from the snapshot directory")
 	}
 	return nil
 }

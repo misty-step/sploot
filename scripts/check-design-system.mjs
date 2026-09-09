@@ -386,19 +386,9 @@ function tokenValue(cssSlice, token) {
     }
   }
 
-  // Production carries no debug affordances: the diagnostics context-menu item
-  // and popup debug button gate on the shared build-mode flag.
-  assertIncludes('apps/extension/shared/build-mode.ts', 'import.meta.env.DEV', 'build-mode source flag');
-  assertIncludes(
-    'apps/extension/entrypoints/background/context-menu.ts',
-    'if (IS_DEV_BUILD)',
-    'production gate on the debug context-menu item'
-  );
-  assertIncludes(
-    'apps/extension/entrypoints/popup/App.tsx',
-    'IS_DEV_BUILD &&',
-    'production gate on the popup debug button'
-  );
+  // Production debug/QA affordances are checked on the compiled extension by
+  // scripts/assert-update-nag-artifact.mjs during zip:prod. Requiring a source
+  // flag spelling or a removed popup button cannot prove artifact safety.
 }
 
 const trackedUiFiles = execSync(

@@ -68,8 +68,8 @@ func TestURLImportRejectsEveryPrivateDNSAnswer(t *testing.T) {
 	}
 }
 
-func TestRemoteMediaStreamsByteRangesThroughRedirects(t *testing.T) {
-	original := []byte("0123456789abcdefghij")
+func TestURLImportRetainsCompleteBytesThroughRedirects(t *testing.T) {
+	original := animatedFixture(t, 150)
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" || r.Header.Get("Referer") != "" {
 			t.Error("remote import forwarded credentials or a referer")
@@ -82,26 +82,14 @@ func TestRemoteMediaStreamsByteRangesThroughRedirects(t *testing.T) {
 	}))
 	defer origin.Close()
 	s := fixtureFetcher(origin.URL)
-	s.enabled = false // Turning capture off must not turn delivery off.
-	response, err := s.OpenRemote(context.Background(), origin.URL+"/redirect", "bytes=3-8")
+	body, _, mediaType, err := s.Fetch(context.Background(), origin.URL+"/redirect")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.StatusCode != 206 || response.Header.Get("Content-Range") != "bytes 3-8/20" || !bytes.Equal(body, original[3:9]) {
-		t.Fatalf("incorrect byte range: status=%d range=%q body=%q", response.StatusCode, response.Header.Get("Content-Range"), body)
-	}
-	response, err = s.OpenRemote(context.Background(), origin.URL+"/media", "bytes=99-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	if response.StatusCode != 416 {
-		t.Fatalf("unsatisfiable range status = %d", response.StatusCode)
+	defer body.Close()
+	actual, err := io.ReadAll(body)
+	if err != nil || !bytes.Equal(actual, original) || mediaType != "image/gif" {
+		t.Fatalf("redirect changed imported original: type=%q error=%v", mediaType, err)
 	}
 }
 

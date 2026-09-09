@@ -12,7 +12,7 @@
 				<key>WFCommentActionText</key>
 				<string>Save to Sploot: share original JPEG, PNG, WebP, GIF, MP4 or WebM files, or a direct HTTP/HTTPS media URL. No page scraping or social-player downloading. GIFs and videos are not converted. Only Sploot receives your personal API token.
 
-The token can save and search; it cannot list or delete your library. First run asks for a token from https://www.sploot.app/app/settings and stores it as plaintext in iCloud Drive/Shortcuts/sploot-upload-token.txt (not Keychain). Run without shared media to replace it. Revoke old tokens in Sploot settings; never share the token file.
+The token can save and search; it cannot list or delete your library. First run asks for a token from {{.BaseURL}}/app/settings and stores it as plaintext in iCloud Drive/Shortcuts/{{.TokenFile}} (not Keychain). This token file is specific to this Sploot instance. Run without shared media to replace it. Revoke old tokens in Sploot settings; never share the token file.
 
 Get Contents of URL exposes the JSON receipt, not an HTTP status variable. success + asset + isDuplicate distinguishes the published 201/409 outcomes. Network/JSON decoding failures stop in Shortcuts with an error, never a Saved message.</string>
 				<key>UUID</key>
@@ -50,7 +50,7 @@ Get Contents of URL exposes the JSON receipt, not an HTTP status variable. succe
 				<key>WFShowFilePicker</key>
 				<false/>
 				<key>WFGetFilePath</key>
-				<string>sploot-upload-token.txt</string>
+				<string>{{.TokenFile}}</string>
 				<key>WFFileErrorIfNotFound</key>
 				<false/>
 				<key>UUID</key>
@@ -386,7 +386,7 @@ Get Contents of URL exposes the JSON receipt, not an HTTP status variable. succe
 			<key>WFWorkflowActionParameters</key>
 			<dict>
 				<key>WFURLActionURL</key>
-				<string>https://www.sploot.app/app</string>
+				<string>{{.BaseURL}}/app</string>
 				<key>UUID</key>
 				<string>B935F70B-DC2C-400E-AE38-27FB9A19A9D1</string>
 				<key>CustomOutputName</key>
@@ -584,7 +584,7 @@ Get Contents of URL exposes the JSON receipt, not an HTTP status variable. succe
 				<key>WFAlertActionTitle</key>
 				<string>Connect your Sploot account</string>
 				<key>WFAlertActionMessage</key>
-				<string>Create a personal API token at https://www.sploot.app/app/settings. This shortcut saves it as plaintext in iCloud Drive/Shortcuts/sploot-upload-token.txt, not Keychain. Anyone who can read that file can save and search as you. Revoke it in Sploot settings if exposed.</string>
+				<string>Create a personal API token at {{.BaseURL}}/app/settings. This shortcut saves it as plaintext in iCloud Drive/Shortcuts/{{.TokenFile}}, not Keychain. Anyone who can read that file can save and search as you. Revoke it in Sploot settings if exposed.</string>
 				<key>WFAlertActionCancelButtonShown</key>
 				<false/>
 				<key>UUID</key>
@@ -597,7 +597,7 @@ Get Contents of URL exposes the JSON receipt, not an HTTP status variable. succe
 			<key>WFWorkflowActionParameters</key>
 			<dict>
 				<key>WFAskActionPrompt</key>
-				<string>Paste your personal API token (starts with splt_). It is only sent to https://www.sploot.app.</string>
+				<string>Paste your personal API token (starts with splt_). It is only sent to {{.BaseURL}}.</string>
 				<key>WFInputType</key>
 				<string>Text</string>
 				<key>WFAskActionMultiline</key>
@@ -823,7 +823,7 @@ Get Contents of URL exposes the JSON receipt, not an HTTP status variable. succe
 					<string>WFTextTokenAttachment</string>
 				</dict>
 				<key>WFName</key>
-				<string>sploot-upload-token.txt</string>
+				<string>{{.TokenFile}}</string>
 				<key>UUID</key>
 				<string>B5BA157A-1957-4C8D-A932-28ED052D6797</string>
 				<key>CustomOutputName</key>
@@ -854,7 +854,7 @@ Get Contents of URL exposes the JSON receipt, not an HTTP status variable. succe
 				<key>WFAskWhereToSave</key>
 				<false/>
 				<key>WFFileDestinationPath</key>
-				<string>sploot-upload-token.txt</string>
+				<string>{{.TokenFile}}</string>
 				<key>WFSaveFileOverwrite</key>
 				<true/>
 				<key>UUID</key>
@@ -914,7 +914,7 @@ Get Contents of URL exposes the JSON receipt, not an HTTP status variable. succe
 				<key>WFAlertActionTitle</key>
 				<string>Token configured</string>
 				<key>WFAlertActionMessage</key>
-				<string>Share an image, GIF, MP4 or WebM file with Save to Sploot. Revoke any previous token in https://www.sploot.app/app/settings; replacing the local token does not revoke it.</string>
+				<string>Share an image, GIF, MP4 or WebM file with Save to Sploot. Revoke any previous token in {{.BaseURL}}/app/settings; replacing the local token does not revoke it.</string>
 				<key>WFAlertActionCancelButtonShown</key>
 				<false/>
 				<key>UUID</key>
@@ -1322,7 +1322,7 @@ Get Contents of URL exposes the JSON receipt, not an HTTP status variable. succe
 			<key>WFWorkflowActionParameters</key>
 			<dict>
 				<key>WFURL</key>
-				<string>https://www.sploot.app/api/upload/url</string>
+				<string>{{.BaseURL}}/api/upload/url</string>
 				<key>WFHTTPMethod</key>
 				<string>POST</string>
 				<key>WFHTTPHeaders</key>
@@ -1491,7 +1491,7 @@ Get Contents of URL exposes the JSON receipt, not an HTTP status variable. succe
 			<key>WFWorkflowActionParameters</key>
 			<dict>
 				<key>WFURL</key>
-				<string>https://www.sploot.app/api/upload</string>
+				<string>{{.BaseURL}}/api/upload</string>
 				<key>WFHTTPMethod</key>
 				<string>POST</string>
 				<key>WFHTTPHeaders</key>
@@ -1810,7 +1810,7 @@ Get Contents of URL exposes the JSON receipt, not an HTTP status variable. succe
 				<key>WFAlertActionTitle</key>
 				<string>Save not confirmed</string>
 				<key>WFAlertActionMessage</key>
-				<string>Sploot returned an incomplete receipt. Check https://www.sploot.app/app before retrying. This shortcut cannot confirm whether this item was saved.</string>
+				<string>Sploot returned an incomplete receipt. Check {{.BaseURL}}/app before retrying. This shortcut cannot confirm whether this item was saved.</string>
 				<key>WFAlertActionCancelButtonShown</key>
 				<false/>
 				<key>UUID</key>
@@ -1910,7 +1910,7 @@ Get Contents of URL exposes the JSON receipt, not an HTTP status variable. succe
 				<key>WFAlertActionTitle</key>
 				<string>Save not confirmed</string>
 				<key>WFAlertActionMessage</key>
-				<string>The receipt has no asset ID. Check https://www.sploot.app/app before retrying.</string>
+				<string>The receipt has no asset ID. Check {{.BaseURL}}/app before retrying.</string>
 				<key>WFAlertActionCancelButtonShown</key>
 				<false/>
 				<key>UUID</key>
@@ -2082,7 +2082,7 @@ Get Contents of URL exposes the JSON receipt, not an HTTP status variable. succe
 				<key>WFAlertActionTitle</key>
 				<string>Save not confirmed</string>
 				<key>WFAlertActionMessage</key>
-				<string>Sploot did not say whether this item was saved or already present. Check https://www.sploot.app/app before retrying.</string>
+				<string>Sploot did not say whether this item was saved or already present. Check {{.BaseURL}}/app before retrying.</string>
 				<key>WFAlertActionCancelButtonShown</key>
 				<false/>
 				<key>UUID</key>
@@ -2430,7 +2430,7 @@ If the token was revoked, run this shortcut without shared media and choose Repl
 				<key>WFAlertActionTitle</key>
 				<string>Save not confirmed</string>
 				<key>WFAlertActionMessage</key>
-				<string>Sploot did not return a valid save receipt. Check https://www.sploot.app/app before retrying. Earlier confirmed items in this batch remain saved.</string>
+				<string>Sploot did not return a valid save receipt. Check {{.BaseURL}}/app before retrying. Earlier confirmed items in this batch remain saved.</string>
 				<key>WFAlertActionCancelButtonShown</key>
 				<false/>
 				<key>UUID</key>

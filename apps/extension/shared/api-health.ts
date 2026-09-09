@@ -1,4 +1,4 @@
-import { assertExtensionConfig, SPLOOT_API_BASE_URL } from './env';
+import { getInstanceUrl } from './env';
 
 const HEALTH_PATH = '/api/health';
 const HEALTH_TIMEOUT_MS = 3_000;
@@ -8,28 +8,22 @@ const HEALTH_TIMEOUT_MS = 3_000;
  * Used at startup to prevent broken context menu actions.
  */
 export async function checkApiHealth(): Promise<boolean> {
-  try {
-    assertExtensionConfig();
-  } catch (error) {
-    console.error('[Health] Extension configuration error', {
-      message: error instanceof Error ? error.message : String(error),
-    });
-    return false;
-  }
-
+  const instanceUrl = await getInstanceUrl();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${SPLOOT_API_BASE_URL}${HEALTH_PATH}`, {
+    const res = await fetch(`${instanceUrl}${HEALTH_PATH}`, {
       method: 'GET',
       signal: controller.signal,
+      credentials: 'omit',
+      redirect: 'error',
     });
     clearTimeout(timeoutId);
     if (!res.ok) {
       console.error('[Health] API health check failed', {
         status: res.status,
-        url: `${SPLOOT_API_BASE_URL}${HEALTH_PATH}`,
+        url: `${instanceUrl}${HEALTH_PATH}`,
       });
       return false;
     }
@@ -38,7 +32,7 @@ export async function checkApiHealth(): Promise<boolean> {
     clearTimeout(timeoutId);
     console.error('[Health] API health check error', {
       message: error instanceof Error ? error.message : String(error),
-      url: `${SPLOOT_API_BASE_URL}${HEALTH_PATH}`,
+      url: `${instanceUrl}${HEALTH_PATH}`,
     });
     return false;
   }

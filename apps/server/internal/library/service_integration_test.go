@@ -5,61 +5,38 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"net"
 	"net/http"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/misty-step/sploot/apps/server/internal/database"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
 func libraryDatabase(t *testing.T) (*Service, string, string) {
 	t.Helper()
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DB path unverified: DATABASE_URL is required")
-	}
-	config, err := pgxpool.ParseConfig(dsn)
+	db, err := database.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	host := config.ConnConfig.Host
-	ip := net.ParseIP(host)
-	if host != "localhost" && !strings.HasPrefix(host, "/") && (ip == nil || !ip.IsLoopback()) {
-		t.Fatal("library integration tests require a local, migrated pgvector database")
-	}
-	pool, err := pgxpool.NewWithConfig(context.Background(), config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
-	owner, other := "qa-library-"+model.NewID(), "qa-library-"+model.NewID()
+	t.Cleanup(func() { _ = db.Close() })
+	owner, other := "library-"+model.NewID(), "library-"+model.NewID()
 	for _, id := range []string{owner, other} {
-		if _, err := pool.Exec(context.Background(), `INSERT INTO users (id, email, "updatedAt") VALUES ($1, $2, CURRENT_TIMESTAMP)`, id, id+"@sploot.test"); err != nil {
+		if _, err := db.ExecContext(context.Background(), `INSERT INTO users(id, email, password_hash) VALUES (?1, ?2, 'test-only-hash')`, id, id+"@sploot.test"); err != nil {
 			t.Fatal(err)
 		}
-		t.Cleanup(func() {
-			if _, err := pool.Exec(context.Background(), `DELETE FROM storage_cleanup_outbox WHERE asset_id IN (SELECT id FROM assets WHERE owner_user_id = $1)`, id); err != nil {
-				t.Error(err)
-			}
-			if _, err := pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, id); err != nil {
-				t.Error(err)
-			}
-		})
 	}
-	return New(pool, []byte(strings.Repeat("cursor-test-key-", 3))), owner, other
+	return New(db, []byte(strings.Repeat("cursor-test-key-", 3))), owner, other
 }
 
 func seedLibraryAsset(t *testing.T, s *Service, owner, suffix string, shuffleKey int64) string {
 	t.Helper()
 	id := owner + "-" + suffix
 	hash := sha256.Sum256([]byte(id))
-	_, err := s.pool.Exec(context.Background(), `INSERT INTO assets (id, owner_user_id, blob_url, pathname, mime, size, storage_size, thumbnail_storage_size, checksum_sha256, shuffle_key, "createdAt", "updatedAt")
-		VALUES ($1, $2, $3, $4, 'image/gif', 100, 120, 8, $5, $6, '2025-01-01T00:00:00'::timestamp, CURRENT_TIMESTAMP)`,
-		id, owner, "https://sploot-qa-seed.public.blob.vercel-storage.com/"+id+".gif", id+".gif", hex.EncodeToString(hash[:]), shuffleKey)
+	_, err := s.db.ExecContext(context.Background(), `INSERT INTO assets (id, owner_user_id, blob_url, pathname, mime, size, storage_size, thumbnail_storage_size, checksum_sha256, shuffle_key, created_at, updated_at)
+		VALUES (?1, ?2, ?3, ?4, 'image/gif', 100, 120, 8, ?5, ?6, '2025-01-01 00:00:00', CURRENT_TIMESTAMP)`,
+		id, owner, "/media/"+id, id+".gif", hex.EncodeToString(hash[:]), shuffleKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +91,7 @@ func TestDatabaseCrossOwnerOperationsAndRestorePreservePrivateMedia(t *testing.T
 	if !favorite.Favorite {
 		t.Fatal("favorite mutation not visible")
 	}
-	before, err := s.Quota(ctx, owner)
+	before, err := s.Stats(ctx, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,12 +132,12 @@ func TestDatabaseCrossOwnerOperationsAndRestorePreservePrivateMedia(t *testing.T
 	if len(trashed.Assets) != 1 || trashed.Assets[0].ID != id || !trashed.Assets[0].Favorite || len(trashed.Assets[0].Tags) != 1 || trashed.Assets[0].Tags[0].Name != "reaction" {
 		t.Fatalf("trash lost asset state: %#v", trashed)
 	}
-	during, err := s.Quota(ctx, owner)
+	during, err := s.Stats(ctx, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if during.UsedBytes != before.UsedBytes || during.ActiveBytes != 0 || during.TrashBytes != before.UsedBytes {
-		t.Fatalf("soft deletion released physical quota: before=%#v after=%#v", before, during)
+	if during.StorageBytes != before.StorageBytes || during.ActiveStorageBytes != 0 || during.TrashStorageBytes != before.StorageBytes {
+		t.Fatalf("soft deletion released physical storage: before=%#v after=%#v", before, during)
 	}
 	restored, err := s.Restore(ctx, owner, id)
 	if err != nil {
@@ -173,13 +150,13 @@ func TestDatabaseCrossOwnerOperationsAndRestorePreservePrivateMedia(t *testing.T
 	libraryStatus(t, err, http.StatusNotFound)
 	_, err = s.SharedSlugByID(ctx, id)
 	libraryStatus(t, err, http.StatusNotFound)
-	// Legacy soft deletion retained share_slug. Restoring that existing data
-	// must be private too, not just assets deleted by the Go service.
+	// Even metadata written directly with a retained share slug must restore
+	// privately, not just assets deleted by this service.
 	legacySlug, err := s.Share(ctx, owner, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE assets SET deleted_at = CURRENT_TIMESTAMP WHERE owner_user_id = $1 AND id = $2`, owner, id); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE assets SET deleted_at = CURRENT_TIMESTAMP WHERE owner_user_id = ?1 AND id = ?2`, owner, id); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Restore(ctx, owner, id); err != nil {
@@ -187,16 +164,6 @@ func TestDatabaseCrossOwnerOperationsAndRestorePreservePrivateMedia(t *testing.T
 	}
 	_, err = s.Shared(ctx, legacySlug)
 	libraryStatus(t, err, http.StatusNotFound)
-	if err := s.Delete(ctx, owner, id); err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO storage_cleanup_outbox (id, asset_id, provider, key, url, action, status, updated_at)
-		VALUES ($1, $2, 'vercel', $3, $4, 'permanent-delete', 'done', CURRENT_TIMESTAMP)`, model.NewID(), id, original.Pathname, original.BlobURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.Restore(ctx, owner, id)
-	libraryStatus(t, err, http.StatusConflict)
 }
 
 func TestDatabaseShuffleCursorSurvivesDeletionAndWrapsWithoutSkipping(t *testing.T) {
@@ -241,25 +208,54 @@ func TestDatabaseShuffleCursorSurvivesDeletionAndWrapsWithoutSkipping(t *testing
 	}
 }
 
-func TestDatabaseQuotaUsesReplicaBytesAndPerRenditionFallback(t *testing.T) {
+func TestDatabaseStorageCountsPhysicalFilesAndTrashPerOwner(t *testing.T) {
+	s, owner, other := libraryDatabase(t)
+	ctx := context.Background()
+	id := seedLibraryAsset(t, s, owner, "physical", 1)
+	seedLibraryAsset(t, s, other, "foreign", 2)
+	stats, err := s.Stats(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.StorageBytes != 128 || stats.ActiveStorageBytes != 128 || stats.TrashStorageBytes != 0 {
+		t.Fatalf("physical original and poster accounting: %#v", stats)
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE assets SET storage_size = NULL WHERE owner_user_id = ?1 AND id = ?2`, owner, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, owner, id); err != nil {
+		t.Fatal(err)
+	}
+	stats, err = s.Stats(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.StorageBytes != 108 || stats.TrashStorageBytes != 108 || stats.ActiveStorageBytes != 0 {
+		t.Fatalf("trashed physical files or per-file size fallback lost: %#v", stats)
+	}
+}
+
+func TestDatabaseTimestampCursorDoesNotRepeatEqualTimeBoundary(t *testing.T) {
 	s, owner, _ := libraryDatabase(t)
 	ctx := context.Background()
-	id := seedLibraryAsset(t, s, owner, "replica", 1)
-	_, err := s.pool.Exec(ctx, `INSERT INTO asset_storage_replicas (id, asset_id, rendition, provider, logical_key, delivery_url, size, sha256, generation, active, updated_at)
-		VALUES ($1, $2, 'original', 'vercel', $3, $4, 150, $5, 1, true, CURRENT_TIMESTAMP)`, model.NewID(), id, id+".gif", "https://sploot-qa-seed.public.blob.vercel-storage.com/"+id+".gif", strings.Repeat("a", 64))
-	if err != nil {
-		t.Fatal(err)
+	a := seedLibraryAsset(t, s, owner, "a", 10)
+	b := seedLibraryAsset(t, s, owner, "b", 20)
+	c := seedLibraryAsset(t, s, owner, "c", 30)
+	options := model.ListOptions{Limit: 1}
+	var ids []string
+	for range 3 {
+		page, err := s.List(ctx, owner, options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Assets) != 1 {
+			t.Fatalf("missing timestamp page: %#v", page)
+		}
+		ids = append(ids, page.Assets[0].ID)
+		options.Cursor = page.NextCursor
 	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO storage_quota_reservations (id, owner_user_id, bytes, expires_at) VALUES ($1, $2, 25, CURRENT_TIMESTAMP + interval '10 minutes'), ($3, $2, 99, CURRENT_TIMESTAMP - interval '1 minute')`, model.NewID(), owner, model.NewID())
-	if err != nil {
-		t.Fatal(err)
-	}
-	quota, err := s.Quota(ctx, owner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if quota.UsedBytes != 158 || quota.ReservedBytes != 25 || quota.RemainingBytes != quota.LimitBytes-183 {
-		t.Fatalf("physical quota drifted from replicas + thumbnail fallback: %#v", quota)
+	if !reflect.DeepEqual(ids, []string{c, b, a}) || options.Cursor != "" {
+		t.Fatalf("equal-time cursor repeated or skipped a boundary: %v", ids)
 	}
 }
 
@@ -269,4 +265,20 @@ func assetIDs(assets []model.Asset) []string {
 		ids[i] = asset.ID
 	}
 	return ids
+}
+
+func TestStorageStatsKeepPendingPurgeChargesOwnerScoped(t *testing.T) {
+	s, owner, other := libraryDatabase(t)
+	seedLibraryAsset(t, s, owner, "active", 1)
+	if _, err := s.db.Exec(`INSERT INTO asset_purges(asset_id,owner_user_id,pathname,thumbnail_path,storage_size,thumbnail_storage_size)
+		VALUES('owned-pending',?,'uploads/owned-pending','uploads/owned-pending/poster',7,3),('foreign-pending',?,'uploads/foreign-pending','uploads/foreign-pending/poster',500,100)`, owner, other); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := s.Stats(context.Background(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.ActiveStorageBytes != 128 || stats.TrashStorageBytes != 10 || stats.StorageBytes != 138 {
+		t.Fatalf("pending purge charge leaked across owners or was released early: %+v", stats)
+	}
 }

@@ -2,6 +2,7 @@ package library
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/misty-step/sploot/apps/server/internal/contract"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 	"golang.org/x/text/cases"
@@ -63,7 +63,7 @@ func (s *Service) Tags(ctx context.Context, owner string) ([]model.Tag, error) {
 	if err := s.ready(owner); err != nil {
 		return nil, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id, name, color FROM tags WHERE owner_user_id = $1 ORDER BY name, id`, owner)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, color FROM tags WHERE owner_user_id = ?1 ORDER BY name, id`, owner)
 	if err != nil {
 		return nil, fmt.Errorf("list tags: %w", err)
 	}
@@ -86,9 +86,9 @@ func (s *Service) TagDetails(ctx context.Context, owner string) ([]TagDetail, er
 	if err := s.ready(owner); err != nil {
 		return nil, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT t.id, t.name, t.color, t."createdAt", t."updatedAt",
+	rows, err := s.db.QueryContext(ctx, `SELECT t.id, t.name, t.color, t.created_at, t.updated_at,
 		(SELECT count(*) FROM asset_tags at JOIN assets a ON a.id = at.asset_id WHERE at.tag_id = t.id AND a.owner_user_id = t.owner_user_id)
-		FROM tags t WHERE t.owner_user_id = $1 ORDER BY t.name, t.id`, owner)
+		FROM tags t WHERE t.owner_user_id = ?1 ORDER BY t.name, t.id`, owner)
 	if err != nil {
 		return nil, fmt.Errorf("list tag metadata: %w", err)
 	}
@@ -123,9 +123,9 @@ func (s *Service) CreateTag(ctx context.Context, owner, name string, color *stri
 	if err != nil {
 		return tag, err
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback()
 	var exists bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM tags WHERE owner_user_id = $1 AND name = $2)`, owner, normalized).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM tags WHERE owner_user_id = ?1 AND name = ?2)`, owner, normalized).Scan(&exists); err != nil {
 		return tag, fmt.Errorf("check tag name: %w", err)
 	}
 	if exists {
@@ -134,15 +134,15 @@ func (s *Service) CreateTag(ctx context.Context, owner, name string, color *stri
 	if err := checkTagLimit(ctx, tx, owner); err != nil {
 		return tag, err
 	}
-	err = tx.QueryRow(ctx, `INSERT INTO tags (id, owner_user_id, name, color, "updatedAt") VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-		RETURNING id, name, color, "createdAt", "updatedAt"`, model.NewID(), owner, normalized, color).Scan(&tag.ID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt)
+	err = tx.QueryRowContext(ctx, `INSERT INTO tags (id, owner_user_id, name, color, updated_at) VALUES (?1, ?2, ?3, ?4, CURRENT_TIMESTAMP)
+		RETURNING id, name, color, created_at, updated_at`, model.NewID(), owner, normalized, color).Scan(&tag.ID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt)
 	if tagNameConflict(err) {
 		return tag, tagConflict()
 	}
 	if err != nil {
 		return tag, fmt.Errorf("create tag: %w", err)
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(); err != nil {
 		return tag, fmt.Errorf("commit tag creation: %w", err)
 	}
 	return tag, nil
@@ -169,10 +169,10 @@ func (s *Service) UpdateTag(ctx context.Context, owner, id string, update TagUpd
 	if err != nil {
 		return tag, err
 	}
-	defer tx.Rollback(ctx)
-	err = tx.QueryRow(ctx, `UPDATE tags SET name = COALESCE($3, name), color = CASE WHEN $4 THEN $5 ELSE color END, "updatedAt" = CURRENT_TIMESTAMP
-		WHERE owner_user_id = $1 AND id = $2 RETURNING id, name, color, "createdAt", "updatedAt"`, owner, id, update.Name, update.ColorSet, update.Color).Scan(&tag.ID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
+	defer tx.Rollback()
+	err = tx.QueryRowContext(ctx, `UPDATE tags SET name = COALESCE(?3, name), color = CASE WHEN ?4 THEN ?5 ELSE color END, updated_at = CURRENT_TIMESTAMP
+		WHERE owner_user_id = ?1 AND id = ?2 RETURNING id, name, color, created_at, updated_at`, owner, id, update.Name, update.ColorSet, update.Color).Scan(&tag.ID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
 		return tag, tagNotFound()
 	}
 	if tagNameConflict(err) {
@@ -181,10 +181,10 @@ func (s *Service) UpdateTag(ctx context.Context, owner, id string, update TagUpd
 	if err != nil {
 		return tag, fmt.Errorf("update tag: %w", err)
 	}
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM asset_tags at JOIN assets a ON a.id = at.asset_id WHERE at.tag_id = $2 AND a.owner_user_id = $1`, owner, id).Scan(&tag.AssetCount); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM asset_tags at JOIN assets a ON a.id = at.asset_id WHERE at.tag_id = ?2 AND a.owner_user_id = ?1`, owner, id).Scan(&tag.AssetCount); err != nil {
 		return tag, fmt.Errorf("count tagged assets: %w", err)
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(); err != nil {
 		return tag, fmt.Errorf("commit tag update: %w", err)
 	}
 	return tag, nil
@@ -198,15 +198,18 @@ func (s *Service) DeleteTag(ctx context.Context, owner, id string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
-	command, err := tx.Exec(ctx, `DELETE FROM tags WHERE owner_user_id = $1 AND id = $2`, owner, id)
+	defer tx.Rollback()
+	command, err := tx.ExecContext(ctx, `DELETE FROM tags WHERE owner_user_id = ?1 AND id = ?2`, owner, id)
 	if err != nil {
 		return fmt.Errorf("delete tag: %w", err)
 	}
-	if command.RowsAffected() == 0 {
+	if count, err := command.RowsAffected(); err != nil || count == 0 {
+		if err != nil {
+			return err
+		}
 		return tagNotFound()
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tag deletion: %w", err)
 	}
 	return nil
@@ -235,7 +238,7 @@ func (s *Service) AddTags(ctx context.Context, owner, id string, tagIDs, tagName
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback()
 	if err := lockLiveAsset(ctx, tx, owner, id); err != nil {
 		return nil, err
 	}
@@ -243,7 +246,7 @@ func (s *Service) AddTags(ctx context.Context, owner, id string, tagIDs, tagName
 	if err != nil {
 		return nil, err
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit asset tags: %w", err)
 	}
 	return added, nil
@@ -263,35 +266,40 @@ func (s *Service) RemoveTags(ctx context.Context, owner, id string, tagIDs []str
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback()
 	if err := lockLiveAsset(ctx, tx, owner, id); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM asset_tags at USING assets a, tags t
-		WHERE at.asset_id = a.id AND at.tag_id = t.id AND a.owner_user_id = $1 AND t.owner_user_id = $1 AND a.id = $2 AND t.id = ANY($3::text[])`, owner, id, tagIDs); err != nil {
+	ids, err := json.Marshal(tagIDs)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM asset_tags WHERE asset_id = ?2
+		AND EXISTS (SELECT 1 FROM assets a WHERE a.id = ?2 AND a.owner_user_id = ?1)
+		AND tag_id IN (SELECT t.id FROM tags t JOIN json_each(?3) j ON j.value = t.id WHERE t.owner_user_id = ?1)`, owner, id, string(ids)); err != nil {
 		return fmt.Errorf("remove asset tags: %w", err)
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit asset tag removal: %w", err)
 	}
 	return nil
 }
 
-func lockLiveAsset(ctx context.Context, tx pgx.Tx, owner, id string) error {
+func lockLiveAsset(ctx context.Context, tx *sql.Tx, owner, id string) error {
 	var found string
-	err := tx.QueryRow(ctx, `SELECT id FROM assets WHERE owner_user_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE`, owner, id).Scan(&found)
+	err := tx.QueryRowContext(ctx, `SELECT id FROM assets WHERE owner_user_id = ?1 AND id = ?2 AND deleted_at IS NULL`, owner, id).Scan(&found)
 	return assetError("lock tagged asset", err)
 }
 
-func addAssetTags(ctx context.Context, tx pgx.Tx, owner, assetID string, ids, names []string) ([]model.Tag, error) {
+func addAssetTags(ctx context.Context, tx *sql.Tx, owner, assetID string, ids, names []string) ([]model.Tag, error) {
 	var associationCount int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM asset_tags at JOIN assets a ON a.id = at.asset_id WHERE a.owner_user_id = $1 AND a.id = $2`, owner, assetID).Scan(&associationCount); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM asset_tags at JOIN assets a ON a.id = at.asset_id WHERE a.owner_user_id = ?1 AND a.id = ?2`, owner, assetID).Scan(&associationCount); err != nil {
 		return nil, fmt.Errorf("count asset tags: %w", err)
 	}
 	added := make([]model.Tag, 0)
 	attach := func(tag model.Tag) error {
 		var exists bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM asset_tags at JOIN assets a ON a.id = at.asset_id WHERE a.owner_user_id = $1 AND a.id = $2 AND at.tag_id = $3)`, owner, assetID, tag.ID).Scan(&exists); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM asset_tags at JOIN assets a ON a.id = at.asset_id WHERE a.owner_user_id = ?1 AND a.id = ?2 AND at.tag_id = ?3)`, owner, assetID, tag.ID).Scan(&exists); err != nil {
 			return fmt.Errorf("check asset tag: %w", err)
 		}
 		if exists {
@@ -300,13 +308,17 @@ func addAssetTags(ctx context.Context, tx pgx.Tx, owner, assetID string, ids, na
 		if associationCount >= contract.TagMaxPerAsset {
 			return tagLimit()
 		}
-		command, err := tx.Exec(ctx, `INSERT INTO asset_tags (asset_id, tag_id)
+		command, err := tx.ExecContext(ctx, `INSERT INTO asset_tags (asset_id, tag_id)
 			SELECT a.id, t.id FROM assets a JOIN tags t ON t.owner_user_id = a.owner_user_id
-			WHERE a.owner_user_id = $1 AND a.id = $2 AND a.deleted_at IS NULL AND t.id = $3 ON CONFLICT DO NOTHING`, owner, assetID, tag.ID)
+			WHERE a.owner_user_id = ?1 AND a.id = ?2 AND a.deleted_at IS NULL AND t.id = ?3 ON CONFLICT DO NOTHING`, owner, assetID, tag.ID)
 		if err != nil {
 			return fmt.Errorf("attach asset tag: %w", err)
 		}
-		if command.RowsAffected() != 0 {
+		count, err := command.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count != 0 {
 			associationCount++
 			added = append(added, tag)
 		}
@@ -314,10 +326,10 @@ func addAssetTags(ctx context.Context, tx pgx.Tx, owner, assetID string, ids, na
 	}
 	for _, id := range ids {
 		var tag model.Tag
-		err := tx.QueryRow(ctx, `SELECT id, name, color FROM tags WHERE owner_user_id = $1 AND id = $2`, owner, id).Scan(&tag.ID, &tag.Name, &tag.Color)
+		err := tx.QueryRowContext(ctx, `SELECT id, name, color FROM tags WHERE owner_user_id = ?1 AND id = ?2`, owner, id).Scan(&tag.ID, &tag.Name, &tag.Color)
 		// Existing API ignores unknown and foreign IDs alike; never expose or
 		// associate someone else's tag even if the ID is valid.
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
 		if err != nil {
@@ -329,12 +341,12 @@ func addAssetTags(ctx context.Context, tx pgx.Tx, owner, assetID string, ids, na
 	}
 	for _, name := range names {
 		var tag model.Tag
-		err := tx.QueryRow(ctx, `SELECT id, name, color FROM tags WHERE owner_user_id = $1 AND name = $2`, owner, name).Scan(&tag.ID, &tag.Name, &tag.Color)
-		if errors.Is(err, pgx.ErrNoRows) {
+		err := tx.QueryRowContext(ctx, `SELECT id, name, color FROM tags WHERE owner_user_id = ?1 AND name = ?2`, owner, name).Scan(&tag.ID, &tag.Name, &tag.Color)
+		if errors.Is(err, sql.ErrNoRows) {
 			if err := checkTagLimit(ctx, tx, owner); err != nil {
 				return nil, err
 			}
-			err = tx.QueryRow(ctx, `INSERT INTO tags (id, owner_user_id, name, "updatedAt") VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+			err = tx.QueryRowContext(ctx, `INSERT INTO tags (id, owner_user_id, name, updated_at) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)
 				ON CONFLICT (owner_user_id, name) DO UPDATE SET name = EXCLUDED.name
 				RETURNING id, name, color`, model.NewID(), owner, name).Scan(&tag.ID, &tag.Name, &tag.Color)
 		}
@@ -348,9 +360,9 @@ func addAssetTags(ctx context.Context, tx pgx.Tx, owner, assetID string, ids, na
 	return added, nil
 }
 
-func checkTagLimit(ctx context.Context, tx pgx.Tx, owner string) error {
+func checkTagLimit(ctx context.Context, tx *sql.Tx, owner string) error {
 	var count int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM tags WHERE owner_user_id = $1`, owner).Scan(&count); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM tags WHERE owner_user_id = ?1`, owner).Scan(&count); err != nil {
 		return fmt.Errorf("count owner tags: %w", err)
 	}
 	if count >= contract.TagMaxPerUser {
@@ -421,5 +433,5 @@ func tagConflict() *model.APIError {
 }
 func tagLimit() *model.APIError { return badRequest("Tag limit reached") }
 func tagNameConflict(err error) bool {
-	return constraintViolation(err, "23505", "tags_owner_user_id_name_key") || constraintViolation(err, "23505", "unique_user_tag")
+	return uniqueViolation(err)
 }

@@ -1,5 +1,7 @@
-// Package recovery creates read-only, complete PostgreSQL and media snapshots.
-// Archives contain private account data and executable SQL: only restore trusted snapshots.
+// Package recovery creates private, consistent SQLite and immutable-media
+// snapshots. A snapshot contains account password hashes: restore only trusted
+// snapshots and protect it like the live library. Sessions and device credentials
+// are deliberately invalidated; the signing secret is never copied.
 package recovery
 
 import (
@@ -11,27 +13,19 @@ import (
 )
 
 const Format = "sploot-library-backup"
-const Version = 1
-const FixtureHost = "sploot-qa-seed.public.blob.vercel-storage.com"
+const Version = 2
+const credentialPolicy = "Account password hashes retained; browser sessions, device sessions, device requests, upload tokens and auth attempts removed; signing secret excluded."
 
-// Options deliberately has no default database authority or storage credentials.
-// FixtureDirectory maps the URL path on FixtureHost directly beneath that root.
-// A seeded Next library therefore uses apps/web/public, not public/qa-blob-seed.
 type Options struct {
-	DatabaseURL      string
-	Directory        string
-	FixtureDirectory string
-	AllowMediaHosts  []string
-	Workers          int
-	MaxObjectBytes   int64
-	ObjectTimeout    time.Duration
+	DataDirectory  string
+	Directory      string
+	MaxObjectBytes int64
+	ObjectTimeout  time.Duration
 }
 
 type RestoreOptions struct {
-	Directory      string
-	TargetURL      string
-	MediaDirectory string
-	AllowRemote    bool
+	Directory           string
+	TargetDataDirectory string
 }
 
 type Artifact struct {
@@ -40,55 +34,24 @@ type Artifact struct {
 	SHA256 string `json:"sha256"`
 }
 
-type DatabaseIdentity struct {
-	Name           string `json:"name"`
-	EndpointSHA256 string `json:"endpointSha256"`
-	ServerVersion  int    `json:"serverVersion"`
-}
-
-// Manifest is atomically replaced only after the phase's artifacts are durable.
-// database-ready permits media-only resume without reconnecting to the source.
+// A database-ready manifest freezes all metadata and permits media-only resume.
+// Its database has already been sanitized and never changes on resume.
 type Manifest struct {
-	Format      string           `json:"format"`
-	Version     int              `json:"version"`
-	ID          string           `json:"id"`
-	State       string           `json:"state"`
-	CreatedAt   time.Time        `json:"createdAt"`
-	CompletedAt *time.Time       `json:"completedAt,omitempty"`
-	Source      DatabaseIdentity `json:"source"`
-	Database    Artifact         `json:"database"`
-	Inventory   Artifact         `json:"inventory"`
-	Assets      Artifact         `json:"assets"`
-	Sources     Artifact         `json:"sources"`
-	Media       *Artifact        `json:"media,omitempty"`
-	AssetCount  int64            `json:"assetCount"`
-	ObjectCount int64            `json:"objectCount"`
-	MediaBytes  int64            `json:"mediaBytes"`
+	Format      string     `json:"format"`
+	Version     int        `json:"version"`
+	ID          string     `json:"id"`
+	Phase       string     `json:"phase"`
+	SourceID    string     `json:"sourceId"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	Database    Artifact   `json:"database"`
+	Media       *Artifact  `json:"media,omitempty"`
+	AssetCount  int64      `json:"assetCount"`
+	ObjectCount int64      `json:"objectCount"`
+	MediaBytes  int64      `json:"mediaBytes"`
+	Credentials string     `json:"credentials"`
 }
 
-type TableInventory struct {
-	Schema string `json:"schema"`
-	Name   string `json:"name"`
-	Kind   string `json:"kind"`
-	Rows   int64  `json:"rows"`
-	SHA256 string `json:"sha256"`
-}
-
-type SequenceInventory struct {
-	Schema    string `json:"schema"`
-	Name      string `json:"name"`
-	LastValue int64  `json:"lastValue"`
-	IsCalled  bool   `json:"isCalled"`
-}
-
-type Inventory struct {
-	Tables        []TableInventory    `json:"tables"`
-	Sequences     []SequenceInventory `json:"sequences"`
-	CatalogSHA256 string              `json:"catalogSha256"`
-}
-
-// MediaEntry is one line in media.ndjson. Paths are relative to the snapshot or
-// restored media directory. Neither this file nor normal command output has URLs.
 type MediaEntry struct {
 	AssetID   string `json:"assetId"`
 	OwnerID   string `json:"ownerId"`
@@ -99,19 +62,6 @@ type MediaEntry struct {
 	MIME      string `json:"mime"`
 }
 
-type objectSource struct {
-	AssetID        string   `json:"assetId"`
-	OwnerID        string   `json:"ownerId"`
-	Rendition      string   `json:"rendition"`
-	Path           string   `json:"path"`
-	MIME           string   `json:"mime"`
-	ExpectedBytes  *int64   `json:"expectedBytes,omitempty"`
-	ExpectedSHA256 string   `json:"expectedSha256,omitempty"`
-	URLs           []string `json:"urls"`
-}
-
-// PhaseError intentionally omits underlying driver/provider messages, which can
-// contain credentials, signed URLs, SQL data, or private local path names.
 type PhaseError struct {
 	Phase   string
 	AssetID string
@@ -124,31 +74,25 @@ func (e *PhaseError) Error() string {
 	}
 	return e.Phase + ": " + e.Reason
 }
-
 func failure(phase, reason string) error { return &PhaseError{Phase: phase, Reason: reason} }
 func assetFailure(phase, id, reason string) error {
 	return &PhaseError{Phase: phase, AssetID: id, Reason: reason}
 }
-
 func safeID(id string) string {
 	if len(id) > 128 {
-		return "sha256:" + digest([]byte(id))
+		return "invalid-id"
 	}
-	for _, c := range id {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
-			return "sha256:" + digest([]byte(id))
+	for _, r := range id {
+		if r < 32 || r == 127 {
+			return "invalid-id"
 		}
 	}
 	return id
 }
-
 func digest(value []byte) string { sum := sha256.Sum256(value); return hex.EncodeToString(sum[:]) }
-
-func mediaPath(id, rendition string) string { return "media/" + digest([]byte(id)) + "/" + rendition }
-
 func contextFailure(ctx context.Context, phase string) error {
 	if ctx.Err() != nil {
-		return failure(phase, "operation canceled; completed media objects remain resumable")
+		return failure(phase, "operation cancelled or deadline exceeded")
 	}
-	return failure(phase, "operation failed")
+	return nil
 }

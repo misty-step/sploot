@@ -8,6 +8,12 @@
 export type SplootApiErrorCode =
   | 'unauthorized'
   | 'quota_exceeded'
+  | 'storage_limit_exceeded'
+  | 'storage_reserve_exceeded'
+  | 'asset_purged'
+  | 'storage_unavailable'
+  | 'purge_incomplete'
+  | 'upload_busy'
   | 'uploads_disabled'
   | 'embeddings_disabled'
   | 'invalid_upload'

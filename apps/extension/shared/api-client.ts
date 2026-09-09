@@ -12,22 +12,16 @@ import {
   type SplootApiErrorCode,
   type SplootApiUploadResponse,
 } from '@sploot/common';
-import { getAuthToken } from '../entrypoints/background/auth-manager';
-import { assertExtensionConfig, CLERK_ENVIRONMENT, SPLOOT_API_BASE_URL } from './env';
+import { getAuthToken, invalidateAuthToken } from '../entrypoints/background/auth-manager';
+import { getInstanceUrl } from './env';
 import { toUploadResult, type UploadResult } from './upload-response';
 
-const API_BASE_URL = SPLOOT_API_BASE_URL;
-
-console.log('[ApiClient] Initialized', {
-  apiBaseUrl: API_BASE_URL,
-  environment: CLERK_ENVIRONMENT,
-});
 
 export interface AuthTokenProvider {
-  getToken(signal?: AbortSignal): Promise<string | null>;
+  getToken(signal?: AbortSignal, instanceUrl?: string): Promise<string | null>;
 }
 
-const clerkAuthTokenProvider: AuthTokenProvider = {
+const deviceAuthTokenProvider: AuthTokenProvider = {
   getToken: getAuthToken,
 };
 
@@ -45,7 +39,7 @@ export class SplootApiClientError extends Error {
 }
 
 export class SplootApiClient {
-  constructor(private readonly authTokenProvider: AuthTokenProvider = clerkAuthTokenProvider) {}
+  constructor(private readonly authTokenProvider: AuthTokenProvider = deviceAuthTokenProvider) {}
 
   async uploadImage(
     blob: Blob,
@@ -74,9 +68,11 @@ async function parseErrorResponse(
     }
   }
 
-  if (errorData?.code === 'quota_exceeded') {
+  if (errorData?.code === 'quota_exceeded'
+    || errorData?.code === 'storage_limit_exceeded'
+    || errorData?.code === 'storage_reserve_exceeded') {
     return new SplootApiClientError(
-      'Storage quota exceeded. Open Sploot settings to manage storage.',
+      'Storage is full. Open Sploot settings to manage storage.',
       response.status,
       errorData.code,
       false,
@@ -131,7 +127,7 @@ async function parseErrorResponse(
 export async function uploadImage(
   blob: Blob,
   filename?: string,
-  authTokenProvider: AuthTokenProvider = clerkAuthTokenProvider,
+  authTokenProvider: AuthTokenProvider = deviceAuthTokenProvider,
   signal?: AbortSignal,
   idempotencyKey?: string,
 ): Promise<UploadResult> {
@@ -145,10 +141,8 @@ async function uploadImageWithTokenProvider(
   signal?: AbortSignal,
   idempotencyKey?: string,
 ): Promise<UploadResult> {
-  assertExtensionConfig();
-
-  // Get auth token
-  const token = await authTokenProvider.getToken(signal);
+  const instanceUrl = await getInstanceUrl();
+  const token = await authTokenProvider.getToken(signal, instanceUrl);
   if (!token) {
     throw new Error('Authentication required');
   }
@@ -189,10 +183,10 @@ async function uploadImageWithTokenProvider(
     console.log('[ApiClient] Upload starting', {
       filename: file.name,
       size: file.size,
-      apiBaseUrl: API_BASE_URL,
+      apiBaseUrl: instanceUrl,
     });
 
-    const response = await fetch(`${API_BASE_URL}/api/upload`, {
+    const response = await fetch(`${instanceUrl}/api/upload`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -200,7 +194,11 @@ async function uploadImageWithTokenProvider(
       },
       body: formData,
       signal: controller.signal,
+      credentials: 'omit',
+      redirect: 'error',
     });
+
+    if (response.status === 401) await invalidateAuthToken(token, instanceUrl);
 
     let data: SplootApiUploadResponse | null;
     try {

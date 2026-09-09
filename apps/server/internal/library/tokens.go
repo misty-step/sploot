@@ -35,8 +35,8 @@ func (s *Service) Tokens(ctx context.Context, owner string) ([]UploadToken, erro
 	if err := s.ready(owner); err != nil {
 		return nil, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id, name, prefix, last_used_at, created_at
-		FROM upload_tokens WHERE user_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC, id DESC`, owner)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, prefix, last_used_at, created_at
+		FROM upload_tokens WHERE user_id = ?1 AND revoked_at IS NULL ORDER BY created_at DESC, id DESC`, owner)
 	if err != nil {
 		return nil, fmt.Errorf("list upload tokens: %w", err)
 	}
@@ -55,9 +55,9 @@ func (s *Service) Tokens(ctx context.Context, owner string) ([]UploadToken, erro
 	return tokens, nil
 }
 
-// MintToken must only be routed after Resolve(request, false). The plaintext
-// appears only in this return value; the database receives SHA-256 and prefix.
-func (s *Service) MintToken(ctx context.Context, owner, name string) (MintedToken, error) {
+// MintToken rechecks the issuing browser session in the credential transaction.
+// The plaintext appears only in this return value; storage receives its hash and prefix.
+func (s *Service) MintToken(ctx context.Context, principal model.Principal, name string) (MintedToken, error) {
 	var result MintedToken
 	name = trimClientWhitespace(name)
 	if name == "" {
@@ -66,13 +66,25 @@ func (s *Service) MintToken(ctx context.Context, owner, name string) (MintedToke
 	if !utf8.ValidString(name) || strings.ContainsRune(name, 0) || utf16Length(name) > maxTokenNameLength {
 		return result, badRequest("Token name must be 64 characters or fewer")
 	}
-	tx, err := s.beginOwner(ctx, owner)
+	tx, err := s.beginOwner(ctx, principal.UserID)
 	if err != nil {
 		return result, err
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback()
+	if principal.Method != "browser" {
+		return result, &model.APIError{Status: http.StatusForbidden, Message: "Sign in through the browser to manage account security", Code: "browser_required"}
+	}
+	var active bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM auth_sessions
+		WHERE id = ?1 AND user_id = ?2 AND kind = 'browser' AND expires_at > ?3)`,
+		principal.SessionID, principal.UserID, time.Now().UTC()).Scan(&active); err != nil {
+		return result, fmt.Errorf("check token issuing session: %w", err)
+	}
+	if !active {
+		return result, &model.APIError{Status: http.StatusUnauthorized, Message: "Unauthorized", Code: "unauthorized"}
+	}
 	var count int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM upload_tokens WHERE user_id = $1 AND revoked_at IS NULL`, owner).Scan(&count); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM upload_tokens WHERE user_id = ?1 AND revoked_at IS NULL`, principal.UserID).Scan(&count); err != nil {
 		return result, fmt.Errorf("count upload tokens: %w", err)
 	}
 	if count >= maxActiveTokens {
@@ -85,12 +97,12 @@ func (s *Service) MintToken(ctx context.Context, owner, name string) (MintedToke
 	randomPart := base64.RawURLEncoding.EncodeToString(random[:])
 	plaintext := "splt_" + randomPart
 	hash := sha256.Sum256([]byte(plaintext))
-	err = tx.QueryRow(ctx, `INSERT INTO upload_tokens (id, user_id, name, token_hash, prefix)
-		VALUES ($1, $2, $3, $4, $5) RETURNING id, name, prefix, created_at`, model.NewID(), owner, name, hex.EncodeToString(hash[:]), "splt_"+randomPart[:6]).Scan(&result.ID, &result.Name, &result.Prefix, &result.CreatedAt)
+	err = tx.QueryRowContext(ctx, `INSERT INTO upload_tokens (id, user_id, name, token_hash, prefix)
+		VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id, name, prefix, created_at`, model.NewID(), principal.UserID, name, hex.EncodeToString(hash[:]), "splt_"+randomPart[:6]).Scan(&result.ID, &result.Name, &result.Prefix, &result.CreatedAt)
 	if err != nil {
 		return MintedToken{}, fmt.Errorf("persist upload token: %w", err)
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(); err != nil {
 		return MintedToken{}, fmt.Errorf("commit upload token: %w", err)
 	}
 	result.Token = plaintext
@@ -107,11 +119,11 @@ func (s *Service) RevokeToken(ctx context.Context, owner, id string) error {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `UPDATE upload_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND id = $2 AND revoked_at IS NULL`, owner, id); err != nil {
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `UPDATE upload_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = ?1 AND id = ?2 AND revoked_at IS NULL`, owner, id); err != nil {
 		return fmt.Errorf("revoke upload token: %w", err)
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit token revocation: %w", err)
 	}
 	return nil

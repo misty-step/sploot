@@ -1,6 +1,6 @@
 # telemetry inventory
 
-the web app has one browser telemetry interface: `lib/telemetry-client.ts`.
+The retained Next.js web app has one browser telemetry interface: `lib/telemetry-client.ts`.
 its default sink is the authenticated same-origin `/api/telemetry` route. a
 deployment may set `NEXT_PUBLIC_TELEMETRY_ENDPOINT` to another same-origin
 path and may disable the sink with `NEXT_PUBLIC_TELEMETRY_ENABLED=false`.
@@ -20,8 +20,7 @@ and never part of the product control flow.
 | retired browser Analytics/Speed Insights adapters and `/_vercel/*` | provider-only adapters | deliberate removal; no package, source, or production bundle may contain them |
 | asset IDs, filenames, storage keys, URLs, pathnames, raw error text, arbitrary metadata | unsafe telemetry fields | deliberate removal from the browser contract and server sink |
 | web `ClerkProvider` (`lib/auth/client.tsx`) | third-party SDK telemetry | disabled via the typed `telemetry={{ disabled: true }}` option; source and compiled markers enforced |
-| extension popup `ClerkProvider` (`entrypoints/popup/App.tsx`) | third-party SDK telemetry | disabled via the typed `telemetry={{ disabled: true }}` option; source and compiled markers enforced |
-| extension background Clerk client (`entrypoints/background/auth-manager.ts`) | third-party SDK telemetry | no typed option exists on `CreateClerkClientOptions`; Clerk's collector no-ops for production publishable keys (instanceType gate); rationale comment enforced by the source gate |
+| device-paired WXT extension | no identity-provider telemetry | Clerk dependencies are forbidden; `zip:prod` scans the compiled artifact for Clerk, debug, and QA residue |
 
 the executable inventory is `scripts/check-telemetry-inventory.mjs`. it checks
 the classified source markers, package/source provider residue, and (when
@@ -35,8 +34,9 @@ pnpm telemetry:check
 pnpm telemetry:check -- --bundle-dir apps/web/.next/static --expect-endpoint /ci-telemetry-sink --expect-enabled false --expect-clerk-disabled
 # server output and public assets: provider-residue scan
 pnpm telemetry:check -- --bundle-dir apps/web/.next/server --bundle-dir apps/web/public
-# extension dist: provider residue + Clerk-disabled falsifier
-pnpm telemetry:check -- --bundle-dir apps/extension/dist/chrome-mv3 --expect-clerk-disabled
+# extension dist: generic provider residue, then compiled Clerk/debug/QA absence
+pnpm telemetry:check -- --bundle-dir apps/extension/dist/chrome-mv3
+pnpm --filter extension assert:update-nag-artifact
 ```
 
 the browser QA path must capture console and network traffic from a production
@@ -45,8 +45,9 @@ same-origin `/api/telemetry` request. disabled or unreachable sink behavior is
 also expected to be console-clean and nonblocking. deployed network and bundle
 readback remain external proof; local build output cannot claim them.
 
-qa authentication remains the signed `qa-local` contract. `x-forwarded-for` is
-not an authority and is not accepted as a fallback.
+Predecessor QA authentication remains the signed `qa-local` contract.
+`x-forwarded-for` is not authority or a fallback. The local Go product instead
+uses real accounts and optional Sentry; see [runtime operations](./DEPLOYMENT.md).
 
 ## volume and retention
 

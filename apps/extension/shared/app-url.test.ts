@@ -1,60 +1,19 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { getSplootAppUrl, getTrustedSplootAppUrl } from './app-url';
+import { normalizeInstanceUrl } from './instance-url';
 
-async function importAppUrl() {
-  vi.resetModules();
-  return await import('./app-url');
-}
-
-describe('getSplootAppUrl', () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
+describe('instance URL boundary', () => {
+  it('allows local HTTP and remote HTTPS without changing the credential origin', () => {
+    expect(normalizeInstanceUrl('http://127.0.0.1:3001/')).toBe('http://127.0.0.1:3001');
+    expect(normalizeInstanceUrl('https://LIBRARY.example:443/')).toBe('https://library.example');
+    expect(getSplootAppUrl('/app/settings', 'https://library.example')).toBe('https://library.example/app/settings');
   });
 
-  it('uses the configured API origin for the library URL', async () => {
-    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_contract');
-    vi.stubEnv('VITE_CLERK_SYNC_HOST', 'http://localhost:3001');
-    vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:3001');
-
-    const { getSplootAppUrl } = await importAppUrl();
-
-    expect(getSplootAppUrl()).toBe('http://localhost:3001/app');
+  it.each(['http://remote.example', 'https://user:password@library.example', 'https://library.example/path', 'https://library.example?token=secret', 'file:///tmp/library'])('rejects unsafe instance selection: %s', value => {
+    expect(() => normalizeInstanceUrl(value)).toThrow();
   });
 
-  it('uses the configured API origin for the web sign-in URL', async () => {
-    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_contract');
-    vi.stubEnv('VITE_CLERK_SYNC_HOST', 'http://localhost:3001');
-    vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:3001');
-
-    const { getSplootSignInUrl } = await importAppUrl();
-
-    expect(getSplootSignInUrl()).toBe('http://localhost:3001/sign-in');
-  });
-
-  it.each([
-    'https://evil.example/steal',
-    '//evil.example/steal',
-    'javascript:alert(1)',
-    'data:text/html,steal',
-  ])('rejects an action URL outside the configured Sploot origin: %s', async path => {
-    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', 'pk_test_contract');
-    vi.stubEnv('VITE_CLERK_SYNC_HOST', 'http://localhost:3001');
-    vi.stubEnv('VITE_API_BASE_URL', 'http://localhost:3001');
-
-    const { getSplootAppUrl, getTrustedSplootAppUrl } = await importAppUrl();
-
-    expect(getTrustedSplootAppUrl(path)).toBeUndefined();
-    expect(() => getSplootAppUrl(path)).toThrow('URL must use the configured Sploot origin');
-  });
-
-  it('throws a diagnostic configuration error instead of silently routing to production', async () => {
-    vi.stubEnv('VITE_CLERK_PUBLISHABLE_KEY', '');
-    vi.stubEnv('VITE_CLERK_SYNC_HOST', '');
-    vi.stubEnv('VITE_API_BASE_URL', '');
-
-    const { getSplootAppUrl } = await importAppUrl();
-
-    expect(() => getSplootAppUrl()).toThrow(
-      'VITE_CLERK_PUBLISHABLE_KEY not configured; VITE_CLERK_SYNC_HOST not configured; VITE_API_BASE_URL not configured'
-    );
+  it.each(['//attacker.test/app', 'https://attacker.test/app', 'javascript:alert(1)', 'http://127.0.0.1:3002/app'])('rejects cross-origin notification actions: %s', value => {
+    expect(getTrustedSplootAppUrl(value, 'http://127.0.0.1:3001')).toBeUndefined();
   });
 });

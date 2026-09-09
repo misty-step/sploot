@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -93,7 +93,7 @@ func normalizeList(owner string, options model.ListOptions) (listContext, error)
 			return context, badRequest("shuffleSeed is required and must be an integer from 0 to 1000000")
 		}
 		context.Seed = strconv.FormatInt(seed, 10)
-		context.Direction = "asc" // Existing shuffle contract always walks the persisted key ring forward.
+		context.Direction = "asc" // Walk the persisted key ring forward.
 	} else if context.Seed != "" {
 		return context, badRequest("shuffleSeed is only supported with sortBy=shuffle")
 	}
@@ -122,13 +122,13 @@ func (s *Service) List(ctx context.Context, owner string, options model.ListOpti
 	page.Limit, page.Offset = binding.Limit, cursor.Offset
 	// Count and all ring segments see the same database snapshot. Keyset
 	// cursors then survive deletions before the boundary without offset skips.
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return page, fmt.Errorf("begin library page: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback()
 	where, args := listFilter(binding, cursor.Snapshot)
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM assets a WHERE `+where, args...).Scan(&page.Total); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM assets a WHERE `+where, args...).Scan(&page.Total); err != nil {
 		return page, fmt.Errorf("count library assets: %w", err)
 	}
 	var records []listRecord
@@ -140,7 +140,7 @@ func (s *Service) List(ctx context.Context, owner string, options model.ListOpti
 	if err != nil {
 		return page, err
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(); err != nil {
 		return page, fmt.Errorf("finish library page: %w", err)
 	}
 	page.HasMore = len(records) > binding.Limit
@@ -165,7 +165,7 @@ func (s *Service) List(ctx context.Context, owner string, options model.ListOpti
 
 func listFilter(binding listContext, snapshot time.Time) (string, []any) {
 	args := []any{binding.Owner, snapshot}
-	where := `a.owner_user_id = $1 AND a."createdAt" <= $2`
+	where := `a.owner_user_id = ?1 AND a.created_at <= ?2`
 	if binding.Deleted {
 		where += ` AND a.deleted_at IS NOT NULL`
 	} else {
@@ -173,24 +173,24 @@ func listFilter(binding listContext, snapshot time.Time) (string, []any) {
 	}
 	if binding.Favorite != nil {
 		args = append(args, *binding.Favorite)
-		where += fmt.Sprintf(` AND a.favorite = $%d`, len(args))
+		where += fmt.Sprintf(` AND a.favorite = ?%d`, len(args))
 	}
 	if binding.TagID != "" {
 		args = append(args, binding.TagID)
-		where += fmt.Sprintf(` AND EXISTS(SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id WHERE at.asset_id = a.id AND t.owner_user_id = a.owner_user_id AND t.id = $%d)`, len(args))
+		where += fmt.Sprintf(` AND EXISTS(SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id WHERE at.asset_id = a.id AND t.owner_user_id = a.owner_user_id AND t.id = ?%d)`, len(args))
 	}
 	return where, args
 }
 
-func sortedRecords(ctx context.Context, tx pgx.Tx, binding listContext, cursor listCursor, where string, args []any) ([]listRecord, error) {
-	column, valueType := `a."createdAt"`, "timestamp"
+func sortedRecords(ctx context.Context, tx *sql.Tx, binding listContext, cursor listCursor, where string, args []any) ([]listRecord, error) {
+	column := "a.created_at"
 	switch binding.Sort {
 	case "updatedAt":
-		column = `a."updatedAt"`
+		column = "a.updated_at"
 	case "size":
-		column, valueType = "a.size", "integer"
+		column = "a.size"
 	case "pathname":
-		column, valueType = "a.pathname", "text"
+		column = "a.pathname"
 	}
 	direction, comparison := "DESC", "<"
 	if binding.Direction == "asc" {
@@ -198,19 +198,30 @@ func sortedRecords(ctx context.Context, tx pgx.Tx, binding listContext, cursor l
 	}
 	offset := cursor.Offset
 	if cursor.AfterID != "" {
-		args = append(args, cursor.AfterValue, cursor.AfterID)
-		where += fmt.Sprintf(` AND (%s, a.id) %s ($%d::text::%s, $%d::text)`, column, comparison, len(args)-1, valueType, len(args))
+		var value any = cursor.AfterValue
+		switch binding.Sort {
+		case "size":
+			parsed, err := strconv.ParseInt(cursor.AfterValue, 10, 64)
+			if err != nil {
+				return nil, invalidCursor()
+			}
+			value = parsed
+		}
+		args = append(args, value, cursor.AfterID)
+		where += fmt.Sprintf(` AND (%s, a.id) %s (?%d, ?%d)`, column, comparison, len(args)-1, len(args))
 		offset = 0
 	}
 	args = append(args, binding.Limit+1, offset)
-	query := `SELECT ` + assetColumns + `, ` + column + `::text FROM assets a WHERE ` + where +
-		fmt.Sprintf(` ORDER BY %s %s, a.id %s LIMIT $%d OFFSET $%d`, column, direction, direction, len(args)-1, len(args))
+	// Keep SQLite's exact stored timestamp text in the cursor. Re-encoding a
+	// DATETIME through time.Time changes CURRENT_TIMESTAMP's lexical boundary.
+	query := `SELECT ` + assetColumns + `, CAST(` + column + ` AS TEXT) FROM assets a WHERE ` + where +
+		fmt.Sprintf(` ORDER BY %s %s, a.id %s LIMIT ?%d OFFSET ?%d`, column, direction, direction, len(args)-1, len(args))
 	return readRecords(ctx, tx, query, args, false)
 }
 
-func shuffledRecords(ctx context.Context, tx pgx.Tx, binding listContext, cursor listCursor, where string, args []any) ([]listRecord, error) {
+func shuffledRecords(ctx context.Context, tx *sql.Tx, binding listContext, cursor listCursor, where string, args []any) ([]listRecord, error) {
 	seed, _ := strconv.ParseInt(binding.Seed, 10, 64)
-	// Equivalent to seed * MaxInt64 / 1e6, without overflowing BIGINT.
+	// Equivalent to seed * MaxInt64 / 1e6 without overflowing int64.
 	pivot := (maxShuffleKey/maxShuffleSeed)*seed + ((maxShuffleKey%maxShuffleSeed)*seed)/maxShuffleSeed
 	head, offset := cursor.Head, cursor.Offset
 	if cursor.AfterID != "" {
@@ -219,7 +230,7 @@ func shuffledRecords(ctx context.Context, tx pgx.Tx, binding listContext, cursor
 	if cursor.AfterID == "" && offset > 0 {
 		countArgs := append(append([]any(nil), args...), pivot)
 		var tailCount int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM assets a WHERE `+where+fmt.Sprintf(` AND a.shuffle_key >= $%d`, len(countArgs)), countArgs...).Scan(&tailCount); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM assets a WHERE `+where+fmt.Sprintf(` AND a.shuffle_key >= ?%d`, len(countArgs)), countArgs...).Scan(&tailCount); err != nil {
 			return nil, fmt.Errorf("count shuffled tail: %w", err)
 		}
 		if offset >= tailCount {
@@ -233,19 +244,19 @@ func shuffledRecords(ctx context.Context, tx pgx.Tx, binding listContext, cursor
 		if head {
 			comparison = "<"
 		}
-		segmentWhere := where + fmt.Sprintf(` AND a.shuffle_key %s $%d`, comparison, len(segmentArgs))
+		segmentWhere := where + fmt.Sprintf(` AND a.shuffle_key %s ?%d`, comparison, len(segmentArgs))
 		if cursor.AfterID != "" && head == cursor.Head {
 			key, err := strconv.ParseInt(cursor.AfterValue, 10, 64)
 			if err != nil {
 				return nil, invalidCursor()
 			}
 			segmentArgs = append(segmentArgs, key, cursor.AfterID)
-			segmentWhere += fmt.Sprintf(` AND (a.shuffle_key, a.id) > ($%d, $%d)`, len(segmentArgs)-1, len(segmentArgs))
+			segmentWhere += fmt.Sprintf(` AND (a.shuffle_key, a.id) > (?%d, ?%d)`, len(segmentArgs)-1, len(segmentArgs))
 		}
 		remaining := binding.Limit + 1 - len(records)
 		segmentArgs = append(segmentArgs, remaining, offset)
-		query := `SELECT ` + assetColumns + `, a.shuffle_key::text FROM assets a WHERE ` + segmentWhere +
-			fmt.Sprintf(` ORDER BY a.shuffle_key ASC, a.id ASC LIMIT $%d OFFSET $%d`, len(segmentArgs)-1, len(segmentArgs))
+		query := `SELECT ` + assetColumns + `, a.shuffle_key FROM assets a WHERE ` + segmentWhere +
+			fmt.Sprintf(` ORDER BY a.shuffle_key ASC, a.id ASC LIMIT ?%d OFFSET ?%d`, len(segmentArgs)-1, len(segmentArgs))
 		segment, err := readRecords(ctx, tx, query, segmentArgs, head)
 		if err != nil {
 			return nil, err
@@ -258,20 +269,31 @@ func shuffledRecords(ctx context.Context, tx pgx.Tx, binding listContext, cursor
 	}
 }
 
-func readRecords(ctx context.Context, tx pgx.Tx, query string, args []any, head bool) ([]listRecord, error) {
-	rows, err := tx.Query(ctx, query, args...)
+func readRecords(ctx context.Context, tx *sql.Tx, query string, args []any, head bool) ([]listRecord, error) {
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query library assets: %w", err)
 	}
 	defer rows.Close()
 	records := make([]listRecord, 0)
 	for rows.Next() {
-		var value string
+		var value any
 		asset, err := scanAsset(rows, &value)
 		if err != nil {
 			return nil, fmt.Errorf("scan library asset: %w", err)
 		}
-		records = append(records, listRecord{asset: asset, value: value, head: head})
+		var encoded string
+		switch value := value.(type) {
+		case time.Time:
+			encoded = value.UTC().Format(time.RFC3339Nano)
+		case int64:
+			encoded = strconv.FormatInt(value, 10)
+		case string:
+			encoded = value
+		default:
+			return nil, fmt.Errorf("unsupported library sort value %T", value)
+		}
+		records = append(records, listRecord{asset: asset, value: encoded, head: head})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read library page: %w", err)

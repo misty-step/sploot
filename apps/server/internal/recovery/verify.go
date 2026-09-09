@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 )
 
-// Verify checks the entire database archive, every frozen metadata artifact,
-// exact media coverage, and every original/thumbnail byte. It never connects to a
-// database. Use VerifyRestore for restored database and media parity too.
+// Verify reads the portable database and every referenced byte without touching
+// the live library. The inventory must exactly match that database, not merely
+// claim internally consistent object totals.
 func Verify(ctx context.Context, directory string) (Manifest, error) {
 	var manifest Manifest
 	dir, err := openDirectory(directory, true)
@@ -20,7 +20,7 @@ func Verify(ctx context.Context, directory string) (Manifest, error) {
 	if err != nil {
 		return manifest, err
 	}
-	if err := verifyCore(dir, manifest); err != nil {
+	if err := verifyCore(ctx, dir, manifest); err != nil {
 		return manifest, err
 	}
 	return manifest, verifyMedia(ctx, dir, manifest)
@@ -30,70 +30,39 @@ func verifyMedia(ctx context.Context, dir *snapshotDirectory, manifest Manifest)
 	if manifest.Media == nil {
 		return failure("verify-media", "media inventory is absent")
 	}
-	if err := dir.verifyArtifact(*manifest.Media); err != nil {
-		return failure("verify-media", "media manifest byte count or SHA-256 differs")
+	if err := dir.verifyArtifact(ctx, *manifest.Media); err != nil {
+		return failure("verify-media", "media inventory size or SHA-256 differs")
 	}
 	file, err := dir.open("media.ndjson")
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	mediaScanner := bufio.NewScanner(file)
-	mediaScanner.Buffer(make([]byte, 64<<10), maxRecordBytes)
-	var count, bytes, assets int64
-	var previousID, previousRendition string
-	err = scanRecords[objectSource](dir, "sources.ndjson", func(source objectSource) error {
-		if ctx.Err() != nil {
-			return contextFailure(ctx, "verify-media")
+	scanner := bufio.NewScanner(recoveryReader{ctx, file})
+	scanner.Buffer(make([]byte, 64<<10), maxRecordBytes)
+	db, err := openDatabase(ctx, dir, true)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	assets, objects, total, err := walkMedia(ctx, db, func(expected MediaEntry) error {
+		if !scanner.Scan() {
+			return failure("verify-media", "media inventory ended before the database catalog")
 		}
-		if err := validateSource(source); err != nil {
-			return err
-		}
-		if source.AssetID == previousID {
-			if previousRendition != "original" || source.Rendition != "thumbnail" {
-				return assetFailure("verify-media", source.AssetID, "duplicate or out-of-order media inventory")
-			}
-		} else {
-			if source.AssetID < previousID || source.Rendition != "original" {
-				return assetFailure("verify-media", source.AssetID, "missing original or unsorted media inventory")
-			}
-			assets++
-		}
-		previousID, previousRendition = source.AssetID, source.Rendition
 		var entry MediaEntry
-		if !mediaScanner.Scan() || json.Unmarshal(mediaScanner.Bytes(), &entry) != nil || !validReceipt(source, entry) {
-			return assetFailure("verify-media", source.AssetID, "media inventory does not match frozen source metadata")
+		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil || entry != expected {
+			return assetFailure("verify-media", expected.AssetID, "media inventory differs from the frozen database")
 		}
-		if err := dir.verifyArtifact(Artifact{Path: entry.Path, Bytes: entry.Bytes, SHA256: entry.SHA256}); err != nil {
-			return assetFailure("verify-media", source.AssetID, "original or thumbnail byte count/SHA-256 mismatch")
+		if err := dir.verifyArtifact(ctx, Artifact{Path: entry.Path, Bytes: entry.Bytes, SHA256: entry.SHA256}); err != nil {
+			return assetFailure("verify-media", entry.AssetID, "media byte count or SHA-256 differs")
 		}
-		count++
-		bytes += entry.Bytes
-		return nil
+		return contextFailure(ctx, "verify-media")
 	})
 	if err != nil {
 		return err
 	}
-	if mediaScanner.Scan() || mediaScanner.Err() != nil {
-		return failure("verify-media", "extra or unreadable media inventory records")
-	}
-	if count != manifest.ObjectCount || assets != manifest.AssetCount || bytes != manifest.MediaBytes {
+	if scanner.Scan() || scanner.Err() != nil || assets != manifest.AssetCount || objects != manifest.ObjectCount || total != manifest.MediaBytes {
 		return failure("verify-media", "media coverage or byte totals differ from the snapshot")
-	}
-	var assetCount int64
-	var lastAsset string
-	if err := scanRecords[assetInventory](dir, "assets.ndjson", func(asset assetInventory) error {
-		if asset.ID == "" || asset.ID <= lastAsset || asset.OwnerID == "" || !validSHA(asset.SHA256) {
-			return assetFailure("verify-assets", asset.ID, "invalid asset ownership or inventory order")
-		}
-		lastAsset = asset.ID
-		assetCount++
-		return nil
-	}); err != nil {
-		return err
-	}
-	if assetCount != manifest.AssetCount {
-		return failure("verify-assets", "asset ownership inventory count differs from snapshot")
 	}
 	return nil
 }

@@ -3,7 +3,7 @@
 Read `AGENTS.md` for the repository map. Keep these invariants visible while working:
 
 - Use pnpm and `origin/master`; do not add npm/yarn workflows.
-- Prisma reads `DATABASE_URL` at Rust-engine initialization. Never invent an alias. Pooled Neon URLs require a `-pooler` host and `pgbouncer=true`; shipping schema changes use named migrations and pgvector-backed CI.
+- The local Go product uses persistent SQLite, private media and local CLIP. Acceptance owns fresh directories, never the operator's library. The retained Next predecessor still uses Prisma: `DATABASE_URL` is read at Rust-engine initialization; never invent an alias. Pooled Neon URLs require a `-pooler` host and `pgbouncer=true`; shipping Prisma schema changes use named migrations and pgvector-backed CI.
 - Keep every gate intact. Diagnose environment, database, migration, WXT, and auth failures instead of weakening checks or hiding skips.
 - `@sploot/common` owns shared upload limits, MIME validation, and API types. Update both web and extension consumers when it changes.
 - Web deploy (DigitalOcean) and extension release (Chrome Web Store) are separate surfaces.
@@ -23,4 +23,4 @@ pnpm --filter extension test
 pnpm --filter extension build
 ```
 
-DB-backed paths require `DATABASE_URL` against pgvector Postgres; label them `DB path unverified` when that evidence is unavailable. CI also runs frozen install, migration, and the required `merge-gate` aggregate.
+DB-backed predecessor paths require `DATABASE_URL` against pgvector Postgres; label them `DB path unverified` when that evidence is unavailable. CI also runs frozen install, migration, and the required `merge-gate` aggregate. The additional Go SQLite/local-inference and real extension acceptance commands are maintained in `.omp/commands/gate.md`; keep both runtime gates until a production cutover retires the predecessor.

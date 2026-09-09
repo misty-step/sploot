@@ -6,14 +6,13 @@
  */
 
 import { IS_DEV_BUILD } from '../../shared/build-mode';
-import { E2E_AUTH_MODE } from '../../shared/env';
 import {
   CONTEXT_MENU_SAVE_MESSAGES,
   type QueueActionResponse,
   type QueueErrorCode,
   type QueueListResponse,
 } from '../../shared/context-menu-save-messages';
-import { getAuthAuthority, runAuthDiagnostics } from './auth-manager';
+import { getAuthAuthority, readCaptureContext, runAuthDiagnostics } from './auth-manager';
 import {
   ContextMenuSaveQueueError,
   discardContextMenuSave,
@@ -93,17 +92,6 @@ export function setupContextMenu() {
   });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (E2E_AUTH_MODE && message?.type === CONTEXT_MENU_SAVE_MESSAGES.E2E_SAVE) {
-      if (typeof message.imageUrl !== 'string' || typeof message.filename !== 'string') {
-        sendResponse({ ok: false, error: 'Invalid E2E save request.' });
-        return true;
-      }
-      void handleImageSave(message.imageUrl, { title: message.filename }).then(
-        () => sendResponse({ ok: true }),
-        error => sendResponse({ ok: false, error: error instanceof Error ? error.message : 'Save failed.' }),
-      );
-      return true;
-    }
 
     const listType = message?.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_QUEUE
       || message?.type === CONTEXT_MENU_SAVE_MESSAGES.LIST_FAILED;
@@ -209,7 +197,8 @@ async function handleImageSave(
   }
 
   try {
-    await enqueueContextMenuSave(imageUrl, extractFilename(imageUrl, tab?.title));
+    const context = await readCaptureContext();
+    await enqueueContextMenuSave(imageUrl, extractFilename(imageUrl, tab?.title), context);
   } catch (error) {
     console.error('[Background][ContextMenu] Save failed', error);
     showErrorNotification(error instanceof Error ? error.message : 'Could not save to Sploot.');

@@ -12,10 +12,10 @@ results, or upload persists.
 
 ## Surface map
 
-- Web UI (`apps/web/app/app/**`, `components/**`): sign in, open `/app`, walk
-  the changed flow, and inspect DOM, network, console, and failed requests.
-- API (`apps/web/app/api/**`): call the route with a QA-local token; check status,
-  JSON shape, and one unauthenticated or malformed request.
+- Local Go UI/API (`apps/server/**`): use real account registration, private
+  media and local inference; exercise the actual browser and HTTP boundary.
+- Retained Next UI/API (`apps/web/**`): use the documented predecessor
+  environment or its isolated QA auth; do not confuse this with Go acceptance.
 - Extension (`apps/extension/**`): run its WXT build; for behavior, load the
   unpacked extension and exercise popup/background capture.
 - Common package (`packages/common/**`): type-check web and build extension.
@@ -26,28 +26,38 @@ text-to-image result → favorite/tag. Relevant routes include `/app/search`,
 
 ## Local runtime
 
-Preferred deterministic setup:
+The ordinary application is persistent, not a seeded QA session:
 
 ```sh
-pnpm dev:local
-# Docker pgvector + migrate + qa:seed + QA auth/server; teardown:
-pnpm dev:local:down
+pnpm dev
+pnpm --filter server run doctor
 ```
 
-Or configure `apps/web/.env.local` from `.env.example` and run `pnpm dev` or
-`pnpm dev:web` (the web app uses port 3001 unless a harness chooses another).
-The local QA database is pgvector Postgres, normally
-`postgresql://test:test@localhost:5432/sploot_test`; `qa:seed` creates user
-`qa-design-user` and 24 deterministic assets and refuses non-localhost URLs.
+Accounts and media survive shutdown in `.sploot-local/library`. Never seed,
+reset or delete that directory to exercise a user story. Use the isolated
+Go gauntlet for repeatable browser, inference, ownership and recovery checks:
 
-For non-production QA auth, set `SPLOOT_QA_AUTH_MODE=enabled` and a 32+ character
-`SPLOOT_QA_AUTH_SECRET`; send the signed token in `x-sploot-qa-auth` or the
-`sploot_qa_auth` cookie. This mode is rejected in production. Real uploads and
-search also need `BLOB_READ_WRITE_TOKEN` and `REPLICATE_API_TOKEN`.
+```sh
+pnpm --filter server build
+pnpm --filter server smoke --keep --binary build/sploot
+```
+
+It allocates a private temporary library, registers actual accounts and indexes
+new media with pinned local CLIP. Host prerequisites and real extension
+acceptance are maintained in `.omp/commands/gate.md`. There is no Go QA-auth
+door or mandatory Clerk/Neon/Blob/Replicate credential.
+
+The retained Next application remains separately available through
+`pnpm dev:web`; its provider/pgvector/QA-auth procedure is in
+`apps/web/docs/DEPLOYMENT.md`. Do not run both applications on the same port.
 
 ## Evidence
 
-Use the one-command harness when possible:
+For the local Go gauntlet, inspect the printed per-story results and retained
+desktop/mobile screenshots. `--keep` also retains private test databases and
+media; it does not sanitize or publish them.
+
+For a retained Next surface, use its existing evidence runner:
 
 ```sh
 pnpm --filter web qa:evidence --slug <slug> --intent "<what this proves>" \
@@ -69,13 +79,14 @@ Linear or the PR. The runner does not upload or redact. Historical
 remain in place; see `docs/qa/README.md` for the input/output boundary.
 
 Check one relevant edge: empty query, no auth, or a bad file type. A red console
-or failed request fails QA even when the page loads. DB paths require pgvector;
-`qa:evidence` requires `agent-browser`; seeded image URLs require QA auth mode.
+or failed request fails QA even when the page loads. Predecessor DB paths require
+pgvector; its `qa:evidence` runner requires `agent-browser` and seeded image URLs
+require QA auth mode. The local Go product uses SQLite and actual local inference.
 Do not hardcode a port chosen by a harness.
 
 ## Report
 
 Return `PASS`, `FAIL`, or `UNVERIFIED`; exact commands; surfaces exercised;
-evidence paths and observed DOM/network/console behavior; uncovered paths (for
-example, no live Replicate search); and whether deployed smoke
-(`pnpm --filter web smoke:deployed`) remains owed.
+evidence paths and observed DOM/network/console behavior; and uncovered paths.
+Local Go acceptance is not a production cutover, Web Store release, Apple signing
+or physical iPhone proof. Report predecessor deployed smoke separately when owed.

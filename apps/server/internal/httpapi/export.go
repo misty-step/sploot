@@ -16,18 +16,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"database/sql"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
 const libraryExportTimeout = 15 * time.Minute
 
 type libraryExportRecord struct {
-	Asset     json.RawMessage      `json:"asset"`
-	Embedding json.RawMessage      `json:"embedding"`
-	TagLinks  json.RawMessage      `json:"asset_tags"`
-	Replicas  json.RawMessage      `json:"asset_storage_replicas"`
-	Media     []libraryExportMedia `json:"media,omitempty"`
+	Asset     json.RawMessage `json:"asset"`
+	Embedding json.RawMessage `json:"embedding"`
+	TagLinks  json.RawMessage `json:"asset_tags"`
+	// Private account credentials and query caches are never part of this export.
+	Media []libraryExportMedia `json:"media,omitempty"`
 }
 
 type libraryExportMedia struct {
@@ -58,33 +58,23 @@ type libraryExportManifest struct {
 	Scope            string    `json:"scope"`
 }
 
-// Only the fields needed to locate and verify bytes are decoded. The complete
-// database rows, including both vectors, remain raw JSON in each asset record.
+// Only media-locator fields are decoded; complete SQLite asset and indexing
+// metadata remain JSON in each archive record.
 type libraryExportAsset struct {
-	ID                 string  `json:"id"`
-	OwnerID            string  `json:"owner_user_id"`
-	URL                string  `json:"blob_url"`
-	ThumbnailURL       *string `json:"thumbnail_url"`
-	Pathname           string  `json:"pathname"`
-	ThumbnailPath      *string `json:"thumbnail_path"`
-	ThumbnailKey       *string `json:"thumbnail_storage_key"`
-	ThumbnailSourceKey *string `json:"thumbnail_storage_source_key"`
-	MIME               string  `json:"mime"`
-	Size               int64   `json:"size"`
-	Checksum           string  `json:"checksum_sha256"`
-	StorageSize        *int64  `json:"storage_size"`
-	StorageSHA256      *string `json:"storage_sha256"`
-	ThumbnailSize      *int64  `json:"thumbnail_storage_size"`
-	ThumbnailSHA256    *string `json:"thumbnail_storage_sha256"`
-	DeletedAt          *string `json:"deleted_at"`
-}
-
-type libraryExportReplica struct {
-	Rendition string `json:"rendition"`
-	URL       string `json:"delivery_url"`
-	Size      int64  `json:"size"`
-	SHA256    string `json:"sha256"`
-	Active    bool   `json:"active"`
+	ID              string  `json:"id"`
+	OwnerID         string  `json:"owner_user_id"`
+	URL             string  `json:"blob_url"`
+	ThumbnailURL    *string `json:"thumbnail_url"`
+	Pathname        string  `json:"pathname"`
+	ThumbnailPath   *string `json:"thumbnail_path"`
+	MIME            string  `json:"mime"`
+	Size            int64   `json:"size"`
+	Checksum        string  `json:"checksum_sha256"`
+	StorageSize     *int64  `json:"storage_size"`
+	StorageSHA256   *string `json:"storage_sha256"`
+	ThumbnailSize   *int64  `json:"thumbnail_storage_size"`
+	ThumbnailSHA256 *string `json:"thumbnail_storage_sha256"`
+	DeletedAt       *string `json:"deleted_at"`
 }
 
 type libraryExportExpectation struct {
@@ -175,12 +165,12 @@ func (s *Server) exportLibrary(w http.ResponseWriter, r *http.Request, principal
 
 func (s *Server) buildLibraryExport(ctx context.Context, owner string, file *os.File, buffer []byte) (libraryExportManifest, error) {
 	manifest := libraryExportManifest{
-		Format: "sploot-owned-library", Version: 1, OwnerID: owner,
+		Format: "sploot-owned-library", Version: 2, OwnerID: owner,
 		AssetMetadata:    "assets/<12-digit-sequence>/metadata.json; media paths in each record are archive-relative",
 		TagMetadata:      "tags.ndjson; one complete owner-scoped tag row per line, including unused tags",
-		MetadataEncoding: "Original PostgreSQL column names and JSON values; timestamps use UTC. image_embedding and embeddingVector are PostgreSQL vector literals or null. Asset IDs are preserved only in metadata, never used as archive paths.",
-		Integrity:        "Every media entry records its actual byte count and SHA-256. Available stored byte counts and SHA-256 values must match. Legacy media without a stored digest has stored_sha256_verified=false. ZIP CRCs protect metadata and media in transit.",
-		Scope:            "All owner asset rows at one repeatable-read, read-only PostgreSQL snapshot, including soft-deleted rows; one complete original and every referenced poster, full embeddings, tag links, and storage replica metadata. Replica byte duplicates, authentication credentials, global caches, and operational jobs are not included. This is not a database backup.",
+		MetadataEncoding: "SQLite snake_case column names and JSON values; timestamps use UTC. image_embedding is a hexadecimal little-endian float32 BLOB or null. Asset IDs remain metadata, never archive paths.",
+		Integrity:        "Every media entry must match its stored byte count and SHA-256. ZIP CRCs protect metadata and media in transit.",
+		Scope:            "All owner assets in one read-only SQLite snapshot, including trash, originals, referenced posters, indexing metadata and tags. Account credentials and other owners are excluded. This is not a database backup.",
 	}
 	catalog, err := os.CreateTemp("", "sploot-library-catalog-*.ndjson")
 	if err != nil {
@@ -211,11 +201,10 @@ func (s *Server) buildLibraryExport(ctx context.Context, owner string, file *os.
 			return manifest, fmt.Errorf("read private library catalog: %w", err)
 		}
 		var asset libraryExportAsset
-		var replicas []libraryExportReplica
-		if json.Unmarshal(record.Asset, &asset) != nil || json.Unmarshal(record.Replicas, &replicas) != nil || asset.OwnerID != owner || asset.ID == "" {
+		if json.Unmarshal(record.Asset, &asset) != nil || asset.OwnerID != owner || asset.ID == "" {
 			return manifest, libraryExportInvalid("The library catalog contains invalid asset ownership or metadata.")
 		}
-		original, poster, hasPoster, err := libraryExportExpectations(asset, replicas)
+		original, poster, hasPoster, err := libraryExportExpectations(asset)
 		if err != nil {
 			return manifest, err
 		}
@@ -273,96 +262,132 @@ func (s *Server) buildLibraryExport(ctx context.Context, owner string, file *os.
 	return manifest, ctx.Err()
 }
 
-// Spooling only the catalog lets us release the connection and the MVCC
-// snapshot before fetching media. No library-sized slice or vector collection
-// is retained in Go memory; pgx reads one row and JSON decoding one asset at a time.
+// SQLite's driver uses immediate transactions for writers. An explicit deferred
+// transaction on one connection keeps this catalog snapshot reader-only. It ends
+// before media copies, so large exports do not retain a WAL snapshot for minutes.
 func (s *Server) captureLibraryExport(ctx context.Context, owner string, archive *zip.Writer, catalog *os.File, manifest *libraryExportManifest) error {
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
-		return fmt.Errorf("open library export snapshot: %w", err)
+		return err
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN DEFERRED"); err != nil {
+		return err
 	}
 	defer func() {
 		rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = tx.Rollback(rollbackCtx)
+		_, _ = conn.ExecContext(rollbackCtx, "ROLLBACK")
 	}()
-	if _, err := tx.Exec(ctx, `SET LOCAL TIME ZONE 'UTC'`); err != nil {
-		return fmt.Errorf("set library snapshot timezone: %w", err)
-	}
-	if err := tx.QueryRow(ctx, `SELECT transaction_timestamp()`).Scan(&manifest.SnapshotAt); err != nil {
-		return fmt.Errorf("read library snapshot timestamp: %w", err)
-	}
+	manifest.SnapshotAt = time.Now().UTC()
 	tagWriter, err := libraryExportEntry(archive, "tags.ndjson", manifest.SnapshotAt, zip.Deflate)
 	if err != nil {
 		return err
 	}
-	rows, err := tx.Query(ctx, `SELECT to_jsonb(t)::text FROM public.tags t WHERE t.owner_user_id=$1 ORDER BY t.id COLLATE "C"`, owner)
+	rows, err := conn.QueryContext(ctx, `SELECT * FROM tags WHERE owner_user_id=? ORDER BY id`, owner)
 	if err != nil {
-		return fmt.Errorf("read owned library tags: %w", err)
+		return err
+	}
+	columns, err := rows.Columns()
+	if err != nil {
+		rows.Close()
+		return err
 	}
 	tagEncoder := json.NewEncoder(tagWriter)
 	for rows.Next() {
-		var tag json.RawMessage
-		if err := rows.Scan(&tag); err != nil {
+		row, err := libraryExportRow(rows, columns)
+		if err != nil {
 			rows.Close()
-			return fmt.Errorf("read library tag: %w", err)
+			return err
 		}
-		if err := tagEncoder.Encode(tag); err != nil {
+		if err := tagEncoder.Encode(row); err != nil {
 			rows.Close()
-			return fmt.Errorf("write library tag: %w", err)
+			return err
 		}
 		manifest.Tags++
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("stream library tags: %w", err)
+		return err
 	}
 
-	// Every join is rooted in the owner's assets. Inconsistent cross-owner
-	// links fail the whole export rather than leaking or silently omitting data.
-	rows, err = tx.Query(ctx, `SELECT to_jsonb(a)::text,
-		COALESCE((SELECT (to_jsonb(e)-'image_embedding'-'embeddingVector') ||
-			jsonb_build_object('image_embedding', e.image_embedding::text, 'embeddingVector', e."embeddingVector"::text)
-			FROM public.asset_embeddings e WHERE e.asset_id=a.id AND e.owner_user_id=$1), 'null'::jsonb)::text,
-		COALESCE((SELECT jsonb_agg(to_jsonb(at) ORDER BY at.tag_id COLLATE "C")
-			FROM public.asset_tags at JOIN public.tags t ON t.id=at.tag_id
-			WHERE at.asset_id=a.id AND t.owner_user_id=$1), '[]'::jsonb)::text,
-		COALESCE((SELECT jsonb_agg(to_jsonb(replica) ORDER BY replica.rendition, replica.generation, replica.provider, replica.id)
-			FROM public.asset_storage_replicas replica WHERE replica.asset_id=a.id), '[]'::jsonb)::text,
-		EXISTS(SELECT 1 FROM public.asset_embeddings e WHERE e.asset_id=a.id AND e.owner_user_id IS DISTINCT FROM $1)
-		OR EXISTS(SELECT 1 FROM public.asset_tags at LEFT JOIN public.tags t ON t.id=at.tag_id
-			WHERE at.asset_id=a.id AND t.owner_user_id IS DISTINCT FROM $1)
-		FROM public.assets a WHERE a.owner_user_id=$1 ORDER BY a.id COLLATE "C"`, owner)
+	rows, err = conn.QueryContext(ctx, `SELECT a.*,
+		(SELECT json_object('asset_id',e.asset_id,'owner_user_id',e.owner_user_id,'model_name',e.model_name,
+			'model_version',e.model_version,'dim',e.dim,'image_embedding',CASE WHEN e.image_embedding IS NULL THEN NULL ELSE hex(e.image_embedding) END,
+			'status',e.status,'attempts',e.attempts,'error',e.error,'processing_token',e.processing_token,
+			'processing_until',e.processing_until,'next_attempt_at',e.next_attempt_at,'created_at',e.created_at,'updated_at',e.updated_at)
+			FROM asset_embeddings e WHERE e.asset_id=a.id AND e.owner_user_id=?),
+		(SELECT json_group_array(json_object('asset_id',at.asset_id,'tag_id',at.tag_id))
+			FROM asset_tags at JOIN tags t ON t.id=at.tag_id WHERE at.asset_id=a.id AND t.owner_user_id=?),
+		EXISTS(SELECT 1 FROM asset_embeddings e WHERE e.asset_id=a.id AND e.owner_user_id<>?)
+			OR EXISTS(SELECT 1 FROM asset_tags at LEFT JOIN tags t ON t.id=at.tag_id WHERE at.asset_id=a.id AND (t.owner_user_id IS NULL OR t.owner_user_id<>?))
+		FROM assets a WHERE a.owner_user_id=? ORDER BY a.id`, owner, owner, owner, owner, owner)
 	if err != nil {
-		return fmt.Errorf("read owned library catalog: %w", err)
+		return err
 	}
 	defer rows.Close()
+	columns, err = rows.Columns()
+	if err != nil {
+		return err
+	}
 	encoder := json.NewEncoder(libraryExportWriter{ctx: ctx, writer: catalog})
+	values := make([]any, len(columns))
+	pointers := make([]any, len(values))
+	for index := range values {
+		pointers[index] = &values[index]
+	}
+	n := len(values) - 3
+	asset := make(map[string]any, n)
 	for rows.Next() {
-		var record libraryExportRecord
-		var invalidOwnership bool
-		if err := rows.Scan(&record.Asset, &record.Embedding, &record.TagLinks, &record.Replicas, &invalidOwnership); err != nil {
-			return fmt.Errorf("read library asset catalog: %w", err)
+		if err := rows.Scan(pointers...); err != nil {
+			return err
 		}
-		if invalidOwnership {
+		if invalid, ok := values[n+2].(int64); !ok || invalid != 0 {
 			return libraryExportInvalid("The library contains inconsistent ownership metadata; no archive was produced.")
 		}
+		for index, name := range columns[:n] {
+			asset[name] = values[index]
+		}
+		payload, err := json.Marshal(asset)
+		if err != nil {
+			return err
+		}
+		record := libraryExportRecord{Asset: payload, Embedding: json.RawMessage("null"), TagLinks: json.RawMessage("[]")}
+		if value, ok := values[n].(string); ok {
+			record.Embedding = json.RawMessage(value)
+		}
+		if value, ok := values[n+1].(string); ok {
+			record.TagLinks = json.RawMessage(value)
+		}
 		if err := encoder.Encode(record); err != nil {
-			return fmt.Errorf("write private library catalog: %w", err)
+			return err
 		}
 		manifest.Assets++
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("stream library asset catalog: %w", err)
+		return err
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("finish library export snapshot: %w", err)
-	}
-	return nil
+	_, err = conn.ExecContext(ctx, "COMMIT")
+	return err
 }
 
-func libraryExportExpectations(asset libraryExportAsset, replicas []libraryExportReplica) (libraryExportExpectation, libraryExportExpectation, bool, error) {
+func libraryExportRow(rows *sql.Rows, columns []string) (map[string]any, error) {
+	values, pointers := make([]any, len(columns)), make([]any, len(columns))
+	for index := range values {
+		pointers[index] = &values[index]
+	}
+	if err := rows.Scan(pointers...); err != nil {
+		return nil, err
+	}
+	row := make(map[string]any, len(columns))
+	for index, name := range columns {
+		row[name] = values[index]
+	}
+	return row, nil
+}
+
+func libraryExportExpectations(asset libraryExportAsset) (libraryExportExpectation, libraryExportExpectation, bool, error) {
 	original := libraryExportExpectation{bytes: asset.StorageSize}
 	poster := libraryExportExpectation{bytes: asset.ThumbnailSize}
 	if asset.StorageSHA256 != nil {
@@ -371,57 +396,12 @@ func libraryExportExpectations(asset libraryExportAsset, replicas []libraryExpor
 	if asset.ThumbnailSHA256 != nil {
 		poster.sha256 = *asset.ThumbnailSHA256
 	}
-	hasPoster := asset.ThumbnailURL != nil && *asset.ThumbnailURL != ""
-	posterMetadata := asset.ThumbnailPath != nil || asset.ThumbnailKey != nil || asset.ThumbnailSourceKey != nil || asset.ThumbnailSize != nil || asset.ThumbnailSHA256 != nil
-	invalid := func() (libraryExportExpectation, libraryExportExpectation, bool, error) {
+	hasPoster := asset.ThumbnailPath != nil && *asset.ThumbnailPath != ""
+	if asset.Size <= 0 || !libraryExportSHA256(asset.Checksum) || original.bytes == nil ||
+		*original.bytes != asset.Size || original.sha256 != asset.Checksum ||
+		hasPoster && (poster.bytes == nil || *poster.bytes <= 0 || !libraryExportSHA256(poster.sha256)) ||
+		!hasPoster && (poster.bytes != nil || poster.sha256 != "" || asset.ThumbnailURL != nil) {
 		return original, poster, hasPoster, libraryExportInvalid(fmt.Sprintf("Asset %q has inconsistent storage metadata; no archive was produced.", asset.ID))
-	}
-	if asset.Size < 0 || !libraryExportSHA256(asset.Checksum) ||
-		asset.StorageSHA256 != nil && !libraryExportSHA256(*asset.StorageSHA256) ||
-		asset.ThumbnailSHA256 != nil && !libraryExportSHA256(*asset.ThumbnailSHA256) {
-		return invalid()
-	}
-	for _, replica := range replicas {
-		var expected *libraryExportExpectation
-		var currentURL string
-		switch replica.Rendition {
-		case "original":
-			expected, currentURL = &original, asset.URL
-		case "thumbnail":
-			posterMetadata = true
-			expected = &poster
-			if hasPoster {
-				currentURL = *asset.ThumbnailURL
-			}
-		default:
-			return invalid()
-		}
-		if !replica.Active && replica.URL != currentURL {
-			continue
-		}
-		if replica.Size < 0 || !libraryExportSHA256(replica.SHA256) ||
-			expected.bytes != nil && *expected.bytes != replica.Size ||
-			expected.sha256 != "" && !strings.EqualFold(expected.sha256, replica.SHA256) {
-			return invalid()
-		}
-		if expected.bytes == nil {
-			size := replica.Size
-			expected.bytes = &size
-		}
-		if expected.sha256 == "" {
-			expected.sha256 = replica.SHA256
-		}
-	}
-	// The upload deduplication checksum can describe pre-processing input in
-	// older libraries. Explicit stored-byte metadata takes precedence.
-	if original.bytes == nil {
-		original.bytes = &asset.Size
-	}
-	if original.sha256 == "" {
-		original.sha256 = asset.Checksum
-	}
-	if *original.bytes < 0 || poster.bytes != nil && *poster.bytes < 0 || !hasPoster && posterMetadata {
-		return invalid()
 	}
 	return original, poster, hasPoster, nil
 }
@@ -441,7 +421,7 @@ func (s *Server) writeLibraryExportMedia(ctx context.Context, archive *zip.Write
 	if err := ctx.Err(); err != nil {
 		return receipt, err
 	}
-	source, err := s.openMedia(ctx, asset, thumbnail, "")
+	source, err := s.openMedia(ctx, asset, thumbnail)
 	if err != nil {
 		return incomplete("could not be opened; check retained media and storage availability")
 	}
@@ -449,36 +429,9 @@ func (s *Server) writeLibraryExportMedia(ctx context.Context, archive *zip.Write
 		return incomplete("has no readable body")
 	}
 	defer source.Body.Close()
-	if source.Status != http.StatusOK || source.Header.Get("Content-Range") != "" {
-		return incomplete("did not return the complete object")
-	}
-	if encoding := source.Header.Get("Content-Encoding"); encoding != "" && !strings.EqualFold(encoding, "identity") {
-		return incomplete("returned encoded instead of exact stored bytes")
-	}
-	var sourceSize *int64
-	if length := source.Header.Get("Content-Length"); length != "" {
-		value, err := strconv.ParseInt(length, 10, 64)
-		if err != nil || value < 0 || value == 1<<63-1 {
-			return incomplete("has an invalid storage byte count")
-		}
-		sourceSize = &value
-	}
-	if source.File != nil {
-		info, err := source.File.Stat()
-		if err != nil || !info.Mode().IsRegular() {
-			return incomplete("is not a readable regular file")
-		}
-		value := info.Size()
-		if sourceSize != nil && *sourceSize != value {
-			return incomplete("has conflicting storage byte counts")
-		}
-		sourceSize = &value
-	}
-	if expected.bytes != nil && sourceSize != nil && *expected.bytes != *sourceSize {
+	info, err := source.File.Stat()
+	if err != nil || !info.Mode().IsRegular() || expected.bytes == nil || info.Size() != *expected.bytes {
 		return incomplete("has a byte count different from the catalog")
-	}
-	if expected.bytes == nil {
-		expected.bytes = sourceSize
 	}
 
 	receipt.Path = directory + basename + libraryExportExtension(source.MIME)

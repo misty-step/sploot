@@ -8,12 +8,12 @@
  */
 
 import {
-  getSplootAppUrl,
   getTrustedSplootAppUrl,
 } from '../../shared/app-url';
 import { setSaveStatus } from '../../shared/save-status';
 import { runBestEffort } from '../../shared/best-effort';
 import { flashErrorBadge, flashSuccessBadge } from './badge';
+import { getInstanceUrl } from '../../shared/env';
 
 export interface ErrorNotificationInput {
   message: string;
@@ -44,6 +44,7 @@ async function loadPersistedActions(): Promise<NotificationAction[]> {
   if (!Array.isArray(actions)) {
     return [];
   }
+  const instanceUrl = await getInstanceUrl();
 
   return actions.flatMap((action): NotificationAction[] => {
     if (
@@ -53,7 +54,7 @@ async function loadPersistedActions(): Promise<NotificationAction[]> {
     ) {
       return [];
     }
-    const url = getTrustedSplootAppUrl(action.url);
+    const url = getTrustedSplootAppUrl(action.url, instanceUrl);
     return url ? [{ notificationId: action.notificationId, url }] : [];
   });
 }
@@ -63,27 +64,21 @@ function enqueueActionWrite(write: () => Promise<void>): Promise<void> {
   return actionWriteQueue;
 }
 
-function rememberAction(notificationId: string, url: string): void {
-  const trustedUrl = getTrustedSplootAppUrl(url);
-  if (!trustedUrl) {
-    return;
-  }
-
-  notificationActions.set(notificationId, trustedUrl);
-  while (notificationActions.size > MAX_PERSISTED_ACTIONS) {
-    const oldest = notificationActions.keys().next().value;
-    if (oldest) {
-      notificationActions.delete(oldest);
+function rememberAction(notificationId: string, url: string): Promise<void> {
+  return enqueueActionWrite(async () => {
+    const trustedUrl = getTrustedSplootAppUrl(url, await getInstanceUrl());
+    if (!trustedUrl) return;
+    notificationActions.set(notificationId, trustedUrl);
+    while (notificationActions.size > MAX_PERSISTED_ACTIONS) {
+      const oldest = notificationActions.keys().next().value;
+      if (oldest) notificationActions.delete(oldest);
     }
-  }
-
-  runBestEffort('notification action persistence', () => enqueueActionWrite(async () => {
     const actions = (await loadPersistedActions()).filter(action => action.notificationId !== notificationId);
     actions.push({ notificationId, url: trustedUrl });
     await chrome.storage.local.set({
       [ACTIONS_STORAGE_KEY]: actions.slice(-MAX_PERSISTED_ACTIONS),
     });
-  }));
+  });
 }
 
 async function forgetAction(notificationId: string): Promise<void> {
@@ -105,9 +100,12 @@ export function setupNotificationFeedback(): void {
   clickListenerRegistered = true;
   chrome.notifications.onClicked.addListener((notificationId) => {
     runBestEffort('notification click handling', async () => {
+      // A click can arrive while its instance lookup/write is still pending.
+      // Persistence failure is already reported; the live map remains useful.
+      await actionWriteQueue.catch(() => undefined);
       const url = notificationActions.get(notificationId)
         ?? (await loadPersistedActions()).find(action => action.notificationId === notificationId)?.url;
-      const trustedUrl = url ? getTrustedSplootAppUrl(url) : undefined;
+      const trustedUrl = url ? getTrustedSplootAppUrl(url, await getInstanceUrl()) : undefined;
       if (trustedUrl) {
         runBestEffort('tabs.create notification action', () => chrome.tabs.create({ url: trustedUrl }));
       }
@@ -143,7 +141,7 @@ export function showSuccessNotification(
     isClickable: true,
   }));
 
-  rememberAction(notificationId, getSplootAppUrl());
+  runBestEffort('notification action', () => rememberAction(notificationId, '/app'));
   flashSuccessBadge();
   // Persistent trace for the popup — survives DND-suppressed notifications.
   setSaveStatus({
@@ -167,7 +165,7 @@ export function toErrorNotificationMessage(errorMessage: string): string {
     return 'Uploads are paused. Please try again later.';
   }
   if (errorMessage.includes('Authentication required')) {
-    return 'Please login to sploot.app first';
+    return 'Connect this device from the Sploot extension popup.';
   }
   if (errorMessage.includes('Session expired')) {
     return 'Session expired. Please login again.';
@@ -193,20 +191,18 @@ export function showErrorNotification(error: string | ErrorNotificationInput): v
   const errorMessage = typeof error === 'string' ? error : error.message;
   const userMessage = toErrorNotificationMessage(errorMessage);
   const actionHref = typeof error === 'string' ? undefined : error.actionHref;
-  const actionUrl = actionHref ? getTrustedSplootAppUrl(actionHref) : undefined;
-
-  runBestEffort('notifications.create error', () => chrome.notifications.create(notificationId, {
-    type: 'basic',
-    iconUrl: chrome.runtime.getURL('icon-128.png'),
-    title: 'Save Failed',
-    message: userMessage,
-    priority: 2,
-    isClickable: Boolean(actionUrl),
-  }));
-
-  if (actionUrl) {
-    rememberAction(notificationId, actionUrl);
-  }
+  runBestEffort('notifications.create error', async () => {
+    const actionUrl = actionHref ? getTrustedSplootAppUrl(actionHref, await getInstanceUrl()) : undefined;
+    if (actionUrl) runBestEffort('notification action', () => rememberAction(notificationId, actionUrl));
+    await chrome.notifications.create(notificationId, {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icon-128.png'),
+      title: 'Save Failed',
+      message: userMessage,
+      priority: 2,
+      isClickable: Boolean(actionUrl),
+    });
+  });
   flashErrorBadge();
   setSaveStatus({ state: 'error', message: userMessage, at: Date.now() });
 

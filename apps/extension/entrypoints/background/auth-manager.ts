@@ -1,599 +1,415 @@
-import { createClerkClient } from '@clerk/chrome-extension/background'
 import { AUTH_MESSAGES, type AuthState } from '../../shared/auth-messages'
-import {
-  assertExtensionConfig,
-  CLERK_ENVIRONMENT,
-  CLERK_PUBLISHABLE_KEY,
-  CLERK_SYNC_HOST,
-  E2E_AUTH_MODE,
-} from '../../shared/env'
-import { getSplootSignInUrl } from '../../shared/app-url'
+import { CONNECTION_STORAGE_KEY, SPLOOT_API_BASE_URL } from '../../shared/env'
+import { normalizeInstanceUrl } from '../../shared/instance-url'
 import { IS_DEV_BUILD } from '../../shared/build-mode'
 
-const PUBLISHABLE_KEY = CLERK_PUBLISHABLE_KEY
-const SIGN_IN_TIMEOUT_MS = 60000
-const E2E_AUTH_KEY = 'sploot:e2e-auth-authority'
-const AUTH_SYNC_RETRY_DELAYS_MS = [50, 100, 250, 500, 1000, 2000, 5000, 10000, 15000, 15000] as const
-const AUTH_SYNC_INITIAL_RETRY_LIMIT = 4
+const PAIRING_ALARM = 'sploot:device-pairing'
+const REQUEST_TIMEOUT_MS = 15_000
+const MAX_PAIRING_AGE_MS = 600_000
+const MAX_POLL_ATTEMPTS = 300
 
-let cachedState: AuthState = { status: 'unknown' }
-const waiters = new Set<(state: AuthState) => void>()
-const authStateListeners = new Set<(state: AuthState) => void>()
-let clerkClientPromise: ReturnType<typeof createClerkClient> | undefined
-let removeClerkListener: (() => void) | undefined
-let bridgeListener: Parameters<typeof chrome.runtime.onMessage.addListener>[0] | undefined
-let authSyncRetryTimer: ReturnType<typeof setTimeout> | undefined
-let authSyncRetryAttempt = 0
-let authSyncGeneration = 0
-let authSyncInFlightGeneration: number | undefined
-let authSyncInFlightPromise: Promise<void> | undefined
-let authCookieListener: ((changeInfo: chrome.cookies.CookieChangeInfo) => void) | undefined
-let authCookieRefreshPromise: Promise<void> | undefined
+interface DeviceSession {
+  token: string
+  user: { id: string; email: string }
+  sessionId: string
+  expiresAt: number
+}
+interface PendingPairing {
+  deviceCode: string
+  userCode: string
+  verificationUriComplete: string
+  expiresAt: number
+  intervalMs: number
+  nextPollAt: number
+  attempts: number
+}
+interface Connection {
+  instanceUrl: string
+  session?: DeviceSession
+  pending?: PendingPairing
+  error?: string
+}
 
-/**
- * The Clerk authority behind a durable save job.
- *
- * Durable ownership is the STABLE account identity (`userId` plus the account
- * boundary `accountId`). `sessionId` records the credential that was live when
- * the job was created — it is credential freshness only and never participates
- * in ownership decisions: ordinary sign-out/re-auth mints a new session for the
- * same account and must not orphan durable work.
- */
+/** Stable instance + account ownership; sessionId is non-secret provenance only. */
 export interface AuthAuthority {
   userId: string
-  /** Clerk's account boundary is currently the user; keep it explicit for future organizations. */
   accountId?: string
   sessionId: string
 }
 
-function sessionAuthority(session: { id?: string | null; user?: { id?: string | null } | null } | null | undefined): AuthAuthority | null {
-  const userId = session?.user?.id
-  const sessionId = session?.id
-  if (!userId || !sessionId) {
-    return null
-  }
-  return { userId, accountId: userId, sessionId }
+/** Admission-time destination and ownership; never contains a usable credential. */
+export interface CaptureContext {
+  readonly instanceUrl: string
+  readonly authority: Readonly<AuthAuthority> | null
 }
 
-/**
- * Whether two authorities belong to the same stable account. This is the ONLY
- * comparison durable ownership may use; session identity is deliberately
- * ignored so a re-authenticated account keeps its queued work.
- */
+const listeners = new Set<(state: AuthState) => void>()
+let operationQueue: Promise<unknown> = Promise.resolve()
+let pollTimer: ReturnType<typeof setTimeout> | undefined
+let bridgeInstalled = false
+let lastState = ''
+
+function exclusively<T>(operation: () => Promise<T>): Promise<T> {
+  const result = operationQueue.then(operation, operation)
+  operationQueue = result.catch(() => undefined)
+  return result
+}
+
 export function sameAccountAuthority(left: AuthAuthority | null | undefined, right: AuthAuthority | null | undefined): boolean {
-  return Boolean(
-    left
-    && right
-    && left.userId === right.userId
-    && (left.accountId ?? left.userId) === (right.accountId ?? right.userId),
-  )
+  return Boolean(left && right && left.userId === right.userId
+    && (left.accountId ?? left.userId) === (right.accountId ?? right.userId))
 }
 
-function notifyWaiters(state: AuthState) {
-  for (const listener of waiters) {
-    listener(state)
-  }
-  for (const listener of authStateListeners) {
-    listener(state)
-  }
-}
-
-/** Subscribe to authoritative Clerk state transitions inside the worker. */
 export function onAuthStateChanged(listener: (state: AuthState) => void): () => void {
-  authStateListeners.add(listener)
-  return () => authStateListeners.delete(listener)
+  listeners.add(listener)
+  return () => listeners.delete(listener)
 }
 
-function authStateFromResources(resources: {
-  session?: { id: string; user?: { id: string } | null; expireAt?: Date | null } | null
-  user?: { id: string } | null
-}): AuthState {
-  if (!resources.session) {
-    return { status: 'signed-out', userId: null, sessionId: null, expiresAt: null }
-  }
-
+async function readConnection(): Promise<Connection> {
+  const stored = await chrome.storage.local.get(CONNECTION_STORAGE_KEY)
+  const connection = stored[CONNECTION_STORAGE_KEY] as Connection | undefined
+  if (!connection) return { instanceUrl: SPLOOT_API_BASE_URL }
+  const instanceUrl = normalizeInstanceUrl(connection.instanceUrl)
+  // This is private, version-owned extension storage, not a public auth input.
+  // An expired credential is never returned even before the startup check runs.
   return {
-    status: 'signed-in',
-    userId: resources.user?.id ?? resources.session.user?.id ?? null,
-    sessionId: resources.session.id,
-    expiresAt: resources.session.expireAt?.getTime() ?? null,
+    instanceUrl,
+    ...(connection.session && connection.session.expiresAt > Date.now() ? { session: connection.session } : {}),
+    ...(connection.pending ? { pending: connection.pending } : {}),
+    ...(connection.error ? { error: connection.error } : {}),
   }
 }
 
-function sameAuthState(left: AuthState, right: AuthState): boolean {
-  return (
-    left.status === right.status &&
-    left.userId === right.userId &&
-    left.sessionId === right.sessionId &&
-    left.expiresAt === right.expiresAt
-  )
+function publicState(connection: Connection): AuthState {
+  const session = connection.session
+  const pending = connection.pending
+  return {
+    status: session ? 'signed-in' : 'signed-out',
+    instanceUrl: connection.instanceUrl,
+    ...(session ? {
+      userId: session.user.id, email: session.user.email,
+      sessionId: session.sessionId, expiresAt: session.expiresAt,
+    } : {}),
+    ...(pending ? { pending: {
+      userCode: pending.userCode, verificationUriComplete: pending.verificationUriComplete,
+      expiresAt: pending.expiresAt,
+    } } : {}),
+    ...(connection.error ? { error: connection.error } : {}),
+  }
 }
 
-function updateCachedState(next: AuthState) {
-  if (sameAuthState(cachedState, next)) {
-    return
+function publish(connection: Connection): AuthState {
+  const state = publicState(connection)
+  const serialized = JSON.stringify(state)
+  if (serialized !== lastState) {
+    lastState = serialized
+    for (const listener of listeners) listener(state)
+    void chrome.runtime.sendMessage({ type: AUTH_MESSAGES.STATE_CHANGED, payload: state }).catch(() => undefined)
   }
+  return state
+}
 
-  cachedState = next
-  console.log('[Auth] State changed', {
-    status: next.status,
-    userId: next.userId,
-    sessionId: next.sessionId,
-    expiresAt: next.expiresAt,
+async function saveConnection(connection: Connection): Promise<AuthState> {
+  await chrome.storage.local.set({ [CONNECTION_STORAGE_KEY]: connection })
+  return publish(connection)
+}
+
+async function authFetch(instanceUrl: string, path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${instanceUrl}${path}`, {
+    ...init,
+    credentials: 'omit',
+    redirect: 'error',
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    headers: { 'Content-Type': 'application/json', ...init.headers },
   })
-  notifyWaiters(next)
-
-  try {
-    const result = chrome.runtime.sendMessage({
-      type: AUTH_MESSAGES.STATE_CHANGED,
-      payload: next,
-    })
-    if (result && typeof result.catch === 'function') {
-      void result.catch(() => undefined)
-    }
-  } catch {
-    // The popup may have closed between the state change and this broadcast.
-  }
 }
 
-function normalizeCookieDomain(domain: string): string {
-  return domain.trim().replace(/^\.+/, '').toLowerCase()
+function authority(connection: Connection): AuthAuthority | null {
+  const session = connection.session
+  return session ? {
+    userId: session.user.id,
+    accountId: `${connection.instanceUrl}/${session.user.id}`,
+    sessionId: session.sessionId,
+  } : null
 }
 
-function isClerkSyncCookieChange(changeInfo: chrome.cookies.CookieChangeInfo): boolean {
-  if (!changeInfo?.cookie?.domain || !CLERK_SYNC_HOST) {
-    return false
-  }
-
-  try {
-    const syncDomain = normalizeCookieDomain(new URL(CLERK_SYNC_HOST).hostname)
-    return syncDomain.length > 0 && normalizeCookieDomain(changeInfo.cookie.domain) === syncDomain
-  } catch {
-    return false
-  }
+export async function readAuthAuthority(signal?: AbortSignal): Promise<AuthAuthority | null> {
+  signal?.throwIfAborted()
+  const connection = await readConnection()
+  signal?.throwIfAborted()
+  publish(connection)
+  return authority(connection)
 }
 
-async function refreshAuthFromCookie(): Promise<void> {
-  const clerk = await getClerkClient()
-  await clerk.__internal_reloadInitialResources()
-  updateCachedState(authStateFromResources(clerk))
-}
-
-function queueAuthCookieRefresh(): void {
-  const previous = authCookieRefreshPromise ?? Promise.resolve()
-  const next = previous
-    .then(async () => {
-      await startAuthSync()
-      await refreshAuthFromCookie()
-    })
-    .catch(error => {
-      console.error('[Auth] Failed to refresh Clerk from cookie change', error)
-    })
-
-  const cleanup = next.finally(() => {
-    if (authCookieRefreshPromise === cleanup) {
-      authCookieRefreshPromise = undefined
-    }
+/** Read both fields together before any capture preparation can outlive this account. */
+export async function readCaptureContext(signal?: AbortSignal): Promise<CaptureContext> {
+  signal?.throwIfAborted()
+  const connection = await readConnection()
+  signal?.throwIfAborted()
+  const owner = authority(connection)
+  return Object.freeze({
+    instanceUrl: connection.instanceUrl,
+    authority: owner ? Object.freeze(owner) : null,
   })
-  authCookieRefreshPromise = cleanup
 }
 
-function installAuthCookieListener(): void {
-  if (E2E_AUTH_MODE || authCookieListener) {
-    return
-  }
-
-  const onChanged = chrome.cookies?.onChanged
-  if (!onChanged || typeof onChanged.addListener !== 'function') {
-    throw new Error('Chrome cookie change listener is unavailable')
-  }
-
-  const listener = (changeInfo: chrome.cookies.CookieChangeInfo) => {
-    if (isClerkSyncCookieChange(changeInfo)) {
-      queueAuthCookieRefresh()
-    }
-  }
-
-  onChanged.addListener(listener)
-  authCookieListener = listener
-}
-
-async function getClerkClient() {
-  assertExtensionConfig()
-  // CreateClerkClientOptions exposes no telemetry option and the SDK loads
-  // Clerk internally with fixed options, so there is no typed disable knob
-  // here. Clerk's telemetry collector no-ops for production publishable keys
-  // (instanceType gate); the ClerkProvider surfaces disable it explicitly.
-  clerkClientPromise ??= Promise.resolve(createClerkClient({
-    publishableKey: PUBLISHABLE_KEY,
-    syncHost: CLERK_SYNC_HOST,
-    __experimental_syncHostListener: false,
-  })).catch(error => {
-    clerkClientPromise = undefined
-    throw error
-  })
-  return await clerkClientPromise
-}
-
-async function startAuthSyncImplementation(generation: number): Promise<void> {
-  if (E2E_AUTH_MODE || removeClerkListener) {
-    return
-  }
-
-  const clerk = await getClerkClient()
-  if (generation !== authSyncGeneration) {
-    return
-  }
-  if (!clerk || typeof clerk.addListener !== 'function') {
-    throw new Error('Clerk sync listener is unavailable')
-  }
-  const removeListener = clerk.addListener(resources => {
-    updateCachedState(authStateFromResources(resources))
-  })
-  removeClerkListener = typeof removeListener === 'function' ? removeListener : () => undefined
-  authSyncRetryAttempt = 0
-  updateCachedState(authStateFromResources(clerk))
-}
-
-function startAuthSync(generation = authSyncGeneration): Promise<void> {
-  if (authSyncInFlightGeneration === generation && authSyncInFlightPromise) {
-    return authSyncInFlightPromise
-  }
-
-  const promise = startAuthSyncImplementation(generation)
-  authSyncInFlightGeneration = generation
-  authSyncInFlightPromise = promise.finally(() => {
-    if (authSyncInFlightGeneration === generation) {
-      authSyncInFlightGeneration = undefined
-      authSyncInFlightPromise = undefined
-    }
-  })
-  return authSyncInFlightPromise
-}
-
-function startAuthSyncWithRetry(generation = authSyncGeneration): void {
-  if (E2E_AUTH_MODE || removeClerkListener || authSyncRetryTimer || generation !== authSyncGeneration) {
-    return
-  }
-
-  void startAuthSync(generation).catch(error => {
-    if (generation !== authSyncGeneration) {
-      return
-    }
-    console.error('[Auth] Failed to initialize Clerk sync', error)
-    const retryLimit = waiters.size > 0 ? AUTH_SYNC_RETRY_DELAYS_MS.length : AUTH_SYNC_INITIAL_RETRY_LIMIT
-    if (authSyncRetryAttempt >= retryLimit) {
-      return
-    }
-    const delay = AUTH_SYNC_RETRY_DELAYS_MS[authSyncRetryAttempt++]
-    authSyncRetryTimer = setTimeout(() => {
-      authSyncRetryTimer = undefined
-      startAuthSyncWithRetry(generation)
-    }, delay)
-  })
+export async function getAuthAuthority(signal?: AbortSignal): Promise<AuthAuthority | null> {
+  try { return await readAuthAuthority(signal) } catch { return null }
 }
 
 export async function isAuthenticated(signal?: AbortSignal): Promise<boolean> {
-  try {
-    if (E2E_AUTH_MODE) {
-      return Boolean(await getE2eAuthority(signal));
-    }
-    const clerk = await withAbort(getClerkClient(), signal)
-    const authority = sessionAuthority(clerk.session)
-    const hasSession = Boolean(authority)
-
-    console.log('[Auth] isAuthenticated check', {
-      hasSession,
-      userId: clerk.session?.user?.id,
-    })
-
-    if (hasSession) {
-      updateCachedState({
-        status: 'signed-in',
-        userId: authority?.userId,
-        sessionId: authority?.sessionId,
-        expiresAt: clerk.session?.expireAt?.getTime(),
-      })
-    }
-
-    return hasSession
-  } catch (error) {
-    console.error('[Auth] Failed to check authentication', error)
-    return false
-  }
+  return Boolean(await getAuthAuthority(signal))
 }
 
-export async function getAuthToken(signal?: AbortSignal): Promise<string | null> {
-  try {
-    if (E2E_AUTH_MODE) {
-      const authority = await getE2eAuthority(signal);
-      return authority ? `e2e-token-${authority.userId}-${authority.sessionId}` : null;
-    }
-    const clerk = await withAbort(getClerkClient(), signal)
-
-    if (!clerk.session) {
-      console.warn('[Auth] No session available for token retrieval')
-      return null
-    }
-
-    const token = await withAbort(clerk.session.getToken(), signal)
-
-    console.log('[Auth] Token retrieved', {
-      hasToken: Boolean(token),
-      userId: clerk.session.user?.id,
-    })
-
-    if (token) {
-      updateCachedState({
-        status: 'signed-in',
-        userId: clerk.session.user?.id,
-        sessionId: clerk.session.id,
-        expiresAt: clerk.session.expireAt?.getTime(),
-      })
-    }
-
-    return token
-  } catch (error) {
-    console.error('[Auth] Failed to get token', error)
-    return null
-  }
+/** The request captures its destination BEFORE reading credentials, closing origin-switch races. */
+export async function getAuthToken(signal?: AbortSignal, instanceUrl?: string): Promise<string | null> {
+  signal?.throwIfAborted()
+  const connection = await readConnection()
+  signal?.throwIfAborted()
+  if (instanceUrl && connection.instanceUrl !== instanceUrl) return null
+  return connection.session?.token ?? null
 }
 
-/**
- * Read the current session authority, THROWING on auth transport failure.
- *
- * `null` means "verifiably signed out"; a thrown error means "could not
- * determine" — callers that fence durable work must treat the two differently
- * (a transient failure schedules a retry; it never masquerades as an owner
- * change).
- */
-export async function readAuthAuthority(signal?: AbortSignal): Promise<AuthAuthority | null> {
-  if (E2E_AUTH_MODE) {
-    return await getE2eAuthority(signal);
-  }
-  const clerk = await withAbort(getClerkClient(), signal)
-  const authority = sessionAuthority(clerk.session)
-  if (authority) {
-    updateCachedState({
-      status: 'signed-in',
-      userId: authority.userId,
-      sessionId: authority.sessionId,
-      expiresAt: clerk.session?.expireAt?.getTime(),
-    })
-  } else {
-    updateCachedState({ status: 'signed-out' })
-  }
-  return authority
+export async function getAuthTokenForAuthority(expected: AuthAuthority, signal?: AbortSignal, instanceUrl?: string): Promise<string | null> {
+  signal?.throwIfAborted()
+  const connection = await readConnection()
+  signal?.throwIfAborted()
+  if (instanceUrl && connection.instanceUrl !== instanceUrl) return null
+  return sameAccountAuthority(authority(connection), expected) ? connection.session?.token ?? null : null
 }
 
-/** Lenient wrapper: read the current session authority, null on any failure. */
-export async function getAuthAuthority(signal?: AbortSignal): Promise<AuthAuthority | null> {
-  try {
-    return await readAuthAuthority(signal)
-  } catch (error) {
-    console.error('[Auth] Failed to read session authority', error)
-    return null
-  }
-}
-
-/**
- * Obtain a token only while the durable job's stable ACCOUNT is still active.
- * The token always comes from the LIVE session — session identity is
- * credential freshness, so a re-authenticated same-account session is valid.
- */
-export async function getAuthTokenForAuthority(expected: AuthAuthority, signal?: AbortSignal): Promise<string | null> {
-  try {
-    if (E2E_AUTH_MODE) {
-      const actual = await getE2eAuthority(signal);
-      return sameAccountAuthority(actual, expected) && actual
-        ? `e2e-token-${actual.userId}-${actual.sessionId}`
-        : null;
+/** Revoke locally only the exact credential rejected by the server, never a newer pairing. */
+export async function invalidateAuthToken(token: string, instanceUrl: string): Promise<void> {
+  await exclusively(async () => {
+    const connection = await readConnection()
+    if (connection.instanceUrl === instanceUrl && connection.session?.token === token) {
+      await saveConnection({ instanceUrl, error: 'This device session expired or was revoked. Connect again.' })
     }
-    const clerk = await withAbort(getClerkClient(), signal)
-    const actual = sessionAuthority(clerk.session)
-    if (!sameAccountAuthority(actual, expected) || !clerk.session) {
-      return null
-    }
-    return await withAbort(clerk.session.getToken(), signal)
-  } catch (error) {
-    console.error('[Auth] Failed to get owner-fenced token', error)
-    return null
-  }
-}
-
-async function getE2eAuthority(signal?: AbortSignal): Promise<AuthAuthority | null> {
-  const stored = await withAbort(chrome.storage.local.get(E2E_AUTH_KEY), signal);
-  const value = stored[E2E_AUTH_KEY];
-  if (!value || typeof value !== 'object') return null;
-  const authority = value as Partial<AuthAuthority>;
-  if (typeof authority.userId !== 'string' || typeof authority.sessionId !== 'string') return null;
-  return {
-    userId: authority.userId,
-    accountId: typeof authority.accountId === 'string' ? authority.accountId : authority.userId,
-    sessionId: authority.sessionId,
-  };
-}
-
-function withAbort<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) {
-    return promise
-  }
-  if (signal.aborted) {
-    return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'))
-  }
-  return new Promise((resolve, reject) => {
-    const abort = () => reject(new DOMException('The operation was aborted.', 'AbortError'))
-    signal.addEventListener('abort', abort, { once: true })
-    promise.then(
-      value => {
-        signal.removeEventListener('abort', abort)
-        resolve(value)
-      },
-      error => {
-        signal.removeEventListener('abort', abort)
-        reject(error)
-      },
-    )
   })
 }
 
-export function waitForSignIn(timeoutMs = SIGN_IN_TIMEOUT_MS, signal?: AbortSignal): Promise<boolean> {
-  return new Promise(resolve => {
-    let settled = false
-    let listener: (state: AuthState) => void
+async function schedulePoll(pending?: PendingPairing): Promise<void> {
+  clearTimeout(pollTimer)
+  pollTimer = undefined
+  await chrome.alarms.clear(PAIRING_ALARM)
+  if (!pending) return
+  const when = Math.min(pending.expiresAt, Math.max(Date.now(), pending.nextPollAt))
+  // A short timer is responsive while awake. The persisted alarm resumes after
+  // MV3 suspension; Chrome may clamp its wakeup to its minimum alarm interval.
+  await chrome.alarms.create(PAIRING_ALARM, { when: Math.max(Date.now() + 30_000, when) })
+  pollTimer = setTimeout(() => { void pollPairing().catch(() => undefined) }, Math.max(0, when - Date.now()))
+}
 
-    const finish = (signedIn: boolean) => {
-      if (settled) {
+async function pollPairing(): Promise<void> {
+  await exclusively(async () => {
+    const connection = await readConnection()
+    const pending = connection.pending
+    if (!pending) return
+    if (pending.expiresAt <= Date.now() || pending.attempts >= MAX_POLL_ATTEMPTS) {
+      await saveConnection({ instanceUrl: connection.instanceUrl, error: 'Connection code expired. Start a new connection.' })
+      await schedulePoll()
+      return
+    }
+    if (pending.nextPollAt > Date.now()) {
+      await schedulePoll(pending)
+      return
+    }
+    pending.attempts += 1
+    pending.nextPollAt = Date.now() + pending.intervalMs
+    await saveConnection(connection)
+    try {
+      const response = await authFetch(connection.instanceUrl, '/api/auth/device/token', {
+        method: 'POST', body: JSON.stringify({ deviceCode: pending.deviceCode }),
+      })
+      if (response.status === 200) {
+        const result = await response.json()
+        const expiresAt = Date.parse(result.expiresAt)
+        if (result.status !== 'authorized' || typeof result.token !== 'string' || !result.token.startsWith('spld_')
+          || typeof result.user?.id !== 'string' || !result.user.id || typeof result.user.email !== 'string'
+          || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+          throw new Error('Invalid device authorization response.')
+        }
+        await saveConnection({ instanceUrl: connection.instanceUrl, session: {
+          token: result.token, user: { id: result.user.id, email: result.user.email },
+          sessionId: crypto.randomUUID(), expiresAt,
+        } })
+        await schedulePoll()
         return
       }
-
-      settled = true
-      clearTimeout(timeoutId)
-      waiters.delete(listener)
-      if (waiters.size === 0) {
-        authSyncGeneration += 1
-        if (authSyncRetryTimer) {
-          clearTimeout(authSyncRetryTimer)
-          authSyncRetryTimer = undefined
-        }
-        authSyncRetryAttempt = 0
+      if (response.status === 403 || response.status === 410) {
+        await saveConnection({ instanceUrl: connection.instanceUrl,
+          error: response.status === 403 ? 'Connection was denied. Start again if this was unexpected.' : 'Connection code expired. Start a new connection.' })
+        await schedulePoll()
+        return
       }
-      signal?.removeEventListener('abort', abort)
-      resolve(signedIn)
-    }
-
-    const abort = () => finish(false)
-
-    const timeoutId = setTimeout(() => {
-      finish(false)
-    }, timeoutMs)
-    if (signal?.aborted) {
-      abort()
-      return
-    }
-    signal?.addEventListener('abort', abort, { once: true })
-
-    listener = (state: AuthState) => {
-      if (state.status === 'signed-in') {
-        finish(true)
+      if (response.status === 429) {
+        const retrySeconds = Number(response.headers.get('Retry-After'))
+        pending.intervalMs = Math.min(60_000, Math.max(pending.intervalMs + 2_000, Number.isFinite(retrySeconds) ? retrySeconds * 1000 : 0))
+      } else if (response.status !== 202) {
+        throw new Error('Instance could not check this connection.')
       }
+      delete connection.error
+    } catch {
+      connection.error = 'Cannot reach the instance. The connection will retry until the code expires.'
+      pending.intervalMs = Math.min(30_000, Math.max(2_000, pending.intervalMs * 2))
     }
-
-    if (cachedState.status === 'signed-in') {
-      finish(true)
-      return
-    }
-
-    const hadActiveWaiter = waiters.size > 0
-    waiters.add(listener)
-    if (!hadActiveWaiter) {
-      authSyncGeneration += 1
-      if (authSyncRetryTimer) {
-        clearTimeout(authSyncRetryTimer)
-        authSyncRetryTimer = undefined
-      }
-      authSyncRetryAttempt = 0
-      startAuthSyncWithRetry(authSyncGeneration)
-    }
+    pending.nextPollAt = Date.now() + pending.intervalMs
+    await saveConnection(connection)
+    await schedulePoll(pending)
   })
 }
 
-async function closeOwnedSignInTab(tabId: number | undefined, signInUrl: string): Promise<void> {
-  if (tabId === undefined) {
-    return
-  }
-
-  try {
-    const tab = await chrome.tabs.get(tabId)
-    if (tab.url === signInUrl) {
-      await chrome.tabs.remove(tabId)
+export async function startDevicePairing(): Promise<AuthState> {
+  return exclusively(async () => {
+    const connection = await readConnection()
+    if (connection.session) return publish(connection)
+    if (connection.pending && connection.pending.expiresAt > Date.now()) {
+      await chrome.tabs.create({ url: connection.pending.verificationUriComplete })
+      await schedulePoll(connection.pending)
+      return publish(connection)
     }
-  } catch {
-    // The tab may have been closed or navigated away while auth completed.
+    const response = await authFetch(connection.instanceUrl, '/api/auth/device', {
+      method: 'POST', body: JSON.stringify({ name: 'Sploot Chrome extension' }),
+    })
+    if (response.status !== 201) throw new Error(response.status === 429
+      ? 'Too many connection requests. Wait a minute before trying again.'
+      : 'Could not start a connection. Check the instance URL and try again.')
+    const result = await response.json()
+    let verificationUrl: URL
+    try { verificationUrl = new URL(result.verificationUriComplete) } catch { throw new Error('Instance returned an invalid verification URL.') }
+    if (verificationUrl.origin !== connection.instanceUrl || verificationUrl.pathname !== '/app/connect'
+      || verificationUrl.username || verificationUrl.password || typeof result.deviceCode !== 'string'
+      || typeof result.userCode !== 'string' || !result.userCode || !Number.isFinite(result.expiresIn) || result.expiresIn <= 0) {
+      throw new Error('Instance returned an unsafe device connection response.')
+    }
+    const intervalMs = Math.min(60_000, Math.max(2_000, (Number(result.interval) || 2) * 1000))
+    connection.pending = {
+      deviceCode: result.deviceCode, userCode: result.userCode, verificationUriComplete: verificationUrl.href,
+      expiresAt: Date.now() + Math.min(MAX_PAIRING_AGE_MS, result.expiresIn * 1000),
+      intervalMs, nextPollAt: Date.now() + intervalMs, attempts: 0,
+    }
+    delete connection.error
+    const state = await saveConnection(connection)
+    await schedulePoll(connection.pending)
+    await chrome.tabs.create({ url: verificationUrl.href })
+    return state
+  })
+}
+
+export async function disconnectDevice(): Promise<AuthState> {
+  return exclusively(async () => {
+    const connection = await readConnection()
+    if (connection.session) {
+      const response = await authFetch(connection.instanceUrl, '/api/auth/device/session', {
+        method: 'DELETE', headers: { Authorization: `Bearer ${connection.session.token}` },
+      })
+      if (response.status !== 204 && response.status !== 401) {
+        throw new Error('Could not revoke this device. Check your connection and try Disconnect again.')
+      }
+    }
+    await schedulePoll()
+    await chrome.storage.local.remove('sploot:last-save')
+    return saveConnection({ instanceUrl: connection.instanceUrl })
+  })
+}
+
+export async function setInstanceUrl(value: string): Promise<AuthState> {
+  const instanceUrl = normalizeInstanceUrl(value)
+  return exclusively(async () => {
+    const connection = await readConnection()
+    if (instanceUrl === connection.instanceUrl) return publish(connection)
+    if (connection.session) throw new Error('Disconnect this device before changing its instance.')
+    await schedulePoll()
+    await chrome.storage.local.remove('sploot:last-save')
+    return saveConnection({ instanceUrl })
+  })
+}
+
+export function waitForSignIn(timeoutMs = 60_000, signal?: AbortSignal): Promise<boolean> {
+  const { promise, resolve } = Promise.withResolvers<boolean>()
+  const finish = (signedIn: boolean) => {
+    clearTimeout(timer)
+    remove()
+    signal?.removeEventListener('abort', abort)
+    resolve(signedIn)
   }
+  const remove = onAuthStateChanged(state => { if (state.status === 'signed-in') finish(true) })
+  const timer = setTimeout(() => finish(false), timeoutMs)
+  const abort = () => finish(false)
+  if (signal?.aborted) finish(false)
+  else {
+    signal?.addEventListener('abort', abort, { once: true })
+    void isAuthenticated(signal).then(signedIn => { if (signedIn) finish(true) })
+  }
+  return promise
 }
 
 export async function promptUserSignIn(signal?: AbortSignal): Promise<boolean> {
-  const signInUrl = getSplootSignInUrl()
-  let tabId: number | undefined
   try {
-    const tab = await chrome.tabs.create({ url: signInUrl })
-    tabId = tab?.id
-  } catch (error) {
-    console.warn('[Auth] Unable to open Sploot sign-in tab', error)
-    return false
-  }
-
-  try {
-    if (await isAuthenticated(signal)) {
-      return true
-    }
-
-    return await waitForSignIn(SIGN_IN_TIMEOUT_MS, signal)
-  } finally {
-    await closeOwnedSignInTab(tabId, signInUrl)
-  }
+    signal?.throwIfAborted()
+    if (await isAuthenticated(signal)) return true
+    await startDevicePairing()
+    return await waitForSignIn(60_000, signal)
+  } catch { return false }
 }
 
-export interface AuthDiagnosticsSnapshot {
-  timestamp: number
-  environment: string
-  status: AuthState['status']
-  userId?: string | null
-  sessionId?: string | null
-  expiresAt?: number | null
-  error?: string
+export async function runAuthDiagnostics(): Promise<AuthState & { timestamp: number }> {
+  return { ...publicState(await readConnection()), timestamp: Date.now() }
 }
 
-export async function runAuthDiagnostics(): Promise<AuthDiagnosticsSnapshot> {
-  const snapshot: AuthDiagnosticsSnapshot = {
-    timestamp: Date.now(),
-    environment: CLERK_ENVIRONMENT,
-    status: cachedState.status,
-    userId: cachedState.userId,
-    sessionId: cachedState.sessionId,
-    expiresAt: cachedState.expiresAt,
-  }
-
-  try {
-    const clerk = await getClerkClient()
-    snapshot.status = clerk.session ? 'signed-in' : 'signed-out'
-    snapshot.userId = clerk.session?.user?.id
-    snapshot.sessionId = clerk.session?.id
-    snapshot.expiresAt = clerk.session?.expireAt?.getTime() ?? null
-  } catch (error) {
-    snapshot.error = error instanceof Error ? error.message : String(error)
-    console.error('[Auth] Diagnostics failed', error)
-  }
-
-  return snapshot
+async function resumeConnection(): Promise<void> {
+  await exclusively(async () => {
+    const connection = await readConnection()
+    if (connection.session) {
+      try {
+        const response = await authFetch(connection.instanceUrl, '/api/auth/session', {
+          headers: { Authorization: `Bearer ${connection.session.token}` },
+        })
+        if (response.status === 401) {
+          delete connection.session
+          connection.error = 'This device session expired or was revoked. Connect again.'
+          await saveConnection(connection)
+        }
+      } catch { /* Offline startup retains credentials and durable captured bytes. */ }
+    }
+    publish(connection)
+    await schedulePoll(connection.pending)
+  })
 }
 
-export function setupAuthBridge() {
-  if (bridgeListener) {
-    return
-  }
-
-  bridgeListener = (message, _sender, sendResponse) => {
-    if (message?.type === AUTH_MESSAGES.REQUEST_STATE) {
-      sendResponse({ state: cachedState })
-      return true
+export function setupAuthBridge(): void {
+  if (bridgeInstalled) return
+  bridgeInstalled = true
+  // No content script can read bearer credentials or persisted source bytes.
+  void chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' }).catch(() => undefined)
+  chrome.alarms.onAlarm.addListener(alarm => {
+    if (alarm.name === PAIRING_ALARM) return pollPairing().catch(() => undefined)
+  })
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (sender.id !== chrome.runtime.id || !Object.values(AUTH_MESSAGES).includes(message?.type)) return false
+    if (message.type === AUTH_MESSAGES.STATE_CHANGED) return false
+    let operation: Promise<AuthState>
+    switch (message.type) {
+      case AUTH_MESSAGES.REQUEST_STATE: operation = readConnection().then(publish); break
+      case AUTH_MESSAGES.CONNECT: operation = startDevicePairing(); break
+      case AUTH_MESSAGES.SET_INSTANCE:
+        operation = typeof message.instanceUrl === 'string' ? setInstanceUrl(message.instanceUrl) : Promise.reject(new Error('Instance URL is required.')); break
+      case AUTH_MESSAGES.DISCONNECT:
+      case AUTH_MESSAGES.CANCEL: operation = disconnectDevice(); break
+      case AUTH_MESSAGES.OPEN_VERIFICATION:
+        operation = readConnection().then(async connection => {
+          if (connection.pending) await chrome.tabs.create({ url: connection.pending.verificationUriComplete })
+          return publicState(connection)
+        }); break
+      case AUTH_MESSAGES.RUN_DIAGNOSTICS:
+        if (!IS_DEV_BUILD) return false
+        operation = runAuthDiagnostics(); break
+      default: return false
     }
-
-    if (message?.type === AUTH_MESSAGES.RUN_DIAGNOSTICS) {
-      if (!IS_DEV_BUILD) {
-        return false
-      }
-      runAuthDiagnostics()
-        .then(snapshot => sendResponse({ snapshot }))
-        .catch(error => sendResponse({ error: error instanceof Error ? error.message : String(error) }))
-      return true
-    }
-
-    return false
-  }
-
-  chrome.runtime.onMessage.addListener(bridgeListener)
-  installAuthCookieListener()
-  startAuthSyncWithRetry()
+    void operation.then(state => sendResponse({ state }), error => sendResponse({
+      error: error instanceof Error && error.name !== 'TypeError' ? error.message : 'Cannot reach the instance. Check its URL and try again.',
+    }))
+    return true
+  })
+  void resumeConnection().catch(() => undefined)
 }

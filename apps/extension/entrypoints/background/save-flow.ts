@@ -27,7 +27,7 @@ export interface ProducedImage {
 export interface SaveOptions {
   /** Produce bytes before auth can open or focus another browser tab. */
   prepareBeforeAuth?: boolean;
-  /** When present, upload is fenced to this stable Clerk account identity. */
+  /** When present, upload is fenced to this stable instance and account. */
   owner?: AuthAuthority;
   signal?: AbortSignal;
   /** Stable per retained capture, including retries after a worker restart. */
@@ -72,7 +72,7 @@ export async function saveToSploot(
         throw new Error('The original Sploot account is no longer active. Sign in to that account to resume this save.');
       }
       const result = await uploadImage(blob, filename, {
-        getToken: signal => getAuthTokenForAuthority(owner, signal),
+        getToken: (signal, instanceUrl) => getAuthTokenForAuthority(owner, signal, instanceUrl),
       }, options.signal, options.idempotencyKey);
       showSuccessNotification(filename, result.thumbnailUrl, { isDuplicate: result.isDuplicate });
       return { ok: true, filename, isDuplicate: result.isDuplicate };

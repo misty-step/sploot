@@ -58,6 +58,7 @@ interface StoredJob {
   id: string;
   imageUrl: string;
   filename: string;
+  targetInstanceUrl?: string;
   state: 'pending' | 'processing' | 'failed' | 'paused' | 'awaiting-auth';
   createdAt: number;
   attempts?: number;
@@ -77,7 +78,8 @@ let alarmListener: ((alarm: { name: string }) => void) | undefined;
 let authStateListener: ((state: { status: string }) => void) | undefined;
 let alarmCreate: ReturnType<typeof vi.fn>;
 let alarmClear: ReturnType<typeof vi.fn>;
-const OWNER = { userId: 'user-1', sessionId: 'session-1' };
+const OWNER = { userId: 'user-1', accountId: 'http://127.0.0.1:3001/user-1', sessionId: 'session-1' };
+const CAPTURE_CONTEXT = { instanceUrl: 'http://127.0.0.1:3001', authority: OWNER };
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -95,6 +97,7 @@ beforeEach(() => {
           [CONTEXT_MENU_QUEUE_KEY]: storedQueue.map(job => ({
             ...job,
             owner: job.owner ?? (job.state === 'awaiting-auth' ? undefined : OWNER),
+            targetInstanceUrl: job.targetInstanceUrl ?? 'http://127.0.0.1:3001',
             sourceBytes: job.sourceBytes ?? btoa('image'),
             sourceType: job.sourceType ?? 'image/png',
           })),
@@ -132,19 +135,16 @@ beforeEach(() => {
 
 describe.sequential('durable context-menu save queue', () => {
   it('removes a job only after the save pipeline reports success', async () => {
-    await enqueueContextMenuSave('https://x.test/cat.png', 'cat.png');
+    await enqueueContextMenuSave('https://x.test/cat.png', 'cat.png', CAPTURE_CONTEXT);
 
     await vi.waitFor(() => expect(storedQueue).toEqual([]));
   });
 
   it('continues a signed-out prepared save from the worker auth event', async () => {
-    mocks.getAuthAuthority
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(OWNER);
     let finishPrompt!: (signedIn: boolean) => void;
     mocks.promptUserSignIn.mockReturnValueOnce(new Promise(resolve => { finishPrompt = resolve; }));
 
-    const enqueue = enqueueCapturedSave(new Blob(['prepared-original'], { type: 'image/png' }), 'cat.png', 'https://x.test/cat.png');
+    const enqueue = enqueueCapturedSave(new Blob(['prepared-original'], { type: 'image/png' }), 'cat.png', { ...CAPTURE_CONTEXT, authority: null }, 'https://x.test/cat.png');
     await vi.waitFor(() => expect(storedQueue).toEqual([expect.objectContaining({ state: 'awaiting-auth' })]));
     expect(mocks.promptUserSignIn).toHaveBeenCalledOnce();
 
@@ -155,10 +155,27 @@ describe.sequential('durable context-menu save queue', () => {
     expect(storedQueue).toEqual([]);
   });
 
+  it('does not adopt an unpaired original into a different instance with the same user ID', async () => {
+    storedQueue = [{
+      id: 'awaiting-other-instance',
+      imageUrl: 'https://private.test/original.png',
+      filename: 'original.png',
+      state: 'awaiting-auth',
+      targetInstanceUrl: 'https://different-instance.test',
+      createdAt: Date.now(),
+      nextAttemptAt: 0,
+      sourceBytes: btoa('original'),
+      sourceType: 'image/png',
+    }];
+    await recoverPendingContextMenuSaves('startup');
+    expect(storedQueue[0].state).toBe('awaiting-auth');
+    expect(mocks.saveToSploot).not.toHaveBeenCalled();
+  });
+
   it('keeps failed payloads and schedules the next attempt with bounded backoff', async () => {
     mocks.saveToSploot.mockResolvedValue({ ok: false, error: new Error('network down') });
 
-    await enqueueContextMenuSave('https://x.test/cat.png', 'cat.png');
+    await enqueueContextMenuSave('https://x.test/cat.png', 'cat.png', CAPTURE_CONTEXT);
 
     expect(storedQueue).toHaveLength(1);
     await vi.waitFor(() => expect(storedQueue[0]).toMatchObject({
@@ -332,7 +349,7 @@ describe.sequential('durable context-menu save queue', () => {
     }));
     const before = structuredClone(storedQueue);
 
-    await expect(enqueueContextMenuSave('https://x.test/new.png', 'new.png'))
+    await expect(enqueueContextMenuSave('https://x.test/new.png', 'new.png', CAPTURE_CONTEXT))
       .rejects.toMatchObject({ code: 'queue-full' });
 
     expect(storedQueue).toEqual(before);
@@ -400,7 +417,7 @@ describe.sequential('durable context-menu save queue', () => {
     let resolveSave!: (outcome: { ok: true; filename: string; isDuplicate: boolean }) => void;
     mocks.saveToSploot.mockReturnValue(new Promise(resolve => { resolveSave = resolve; }));
 
-    const enqueue = enqueueContextMenuSave('https://x.test/queued.png', 'queued.png');
+    const enqueue = enqueueContextMenuSave('https://x.test/queued.png', 'queued.png', CAPTURE_CONTEXT);
     await enqueue;
 
     await vi.waitFor(() => expect(storedQueue[0]).toMatchObject({ state: 'processing', filename: 'queued.png' }));
@@ -530,7 +547,7 @@ describe.sequential('durable context-menu save queue', () => {
       return { ok: true, filename: produced.filename, isDuplicate: true };
     });
 
-    await enqueueContextMenuSave('https://x.test/changing.png', 'changing.png');
+    await enqueueContextMenuSave('https://x.test/changing.png', 'changing.png', CAPTURE_CONTEXT);
     await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledOnce());
     await vi.waitFor(() => expect(storedQueue[0]?.state).toBe('pending'));
     vi.setSystemTime(storedQueue[0].nextAttemptAt!);
@@ -541,7 +558,7 @@ describe.sequential('durable context-menu save queue', () => {
     expect(storedQueue).toEqual([]);
   });
 
-  it('pauses a durable save when the Clerk session changes without leaking the owner', async () => {
+  it('pauses a durable save when the account changes without leaking the owner', async () => {
     storedQueue = [{
       id: 'owner-bound',
       imageUrl: 'https://x.test/private.png',
@@ -650,7 +667,7 @@ describe.sequential('durable context-menu save queue', () => {
 
   it('persists screenshot bytes before processing and replays them after an upload failure', async () => {
     mocks.saveToSploot.mockResolvedValueOnce({ ok: false, error: new Error('offline') });
-    await enqueueCapturedSave(new Blob(['captured-original'], { type: 'image/png' }), 'shot.png');
+    await enqueueCapturedSave(new Blob(['captured-original'], { type: 'image/png' }), 'shot.png', CAPTURE_CONTEXT);
 
     expect(storedQueue[0]).toMatchObject({
       state: 'pending',
@@ -677,8 +694,8 @@ describe.sequential('durable context-menu save queue', () => {
         : Promise.resolve(new Blob(['later'], { type: 'image/png' }))
     ));
 
-    const hung = enqueueContextMenuSave('https://x.test/hung.png', 'hung.png');
-    const later = enqueueContextMenuSave('https://x.test/later.png', 'later.png');
+    const hung = enqueueContextMenuSave('https://x.test/hung.png', 'hung.png', CAPTURE_CONTEXT);
+    const later = enqueueContextMenuSave('https://x.test/later.png', 'later.png', CAPTURE_CONTEXT);
     await later;
     // Enqueue acknowledges durable capture, not completion of its detached save.
     await recoverPendingContextMenuSaves();
@@ -700,7 +717,7 @@ describe.sequential('durable context-menu save queue', () => {
       active -= 1;
       return new Blob(['admitted'], { type: 'image/png' });
     });
-    const enqueues = Array.from({ length: 5 }, (_, index) => enqueueContextMenuSave(`https://x.test/${index}.png`, `${index}.png`));
+    const enqueues = Array.from({ length: 5 }, (_, index) => enqueueContextMenuSave(`https://x.test/${index}.png`, `${index}.png`, CAPTURE_CONTEXT));
     await vi.waitFor(() => expect(resolvers).toHaveLength(2));
     expect(maximum).toBe(2);
     resolvers.splice(0, 2).forEach(resolve => resolve());
@@ -717,7 +734,7 @@ describe.sequential('durable context-menu save queue', () => {
     const storageSet = chrome.storage.local.set as unknown as ReturnType<typeof vi.fn>;
     storageSet.mockRejectedValueOnce(new Error('worker terminated before commit'));
 
-    await expect(enqueueCapturedSave(new Blob(['not-durable'], { type: 'image/png' }), 'lost.png'))
+    await expect(enqueueCapturedSave(new Blob(['not-durable'], { type: 'image/png' }), 'lost.png', CAPTURE_CONTEXT))
       .rejects.toThrow('worker terminated before commit');
     expect(mocks.saveToSploot).not.toHaveBeenCalled();
   });
@@ -839,7 +856,7 @@ describe.sequential('durable context-menu save queue', () => {
       owner: { userId: 'user-old', accountId: 'user-old', sessionId: 'session-old' },
     }));
 
-    await enqueueContextMenuSave('https://x.test/new.png', 'new.png');
+    await enqueueContextMenuSave('https://x.test/new.png', 'new.png', CAPTURE_CONTEXT);
 
     // Deterministic, privacy-safe reclaim: the oldest non-active foreign job is
     // evicted (never uploaded, never surfaced) and the new save proceeds.
@@ -867,7 +884,7 @@ describe.sequential('durable context-menu save queue', () => {
       owner: { userId: 'user-old', accountId: 'user-old', sessionId: 'session-old' },
     }));
 
-    await enqueueCapturedSave(new Blob(['captured-new'], { type: 'image/png' }), 'fresh-capture.png');
+    await enqueueCapturedSave(new Blob(['captured-new'], { type: 'image/png' }), 'fresh-capture.png', CAPTURE_CONTEXT);
 
     await vi.waitFor(() => expect(mocks.saveToSploot).toHaveBeenCalledOnce());
     expect(storedQueue.map(job => job.id)).toEqual(['foreign-bytes-1']);
@@ -900,7 +917,7 @@ describe.sequential('durable context-menu save queue', () => {
     });
     const before = structuredClone(storedQueue);
 
-    await expect(enqueueContextMenuSave('https://x.test/new.png', 'new.png'))
+    await expect(enqueueContextMenuSave('https://x.test/new.png', 'new.png', CAPTURE_CONTEXT))
       .rejects.toMatchObject({ code: 'queue-full' });
 
     expect(storedQueue).toEqual(before);
@@ -918,7 +935,7 @@ describe.sequential('durable context-menu save queue', () => {
       nextAttemptAt: Date.now(),
       owner: OWNER,
     }];
-    mocks.readAuthAuthority.mockRejectedValue(new Error('clerk transport down'));
+    mocks.readAuthAuthority.mockRejectedValue(new Error('device storage unavailable'));
 
     await recoverPendingContextMenuSaves();
 
@@ -926,7 +943,7 @@ describe.sequential('durable context-menu save queue', () => {
     expect(storedQueue[0]).toMatchObject({
       state: 'pending',
       attempts: 1,
-      lastError: 'clerk transport down',
+      lastError: 'device storage unavailable',
     });
     expect(storedQueue[0].nextAttemptAt).toBeGreaterThan(Date.now());
     const storageSet = chrome.storage.local.set as unknown as ReturnType<typeof vi.fn>;
@@ -946,7 +963,7 @@ describe.sequential('durable context-menu save queue', () => {
       nextAttemptAt: Date.now(),
       owner: OWNER,
     }];
-    mocks.readAuthAuthority.mockRejectedValue(new Error('clerk transport down'));
+    mocks.readAuthAuthority.mockRejectedValue(new Error('device storage unavailable'));
 
     await recoverPendingContextMenuSaves();
 

@@ -1,9 +1,8 @@
 (() => {
   "use strict";
 
-  // This is the existing browser capture store, not a replacement database.
-  // Keep its v4 metadata, split payloads, hashed Clerk partitions, and claim
-  // fences compatible with a still-open legacy Sploot tab during cutover.
+  // Retain v4 metadata, split original payloads, and account claim fences.
+  // Changing the authentication service must not reassign existing captures.
   const DATABASE = "sploot_uploads";
   const VERSION = 4;
   const METADATA = "pending_uploads";

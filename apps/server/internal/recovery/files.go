@@ -2,6 +2,7 @@ package recovery
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -46,10 +47,24 @@ func newDirectory(path string) (*snapshotDirectory, error) {
 	if err := os.Mkdir(absolute, 0700); err != nil {
 		return nil, failure("destination", "directory must be new; existing or inaccessible destinations are rejected")
 	}
+	parentDirectory, err := os.Open(parent)
+	if err != nil {
+		return nil, failure("destination", "cannot open parent directory for durability")
+	}
+	err = parentDirectory.Sync()
+	_ = parentDirectory.Close()
+	if err != nil {
+		return nil, failure("destination", "cannot persist new destination directory")
+	}
 	return openDirectory(absolute, true)
 }
 
 func openDirectory(path string, lock bool) (*snapshotDirectory, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil || path == "" {
+		return nil, failure("snapshot", "an explicit directory is required")
+	}
+	path = absolute
 	info, err := os.Lstat(path)
 	if err != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
 		return nil, failure("snapshot", "directory must be a real mode0700 directory owned by this user")
@@ -57,6 +72,10 @@ func openDirectory(path string, lock bool) (*snapshotDirectory, error) {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok || int(stat.Uid) != os.Geteuid() {
 		return nil, failure("snapshot", "directory is not owned by this user")
+	}
+	path, err = filepath.EvalSymlinks(path)
+	if err != nil {
+		return nil, failure("snapshot", "cannot resolve private directory")
 	}
 	root, err := os.OpenRoot(path)
 	if err != nil {
@@ -236,29 +255,40 @@ func (d *snapshotDirectory) readJSON(path string, value any) error {
 	return nil
 }
 
-func (d *snapshotDirectory) hashFile(path string) (Artifact, error) {
+func (d *snapshotDirectory) hashFile(ctx context.Context, path string) (Artifact, error) {
 	file, err := d.open(path)
 	if err != nil {
 		return Artifact{}, err
 	}
 	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || info.Size() > 1<<40 {
+		return Artifact{}, failure("verify", "artifact exceeds supported size")
+	}
 	hash := sha256.New()
-	bytes, err := io.Copy(hash, file)
-	if err != nil {
-		return Artifact{}, failure("verify", "cannot read complete artifact")
+	bytes, err := io.Copy(hash, io.LimitReader(recoveryReader{ctx, file}, info.Size()+1))
+	if err != nil || bytes != info.Size() {
+		return Artifact{}, failure("verify", "cannot read complete unchanged artifact")
 	}
 	return Artifact{Path: path, Bytes: bytes, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
 }
 
-func (d *snapshotDirectory) verifyArtifact(expected Artifact) error {
-	if expected.Bytes < 0 || !validSHA(expected.SHA256) {
+func (d *snapshotDirectory) verifyArtifact(ctx context.Context, expected Artifact) error {
+	if expected.Bytes < 0 || expected.Bytes > 1<<40 || !validSHA(expected.SHA256) {
 		return failure("verify", "invalid artifact checksum metadata")
 	}
-	actual, err := d.hashFile(expected.Path)
+	file, err := d.open(expected.Path)
 	if err != nil {
 		return err
 	}
-	if actual != expected {
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || info.Size() != expected.Bytes {
+		return failure("verify", "artifact size differs from its frozen receipt")
+	}
+	hash := sha256.New()
+	count, err := io.Copy(hash, io.LimitReader(recoveryReader{ctx, file}, expected.Bytes+1))
+	if err != nil || count != expected.Bytes || hex.EncodeToString(hash.Sum(nil)) != expected.SHA256 {
 		return failure("verify", "artifact size or SHA-256 mismatch")
 	}
 	return nil

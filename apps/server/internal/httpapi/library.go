@@ -1,10 +1,10 @@
 package httpapi
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/misty-step/sploot/apps/server/internal/library"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
@@ -52,6 +52,14 @@ func (s *Server) deleteAsset(w http.ResponseWriter, r *http.Request, p model.Pri
 		return
 	}
 	s.json(w, 200, map[string]bool{"success": true})
+}
+
+func (s *Server) purgeAsset(w http.ResponseWriter, r *http.Request, p model.Principal) {
+	if err := s.ingest.Purge(r.Context(), p.UserID, r.PathValue("id")); err != nil {
+		s.failure(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) restoreAsset(w http.ResponseWriter, r *http.Request, p model.Principal) {
@@ -114,7 +122,7 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request, p model.Pri
 		s.failure(w, r, err)
 		return
 	}
-	token, err := s.library.MintToken(r.Context(), p.UserID, request.Name)
+	token, err := s.library.MintToken(r.Context(), p, request.Name)
 	if err != nil {
 		s.failure(w, r, err)
 		return
@@ -166,8 +174,8 @@ func (s *Server) checkUpload(w http.ResponseWriter, r *http.Request, p model.Pri
 		return
 	}
 	var id string
-	err := s.pool.QueryRow(r.Context(), `SELECT id FROM assets WHERE owner_user_id=$1 AND checksum_sha256=$2 AND deleted_at IS NULL`, p.UserID, checksum).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
+	err := s.db.QueryRowContext(r.Context(), `SELECT id FROM assets WHERE owner_user_id=? AND checksum_sha256=? AND deleted_at IS NULL`, p.UserID, checksum).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
 		s.json(w, 200, map[string]bool{"exists": false, "isDuplicate": false})
 		return
 	}

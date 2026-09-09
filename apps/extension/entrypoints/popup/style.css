@@ -198,6 +198,51 @@ main {
   animation: fadeIn var(--sploot-motion-panel) var(--sploot-ease-out);
 }
 
+.instance-form,
+.pairing-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.instance-form input {
+  width: 100%;
+  min-width: 0;
+  border: var(--sploot-border-thin);
+  border-radius: var(--sploot-radius-ctl);
+  padding: 10px;
+  color: var(--sploot-ink);
+  background: var(--sploot-panel);
+  font: inherit;
+}
+
+.instance-form input:focus-visible {
+  outline: 3px solid var(--sploot-focus);
+  outline-offset: 3px;
+}
+
+.pairing-code {
+  display: block;
+  text-align: center;
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-2xl);
+  font-weight: 800;
+  padding: 12px 4px;
+  color: var(--sploot-ink);
+  border: var(--sploot-border-thin);
+  border-radius: var(--sploot-radius-inner);
+  background: var(--sploot-paper-warm);
+  overflow-wrap: anywhere;
+}
+
+.connection-error {
+  border-left: 4px solid var(--sploot-red);
+  padding: 8px 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .auth-header h2 {
   font-size: var(--font-xl);
   font-weight: 800;

@@ -3,10 +3,12 @@ import { UPLOAD } from '@sploot/common';
 
 const mocks = vi.hoisted(() => ({
   enqueueCapturedSave: vi.fn(),
+  readCaptureContext: vi.fn(),
   showErrorNotification: vi.fn(),
 }));
 
 vi.mock('./context-menu-save-queue', () => ({ enqueueCapturedSave: mocks.enqueueCapturedSave }));
+vi.mock('./auth-manager', () => ({ readCaptureContext: mocks.readCaptureContext }));
 vi.mock('./notifications', () => ({
   showErrorNotification: mocks.showErrorNotification,
 }));
@@ -46,6 +48,10 @@ beforeEach(() => {
     vi.fn().mockResolvedValue({ blob: async () => new Blob(['x'], { type: 'image/png' }) })
   );
   mocks.enqueueCapturedSave.mockResolvedValue(undefined);
+  mocks.readCaptureContext.mockResolvedValue({
+    instanceUrl: 'http://127.0.0.1:3001',
+    authority: { userId: 'user-1', accountId: 'http://127.0.0.1:3001/user-1', sessionId: 'session-1' },
+  });
 });
 
 describe('captureAndSaveVisibleTab', () => {
@@ -72,21 +78,6 @@ describe('captureAndSaveVisibleTab', () => {
     expect(mocks.showErrorNotification).toHaveBeenCalledWith(
       "Chrome doesn't allow capturing this page. Try a normal web page."
     );
-  });
-
-  it('persists captured bytes through the shared queue after capture', async () => {
-    mocks.enqueueCapturedSave.mockRejectedValue(new Error('Sign in to Sploot before saving this image.'));
-    const order: string[] = [];
-    chromeMock.tabs.captureVisibleTab.mockImplementation(async () => {
-      order.push('capture');
-      return 'data:image/png;base64,AAAA';
-    });
-    await captureAndSaveVisibleTab();
-
-    expect(chromeMock.tabs.captureVisibleTab).toHaveBeenCalled();
-    expect(mocks.enqueueCapturedSave).toHaveBeenCalledOnce();
-    expect(mocks.showErrorNotification).toHaveBeenCalled();
-    expect(order).toEqual(['capture']);
   });
 
   it('decodes the Chrome data URL without a data fetch', async () => {

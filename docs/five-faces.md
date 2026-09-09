@@ -9,32 +9,39 @@ hosted deployment, and a device/store release are not interchangeable.
 
 | Face | Status | Evidence |
 |---|---|---|
-| **UI** | Deployed predecessor; replacement candidate | `apps/web` retains the deployed Next.js library. `apps/server` is the Go HTML/HTMX personal replacement, runnable locally but not cut over. `apps/extension` is a TypeScript/WXT Chrome capture candidate with no current Web Store submission/publication claim. The [iPhone Shortcut](../apps/web/docs/shortcuts/save-to-sploot.md) is unsigned source, not an installable release. |
-| **API** | Published save/search contract; candidate implementation | [`PUBLIC_API.md`](../apps/web/docs/PUBLIC_API.md) owns token-scoped save bytes, save by URL, and search (published 2026-07-07, sploot-071). [`API.md`](../apps/web/docs/API.md) distinguishes current candidate routes from the deployed session-authenticated predecessor surface; not every legacy route is retained. |
-| **MCP** | Shipped record, 2026-07-07 | `apps/mcp` (`@sploot/mcp`, bin `sploot-mcp`) exposes `sploot_search` and `sploot_save` over the published API. The sploot-071 completion record is historical live-instance evidence, not a new Go/production acceptance receipt. |
-| **Skill** | Shipped record, 2026-07-07 | `.agents/skills/misty-sploot/SKILL.md` teaches save/search, setup, and failure modes with the MCP server. The runtime replacement does not imply a new skill release. |
-| **CLI** | **Waived** (see below) | No standalone consumer `sploot` CLI. The new operator `library-backup` recovery utility is not a substitute save/search face. |
+| **UI** | Persistent local product; deployed predecessor separate | `apps/server` is the runnable Go HTML/HTMX library with local accounts and real CPU inference. Desktop/mobile-browser and real-backend Chromium extension paths have local proof; `apps/web` remains the unchanged production app. The device-paired WXT extension is not a Web Store publication. The [iPhone Shortcut](../apps/web/docs/shortcuts/save-to-sploot.md) is unsigned source, not an accepted installable release. |
+| **API** | Published save/search contract; local and deployed implementations | [`PUBLIC_API.md`](../apps/web/docs/PUBLIC_API.md) owns token-scoped save bytes, save by URL, and search (published 2026-07-07, sploot-071). [`API.md`](../apps/web/docs/API.md) separates Go account/device/private-media authority from the predecessor's Clerk-backed API; not every legacy route is retained. |
+| **MCP** | Shipped client; instance-scoped save/search | `apps/mcp` (`@sploot/mcp`, bin `sploot-mcp`) exposes `sploot_search` and `sploot_save` over the published API. Select the intended origin and that instance's personal token. The sploot-071 completion record is historical shipping evidence, not a new production migration receipt. |
+| **Skill** | Shipped record, 2026-07-07 | `.agents/skills/misty-sploot/SKILL.md` teaches save/search, setup, and failure modes with the MCP server. A local runtime change does not imply a new skill release. |
+| **CLI** | **Waived** (see below) | `sploot serve/doctor/backup/resume/verify/restore` and `library-backup` are operator commands, not a standalone consumer save/search face. |
 
-## Replacement acceptance boundary
+## Local product and release boundaries
 
-The candidate retains existing Postgres/pgvector, Clerk identities, Blob media,
-Replicate CLIP revision, quotas/attempt ceilings, Sentry, and public share slugs.
-Personal tokens permit **save and search**, not library listing, export,
-deletion, or token management. The candidate owner ZIP download intentionally
-replaces the predecessor UI's multipart export workflow.
+The local product owns persistent SQLite/sqlite-vec state, password accounts,
+private filesystem originals/posters, and a separately cached SHA-pinned
+quantized CLIP/ONNX CPU bundle. `pnpm dev` / `dev:local` opens a real library,
+not a disposable seeded QA environment; ordinary shutdown never deletes it.
+New uploads and genuinely new queries use local inference.
 
-`pnpm dev:local` and `pnpm --filter server smoke` own the disposable
-provider-free Go loop. Cached fixture retrieval is not live indexing proof.
-Current production authority/current-library access is unavailable, so no
-current real-library backup or Go production cutover is claimed. Isolated
-fixture restoration cannot establish those facts. Keep `apps/web`, named
-Prisma migrations, and the rollback artifact until real acceptance.
+Browser sessions, paired `spld_` device credentials, and personal `splt_` tokens
+have different authority. Personal tokens permit **save and search**, not
+listing, private media download, export, deletion, or account/token management.
+Private media references in receipts/results are not public download grants.
+The Go owner ZIP route differs from the predecessor's multipart export lifecycle.
 
-The [deployment/recovery procedure](../apps/web/docs/DEPLOYMENT.md) owns the
-operating commands rather than duplicating them here. The
-[Shortcut source and release script](../apps/web/docs/shortcuts/save-to-sploot.md)
-still require Apple signing and real iPhone saved/duplicate/failure verification.
-There is no verified iCloud install link or completed packaged-device claim.
+The [runtime/deployment/recovery procedure](../apps/web/docs/DEPLOYMENT.md) owns
+operating commands. Its SQLite backup/restore format preserves local accounts
+and media but removes portable session/device/PAT credentials. It is not an
+importer or backup of the unchanged production Postgres/Blob library.
+Existing Next.js source, migrations, gates, deployment, and old real library
+are unchanged; local acceptance is not a production cutover.
+
+Mobile-viewport browsing, upload, playback, and download are browser proof,
+not physical iPhone or native share-sheet acceptance. The
+[Shortcut procedure](../apps/web/docs/shortcuts/save-to-sploot.md) still requires
+Apple signing and real-device saved/duplicate/failure verification; no verified
+iCloud install link is claimed. Real-backend Chromium device pairing/capture
+is likewise separate from fixture-only tests and Chrome Web Store publication.
 
 ## CLI waiver
 

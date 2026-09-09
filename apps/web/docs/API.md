@@ -2,72 +2,230 @@
 
 ## Overview
 
-Sploot provides authenticated save and semantic-search APIs over its existing
-personal library. **`apps/web` is the deployed Next.js predecessor;
-`apps/server` is the Go HTTP/HTML/HTMX candidate, not a deployed cutover.**
-Operational routes define their own authentication contracts.
+Sploot's [published token API](./PUBLIC_API.md) owns the external **save/search**
+contract. Two independent runtimes implement that contract:
 
-The [published token API](./PUBLIC_API.md) remains the external save/search
-contract. The candidate preserves that contract and Chrome capture, existing
-identifiers/metadata, public share links, and owner export access; it does not
-claim every legacy UI/API route. Unless explicitly marked otherwise below,
-the detailed endpoint recipes describe the **deployed predecessor**.
+- **Local Go product — `apps/server`**: persistent SQLite/sqlite-vec, private
+  filesystem media, local CPU CLIP inference, real password accounts, browser
+  sessions, and paired-device credentials.
+- **Deployed Next.js predecessor — `apps/web`**: existing Clerk, Postgres/pgvector,
+  Blob, and Replicate behavior. Production and its old real library are unchanged,
+  not migrated into the local product.
 
-### Candidate route ownership
+The Go API does not claim every legacy route. Its inventory and auth boundary
+below are authoritative for local clients; unless explicitly marked otherwise,
+the detailed endpoint recipes later in this document describe the predecessor.
+Do not infer local auth or media access from a predecessor example.
 
-The registered candidate routes are owned by
-`apps/server/internal/httpapi/server.go`, not Next.js route files:
+### Local Go route ownership
 
-| Surface | Go candidate routes |
-|---|---|
-| Public operations | `GET /api/health/live`, `/api/health`, `/api/health/services`, `/api/health/enrollment`, `/api/version` |
-| Session or personal token | `POST /api/upload`, `POST /api/upload/url`, `POST /api/search` |
-| Owner library | `GET /api/assets`; `GET`, `PATCH`, `DELETE /api/assets/{id}`; `POST /api/assets/{id}/restore` |
-| Owner sharing/indexing | `POST`, `DELETE /api/assets/{id}/share`; `GET /api/assets/{id}/embedding-status`; `POST /api/assets/{id}/generate-embedding` |
-| Session token management | `GET`, `POST /api/upload-tokens`; `DELETE /api/upload-tokens/{id}` |
-| Owner tags | `GET`, `POST /api/tags`; `PATCH`, `DELETE /api/tags/{id}`; `GET`, `POST`, `DELETE /api/assets/{id}/tags` |
-| Other session routes | `POST /api/upload/check`; `GET /api/stats`; `GET /api/library/export`; `POST /api/telemetry` |
+`apps/server/internal/httpapi/server.go` registers product routes;
+`internal/httpapi/auth.go` registers account/device routes. Next.js route files
+do not own the Go API.
 
-Candidate HTML routes are `/app`, `/app/feed`, `/app/search`, `/app/settings`,
-and `/sign-in`. Existing public `/s/{slug}` links resolve without a session;
-legacy `/m/{id}` links redirect to the current slug only while sharing remains
-enabled and the asset is not deleted. `/s/{slug}?media=1` serves shared media. Owner media is served through
-session-authenticated `/media/{id}`. PWA routes are `/manifest.json`, `/sw.js`,
-and `GET`/`POST /share-target`. The local-only login is `/qa-auth/login`, not
-the predecessor's `/api/qa-auth/login`.
+| Surface | Local Go routes | Authority |
+|---|---|---|
+| Public operations | `GET /api/health/live`, `/api/health`, `/api/health/services`, `/api/health/enrollment`, `/api/version` | None; readiness/configuration only |
+| Published save/search | `POST /api/upload`, `POST /api/upload/url`, `POST /api/search` | Browser, paired device, or personal `splt_` token |
+| Owner library | `GET /api/assets`; `GET`, `PATCH`, `DELETE /api/assets/{id}`; `POST /api/assets/{id}/restore` | Browser or paired device |
+| Permanent trash reclamation | `DELETE /api/assets/{id}/purge` | Browser only; owner-scoped, already-trashed asset |
+| Owner sharing/indexing | `POST`, `DELETE /api/assets/{id}/share`; `GET /api/assets/{id}/embedding-status`; `POST /api/assets/{id}/generate-embedding` | Browser or paired device |
+| Owner tags | `GET`, `POST /api/tags`; `PATCH`, `DELETE /api/tags/{id}`; `GET`, `POST`, `DELETE /api/assets/{id}/tags` | Browser or paired device |
+| Other owner operations | `POST /api/upload/check`; `GET /api/stats`; `GET /api/library/export`; `POST /api/telemetry` | Browser or paired device |
+| Private media | `GET`/`HEAD /media/{id}` | Owner browser or paired device, never a personal token |
+| Personal token management | `GET`, `POST /api/upload-tokens`; `DELETE /api/upload-tokens/{id}` | Browser only |
 
-The candidate's `GET /api/library/export` downloads a completed owner ZIP,
-intentionally replacing the predecessor's multipart export-session workflow.
-The old export subroutes, SSE, piles/taste, advanced search, cache diagnostics,
-direct embedding endpoints, and consumer billing routes are not registered
-candidate APIs. Their presence later in this predecessor reference is not a
-promise that Go serves them. Migration/rollback ownership remains in
-[`DEPLOYMENT.md`](./DEPLOYMENT.md).
+Local `GET /api/assets` uses `sortBy=shuffle&shuffleSeed=<0..1000000>`
+for deterministic owner-scoped shuffle. Preserve the seed, filters and limit
+when following `nextCursor`. The HTML `/app` and `/app/feed` URLs instead use
+`seed`; that browser navigation parameter is not an alias on the JSON API.
+
+HTML routes include `/`, `/sign-in`, `/sign-up`, `/app`, `/app/feed`,
+`/app/search`, `/app/settings`, `/app/connect`, and `/app/shortcut`. The last
+downloads unsigned Shortcut source configured for this instance. PWA routes
+are `/manifest.json`, `/sw.js`, and `GET`/`POST /share-target`; Web Share Target
+availability depends on the browser and is not an iOS share-sheet claim.
+There is no local QA login route or seeded-account authority.
+
+Explicit public shares use `/s/{slug}` and `/s/{slug}?media=1` without a session.
+`/m/{id}` redirects only when that asset has an enabled share slug and is not
+deleted. These are local-library shares, not migrated production links.
+An unshared asset's `/media/{id}` URL remains private even when its ID is known.
+
+`GET /api/library/export` returns a completed owner ZIP rather than the
+predecessor's multipart export-session lifecycle. The old export subroutes,
+SSE, piles/taste, advanced search, cache diagnostics, direct embedding endpoints,
+and consumer billing routes are not Go APIs. Runtime and migration boundaries
+remain in [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ## Base URL
 
-```
+```text
+Local Go: http://127.0.0.1:3001/api
 Production predecessor: https://www.sploot.app/api
-Local Go candidate: http://127.0.0.1:3001/api
-Next.js development: http://localhost:3001/api
+Next.js development (separate process): http://localhost:3001/api
 ```
+
+Use the selected instance's exact canonical origin (`SPLOOT_BASE_URL` for Go),
+including for relative media URLs and device approval. Off-loopback Go access
+requires HTTPS. Local and production credentials are not interchangeable.
+Do not run both development servers on the same port.
 
 ## Authentication
 
-User-facing product APIs require authentication through Sploot's auth boundary.
-Production requests remain Clerk-backed; personal tokens opt in only on the
-three save/search routes. The Go candidate resolves existing `user_identities`
-or legacy Clerk-backed user IDs and never provisions a new account. Local
-candidate smoke uses isolated signed QA auth; predecessor auth details remain
-in [`AUTH.md`](./AUTH.md).
-Operational routes define their own auth contracts. The upload routes
-(`/api/upload`, `/api/upload/url`) and the search
-route (`/api/search`) additionally accept a personal **API token**
-(`Authorization: Bearer splt_…`) for non-session clients like the iPhone
-shortcut, the sploot MCP server, and other agents — see [Personal Upload
-Tokens](#personal-upload-tokens) below for minting/managing tokens, and
-**[`PUBLIC_API.md`](./PUBLIC_API.md) for the published, token-scoped external
-contract** (save + search) this section's internal detail feeds.
+### Auth boundary — local Go
+
+`apps/server/internal/auth` owns local accounts and credential resolution.
+Registration creates real persistent accounts; there is no Clerk, inherited
+owner ID, or QA-auth fallback. Passwords are Argon2id-hashed and must contain
+12–128 characters (at most 512 UTF-8 bytes). Email is an account identifier,
+not a verified email-delivery or reset-password integration.
+
+| Credential | Authority and lifetime |
+|---|---|
+| `sploot_session` browser cookie | Full owner UI/API plus account-security actions; opaque secret, hashed server-side, 30-day lifetime; HttpOnly, SameSite=Lax, Secure on HTTPS |
+| `Authorization: Bearer spld_…` | Revocable paired device, 90-day lifetime; owner-library/save/search/private-media/export operations, but no permanent purge, password changes, device approval/list management, or personal-token management |
+| `Authorization: Bearer splt_…` | Personal token; only the three published save/search routes opt in. No library listing, direct private media, export, deletion, or account/token management |
+
+Invalid, expired, or revoked credentials return `401` with
+`{"error":"Unauthorized","code":"unauthorized"}`. An explicit bad bearer never
+falls back to a browser cookie. A valid device credential on a browser-only
+operation returns `403` with `code: "browser_required"`.
+
+Cookie-authenticated mutations, including login/registration, require the exact
+configured `Origin`; cross-site requests cannot borrow cookie authority.
+Recognized Chrome-extension origins may use bearer endpoints, not the browser
+cookie. CORS credentials are granted only to the instance origin, never with a
+wildcard. If supplied, `X-Sploot-User-ID` must match the authenticated owner
+(`409`, `code: "ACCOUNT_CHANGED"` on mismatch); it is a retry fence, not identity
+authority. Account/password work and device creation/polling are bounded and
+can return `429` with `Retry-After`.
+
+### Local account and device routes
+
+Auth request bodies are JSON. Registration is enabled by default on loopback
+development/test only; closing `SPLOOT_REGISTRATION_OPEN` returns `403`,
+`code: "registration_closed"` for new registration without revoking existing
+accounts. Hosted exposure requires an explicit policy.
+
+| Route | Request / response | Authority |
+|---|---|---|
+| `POST /api/auth/register` | `{email,password}` → `201 {user:{id,email}}`, sets browser cookie | No session; same-origin browser request |
+| `POST /api/auth/login` | `{email,password}` → `200 {user:{id,email}}`, sets browser cookie; incorrect credentials return `401 invalid_credentials` | No session; same-origin browser request |
+| `GET /api/auth/session` | `200 {user:{id,email}}` or `401` | Browser or paired device |
+| `POST /api/auth/logout` | `204`, revokes current browser session and clears cookie | Browser only |
+| `POST /api/auth/password` | `{currentPassword,password}` → `204` | Browser only; retains this session and revokes other browser/device sessions, personal tokens, and approved pending pairings |
+| `POST /api/auth/device` | `{name}` (1–64 characters) → `201` challenge | No session; pairing origin policy, no bearer authority |
+| `GET /api/auth/device?userCode=…` | `{name,userCode,expiresAt}` | Browser only |
+| `POST /api/auth/device/approve` | `{userCode,approve:true\|false}` → `204` | Browser only; approval selects that signed-in account |
+| `POST /api/auth/device/token` | `{deviceCode}` → pending or one-time authorization | No session; proof of the secret device code |
+| `GET /api/auth/devices` | `{devices:[{id,name,createdAt,lastUsedAt,expiresAt}]}` | Browser only |
+| `DELETE /api/auth/devices/{id}` | `204`, owner-scoped revocation | Browser only |
+| `DELETE /api/auth/device/session` | `204`, revokes the presented device session | Device bearer only |
+
+A challenge contains `deviceCode`, `userCode`, `verificationUri`,
+`verificationUriComplete`, `expiresIn: 600`, and `interval: 2`. Open the
+instance's `/app/connect?code=…`, verify the displayed code and signed-in account,
+then explicitly approve or deny. A cookie, claimed email, or extension-supplied
+owner ID cannot approve the request.
+
+Polling returns `202 {"status":"pending"}` until approval, then once returns
+`200 {status:"authorized",token:"spld_…",user:{id,email},expiresAt}`. Denial is
+`403 device_denied`; expiry or already-consumed authorization is
+`410 device_expired`; premature/rate-limited polling returns `429` with
+`Retry-After`. Persist the pending deadline and follow the server's interval;
+never treat offline or malformed responses as authorization.
+
+Backup/restore deliberately removes portable session/device/pairing/PAT
+credentials while preserving password accounts. A restored user must sign in,
+mint personal tokens, and pair devices again; see
+[recovery credential lifetime](./DEPLOYMENT.md#snapshot-contents-and-credential-lifetime).
+
+### Local private media and published save/search
+
+The shared `@sploot/common` save/search shapes, MIME limits, idempotency behavior,
+and created/duplicate receipts remain the published contract. Go indexes new
+captures and new queries using the SHA-pinned 512-D local CPU CLIP bundle, not
+Replicate or a seeded cache.
+
+Go asset `blobUrl` values are relative `/media/{assetID}` paths; thumbnails use
+`/media/{assetID}?thumbnail=1`. Media supports HEAD and byte ranges for original
+video, and `?download=1` supplies an attachment filename. Requests are owner
+authenticated and `Cache-Control: private, no-store`; filesystem paths are
+never a public static directory.
+
+Resolve relative references against the selected instance, not the extension
+origin. An extension must fetch private media with its same-instance `spld_`
+bearer credential and omitted cookies; a bare `<img>` URL or notification-image
+URL cannot supply that bearer. Do not forward credentials to arbitrary URLs
+from a response or to a different instance. A personal `splt_` search result
+exposes matching metadata but does not authorize a subsequent private media
+download. Public sharing is a separate, explicit owner action.
+
+### Local storage, trash and errors
+
+Go uses operator-configured **instance** storage admission, not the predecessor's
+per-user quota. `SPLOOT_STORAGE_LIMIT_BYTES=0` removes the artificial ceiling;
+`SPLOOT_STORAGE_RESERVE_BYTES` defaults to 1 GiB of free disk. Both are
+nonnegative byte counts. Originals, previews and trash consume retained capacity;
+unfinished physical reclamation remains charged until bytes are removed.
+
+`GET /api/stats` returns owner-only `assetCount`, `favoriteCount`, `trashCount`,
+`storageBytes`, `activeStorageBytes`, `trashStorageBytes` and `lastUploadAt`.
+There is no local `storageLimitBytes`, remaining allowance, usage percentage,
+quota snapshot, or disclosure of another owner's usage.
+
+`DELETE /api/assets/{id}` remains reversible trash. The separate
+`DELETE /api/assets/{id}/purge` returns 204 after permanent reclamation; its browser
+UI asks for confirmation. It requires browser-cookie authority and the normal
+origin/owner checks, not a JSON confirmation field. A live asset returns
+409 `asset_not_trashed`; foreign/unknown assets return 404. Interrupted reclamation
+returns retryable 503 `purge_incomplete` and resumes on retry/startup. A completed
+purge is idempotent. Replaying a saved receipt for a purged asset returns
+410 `asset_purged`, never duplicate success or recreated media. Existing backups
+are unaffected.
+
+| Local admission failure | HTTP / retry behavior |
+|---|---|
+| `storage_limit_exceeded` | 507, `retryable: false`; manage storage or change instance policy |
+| `storage_reserve_exceeded` | 507, `retryable: false`; free disk or change the operator reserve |
+| `storage_unavailable` | 503, `retryable: false`; repair filesystem availability inspection |
+
+Storage errors link to `/app/settings` with the shared `manage_storage` action.
+They do not include an account quota. Go typed errors serialize `retryable`
+explicitly, including `false`; clients must not infer retries solely from 5xx.
+The predecessor's `quota_exceeded` contract remains unchanged below.
+
+One HTTP file-upload slot bounds multipart memory. `/api/upload` receives at most
+the shared file bound plus 1 MiB of multipart overhead without temporary-file
+spooling. `/share-target` processes files sequentially through storage admission,
+with at most 100 files, 1,000 parts and 250 MiB per request. Its redirect reports
+`shared`, `duplicates` and `failed`; already saved files survive a later failure.
+Network read deadlines are cleared after each body read; an exceeded deadline cannot be extended, including on HTTP/2.
+
+### Local inference readiness and admission
+
+`/api/health/live` reports process liveness. With healthy SQLite/schema,
+`/api/health` stays HTTP 200 and exposes `libraryReady: true`; loading/unavailable
+search sets `status: "degraded"`, `searchReady: false`, and
+`dependencies.search` to `loading` or `unavailable`. Search states are
+`loading`, `ready`, `unavailable`, or explicitly `disabled`.
+`/api/health/services` returns 503 while enabled inference is not ready.
+Explicitly disabled inference can return configured-service health 200 without
+claiming `searchReady`.
+
+Saved media, account access, saves and export remain available after model
+initialization failure. Search and indexing fail truthfully; even cached query
+vectors do not bypass unavailable inference. Loading returns 503
+`embedding_loading`, `retryable: true`, `Retry-After: 2`; unavailable returns
+503 `embedding_unavailable`, and explicitly disabled returns
+503 `embeddings_disabled`, both nonretryable until operator intervention.
+
+Interactive projections use the same bounded native executor as indexing:
+eight FIFO waiting queries, a 15-second wait bound, and one waiting indexing turn
+after four queries. Active native work is not preempted. Queue overflow/expiry
+returns 429 `embedding_busy`, `retryable: true`, `Retry-After: 1`.
+
 
 ### Auth Boundary — deployed Next.js
 
@@ -93,10 +251,8 @@ contract** (save + search) this section's internal detail feeds.
 }
 ```
 
-with status `401`. The candidate also returns `401` for missing/invalid auth,
-with a machine-readable `code: "unauthorized"`. Its auth boundary is
-`apps/server/internal/auth`; cookie-authenticated mutations require the exact
-configured `Origin`, while bearer clients use their explicit credential.
+with status `401`. Local Go errors and credential scopes are specified above;
+the predecessor's [`AUTH.md`](./AUTH.md) is not the Go account/device authority.
 
 Protected product API route inventory — deployed predecessor:
 
@@ -118,8 +274,10 @@ the application has no billed-dollar authority for observed upload cost.
 
 ## Response Format
 
-successful responses are endpoint-specific json objects. error responses use
-the route's `error` field, with optional diagnostic fields on some endpoints:
+Successful responses are endpoint-specific JSON objects. Local Go errors use
+`{error,code,retryable?}`; meaningful HTTP statuses and `Retry-After` distinguish
+auth, validation, quota, unavailable, and retryable conditions. The predecessor
+may also include diagnostic fields:
 
 ```json
 {
@@ -148,7 +306,7 @@ Two routes do enforce a real, tested limit:
 
 ---
 
-## Endpoints
+## Endpoint reference — deployed Next.js unless marked
 
 ### Health Check
 
@@ -172,24 +330,30 @@ dependency oracle.
 }
 ```
 
-The Go candidate adds `commit` from `SPLOOT_DEPLOYMENT_COMMIT`. The deployed
-predecessor does not expose a commit here. This extra candidate field is not
-evidence that the candidate is serving production.
+Local Go adds `commit` from configured/build revision metadata. The deployed
+predecessor does not expose a commit here. This extra local field is not
+evidence that Go is serving production.
 
 #### GET /api/health
 
-Deep readiness oracle: database connectivity, embedding limiter schema, and
+**Deployed Next.js:** database connectivity, embedding limiter schema, and
 (when `STRIPE_LEDGER_BOOTSTRAP_REQUIRED=true`) the Stripe bootstrap marker.
-Both runtimes fail closed with `503` when the readiness boundary is degraded. Deployed
-verification and operators use this endpoint; platform routing deliberately
-does not (see `/api/health/live` above).
+Failure is `503`. Concurrent predecessor requests share one bounded database
+probe; a request timeout never launches duplicate database work.
 
-Concurrent requests share one underlying bounded database probe; a request
-timeout never launches duplicate database work.
+**Local Go:** a bounded SQLite query checks `vec_version()` and required tables.
+The response includes `runtime: "go"`, `database: "sqlite"`,
+`storage: "filesystem"`, `commit`, `dependencies.database` (`up`/`down`),
+`dependencies.search` (`ready`/`disabled`), and schema/connection diagnostics.
+SQLite/schema failure returns `503` with `status: "degraded"`. This is not a
+pgvector, Prisma migration, provider-limiter, or Stripe readiness oracle.
+
+Operators use deep readiness; platform routing deliberately uses shallow
+`/api/health/live`. Neither health endpoint exercises a semantic query.
 
 **Authentication:** Not required
 
-**Common healthy fields (illustrative subset, not a complete payload):**
+**Healthy predecessor fields (illustrative subset, not a complete payload):**
 
 ```json
 {
@@ -202,15 +366,19 @@ timeout never launches duplicate database work.
 }
 ```
 
-Both include a timestamp and schema/connection diagnostics. The predecessor
-returns `version` from its package on success, uses
+The predecessor returns a timestamp and package `version` on success, uses
 `diagnostics.prisma_connection_test`, and reports `status: "error"` on `503`.
-The current candidate returns `commit`, uses
-`diagnostics.database_connection_test`, and reports `status: "degraded"` on
-`503`. Its probe also checks pgvector, required durable tables, claim/circuit
-columns, validated attempt/revival constraints, trigger/index validity, and
-absence of unfinished migrations. Do not replace these dependency fields with
-a version-only example or treat a green liveness response as deep readiness.
+Do not replace its dependency fields with a version-only example or treat
+a green liveness response as deep readiness.
+
+#### GET /api/health/services — local Go
+
+Anonymous readiness/configuration report used by `sploot doctor`: SQLite
+health, local account registration policy, filesystem media, local embedding
+enabled/model/dimensions, and optional Sentry configuration. It returns
+`status: "ok"` with `allServicesConfigured: true` only when its SQLite/schema
+probe succeeds; otherwise `503`/`degraded`. Configuration flags are not proof
+of a completed upload, inference, or external telemetry call.
 
 #### GET /api/version
 
@@ -219,7 +387,7 @@ a version-only example or treat a green liveness response as deep readiness.
 - **Deployed Next.js:** `{"version":"v…"}` or `{"version":null}` when the latest
   release is unknown. This is the latest GitHub release tag, cached for one
   hour, **not** the active deployment commit or a package version.
-- **Current Go candidate:** `{"version":"0.1.0","commit":"…","runtime":"go"}`.
+- **Local Go:** `{"version":"0.1.0","commit":"…","runtime":"go"}`.
   This package version is not the predecessor's latest-release lookup and
   cannot be compared with a release tag as proof of the same running artifact.
 
@@ -233,10 +401,11 @@ revision; `/api/version` alone cannot prove a predecessor deployment.
 #### Pre-GA enrollment containment
 
 The policy modes and response wording in this subsection describe the
-predecessor. The personal Go candidate is closed-only: its public enrollment
-probe returns `{"status":"paused","mode":"closed","configuration":"valid"}`.
-It authenticates existing identities but rejects unknown accounts; setting a
-legacy GA/capped environment value does not open enrollment in Go.
+predecessor only. Local Go registers password accounts according to
+`SPLOOT_REGISTRATION_OPEN`; its anonymous enrollment probe returns
+`{"status":"ok","mode":"open","configuration":"valid"}` or the same shape with
+`mode: "closed"`. Its registration denial is `registration_closed`, not the
+predecessor's Clerk admission error.
 
 New account admission is server-owned and applies before any Blob, storage,
 starter-pile, embedding, or search work. A request for an authenticated Clerk
@@ -486,10 +655,11 @@ token management. Search responses necessarily expose matching assets. See the
 [Shortcut source/release procedure](./shortcuts/save-to-sploot.md),
 [published external contract](./PUBLIC_API.md), and predecessor
 [auth model](./AUTH.md). "Upload tokens" is a legacy UI/route name, not an
-upload-only permission claim; the candidate labels them personal access tokens.
+upload-only permission claim; local Go labels them personal access tokens.
 
-These management endpoints are **session-authenticated** (Clerk/qa-local). An
-upload token cannot mint, list, or revoke tokens.
+Management is **browser-session-only**: Clerk/qa-local in the predecessor,
+`sploot_session` in Go. Neither a personal token nor a Go device credential
+can mint, list, or revoke personal tokens.
 
 #### POST /api/upload-tokens
 
@@ -535,8 +705,9 @@ curl -X POST https://www.sploot.app/api/upload \
 ```
 
 `POST /api/upload`, `POST /api/upload/url`, and `POST /api/search` accept a
-personal API token in both runtimes. Other protected product routes do not opt
-in and reject token-only authentication with `401`.
+personal API token in both runtimes. Other protected product routes reject
+personal-token-only authentication. Go device `spld_` tokens are a different,
+broader credential governed by the local authority table above.
 Dedupe, quota, and the `201`/`409` contracts are identical to a session upload. See
 [`PUBLIC_API.md`](./PUBLIC_API.md) for the full token-scoped contract.
 
@@ -898,7 +1069,7 @@ Return per-user aggregate stats (`assetCount`, `storageBytes`, `storageLimitByte
 ### Library Export
 
 **Runtime distinction:** the multipart lifecycle below belongs to the deployed
-predecessor. In the Go candidate, session-authenticated
+predecessor. In local Go, browser- or device-authenticated
 `GET /api/library/export` prepares and returns a single `application/zip`
 attachment containing owner metadata/vectors/tags and currently stored
 source/thumbnail bytes, including soft-deleted asset records. It does not create the old export
@@ -1554,112 +1725,45 @@ Clear or warm the cache.
 | 413  | Payload Too Large - File exceeds size limit |
 | 429  | Too Many Requests - Rate limit exceeded     |
 | 500  | Internal Server Error                       |
-| 503  | Service Unavailable - External service down |
+| 503  | Service Unavailable - Required dependency or operation unavailable |
 
 ## Local Development Without Vendor Credentials
 
-The root `pnpm dev:local` now runs the Go candidate with a fresh owned pgvector
-database, retained migrations/QA fixtures, signed loopback-only auth, and private
-filesystem media. It accepts no inherited database/provider authority or env
-file. The seeded `reaction face meme` query uses cached embeddings; newly saved
-media remains unindexed and uncached queries return `503` with
-`code: "embeddings_disabled"`.
+`pnpm dev` / `pnpm dev:local` runs the persistent Go product at
+`http://127.0.0.1:3001`. Register an account, upload original media, and search
+with real local CPU CLIP. Data survives shutdown in repository
+`.sploot-local/library`; verified model files live in a separate reusable cache.
+No seeded account, cached-only query, QA login, Postgres, or vendor credential
+is required.
 
-Use the [root local-loop commands](../../../README.md#quick-start) for start,
-session-specific status/doctor/stop, and the finite
-`pnpm --filter server smoke` command. An intentional live-provider Go run is a
-separate private-environment path in [DEPLOYMENT.md](./DEPLOYMENT.md#go-candidate-runtime).
-No credential-free smoke result proves production, live indexing quality, or
-device acceptance.
+The [quick start](../../../README.md#quick-start) and
+[runtime/recovery procedure](./DEPLOYMENT.md#self-contained-go-runtime) own
+startup, doctor, model preparation, build, and private backup/restore commands.
+Local web/Chromium acceptance does not migrate the unchanged production
+library or establish physical iPhone, Apple signing, or Web Store acceptance.
 
-## WebSocket Events (Future)
+## Client integration
 
-_Note: Real-time features are planned for v2_
+Use the [published token API](./PUBLIC_API.md) for scriptable save/search recipes
+instead of copying browser-session credentials into a client. Browser/device/
+personal-token authority is specified [above](#authentication); there is no
+separate shipped SDK implied by this reference. Shared upload/MIME/response
+types live in `@sploot/common`, and the [MCP client](../../mcp/README.md) consumes
+the published contract.
 
-```javascript
-// Example WebSocket connection for live updates
-const ws = new WebSocket("wss://www.sploot.app/api/ws");
+## Client behavior
 
-ws.on("asset:created", (asset) => {
-  console.log("New asset:", asset);
-});
-
-ws.on("embedding:completed", (data) => {
-  console.log("Embedding ready:", data.assetId);
-});
-```
-
-## SDK Usage Examples
-
-### JavaScript/TypeScript
-
-```typescript
-// Using the API with fetch
-async function uploadMeme(file: File) {
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const uploadRes = await fetch("/api/upload", {
-    method: "POST",
-    body: formData,
-  });
-
-  const data = await uploadRes.json();
-  return data.asset;
-}
-
-// Search for memes
-async function searchMemes(query: string) {
-  const res = await fetch("/api/search", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, limit: 30 }),
-  });
-
-  return await res.json();
-}
-```
-
-### Python
-
-```python
-import requests
-import os
-
-class SplootAPI:
-    def __init__(self, base_url, session_cookie):
-        self.base_url = base_url
-        self.session = requests.Session()
-        self.session.cookies.set('__session', session_cookie)
-
-    def upload_meme(self, file_path):
-        with open(file_path, 'rb') as f:
-            file_data = f.read()
-
-        upload_response = self.session.post(
-            f"{self.base_url}/api/upload",
-            files={
-                'file': (os.path.basename(file_path), file_data, 'image/jpeg')
-            }
-        )
-
-        return upload_response.json()
-
-    def search(self, query):
-        response = self.session.post(
-            f"{self.base_url}/api/search",
-            json={'query': query}
-        )
-        return response.json()
-```
-
-## Performance Tips
-
-1. **Batch Operations**: When uploading multiple files, reuse the session and upload in parallel
-2. **Caching**: Search results are cached for 5 minutes - repeated searches are faster
-3. **Pagination**: Use offset/limit for large collections instead of fetching all assets
-4. **Thumbnails**: The blob URLs support on-the-fly resizing via query parameters
-5. **Embeddings**: Allow 1-2 seconds after upload for embedding generation to complete
+- Preserve captured originals and their idempotency key across uncertain saves.
+  Respect quota, retained failure state, and `Retry-After`; do not retry by
+  fetching a mutable source again.
+- Use opaque search cursors for traversal beyond the legacy offset window.
+  Keep owner, model, query, and filters unchanged between cursor pages.
+- Local Go caches model-version/owner-scoped query vectors, not result lists;
+  newly indexed captures and favorite/tag/trash changes affect fresh requests.
+- Local media is private; request the documented poster variant rather than
+  assuming arbitrary Blob resizing parameters.
+- Saving and indexing are distinct. Observe embedding status and expose a
+  retryable failure rather than promising a fixed indexing latency.
 
 ## Changelog
 
@@ -1671,11 +1775,3 @@ class SplootAPI:
 - Multi-layer caching system
 - PWA support with offline capabilities
 
-### Planned Features (v2.0)
-
-- Batch upload endpoints
-- WebSocket for real-time updates
-- Public sharing links
-- Advanced search with OCR
-- Video/GIF support
-- Organization and team features

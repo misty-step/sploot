@@ -1,38 +1,19 @@
-# Repository Guidelines
+# Extension repository guidance
 
-## Project Structure & Module Organization
-- `entrypoints/` hosts WXT entry files; keep background-only logic in `background/` and popup UI in `popup/` so layers stay decoupled.
-- `components/` holds shared React pieces (currently sparse); prefer co-locating CSS-in-TS with the component and exporting a single entry point.
-- `shared/` is for deep utilities like `api-client.ts`; surface minimal functions and keep constants in sync with the main app per `ARCHITECTURE.md`.
-- `public/` stores icons, `scripts/` automates Clerk + CRX tasks, and `dist/` is generated—never edit artifacts directly.
+## Ownership and conventions
 
-## Build, Test, and Development Commands
-- `pnpm dev` → WXT dev server with hot reload; `pnpm dev:firefox` targets Firefox preview.
-- `pnpm build` (dev bits) and `pnpm build:prod` (ship bits) emit `dist/chrome-mv3`; always run before creating zips.
-- `pnpm zip` or `pnpm zip:firefox` packages the latest build for store upload.
-- `pnpm generate:crx-key` keeps a stable extension ID; `pnpm setup:clerk` syncs allowed origins so manual dashboard edits stay unnecessary.
+`entrypoints/background/` owns device authentication and durable capture; `entrypoints/popup/` owns React UI; `shared/` owns extension transport, URL and receipt helpers. `@sploot/common` owns shared MIME/upload/API contracts. Generated WXT output is `dist/`; do not edit it. Follow [ARCHITECTURE.md](ARCHITECTURE.md) for boundaries and [README.md](README.md) for exact run/load/release commands.
 
-## Coding Style & Naming Conventions
-- TypeScript strict mode enforced via `tsconfig.json`; keep 2-space indentation and trailing commas per existing files.
-- Components use PascalCase filenames, hooks and helpers use camelCase, directories remain kebab-case.
-- Favor deep modules: expose intention (`uploadImage`) and hide FormData, Clerk tokens, and retry rules; avoid `utils` junk drawers.
-- Console logs should include `[Background]` or `[Popup]` prefixes for grep-friendly tracing.
+Use pnpm only. TypeScript is strict; match the surrounding two-space style. Keep original image/GIF/video bytes, immutable retry digests, owner fences, and explicit saved/duplicate/failure receipts intact. Never log tokens, passwords, private device codes, or another account's capture metadata.
 
-## Testing Guidelines
-- Follow `TESTING.md` scenario list before release; log pass/fail in PR notes.
-- Smoke test popup via `pnpm dev` + Chrome load, then use `test-cookies.js` / `test-clerk-manually.js` for edge auth cases when needed.
-- When touching upload flow, cover large-image, offline, and duplicate cases outlined in the guide; note any skipped scenario as debt.
+## Device authority
 
-## Commit & Pull Request Guidelines
-- Use Conventional Commits (`feat:`, `fix:`, `docs:`) as seen in git history; keep subject under 72 chars.
-- PR description must state problem, approach, and testing evidence (screenshots/GIF for popup, console log snippets for background).
-- Link Clerk or product issues when relevant, and call out any shared-constant drift so the main app can be updated in lockstep.
+The default instance is `http://127.0.0.1:3001`. The popup can select another origin; only HTTPS remote origins or loopback HTTP are accepted. Device pairing uses the real instance approval page and persisted bounded polling. Credentials stay in trusted local extension storage, never auth messages or Chrome sync storage. Account ownership includes the instance origin. API requests reject redirects, omit cookies, and obtain a token fenced to their already-selected destination.
 
-## Security & Configuration Tips
-- Never commit `.env`, `.crx-key.pem`, or Clerk keys; reference `.env.example` for required vars.
-- Store generated keys locally and rotate when sharing builds outside the core team.
-- Validate that `scripts/configure-clerk.sh` succeeds before publishing—missing origins will break uploads for everyone.
-- Clerk/WebSSO still requires the extension origin to be allowed in Clerk, but
-  user sign-in happens on the Sploot web app. Web app URLs are centralized in
-  `shared/app-url.ts`; do not hardcode sign-in or library targets elsewhere.
-- API base is explicit: set `VITE_API_BASE_URL` for every build (prod: `https://sploot.app`; local dev: `http://localhost:3001` or your Next port). Builds now fail if it’s missing. WXT dev server runs on 3303 to avoid port clash with Next.
+Disconnect revokes the current device before changing instances. A failed revocation must remain visible. Same-account re-pairing can resume queued bytes; different accounts and instances cannot inspect or submit them. There is no hosted identity SDK, cookie synchronization, or E2E-only authentication bypass.
+
+## Validation and shipping
+
+Keep `lint`, unit tests, actual Chromium layout/lifecycle/update tests, build, manifest policy, release provenance and strict operator-evidence checks intact. `test:mv3` needs the actual Go app with local inference and creates unique accounts; `test:mv3:fixture` uses a controlled API and must never be labeled backend proof. Linux native browser actions require xdotool and a display or Xvfb.
+
+`build:prod` produces the release-mode unpacked output; `zip:prod` creates the provenance-bound store packet. `release:structural` does not replace `release:check`. Device pairing in a local build proves neither predecessor deployment compatibility nor Web Store submission. Preserve the operator's manual upload and exact candidate/artifact evidence requirements. Private CRX keys and local environment values stay untracked.

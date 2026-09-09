@@ -1,14 +1,6 @@
 package auth
 
 import (
-	"context"
-	"crypto"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -17,45 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/clerk/clerk-sdk-go/v2"
-	"github.com/clerk/clerk-sdk-go/v2/jwks"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
-
-func signingService(t *testing.T) (*Service, *rsa.PrivateKey) {
-	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &Service{
-		issuer:            "https://test.clerk.accounts.dev",
-		authorizedParties: map[string]bool{"https://www.sploot.app": true},
-		jwks:              &jwks.Client{}, keysExpireAt: time.Now().Add(time.Hour),
-		keys: map[string]*clerk.JSONWebKey{"test-key": {Key: &key.PublicKey, KeyID: "test-key", Algorithm: "RS256", Use: "sig"}},
-	}, key
-}
-
-func sessionClaims(subject string) map[string]any {
-	now := time.Now().Unix()
-	return map[string]any{"iss": "https://test.clerk.accounts.dev", "sub": subject, "sid": "sess_test", "azp": "https://www.sploot.app", "iat": now - 10, "nbf": now - 10, "exp": now + 60, "v": 2}
-}
-
-func signedJWT(t *testing.T, key *rsa.PrivateKey, claims map[string]any) string {
-	t.Helper()
-	body, err := json.Marshal(claims)
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","kid":"test-key","typ":"JWT"}`)) + "." + base64.RawURLEncoding.EncodeToString(body)
-	hash := sha256.Sum256([]byte(payload))
-	signature, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, hash[:])
-	if err != nil {
-		t.Fatal(err)
-	}
-	return payload + "." + base64.RawURLEncoding.EncodeToString(signature)
-}
 
 func requireAPIStatus(t *testing.T, err error, status int) {
 	t.Helper()
@@ -65,153 +20,116 @@ func requireAPIStatus(t *testing.T, err error, status int) {
 	}
 }
 
-func TestSessionVerificationRejectsInvalidAuthorityAndInactiveSessions(t *testing.T) {
-	s, key := signingService(t)
-	valid, err := s.verifySession(context.Background(), signedJWT(t, key, sessionClaims("user_existing")))
-	if err != nil || valid.Subject != "user_existing" || valid.SessionID != "sess_test" {
-		t.Fatalf("valid session: %v, %v", valid, err)
-	}
-	cases := map[string]func(map[string]any){
-		"wrong issuer":             func(c map[string]any) { c["iss"] = "https://other.clerk.accounts.dev" },
-		"foreign authorized party": func(c map[string]any) { c["azp"] = "https://www.sploot.app.attacker.invalid" },
-		"missing authorized party": func(c map[string]any) { delete(c, "azp") },
-		"expired":                  func(c map[string]any) { c["iat"] = time.Now().Unix() - 100; c["exp"] = time.Now().Unix() - 30 },
-		"future not before":        func(c map[string]any) { c["nbf"] = time.Now().Unix() + 30 },
-		"missing expiry":           func(c map[string]any) { delete(c, "exp") },
-		"missing session id":       func(c map[string]any) { delete(c, "sid") },
-		"pending session":          func(c map[string]any) { c["sts"] = "pending" },
-	}
-	for name, modify := range cases {
-		t.Run(name, func(t *testing.T) {
-			claims := sessionClaims("user_existing")
-			modify(claims)
-			_, err := s.verifySession(context.Background(), signedJWT(t, key, claims))
-			requireAPIStatus(t, err, http.StatusUnauthorized)
-		})
-	}
-	token := signedJWT(t, key, sessionClaims("user_existing"))
-	parts := strings.Split(token, ".")
-	signature, _ := base64.RawURLEncoding.DecodeString(parts[2])
-	signature[0] ^= 1
-	parts[2] = base64.RawURLEncoding.EncodeToString(signature)
-	_, err = s.verifySession(context.Background(), strings.Join(parts, "."))
-	requireAPIStatus(t, err, http.StatusUnauthorized)
-}
-
-func TestPATRequiresExplicitOptInAndDoesNotFallBackToSession(t *testing.T) {
-	s, key := signingService(t)
-	r := httptest.NewRequest(http.MethodGet, "https://www.sploot.app/api/upload-tokens", nil)
-	r.Header.Set("Authorization", "Bearer splt_"+strings.Repeat("A", 43))
-	r.AddCookie(&http.Cookie{Name: "__session", Value: signedJWT(t, key, sessionClaims("user_existing"))})
-	_, err := s.Resolve(r, false)
-	requireAPIStatus(t, err, http.StatusUnauthorized)
-	r.Header.Add("Authorization", "Bearer another")
-	_, err = s.Resolve(r, true)
-	requireAPIStatus(t, err, http.StatusUnauthorized)
-}
-
-func signedQA(t *testing.T, secret string, payload map[string]any) string {
-	t.Helper()
-	body, err := json.Marshal(payload)
+func TestBrowserOriginAuthorityDoesNotExtendToExtensions(t *testing.T) {
+	base, err := url.Parse("https://sploot.example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded := base64.RawURLEncoding.EncodeToString(body)
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(encoded))
-	return encoded + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-}
-
-func TestQATokensHonorCanonicalBindingAndLifetime(t *testing.T) {
-	now := time.Unix(1800000000, 0)
-	secret := strings.Repeat("q", 32)
-	s := &Service{qaSecret: []byte(secret), qaUserID: "qa-regression"}
-	payload := func() map[string]any {
-		return map[string]any{
-			"v": 1, "userId": "qa-regression", "deploymentId": "local-pwa-capture-v1", "deploymentEnv": "local-qa", "audience": "sploot-pwa-capture", "iat": now.Unix() - 1, "exp": now.Unix() + 899,
+	s := &Service{baseURL: base}
+	extension := "chrome-extension://" + strings.Repeat("a", 32)
+	if !s.AllowedOrigin(extension) {
+		t.Fatal("extension bearer origin rejected")
+	}
+	for _, origin := range []string{"https://sploot.example.attacker.invalid", extension + "/", "chrome-extension://" + strings.Repeat("q", 32), "null"} {
+		if s.AllowedOrigin(origin) {
+			t.Fatalf("foreign origin accepted: %s", origin)
 		}
 	}
-	parsed, err := s.verifyQAToken(signedQA(t, secret, payload()), now)
-	if err != nil || parsed.UserID != "qa-regression" {
-		t.Fatalf("canonical token: %v, %v", parsed, err)
-	}
-	cases := map[string]func(map[string]any){
-		"different configured user": func(p map[string]any) { p["userId"] = "qa-other" },
-		"real user":                 func(p map[string]any) { p["userId"] = "user_real" },
-		"production deployment":     func(p map[string]any) { p["deploymentEnv"] = "production" },
-		"different issuer":          func(p map[string]any) { p["deploymentId"] = "other-local" },
-		"different audience":        func(p map[string]any) { p["audience"] = "sploot-gallery-evidence" },
-		"expired":                   func(p map[string]any) { p["exp"] = now.Unix() },
-		"future issued":             func(p map[string]any) { p["iat"] = now.Unix() + 1 },
-		"overlong lifetime":         func(p map[string]any) { p["exp"] = now.Unix() + 900 },
-		"unknown field":             func(p map[string]any) { p["admin"] = true },
-	}
-	for name, modify := range cases {
+	for name, modify := range map[string]func(*http.Request){
+		"missing mutation origin": func(r *http.Request) { r.Header.Del("Origin") },
+		"extension cookie":        func(r *http.Request) { r.Header.Set("Origin", extension) },
+		"foreign origin":          func(r *http.Request) { r.Header.Set("Origin", "https://attacker.invalid") },
+		"duplicate origin":        func(r *http.Request) { r.Header.Add("Origin", base.String()) },
+		"foreign host":            func(r *http.Request) { r.Host = "attacker.invalid" },
+		"cross-site fetch":        func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") },
+	} {
 		t.Run(name, func(t *testing.T) {
-			p := payload()
-			modify(p)
-			_, err := s.verifyQAToken(signedQA(t, secret, p), now)
+			r := httptest.NewRequest(http.MethodPost, base.String()+"/api/auth/login", nil)
+			r.Header.Set("Origin", base.String())
+			modify(r)
+			requireAPIStatus(t, s.CheckBrowserRequest(r), http.StatusForbidden)
+		})
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		r := httptest.NewRequest(method, base.String()+"/api/auth/session", nil)
+		if method == http.MethodPost {
+			r.Header.Set("Origin", base.String())
+		}
+		if err := s.CheckBrowserRequest(r); err != nil {
+			t.Fatalf("same-origin browser request rejected: %v", err)
+		}
+	}
+}
+
+func TestBrowserCookiesAreHostOnlyAndExpireOnLogout(t *testing.T) {
+	for _, scheme := range []string{"http", "https"} {
+		t.Run(scheme, func(t *testing.T) {
+			base, err := url.Parse(scheme + "://sploot.example")
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := &Service{baseURL: base}
+			token, err := newSecret("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			expires := time.Now().UTC().Add(browserLifetime).Truncate(time.Second)
+			recorder := httptest.NewRecorder()
+			s.SetSessionCookie(recorder, Session{Token: token, ExpiresAt: expires})
+			cookies := recorder.Result().Cookies()
+			if len(cookies) != 1 {
+				t.Fatalf("expected one session cookie, got %d", len(cookies))
+			}
+			cookie := cookies[0]
+			if cookie.Name != SessionCookie || cookie.Value != token || cookie.Path != "/" || cookie.Domain != "" || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode || cookie.Secure != (scheme == "https") || !cookie.Expires.Equal(expires) || cookie.MaxAge != int(browserLifetime/time.Second) {
+				t.Fatal("session cookie lost its host, security, or lifetime boundary")
+			}
+			recorder = httptest.NewRecorder()
+			s.ClearSessionCookie(recorder)
+			cookies = recorder.Result().Cookies()
+			if len(cookies) != 1 || cookies[0].Name != SessionCookie || cookies[0].Value != "" || cookies[0].MaxAge != -1 || cookies[0].Path != "/" || !cookies[0].HttpOnly || cookies[0].Secure != (scheme == "https") || !cookies[0].Expires.Before(time.Now()) {
+				t.Fatal("logout did not expire the same protected cookie")
+			}
+		})
+	}
+}
+
+func TestPasswordPolicyUsesCharactersWithoutCompositionRules(t *testing.T) {
+	for _, password := range []string{strings.Repeat("a", 12), strings.Repeat("界", 128)} {
+		if err := validatePassword(password); err != nil {
+			t.Fatalf("valid password boundary rejected: %v", err)
+		}
+	}
+	for _, password := range []string{strings.Repeat("a", 11), strings.Repeat("界", 129)} {
+		requireAPIStatus(t, validatePassword(password), http.StatusBadRequest)
+	}
+}
+
+func TestAccountEntryRejectsLoginCSRFAndBearerAuthority(t *testing.T) {
+	base, err := url.Parse(testBaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{baseURL: base, registrationOpen: true}
+	for _, operation := range []struct {
+		name string
+		run  func(*http.Request, string, string) (Session, error)
+	}{
+		{"register", s.Register},
+		{"login", s.Login},
+	} {
+		t.Run(operation.name, func(t *testing.T) {
+			request := authRequest(http.MethodPost, "/api/auth/"+operation.name)
+			request.Header.Del("Origin")
+			_, err := operation.run(request, "owner@example.com", testPassword)
+			requireAPIStatus(t, err, http.StatusForbidden)
+			request.Header.Set("Origin", testBaseURL)
+			request.Header.Set("Authorization", "Bearer invalid")
+			_, err = operation.run(request, "owner@example.com", testPassword)
 			requireAPIStatus(t, err, http.StatusUnauthorized)
 		})
 	}
-	_, err = s.verifyQAToken(signedQA(t, "wrong signing authority", payload()), now)
-	requireAPIStatus(t, err, http.StatusUnauthorized)
-}
-
-func TestQABoundaryRejectsRemoteProxyAndCrossOriginRequests(t *testing.T) {
-	base, _ := url.Parse("http://127.0.0.1:3001")
-	s := &Service{baseURL: base, qaSecret: []byte(strings.Repeat("q", 32)), qaUserID: "qa-regression"}
-	request := func() *http.Request {
-		r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:3001/qa-auth/login", nil)
-		r.RemoteAddr = "127.0.0.1:43123"
-		return r
-	}
-	if err := s.qaBoundary(request()); err != nil {
-		t.Fatal(err)
-	}
-	cases := map[string]func(*http.Request){
-		"remote transport":      func(r *http.Request) { r.RemoteAddr = "203.0.113.8:43123" },
-		"missing transport":     func(r *http.Request) { r.RemoteAddr = "" },
-		"DNS rebinding":         func(r *http.Request) { r.Host = "attacker.invalid:3001" },
-		"forwarded proxy":       func(r *http.Request) { r.Header.Set("X-Forwarded-For", "127.0.0.1") },
-		"cross origin":          func(r *http.Request) { r.Header.Set("Origin", "https://attacker.invalid") },
-		"cross site navigation": func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") },
-	}
-	for name, mutate := range cases {
-		t.Run(name, func(t *testing.T) {
-			r := request()
-			mutate(r)
-			requireAPIStatus(t, s.qaBoundary(r), http.StatusForbidden)
-		})
-	}
-	r := request()
-	r.Header.Set("X-Sploot-QA-Auth", "invalid")
-	r.Header.Set("Authorization", "Bearer ignored-session")
-	_, err := s.Resolve(r, true)
-	requireAPIStatus(t, err, http.StatusUnauthorized)
-}
-
-func TestQAConfigurationRejectsProductionAndNonLocalDatabase(t *testing.T) {
-	for _, configuration := range []struct{ environment, base, host, user string }{
-		{"production", "https://www.sploot.app", "127.0.0.1", "qa-regression"},
-		{"test", "http://127.0.0.1:3001", "remote-database.invalid", "qa-regression"},
-		{"test", "http://127.0.0.1:3001", "127.0.0.1", "user_existing"},
-	} {
-		t.Run(configuration.environment+"-"+configuration.host+"-"+configuration.user, func(t *testing.T) {
-			config, err := pgxpool.ParseConfig("postgres://test@" + configuration.host + "/test?sslmode=disable")
-			if err != nil {
-				t.Fatal(err)
-			}
-			config.MinConns = 0
-			pool, err := pgxpool.NewWithConfig(context.Background(), config)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer pool.Close()
-			_, err = New(pool, Options{Environment: configuration.environment, BaseURL: configuration.base, QALocalUserID: configuration.user, QALocalSecret: strings.Repeat("q", 32)})
-			if err == nil {
-				t.Fatal("unsafe QA configuration was accepted")
-			}
-		})
-	}
+	s.registrationOpen = false
+	_, err = s.Register(authRequest(http.MethodPost, "/api/auth/register"), "owner@example.com", testPassword)
+	requireAPIStatus(t, err, http.StatusForbidden)
 }

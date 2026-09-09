@@ -1,7 +1,9 @@
 import path from 'node:path';
-import { chromium, expect, test, type BrowserContext, type Page, type Worker } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page, type Worker } from '@playwright/test';
+import type { TestInfo } from '@playwright/test';
 import {
   closeMv3Context,
+  launchMv3Context,
   openMv3Popup,
   runMv3Step,
   sendMv3Message,
@@ -17,7 +19,7 @@ async function stopAndRestartServiceWorker(
   context: BrowserContext,
   popup: Page,
   previousWorker: Worker,
-  testInfo: import('@playwright/test').TestInfo,
+  testInfo: TestInfo,
   step: Mv3Step,
 ): Promise<Worker> {
   return runMv3Step(context, testInfo, step, 'service worker termination and bounded restart', async () => {
@@ -121,22 +123,12 @@ test('dev MV3 seam shows update notice, opens update path, and clears after inst
   let context: BrowserContext | undefined;
   const step: Mv3Step = (title, body) => test.step(title, body);
   try {
-    context = await runMv3Step(undefined, testInfo, step, 'launch unpacked MV3 extension', () => chromium.launchPersistentContext('', {
-      channel: 'chromium',
-      headless: false,
-      ignoreDefaultArgs: ['--disable-extensions'],
-      args: [
-        '--disable-extensions-except=' + extensionPath,
-        '--load-extension=' + extensionPath,
-        '--no-first-run',
-        '--no-default-browser-check',
-      ],
-    }));
+    context = await runMv3Step(undefined, testInfo, step, 'launch unpacked MV3 extension', () => launchMv3Context(extensionPath));
     let worker = await waitForMv3Worker(context, testInfo, step);
     const extensionId = new URL(worker.url()).host;
     let popup = await openMv3Popup(context, extensionId, testInfo, step);
-    // Let the real native startup check settle before injecting deterministic QA state.
-    await popup.waitForTimeout(3_500);
+    // A late native startup result is generation-fenced; the acknowledged
+    // development message is the readiness boundary, not a fixed delay.
 
     const injected = await sendMv3Message<{ ok: boolean }>(
       popup,

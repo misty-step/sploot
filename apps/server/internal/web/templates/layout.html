@@ -7,7 +7,6 @@
   <meta name="color-scheme" content="light dark">
   <meta name="referrer" content="same-origin">
   <meta name="robots" content="noindex, nofollow">
-  <meta name="clerk-publishable-key" content="{{.ClerkPublishableKey}}">
   <meta name="htmx-config" content='{"historyCacheSize":0,"selfRequestsOnly":true,"includeIndicatorStyles":false,"scrollIntoViewOnBoost":false}'>
   <title>{{.Title}}</title>
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
@@ -25,7 +24,7 @@
 
 {{define "shell-open"}}
 <div id="shell" class="app-shell" hx-history-elt>
-  <div id="page-state" hidden data-page="{{.Page}}" data-user-id="{{if .Principal}}{{.Principal.UserID}}{{end}}" data-auth-method="{{if .Principal}}{{.Principal.Method}}{{end}}" data-environment="{{.Environment}}" data-seed="{{.Seed}}" data-favorite="{{.FavoriteOnly}}" data-return-url="{{.ReturnURL}}" data-uploads-enabled="{{.UploadsEnabled}}"></div>
+  <div id="page-state" hidden data-page="{{.Page}}" data-user-id="{{if .Principal}}{{.Principal.UserID}}{{end}}" data-account-email="{{.AccountEmail}}" data-seed="{{.Seed}}" data-favorite="{{.FavoriteOnly}}" data-return-url="{{.ReturnURL}}" data-uploads-enabled="{{.UploadsEnabled}}"></div>
   {{template "chrome" .}}
 {{end}}
 
@@ -52,6 +51,7 @@
     <button class="button button-primary save-control" type="button" data-action="upload" aria-label="Save" {{if not .UploadsEnabled}}disabled title="Saving is currently unavailable"{{end}}><svg class="icon" aria-hidden="true"><use href="#icon-plus"/></svg><span>Save</span></button>
     <a class="icon-button settings-control" href="/app/settings" data-nav hx-boost="true" hx-target="#shell" hx-select="#shell" hx-swap="outerHTML" aria-label="Settings" {{if eq .Page "settings"}}aria-current="page"{{end}}><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span class="desktop-label">Settings</span></a>
   </div>
+  <div class="rail-account"><a href="/app/settings" data-nav hx-boost="true" hx-target="#shell" hx-select="#shell" hx-swap="outerHTML" data-account-label>{{.AccountEmail}}</a><button class="button" type="button" data-action="sign-out">Sign out</button></div>
   <p class="rail-note">Your memes.<br>Ready when you need them.</p>
   {{else}}
   <a class="button signed-out-link" href="/sign-in">Sign in</a>
@@ -61,11 +61,12 @@
 
 {{define "foot"}}
 <div class="session-notice" id="session-notice" role="status" hidden><span data-session-message></span> <a href="/sign-in" data-session-link hidden>Sign in again</a></div>
+<div class="session-lock" id="session-lock" role="alert" hidden><h2 id="session-lock-title">Your session ended</h2><p id="session-lock-message">Pending captures stay on this device, under their original account.</p><a class="button button-primary" href="/sign-in" id="session-lock-link">Sign in again</a><button class="button" type="button" data-action="review-pending" id="review-pending" hidden>Review pending captures</button></div>
 <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 <div id="notifications" class="notifications" aria-label="Recent actions"></div>
 <div class="drop-target" id="drop-target" hidden><span>Drop to save to your library</span></div>
 {{template "dialogs" .}}
-<noscript><p class="noscript-note">Browsing and downloads work without JavaScript. Enable JavaScript to sign in, save, favorite, or share files.</p></noscript>
+<noscript><p class="noscript-note">Browsing and downloads work without JavaScript. Enable JavaScript to create an account, sign in, save, favorite, or share files.</p></noscript>
 </body>
 </html>{{end}}
 
@@ -77,6 +78,7 @@
   <input id="upload-files" class="sr-only" type="file" multiple accept="{{uploadAccept}}" data-max-bytes="{{uploadMaxBytes}}" data-timeout="{{uploadTimeout}}">
   <p class="help-text">Up to {{bytes uploadMaxBytes}} each. You can also paste an image or drop files anywhere.</p>
   <p class="help-text">Pending captures are kept in this browser until saved or explicitly removed. Clearing browser data removes those pending copies.</p>
+  <p class="form-error" id="upload-capability" role="alert" hidden>Durable capture needs browser storage and a secure connection. Open this instance over HTTPS, or use its loopback address on the same device. Browsing and downloads still work.</p>
   <form id="url-save-form" class="stack-form">
     <label for="save-url">Or paste a direct media URL</label>
     <div class="input-action"><input id="save-url" type="url" name="url" placeholder="https://…" inputmode="url" autocomplete="off" required><button class="button" type="submit">Save URL</button></div>
@@ -116,13 +118,19 @@
   <p id="details-filename" class="filename"></p>
   <dl id="details-metadata" class="metadata"></dl>
   <a id="details-download" class="button" download>Download original</a>
+  <section class="tags-section" data-private-action aria-labelledby="asset-tags-title">
+    <h3 id="asset-tags-title">Tags</h3>
+    <div id="asset-tags" class="tag-list" aria-live="polite"></div>
+    <form id="asset-tag-form" class="stack-form"><label for="asset-tag-name">Add a tag</label><div class="input-action"><input id="asset-tag-name" name="name" type="text" maxlength="{{tagMaxNameLength}}" list="existing-tags" autocomplete="off" required><button class="button" type="submit">Add tag</button></div><datalist id="existing-tags"></datalist><p id="asset-tag-error" class="form-error" role="alert" hidden></p></form>
+  </section>
+  <section class="indexing-section" data-private-action aria-labelledby="indexing-title"><h3 id="indexing-title">Search</h3><p id="asset-indexing-status" role="status">Checking search availability…</p><button class="button" type="button" data-action="retry-indexing" id="retry-indexing" hidden>Retry search indexing</button></section>
   <section class="public-link-section" data-private-action>
     <h3>Public link</h3>
     <p class="help-text">Only create one if you want anyone with the link to see and download this meme. You can revoke it here.</p>
     <div id="public-link-output" hidden><label class="sr-only" for="public-link">Public share URL</label><input id="public-link" type="url" readonly><div class="button-row"><button class="button" type="button" data-action="copy-public-link">Copy public link</button><button class="button" type="button" data-action="revoke-public-link">Revoke link</button></div></div>
     <button id="create-public-link" class="button" type="button" data-action="create-public-link">Create public link</button>
   </section>
-  <section class="delete-section" data-private-action><button class="button button-danger" type="button" data-action="delete">Move to trash</button><p class="help-text">Removes this meme from your library. You can undo immediately.</p></section>
+  <section class="delete-section" data-private-action><button class="button button-danger" type="button" data-action="delete">Move to trash</button><p class="help-text">Removes this meme from browsing and search. Restore it from Trash in Settings.</p></section>
 </dialog>
 {{end}}
 

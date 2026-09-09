@@ -2,19 +2,19 @@ package httpapi
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/misty-step/sploot/apps/server/internal/auth"
 	"github.com/misty-step/sploot/apps/server/internal/config"
 	"github.com/misty-step/sploot/apps/server/internal/contract"
@@ -23,47 +23,41 @@ import (
 	"github.com/misty-step/sploot/apps/server/internal/library"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 	"github.com/misty-step/sploot/apps/server/internal/observability"
-	"github.com/misty-step/sploot/apps/server/internal/recovery"
 	"github.com/misty-step/sploot/apps/server/internal/web"
 )
 
 type Server struct {
-	config        config.Config
-	pool          *pgxpool.Pool
-	auth          *auth.Service
-	library       *library.Service
-	ingest        *ingest.Service
-	embedding     *embedding.Service
-	web           *web.Renderer
-	logger        *slog.Logger
-	readiness     *readiness
-	localMedia    *os.Root
-	restoredMedia *recovery.MediaDirectory
-	exportSlot    chan struct{}
-	handler       http.Handler
+	config     config.Config
+	db         *sql.DB
+	auth       *auth.Service
+	library    *library.Service
+	ingest     *ingest.Service
+	embedding  *embedding.Service
+	web        *web.Renderer
+	logger     *slog.Logger
+	exportSlot chan struct{}
+	uploadSlot chan struct{}
+	handler    http.Handler
 }
 
-func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) (*Server, error) {
-	authentication, err := auth.New(pool, auth.Options{
-		ClerkSecretKey: cfg.ClerkSecretKey, ClerkPublishableKey: cfg.ClerkPublishableKey,
-		BaseURL: cfg.BaseURL, Environment: cfg.Environment,
-		QALocalSecret: cfg.QALocalSecret, QALocalUserID: cfg.QALocalUserID,
-		AuthorizedParties: cfg.ClerkAuthorizedParties,
+func New(cfg config.Config, db *sql.DB, logger *slog.Logger, engine embedding.Engine) (*Server, error) {
+	authentication, err := auth.New(db, auth.Options{
+		BaseURL: cfg.BaseURL, RegistrationOpen: cfg.RegistrationOpen,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("authentication configuration: %w", err)
 	}
-	capture, err := ingest.New(pool, ingest.Options{
-		BlobToken: cfg.BlobToken, MediaDirectory: cfg.MediaDirectory, Environment: cfg.Environment,
+	capture, err := ingest.New(db, ingest.Options{
+		MediaDirectory: cfg.MediaDirectory, Environment: cfg.Environment,
 		UploadsEnabled: cfg.UploadsEnabled, Logger: logger,
+		StorageLimitBytes: cfg.StorageLimitBytes, StorageReserveBytes: cfg.StorageReserveBytes,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("capture configuration: %w", err)
 	}
-	index, err := embedding.New(pool, embedding.Options{
-		ReplicateToken: cfg.ReplicateToken, MediaDirectory: cfg.MediaDirectory, Environment: cfg.Environment,
+	index, err := embedding.New(db, embedding.Options{
+		Engine: engine, MediaDirectory: cfg.MediaDirectory,
 		CursorSecret: cfg.CursorSecret, Enabled: cfg.EmbeddingsEnabled, Logger: logger,
-		GlobalDailyAttempts: cfg.EmbeddingDailyBudget, CostAdmissionHalted: cfg.CostAdmissionHalted,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("indexing configuration: %w", err)
@@ -72,27 +66,18 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) (*Server, e
 	if err != nil {
 		return nil, fmt.Errorf("load interface: %w", err)
 	}
-	s := &Server{config: cfg, pool: pool, auth: authentication, library: library.New(pool, cfg.CursorSecret), ingest: capture, embedding: index, web: renderer, logger: logger, readiness: newReadiness(pool, cfg.StripeBootstrapRequired)}
+	s := &Server{config: cfg, db: db, auth: authentication, library: library.New(db, cfg.CursorSecret), ingest: capture, embedding: index, web: renderer, logger: logger}
 	s.exportSlot = make(chan struct{}, 1)
-	if cfg.MediaDirectory != "" {
-		s.localMedia, err = os.OpenRoot(cfg.MediaDirectory)
-		if err != nil {
-			return nil, fmt.Errorf("open local media directory: %w", err)
-		}
-	}
-	if cfg.RestoredLibraryDirectory != "" {
-		s.restoredMedia, err = recovery.OpenMediaDirectory(cfg.RestoredLibraryDirectory)
-		if err != nil {
-			s.Close()
-			return nil, fmt.Errorf("open restored library: %w", err)
-		}
-	}
+	s.uploadSlot = make(chan struct{}, 1)
 	mux := http.NewServeMux()
+	s.registerAuthRoutes(mux)
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("GET /sign-in", s.signIn)
-	mux.HandleFunc("GET /qa-auth/login", s.qaLogin)
+	mux.HandleFunc("GET /sign-up", s.signUp)
+	mux.HandleFunc("GET /app/connect", s.connectPage)
 	mux.HandleFunc("GET /app", s.appPage)
 	mux.HandleFunc("GET /app/feed", s.feedPage)
+	mux.HandleFunc("GET /app/shortcut", s.shortcutSource)
 	mux.HandleFunc("GET /app/search", s.searchPage)
 	mux.HandleFunc("GET /app/settings", s.settingsPage)
 	mux.HandleFunc("GET /s/{slug}", s.publicShare)
@@ -113,7 +98,11 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) (*Server, e
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/health/services", s.healthServices)
 	mux.HandleFunc("GET /api/health/enrollment", func(w http.ResponseWriter, r *http.Request) {
-		s.json(w, 200, map[string]string{"status": "paused", "mode": "closed", "configuration": "valid"})
+		mode := "closed"
+		if cfg.RegistrationOpen {
+			mode = "open"
+		}
+		s.json(w, 200, map[string]string{"status": "ok", "mode": mode, "configuration": "valid"})
 	})
 	mux.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
 		s.json(w, 200, map[string]string{"version": "0.1.0", "commit": cfg.Revision, "runtime": "go"})
@@ -122,6 +111,7 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) (*Server, e
 	mux.HandleFunc("GET /api/assets/{id}", s.secured(false, s.getAsset))
 	mux.HandleFunc("PATCH /api/assets/{id}", s.secured(false, s.updateAsset))
 	mux.HandleFunc("DELETE /api/assets/{id}", s.secured(false, s.deleteAsset))
+	mux.HandleFunc("DELETE /api/assets/{id}/purge", s.securedBrowser(s.purgeAsset))
 	mux.HandleFunc("POST /api/assets/{id}/restore", s.secured(false, s.restoreAsset))
 	mux.HandleFunc("POST /api/assets/{id}/share", s.secured(false, s.createShare))
 	mux.HandleFunc("DELETE /api/assets/{id}/share", s.secured(false, s.revokeShare))
@@ -131,9 +121,9 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) (*Server, e
 	mux.HandleFunc("POST /api/upload", s.secured(true, s.upload))
 	mux.HandleFunc("POST /api/upload/url", s.secured(true, s.uploadURL))
 	mux.HandleFunc("POST /api/upload/check", s.secured(false, s.checkUpload))
-	mux.HandleFunc("GET /api/upload-tokens", s.secured(false, s.listTokens))
-	mux.HandleFunc("POST /api/upload-tokens", s.secured(false, s.createToken))
-	mux.HandleFunc("DELETE /api/upload-tokens/{id}", s.secured(false, s.revokeToken))
+	mux.HandleFunc("GET /api/upload-tokens", s.securedBrowser(s.listTokens))
+	mux.HandleFunc("POST /api/upload-tokens", s.securedBrowser(s.createToken))
+	mux.HandleFunc("DELETE /api/upload-tokens/{id}", s.securedBrowser(s.revokeToken))
 	mux.HandleFunc("GET /api/tags", s.secured(false, s.listTags))
 	mux.HandleFunc("POST /api/tags", s.secured(false, s.createTag))
 	mux.HandleFunc("PATCH /api/tags/{id}", s.secured(false, s.updateTag))
@@ -151,6 +141,12 @@ func New(cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) (*Server, e
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.handler.ServeHTTP(w, r) }
 func (s *Server) RunIndexing(ctx context.Context) error            { return s.embedding.Run(ctx) }
+
+func (s *Server) SetInferenceEngine(engine embedding.Engine) error {
+	return s.embedding.SetEngine(engine)
+}
+
+func (s *Server) MarkInferenceUnavailable() { s.embedding.MarkUnavailable() }
 
 func (s *Server) secured(allowToken bool, handler func(http.ResponseWriter, *http.Request, model.Principal)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -170,8 +166,31 @@ func (s *Server) secured(allowToken bool, handler func(http.ResponseWriter, *htt
 	}
 }
 
+func (s *Server) securedBrowser(handler func(http.ResponseWriter, *http.Request, model.Principal)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		principal, err := s.auth.ResolveBrowser(r)
+		if err != nil {
+			s.failure(w, r, err)
+			return
+		}
+		w.Header().Set("Cache-Control", "private, no-store")
+		handler(w, r, principal)
+	}
+}
+
 func (s *Server) boundary(next http.Handler) http.Handler {
+	base, _ := url.Parse(s.config.BaseURL)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.EqualFold(r.Host, base.Host) {
+			incomingHost, incomingPort, _ := net.SplitHostPort(r.Host)
+			baseHost, basePort, _ := net.SplitHostPort(base.Host)
+			if (r.Method == http.MethodGet || r.Method == http.MethodHead) && incomingPort == basePort && isLoopbackHost(incomingHost) && isLoopbackHost(baseHost) {
+				http.Redirect(w, r, s.config.BaseURL+r.URL.RequestURI(), http.StatusTemporaryRedirect)
+				return
+			}
+			s.json(w, http.StatusMisdirectedRequest, map[string]string{"error": "Use this application's configured address", "code": "invalid_host"})
+			return
+		}
 		defer func() {
 			if cause := recover(); cause != nil {
 				if cause == http.ErrAbortHandler {
@@ -194,7 +213,9 @@ func (s *Server) boundary(next http.Handler) http.Handler {
 			w.Header().Add("Vary", "Origin")
 			if s.auth.AllowedOrigin(origin) {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				if origin == s.config.BaseURL {
+					w.Header().Set("Access-Control-Allow-Credentials", "true")
+				}
 				w.Header().Set("Access-Control-Expose-Headers", "Retry-After, X-Request-ID")
 			}
 		}
@@ -204,13 +225,21 @@ func (s *Server) boundary(next http.Handler) http.Handler {
 				return
 			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, X-Sploot-User-ID")
 			w.Header().Set("Access-Control-Max-Age", "600")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) json(w http.ResponseWriter, status int, value any) {
@@ -225,7 +254,7 @@ func (s *Server) json(w http.ResponseWriter, status int, value any) {
 func (s *Server) failure(w http.ResponseWriter, r *http.Request, err error) {
 	var known *model.APIError
 	if errors.As(err, &known) {
-		if known.Code == "quota_exceeded" && known.Action == nil {
+		if (known.Code == "storage_limit_exceeded" || known.Code == "storage_reserve_exceeded") && known.Action == nil {
 			known.Action = &model.ErrorAction{Type: "manage_storage", Label: "Manage storage", Href: "/app/settings"}
 		}
 		if known.RetryAfter > 0 {
@@ -261,7 +290,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 }
 
 func listOptions(values url.Values) (model.ListOptions, error) {
-	options := model.ListOptions{Limit: 30, Sort: "createdAt", Direction: "desc", Seed: values.Get("seed"), Cursor: values.Get("cursor"), TagID: values.Get("tagId")}
+	options := model.ListOptions{Limit: 30, Sort: "createdAt", Direction: "desc", Seed: values.Get("shuffleSeed"), Cursor: values.Get("cursor"), TagID: values.Get("tagId")}
 	for _, field := range []struct {
 		name   string
 		target *int
@@ -312,9 +341,19 @@ func (s *Server) searchAPI(w http.ResponseWriter, r *http.Request, principal mod
 }
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request, principal model.Principal) {
+	select {
+	case s.uploadSlot <- struct{}{}:
+		defer func() { <-s.uploadSlot }()
+	default:
+		s.failure(w, r, &model.APIError{Status: http.StatusTooManyRequests, Code: "upload_busy", Message: "Another upload is being received. Retry shortly.", Retryable: true, RetryAfter: 1})
+		return
+	}
 	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(time.Duration(contract.UploadTimeoutMS) * time.Millisecond))
-	r.Body = http.MaxBytesReader(w, r.Body, int64(contract.UploadMaxBytes)+(1<<20))
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
+	bodyLimit := int64(contract.UploadMaxBytes) + (1 << 20)
+	r.Body = http.MaxBytesReader(w, r.Body, bodyLimit)
+	// Preserve fields after the file without spooling outside the library's
+	// storage admission boundary. The shared upload slot bounds this memory.
+	if err := r.ParseMultipartForm(bodyLimit); err != nil {
 		var oversized *http.MaxBytesError
 		status := 400
 		if errors.As(err, &oversized) {

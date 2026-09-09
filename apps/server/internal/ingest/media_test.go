@@ -40,14 +40,3 @@ func TestOriginalUploadRejectsUnboundedReaderAndMIMESpoofing(t *testing.T) {
 		t.Fatalf("spoofed MIME was accepted: %v", err)
 	}
 }
-
-func TestExistingNodeReceiptRemainsReplayable(t *testing.T) {
-	payload := []byte(`{"kind":"duplicate","asset":{"id":"existing-asset","blobUrl":"https://sploot-qa-seed.public.blob.vercel-storage.com/existing.gif","pathname":"existing.gif","filename":"reaction.gif","mimeType":"image/gif","size":10,"checksum":"existing-checksum","createdAt":"2026-07-15T12:34:56.000Z","needsEmbedding":false}}`)
-	response, err := decodeReceipt(payload)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !response.Success || !response.IsDuplicate || response.Asset.ID != "existing-asset" || response.Asset.NeedsEmbedding {
-		t.Fatalf("existing successful duplicate receipt changed semantics: %+v", response)
-	}
-}

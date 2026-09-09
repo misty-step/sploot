@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,7 +14,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -50,8 +50,8 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request, p model.Princ
 	owner := sha256.Sum256([]byte(p.UserID))
 	key := fmt.Sprintf("telemetry:%s:%d", hex.EncodeToString(owner[:]), time.Now().Unix()/60)
 	var count int
-	err := s.pool.QueryRow(ctx, `INSERT INTO cost_admission_counters(key,count,expires_at,updated_at) VALUES($1,1,now()+interval '2 minutes',now()) ON CONFLICT(key) DO UPDATE SET count=cost_admission_counters.count+1,updated_at=now() WHERE cost_admission_counters.count<60 RETURNING count`, key).Scan(&count)
-	if errors.Is(err, pgx.ErrNoRows) {
+	err := s.db.QueryRowContext(ctx, `INSERT INTO request_limits(key,count,expires_at) VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=request_limits.count+1 WHERE request_limits.count<60 RETURNING count`, key, time.Now().UTC().Add(2*time.Minute)).Scan(&count)
+	if errors.Is(err, sql.ErrNoRows) {
 		s.json(w, 429, map[string]bool{"success": false})
 		return
 	}
@@ -61,7 +61,7 @@ func (s *Server) telemetry(w http.ResponseWriter, r *http.Request, p model.Princ
 		return
 	}
 	if count == 1 {
-		_, _ = s.pool.Exec(ctx, `DELETE FROM cost_admission_counters WHERE key LIKE 'telemetry:%' AND expires_at<now()`)
+		_, _ = s.db.ExecContext(ctx, `DELETE FROM request_limits WHERE key LIKE 'telemetry:%' AND expires_at<?`, time.Now().UTC())
 	}
 	properties := make(map[string]any)
 	name, _ := request.Payload["name"].(string)

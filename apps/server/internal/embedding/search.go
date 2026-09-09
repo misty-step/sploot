@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math"
@@ -15,14 +15,12 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/misty-step/sploot/apps/server/internal/contract"
+	"github.com/misty-step/sploot/apps/server/internal/inference"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
-// The field names and v4 envelope intentionally accept existing signed cursors.
-// A distance remains Postgres' raw float8 text, not 1 minus a public score.
 type searchContext struct {
 	Query          string  `json:"query"`
 	EmbeddingModel string  `json:"embeddingModel"`
@@ -49,21 +47,17 @@ var distancePattern = regexp.MustCompile(`^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]
 func normalizeQuery(query string) string {
 	return strings.Trim(searchWhitespace.ReplaceAllString(strings.ToLower(query), " "), " ")
 }
-func digest(value string) string {
-	hash := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(hash[:])
-}
-func queryCacheKey(query string) string {
-	return "txt:v2:" + digest(contract.EmbeddingModel) + ":" + digest(normalizeQuery(query))
-}
 
 func (s *Service) Search(ctx context.Context, owner string, request model.SearchRequest) (model.SearchResponse, error) {
 	started := time.Now()
 	if owner == "" {
 		return model.SearchResponse{}, apiError(401, "Authentication required", "unauthorized", 0)
 	}
-	context, err := validateSearch(request)
+	binding, err := validateSearch(request)
 	if err != nil {
+		return model.SearchResponse{}, err
+	}
+	if err := s.available(); err != nil {
 		return model.SearchResponse{}, err
 	}
 	var cursor *searchCursor
@@ -71,25 +65,23 @@ func (s *Service) Search(ctx context.Context, owner string, request model.Search
 		if request.Offset > 0 {
 			return model.SearchResponse{}, apiError(400, "Search cursor cannot be combined with offset", "invalid_search_cursor", 0)
 		}
-		cursor, err = s.decodeCursor(request.Cursor, owner, context)
+		cursor, err = s.decodeCursor(request.Cursor, owner, binding)
 		if err != nil {
 			return model.SearchResponse{}, err
 		}
 	}
-	// Query vectors are global immutable model outputs, not user result sets.
-	// Enrollment still must exist even on a cache hit; no implicit creation.
 	var enrolled bool
-	if err = s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id=$1)`, owner).Scan(&enrolled); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM users WHERE id = ?1)`, owner).Scan(&enrolled); err != nil {
 		return model.SearchResponse{}, err
 	}
 	if !enrolled {
-		return model.SearchResponse{}, apiError(403, "Account is not enrolled", "enrollment_denied", 0)
+		return model.SearchResponse{}, apiError(403, "Account not found", "account_not_found", 0)
 	}
-	vector, err := s.queryVector(ctx, owner, request.Query)
+	vector, err := s.queryVector(ctx, owner, binding.Query)
 	if err != nil {
-		return model.SearchResponse{}, publicError(err)
+		return model.SearchResponse{}, err
 	}
-	response, err := s.searchVector(ctx, owner, vector, context, request.Offset, cursor)
+	response, err := s.searchVector(ctx, owner, vector, binding, request.Offset, cursor)
 	if err != nil {
 		return model.SearchResponse{}, err
 	}
@@ -104,11 +96,10 @@ func validateSearch(request model.SearchRequest) (searchContext, error) {
 	for _, r := range request.Query {
 		length += utf16.RuneLen(r)
 	}
-	if query == "" || length > 500 {
+	if query == "" || length > 500 || !utf8.ValidString(request.Query) || strings.ContainsRune(query, 0) {
 		return searchContext{}, apiError(400, "Search query must contain 1 to 500 characters", "invalid_search_query", 0)
 	}
-	limit := request.Limit
-	if limit < 1 || limit > searchMaxLimit {
+	if request.Limit < 1 || request.Limit > searchMaxLimit {
 		return searchContext{}, apiError(400, "Search limit must be between 1 and 100", "invalid_search_limit", 0)
 	}
 	if request.Offset < 0 || request.Offset > 500 {
@@ -124,58 +115,109 @@ func validateSearch(request model.SearchRequest) (searchContext, error) {
 	var tag *string
 	if request.TagID != nil {
 		value := strings.TrimSpace(*request.TagID)
-		if value == "" {
+		if value == "" || len(value) > 200 || strings.ContainsRune(value, 0) || !utf8.ValidString(value) {
 			return searchContext{}, apiError(400, "Invalid tag filter", "invalid_search_tag", 0)
 		}
 		tag = &value
 	}
-	return searchContext{Query: query, EmbeddingModel: contract.EmbeddingModel, Threshold: threshold, Sort: "relevance", Direction: "desc", FavoriteOnly: request.FavoriteOnly, TagID: tag, Limit: limit}, nil
+	return searchContext{Query: query, EmbeddingModel: modelName + "@" + inference.ModelVersion, Threshold: threshold, Sort: "relevance", Direction: "desc", FavoriteOnly: request.FavoriteOnly, TagID: tag, Limit: request.Limit}, nil
 }
 
-func (s *Service) queryVector(ctx context.Context, owner, query string) ([]float64, error) {
-	key := queryCacheKey(query)
+func (s *Service) queryVector(ctx context.Context, owner, query string) ([]float32, error) {
+	// A cached model output cannot mask disabled, loading or failed inference.
+	if err := s.available(); err != nil {
+		return nil, err
+	}
+	query = normalizeQuery(query)
+	vector, err := s.cachedQueryVector(ctx, owner, query)
+	if err != nil || vector != nil {
+		return vector, err
+	}
+	waitCtx, stopWaiting := context.WithTimeout(ctx, interactiveWaitTimeout)
+	err = s.compute.acquire(waitCtx, true)
+	stopWaiting()
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, admissionBusy()
+		}
+		return nil, err
+	}
+	defer s.compute.release()
+	engine, err := s.currentEngine()
+	if err != nil {
+		return nil, err
+	}
+	// A preceding waiter may have filled this owner's cache while we queued.
+	vector, err = s.cachedQueryVector(ctx, owner, query)
+	if err != nil || vector != nil {
+		return vector, err
+	}
+	computeCtx, cancel := context.WithTimeout(ctx, inferenceTimeout)
+	vector, err = engine.Text(computeCtx, query)
+	cancel()
 	var data []byte
-	err := s.pool.QueryRow(ctx, `SELECT embedding FROM text_embedding_cache WHERE key=$1 AND model=$2 AND expires_at>CURRENT_TIMESTAMP`, key, contract.EmbeddingModel).Scan(&data)
 	if err == nil {
-		vector, decodeErr := decodeVector(data)
-		if decodeErr == nil {
-			return vector, nil
+		data, err = encodeVector(vector)
+	}
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
-		// A corrupt cached vector is not a real cache hit. Never feed it into
-		// pgvector or turn it into a synthetic fallback for missing credentials.
-		s.opts.Logger.Error("embedding-query.invalid-cache-vector", "key", key)
-	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, err
+		s.opts.Logger.Error("search.inference_failed", "error", err)
+		return nil, apiError(503, "Local inference could not encode this query", "embedding_inference_failed", 2)
 	}
-	vector, err := s.generate(ctx, owner, "embedding_query", "text", query, nil)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	data, err = json.Marshal(vector)
+	defer tx.Rollback()
+	now := time.Now().UTC()
+	_, err = tx.ExecContext(ctx, `INSERT INTO query_embeddings(user_id, query, model_version, embedding, created_at) VALUES (?1, ?2, ?3, ?4, ?5)
+		ON CONFLICT(user_id, query, model_version) DO UPDATE SET embedding = excluded.embedding, created_at = excluded.created_at`, owner, query, inference.ModelVersion, data, now)
 	if err != nil {
 		return nil, err
 	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO text_embedding_cache (key,model,embedding,expires_at) VALUES ($1,$2,$3::jsonb,CURRENT_TIMESTAMP+$4::interval)
-		ON CONFLICT (key) DO UPDATE SET model=EXCLUDED.model,embedding=EXCLUDED.embedding,expires_at=EXCLUDED.expires_at`, key, contract.EmbeddingModel, string(data), durationInterval(queryCacheTTL))
+	_, err = tx.ExecContext(ctx, `DELETE FROM query_embeddings WHERE user_id = ?1 AND
+		(created_at <= ?2 OR model_version != ?3 OR (query, model_version) NOT IN
+		(SELECT query, model_version FROM query_embeddings WHERE user_id = ?1 ORDER BY created_at DESC, query LIMIT ?4))`, owner, now.Add(-queryCacheTTL), inference.ModelVersion, queryCacheEntries)
 	if err != nil {
-		s.opts.Logger.Error("embedding-query.cache-write-failed", "error", err)
+		return nil, err
 	}
-	if err == nil {
-		if _, pruneErr := s.pool.Exec(ctx, `DELETE FROM text_embedding_cache WHERE expires_at<=CURRENT_TIMESTAMP`); pruneErr != nil {
-			s.opts.Logger.Error("embedding-query.cache-prune-failed", "error", pruneErr)
-		}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return vector, nil
+}
+
+func (s *Service) cachedQueryVector(ctx context.Context, owner, query string) ([]float32, error) {
+	var data []byte
+	err := s.db.QueryRowContext(ctx, `SELECT embedding FROM query_embeddings WHERE user_id = ?1 AND query = ?2 AND model_version = ?3 AND created_at > ?4`, owner, query, inference.ModelVersion, time.Now().UTC().Add(-queryCacheTTL)).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	vector, err := decodeVector(data)
+	if err != nil {
+		s.opts.Logger.Warn("search.invalid_cached_vector", "owner_id", owner)
+		return nil, nil
 	}
 	return vector, nil
 }
 
 func (s *Service) encodeCursor(cursor searchCursor) (string, error) {
-	cursor.Version = 4
+	cursor.Version = 5
 	payload, err := json.Marshal(cursor)
 	if err != nil {
 		return "", err
 	}
 	encoded := base64.RawURLEncoding.EncodeToString(payload)
 	mac := hmac.New(sha256.New, s.opts.CursorSecret)
+	mac.Write([]byte("sploot:local-search:v5:"))
 	mac.Write([]byte(encoded))
 	return encoded + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
@@ -204,6 +246,7 @@ func (s *Service) decodeCursor(value, owner string, expected searchContext) (*se
 		return nil, invalid
 	}
 	mac := hmac.New(sha256.New, s.opts.CursorSecret)
+	mac.Write([]byte("sploot:local-search:v5:"))
 	mac.Write([]byte(parts[0]))
 	if !hmac.Equal(signature, mac.Sum(nil)) {
 		return nil, invalid
@@ -213,11 +256,11 @@ func (s *Service) decodeCursor(value, owner string, expected searchContext) (*se
 		return nil, invalid
 	}
 	var cursor searchCursor
-	if json.Unmarshal(data, &cursor) != nil || cursor.Version != 4 || cursor.UserID != owner || cursor.Order != "relevance" || cursor.ID == "" || len(cursor.ID) > 200 || !distancePattern.MatchString(cursor.RawDistance) {
+	if json.Unmarshal(data, &cursor) != nil || cursor.Version != 5 || cursor.UserID != owner || cursor.Order != "relevance" || cursor.ID == "" || len(cursor.ID) > 200 || !distancePattern.MatchString(cursor.RawDistance) {
 		return nil, invalid
 	}
 	distance, err := strconv.ParseFloat(cursor.RawDistance, 64)
-	if err != nil || math.IsNaN(distance) || math.IsInf(distance, 0) {
+	if err != nil || math.IsNaN(distance) || math.IsInf(distance, 0) || distance < -0.00001 || distance > 2.00001 {
 		return nil, invalid
 	}
 	if !sameContext(cursor.Context, expected) {
@@ -226,88 +269,83 @@ func (s *Service) decodeCursor(value, owner string, expected searchContext) (*se
 	return &cursor, nil
 }
 
-// Personal libraries use an exact owner-scoped scan, rather than repeatedly
-// widening an approximate cross-library candidate pool. One materialization
-// computes distance once per eligible owned vector; total and page share the
-// same snapshot. No saved search/result cache can hide a newly indexed asset.
-func (s *Service) searchVector(ctx context.Context, owner string, vector []float64, context searchContext, offset int, cursor *searchCursor) (model.SearchResponse, error) {
-	if err := validateVector(vector); err != nil {
+// Exact owner-scoped cosine retrieval computes each eligible distance once.
+// Count and page use one SQLite snapshot; only query vectors are cached, never
+// results, so newly indexed captures and favorite/tag/trash edits appear at once.
+func (s *Service) searchVector(ctx context.Context, owner string, vector []float32, binding searchContext, offset int, cursor *searchCursor) (model.SearchResponse, error) {
+	data, err := encodeVector(vector)
+	if err != nil {
 		return model.SearchResponse{}, err
 	}
-	var afterDistance, afterID *string
+	var afterDistance *float64
+	var afterID *string
 	if cursor != nil {
-		afterDistance = &cursor.RawDistance
-		afterID = &cursor.ID
+		distance, err := strconv.ParseFloat(cursor.RawDistance, 64)
+		if err != nil {
+			return model.SearchResponse{}, err
+		}
+		afterDistance, afterID = &distance, &cursor.ID
 	}
-	rows, err := s.pool.Query(ctx, `WITH eligible AS MATERIALIZED (
-		SELECT a.id,e.image_embedding <=> $2::vector AS distance
-		FROM asset_embeddings e JOIN assets a ON a.id=e.asset_id
-		WHERE e.owner_user_id=$1 AND e.asset_deleted_at IS NULL AND e.status='ready'
-		AND e.image_embedding IS NOT NULL AND e.dim=$3 AND e.model_name=$4 AND e.model_version=$5
-		AND a.owner_user_id=$1 AND a.deleted_at IS NULL AND (NOT $6 OR a.favorite)
-		AND ($7::text IS NULL OR EXISTS (SELECT 1 FROM asset_tags at JOIN tags t ON t.id=at.tag_id
-			WHERE at.asset_id=a.id AND t.id=$7 AND t.owner_user_id=$1))
-	), matched AS MATERIALIZED (SELECT * FROM eligible WHERE 1-distance >= $8),
-	page AS (SELECT * FROM matched WHERE $9::double precision IS NULL OR (distance,id)>($9::double precision,$10::text)
-		ORDER BY distance,id LIMIT $11 OFFSET $12),
+	rows, err := s.db.QueryContext(ctx, `WITH eligible AS MATERIALIZED (
+		SELECT a.id, vec_distance_cosine(e.image_embedding, ?2) AS distance
+		FROM asset_embeddings e JOIN assets a ON a.id = e.asset_id AND a.owner_user_id = e.owner_user_id
+		WHERE e.owner_user_id = ?1 AND e.status = 'ready' AND e.dim = ?3 AND e.model_name = ?4 AND e.model_version = ?5
+		AND a.owner_user_id = ?1 AND a.deleted_at IS NULL AND (NOT ?6 OR a.favorite)
+		AND (?7 IS NULL OR EXISTS (SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id
+			WHERE at.asset_id = a.id AND t.id = ?7 AND t.owner_user_id = ?1))
+	), matched AS MATERIALIZED (SELECT * FROM eligible WHERE 1 - distance >= ?8),
+	page AS (SELECT * FROM matched WHERE ?9 IS NULL OR (distance, id) > (?9, ?10)
+		ORDER BY distance, id LIMIT ?11 OFFSET ?12),
 	total AS (SELECT count(*) AS count FROM matched)
-	SELECT total.count,a.id,a.owner_user_id,a.blob_url,a.thumbnail_url,a.pathname,a.mime,a.size,a.width,a.height,a.checksum_sha256,a.favorite,
-		a."createdAt",a."updatedAt",a.share_slug,1-page.distance,page.distance::text,
-		COALESCE((SELECT jsonb_agg(jsonb_build_object('id',t.id,'name',t.name,'color',t.color) ORDER BY t.name,t.id)
-			FROM asset_tags at JOIN tags t ON t.id=at.tag_id WHERE at.asset_id=a.id AND t.owner_user_id=$1),'[]'::jsonb)
-	FROM total LEFT JOIN page ON true LEFT JOIN assets a ON a.id=page.id AND a.owner_user_id=$1 AND a.deleted_at IS NULL
-	ORDER BY page.distance,page.id`, owner, vectorSQL(vector), contract.EmbeddingDimension, contract.EmbeddingModel, contract.EmbeddingVersion, context.FavoriteOnly, context.TagID, context.Threshold, afterDistance, afterID, context.Limit+1, offset)
+	SELECT total.count, a.id, a.owner_user_id, a.blob_url, a.thumbnail_url, a.pathname, a.mime, a.size, a.width, a.height, a.checksum_sha256, a.favorite,
+		a.created_at, a.updated_at, a.share_slug, page.distance,
+		COALESCE((SELECT json_group_array(json_object('id', t.id, 'name', t.name, 'color', t.color))
+			FROM (SELECT t.id, t.name, t.color FROM asset_tags at JOIN tags t ON t.id = at.tag_id
+			WHERE at.asset_id = a.id AND t.owner_user_id = ?1 ORDER BY t.name, t.id) t), '[]')
+	FROM total LEFT JOIN page ON true LEFT JOIN assets a ON a.id = page.id AND a.owner_user_id = ?1 AND a.deleted_at IS NULL
+	ORDER BY page.distance, page.id`, owner, data, inference.Dimension, modelName, inference.ModelVersion, binding.FavoriteOnly, binding.TagID, binding.Threshold, afterDistance, afterID, binding.Limit+1, offset)
 	if err != nil {
 		return model.SearchResponse{}, err
 	}
 	defer rows.Close()
-	response := model.SearchResponse{Results: make([]model.Asset, 0, context.Limit), Limit: context.Limit, Threshold: context.Threshold}
-	var lastDistance string
+	response := model.SearchResponse{Results: make([]model.Asset, 0, binding.Limit), Limit: binding.Limit, Threshold: binding.Threshold}
+	var lastDistance float64
 	for rows.Next() {
 		var asset model.Asset
-		var id, assetOwner, blobURL, pathname, mime, checksum, rawDistance *string
+		var id, assetOwner, blobURL, pathname, mime, checksum *string
 		var size *int64
 		var favorite *bool
 		var created, updated *time.Time
-		var similarity *float64
+		var distance *float64
 		var tags []byte
-		if err = rows.Scan(&response.Total, &id, &assetOwner, &blobURL, &asset.ThumbnailURL, &pathname, &mime, &size, &asset.Width, &asset.Height, &checksum, &favorite,
-			&created, &updated, &asset.ShareSlug, &similarity, &rawDistance, &tags); err != nil {
+		if err := rows.Scan(&response.Total, &id, &assetOwner, &blobURL, &asset.ThumbnailURL, &pathname, &mime, &size, &asset.Width, &asset.Height, &checksum, &favorite,
+			&created, &updated, &asset.ShareSlug, &distance, &tags); err != nil {
 			return model.SearchResponse{}, err
 		}
 		if id == nil {
 			continue
 		}
-		if len(response.Results) == context.Limit {
+		if len(response.Results) == binding.Limit {
 			response.HasMore = true
 			continue
 		}
-		asset.ID = *id
-		asset.OwnerID = *assetOwner
-		asset.BlobURL = *blobURL
-		asset.Pathname = *pathname
-		asset.Filename = path.Base(*pathname)
-		asset.MIME = *mime
-		asset.Size = *size
-		asset.Checksum = *checksum
-		asset.Favorite = *favorite
-		asset.CreatedAt = *created
-		asset.UpdatedAt = *updated
-		asset.Similarity = *similarity
-		asset.Relevance = math.Round(*similarity * 100)
-		asset.EmbeddingStatus = "ready"
-		if err = json.Unmarshal(tags, &asset.Tags); err != nil {
+		asset.ID, asset.OwnerID, asset.BlobURL, asset.Pathname = *id, *assetOwner, *blobURL, *pathname
+		asset.Filename, asset.MIME, asset.Size, asset.Checksum = path.Base(*pathname), *mime, *size, *checksum
+		asset.Favorite, asset.CreatedAt, asset.UpdatedAt = *favorite, *created, *updated
+		asset.Similarity = min(1, max(0, 1-*distance))
+		asset.Relevance, asset.EmbeddingStatus = math.Round(asset.Similarity*100), "ready"
+		if err := json.Unmarshal(tags, &asset.Tags); err != nil {
 			return model.SearchResponse{}, err
 		}
 		response.Results = append(response.Results, asset)
-		lastDistance = *rawDistance
+		lastDistance = *distance
 	}
-	if err = rows.Err(); err != nil {
+	if err := rows.Err(); err != nil {
 		return model.SearchResponse{}, err
 	}
 	if response.HasMore {
 		last := response.Results[len(response.Results)-1]
-		response.NextCursor, err = s.encodeCursor(searchCursor{UserID: owner, Order: "relevance", ID: last.ID, RawDistance: lastDistance, Context: context})
+		response.NextCursor, err = s.encodeCursor(searchCursor{UserID: owner, Order: "relevance", ID: last.ID, RawDistance: strconv.FormatFloat(lastDistance, 'g', -1, 64), Context: binding})
 		if err != nil {
 			return model.SearchResponse{}, err
 		}

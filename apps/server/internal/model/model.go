@@ -8,6 +8,7 @@ import (
 
 type Principal struct {
 	UserID    string
+	Email     string
 	SessionID string
 	Method    string
 }
@@ -103,14 +104,6 @@ type UploadResponse struct {
 	IsDuplicate bool         `json:"isDuplicate"`
 }
 
-type Quota struct {
-	UsedBytes      int64 `json:"usedBytes"`
-	LimitBytes     int64 `json:"limitBytes"`
-	RemainingBytes int64 `json:"remainingBytes"`
-	ReservedBytes  int64 `json:"reservedBytes,omitempty"`
-	IncomingBytes  int64 `json:"incomingBytes,omitempty"`
-}
-
 type ErrorAction struct {
 	Type  string `json:"type"`
 	Label string `json:"label"`
@@ -121,9 +114,8 @@ type APIError struct {
 	Status     int          `json:"-"`
 	Message    string       `json:"error"`
 	Code       string       `json:"code,omitempty"`
-	Retryable  bool         `json:"retryable,omitempty"`
+	Retryable  bool         `json:"retryable"`
 	RetryAfter int          `json:"-"`
-	Quota      *Quota       `json:"quota,omitempty"`
 	Action     *ErrorAction `json:"action,omitempty"`
 }
 

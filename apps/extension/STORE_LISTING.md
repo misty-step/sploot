@@ -62,7 +62,7 @@ Sploot is your personal meme library with AI-powered semantic search. Save any i
 How it works:
 
 - Right-click any image and choose "Save to Sploot"
-- Images sync to your private library at www.sploot.app
+- Images and original videos save to your selected Sploot instance
 - Search with natural language like "cat with sunglasses" or "confused guy meme"
 - AI semantic search helps find the exact reaction image you meant
 
@@ -72,7 +72,7 @@ Key features:
 - AI-powered search for your private meme collection
 - Fast access from the extension popup
 - Private library by default, with public links only when you choose to share
-- Secure account access through Clerk
+- Device pairing with explicit account approval and revocable device sessions
 
 Perfect for:
 
@@ -92,9 +92,9 @@ Privacy:
 Get started:
 
 1. Install the extension
-2. Sign in to Sploot
+2. Open the popup, choose your Sploot instance, and approve the connection
 3. Right-click any meme and choose "Save to Sploot"
-4. Visit www.sploot.app to search your library
+4. Open your library to search with local semantic inference
 
 Free to start.
 
@@ -119,7 +119,7 @@ Required to add the "Save to Sploot" option to image right-click menus.
 **storage**
 
 ```text
-Required to cache extension auth state, durable save jobs, and upload status across browser sessions.
+Required to retain the instance URL, private device session, durable captured bytes, bounded retries, and upload receipts across browser sessions.
 ```
 
 **notifications**
@@ -128,16 +128,16 @@ Required to cache extension auth state, durable save jobs, and upload status acr
 Required to show success and error feedback after the user saves an image.
 ```
 
-**cookies**
+**alarms**
 
 ```text
-Required to sync the user's Clerk session between the Sploot web app and the extension.
+Required to resume pending device approval and bounded capture retries after Chrome suspends the background worker.
 ```
 
 **tabs**
 
 ```text
-Required to open the Sploot library and sign-in pages from extension actions.
+Required to open the selected Sploot instance's device-approval page and library from explicit extension actions.
 ```
 
 **activeTab**
@@ -149,31 +149,14 @@ Required to capture the visible tab only after the user invokes the Sploot popup
 **Host permission: `*://*/*`**
 
 ```text
-Required so the extension can offer "Save to Sploot" on images from arbitrary websites the user visits. The extension only captures or uploads after the user explicitly chooses a Sploot action. Screenshot capture is limited to visible http(s) pages; Chrome, extension, file, ftp, data, and view-source pages are rejected.
+Required to fetch original user-selected media from websites and contact the user's configured Sploot instance. The extension only captures or uploads after an explicit Sploot action. Remote instances require HTTPS; HTTP is allowed only on the local machine. Screenshots capture only visible HTTP(S) pages; Chrome, extension, file, FTP, data, and view-source pages are rejected.
 ```
 
-**Host permission: `https://www.sploot.app/*`**
-
-```text
-Required to upload selected images to the user's Sploot library and open the web app.
-```
-
-**Host permission: `https://sploot.app/*`**
-
-```text
-Required for compatibility with the apex Sploot domain.
-```
-
-**Host permission: `https://clerk.sploot.app/*`**
-
-```text
-Required for secure Clerk authentication and session synchronization.
-```
 
 ## Data Usage
 
 - User-selected images are uploaded to the user's private Sploot meme library.
-- Authentication is handled by Clerk.
+- Device pairing is authorized on the selected instance. The extension stores a revocable device token; it never reads website sign-in cookies or collects your password.
 - The extension does not collect or transmit browsing history.
 - Only images explicitly selected by the user through the context menu are sent to Sploot.
 - Search logs and product analytics are described in the privacy policy.

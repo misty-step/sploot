@@ -13,7 +13,11 @@ import (
 )
 
 func (s *Server) pageData(title string, principal *model.Principal) web.PageData {
-	return web.PageData{Title: title, BaseURL: s.config.BaseURL, ClerkPublishableKey: s.config.ClerkPublishableKey, Environment: s.config.Environment, Principal: principal, UploadsEnabled: s.config.UploadsEnabled}
+	data := web.PageData{Title: title, BaseURL: s.config.BaseURL, RegistrationOpen: s.config.RegistrationOpen, Principal: principal, UploadsEnabled: s.config.UploadsEnabled, StorageLimitBytes: s.config.StorageLimitBytes, ModelStatus: s.embedding.ModelStatus()}
+	if principal != nil {
+		data.AccountEmail = principal.Email
+	}
+	return data
 }
 
 func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, name string, data web.PageData) {
@@ -41,6 +45,10 @@ func (s *Server) pagePrincipal(w http.ResponseWriter, r *http.Request) (model.Pr
 		}
 		return principal, false
 	}
+	if errors.As(err, &denied) && denied.Code == "ACCOUNT_CHANGED" {
+		s.failure(w, r, err)
+		return principal, false
+	}
 	data := s.pageData("Library unavailable", nil)
 	data.Error = "Your library could not be opened. Try again shortly."
 	status := 503
@@ -60,27 +68,44 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/sign-in", http.StatusSeeOther)
 }
 
-func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.auth.Resolve(r, false); err == nil {
-		http.Redirect(w, r, "/app", http.StatusSeeOther)
-		return
+func pageReturnURL(r *http.Request) string {
+	target, err := url.Parse(r.URL.Query().Get("redirect_url"))
+	if err == nil && !target.IsAbs() && target.Host == "" && (target.Path == "/app" || strings.HasPrefix(target.Path, "/app/")) {
+		return target.RequestURI()
 	}
-	data := s.pageData("Your library", nil)
-	data.ReturnURL = "/app"
-	if target := r.URL.Query().Get("redirect_url"); strings.HasPrefix(target, "/app") && !strings.HasPrefix(target, "//") {
-		data.ReturnURL = target
-	}
-	s.render(w, r, 200, "sign-in", data)
+	return "/app"
 }
 
-func (s *Server) qaLogin(w http.ResponseWriter, r *http.Request) {
-	token, err := s.auth.MintQALocalToken(r)
-	if err != nil {
-		s.failure(w, r, err)
+func (s *Server) signIn(w http.ResponseWriter, r *http.Request) {
+	target := pageReturnURL(r)
+	if _, err := s.auth.Resolve(r, false); err == nil {
+		http.Redirect(w, r, target, http.StatusSeeOther)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: "sploot_qa_auth", Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 900})
-	http.Redirect(w, r, "/app", http.StatusSeeOther)
+	data := s.pageData("Sign in · Sploot", nil)
+	data.ReturnURL = target
+	s.render(w, r, http.StatusOK, "sign-in", data)
+}
+
+func (s *Server) signUp(w http.ResponseWriter, r *http.Request) {
+	target := pageReturnURL(r)
+	if _, err := s.auth.Resolve(r, false); err == nil {
+		http.Redirect(w, r, target, http.StatusSeeOther)
+		return
+	}
+	data := s.pageData("Create your account · Sploot", nil)
+	data.ReturnURL = target
+	s.render(w, r, http.StatusOK, "sign-up", data)
+}
+
+func (s *Server) connectPage(w http.ResponseWriter, r *http.Request) {
+	principal, ok := s.pagePrincipal(w, r)
+	if !ok {
+		return
+	}
+	data := s.pageData("Connect a device · Sploot", &principal)
+	data.DeviceCode = strings.TrimSpace(r.URL.Query().Get("code"))
+	s.render(w, r, http.StatusOK, "connect", data)
 }
 
 func (s *Server) appPage(w http.ResponseWriter, r *http.Request)  { s.libraryPage(w, r, "app") }
@@ -97,6 +122,7 @@ func (s *Server) libraryPage(w http.ResponseWriter, r *http.Request, template st
 		return
 	}
 	options.Sort = "shuffle"
+	options.Seed = r.URL.Query().Get("seed")
 	if options.Seed == "" {
 		options.Seed = strconv.Itoa(rand.IntN(1_000_001))
 	}
@@ -162,6 +188,18 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, r, 200, "settings", s.pageData("Settings", &principal))
+}
+
+func (s *Server) shortcutSource(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.pagePrincipal(w, r); !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-apple-shortcut")
+	w.Header().Set("Content-Disposition", `attachment; filename="save-to-sploot.unsigned.shortcut"`)
+	w.Header().Set("Cache-Control", "private, no-store")
+	if err := s.web.RenderShortcut(w, s.config.BaseURL); err != nil {
+		s.logger.Error("Shortcut source failed", "error", err)
+	}
 }
 
 func (s *Server) publicShareByID(w http.ResponseWriter, r *http.Request) {
