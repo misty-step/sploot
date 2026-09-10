@@ -218,7 +218,7 @@ We use **Turborepo** to orchestrate tasks.
 - **CI/CD**: GitHub Actions (Lint, Test, Type-check).
 - **Deployment**: 
   - Local Go: persistent data directory and separate reusable model cache.
-  - Retained Next.js predecessor: historical DigitalOcean App Platform runtime retired on2026-09-10; source and provider contracts remain retained, not current serving authority.
+  - Retained Next.js predecessor: historical DigitalOcean App Platform runtime retired on 2026-09-10; source and provider contracts remain retained, not current serving authority.
   - Extension: Manual submission to Chrome Web Store.
 - **Details**: See [ARCHITECTURE.md](./ARCHITECTURE.md).
 

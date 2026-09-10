@@ -593,6 +593,11 @@ deep `/api/health` contract above remains the readiness authority.
 
 ## Rollback — retained Next.js predecessor
 
+**Historical only. Do not use this predecessor rollback after native writes.**
+The retired app cannot recover native saves; follow
+[controlled rollback after native writes](#controlled-rollback-after-native-writes)
+for the current production authority.
+
 for a deliberate application rollback, first set
 `SPLOOT_EMBEDDINGS_ENABLED=false` on the web service and verify the deployed
 generate-embedding route returns `503` with `code: "embeddings_disabled"`.
