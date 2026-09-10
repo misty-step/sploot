@@ -59,6 +59,12 @@ default remains loopback. Repository-built MCP defaults to
 overrides remain supported. Unpacked extension and built MCP acceptance do
 not claim a Web Store, npm publication, or physical Apple-device release.
 
+Cutover client acceptance retained one decoder caveat: a migrated H264 original
+failed the host Chromium VAAPI decoder despite byte parity. The same original
+completed playback with software decoding, full FFmpeg decode and range
+requests. Originals were not transcoded and host GPU/browser policy was not
+changed; this is not an all-default-browser playback guarantee.
+
 `SPLOOT_REDIRECT_HOSTS=sploot.app,www.sploot.app` is the explicit native
 legacy-host policy. Those registered HTTPS aliases are browser redirects,
 not another writable API: GET/HEAD browser paths receive `308` to the fixed
@@ -90,8 +96,8 @@ This is a procedure, not a claim that production was rolled back. Keep
 registration closed and never resume the Next writer or its jobs.
 
 1. Stop the timer; stop and wait for both backup and native services to become
-   inactive. `uploads=false` alone does not freeze account/metadata/deletion
-   writes.
+   inactive. Confirm no process still holds the live library. `uploads=false`
+   alone does not freeze account/metadata/deletion writes.
 2. Retain a new private copy of the **entire current** production directory:
    SQLite, any WAL/SHM/journal, media and `signing.key`, plus environment files,
    service configuration and release-link target. Encrypt it off-VM and
@@ -100,6 +106,7 @@ registration closed and never resume the Next writer or its jobs.
 3. Prefer fixing configuration around the verified native release/current
    epoch, or restore that verified current epoch into a fresh private target
    on a repaired host. Never overwrite an active SQLite directory.
+   A complete stopped raw epoch preserves credentials.
    A portable restore retains passwords/material but deliberately strips
    sessions, device/PAT/invitation authority and signing key; users sign in,
    re-pair/re-mint, and unclaimed owners require fresh offline invitations.
@@ -118,10 +125,18 @@ Restoring old DNS is therefore **not** rollback. If current-epoch recovery
 cannot preserve every committed save, retain it and serve maintenance until
 repaired rather than reopen the predecessor. Hourly snapshots provide a
 60-minute RPO objective after total host loss, not a zero-loss guarantee.
-Exact source/runtime acceptance, protected receipt locations, decoder caveats
-and the explicitly bounded retirement decision are recorded in `HANDOFF.md`
-and MIS-46/MIS-47; retained source providers and CI are not removed by this
-procedure.
+Linear MIS-46/MIS-47 record exact source/runtime acceptance and the bounded
+retirement decision; protected receipts and recovery indexes remain under
+operator-controlled `$HOME/.local/share/sploot/migration/`. Follow the
+[evidence ownership policy](../../../docs/qa/README.md#ownership-and-safe-handling);
+do not publish raw provider output, private media or credentials.
+
+Independent source PostgreSQL recovery proved a logical restore, not physical
+or bit-for-bit recovery. Retained caveats include dropped-column ordinal
+normalization, pgvector 0.8.0→0.8.6 drift, uncaptured original locale and two
+historical migration checksum differences. Do not rewrite old migrations to
+hide those differences. Source providers, archives, credentials and required
+CI remain retained; runtime retirement does not authorize their removal.
 
 ## Self-contained Go runtime
 

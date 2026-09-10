@@ -73,6 +73,9 @@ next-env.d.ts
 # Clerk
 .clerk/
 
+# Local verification worktrees — preserve separately from repository source
+.worktrees/
+
 # Local harness traces — not committed
 .harness-kit/traces/*.jsonl
 .harness-kit/traces/provider-lanes/
@@ -81,6 +84,6 @@ next-env.d.ts
 .pi/state/
 .codex/agents/
 
-# dev:local doctor evidence + local state
+# Persistent local library + private QA evidence
 .sploot-local/
 .env*.local
