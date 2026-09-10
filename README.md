@@ -240,6 +240,7 @@ their native authority; historical files are not an automatic intake queue.
 
 - [QA procedure and evidence ownership](./docs/qa/README.md)
 - [Design contract](./DESIGN.md)
+- [Public product design and pricing proposal](./docs/design/public-product-proposal.md) — for review, not an approved offer or implemented consumer UI.
 
 - [Contributor instructions](./AGENTS.md) - Repository guidance for agents and developers.
 - [Web App Docs](./apps/web/README.md)
