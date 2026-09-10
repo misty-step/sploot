@@ -5,12 +5,12 @@
 Sploot's [published token API](./PUBLIC_API.md) owns the external **save/search**
 contract. Two independent runtimes implement that contract:
 
-- **Local Go product — `apps/server`**: persistent SQLite/sqlite-vec, private
-  filesystem media, local CPU CLIP inference, real password accounts, browser
-  sessions, and paired-device credentials.
-- **Deployed Next.js predecessor — `apps/web`**: Clerk, Postgres/pgvector,
-  Blob, and Replicate behavior. Starting Go does not migrate these identities
-  or data; the explicit offline converter is documented in DEPLOYMENT.md.
+- **Go product — `apps/server`**: canonical hosted and local SQLite/sqlite-vec,
+  private filesystem media, local CPU CLIP inference, real password accounts,
+  browser sessions, and paired-device credentials.
+- **Retained Next.js predecessor — `apps/web`**: Clerk, Postgres/pgvector,
+  Blob, and Replicate behavior. Its recipes below are not native production
+  authority; the explicit offline conversion is documented in DEPLOYMENT.md.
 
 The Go API does not claim every legacy route. Its inventory and auth boundary
 below are authoritative for local clients; unless explicitly marked otherwise,
@@ -62,15 +62,21 @@ remain in [DEPLOYMENT.md](./DEPLOYMENT.md).
 ## Base URL
 
 ```text
+Canonical hosted Go: https://sploot.mistystep.io/api
 Local Go: http://127.0.0.1:3001/api
-Production predecessor: https://www.sploot.app/api
-Next.js development (separate process): http://localhost:3001/api
+Next.js development (separate retained process): http://localhost:3001/api
 ```
 
 Use the selected instance's exact canonical origin (`SPLOOT_BASE_URL` for Go),
 including for relative media URLs and device approval. Off-loopback Go access
 requires HTTPS. Local and production credentials are not interchangeable.
 Do not run both development servers on the same port.
+
+Hosted registration is closed. Extension clients select the canonical HTTPS
+instance explicitly; MCP defaults to its `/api` origin. A local development
+default is not a second production authority. Legacy-origin redirects and
+retirement are operational routing, not API compatibility proxies; see
+[current production operations](./DEPLOYMENT.md#canonical-hosted-go-instance).
 
 ## Authentication
 
@@ -86,7 +92,7 @@ not a verified email-delivery or reset-password integration.
 |---|---|
 | `sploot_session` browser cookie | Full owner UI/API plus account-security actions; opaque secret, hashed server-side, 30-day lifetime; HttpOnly, SameSite=Lax, Secure on HTTPS |
 | `Authorization: Bearer spld_…` | Revocable paired device, 90-day lifetime; owner-library/save/search/private-media/export operations, but no permanent purge, password changes, device approval/list management, or personal-token management |
-| `Authorization: Bearer splt_…` | Personal token; only the three published save/search routes opt in. No library listing, direct private media, export, deletion, or account/token management |
+| `Authorization: Bearer splt_…` | Revocable personal token, with no configured expiry lifetime; only the three published save/search routes opt in. No library listing, direct private media, export, deletion, or account/token management |
 
 Invalid, expired, or revoked credentials return `401` with
 `{"error":"Unauthorized","code":"unauthorized"}`. An explicit bad bearer never
@@ -259,7 +265,7 @@ after four queries. Active native work is not preempted. Queue overflow/expiry
 returns 429 `embedding_busy`, `retryable: true`, `Retry-After: 1`.
 
 
-### Auth Boundary — deployed Next.js
+### Auth Boundary — retained Next.js predecessor
 
 - browser page traffic on `https://sploot.app` redirects to
   `https://www.sploot.app` before auth checks, so signed-in users do not get
@@ -286,7 +292,7 @@ returns 429 `embedding_busy`, `retryable: true`, `Retry-After: 1`.
 with status `401`. Local Go errors and credential scopes are specified above;
 the predecessor's [`AUTH.md`](./AUTH.md) is not the Go account/device authority.
 
-Protected product API route inventory — deployed predecessor:
+Protected product API route inventory — retained predecessor:
 
 - `/api/upload`, `/api/upload/url`, `/api/upload/check`
 - `/api/upload-tokens`, `/api/upload-tokens/{id}` (session-only; manage upload tokens)
@@ -318,7 +324,7 @@ may also include diagnostic fields:
 }
 ```
 
-## Rate Limiting — deployed predecessor
+## Rate Limiting — retained predecessor
 
 There is no general per-request rate limiter on upload, search, share, or
 other product API routes — an accepted residual documented in
@@ -338,7 +344,7 @@ Two routes do enforce a real, tested limit:
 
 ---
 
-## Endpoint reference — deployed Next.js unless marked
+## Endpoint reference — retained Next.js predecessor unless marked
 
 ### Health Check
 
@@ -362,13 +368,13 @@ dependency oracle.
 }
 ```
 
-Local Go adds `commit` from configured/build revision metadata. The deployed
+Local Go adds `commit` from configured/build revision metadata. The retained
 predecessor does not expose a commit here. This extra local field is not
 evidence that Go is serving production.
 
 #### GET /api/health
 
-**Deployed Next.js:** database connectivity, embedding limiter schema, and
+**Retained Next.js predecessor:** database connectivity, embedding limiter schema, and
 (when `STRIPE_LEDGER_BOOTSTRAP_REQUIRED=true`) the Stripe bootstrap marker.
 Failure is `503`. Concurrent predecessor requests share one bounded database
 probe; a request timeout never launches duplicate database work.
@@ -416,7 +422,7 @@ of a completed upload, inference, or external telemetry call.
 
 **Authentication:** Not required.
 
-- **Deployed Next.js:** `{"version":"v…"}` or `{"version":null}` when the latest
+- **Retained Next.js predecessor:** `{"version":"v…"}` or `{"version":null}` when the latest
   release is unknown. This is the latest GitHub release tag, cached for one
   hour, **not** the active deployment commit or a package version.
 - **Local Go:** `{"version":"0.1.0","commit":"…","runtime":"go"}`.
@@ -1100,7 +1106,7 @@ Return per-user aggregate stats (`assetCount`, `storageBytes`, `storageLimitByte
 
 ### Library Export
 
-**Runtime distinction:** the multipart lifecycle below belongs to the deployed
+**Runtime distinction:** the multipart lifecycle below belongs to the retained
 predecessor. In local Go, browser- or device-authenticated
 `GET /api/library/export` prepares and returns a single `application/zip`
 attachment containing owner metadata/vectors/tags and currently stored
@@ -1111,7 +1117,7 @@ The archive is completed before success headers; transfer truncation is a
 transport failure, not a completed download. This owner export is not the
 operator [full-database backup/restore](./DEPLOYMENT.md#library-backup-and-isolated-restore).
 
-#### Deployed predecessor export lifecycle
+#### Retained predecessor export lifecycle
 
 Complete-library export: every original plus a versioned, portable
 `manifest.json`. Manifest schema, snapshot semantics, retry model, and
@@ -1771,8 +1777,9 @@ is required.
 The [quick start](../../../README.md#quick-start) and
 [runtime/recovery procedure](./DEPLOYMENT.md#self-contained-go-runtime) own
 startup, doctor, model preparation, build, and private backup/restore commands.
-Local web/Chromium acceptance does not migrate the unchanged production
-library or establish physical iPhone, Apple signing, or Web Store acceptance.
+Local web/Chromium acceptance does not alter the separate hosted library or
+prove production cutover. It also does not establish physical iPhone, Apple
+signing, or Web Store acceptance.
 
 ## Client integration
 
