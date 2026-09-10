@@ -4,7 +4,7 @@ MCP server exposing Sploot's two agent-facing verbs — **save** and
 **search** — as tools, over the published, token-scoped external contract in
 [`apps/web/docs/PUBLIC_API.md`](../web/docs/PUBLIC_API.md). It is a thin HTTP
 client: no business logic (dedupe, quota, embeddings, similarity ranking)
-lives here, all of it lives server-side in `apps/web`.
+lives here; the native Go server in `apps/server` owns it.
 
 The companion agent skill (`.agents/skills/misty-sploot/SKILL.md`) teaches
 the verbs; this package is the runtime that implements them.
@@ -23,9 +23,13 @@ etc.) — see `PUBLIC_API.md` for the exact response shapes and error codes.
 
 ## Setup
 
-1. **Mint a personal API token** — sploot.app → Settings → Upload tokens (or
-   `POST /api/upload-tokens` with a signed-in session). Shown once; store it
-   in your secret manager, not in a config file.
+1. **Mint a personal API token** — sign in through the browser at
+   [sploot.mistystep.io](https://sploot.mistystep.io/sign-in) with your native
+   account, then open **Settings → Personal access tokens**. Token management
+   (`POST /api/upload-tokens`) requires that instance's signed-in browser
+   session; a personal or paired-device token cannot mint another token.
+   The plaintext is shown once; store it in your secret manager, not a
+   checked-in config file.
 2. **Build the server:**
 
    ```bash
@@ -54,10 +58,15 @@ etc.) — see `PUBLIC_API.md` for the exact response shapes and error codes.
 | Var | Required | Default | Purpose |
 |---|---|---|---|
 | `SPLOOT_API_TOKEN` | yes | — | Personal API token (`splt_…`) |
-| `SPLOOT_API_BASE_URL` | no | `https://www.sploot.app/api` | Point at a local dev instance (e.g. `http://localhost:3001/api`) instead of production |
+| `SPLOOT_API_BASE_URL` | no | `https://sploot.mistystep.io/api` | Override for another instance (e.g. `http://127.0.0.1:3001/api`); use a token minted on that instance |
 
 The server refuses to start without `SPLOOT_API_TOKEN` and prints the mint
 instructions to stderr.
+
+Leave `SPLOOT_API_BASE_URL` unset for native production. The legacy
+`sploot.app` API is not a fallback: after legacy routing is enabled, API
+requests return `410 Gone` instead of redirecting credentials. Other local
+or self-hosted libraries require an explicit base URL and their own token.
 
 ## Development
 
@@ -76,13 +85,21 @@ transport or a live Sploot instance.
 
 ## Manual smoke test against a local instance
 
-```bash
-# 1. Boot a local Sploot with qa-local auth + seeded data (repo root):
-pnpm dev:local
+1. From the repository root, run `pnpm dev` to start the persistent native Go
+   library at `http://127.0.0.1:3001`. See
+   [startup and recovery](../web/docs/DEPLOYMENT.md#self-contained-go-runtime)
+   for prerequisites. There is no QA login or seeded account.
+2. Sign in in that instance's browser UI (or register if registration is open),
+   then mint a token in **Settings → Personal access tokens**. Load it into
+   `SPLOOT_API_TOKEN` privately; a production token does not authenticate locally.
+3. Build and configure an MCP client (or Inspector) to launch the server over
+   stdio with that token and the explicit local override:
 
-# 2. Mint a token for the seeded qa-design-user (see apps/web/docs/AUTH.md
-#    for qa-local auth), then:
-SPLOOT_API_TOKEN=splt_… SPLOOT_API_BASE_URL=http://localhost:3001/api \
-  node apps/mcp/dist/index.js
-# 3. Point an MCP client (or the Inspector) at that process over stdio.
-```
+   ```bash
+   pnpm --filter @sploot/mcp build
+   SPLOOT_API_BASE_URL=http://127.0.0.1:3001/api node apps/mcp/dist/index.js
+   ```
+
+4. Call `sploot_save` with a disposable image, then `sploot_search` after native
+   indexing is ready. A real empty search is valid; seeded retrieval is not a
+   smoke-test substitute. Stop the process normally without deleting the library.

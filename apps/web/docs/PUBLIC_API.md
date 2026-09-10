@@ -6,27 +6,30 @@ automations, the iPhone Shortcut source, and the
 upload/MIME/response types. The full route and credential-scope inventory is in
 [API.md](./API.md).
 
-The self-contained local Go product and deployed Next.js predecessor are
-separate instances. Local Go owns password accounts, SQLite/sqlite-vec, private
-media, and CPU CLIP; production still uses its existing Clerk/Postgres/Blob/
-Replicate stack. Running locally does not migrate the old library, and a token
-from one instance does not authenticate another.
+Native production is **https://sploot.mistystep.io**. The self-contained Go
+runtime owns password accounts, SQLite/sqlite-vec, private media, and CPU CLIP.
+The retained Next.js predecessor used Clerk/Postgres/Blob/Replicate; its
+guidance below is historical, not the current production authority. Local and
+other self-hosted instances have separate accounts and libraries. Starting one
+does not migrate another instance's data, and tokens do not cross instances.
 
 ## Auth: personal API token
 
 Every save/search call in this contract authenticates with a **personal API token** —
-`Authorization: Bearer splt_…`. Mint one from a signed-in **browser session on
-the selected instance**: **Settings → Personal access tokens** in Go, or
-**Settings → Upload tokens** in the predecessor. `POST /api/upload-tokens` is
-browser-session-only; see [token management](./API.md#personal-upload-tokens).
-The plaintext token is shown once at mint time; only its hash is stored.
+`Authorization: Bearer splt_…`. Sign in through the **selected instance's browser
+UI**, then mint one in **Settings → Personal access tokens** in native Go.
+Production sign-in is at https://sploot.mistystep.io/sign-in; local accounts use
+the local instance's sign-in page. The historical predecessor called this
+**Settings → Upload tokens**. `POST /api/upload-tokens` is browser-session-only;
+see [token management](./API.md#personal-upload-tokens). The plaintext token is
+shown once at mint time; only its hash is stored.
 
 - Format: `splt_` + 32 random bytes, base64url-encoded.
 - Hashed at rest (`sha256`); revoked and unknown tokens are indistinguishable
   (no timing or error-message tell).
 - Not a browser/device session: it has no cookie-CSRF exposure and does not
   expire on a timer. Revoke it in Settings when no longer needed.
-- In local Go, a password change revokes personal tokens, and portable
+- In native Go, a password change revokes personal tokens, and portable
   backup/restore removes them from the restored copy. Sign in with the preserved
   password and mint a new token after restore; source credentials are untouched.
 
@@ -47,14 +50,14 @@ token cannot list the full library, fetch private local media, delete assets,
 export, pair devices, or manage credentials. Search necessarily returns matching
 asset metadata; it does not grant a new media-download capability.
 
-Local Go's paired `spld_` device token is a **different, broader credential**.
+Native Go's paired `spld_` device token is a **different, broader credential**.
 Extensions obtain it only through browser-approved device pairing, not by
 minting a personal token or borrowing browser cookies. Its scope and the
 predecessor's Clerk/session boundary are documented separately in
 [API.md](./API.md#authentication). Invalid/revoked personal tokens return `401`;
 Go includes `code: "unauthorized"` alongside `error: "Unauthorized"`.
 
-New account admission is separate from save/search. On local Go, register or
+New account admission is separate from save/search. On native Go, register or
 sign in through the selected instance's browser UI; a closed registration policy
 does not revoke existing users or tokens. Only the predecessor uses the
 Clerk/enrollment errors `enrollment_closed`, `enrollment_unavailable`, and
@@ -63,33 +66,43 @@ clients create accounts or bypass registration.
 
 Both runtimes can independently pause saves with `SPLOOT_UPLOADS_ENABLED=false`
 (`503 uploads_disabled`) or inference with `SPLOOT_EMBEDDINGS_ENABLED=false`.
-Local Go rejects search with `503 embeddings_disabled` while inference is
+Native Go rejects search with `503 embeddings_disabled` while inference is
 disabled even if a query vector was cached; it never disguises a disabled engine
 with seeded retrieval.
 
 ## Base URL
 
 ```text
+Native production (MCP default): https://sploot.mistystep.io/api
 Self-contained local Go: http://127.0.0.1:3001/api
-Deployed Next.js predecessor: https://www.sploot.app/api
 ```
 
-Use the exact configured origin for the intended library. Local Go defaults to
-`http://127.0.0.1:3001`; custom off-loopback instances require HTTPS. For the
-recipes below, set the origin without `/api`, and supply `SPLOOT_API_TOKEN`
-from your private client configuration, not a checked-in file:
+Use the exact configured origin for the intended library. MCP defaults to
+native production; set `SPLOOT_API_BASE_URL` explicitly, including `/api`, for
+any other instance. Local Go defaults to `http://127.0.0.1:3001`; custom
+off-loopback instances require HTTPS. Supply `SPLOOT_API_TOKEN` from your
+private client configuration, not a checked-in file, and mint it on the same
+instance as the base URL.
+
+The historical predecessor API was `https://www.sploot.app/api`. After approved
+legacy routing is enabled, API requests on `sploot.app` and `www.sploot.app`
+return **`410 Gone`**, rather than redirecting token-bearing requests. Browser
+redirects are not an API migration mechanism; update clients to the canonical
+origin instead.
+
+For the recipes below, set the origin without `/api`:
 
 ```sh
-SPLOOT_ORIGIN=http://127.0.0.1:3001
+SPLOOT_ORIGIN=https://sploot.mistystep.io
 ```
 
-Production clients deliberately choose `https://www.sploot.app` instead.
+For a local library, use `SPLOOT_ORIGIN=http://127.0.0.1:3001` instead.
 [Startup and recovery](./DEPLOYMENT.md#self-contained-go-runtime) owns the local
 account/data/cache setup.
 
 ### Private media references
 
-The `blobUrl` field name is retained for contract compatibility. In local Go,
+The `blobUrl` field name is retained for contract compatibility. In native Go,
 its value is `/media/{assetID}` and a thumbnail reference is
 `/media/{assetID}?thumbnail=1`, **relative to the selected instance**, not a
 public Blob URL. Resolve relative references only against that instance.
