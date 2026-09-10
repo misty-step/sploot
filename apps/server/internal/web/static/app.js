@@ -237,6 +237,48 @@
     } catch (error) { showFormError(errorOutput, error.message); }
     finally { submit.disabled = false; form.removeAttribute("aria-busy"); }
   }
+  // Fragments are not sent to HTTP servers, referrers, or access logs. Remove
+  // the secret from history immediately; retain it only in this page closure.
+  let claimParameters = null;
+  if ($("#claim-form")) {
+    const receiveInvitation = () => {
+      claimParameters = new URLSearchParams(location.hash.slice(1));
+      history.replaceState(null, "", "/claim");
+      $("#claim-account").textContent = claimParameters.get("email") || "Use the invitation the operator sent for your account.";
+      $("#claim-password").value = "";
+      $("#claim-error").hidden = true;
+    };
+    receiveInvitation();
+    addEventListener("hashchange", receiveInvitation);
+  }
+  async function submitClaim(form) {
+    const output = $("#claim-error");
+    const submit = $("button[type='submit']", form);
+    if (submit.disabled) return;
+    output.hidden = true;
+    const password = $("#claim-password").value;
+    const invalid = passwordValidation(password);
+    if (invalid) { showFormError(output, invalid); return; }
+    const parameters = claimParameters;
+    const userId = parameters?.get("userId");
+    const token = parameters?.get("token");
+    if (!userId || !token) { showFormError(output, "Open the complete private invitation link from the operator."); return; }
+    submit.disabled = true;
+    form.setAttribute("aria-busy", "true");
+    try {
+      const data = await api(form.action, jsonOptions("POST", { userId, token, password }));
+      if (data.user?.id !== userId) throw new Error("Account activation was not confirmed.");
+      parameters.delete("token");
+      broadcastSessionChange();
+      if (claimParameters === parameters) {
+        $("#claim-password").value = "";
+        location.replace("/app");
+      }
+    } catch (error) {
+      if (claimParameters === parameters) showFormError(output, error.message);
+    }
+    finally { submit.disabled = false; form.removeAttribute("aria-busy"); }
+  }
   async function signOut(switchAccount = false) {
     const destination = switchAccount ? `/sign-in?redirect_url=${encodeURIComponent(safeReturnURL(location.href))}` : "/sign-in";
     rememberPosition();
@@ -1230,6 +1272,7 @@
     if (event.target.id === "url-save-form") { event.preventDefault(); const url = $("#save-url").value.trim(); if (url) enqueueUpload({ url }); }
     if (event.target.id === "token-create-form") { event.preventDefault(); createToken(event.target); }
     if (event.target.id === "auth-form") { event.preventDefault(); submitAuth(event.target); }
+    if (event.target.id === "claim-form") { event.preventDefault(); submitClaim(event.target); }
     if (event.target.id === "password-change-form") { event.preventDefault(); changePassword(event.target); }
     if (event.target.id === "device-code-form") { event.preventDefault(); checkDeviceCode(event.target); }
     if (event.target.id === "asset-tag-form") { event.preventDefault(); addAssetTag(event.target); }

@@ -2,12 +2,13 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
 func TestRegistrationPolicyRequiresExplicitHostedEnrollment(t *testing.T) {
 	for _, key := range []string{
-		"SPLOOT_LISTEN_ADDR", "SPLOOT_BASE_URL", "SPLOOT_DEPLOYMENT_ENV",
+		"SPLOOT_LISTEN_ADDR", "SPLOOT_BASE_URL", "SPLOOT_REDIRECT_HOSTS", "SPLOOT_DEPLOYMENT_ENV",
 		"SPLOOT_DEPLOYMENT_COMMIT", "SPLOOT_DATA_DIR", "SPLOOT_MODEL_DIR", "SENTRY_DSN",
 		"SPLOOT_UPLOADS_ENABLED", "SPLOOT_EMBEDDINGS_ENABLED", "SPLOOT_REGISTRATION_OPEN", "PORT",
 	} {
@@ -67,7 +68,7 @@ func TestRegistrationPolicyRequiresExplicitHostedEnrollment(t *testing.T) {
 }
 
 func TestStoragePolicyAcceptsExplicitZeroAndRejectsInvalidByteCounts(t *testing.T) {
-	for _, key := range []string{"SPLOOT_LISTEN_ADDR", "SPLOOT_BASE_URL", "SPLOOT_DEPLOYMENT_ENV", "SPLOOT_UPLOADS_ENABLED", "SPLOOT_EMBEDDINGS_ENABLED", "SPLOOT_REGISTRATION_OPEN", "PORT"} {
+	for _, key := range []string{"SPLOOT_LISTEN_ADDR", "SPLOOT_BASE_URL", "SPLOOT_REDIRECT_HOSTS", "SPLOOT_DEPLOYMENT_ENV", "SPLOOT_UPLOADS_ENABLED", "SPLOOT_EMBEDDINGS_ENABLED", "SPLOOT_REGISTRATION_OPEN", "PORT"} {
 		t.Setenv(key, "")
 	}
 	t.Setenv("SPLOOT_DATA_DIR", t.TempDir())
@@ -97,5 +98,36 @@ func TestStoragePolicyAcceptsExplicitZeroAndRejectsInvalidByteCounts(t *testing.
 				}
 			})
 		}
+	}
+}
+
+func TestRedirectHostsRequireAnExplicitDNSHostnameList(t *testing.T) {
+	for _, key := range []string{"SPLOOT_LISTEN_ADDR", "SPLOOT_BASE_URL", "SPLOOT_DEPLOYMENT_ENV", "SPLOOT_UPLOADS_ENABLED", "SPLOOT_EMBEDDINGS_ENABLED", "SPLOOT_REGISTRATION_OPEN", "PORT"} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("SPLOOT_DATA_DIR", t.TempDir())
+	t.Setenv("SPLOOT_MODEL_DIR", t.TempDir())
+	t.Setenv("SPLOOT_STORAGE_LIMIT_BYTES", "0")
+	t.Setenv("SPLOOT_STORAGE_RESERVE_BYTES", "0")
+	t.Setenv("SPLOOT_REDIRECT_HOSTS", " Old.EXAMPLE , archive.example ")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(cfg.RedirectHosts, ","); got != "old.example,archive.example" {
+		t.Fatalf("explicit hostnames were not normalized: %q", got)
+	}
+	for _, value := range []string{
+		"https://old.example", "old.example:443", "*.example", "127.0.0.1",
+		"old.example,,archive.example", "old..example", "-old.example", "\u212a.example",
+		strings.Repeat("a", 64) + ".example",
+		strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("a", 62),
+	} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("SPLOOT_REDIRECT_HOSTS", value)
+			if _, err := Load(""); err == nil {
+				t.Fatalf("invalid redirect allowlist %q accepted", value)
+			}
+		})
 	}
 }

@@ -8,9 +8,9 @@ contract. Two independent runtimes implement that contract:
 - **Local Go product — `apps/server`**: persistent SQLite/sqlite-vec, private
   filesystem media, local CPU CLIP inference, real password accounts, browser
   sessions, and paired-device credentials.
-- **Deployed Next.js predecessor — `apps/web`**: existing Clerk, Postgres/pgvector,
-  Blob, and Replicate behavior. Production and its old real library are unchanged,
-  not migrated into the local product.
+- **Deployed Next.js predecessor — `apps/web`**: Clerk, Postgres/pgvector,
+  Blob, and Replicate behavior. Starting Go does not migrate these identities
+  or data; the explicit offline converter is documented in DEPLOYMENT.md.
 
 The Go API does not claim every legacy route. Its inventory and auth boundary
 below are authoritative for local clients; unless explicitly marked otherwise,
@@ -40,7 +40,7 @@ for deterministic owner-scoped shuffle. Preserve the seed, filters and limit
 when following `nextCursor`. The HTML `/app` and `/app/feed` URLs instead use
 `seed`; that browser navigation parameter is not an alias on the JSON API.
 
-HTML routes include `/`, `/sign-in`, `/sign-up`, `/app`, `/app/feed`,
+HTML routes include `/`, `/sign-in`, `/sign-up`, `/claim`, `/app`, `/app/feed`,
 `/app/search`, `/app/settings`, `/app/connect`, and `/app/shortcut`. The last
 downloads unsigned Shortcut source configured for this instance. PWA routes
 are `/manifest.json`, `/sw.js`, and `GET`/`POST /share-target`; Web Share Target
@@ -49,7 +49,8 @@ There is no local QA login route or seeded-account authority.
 
 Explicit public shares use `/s/{slug}` and `/s/{slug}?media=1` without a session.
 `/m/{id}` redirects only when that asset has an enabled share slug and is not
-deleted. These are local-library shares, not migrated production links.
+deleted. The converter retains compatible predecessor slugs; old-domain link
+continuity still requires a separately authorized redirect/cutover.
 An unshared asset's `/media/{id}` URL remains private even when its ID is known.
 
 `GET /api/library/export` returns a completed owner ZIP rather than the
@@ -112,6 +113,7 @@ accounts. Hosted exposure requires an explicit policy.
 |---|---|---|
 | `POST /api/auth/register` | `{email,password}` → `201 {user:{id,email}}`, sets browser cookie | No session; same-origin browser request |
 | `POST /api/auth/login` | `{email,password}` → `200 {user:{id,email}}`, sets browser cookie; incorrect credentials return `401 invalid_credentials` | No session; same-origin browser request |
+| `POST /api/auth/claim` | `{userId,token,password}` → `200 {user:{id,email}}`, sets browser cookie | No session; same-origin browser request and one-use operator invitation |
 | `GET /api/auth/session` | `200 {user:{id,email}}` or `401` | Browser or paired device |
 | `POST /api/auth/logout` | `204`, revokes current browser session and clears cookie | Browser only |
 | `POST /api/auth/password` | `{currentPassword,password}` → `204` | Browser only; retains this session and revokes other browser/device sessions, personal tokens, and approved pending pairings |
@@ -136,9 +138,39 @@ Polling returns `202 {"status":"pending"}` until approval, then once returns
 `Retry-After`. Persist the pending deadline and follow the server's interval;
 never treat offline or malformed responses as authorization.
 
-Backup/restore deliberately removes portable session/device/pairing/PAT
-credentials while preserving password accounts. A restored user must sign in,
-mint personal tokens, and pair devices again; see
+### Operator-invited migrated accounts
+
+Imported identities remain separate. The offline importer accepts an explicit
+source-ID → existing-native-ID mapping; email equality is never linking authority.
+Mapped accounts keep their existing password hashes and sessions. Other DB and
+Clerk-only identities have a deliberately unusable password marker until claimed.
+No Clerk password, session, old personal token, or guessed password is imported.
+
+The operator writes invitation links to a **new private mode0600 file**, never
+stdout or an email sender. Links use `/claim#userId=…&token=…&email=…`; the
+fragment is not sent in the GET request and the page removes it from browser
+history immediately. Its email is a display hint, not account authority.
+`POST /api/auth/claim` requires the exact `userId` and 256-bit random `spli_`
+token plus a valid new password. Only SHA-256 of the token is stored. Validity
+is operator-bounded from one minute to seven days (default 24 hours).
+
+Claiming works when public registration is closed. The existing origin checks,
+bounded password-work admission, Argon2id parameters, and browser-cookie rules
+apply. Token consumption and password setup commit together, fenced to the one
+unclaimed account; only one concurrent claimant succeeds. Wrong-owner, expired,
+rotated or used tokens return `410 invitation_invalid`. A browser already signed
+in as a different owner gets `409 ACCOUNT_CHANGED` and must sign out first.
+GET never consumes an invitation. The operator may rotate an unclaimed account's
+link, but cannot use this flow to reset an already activated account.
+
+There is no public invitation-issuance endpoint, automatic email, email-based
+account merging, or general password-reset service. See the
+[offline importer and invitation commands](./DEPLOYMENT.md#offline-predecessor-conversion).
+
+Backup/restore deliberately removes portable session/device/pairing/PAT and
+invitation credentials while preserving password accounts. A restored user must
+sign in, mint personal tokens, and pair devices again; an unclaimed account needs
+a newly issued operator invitation. See
 [recovery credential lifetime](./DEPLOYMENT.md#snapshot-contents-and-credential-lifetime).
 
 ### Local private media and published save/search

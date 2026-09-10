@@ -42,10 +42,10 @@ Sploot does not learn your taste or generate new memes. Automatic piles belong
 to the Next.js predecessor, not the local Go route surface.
 
 [`apps/server`](./apps/server) owns local accounts, SQLite, private filesystem
-media, and pinned local inference. **Existing production and the old real library
-are unchanged and have not been migrated.** This is a separate persistent local
-product, not a Go-on-Postgres deployment or a production cutover. See
-[runtime operations and recovery](./apps/web/docs/DEPLOYMENT.md).
+media, and pinned local inference. Starting it does not alter an existing
+predecessor deployment. The explicit offline converter preserves captured stored
+bytes, historical metadata and separate owners; it is not a Go-on-Postgres
+deployment. See [runtime operations, migration and recovery](./apps/web/docs/DEPLOYMENT.md).
 
 Responsive mobile-browser capture, playback, and download have been exercised;
 that is not physical iPhone or Apple Shortcuts acceptance. The
@@ -213,7 +213,7 @@ We use **Turborepo** to orchestrate tasks.
 - **CI/CD**: GitHub Actions (Lint, Test, Type-check).
 - **Deployment**: 
   - Local Go: persistent data directory and separate reusable model cache.
-  - Deployed Next.js predecessor: DigitalOcean App Platform, unchanged; data migration and production cutover are separate, unperformed work.
+  - Retained Next.js predecessor: DigitalOcean App Platform; its provider runtime and retirement are separate from native code deployment.
   - Extension: Manual submission to Chrome Web Store.
 - **Details**: See [ARCHITECTURE.md](./ARCHITECTURE.md).
 

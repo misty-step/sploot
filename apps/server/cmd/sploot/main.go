@@ -26,6 +26,7 @@ import (
 	"github.com/misty-step/sploot/apps/server/internal/httpapi"
 	"github.com/misty-step/sploot/apps/server/internal/inference"
 	"github.com/misty-step/sploot/apps/server/internal/observability"
+	"github.com/misty-step/sploot/apps/server/internal/predecessor"
 	"github.com/misty-step/sploot/apps/server/internal/recovery"
 )
 
@@ -43,6 +44,10 @@ func run(args []string) error {
 			args = args[1:]
 		case "doctor":
 			return doctor(args[1:])
+		case "import-predecessor", "invite-owner":
+			ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+			defer stop()
+			return predecessor.RunCLI(ctx, args, os.Stdout)
 		case "backup", "resume", "verify", "restore":
 			if recovery.RunCLI(context.Background(), args, os.Stdout, os.Stderr) != 0 {
 				return errors.New("recovery operation failed; existing library data was not replaced")
@@ -64,7 +69,7 @@ func run(args []string) error {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("unexpected arguments; use serve, doctor, backup, verify or restore")
+		return errors.New("unexpected arguments; use serve, doctor, backup, verify, restore, import-predecessor or invite-owner")
 	}
 	if *port != "" && *address != "" {
 		return errors.New("choose --port or --listen, not both")

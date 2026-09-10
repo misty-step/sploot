@@ -104,7 +104,7 @@ func New() (*Renderer, error) {
 
 func (r *Renderer) Render(w io.Writer, name string, data PageData) error {
 	switch name {
-	case "app", "search", "settings", "connect", "share", "sign-in", "sign-up", "not-found":
+	case "app", "search", "settings", "connect", "share", "sign-in", "sign-up", "claim", "not-found":
 		data.Page = name
 	case "feed":
 		data.Page = "app"

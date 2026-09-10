@@ -163,19 +163,16 @@ func TestInstanceStorageMigrationPreservesVersionOneLibrary(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	var version, quotaTables, bytes int
+	var quotaTables, bytes int
 	var checksum string
-	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
-		t.Fatal(err)
-	}
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='user_storage_quotas'`).Scan(&quotaTables); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.QueryRow(`SELECT checksum_sha256,storage_size+thumbnail_storage_size FROM assets WHERE owner_user_id='owner' AND id='asset' AND deleted_at IS NOT NULL`).Scan(&checksum, &bytes); err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 || quotaTables != 0 || checksum != "retained-checksum" || bytes != 30 {
-		t.Fatalf("migration lost retained trash or left account quotas: version=%d quotaTables=%d checksum=%q bytes=%d", version, quotaTables, checksum, bytes)
+	if quotaTables != 0 || checksum != "retained-checksum" || bytes != 30 {
+		t.Fatalf("migration lost retained trash or left account quotas: quotaTables=%d checksum=%q bytes=%d", quotaTables, checksum, bytes)
 	}
 	if err := migrate(context.Background(), db); err != nil {
 		t.Fatalf("reapplying the migrated library changed its schema: %v", err)

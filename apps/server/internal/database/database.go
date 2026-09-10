@@ -21,6 +21,12 @@ var initialSchema string
 //go:embed migrations/002_instance_storage.sql
 var instanceStorageSchema string
 
+//go:embed migrations/003_predecessor_activation.sql
+var predecessorActivationSchema string
+
+//go:embed migrations/004_asset_content_identity.sql
+var assetContentIdentitySchema string
+
 var registerVector sync.Once
 
 // Open migrates library.sqlite in a private persistent directory. Every pooled
@@ -83,8 +89,25 @@ func Open(ctx context.Context, dataDir string) (*sql.DB, error) {
 	return db, nil
 }
 
-func migrate(ctx context.Context, db *sql.DB) error {
-	tx, err := db.BeginTx(ctx, nil)
+func migrate(ctx context.Context, db *sql.DB) (resultErr error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire library migration connection: %w", err)
+	}
+	defer func() {
+		_, err := conn.ExecContext(context.Background(), `PRAGMA foreign_keys=ON`)
+		if err != nil && resultErr == nil {
+			resultErr = fmt.Errorf("restore foreign key enforcement: %w", err)
+		}
+		conn.Close()
+	}()
+	// SQLite table reconstruction must not cascade deletes into retained
+	// child rows. This dedicated connection never escapes migration; all
+	// foreign keys are checked before commit and enforcement restored above.
+	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys=OFF`); err != nil {
+		return fmt.Errorf("prepare schema reconstruction: %w", err)
+	}
+	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin library migration: %w", err)
 	}
@@ -93,8 +116,8 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	if err := tx.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
 		return fmt.Errorf("read library schema version: %w", err)
 	}
-	if version > 2 {
-		return fmt.Errorf("library schema version %d is newer than this server supports (2); use a newer server", version)
+	if version > 4 {
+		return fmt.Errorf("library schema version %d is newer than this server supports (4); use a newer server", version)
 	}
 	if version == 0 {
 		if _, err := tx.ExecContext(ctx, initialSchema); err != nil {
@@ -111,6 +134,31 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 2`); err != nil {
 			return fmt.Errorf("record library migration 002_instance_storage: %w", err)
 		}
+	}
+	if version < 3 {
+		if _, err := tx.ExecContext(ctx, predecessorActivationSchema); err != nil {
+			return fmt.Errorf("apply library migration 003_predecessor_activation: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 3`); err != nil {
+			return fmt.Errorf("record library migration 003_predecessor_activation: %w", err)
+		}
+	}
+	if version < 4 {
+		if _, err := tx.ExecContext(ctx, assetContentIdentitySchema); err != nil {
+			return fmt.Errorf("apply library migration 004_asset_content_identity: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 4`); err != nil {
+			return fmt.Errorf("record library migration 004_asset_content_identity: %w", err)
+		}
+	}
+	foreignKeys, err := tx.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	if err != nil {
+		return fmt.Errorf("check migrated owner references: %w", err)
+	}
+	invalid := foreignKeys.Next()
+	foreignKeys.Close()
+	if invalid || foreignKeys.Err() != nil {
+		return fmt.Errorf("migration would violate retained owner references")
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit library migration: %w", err)

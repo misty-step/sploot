@@ -106,6 +106,14 @@ func sanitizeDatabase(ctx context.Context, db *sql.DB) error {
 	if hasPurges {
 		purgeSQL = `UPDATE asset_purges SET pathname=NULL,thumbnail_path=NULL,storage_size=0,thumbnail_storage_size=0,completed_at=COALESCE(completed_at,CURRENT_TIMESTAMP);`
 	}
+	var hasInvitations bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_invitations')`).Scan(&hasInvitations); err != nil {
+		return failure("database", "cannot inspect account invitations")
+	}
+	invitationSQL := ""
+	if hasInvitations {
+		invitationSQL = `DELETE FROM account_invitations;`
+	}
 	if _, err := db.ExecContext(ctx, `PRAGMA secure_delete=ON;
 		BEGIN IMMEDIATE;
 		DELETE FROM auth_sessions;
@@ -114,7 +122,7 @@ func sanitizeDatabase(ctx context.Context, db *sql.DB) error {
 		DELETE FROM auth_attempts;
 		DELETE FROM upload_idempotency WHERE status='processing';
 		UPDATE asset_embeddings SET status='pending',processing_token=NULL,processing_until=NULL,next_attempt_at=CURRENT_TIMESTAMP WHERE status='processing';
-		`+purgeSQL+`
+		`+purgeSQL+invitationSQL+`
 		COMMIT;
 		VACUUM;`); err != nil {
 		_, _ = db.ExecContext(context.Background(), "ROLLBACK")
@@ -144,6 +152,15 @@ func verifyDatabase(ctx context.Context, db *sql.DB) error {
 	var credentials int64
 	if err := db.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM auth_sessions)+(SELECT count(*) FROM device_requests)+(SELECT count(*) FROM upload_tokens)+(SELECT count(*) FROM auth_attempts)`).Scan(&credentials); err != nil || credentials != 0 {
 		return failure("verify-database", "portable snapshot contains session or device credentials")
+	}
+	var hasInvitations bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_invitations')`).Scan(&hasInvitations); err != nil {
+		return failure("verify-database", "cannot inspect account invitations")
+	}
+	if hasInvitations {
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM account_invitations`).Scan(&credentials); err != nil || credentials != 0 {
+			return failure("verify-database", "portable snapshot contains account invitations")
+		}
 	}
 	return nil
 }

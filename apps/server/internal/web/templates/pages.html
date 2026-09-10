@@ -114,6 +114,24 @@
 </div>{{template "foot" .}}
 {{end}}
 
+{{define "claim"}}
+{{template "head" .}}{{template "shell-open" .}}
+<main id="main" class="app-main sign-in-main" tabindex="-1">
+  <section class="sign-in-intro"><h1>Your library made the move.</h1><p>Set a new password to open your existing collection. This invitation belongs to one account.</p></section>
+  <form id="claim-form" class="stack-form auth-form" action="/api/auth/claim" method="post">
+    <p id="claim-account" class="help-text"></p>
+    <label for="claim-password">New password</label><input id="claim-password" name="password" type="password" autocomplete="new-password" aria-describedby="claim-password-rules" required>
+    <p id="claim-password-rules" class="help-text">Use 12–128 characters. Your previous Sploot password is not used here.</p>
+    <label class="check-label"><input type="checkbox" data-show-password="claim-password">Show password</label>
+    <p id="claim-error" class="form-error" role="alert" hidden></p>
+    <button class="button button-primary" type="submit">Set password and open library</button>
+  </form>
+  <noscript><p>JavaScript is required to use the private invitation without sending its secret in the page URL.</p></noscript>
+  <p class="help-text">This one-use link expires. If it no longer works, request a new invitation from the operator. No email is sent automatically.</p>
+</main>
+</div>{{template "foot" .}}
+{{end}}
+
 {{define "connect"}}
 {{template "head" .}}{{template "shell-open" .}}
 <main id="main" class="app-main settings-main connect-main" tabindex="-1">
