@@ -5,7 +5,7 @@ Sploot is a personal meme library: save images, find them with semantic text sea
 ## Surfaces
 
 - `apps/server` owns the persistent Go/HTML/HTMX product: SQLite, private filesystem media, local CLIP, built-in accounts and extension device pairing. No SaaS credentials are required. Runtime/recovery: `apps/web/docs/DEPLOYMENT.md`. Routes: `apps/web/docs/API.md`.
-- `apps/web` retains the deployed Next.js predecessor, Clerk, Prisma/Neon Postgres with pgvector, Vercel Blob, Replicate, Sentry and DigitalOcean. Running Go does not migrate its identities or production data. Token-scoped save/search: `apps/web/docs/PUBLIC_API.md`.
+- `apps/web` retains the Next.js predecessor source and its Clerk, Prisma/Neon Postgres, Vercel Blob, Replicate, Sentry and DigitalOcean contracts. The canonical hosted Go origin is `https://sploot.mistystep.io`; running another Go instance does not migrate identities/data or authorize removal of retained providers/gates.
 - `apps/extension` owns WXT capture, instance selection, device-paired bearer auth, store listing and the Chrome Web Store packet. Unpacked output is `apps/extension/dist/chrome-mv3`.
 - `apps/mcp` owns `@sploot/mcp` / `sploot-mcp`.
 - `packages/common` owns shared upload limits, MIME validation and API types. Add shared code in `packages/common/src/`, export it from `index.ts`, and import it as `@sploot/common`.

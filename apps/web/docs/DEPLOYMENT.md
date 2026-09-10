@@ -1,11 +1,127 @@
 # Runtime operations, recovery, and deployment
 
-`apps/server` is the self-contained persistent local Sploot product.
-`apps/web` retains the Next.js predecessor and its provider-specific operations.
-Starting Go does **not** migrate or back up predecessor data. Do not apply the
-predecessor's database/provider settings to Go or replace a deployed service
-as part of a local startup. The explicit offline conversion procedure below
-does not authorize a provider write, deletion, DNS change, or production cutover.
+`apps/server` is the self-contained persistent Sploot product, used by the
+canonical hosted library and separate local installations. `apps/web` retains
+the Next.js predecessor source and provider-specific recovery operations.
+Starting Go does **not** migrate or back up predecessor data. Do not apply
+predecessor database/provider settings to Go or replace a deployed service as
+part of a local startup. The offline conversion procedure does not itself
+authorize provider writes, deletion, DNS changes, or another production cutover.
+
+## Canonical hosted Go instance
+
+The canonical hosted library is `https://sploot.mistystep.io`. Local
+`pnpm dev` libraries remain independent. The production Go binary is pinned
+at `/opt/sploot/releases/e975904b/sploot`, with deployment revision binding
+`e975904b76f777147b7f2cd0c5831ba1644cf440`; its SHA-256 is
+`01ff3b40957073048b0fcbb6c819f01d53f6a1db36519f8f7a63e141b22bb90a`.
+The portable Go build has no embedded VCS field: the immutable artifact hash
+and explicit deployment binding, not a claim about embedded Git metadata,
+identify this release. Later MCP-only source changes do not reidentify this
+Go executable.
+
+Observed production bindings on 2026-09-10:
+
+- Existing exe.dev VM `sploot-pilot.exe.xyz`, 1 vCPU, 2 GiB RAM, 10 GiB disk.
+- Persistent, enabled system `sploot.service`, user/group `sploot`, listening
+  on `0.0.0.0:3001` behind exe.dev HTTPS. `Restart=on-failure`,
+  `TimeoutStopSec=120`, `MemoryMax=1536M`; private filesystem/hardening settings
+  remain enabled.
+- `/etc/sploot/production.env` selects `/var/lib/sploot/production`,
+  `/var/cache/sploot/models`, production exposure, closed registration,
+  enabled uploads and local embeddings. `/opt/sploot/current` selects the
+  same immutable release for recovery.
+- Only the exe.dev **web** gate is public; Sploot authentication protects
+  private APIs/media. SSH, terminal access, existing shares and proxy port
+  were not opened or broadened. Anonymous library requests return `401`.
+- `/etc/sploot/recovery.env` selects the same production directory.
+  `sploot-backup.service` uses the root-protected credential through
+  `LoadCredential`, with `MemoryMax=256M`, `CPUQuota=50%`, idle I/O and `Nice=10`.
+  Exactly one enabled `sploot-backup.timer` uses `OnCalendar=hourly` and
+  `Persistent=true`; there is no separate Sploot cron scheduler.
+- Private R2 bucket `sploot-recovery`: hourly snapshots protected for 72h and
+  expired after 4d; daily snapshots protected for 30d and expired after 31d;
+  the separate complete predecessor archive is retained indefinitely.
+  The decryption identity remains in operator custody, not on the VM.
+
+Check the actual unit, `/api/health/services`, recovery receipt and available
+disk before operating; these dated bindings are not ongoing health evidence.
+Backup currently stages a verified snapshot, tar and age ciphertext at once.
+Account for current SQLite/WAL pages, rounded media files, directories and
+tar/encryption overhead **plus** the configured 1 GiB save reserve. Do not
+lower the reserve or assume this 10 GiB host can accommodate arbitrary growth.
+A successful backup's remote metadata receipt is not independent restore proof.
+
+The extension selects `https://sploot.mistystep.io` explicitly; its development
+default remains loopback. Repository-built MCP defaults to
+`https://sploot.mistystep.io/api` as of merged
+`9d0b34b69b937fba900e9438afb1ea9d56ba82e8` (PR #339); explicit local/self-hosted
+overrides remain supported. Unpacked extension and built MCP acceptance do
+not claim a Web Store, npm publication, or physical Apple-device release.
+
+`SPLOOT_REDIRECT_HOSTS=sploot.app,www.sploot.app` is the explicit native
+legacy-host policy. Those registered HTTPS aliases are browser redirects,
+not another writable API: GET/HEAD browser paths receive `308` to the fixed
+canonical origin, preserving escaped paths and dropping queries; API paths
+and other methods receive `410`. Unlisted Host values receive `421`.
+DNS, alias/TLS readiness and old-record cache horizons must be verified
+separately before retiring a predecessor endpoint.
+
+On 2026-09-10 the exact approved DigitalOcean app
+`68a12c8a-282e-4f1a-84bb-e7c6f074aeaa` was retired after acceptance. Provider
+GET404, list absence and old default-ingress NXDOMAIN were observed. Legacy
+apex A `161.210.95.211` and `www` CNAME `sploot-pilot.exe.xyz`, ten unrelated
+zone records, both trusted HTTPS redirect/410 policies and canonical readiness
+survived deletion. Former provider deploy/rollback recipes below are historical:
+there is no remaining old app to roll back, and they do not authorize recreating
+a Next writer after native saves.
+
+Graceful stop/start, automatic recovery after an exact service-main-process
+SIGKILL, actual VM reboot, and a second reboot with the timer enabled all
+preserved a post-cutover original and credentials. The natural 17:00 UTC
+backup completed at 17:01:32Z; its actual R2 object was independently
+downloaded, hash checked, decrypted and fully verified after synthetic cleanup.
+Minimum sampled free space was 2,023,264,256 bytes, preserving the 1 GiB reserve.
+This is dated evidence, not a guarantee of future growth capacity.
+
+### Controlled rollback after native writes
+
+This is a procedure, not a claim that production was rolled back. Keep
+registration closed and never resume the Next writer or its jobs.
+
+1. Stop the timer; stop and wait for both backup and native services to become
+   inactive. `uploads=false` alone does not freeze account/metadata/deletion
+   writes.
+2. Retain a new private copy of the **entire current** production directory:
+   SQLite, any WAL/SHM/journal, media and `signing.key`, plus environment files,
+   service configuration and release-link target. Encrypt it off-VM and
+   independently extract/compare every file before repair. Never replace it
+   with the old bootstrap or pre-cutover candidate after new saves.
+3. Prefer fixing configuration around the verified native release/current
+   epoch, or restore that verified current epoch into a fresh private target
+   on a repaired host. Never overwrite an active SQLite directory.
+   A portable restore retains passwords/material but deliberately strips
+   sessions, device/PAT/invitation authority and signing key; users sign in,
+   re-pair/re-mint, and unclaimed owners require fresh offline invitations.
+4. Start the proposed native authority on private verification ingress with
+   uploads explicitly disabled. Restrict all verification traffic, since this
+   flag does not pause every mutation. Check current and post-cutover originals,
+   owner isolation, search and canonical routing while the former writer stays
+   stopped.
+5. After acceptance, select the verified directory for the one persistent
+   native service and one backup timer, still with uploads disabled. Prove
+   readiness and encrypted recovery, then restore the approved public web
+   ingress and reopen saves.
+
+The old PostgreSQL/Next state has no reverse conversion of native saves.
+Restoring old DNS is therefore **not** rollback. If current-epoch recovery
+cannot preserve every committed save, retain it and serve maintenance until
+repaired rather than reopen the predecessor. Hourly snapshots provide a
+60-minute RPO objective after total host loss, not a zero-loss guarantee.
+Exact source/runtime acceptance, protected receipt locations, decoder caveats
+and the explicitly bounded retirement decision are recorded in `HANDOFF.md`
+and MIS-46/MIS-47; retained source providers and CI are not removed by this
+procedure.
 
 ## Self-contained Go runtime
 
@@ -70,7 +186,8 @@ The retired `--session`/`--down` disposable launcher is not an operating path.
 ### Acceptance gates
 
 Hosted GitHub [`merge-gate`](../../../.github/workflows/ci.yml) is the ship
-authority. Keep both runtimes' gates until a verified production cutover.
+authority. Native cutover alone does not authorize removal of retained
+predecessor source, database/provider contracts, or CI gates.
 From the repository root, run these local checks in order and record every exit:
 
 ```sh
@@ -272,12 +389,12 @@ mobile browser exercise is not physical iPhone, Apple signing, or Chrome Web
 Store proof. Those release boundaries remain in their owning procedures.
 Run conclusions belong in the work record, not in this operating manual.
 
-## Deployed Next.js predecessor
+## Retained Next.js predecessor
 
-Everything below through [predecessor rollback](#rollback--deployed-nextjs-predecessor)
-describes the unchanged Next.js deployment, not the local Go product.
+Everything below through [predecessor rollback](#rollback--retained-nextjs-predecessor)
+describes retained Next.js procedures, not the canonical Go deployment.
 
-### Runtime dependencies — deployed Next.js predecessor
+### Runtime dependencies — retained Next.js predecessor
 
 - Neon Postgres with pgvector, supplied as `DATABASE_URL`;
 - Vercel Blob, supplied as `BLOB_READ_WRITE_TOKEN`;
@@ -292,7 +409,7 @@ Prisma/pgvector-backed migration and CI gates remain mandatory for this surface;
 without their database evidence, report **DB path unverified**.
 
 
-## required environment — deployed Next.js predecessor
+## required environment — retained Next.js predecessor
 
 ```env
 NODE_ENV=production
@@ -371,7 +488,7 @@ insert. `closed` pauses new accounts. Missing or malformed values fail closed
 in production. Existing users do not pass through this admission check, so
 reads, downloads/exports, and deletes remain available.
 
-## Platform routing health vs deep readiness — deployed Next.js predecessor
+## Platform routing health vs deep readiness — retained Next.js predecessor
 
 DigitalOcean routes the web service on
 `services[name=web].health_check.http_path`, and that path MUST be the
@@ -398,7 +515,7 @@ Next.js uses its shared Prisma client and never disconnects the runtime pool
 globally on a readiness failure. The separate Go runtime probes SQLite and
 sqlite-vec; it does not implement this predecessor limiter/bootstrap probe.
 
-## Automatic DigitalOcean release on merge — predecessor
+## Automatic DigitalOcean release on merge — historical predecessor
 
 The recorded predecessor configuration has `github.deploy_on_push: true` on
 both the `web` service and `web-pre-deploy-migrate` job. That binding was set
@@ -429,7 +546,7 @@ and production migration history before recording acceptance. The separate Go
 route contracts are explicit in [`API.md`](./API.md).
 
 
-## deploy contract — deployed Next.js predecessor
+## deploy contract — retained Next.js predecessor
 
 ```bash
 pnpm install --frozen-lockfile
@@ -453,7 +570,7 @@ migrations only to its pgvector test database and never owns production
 credentials. Migrations are forward-only and additive unless their own SQL
 says otherwise.
 
-## verification — deployed Next.js predecessor
+## verification — retained Next.js predecessor
 
 ```bash
 DEPLOYMENT_URL=https://www.sploot.app pnpm --filter web validate:deployment
@@ -474,7 +591,7 @@ not a verified deployment. the deployed smoke also asserts `/api/health/live`
 answers `alive` — the platform routing probe is explicitly shallow, and the
 deep `/api/health` contract above remains the readiness authority.
 
-## Rollback — deployed Next.js predecessor
+## Rollback — retained Next.js predecessor
 
 for a deliberate application rollback, first set
 `SPLOOT_EMBEDDINGS_ENABLED=false` on the web service and verify the deployed
@@ -513,8 +630,10 @@ media, local model identity, and device protocol are different. The explicit
 offline converter below creates a new native library; starting the server or
 using native backup/restore alone does not perform predecessor conversion.
 
-Keep the existing DigitalOcean service, Next.js artifact, Node PRE_DEPLOY job,
-named Prisma migrations, and vendor data intact. A production migration requires
+Retain Next.js source and artifacts, named Prisma migrations, and vendor data.
+The exact approved DigitalOcean runtime and associated deployments/jobs were
+retired on 2026-09-10; that retirement does not authorize broader removal.
+Any further production migration requires
 separate authorization, source access, an identity/data conversion contract,
 verified original-media recovery, acceptance on the intended origin, and a
 rollback strategy that preserves writes. A local SQLite backup or a green
@@ -686,7 +805,7 @@ directory, verify before startup, then exercise that restored library.
 
 ## Library backup and isolated restore
 
-This procedure recovers the **local SQLite product only**, not the deployed
+This procedure recovers **Go SQLite libraries, local or hosted**, not the retained
 Postgres/Blob library. `library-backup` is an operator full-library utility,
 distinct from the per-owner `/api/library/export` ZIP. The same subcommands
 are available as `sploot backup/resume/verify/restore`.

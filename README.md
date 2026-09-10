@@ -3,17 +3,17 @@
 > **A private library for your memes and screenshots.** Save from anywhere in
 > one click, then find any of them by typing what's in the picture.
 
-**[sploot.app](https://www.sploot.app)**
+**[sploot.mistystep.io](https://sploot.mistystep.io)** — sign-in required; registration is closed.
 
-The deployed predecessor's historical starter-pile walkthrough uses precomputed
+The retained predecessor's historical starter-pile walkthrough uses precomputed
 CLIP vectors (see `docs/design/lab-053-stranger-aha.html`); it is not the local
 runtime's startup or acceptance path:
 
 ![Stranger to aha: landing → starter pile → plain-words search locks the right meme](./docs/demo/stranger-to-aha.gif)
 
-This monorepo contains the self-contained local Go product, the unchanged
-deployed Next.js predecessor, the WXT Chrome extension, MCP server, and shared
-contracts.
+This monorepo contains the self-contained Go product, the retained Next.js
+predecessor source, the WXT Chrome extension, MCP server, and shared contracts.
+The canonical hosted Go instance is separate from local development libraries.
 
 Sploot is a personal meme library with text→image semantic search: save a
 meme once and later find it by describing what's in it — no remembering
@@ -61,6 +61,11 @@ a revocable device credential. Passwords stay on the instance's browser sign-in
 page; the extension does not use Clerk or inherit the browser's session.
 See the [run/load procedure](./apps/extension/README.md).
 
+For the hosted library, select `https://sploot.mistystep.io` in the extension.
+Its development default remains loopback; instance selection is stored in that
+browser profile. MCP's hosted default is `https://sploot.mistystep.io/api`;
+an explicit override still selects a separate local or self-hosted instance.
+
 An unpacked Chromium build and local pairing/capture proof are not a Chrome Web
 Store release. No current submission, live listing, or publication receipt is
 claimed.
@@ -73,7 +78,7 @@ TypeScript clients and predecessor.
 | Workspace | Path | Description |
 |-----------|------|-------------|
 | **Go Server** | [`apps/server`](./apps/server) | Persistent Go HTTP + HTML/HTMX, local accounts, SQLite/sqlite-vec, private media, CPU CLIP. |
-| **Web Predecessor** | [`apps/web`](./apps/web) | Unchanged deployed Next.js app; its Prisma migrations, pgvector gates, and deployment remain separate. |
+| **Web Predecessor** | [`apps/web`](./apps/web) | Retained Next.js source and provider data; Prisma/pgvector and predecessor gates remain separate from native serving. |
 | **Extension** | [`apps/extension`](./apps/extension) | Chrome Extension (WXT) for one-click saving. |
 | **MCP Server** | [`apps/mcp`](./apps/mcp) | `sploot-mcp` — save + search as agent tools over the [published API](./apps/web/docs/PUBLIC_API.md). |
 | **Common** | [`packages/common`](./packages/common) | Shared constants, types, and utilities. |
@@ -213,7 +218,7 @@ We use **Turborepo** to orchestrate tasks.
 - **CI/CD**: GitHub Actions (Lint, Test, Type-check).
 - **Deployment**: 
   - Local Go: persistent data directory and separate reusable model cache.
-  - Retained Next.js predecessor: DigitalOcean App Platform; its provider runtime and retirement are separate from native code deployment.
+  - Retained Next.js predecessor: historical DigitalOcean App Platform runtime retired on2026-09-10; source and provider contracts remain retained, not current serving authority.
   - Extension: Manual submission to Chrome Web Store.
 - **Details**: See [ARCHITECTURE.md](./ARCHITECTURE.md).
 

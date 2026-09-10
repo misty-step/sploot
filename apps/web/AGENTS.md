@@ -4,7 +4,7 @@ Canonical repo instructions are `../../AGENTS.md`. `VISION.md` is optional and i
 
 ## Boundaries
 
-- DigitalOcean App Platform runs the long-lived Next.js service. Neon Postgres + pgvector is durable state. Vercel Blob is the only intentional Vercel dependency. Clerk is identity; Replicate is embeddings; Sentry plus DigitalOcean structured logs are diagnostics. Browser events use first-party `/api/telemetry`.
+- This workspace retains the Next.js predecessor's DigitalOcean, Neon Postgres/pgvector, Vercel Blob, Clerk, Replicate and Sentry contracts. Canonical serving is the separate Go instance at `https://sploot.mistystep.io`; native runtime cutover does not authorize deleting predecessor source, provider data or CI. Historical Next browser events use first-party `/api/telemetry`.
 - Read `docs/adr/010-digitalocean-runtime-controls.md` before changing hosting, caching, embedding limits, or provider surfaces. The provider-retirement gate rejects new compute-provider runtime.
 - Product-facing copy follows root `DESIGN.md`. Do not apply that voice to commits, pull-request text, or engineering docs.
 
