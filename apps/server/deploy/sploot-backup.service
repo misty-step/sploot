@@ -1,0 +1,27 @@
+[Unit]
+Description=Verified encrypted Sploot library recovery
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sploot
+Group=sploot
+EnvironmentFile=/etc/sploot/recovery.env
+LoadCredential=recovery:/etc/sploot/recovery.credentials
+ExecStart=/usr/bin/python3 /opt/sploot/backup-remote.py --data-dir ${SPLOOT_DATA_DIR} --work-dir /var/lib/sploot/recovery-work --backup-command /opt/sploot/current/library-backup --recipient ${SPLOOT_BACKUP_RECIPIENT} --bucket-url ${SPLOOT_BACKUP_BUCKET_URL} --credentials %d/recovery --status-file /var/lib/sploot/recovery-status.json
+WorkingDirectory=/var/lib/sploot
+StateDirectory=sploot
+StateDirectoryMode=0700
+UMask=0077
+TimeoutStartSec=45min
+MemoryMax=256M
+CPUQuota=50%
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+CapabilityBoundingSet=

@@ -201,7 +201,7 @@ func VerifyRestore(ctx context.Context, options RestoreOptions) (Manifest, error
 	if err := target.readJSON("restore.json", &receipt); err != nil {
 		return manifest, err
 	}
-	if receipt.Format != "sploot-library-restore" || receipt.Version != Version || receipt.SnapshotID != manifest.ID || receipt.Database != manifest.Database || receipt.Objects != manifest.ObjectCount || receipt.Bytes != manifest.MediaBytes || receipt.VerifiedAt.IsZero() || receipt.Credentials != credentialPolicy {
+	if receipt.Format != "sploot-library-restore" || receipt.Version != Version || receipt.SnapshotID != manifest.ID || receipt.Database != manifest.Database || receipt.Objects != manifest.ObjectCount || receipt.Bytes != manifest.MediaBytes || receipt.VerifiedAt.IsZero() || receipt.Credentials == "" {
 		return manifest, failure("verify-restore", "restore receipt differs from the verified snapshot")
 	}
 	return manifest, nil

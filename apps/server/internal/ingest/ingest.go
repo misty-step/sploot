@@ -323,7 +323,8 @@ func duplicate(ctx context.Context, tx *sql.Tx, owner, checksum string) (*model.
 	var deleted bool
 	err := tx.QueryRowContext(ctx, `SELECT a.id,a.blob_url,a.pathname,a.mime,a.size,a.checksum_sha256,a.created_at,a.deleted_at IS NOT NULL,
 		NOT EXISTS (SELECT 1 FROM asset_embeddings e WHERE e.asset_id=a.id AND e.owner_user_id=a.owner_user_id AND e.status='ready' AND e.image_embedding IS NOT NULL)
-		FROM assets a WHERE a.owner_user_id=? AND a.checksum_sha256=?`, owner, checksum).Scan(&asset.ID, &asset.BlobURL, &asset.Pathname, &asset.MIMEType, &asset.Size, &asset.Checksum, &asset.CreatedAt, &deleted, &asset.NeedsEmbedding)
+		FROM assets a WHERE a.owner_user_id=? AND a.checksum_sha256=?
+		ORDER BY a.deleted_at IS NOT NULL,a.created_at,a.id LIMIT 1`, owner, checksum).Scan(&asset.ID, &asset.BlobURL, &asset.Pathname, &asset.MIMEType, &asset.Size, &asset.Checksum, &asset.CreatedAt, &deleted, &asset.NeedsEmbedding)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -87,12 +88,28 @@ func videoFixture(t *testing.T) []byte {
 	return data
 }
 
+func isoVideoFixture(t *testing.T) []byte {
+	t.Helper()
+	data := videoFixture(t)
+	boxSize := int(binary.BigEndian.Uint32(data[:4]))
+	if boxSize > len(data) || string(data[4:8]) != "ftyp" {
+		t.Fatal("video fixture has no leading file-type box")
+	}
+	for offset := 16; offset+4 <= boxSize; offset += 4 {
+		if string(data[offset:offset+3]) == "mp4" {
+			copy(data[offset:offset+4], "iso4")
+		}
+	}
+	return data
+}
+
 func TestOriginalsAndReceiptsSurviveRestart(t *testing.T) {
 	for _, media := range []struct {
 		name, mime string
 		fixture    func(*testing.T) []byte
 	}{
 		{"still.png", "image/png", pngFixture}, {"animation.gif", "image/gif", func(t *testing.T) []byte { return animatedFixture(t, 230) }}, {"video.mp4", "video/mp4", videoFixture},
+		{"iso-video.mp4", "video/mp4", isoVideoFixture},
 	} {
 		t.Run(media.name, func(t *testing.T) {
 			db, owner, directory := ingestionDatabase(t)

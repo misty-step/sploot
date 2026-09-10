@@ -11,6 +11,8 @@ import (
 func (s *Server) registerAuthRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/register", s.authRegister)
 	mux.HandleFunc("POST /api/auth/login", s.authLogin)
+	mux.HandleFunc("POST /api/auth/claim", s.authClaim)
+	mux.HandleFunc("GET /claim", s.claimPage)
 	mux.HandleFunc("POST /api/auth/logout", s.securedBrowser(s.authLogout))
 	mux.HandleFunc("GET /api/auth/session", s.secured(false, s.authSession))
 	mux.HandleFunc("POST /api/auth/password", s.securedBrowser(s.authPassword))
@@ -65,6 +67,33 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auth.SetSessionCookie(w, session)
 	s.json(w, http.StatusOK, map[string]any{"user": session.User})
+}
+
+func (s *Server) authClaim(w http.ResponseWriter, r *http.Request) {
+	if err := s.auth.CheckBrowserRequest(r); err != nil {
+		s.failure(w, r, err)
+		return
+	}
+	var input struct {
+		UserID   string `json:"userId"`
+		Token    string `json:"token"`
+		Password string `json:"password"`
+	}
+	if err := decodeAuthJSON(w, r, &input); err != nil {
+		s.failure(w, r, err)
+		return
+	}
+	session, err := s.auth.ClaimInvitation(r, input.UserID, input.Token, input.Password)
+	if err != nil {
+		s.failure(w, r, err)
+		return
+	}
+	s.auth.SetSessionCookie(w, session)
+	s.json(w, http.StatusOK, map[string]any{"user": session.User})
+}
+
+func (s *Server) claimPage(w http.ResponseWriter, r *http.Request) {
+	s.render(w, r, http.StatusOK, "claim", s.pageData("Set your password · Sploot", nil))
 }
 
 func (s *Server) authSession(w http.ResponseWriter, r *http.Request, principal model.Principal) {

@@ -1,11 +1,11 @@
 # Runtime operations, recovery, and deployment
 
 `apps/server` is the self-contained persistent local Sploot product.
-`apps/web` remains the deployed Next.js predecessor at
-`https://www.sploot.app`. **Existing production and the old real library are
-unchanged, not migrated, and not backed up by the local acceptance exercise.**
-Do not apply the predecessor's database/provider settings to Go or replace the
-DigitalOcean service as part of a local startup.
+`apps/web` retains the Next.js predecessor and its provider-specific operations.
+Starting Go does **not** migrate or back up predecessor data. Do not apply the
+predecessor's database/provider settings to Go or replace a deployed service
+as part of a local startup. The explicit offline conversion procedure below
+does not authorize a provider write, deletion, DNS change, or production cutover.
 
 ## Self-contained Go runtime
 
@@ -507,10 +507,10 @@ declaring the bootstrap ready.
 ## Production migration boundary
 
 The self-contained Go product is **not** a drop-in runtime replacement on the
-existing Postgres/Clerk/Blob authorities. Its SQLite schema, password accounts,
-private media, local model identity, and device protocol are different. There
-is no supported command here to import the old real library or rebind existing
-identities. The former Go-on-Postgres spec-edit procedure is obsolete.
+Postgres/Clerk/Blob authorities. Its SQLite schema, password accounts, private
+media, local model identity, and device protocol are different. The explicit
+offline converter below creates a new native library; starting the server or
+using native backup/restore alone does not perform predecessor conversion.
 
 Keep the existing DigitalOcean service, Next.js artifact, Node PRE_DEPLOY job,
 named Prisma migrations, and vendor data intact. A production migration requires
@@ -519,6 +519,167 @@ verified original-media recovery, acceptance on the intended origin, and a
 rollback strategy that preserves writes. A local SQLite backup or a green
 browser smoke is not evidence for any of those source-library obligations.
 The existing deployment lifecycle automation remains predecessor-specific.
+
+### Offline predecessor conversion
+
+`sploot import-predecessor` consumes three private inputs:
+
+1. A complete capture root with `capture.json`, schema/retrieval artifacts and
+   every downloaded object. Schema is `sploot.predecessor.capture.v1`; `tables`
+   maps exact public PostgreSQL table names to untouched `row_to_json` rows,
+   `clerkUsers` contains complete Clerk REST user JSON, and `objects` contains
+   `{url,pathname,size,sha256,path}` with measured stored-byte receipts.
+   `completeness.database`, `.clerk`, `.objects`, and `.verified` must all be true.
+   `counts.tables`, `.users`, `.assets`, `.clerkUsers`, `.objects`, and `.bytes`
+   must match the captured collections. All public tables, not just native
+   product tables, belong in the capture. Its JSON is bounded to 256 MiB.
+2. A **stopped, consistent native base clone**, including `library.sqlite`,
+   `signing.key` and media. It must have no SQLite WAL, SHM or rollback journal.
+   The importer copies files without opening source SQLite and never modifies
+   this base. A normal portable backup is not a substitute: it strips the
+   sessions and signing secret this operation is required to preserve.
+3. A private JSON mapping with schema `sploot.predecessor.mapping.v1`.
+   `owners` must enumerate the complete union of DB and Clerk identities.
+   `{sourceUserId,targetUserId}` selects an existing base account by exact ID.
+   `{sourceUserId}` creates a separate account preserving that source ID;
+   optional `loginEmail` is an explicit login-identifier override for collisions
+   or missing email. Two source identities cannot map to the same target.
+   No email is compared to infer an existing-account link.
+
+Every directory is current-user-owned mode0700 and every input file is a
+mode0600 regular file. Symlink components are rejected. Source, base, target
+and archive must be separate; target/archive must be new and outside Git.
+The claims file must also be new, in a separate private parent outside those
+directories and Git. Allocate space for the whole source archive, native media,
+generated posters, database, and the later backup/restore exercise.
+
+From the repository root, after building:
+
+```sh
+apps/server/build/sploot import-predecessor \
+  --capture-directory "$CAPTURE" \
+  --base-directory "$OFFLINE_BASE" \
+  --mapping-file "$PRIVATE_OWNER_MAPPING" \
+  --target-data-dir "$NEW_NATIVE_LIBRARY" \
+  --archive-directory "$NEW_SOURCE_ARCHIVE" \
+  --claims-file "$NEW_PRIVATE_CLAIM_LINKS" \
+  --base-url https://sploot.example.net \
+  --invitation-lifetime 24h
+```
+
+This command has no network/provider authority and sends no email. It verifies
+every captured hash/size, preserves the entire capture tree in the separate
+archive, and records the exact capture JSON, mapping and conversion report in
+the private native `predecessor_imports` table. Neither that table nor the raw
+source archive is exposed by owner media/search/export APIs.
+
+Native asset IDs, ownership, created/updated/deleted timestamps, favorites,
+shuffle keys, valid public slugs, tags and links are retained. Main media files
+are **exact current stored bytes**, with native size/checksum and storage
+receipts measured from those bytes. Historical upload receipts remain untouched
+in provenance; transformed stored bytes are never described as byte-identical
+historical uploads. Source dimensions remain in capture; native dimensions and
+genuine JPEG posters come from the same constrained FFmpeg/ffprobe decoder as
+uploads, without rewriting main files. All new embeddings are pending local
+512-D work, including deferred trash; no old 768-D vector becomes native ready.
+Native MIME and filename extensions describe the stored bytes, not a stale
+historical upload label. Standard ISO MP4 brands pass the same constrained
+video decoder used by new uploads. Prisma timestamp-without-zone values retain
+their UTC meaning and fractional precision; untouched source JSON remains provenance.
+
+Different predecessor IDs may have identical canonical bytes after historical
+transforms. Native schema preserves each identity with its own path, timestamps,
+favorites, shares and trash state. It indexes owner/checksum without enforcing
+identity uniqueness by content; ordinary saves still deduplicate atomically
+inside immediate SQLite writer transactions, choosing a live match before trash
+and then the earliest created ID deterministically. The private report records
+canonical duplicate groups, historical-original recovery candidates, and
+unassigned objects. Recovered originals and unassigned blobs stay in the
+nonsearchable source archive; they are not guessed into an owner's collection.
+
+An invalid, conflicting or trashed share stops import with a private issue.
+Resolve it explicitly in mapping `shares`, for example
+`{assetId,action:"replace",slug:"valid-new-slug",reason:"operator decision"}`
+or `{assetId,action:"revoke",reason:"operator decision"}`. The original share and
+decision remain in provenance; no incompatible share is silently dropped.
+Compatible `/s/{slug}` and `/m/{id}` links exist on the new origin only until
+separate redirect/cutover work establishes old-domain continuity.
+
+Mapped accounts retain their existing password hashes, signing key and native
+sessions. All other identities receive unusable password markers and separate
+one-use invitations. The private claims JSON contains the only plaintext links;
+the database stores token hashes, a one-minute-to-seven-day expiry and consumption
+state. Opening a link does not consume it. The same-origin password claim is
+transactional, owner-fenced and uses the ordinary password/cookie conventions.
+Registration can remain closed. Protect and deliver these links individually
+through an authorized channel; do not paste them into logs or issue trackers.
+
+To replace an expired invitation, stop the relevant native instance first:
+
+```sh
+apps/server/build/sploot invite-owner \
+  --data-dir "$OFFLINE_NATIVE_LIBRARY" \
+  --user-id "$UNCLAIMED_NATIVE_ID" \
+  --base-url https://sploot.example.net \
+  --claims-file "$NEW_PRIVATE_CLAIM_LINKS" \
+  --invitation-lifetime 24h
+```
+
+This operator action rotates only an unclaimed account's token; it cannot reset
+an activated account's password. The instance must be offline without SQLite
+sidecars. No automatic mail or general password-reset service is provided.
+This also works immediately after a portable restore, before its first server
+startup: invitation issuance requires an offline database, not the signing key
+deliberately excluded from snapshots. The server generates its new key on startup.
+
+The importer stages privately and publishes the target with atomic no-replace
+rename only after native media/recovery checks. On rejection, no partial target
+or claim file is published; retain the new archive's `import-report.json`,
+resolve the actual failure and use fresh output names. A failure after the final
+publication/durability boundary requires inspecting the complete target and
+private report rather than deleting or overwriting it.
+
+Before promotion, run native backup, verify, isolated restore and target verify
+below on the actual converted library, then exercise account isolation,
+downloads, JPEG posters, shares, trash, password claims and real local indexing
+on the intended origin. **Back up/encrypt the separate complete source archive
+as well as the native snapshot**, and verify independent recovery before any
+predecessor retirement. The native backup preserves embedded source metadata,
+but deliberately does not include the external archive or plaintext claim links.
+Portable restore strips invitations and sessions; unclaimed accounts require
+fresh offline invitations after restore.
+
+### Scheduled encrypted remote snapshots
+
+`apps/server/scripts/backup-remote.py` runs the native backup and verification
+commands, encrypts the complete snapshot with an age public recipient, uploads
+to private R2, and checks remote size/SHA-256 metadata before recording success.
+It requires Python3, boto3, age, tar and the built `library-backup`.
+The decryption identity belongs in separate operator custody, never on the VM.
+
+The `apps/server/deploy/sploot-backup.service` and `.timer` templates run one
+hourly scheduler as the `sploot` user. Install the runner at
+`/opt/sploot/backup-remote.py`, point `/opt/sploot/current` at the selected release,
+and supply a root-owned mode0600 `/etc/sploot/recovery.env` containing
+`SPLOOT_DATA_DIR`, `SPLOOT_BACKUP_RECIPIENT` and
+`SPLOOT_BACKUP_BUCKET_URL=https://<account-id>.r2.cloudflarestorage.com/sploot-recovery`.
+Supply a separately protected `/etc/sploot/recovery.credentials` in AWS INI
+format (`[default]`, `aws_access_key_id`, `aws_secret_access_key`), restricted
+to the recovery bucket. Systemd passes it through `LoadCredential`; no secret
+belongs in command arguments or the public recipient setting.
+
+Enable only the intended production scheduler, never a preview or VM clone.
+Hourly objects use `production/hourly/`; the first successful run each UTC day
+also uploads a distinct `production/daily/` object. Configure bucket locks and
+lifecycle rules separately: hourly protection72h/expiry4d, daily
+protection30d/expiry31d, preserving unrelated rules. Retain the encrypted full
+predecessor capture separately under protected `predecessor/`.
+
+Run the service once and inspect `/var/lib/sploot/recovery-status.json` before
+enabling the timer. A failed attempt writes the adjacent `.failure` receipt and
+does not replace the last successful receipt. A fresh upload/HEAD receipt is
+not restore proof: download independently, decrypt, restore into a new private
+directory, verify before startup, then exercise that restored library.
 
 ## Library backup and isolated restore
 
@@ -538,10 +699,11 @@ state. Interrupted indexing claims become pending; in-progress upload leases
 are not portable completed receipts.
 
 **Portable recovery deliberately invalidates credentials on the restored
-copy.** Browser/device sessions, pairing requests, personal upload tokens, and
-authentication attempts are removed; `signing.key` is excluded. Users retain
-their passwords but must sign in, mint new `splt_` tokens, and pair devices
-again. The restored server creates a fresh signing key. Source accounts and
+copy.** Browser/device sessions, pairing requests, personal upload tokens,
+account invitations and authentication attempts are removed; `signing.key` is
+excluded. Users retain passwords but must sign in, mint new `splt_` tokens,
+and pair devices again; unclaimed accounts need new operator invitations.
+The restored server creates a fresh signing key. Source accounts and
 credentials are untouched by backup/restore. Model files are a separately
 reusable cache, not private-library backup contents.
 

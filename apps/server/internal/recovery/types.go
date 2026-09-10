@@ -14,7 +14,7 @@ import (
 
 const Format = "sploot-library-backup"
 const Version = 2
-const credentialPolicy = "Account password hashes retained; browser sessions, device sessions, device requests, upload tokens and auth attempts removed; signing secret excluded."
+const credentialPolicy = "Account password hashes retained; browser sessions, device sessions, device requests, upload tokens, account invitations and auth attempts removed; signing secret excluded."
 
 type Options struct {
 	DataDirectory  string

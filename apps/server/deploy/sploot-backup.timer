@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly Sploot recovery with missed-run catchup
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+AccuracySec=1s
+Unit=sploot-backup.service
+
+[Install]
+WantedBy=timers.target

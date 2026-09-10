@@ -174,7 +174,7 @@ func (s *Server) checkUpload(w http.ResponseWriter, r *http.Request, p model.Pri
 		return
 	}
 	var id string
-	err := s.db.QueryRowContext(r.Context(), `SELECT id FROM assets WHERE owner_user_id=? AND checksum_sha256=? AND deleted_at IS NULL`, p.UserID, checksum).Scan(&id)
+	err := s.db.QueryRowContext(r.Context(), `SELECT id FROM assets WHERE owner_user_id=? AND checksum_sha256=? AND deleted_at IS NULL ORDER BY created_at,id LIMIT 1`, p.UserID, checksum).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		s.json(w, 200, map[string]bool{"exists": false, "isDuplicate": false})
 		return

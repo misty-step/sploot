@@ -7,9 +7,10 @@ product: Go HTTP, server-rendered HTML/HTMX, local accounts, SQLite/sqlite-vec,
 private filesystem media, and CPU CLIP inference. `apps/web` remains the
 deployed Next.js predecessor with its existing vendor services and data.
 
-The Go product does not connect to or migrate the old real library. Existing
-production, Clerk identities, Postgres/pgvector data, Blob media, and deployment
-are unchanged. Local acceptance is not production cutover or migration proof.
+Starting Go does not connect to or alter the predecessor's identities or data.
+The explicit offline converter consumes a complete private capture and an
+operator-supplied owner map, publishing a new native library and separate source
+archive. Local acceptance is not production cutover or migration authorization.
 Chrome capture uses TypeScript/WXT device pairing; MCP and the unsigned iPhone
 Shortcut source use the published token-scoped save/search contract.
 
@@ -202,16 +203,20 @@ that interruption. Keep deletion paused until that snapshot is complete.
 
 Accounts/password hashes, IDs, metadata, vectors, tags, trash, public slugs,
 and completed receipts survive recovery. Portable snapshots remove browser
-and device sessions, pairing requests, personal upload tokens, authentication
-attempts, and the signing key. Restored users sign in with their passwords,
+and device sessions, pairing requests, personal upload tokens, account invitations,
+authentication attempts, and the signing key. Restored users sign in with their passwords,
 mint new personal tokens, and pair devices again; this does not revoke
 credentials on the untouched source.
 
 [Deployment and recovery](./apps/web/docs/DEPLOYMENT.md#library-backup-and-isolated-restore)
 owns commands, directory privacy, and exact parity-before-start requirements.
-This format is for the local SQLite product, not an importer or backup of the
-old Postgres/Blob library. A production migration/cutover needs its own
-explicitly authorized data/identity/recovery design and acceptance.
+Native snapshots do not replace the complete predecessor archive.
+`internal/predecessor` owns offline conversion: explicit owner mapping, exact
+stored bytes, historical provenance, per-asset identity even when content
+matches, and one-use password claims for separate unactivated accounts.
+Unclaimed restored accounts receive new offline invitations; the server generates
+a fresh signing key at startup. Conversion never contacts old providers.
+Production cutover requires independent source/native recovery and one write authority.
 
 ## Key Decisions
 

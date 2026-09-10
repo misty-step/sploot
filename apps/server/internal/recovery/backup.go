@@ -145,7 +145,7 @@ func readManifest(dir *snapshotDirectory, complete bool) (Manifest, error) {
 	if err := dir.readJSON("manifest.json", &manifest); err != nil {
 		return manifest, err
 	}
-	if manifest.Format != Format || manifest.Version != Version || !validSnapshotID(manifest.ID) || !validSHA(manifest.SourceID) || manifest.CreatedAt.IsZero() || manifest.Database.Path != "library.sqlite" || manifest.Database.Bytes <= 0 || !validSHA(manifest.Database.SHA256) || manifest.Credentials != credentialPolicy || manifest.Phase != "database-ready" && manifest.Phase != "complete" || manifest.AssetCount < 0 || manifest.ObjectCount < 0 || manifest.MediaBytes < 0 {
+	if manifest.Format != Format || manifest.Version != Version || !validSnapshotID(manifest.ID) || !validSHA(manifest.SourceID) || manifest.CreatedAt.IsZero() || manifest.Database.Path != "library.sqlite" || manifest.Database.Bytes <= 0 || !validSHA(manifest.Database.SHA256) || manifest.Credentials == "" || manifest.Phase != "database-ready" && manifest.Phase != "complete" || manifest.AssetCount < 0 || manifest.ObjectCount < 0 || manifest.MediaBytes < 0 {
 		return manifest, failure("snapshot", "invalid or unsupported portable snapshot manifest")
 	}
 	if manifest.Phase == "complete" && (manifest.CompletedAt == nil || manifest.Media == nil || manifest.Media.Path != "media.ndjson") || complete && manifest.Phase != "complete" {

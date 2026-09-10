@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -43,6 +44,21 @@ func normalizeMIME(value string) string {
 		return "image/jpeg"
 	}
 	return value
+}
+
+// DetectMediaMIME recognizes ISO MP4 brands that net/http omits. Signature
+// recognition never replaces the constrained video-stream decoder below.
+func DetectMediaMIME(header []byte) string {
+	if len(header) >= 16 && string(header[4:8]) == "ftyp" {
+		size := binary.BigEndian.Uint32(header[:4])
+		if size >= 16 && size%4 == 0 && uint64(size) <= uint64(len(header)) {
+			switch string(header[8:12]) {
+			case "isom", "iso2", "iso3", "iso4", "iso5", "iso6", "iso7", "iso8", "iso9", "avc1", "dash", "M4V ", "MSNV":
+				return "video/mp4"
+			}
+		}
+	}
+	return normalizeMIME(http.DetectContentType(header))
 }
 
 func extension(mime string) string {
@@ -118,7 +134,7 @@ func spool(ctx context.Context, directory string, reader io.Reader, mime string)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return mediaFile{}, err
 	}
-	if normalizeMIME(http.DetectContentType(header[:read])) != mime {
+	if DetectMediaMIME(header[:read]) != mime {
 		return mediaFile{}, invalid("The file bytes do not match a supported media type")
 	}
 	return mediaFile{path: file.Name(), size: n, checksum: hex.EncodeToString(hash.Sum(nil)), mime: mime}, nil
