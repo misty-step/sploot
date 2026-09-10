@@ -46,7 +46,7 @@
     "react-dom": "^19.2.6",
     "sharp": "^0.34.5",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.7",
+    "vitest": "^4.1.11",
     "wxt": "^0.20.26"
   },
   "dependencies": {
