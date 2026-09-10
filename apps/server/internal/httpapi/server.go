@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -180,12 +181,37 @@ func (s *Server) securedBrowser(handler func(http.ResponseWriter, *http.Request,
 
 func (s *Server) boundary(next http.Handler) http.Handler {
 	base, _ := url.Parse(s.config.BaseURL)
+	baseHost, basePort, _ := net.SplitHostPort(base.Host)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.EqualFold(r.Host, base.Host) {
 			incomingHost, incomingPort, _ := net.SplitHostPort(r.Host)
-			baseHost, basePort, _ := net.SplitHostPort(base.Host)
 			if (r.Method == http.MethodGet || r.Method == http.MethodHead) && incomingPort == basePort && isLoopbackHost(incomingHost) && isLoopbackHost(baseHost) {
 				http.Redirect(w, r, s.config.BaseURL+r.URL.RequestURI(), http.StatusTemporaryRedirect)
+				return
+			}
+			if incomingHost == "" {
+				incomingHost = r.Host
+			}
+			for _, host := range s.config.RedirectHosts {
+				if !strings.EqualFold(incomingHost, host) {
+					continue
+				}
+				w.Header().Set("Referrer-Policy", "no-referrer")
+				browserRequest := (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.URL.Path != "/api" && !strings.HasPrefix(r.URL.Path, "/api/")
+				if browserRequest {
+					// Do not let path normalization turn a browser redirect into an API request.
+					requestPath := path.Clean(r.URL.Path)
+					browserRequest = requestPath != "/api" && !strings.HasPrefix(requestPath, "/api/")
+				}
+				if !browserRequest {
+					s.json(w, http.StatusGone, model.APIError{
+						Message: "This address no longer accepts API requests or changes. Use the configured application address.",
+						Code:    "legacy_host_retired",
+					})
+					return
+				}
+				w.Header().Set("Cache-Control", "no-store")
+				http.Redirect(w, r, s.config.BaseURL+r.URL.EscapedPath(), http.StatusPermanentRedirect)
 				return
 			}
 			s.json(w, http.StatusMisdirectedRequest, map[string]string{"error": "Use this application's configured address", "code": "invalid_host"})

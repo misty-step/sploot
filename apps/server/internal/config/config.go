@@ -16,6 +16,7 @@ import (
 type Config struct {
 	Address             string
 	BaseURL             string
+	RedirectHosts       []string
 	Environment         string
 	Revision            string
 	DataDirectory       string
@@ -88,6 +89,10 @@ func Load(envFile string) (Config, error) {
 	base.Host = strings.ToLower(base.Host)
 	base.Path = ""
 	c.BaseURL = base.String()
+	c.RedirectHosts, err = parseRedirectHosts(os.Getenv("SPLOOT_REDIRECT_HOSTS"))
+	if err != nil {
+		return c, err
+	}
 	for _, setting := range []struct {
 		name     string
 		target   *int64
@@ -156,6 +161,32 @@ func Load(envFile string) (Config, error) {
 		return c, err
 	}
 	return c, nil
+}
+
+func parseRedirectHosts(value string) ([]string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	hosts := strings.Split(value, ",")
+	for i, host := range hosts {
+		host = strings.TrimSpace(host)
+		if len(host) == 0 || len(host) > 253 || net.ParseIP(host) != nil {
+			return nil, errors.New("SPLOOT_REDIRECT_HOSTS must contain only comma-separated DNS hostnames")
+		}
+		for label := range strings.SplitSeq(host, ".") {
+			if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+				return nil, errors.New("SPLOOT_REDIRECT_HOSTS must contain only comma-separated DNS hostnames")
+			}
+			for _, character := range label {
+				if character != '-' && (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') && (character < '0' || character > '9') {
+					return nil, errors.New("SPLOOT_REDIRECT_HOSTS must contain only comma-separated DNS hostnames")
+				}
+			}
+		}
+		hosts[i] = strings.ToLower(host)
+	}
+	return hosts, nil
 }
 
 func loopback(host string) bool {
@@ -242,7 +273,7 @@ func loadFile(path string) error {
 			return fmt.Errorf("invalid environment assignment on line %d", line)
 		}
 		switch key {
-		case "SPLOOT_LISTEN_ADDR", "SPLOOT_BASE_URL", "SPLOOT_DEPLOYMENT_ENV", "SPLOOT_DEPLOYMENT_COMMIT",
+		case "SPLOOT_LISTEN_ADDR", "SPLOOT_BASE_URL", "SPLOOT_REDIRECT_HOSTS", "SPLOOT_DEPLOYMENT_ENV", "SPLOOT_DEPLOYMENT_COMMIT",
 			"SPLOOT_DATA_DIR", "SPLOOT_MODEL_DIR", "SPLOOT_UPLOADS_ENABLED", "SPLOOT_EMBEDDINGS_ENABLED",
 			"SPLOOT_REGISTRATION_OPEN", "SENTRY_DSN", "PORT":
 		default:

@@ -132,6 +132,7 @@ apps/server/build/sploot serve \
 | `SPLOOT_MODEL_DIR` / `--model-dir` | Separate reusable artifact cache; default OS user-cache directory plus `sploot/models`. It is not a library or a backup destination. |
 | `SPLOOT_LISTEN_ADDR` / `--listen` | Default `127.0.0.1:3001`. `--port` selects another loopback port and cannot be combined with `--listen`; `PORT` supplies the fallback port when no listen address is set. |
 | `SPLOOT_BASE_URL` / `--base-url` | Exact canonical browser/API origin. Derived from a loopback listen address by default. Off-loopback access requires explicit HTTPS; hosted environments require HTTPS even on loopback. Preserve this Host through a proxy. |
+| `SPLOOT_REDIRECT_HOSTS` | Optional comma-separated legacy DNS hostnames, without schemes, ports or wildcards. Their GET/HEAD browser paths redirect permanently to the canonical origin with query strings discarded. API paths and other methods return 410; unlisted hosts remain rejected. Configure DNS and proxy aliases separately. |
 | `SPLOOT_REGISTRATION_OPEN` | `true` by default only for loopback development/test. Nonlocal/hosted access requires an explicit `true` or `false`. Closing registration does not revoke existing accounts. |
 | `SPLOOT_UPLOADS_ENABLED` | `true` by default; `false` pauses saves, not metadata edits, deletion, downloads, or export. |
 | `SPLOOT_EMBEDDINGS_ENABLED` | `true` by default; `false` disables new local indexing/query embeddings. It is an explicit operational pause, not the ordinary startup mode. |
@@ -665,8 +666,10 @@ and supply a root-owned mode0600 `/etc/sploot/recovery.env` containing
 `SPLOOT_BACKUP_BUCKET_URL=https://<account-id>.r2.cloudflarestorage.com/sploot-recovery`.
 Supply a separately protected `/etc/sploot/recovery.credentials` in AWS INI
 format (`[default]`, `aws_access_key_id`, `aws_secret_access_key`), restricted
-to the recovery bucket. Systemd passes it through `LoadCredential`; no secret
-belongs in command arguments or the public recipient setting.
+to the recovery bucket. Systemd passes it through `LoadCredential`; the runner
+accepts its root-owned, read-only ACL credential inside `CREDENTIALS_DIRECTORY`.
+Standalone credential files must remain owner-only. No secret belongs in command
+arguments or the public recipient setting.
 
 Enable only the intended production scheduler, never a preview or VM clone.
 Hourly objects use `production/hourly/`; the first successful run each UTC day

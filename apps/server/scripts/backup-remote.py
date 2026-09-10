@@ -63,8 +63,17 @@ def main():
     args.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     if args.work_dir.is_symlink() or args.work_dir.stat().st_mode & 0o077:
         parser.error('work directory must be a private, real directory')
+    credential_directory = os.environ.get('CREDENTIALS_DIRECTORY')
+    credential_stat = args.credentials.stat()
+    # systemd grants the service read access through an ACL; its mask is 0440.
+    managed_credential = (
+        credential_directory
+        and args.credentials.parent == Path(credential_directory)
+        and credential_stat.st_uid == 0
+        and credential_stat.st_mode & 0o777 == 0o440
+    )
     if (args.credentials.is_symlink() or not args.credentials.is_file()
-            or args.credentials.stat().st_mode & 0o077):
+            or (credential_stat.st_mode & 0o077 and not managed_credential)):
         parser.error('storage credentials must be a private, real file')
     credentials = configparser.ConfigParser(interpolation=None)
     credentials.read(args.credentials)
