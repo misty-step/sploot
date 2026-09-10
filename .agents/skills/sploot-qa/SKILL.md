@@ -6,7 +6,7 @@ argument-hint: "[web|api|extension|route|feature]"
 
 # Sploot QA
 
-Invoke as `/sploot-qa`. Exercise the changed surface against a running app. Unit-test
+In OMP invoke as `/skill:sploot-qa` (other skill-aware clients may use `/sploot-qa`). Exercise the changed surface against a running app. Unit-test
 success does not prove that the web grid renders, semantic search returns
 results, or upload persists.
 
@@ -25,6 +25,11 @@ text-to-image result → favorite/tag. Relevant routes include `/app/search`,
 `/app/upload`, `/app/settings`, `/app/tags`, and `/app/meme`.
 
 ## Local runtime
+
+For fresh isolated Go setup, source/binary identity, the existing stories'
+correctness criteria, discovery and bounded cleanup, load [local-go.md](local-go.md).
+It complements the runtime manual; it does not add another runner or replace
+the retained Next/extension procedures below.
 
 The ordinary application is persistent, not a seeded QA session:
 
