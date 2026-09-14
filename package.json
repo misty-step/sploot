@@ -6,6 +6,7 @@
     "overrides": {
       "handlebars": "4.7.9",
       "js-cookie": "3.0.7",
+      "js-yaml@<4.3.2": "4.3.2",
       "postcss@<8.5.10": "8.5.15",
       "serialize-javascript@<=7.0.2": "7.0.5",
       "shell-quote@<1.8.4": "1.8.4",
