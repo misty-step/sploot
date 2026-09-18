@@ -132,7 +132,7 @@ func (s *Service) Update(ctx context.Context, owner, id string, update AssetUpda
 	var names []string
 	if update.Tags != nil {
 		var err error
-		names, err = normalizeTagNames(*update.Tags, contract.TagMaxPerAsset)
+		names, err = NormalizeTagNames(*update.Tags, contract.TagMaxPerAsset)
 		if err != nil {
 			return model.Asset{}, err
 		}

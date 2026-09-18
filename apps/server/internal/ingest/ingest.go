@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/misty-step/sploot/apps/server/internal/contract"
+	"github.com/misty-step/sploot/apps/server/internal/library"
 	"github.com/misty-step/sploot/apps/server/internal/medialock"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
@@ -342,6 +343,21 @@ func duplicate(ctx context.Context, tx *sql.Tx, owner, checksum string) (*model.
 		message = "This media already exists in your trash; restore it to browse it"
 	}
 	return &model.UploadResponse{Success: true, Asset: &asset, Message: message, IsDuplicate: true}, nil
+}
+
+func sanitizeTags(input []string) ([]string, error) {
+	if len(input) > contract.TagMaxRequestItems {
+		return nil, invalid("Too many tags")
+	}
+	// Library owns tag identity. Upload keeps its invalid_upload messages.
+	tags, err := library.NormalizeTagNames(input, contract.TagMaxRequestItems)
+	if err != nil {
+		return nil, invalid("A tag name is empty or too long")
+	}
+	if len(tags) > contract.TagMaxPerAsset {
+		return nil, invalid("Too many tags on this asset")
+	}
+	return tags, nil
 }
 
 func admitTags(ctx context.Context, tx *sql.Tx, owner string, names []string) error {

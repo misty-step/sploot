@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/misty-step/sploot/apps/server/internal/contract"
 )
@@ -249,34 +248,4 @@ func (b *limitedBuffer) Write(value []byte) (int, error) {
 		return 0, errors.New("media output exceeds its bound")
 	}
 	return b.buffer.Write(value)
-}
-
-func sanitizeTags(input []string) ([]string, error) {
-	if len(input) > contract.TagMaxRequestItems {
-		return nil, invalid("Too many tags")
-	}
-	tags := make([]string, 0, len(input))
-	seen := make(map[string]bool, len(input))
-	for _, value := range input {
-		value = strings.TrimSpace(value)
-		// JavaScript's shared length bound counts UTF-16 code units.
-		length := 0
-		for _, r := range value {
-			length++
-			if r > 0xffff {
-				length++
-			}
-		}
-		if !utf8.ValidString(value) || strings.ContainsRune(value, 0) || length == 0 || length > contract.TagMaxNameLength {
-			return nil, invalid("A tag name is empty or too long")
-		}
-		if !seen[value] {
-			tags = append(tags, value)
-			seen[value] = true
-		}
-	}
-	if len(tags) > contract.TagMaxPerAsset {
-		return nil, invalid("Too many tags on this asset")
-	}
-	return tags, nil
 }

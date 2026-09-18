@@ -109,7 +109,7 @@ func (s *Service) TagDetails(ctx context.Context, owner string) ([]TagDetail, er
 
 func (s *Service) CreateTag(ctx context.Context, owner, name string, color *string) (TagDetail, error) {
 	var tag TagDetail
-	normalized, err := normalizeTagName(name)
+	normalized, err := NormalizeTagName(name)
 	if err != nil {
 		return tag, err
 	}
@@ -154,7 +154,7 @@ func (s *Service) UpdateTag(ctx context.Context, owner, id string, update TagUpd
 		return tag, err
 	}
 	if update.Name != nil {
-		name, err := normalizeTagName(*update.Name)
+		name, err := NormalizeTagName(*update.Name)
 		if err != nil {
 			return tag, err
 		}
@@ -230,7 +230,7 @@ func (s *Service) AddTags(ctx context.Context, owner, id string, tagIDs, tagName
 	if err := validateTagIDs(tagIDs); err != nil {
 		return nil, err
 	}
-	names, err := normalizeTagNames(tagNames, contract.TagMaxRequestItems)
+	names, err := NormalizeTagNames(tagNames, contract.TagMaxRequestItems)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +371,10 @@ func checkTagLimit(ctx context.Context, tx *sql.Tx, owner string) error {
 	return nil
 }
 
-func normalizeTagName(name string) (string, error) {
+// NormalizeTagName is the single tag-name identity: ECMAScript trim plus
+// JavaScript toLowerCase. Upload, PATCH, and later associations must share it
+// or mixed-case and Unicode names split into duplicate tags.
+func NormalizeTagName(name string) (string, error) {
 	name = trimClientWhitespace(name)
 	if name == "" || !utf8.ValidString(name) || strings.ContainsRune(name, 0) || utf16Length(name) > contract.TagMaxNameLength {
 		return "", badRequest("Tag name is invalid or too long")
@@ -390,14 +393,15 @@ func trimClientWhitespace(value string) string {
 	return strings.TrimFunc(value, func(r rune) bool { return r == '\ufeff' || (r != '\u0085' && unicode.IsSpace(r)) })
 }
 
-func normalizeTagNames(names []string, limit int) ([]string, error) {
+// NormalizeTagNames applies NormalizeTagName and drops duplicates in request order.
+func NormalizeTagNames(names []string, limit int) ([]string, error) {
 	if len(names) > limit {
 		return nil, badRequest("Too many tag names")
 	}
 	unique := make(map[string]bool, len(names))
 	normalized := make([]string, 0, len(names))
 	for _, value := range names {
-		name, err := normalizeTagName(value)
+		name, err := NormalizeTagName(value)
 		if err != nil {
 			return nil, err
 		}

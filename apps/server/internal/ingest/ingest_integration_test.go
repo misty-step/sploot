@@ -19,10 +19,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/misty-step/sploot/apps/server/internal/database"
+	"github.com/misty-step/sploot/apps/server/internal/library"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -175,6 +177,39 @@ func TestOriginalsAndReceiptsSurviveRestart(t *testing.T) {
 type failedReader struct{}
 
 func (failedReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+func TestSavedTagsShareLibraryIdentity(t *testing.T) {
+	db, owner, directory := ingestionDatabase(t)
+	s := localIngestion(t, db, directory)
+	ctx := context.Background()
+	saved, err := s.Save(ctx, owner, Input{Reader: bytes.NewReader(animatedFixture(t, 90)), MIME: "image/gif", Tags: []string{"Reaction", " reaction "}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored string
+	var count int
+	if err := db.QueryRow(`SELECT t.name, (SELECT count(*) FROM asset_tags WHERE asset_id = ?) FROM tags t JOIN asset_tags at ON at.tag_id = t.id WHERE at.asset_id = ?`, saved.Asset.ID, saved.Asset.ID).Scan(&stored, &count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || stored != "reaction" {
+		t.Fatalf("save stored a second tag identity: count=%d name=%q", count, stored)
+	}
+	lib := library.New(db, []byte(strings.Repeat("cursor-key-", 4)))
+	added, err := lib.AddTags(ctx, owner, saved.Asset.ID, nil, []string{"REACTION", "ος"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(added) != 1 || added[0].Name != "ος" {
+		t.Fatalf("library treated the saved tag as a different name: %#v", added)
+	}
+	asset, err := lib.Get(ctx, owner, saved.Asset.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asset.Tags) != 2 || asset.Tags[0].Name != "reaction" || asset.Tags[1].Name != "ος" {
+		t.Fatalf("save and later tagging split the asset: %#v", asset.Tags)
+	}
+}
 
 func TestConcurrentSavesDeduplicateWithinInstanceLimitAndPreserveTrash(t *testing.T) {
 	db, owner, directory := ingestionDatabase(t)
