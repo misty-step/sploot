@@ -59,6 +59,37 @@ func (u *TagUpdate) UnmarshalJSON(body []byte) error {
 	return nil
 }
 
+// How many of this owner's assets carry tag t, including trash. List and PATCH
+// must use the same predicate or a rename would report a different count than GET.
+const tagAssetCountSQL = `(SELECT count(*) FROM asset_tags at JOIN assets a ON a.id = at.asset_id WHERE at.tag_id = t.id AND a.owner_user_id = t.owner_user_id)`
+
+const tagDetailSQL = `SELECT t.id, t.name, t.color, t.created_at, t.updated_at, ` + tagAssetCountSQL + `
+		FROM tags t`
+
+func scanTag(row interface{ Scan(...any) error }) (model.Tag, error) {
+	var tag model.Tag
+	if err := row.Scan(&tag.ID, &tag.Name, &tag.Color); err != nil {
+		return tag, err
+	}
+	return tag, nil
+}
+
+func scanTagDetail(row interface{ Scan(...any) error }) (TagDetail, error) {
+	var tag TagDetail
+	if err := row.Scan(&tag.ID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt, &tag.AssetCount); err != nil {
+		return tag, err
+	}
+	return tag, nil
+}
+
+func loadTagDetail(ctx context.Context, q rowQuery, owner, id string) (TagDetail, error) {
+	tag, err := scanTagDetail(q.QueryRowContext(ctx, tagDetailSQL+` WHERE t.owner_user_id = ?1 AND t.id = ?2`, owner, id))
+	if err != nil {
+		return tag, fmt.Errorf("read tag metadata: %w", err)
+	}
+	return tag, nil
+}
+
 func (s *Service) Tags(ctx context.Context, owner string) ([]model.Tag, error) {
 	if err := s.ready(owner); err != nil {
 		return nil, err
@@ -70,8 +101,8 @@ func (s *Service) Tags(ctx context.Context, owner string) ([]model.Tag, error) {
 	defer rows.Close()
 	tags := make([]model.Tag, 0)
 	for rows.Next() {
-		var tag model.Tag
-		if err := rows.Scan(&tag.ID, &tag.Name, &tag.Color); err != nil {
+		tag, err := scanTag(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan tag: %w", err)
 		}
 		tags = append(tags, tag)
@@ -86,17 +117,15 @@ func (s *Service) TagDetails(ctx context.Context, owner string) ([]TagDetail, er
 	if err := s.ready(owner); err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT t.id, t.name, t.color, t.created_at, t.updated_at,
-		(SELECT count(*) FROM asset_tags at JOIN assets a ON a.id = at.asset_id WHERE at.tag_id = t.id AND a.owner_user_id = t.owner_user_id)
-		FROM tags t WHERE t.owner_user_id = ?1 ORDER BY t.name, t.id`, owner)
+	rows, err := s.db.QueryContext(ctx, tagDetailSQL+` WHERE t.owner_user_id = ?1 ORDER BY t.name, t.id`, owner)
 	if err != nil {
 		return nil, fmt.Errorf("list tag metadata: %w", err)
 	}
 	defer rows.Close()
 	tags := make([]TagDetail, 0)
 	for rows.Next() {
-		var tag TagDetail
-		if err := rows.Scan(&tag.ID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt, &tag.AssetCount); err != nil {
+		tag, err := scanTagDetail(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scan tag metadata: %w", err)
 		}
 		tags = append(tags, tag)
@@ -171,7 +200,7 @@ func (s *Service) UpdateTag(ctx context.Context, owner, id string, update TagUpd
 	}
 	defer tx.Rollback()
 	err = tx.QueryRowContext(ctx, `UPDATE tags SET name = COALESCE(?3, name), color = CASE WHEN ?4 THEN ?5 ELSE color END, updated_at = CURRENT_TIMESTAMP
-		WHERE owner_user_id = ?1 AND id = ?2 RETURNING id, name, color, created_at, updated_at`, owner, id, update.Name, update.ColorSet, update.Color).Scan(&tag.ID, &tag.Name, &tag.Color, &tag.CreatedAt, &tag.UpdatedAt)
+		WHERE owner_user_id = ?1 AND id = ?2 RETURNING id`, owner, id, update.Name, update.ColorSet, update.Color).Scan(&tag.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return tag, tagNotFound()
 	}
@@ -181,8 +210,9 @@ func (s *Service) UpdateTag(ctx context.Context, owner, id string, update TagUpd
 	if err != nil {
 		return tag, fmt.Errorf("update tag: %w", err)
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM asset_tags at JOIN assets a ON a.id = at.asset_id WHERE at.tag_id = ?2 AND a.owner_user_id = ?1`, owner, id).Scan(&tag.AssetCount); err != nil {
-		return tag, fmt.Errorf("count tagged assets: %w", err)
+	tag, err = loadTagDetail(ctx, tx, owner, id)
+	if err != nil {
+		return tag, err
 	}
 	if err := tx.Commit(); err != nil {
 		return tag, fmt.Errorf("commit tag update: %w", err)
@@ -325,8 +355,7 @@ func addAssetTags(ctx context.Context, tx *sql.Tx, owner, assetID string, ids, n
 		return nil
 	}
 	for _, id := range ids {
-		var tag model.Tag
-		err := tx.QueryRowContext(ctx, `SELECT id, name, color FROM tags WHERE owner_user_id = ?1 AND id = ?2`, owner, id).Scan(&tag.ID, &tag.Name, &tag.Color)
+		tag, err := scanTag(tx.QueryRowContext(ctx, `SELECT id, name, color FROM tags WHERE owner_user_id = ?1 AND id = ?2`, owner, id))
 		// Existing API ignores unknown and foreign IDs alike; never expose or
 		// associate someone else's tag even if the ID is valid.
 		if errors.Is(err, sql.ErrNoRows) {
@@ -340,15 +369,14 @@ func addAssetTags(ctx context.Context, tx *sql.Tx, owner, assetID string, ids, n
 		}
 	}
 	for _, name := range names {
-		var tag model.Tag
-		err := tx.QueryRowContext(ctx, `SELECT id, name, color FROM tags WHERE owner_user_id = ?1 AND name = ?2`, owner, name).Scan(&tag.ID, &tag.Name, &tag.Color)
+		tag, err := scanTag(tx.QueryRowContext(ctx, `SELECT id, name, color FROM tags WHERE owner_user_id = ?1 AND name = ?2`, owner, name))
 		if errors.Is(err, sql.ErrNoRows) {
 			if err := checkTagLimit(ctx, tx, owner); err != nil {
 				return nil, err
 			}
-			err = tx.QueryRowContext(ctx, `INSERT INTO tags (id, owner_user_id, name, updated_at) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)
+			tag, err = scanTag(tx.QueryRowContext(ctx, `INSERT INTO tags (id, owner_user_id, name, updated_at) VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)
 				ON CONFLICT (owner_user_id, name) DO UPDATE SET name = EXCLUDED.name
-				RETURNING id, name, color`, model.NewID(), owner, name).Scan(&tag.ID, &tag.Name, &tag.Color)
+				RETURNING id, name, color`, model.NewID(), owner, name))
 		}
 		if err != nil {
 			return nil, fmt.Errorf("find or create asset tag: %w", err)

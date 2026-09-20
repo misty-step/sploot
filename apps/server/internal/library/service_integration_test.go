@@ -282,3 +282,47 @@ func TestStorageStatsKeepPendingPurgeChargesOwnerScoped(t *testing.T) {
 		t.Fatalf("pending purge charge leaked across owners or was released early: %+v", stats)
 	}
 }
+
+func TestTagAssetCountIsTheSameAfterUpdateAndList(t *testing.T) {
+	s, owner, other := libraryDatabase(t)
+	ctx := context.Background()
+	live := seedLibraryAsset(t, s, owner, "live", 1)
+	trashed := seedLibraryAsset(t, s, owner, "trashed", 2)
+	foreign := seedLibraryAsset(t, s, other, "foreign", 3)
+	tag, err := s.CreateTag(ctx, owner, "reaction", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tag.AssetCount != 0 {
+		t.Fatalf("new tag counted assets: %#v", tag)
+	}
+	if _, err := s.AddTags(ctx, owner, live, []string{tag.ID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddTags(ctx, owner, trashed, []string{tag.ID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddTags(ctx, other, foreign, nil, []string{"reaction"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, owner, trashed); err != nil {
+		t.Fatal(err)
+	}
+
+	listed, err := s.TagDetails(ctx, owner)
+	if err != nil || len(listed) != 1 || listed[0].ID != tag.ID || listed[0].AssetCount != 2 {
+		t.Fatalf("list tag count drifted from owner-owned live+trash assets: %#v %v", listed, err)
+	}
+	color := "#ff00aa"
+	updated, err := s.UpdateTag(ctx, owner, tag.ID, TagUpdate{Color: &color, ColorSet: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.AssetCount != listed[0].AssetCount || updated.Name != "reaction" || updated.Color == nil || *updated.Color != color {
+		t.Fatalf("PATCH tag count used a different predicate than GET: list=%#v patch=%#v", listed[0], updated)
+	}
+	listed, err = s.TagDetails(ctx, owner)
+	if err != nil || len(listed) != 1 || listed[0].AssetCount != updated.AssetCount {
+		t.Fatalf("list tag count changed after a color-only PATCH: %#v %v", listed, err)
+	}
+}
