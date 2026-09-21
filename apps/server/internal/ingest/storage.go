@@ -61,6 +61,18 @@ func validMediaPath(key string) bool {
 	return key != "" && filepath.IsLocal(key) && filepath.ToSlash(filepath.Clean(key)) == key && !strings.Contains(key, "\\") && strings.HasPrefix(key, "uploads/")
 }
 
+// OwnerMediaPrefix is the relative directory that contains one asset's original
+// and poster. Save, open, purge, predecessor import, and recovery all keep
+// retained files under this key.
+func OwnerMediaPrefix(owner, assetID string) string {
+	sum := sha256.Sum256([]byte(owner))
+	return "uploads/" + hex.EncodeToString(sum[:16]) + "/" + assetID + "/"
+}
+
+func ownedMediaPath(owner, assetID, key string) bool {
+	return owner != "" && assetID != "" && validMediaPath(key) && strings.HasPrefix(key, OwnerMediaPrefix(owner, assetID))
+}
+
 func (s *objectStore) mkdir(key string) error {
 	current := ""
 	for _, component := range strings.Split(filepath.Dir(key), "/") {
@@ -190,9 +202,7 @@ func (s *Service) OpenMedia(ctx context.Context, owner, assetID string, thumbnai
 			return nil, errors.New("stored media must be a private regular file")
 		}
 	}
-	ownerHash := sha256.Sum256([]byte(owner))
-	prefix := "uploads/" + hex.EncodeToString(ownerHash[:16]) + "/" + assetID + "/"
-	if !strings.HasPrefix(key, prefix) {
+	if !strings.HasPrefix(key, OwnerMediaPrefix(owner, assetID)) {
 		return nil, errors.New("stored media path does not belong to the asset owner")
 	}
 	file, err := s.store.root.Open(key)

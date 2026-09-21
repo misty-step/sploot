@@ -2,9 +2,7 @@ package ingest
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -109,14 +107,12 @@ func validatePurge(intent purgeIntent) error {
 	if intent.completed {
 		return nil
 	}
-	ownerHash := sha256.Sum256([]byte(intent.owner))
-	prefix := "uploads/" + hex.EncodeToString(ownerHash[:16]) + "/" + intent.assetID + "/"
-	if intent.owner == "" || intent.assetID == "" || !validMediaPath(intent.original.key) || !strings.HasPrefix(intent.original.key, prefix) || intent.original.size < 0 {
+	if !ownedMediaPath(intent.owner, intent.assetID, intent.original.key) || intent.original.size < 0 {
 		return errors.New("permanent deletion has an invalid owned original path")
 	}
 	if intent.poster.size < 0 ||
 		intent.poster.key == "" && intent.poster.size != 0 ||
-		intent.poster.key != "" && (!validMediaPath(intent.poster.key) || !strings.HasPrefix(intent.poster.key, prefix) || intent.poster.key == intent.original.key) {
+		intent.poster.key != "" && (!ownedMediaPath(intent.owner, intent.assetID, intent.poster.key) || intent.poster.key == intent.original.key) {
 		return errors.New("permanent deletion has an invalid owned poster path")
 	}
 	return nil

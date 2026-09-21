@@ -303,9 +303,9 @@ func importAsset(ctx context.Context, db *sql.DB, archive, target *os.Root, p pl
 	if readErr != nil && readErr != io.EOF || !contract.IsAllowedMIME(mime) {
 		return AssetReceipt{}, reject("unsupported_stored_media")
 	}
-	prefix := "uploads/" + digest([]byte(owner))[:32] + "/" + asset.ID
-	pathname := prefix + "/" + asset.ID + mediaExtension(mime)
-	posterPath := prefix + "/poster/preview.jpg"
+	prefix := ingest.OwnerMediaPrefix(owner, asset.ID)
+	pathname := prefix + asset.ID + mediaExtension(mime)
+	posterPath := prefix + "poster/preview.jpg"
 	if err := copyObject(ctx, archive, target, object.Path, "media/"+pathname, object.Size, object.SHA256); err != nil {
 		return AssetReceipt{}, err
 	}
