@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/misty-step/sploot/apps/server/internal/database"
+	"github.com/misty-step/sploot/apps/server/internal/ingest"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -43,7 +44,7 @@ func newRecoveryFixture(t *testing.T) recoveryFixture {
 	if err := jpeg.Encode(&poster, image.NewRGBA(image.Rect(0, 0, 1, 1)), nil); err != nil {
 		t.Fatal(err)
 	}
-	key := "uploads/" + digest([]byte(owner))[:32] + "/" + asset + "/original.gif"
+	key := ingest.OwnerMediaPrefix(owner, asset) + "original.gif"
 	posterKey := filepath.ToSlash(filepath.Join(filepath.Dir(key), "poster", "preview.jpg"))
 	for path, value := range map[string][]byte{key: data, posterKey: poster.Bytes()} {
 		filename := filepath.Join(directory, "media", path)
