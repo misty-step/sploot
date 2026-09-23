@@ -1,10 +1,13 @@
 package embedding
 
 import (
-	"github.com/misty-step/sploot/apps/server/internal/inference"
-	"github.com/misty-step/sploot/apps/server/internal/model"
 	"math"
+	"strings"
 	"testing"
+
+	"github.com/misty-step/sploot/apps/server/internal/inference"
+	"github.com/misty-step/sploot/apps/server/internal/library"
+	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
 func TestSearchCursorRejectsDifferentOwnerAndContext(t *testing.T) {
@@ -73,6 +76,12 @@ func TestVectorBoundaryRejectsInvalidModelOutput(t *testing.T) {
 				t.Fatal("invalid model output accepted into the canonical vector boundary")
 			}
 		})
+	}
+}
+
+func TestSearchPageUsesLibraryTagProjection(t *testing.T) {
+	if !strings.Contains(searchPageSQL, library.OwnedAssetTagsJSON) {
+		t.Fatal("search results must use the library tag projection")
 	}
 }
 
