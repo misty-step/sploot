@@ -38,9 +38,7 @@ const assetColumns = `a.id, a.owner_user_id, a.blob_url, a.thumbnail_url,
 	a.pathname, a.mime, a.size, a.width, a.height, a.checksum_sha256,
 	a.favorite, a.created_at, a.updated_at, a.deleted_at, a.share_slug,
 	COALESCE((SELECT e.status FROM asset_embeddings e WHERE e.asset_id = a.id AND e.owner_user_id = a.owner_user_id), 'pending'),
-	COALESCE((SELECT json_group_array(json_object('id', t.id, 'name', t.name, 'color', t.color))
-		FROM (SELECT t.id, t.name, t.color FROM asset_tags at JOIN tags t ON t.id = at.tag_id
-		WHERE at.asset_id = a.id AND t.owner_user_id = a.owner_user_id ORDER BY t.name, t.id) t), '[]')`
+	` + OwnedAssetTagsJSON
 
 func scanAsset(row interface{ Scan(...any) error }, extra ...any) (model.Asset, error) {
 	var asset model.Asset
