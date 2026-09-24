@@ -259,6 +259,33 @@ func TestDatabaseTimestampCursorDoesNotRepeatEqualTimeBoundary(t *testing.T) {
 	}
 }
 
+func TestDatabaseListTagFilterStaysOnOwnerTags(t *testing.T) {
+	s, owner, other := libraryDatabase(t)
+	ctx := context.Background()
+	id := seedLibraryAsset(t, s, owner, "tagged", 1)
+	seedLibraryAsset(t, s, owner, "plain", 2)
+	seedLibraryAsset(t, s, other, "foreign", 3)
+	tag, err := s.CreateTag(ctx, owner, "retrieval", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddTags(ctx, owner, id, []string{tag.ID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.List(ctx, owner, model.ListOptions{TagID: tag.ID})
+	if err != nil || !reflect.DeepEqual(assetIDs(page.Assets), []string{id}) || page.Total != 1 {
+		t.Fatalf("owned tag filter: %#v %v", page, err)
+	}
+	foreign, err := s.CreateTag(ctx, other, "retrieval", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err = s.List(ctx, owner, model.ListOptions{TagID: foreign.ID})
+	if err != nil || page.Total != 0 || len(page.Assets) != 0 {
+		t.Fatalf("foreign tag matched owner library: %#v %v", page, err)
+	}
+}
+
 func assetIDs(assets []model.Asset) []string {
 	ids := make([]string, len(assets))
 	for i, asset := range assets {
