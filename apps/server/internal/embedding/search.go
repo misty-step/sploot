@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/misty-step/sploot/apps/server/internal/inference"
+	"github.com/misty-step/sploot/apps/server/internal/library"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -269,6 +270,25 @@ func (s *Service) decodeCursor(value, owner string, expected searchContext) (*se
 	return &cursor, nil
 }
 
+// Eligible hits use the same owner-fenced tag predicate as library list.
+var searchPageSQL = `WITH eligible AS MATERIALIZED (
+		SELECT a.id, vec_distance_cosine(e.image_embedding, ?2) AS distance
+		FROM asset_embeddings e JOIN assets a ON a.id = e.asset_id AND a.owner_user_id = e.owner_user_id
+		WHERE e.owner_user_id = ?1 AND e.status = 'ready' AND e.dim = ?3 AND e.model_name = ?4 AND e.model_version = ?5
+		AND a.owner_user_id = ?1 AND a.deleted_at IS NULL AND (NOT ?6 OR a.favorite)
+		AND (?7 IS NULL OR ` + library.OwnedAssetHasTag("?7") + `)
+	), matched AS MATERIALIZED (SELECT * FROM eligible WHERE 1 - distance >= ?8),
+	page AS (SELECT * FROM matched WHERE ?9 IS NULL OR (distance, id) > (?9, ?10)
+		ORDER BY distance, id LIMIT ?11 OFFSET ?12),
+	total AS (SELECT count(*) AS count FROM matched)
+	SELECT total.count, a.id, a.owner_user_id, a.blob_url, a.thumbnail_url, a.pathname, a.mime, a.size, a.width, a.height, a.checksum_sha256, a.favorite,
+		a.created_at, a.updated_at, a.share_slug, page.distance,
+		COALESCE((SELECT json_group_array(json_object('id', t.id, 'name', t.name, 'color', t.color))
+			FROM (SELECT t.id, t.name, t.color FROM asset_tags at JOIN tags t ON t.id = at.tag_id
+			WHERE at.asset_id = a.id AND t.owner_user_id = ?1 ORDER BY t.name, t.id) t), '[]')
+	FROM total LEFT JOIN page ON true LEFT JOIN assets a ON a.id = page.id AND a.owner_user_id = ?1 AND a.deleted_at IS NULL
+	ORDER BY page.distance, page.id`
+
 // Exact owner-scoped cosine retrieval computes each eligible distance once.
 // Count and page use one SQLite snapshot; only query vectors are cached, never
 // results, so newly indexed captures and favorite/tag/trash edits appear at once.
@@ -286,24 +306,7 @@ func (s *Service) searchVector(ctx context.Context, owner string, vector []float
 		}
 		afterDistance, afterID = &distance, &cursor.ID
 	}
-	rows, err := s.db.QueryContext(ctx, `WITH eligible AS MATERIALIZED (
-		SELECT a.id, vec_distance_cosine(e.image_embedding, ?2) AS distance
-		FROM asset_embeddings e JOIN assets a ON a.id = e.asset_id AND a.owner_user_id = e.owner_user_id
-		WHERE e.owner_user_id = ?1 AND e.status = 'ready' AND e.dim = ?3 AND e.model_name = ?4 AND e.model_version = ?5
-		AND a.owner_user_id = ?1 AND a.deleted_at IS NULL AND (NOT ?6 OR a.favorite)
-		AND (?7 IS NULL OR EXISTS (SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id
-			WHERE at.asset_id = a.id AND t.id = ?7 AND t.owner_user_id = ?1))
-	), matched AS MATERIALIZED (SELECT * FROM eligible WHERE 1 - distance >= ?8),
-	page AS (SELECT * FROM matched WHERE ?9 IS NULL OR (distance, id) > (?9, ?10)
-		ORDER BY distance, id LIMIT ?11 OFFSET ?12),
-	total AS (SELECT count(*) AS count FROM matched)
-	SELECT total.count, a.id, a.owner_user_id, a.blob_url, a.thumbnail_url, a.pathname, a.mime, a.size, a.width, a.height, a.checksum_sha256, a.favorite,
-		a.created_at, a.updated_at, a.share_slug, page.distance,
-		COALESCE((SELECT json_group_array(json_object('id', t.id, 'name', t.name, 'color', t.color))
-			FROM (SELECT t.id, t.name, t.color FROM asset_tags at JOIN tags t ON t.id = at.tag_id
-			WHERE at.asset_id = a.id AND t.owner_user_id = ?1 ORDER BY t.name, t.id) t), '[]')
-	FROM total LEFT JOIN page ON true LEFT JOIN assets a ON a.id = page.id AND a.owner_user_id = ?1 AND a.deleted_at IS NULL
-	ORDER BY page.distance, page.id`, owner, data, inference.Dimension, modelName, inference.ModelVersion, binding.FavoriteOnly, binding.TagID, binding.Threshold, afterDistance, afterID, binding.Limit+1, offset)
+	rows, err := s.db.QueryContext(ctx, searchPageSQL, owner, data, inference.Dimension, modelName, inference.ModelVersion, binding.FavoriteOnly, binding.TagID, binding.Threshold, afterDistance, afterID, binding.Limit+1, offset)
 	if err != nil {
 		return model.SearchResponse{}, err
 	}
