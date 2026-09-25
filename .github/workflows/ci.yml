@@ -669,3 +669,98 @@ jobs:
             fi
           done
           echo "All jobs passed"
+
+  foundation:
+    name: foundation
+    runs-on: ubuntu-24.04
+    env:
+      HARNESS_SHA: "6286d1039976485a36a8a0d649c487cfee886939"
+      BUN_URL: https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64-baseline.zip
+      BUN_SHA256: c678040f14fe0440eb839d37cbd0ce4c051a32da72806ac97de6a6aab6bf728f
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch pinned foundation checker and Bun
+        run: |
+          root="$RUNNER_TEMP/foundation"
+          mkdir -p "$root/checker" "$root/runtime"
+          git init --quiet --initial-branch=checker "$root/checker"
+          git -C "$root/checker" fetch --quiet --no-tags --depth=1 https://github.com/misty-step/harness.git "$HARNESS_SHA"
+          git -C "$root/checker" checkout --quiet --detach "$HARNESS_SHA"
+          test "$(git -C "$root/checker" rev-parse HEAD)" = "$HARNESS_SHA"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --retry 3 --output "$root/runtime/bun.zip" "$BUN_URL"
+          printf '%s  %s\n' "$BUN_SHA256" "$root/runtime/bun.zip" | sha256sum --check --strict
+          unzip -q "$root/runtime/bun.zip" -d "$root/runtime"
+      - name: Check repository foundations
+        working-directory: ${{ runner.temp }}/foundation
+        run: |
+          bun="$RUNNER_TEMP/foundation/runtime/bun-linux-x64-baseline/bun"
+          checker="$RUNNER_TEMP/foundation/checker/agent-config/bin/foundation-check.ts"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            "$bun" --no-env-file --no-install "$checker" check --repo "$GITHUB_WORKSPACE" --base "$BASE_SHA"
+          else
+            "$bun" --no-env-file --no-install "$checker" check --repo "$GITHUB_WORKSPACE"
+          fi
+
+  story-walk:
+    name: story-walk
+    needs: foundation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      HARNESS_SHA: "6286d1039976485a36a8a0d649c487cfee886939"
+      BUN_URL: https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64-baseline.zip
+      BUN_SHA256: c678040f14fe0440eb839d37cbd0ce4c051a32da72806ac97de6a6aab6bf728f
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: apps/server/go.sum
+      - name: Fetch pinned foundation checker and Bun
+        run: |
+          root="$RUNNER_TEMP/foundation"
+          mkdir -p "$root/checker" "$root/runtime"
+          git init --quiet --initial-branch=checker "$root/checker"
+          git -C "$root/checker" fetch --quiet --no-tags --depth=1 https://github.com/misty-step/harness.git "$HARNESS_SHA"
+          git -C "$root/checker" checkout --quiet --detach "$HARNESS_SHA"
+          test "$(git -C "$root/checker" rev-parse HEAD)" = "$HARNESS_SHA"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --retry 3 --output "$root/runtime/bun.zip" "$BUN_URL"
+          printf '%s  %s\n' "$BUN_SHA256" "$root/runtime/bun.zip" | sha256sum --check --strict
+          unzip -q "$root/runtime/bun.zip" -d "$root/runtime"
+      - name: Walk affected stories and validate receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun="$RUNNER_TEMP/foundation/runtime/bun-linux-x64-baseline/bun"
+          checker="$RUNNER_TEMP/foundation/checker/agent-config/bin/foundation-check.ts"
+          foundation() { (cd "$RUNNER_TEMP/foundation" && "$bun" --no-env-file --no-install "$checker" "$@" --repo "$GITHUB_WORKSPACE"); }
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ || "$BASE_SHA" =~ ^0+$ ]]; then BASE_SHA=$(git rev-parse HEAD^); fi
+          git cat-file -e "$BASE_SHA^{commit}"
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then foundation check --base "$BASE_SHA"; else foundation check; fi
+          affected=$(foundation affected --base "$BASE_SHA")
+          if [[ -n "$affected" ]]; then bash .exe/setup.sh; fi
+          WALK_BASE="$BASE_SHA" qa/walk --stories "$affected"
+          foundation receipt target/walk/walk-receipt.json --base "$BASE_SHA"
+      - name: Upload story-walk receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sploot-story-walk-${{ github.sha }}
+          path: target/walk/
+          if-no-files-found: warn
+          retention-days: 14

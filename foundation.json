@@ -1,0 +1,108 @@
+{
+  "schema": "foundation-adoption/1",
+  "standard": {
+    "id": "misty-step.foundation",
+    "version": "1.1.0",
+    "catalog_sha256": "483f8779e56c969f44316bb29ec5ec698b8b89140b3ca7510c4b30e049815e86",
+    "revision": "6286d1039976485a36a8a0d649c487cfee886939",
+    "source": "https://github.com/misty-step/harness/blob/6286d1039976485a36a8a0d649c487cfee886939/agent-config/skills/foundation/foundation-standard-v1.json"
+  },
+  "capabilities": [
+    "Self-contained Go/SQLite private meme library with local CPU CLIP search, media recovery and owner accounts",
+    "Device-paired WXT capture and token-scoped MCP save/search; retired Next.js predecessor retained separately"
+  ],
+  "dispositions": {
+    "FND-CHG-001": {
+      "status": "pending",
+      "missing": "No retained candidate-bound story walk for this adoption",
+      "owner": "phaedrus",
+      "next": "Retain green PR and master story-walk receipts with the exact candidate"
+    },
+    "FND-CHG-002": {
+      "status": "pending",
+      "missing": "Negative media rejection and restore refusal lack a retained candidate receipt",
+      "owner": "phaedrus",
+      "next": "Retain isolated browser and recovery refusal evidence from qa/walk"
+    },
+    "FND-TRN-001": {
+      "status": "pending",
+      "missing": "No documented foundation transition assessment bound to the Go and predecessor release boundary",
+      "owner": "phaedrus",
+      "next": "Review candidate identity, hosted authorization, release and rollback separately before marking satisfied"
+    },
+    "FND-OBS-001": {
+      "status": "pending",
+      "missing": "Go diagnostics and error context have not been audited against the complete structured-event contract",
+      "owner": "phaedrus",
+      "next": "Inventory errors, event fields, causal chains and source attribution on the live runtime"
+    },
+    "FND-ACT-001": {
+      "status": "pending",
+      "missing": "No reviewed versioned first-party success, rejection and recovery event schema",
+      "owner": "phaedrus",
+      "next": "Design and exercise durable owner-scoped journey events in SQLite"
+    },
+    "FND-DAT-001": {
+      "status": "pending",
+      "missing": "No complete privacy, cardinality, retention and sink-outage proof for diagnostics or activity",
+      "owner": "phaedrus",
+      "next": "Review typed field allowlists and demonstrate bounded failure behavior"
+    },
+    "FND-PRF-001": {
+      "status": "pending",
+      "missing": "No fresh sanitized success/error record retrieved from the intended operational sink",
+      "owner": "phaedrus",
+      "next": "Run private-content negative canaries and a controlled sink failure with retained retrieval"
+    },
+    "FND-USE-001": {
+      "status": "pending",
+      "missing": "No exercised query, alert and response path for every material incident decision",
+      "owner": "phaedrus",
+      "next": "Record owners, freshness windows and recovery queries; drill one failure"
+    },
+    "FND-DOC-001": {
+      "status": "pending",
+      "missing": "docs/postmortems/ has no README or incident template",
+      "owner": "phaedrus",
+      "next": "Add an owned incident-learning template and remove doc:postmortems baseline before its expiry"
+    },
+    "FND-MAP-001": {
+      "status": "pending",
+      "missing": "Draft feature map has not yet passed the pinned check on committed source",
+      "owner": "phaedrus",
+      "next": "Validate the reviewed features/ map on PR and master"
+    },
+    "FND-WLK-001": {
+      "status": "pending",
+      "missing": "Criterion receipts for all live stories have not passed on master",
+      "owner": "phaedrus",
+      "next": "Run affected PR and nightly full walks and retain receipt artifacts"
+    },
+    "FND-WS-001": {
+      "status": "pending",
+      "missing": "New credential-free setup has not yet passed on a fresh runner",
+      "owner": "phaedrus",
+      "next": "Run .exe/setup.sh in hosted story-walk and nightly jobs"
+    },
+    "FND-DEF-SENTRY-001": {
+      "status": "pending",
+      "missing": "Existing Sentry integration has no retained end-to-end safe error capture and retrieval proof",
+      "owner": "phaedrus",
+      "next": "Assess Go Sentry fields and retrieve a controlled redacted error with release attribution"
+    },
+    "FND-DEF-ACTIVITY-001": {
+      "status": "pending",
+      "missing": "SQLite has no reviewed versioned product-activity event contract",
+      "owner": "phaedrus",
+      "next": "Decide and exercise minimal owned event table and deletion policy"
+    }
+  },
+  "mode": "bootstrap",
+  "baseline": [
+    {
+      "gap": "doc:postmortems",
+      "owner": "phaedrus",
+      "expires": "2026-10-25"
+    }
+  ]
+}
