@@ -431,9 +431,10 @@ of a completed upload, inference, or external telemetry call.
   This package version is not the predecessor's latest-release lookup and
   cannot be compared with a release tag as proof of the same running artifact.
 
-For a historical Next.js revision, use its archived DigitalOcean completed
-deployment/source receipt; there is no current DigitalOcean Sploot deployment.
-`/api/version` alone cannot prove which predecessor revision was deployed.
+For a historical Next.js revision, only a retained DigitalOcean completed
+deployment/source receipt could establish the running predecessor revision;
+there is no current DigitalOcean Sploot deployment. `/api/version` alone
+cannot prove which predecessor revision was deployed.
 
 ---
 
