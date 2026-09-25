@@ -71,7 +71,9 @@ export function isValidFileSize(size: number): boolean {
 }
 
 export function normalizeMimeType(mimeType: string): string {
-  return mimeType.toLowerCase().split(';')[0].trim();
+  const normalized = mimeType.toLowerCase().split(';')[0].trim();
+  // Stored decoder identity is image/jpeg; image/jpg is a wire alias.
+  return normalized === 'image/jpg' ? 'image/jpeg' : normalized;
 }
 
 export function isVideoMimeType(mimeType: string): boolean {

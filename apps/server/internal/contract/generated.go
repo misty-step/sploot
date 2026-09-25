@@ -24,10 +24,18 @@ const (
 
 var AllowedMIMETypes = []string{"image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm"}
 
-func IsAllowedMIME(value string) bool {
+func NormalizeMIME(value string) string {
 	value, _, _ = strings.Cut(value, ";")
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm":
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "image/jpg" {
+		return "image/jpeg"
+	}
+	return value
+}
+
+func IsAllowedMIME(value string) bool {
+	switch NormalizeMIME(value) {
+	case "image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "video/webm":
 		return true
 	default:
 		return false

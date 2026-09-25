@@ -37,15 +37,6 @@ type preparedMedia struct {
 	height         int
 }
 
-func normalizeMIME(value string) string {
-	value, _, _ = strings.Cut(value, ";")
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "image/jpg" {
-		return "image/jpeg"
-	}
-	return value
-}
-
 // DetectMediaMIME recognizes ISO MP4 brands that net/http omits. Signature
 // recognition never replaces the constrained video-stream decoder below.
 func DetectMediaMIME(header []byte) string {
@@ -58,7 +49,7 @@ func DetectMediaMIME(header []byte) string {
 			}
 		}
 	}
-	return normalizeMIME(http.DetectContentType(header))
+	return contract.NormalizeMIME(http.DetectContentType(header))
 }
 
 func extension(mime string) string {
