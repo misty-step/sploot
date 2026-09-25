@@ -1,7 +1,7 @@
 # Private library
 
 Stories: US-003
-Source: apps/server/internal/library/**, apps/server/internal/recovery/**, apps/server/internal/httpapi/**, apps/server/internal/auth/**, apps/server/scripts/local-gauntlet.ts, qa/walk*, .exe/setup.sh
+Source: apps/server/cmd/sploot/**, apps/server/internal/library/**, apps/server/internal/recovery/**, apps/server/internal/httpapi/**, apps/server/internal/auth/**, apps/server/internal/database/**, apps/server/internal/web/**, apps/server/scripts/local-gauntlet.ts, qa/walk*, .exe/setup.sh
 
 ## Sub-features
 

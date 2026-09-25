@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,8 +46,12 @@ for (const [index, match] of sections.entries()) {
 }
 const output = join(repo, 'target/walk');
 const marker = join(output, '.sploot-walk-owned');
-if (existsSync(output) && !existsSync(marker)) throw Error(`Refusing to replace non-owned walk output: ${output}`);
-if (existsSync(marker)) await rm(output, { recursive: true });
+if (existsSync(output)) {
+  if (!lstatSync(output).isDirectory() || !existsSync(marker) || !lstatSync(marker).isFile()) {
+    throw Error(`Refusing to replace non-owned walk output: ${output}`);
+  }
+  await rm(output, { recursive: true });
+}
 await mkdir(join(output, 'evidence'), { recursive: true });
 await writeFile(marker, 'Owned by qa/walk; never a production library.\n');
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -67,8 +71,18 @@ async function exercise(command, argv) {
   try {
     const status = await new Promise((resolveExit, reject) => { child.on('error', reject); child.on('close', resolveExit); });
     if (status !== 0 || !/"status": "PASS"/.test(text)) {
-      const location = text.match(/Private acceptance evidence retained at ([^\n]+)/)?.[1];
-      throw Error(`${command} ${argv.join(' ')} exited ${status}; ${location ? `private diagnostics at ${location}` : 'inspect the runner step'}`);
+      // Retain source frames, error class and numeric assertions without copying
+      // browser traces, account identifiers, passwords or private library data.
+      const path = `evidence/${argv.includes('--extension') ? 'extension' : 'go'}-failure.txt`;
+      const known = Object.values(observations).flat(2);
+      const completed = [...text.matchAll(/^PASS ([^\n]+)$/gm)].map(match => match[1]).filter(step => known.includes(step));
+      const frames = [...new Set([...text.matchAll(/\b(?:local-gauntlet|mv3-[\w-]+)\.(?:ts|mjs):\d+(?::\d+)?\b/g)].map(match => match[0]))].slice(0, 8);
+      const kinds = [...new Set([...text.matchAll(/\b(?:AssertionError|TimeoutError|TypeError|Error)\b/g)].map(match => match[0]))];
+      const numbers = text.split('\n').filter(line => /^\s*(?:Expected|Received):\s*(?:-?\d+(?:\.\d+)?|true|false|null|undefined)\s*$/.test(line)).slice(0, 8);
+      const diagnostic = Buffer.from(`Exit: ${status}\nCompleted:\n${completed.join('\n')}\nError class: ${kinds.join(', ') || 'unknown'}\nSource frames: ${frames.join(', ') || 'unavailable'}\nNumeric assertions:\n${numbers.join('\n')}\n`);
+      await writeFile(join(output, path), diagnostic);
+      receipt.artifacts.push({ path, sha256: hash(diagnostic) });
+      throw Error(`${command} ${argv.join(' ')} exited ${status}; diagnostic ${path}: ${kinds.join(', ') || 'unknown'}, ${frames[0] || 'source frame unavailable'}`);
     }
     return new Set([...text.matchAll(/^PASS ([^\n]+)$/gm)].map(match => match[1]));
   } finally {

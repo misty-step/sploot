@@ -1,7 +1,7 @@
 # Capture
 
 Stories: US-001
-Source: apps/server/internal/ingest/**, apps/server/internal/httpapi/**, apps/server/internal/auth/**, apps/extension/entrypoints/**, apps/extension/shared/**, packages/common/src/**, apps/server/scripts/local-gauntlet.ts, apps/extension/playwright/mv3-lifecycle.e2e.ts, qa/walk*, .exe/setup.sh
+Source: apps/server/cmd/sploot/**, apps/server/internal/ingest/**, apps/server/internal/httpapi/**, apps/server/internal/auth/**, apps/server/internal/database/**, apps/server/internal/web/**, apps/extension/entrypoints/**, apps/extension/shared/**, apps/extension/wxt.config.ts, packages/common/src/**, apps/server/scripts/local-gauntlet.ts, apps/extension/playwright/mv3-lifecycle.e2e.ts, qa/walk*, .exe/setup.sh
 
 ## Sub-features
 

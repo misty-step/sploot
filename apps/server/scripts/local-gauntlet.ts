@@ -135,7 +135,7 @@ async function fixtures() {
 }
 
 type Actor = { context: BrowserContext; page: Page; id: string; email: string; password: string };
-type Asset = { id: string; mime: string; favorite: boolean; tags: Array<{ id: string; name: string }>; shareSlug?: string; checksum: string };
+type Asset = { id: string; filename: string; mime: string; favorite: boolean; tags: Array<{ id: string; name: string }>; shareSlug?: string; checksum: string };
 async function api(actor: Actor, origin: string, path: string, method = 'GET', data?: unknown, extra: Record<string, string> = {}) {
   return actor.context.request.fetch(`${origin}${path}`, { method, data, headers: { Origin: origin, 'X-Sploot-User-ID': actor.id, ...extra } });
 }
@@ -173,6 +173,8 @@ if (extensionOnly) {
   });
 } else {
 const inputDirectory = await fixtures();
+const originals = ['triangle.png', 'circle.png', 'square.png', 'circle.jpg', 'circle.webp', 'triangle.gif', 'circle.mp4', 'circle.webm'];
+const submittedHashes = new Map(await Promise.all(originals.map(async name => [name, digest(await readFile(join(inputDirectory, name)))] as const)));
 const localBrowser = await chromium.launch({ headless: true, ...(process.env.SPLOOT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.SPLOOT_CHROMIUM_EXECUTABLE } : {}) });
 browser = localBrowser;
 const aliceContext = await localBrowser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
@@ -198,20 +200,21 @@ let personalToken = '';
   });
   await story('Browser capture preserves image GIF and video originals and genuine indexing intent', async () => {
     await alice.page.getByRole('button', { name: 'Save', exact: true }).click();
-    await alice.page.locator('#upload-files').setInputFiles(['triangle.png', 'circle.png', 'square.png', 'circle.jpg', 'circle.webp', 'triangle.gif', 'circle.mp4', 'circle.webm'].map(name => join(inputDirectory, name)));
+    await alice.page.locator('#upload-files').setInputFiles(originals.map(name => join(inputDirectory, name)));
     await expect.poll(async () => {
       const response = await api(alice, application.origin, '/api/assets?limit=30');
       assets = (await response.json()).assets;
       return assets.length;
-    }, { timeout: 60_000 }).toBe(8);
+    }, { timeout: 60_000 }).toBe(originals.length);
     assert.deepEqual([...new Set(assets.map(asset => asset.mime))].sort(), ['image/gif', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm']);
-    const triangleHash = digest(await readFile(join(inputDirectory, 'triangle.png')));
-    triangle = assets.find(asset => asset.checksum === triangleHash)!;
-    assert(triangle, 'Uploaded original must be identifiable by its actual checksum');
+    assert.deepEqual(assets.map(asset => asset.filename).sort(), [...originals].sort());
+    triangle = assets.find(asset => asset.filename === 'triangle.png')!;
+    assert(triangle, 'Uploaded original must retain the submitted filename');
     for (const asset of assets) {
       const response = await api(alice, application.origin, `/media/${asset.id}`);
       assert.equal(response.status(), 200);
-      assert.equal(digest(await response.body()), asset.checksum);
+      assert.equal(asset.checksum, submittedHashes.get(asset.filename), `${asset.filename}: recorded checksum differs from submitted bytes`);
+      assert.equal(digest(await response.body()), submittedHashes.get(asset.filename), `${asset.filename}: downloaded original differs from submitted bytes`);
       await expect.poll(async () => (await (await api(alice, application.origin, `/api/assets/${asset.id}/embedding-status`)).json()).status, { timeout: 90_000 }).toBe('ready');
     }
     await alice.page.getByRole('button', { name: 'Close save panel' }).click();
@@ -396,7 +399,7 @@ let personalToken = '';
     const persisted = (await (await api(alice, application.origin, `/api/assets/${triangle.id}`)).json()).asset;
     assert.equal(persisted.favorite, true);
     for (const asset of assets) {
-      assert.equal(digest(await (await api(alice, application.origin, `/media/${asset.id}`)).body()), asset.checksum);
+      assert.equal(digest(await (await api(alice, application.origin, `/media/${asset.id}`)).body()), submittedHashes.get(asset.filename), `${asset.filename}: original changed after restart`);
     }
     const response = await api(alice, application.origin, '/api/search', 'POST', { query: 'a green square against white', threshold: 0 });
     assert.equal(response.status(), 200);

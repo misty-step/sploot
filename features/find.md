@@ -1,7 +1,7 @@
 # Find
 
 Stories: US-002
-Source: apps/server/internal/embedding/**, apps/server/internal/inference/**, apps/server/internal/library/**, apps/server/internal/httpapi/**, apps/mcp/src/**, apps/server/scripts/local-gauntlet.ts, qa/walk*, .exe/setup.sh
+Source: apps/server/cmd/sploot/**, apps/server/internal/embedding/**, apps/server/internal/inference/**, apps/server/internal/library/**, apps/server/internal/httpapi/**, apps/server/internal/database/**, apps/server/internal/web/**, apps/mcp/src/**, apps/server/scripts/local-gauntlet.ts, qa/walk*, .exe/setup.sh
 
 ## Sub-features
 
