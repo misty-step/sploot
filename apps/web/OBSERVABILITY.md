@@ -1,5 +1,8 @@
 # observability
 
+This describes the retained Next.js predecessor, not the currently hosted Go
+library. The former DigitalOcean Sploot app is retired.
+
 Sploot emits provider-neutral JSON logs from `lib/observability-logger.ts`.
 Handled server errors and client error boundaries also report to Sentry project
 `misty-step/sploot`. Sentry failure never affects request status, routing, or
@@ -30,16 +33,20 @@ fields and writes provider-neutral JSON logs. Browser error boundaries capture
 the exception in Sentry and send only boundary/name/stack-presence fields to
 the first-party route, so the server does not create a duplicate Sentry event.
 
-Runtime proof:
+To verify an explicitly started predecessor instance (not the legacy
+`www.sploot.app` host, whose API returns `410`):
 
 ```bash
-curl -fsS https://www.sploot.app/api/health/live | jq
-curl -fsS https://www.sploot.app/api/health | jq
-curl -fsS https://www.sploot.app/api/health/services | jq
-DEPLOYMENT_URL=https://www.sploot.app pnpm validate:deployment
+NEXT_ORIGIN=http://localhost:3001
+curl -fsS "$NEXT_ORIGIN/api/health/live" | jq
+curl -fsS "$NEXT_ORIGIN/api/health" | jq
+curl -fsS "$NEXT_ORIGIN/api/health/services" | jq
+DEPLOYMENT_URL="$NEXT_ORIGIN" pnpm --filter web validate:deployment
 ```
 
-`/api/health/live` is the provider-free routing probe. `/api/health` is the
-database/schema readiness oracle. Neither endpoint calls or reports Sentry.
-Use [`docs/runbooks/sentry-error-response.md`](docs/runbooks/sentry-error-response.md)
-for alert ownership and incident response.
+`/api/health/live` is the predecessor's provider-free routing probe.
+`/api/health` is its database/schema readiness oracle. Neither endpoint
+calls or reports Sentry. For current hosted Go readiness, use
+`https://sploot.mistystep.io/api/health/services`. See
+[`docs/runbooks/sentry-error-response.md`](docs/runbooks/sentry-error-response.md)
+for retained predecessor alert history and incident response.

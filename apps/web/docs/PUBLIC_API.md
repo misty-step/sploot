@@ -84,11 +84,10 @@ off-loopback instances require HTTPS. Supply `SPLOOT_API_TOKEN` from your
 private client configuration, not a checked-in file, and mint it on the same
 instance as the base URL.
 
-The historical predecessor API was `https://www.sploot.app/api`. After approved
-legacy routing is enabled, API requests on `sploot.app` and `www.sploot.app`
-return **`410 Gone`**, rather than redirecting token-bearing requests. Browser
-redirects are not an API migration mechanism; update clients to the canonical
-origin instead.
+The historical predecessor API was `https://www.sploot.app/api`. Legacy API
+requests on `sploot.app` and `www.sploot.app` now return **`410 Gone`**,
+rather than redirecting token-bearing requests. Browser redirects are not an
+API migration mechanism; update clients to the canonical origin instead.
 
 For the recipes below, set the origin without `/api`:
 

@@ -1,39 +1,47 @@
 # Sentry error response
 
+Retained Next.js predecessor only. The DigitalOcean Sploot runtime is retired;
+the legacy `www.sploot.app` API returns `410`. For current Go operations use
+[native runtime operations](../DEPLOYMENT.md#canonical-hosted-go-instance).
+
 ## detect
 
 ```bash
-curl -fsS https://www.sploot.app/api/health/live | jq
-curl -fsS https://www.sploot.app/api/health | jq
+NEXT_ORIGIN=http://localhost:3001 # explicitly started predecessor
+curl -fsS "$NEXT_ORIGIN/api/health/live" | jq
+curl -fsS "$NEXT_ORIGIN/api/health" | jq
 ```
 
 - `/api/health/live` returning `alive` while `/api/health` is `503` means the
   process is healthy and a dependency is degraded.
-- A Sentry issue for project `sploot` with tag `service=sploot-web` is the
-  agent-facing error surface. DigitalOcean runtime logs remain the raw request
-  record.
+- A historical Sentry issue for project `sploot` with tag `service=sploot-web`
+  concerns the predecessor. DigitalOcean runtime logs are historical records,
+  not a current source of Sploot requests.
 
-Production new-issue alerts are partitioned by `error.unhandled`:
+The recorded predecessor production new-issue alerts were partitioned by
+`error.unhandled`:
 
 - handled: rule `16434801`, team `Misty Step`;
 - unhandled: rule `16664820`, team `Misty Step`.
 
-Both rules require `environment=production`. Project-side default scrubbing,
-IP-address scrubbing, and the repository sanitizer are all enabled.
+Those recorded rules required `environment=production`. The repository
+sanitizer remains in source; confirm provider-side scrubbing before relying
+on retained Sentry data.
 
 ## diagnose
 
 1. Open the Sentry issue and read `sploot.context`, `sploot.trace_id`,
    release, and environment. Do not treat request URLs, user ids, or raw
    client error text as available; the sanitizer removes them.
-2. Correlate the same `traceId` and timestamp in DigitalOcean runtime logs.
-3. Replay the affected route through deployed-smoke or the authenticated QA
-   harness.
+2. Correlate the same `traceId` and timestamp in retained predecessor logs.
+3. Replay the affected route through a separately started predecessor instance
+   or its authenticated QA harness, not the retired public origin.
 4. Record the request/response pair and the Sentry issue URL.
 
 ## recover
 
-Fix the owning route or dependency, deploy, and confirm:
+For an explicitly authorized predecessor instance, fix the owning route or
+dependency, deploy that instance, and confirm:
 
 - `/api/health` returns `ok`;
 - the Sentry issue is resolved or marked as a regression watch;
