@@ -180,7 +180,7 @@ func (s *Service) saveRequest(ctx context.Context, owner string, input Input, ra
 		defer body.Close()
 		input.Reader, input.Filename, input.MIME = body, filename, mediaType
 	}
-	input.MIME = normalizeMIME(input.MIME)
+	input.MIME = contract.NormalizeMIME(input.MIME)
 	if !contract.IsAllowedMIME(input.MIME) {
 		return result, invalid("Use JPEG, PNG, WebP, GIF, MP4, or WebM media")
 	}

@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { ASSET, TAG, UPLOAD } from '@sploot/common';
+import { ASSET, TAG, UPLOAD, normalizeMimeType } from '@sploot/common';
 
 const root = new URL('../../../', import.meta.url);
 const destination = new URL('../internal/contract/generated.go', import.meta.url);
@@ -37,10 +37,18 @@ ${Object.entries(constants).map(([name, value]) => `\t${name} = ${value}`).join(
 
 var AllowedMIMETypes = []string{${UPLOAD.allowedTypes.map(value => JSON.stringify(value)).join(', ')}}
 
-func IsAllowedMIME(value string) bool {
+func NormalizeMIME(value string) string {
 \tvalue, _, _ = strings.Cut(value, ";")
-\tswitch strings.ToLower(strings.TrimSpace(value)) {
-\tcase ${UPLOAD.allowedTypes.map(value => JSON.stringify(value)).join(', ')}:
+\tvalue = strings.ToLower(strings.TrimSpace(value))
+\tif value == "image/jpg" {
+\t\treturn "image/jpeg"
+\t}
+\treturn value
+}
+
+func IsAllowedMIME(value string) bool {
+\tswitch NormalizeMIME(value) {
+\tcase ${[...new Set(UPLOAD.allowedTypes.map(value => normalizeMimeType(value)))].map(value => JSON.stringify(value)).join(', ')}:
 \t\treturn true
 \tdefault:
 \t\treturn false
