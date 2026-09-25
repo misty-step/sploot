@@ -267,10 +267,11 @@ returns 429 `embedding_busy`, `retryable: true`, `Retry-After: 1`.
 
 ### Auth Boundary — retained Next.js predecessor
 
-- browser page traffic on `https://sploot.app` redirects to
-  `https://www.sploot.app` before auth checks, so signed-in users do not get
-  dumped into the wrong-host landing page. api routes stay on their requested
-  host and keep json auth responses.
+- While the Next.js predecessor was hosted, browser page traffic on
+  `https://sploot.app` redirected to `https://www.sploot.app` before auth
+  checks; its API routes stayed on the requested host. Both legacy hosts
+  now return `410` for API requests; browser paths redirect to the canonical
+  Go origin instead. Do not send token-bearing API requests to a legacy host.
 - `apps/web/next.config.ts` keeps PWA start-url document caching off because
   `/` is auth-dependent; the service worker may cache images and search data,
   but not the signed-out landing document.

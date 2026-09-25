@@ -1,8 +1,11 @@
-# Sploot Web App 🌐
+# Sploot Web App 🌐 (retained Next.js predecessor)
 
-> **The core meme library experience.**
+> **The former hosted meme library experience.**
 
-A Next.js 16 Progressive Web App (PWA) enabling semantic search over your personal meme collection.
+This Next.js 16 Progressive Web App (PWA) source retains the former
+semantic-search product and its provider contracts. The current hosted library
+is the separate Go runtime at
+[`sploot.mistystep.io`](https://sploot.mistystep.io).
 
 ## ✨ Key Features
 
@@ -70,6 +73,7 @@ pnpm test:ui        # Open Test UI
 
 ## 📦 Deployment
 
-Deployed automatically to DigitalOcean App Platform on push to `master`.
-See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for build, migration, health,
-and rollback contracts.
+The DigitalOcean App Platform Sploot app was retired on 2026-09-10; pushes to
+`master` no longer deploy this predecessor. The current hosted Go instance is
+`https://sploot.mistystep.io`. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+for native operations and retained predecessor build/migration history.

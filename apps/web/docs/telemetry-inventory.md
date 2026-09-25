@@ -53,6 +53,8 @@ uses real accounts and optional Sentry; see [runtime operations](./DEPLOYMENT.md
 
 server acceptance is bounded: 16 KiB body cap and a per-user 60/min fixed
 window at `/api/telemetry`; observer-driven browser metrics emit at most once
-per metric per page load. accepted first-party telemetry lands in DigitalOcean
-structured logs; browser and server errors land in Sentry. provider retention
-is outside application deletion authority and the docs do not claim otherwise.
+per metric per page load. in the retired DigitalOcean predecessor deployment,
+accepted first-party telemetry landed in structured logs; browser and server
+errors landed in Sentry. provider retention is outside application deletion
+authority. these are historical Next.js destinations, not evidence of the
+current Go library's telemetry routing.

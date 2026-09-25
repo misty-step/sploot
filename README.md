@@ -216,7 +216,8 @@ We use **Turborepo** to orchestrate tasks.
 - **Monorepo Tooling**: Turborepo + pnpm workspaces.
 - **Shared Code**: `@sploot/common` owns upload/MIME/API contracts; Go generates its bounds from common and takes model identity from its local inference bundle.
 - **CI/CD**: GitHub Actions (Lint, Test, Type-check).
-- **Deployment**: 
+- **Deployment**:
+  - Hosted Go: [`https://sploot.mistystep.io`](https://sploot.mistystep.io), separate from local libraries.
   - Local Go: persistent data directory and separate reusable model cache.
   - Retained Next.js predecessor: historical DigitalOcean App Platform runtime retired on 2026-09-10; source and provider contracts remain retained, not current serving authority.
   - Extension: Manual submission to Chrome Web Store.

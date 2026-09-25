@@ -2,15 +2,16 @@
 
 ## Overview
 
-Sploot has two separate web runtimes. `apps/server` is the self-contained local
-product: Go HTTP, server-rendered HTML/HTMX, local accounts, SQLite/sqlite-vec,
-private filesystem media, and CPU CLIP inference. `apps/web` remains the
-deployed Next.js predecessor with its existing vendor services and data.
+Sploot has two separate web runtimes. `apps/server` is the self-contained
+product, hosted at `https://sploot.mistystep.io` and also runnable locally:
+Go HTTP, server-rendered HTML/HTMX, local accounts, SQLite/sqlite-vec,
+private filesystem media, and CPU CLIP inference. `apps/web` retains the
+retired Next.js predecessor source and its vendor services and data.
 
 Starting Go does not connect to or alter the predecessor's identities or data.
 The explicit offline converter consumes a complete private capture and an
 operator-supplied owner map, publishing a new native library and separate source
-archive. Local acceptance is not production cutover or migration authorization.
+archive. Local acceptance alone is not evidence of a production cutover.
 Chrome capture uses TypeScript/WXT device pairing; MCP and the unsigned iPhone
 Shortcut source use the published token-scoped save/search contract.
 
@@ -43,7 +44,7 @@ graph TB
   CPU --> CACHE[Pinned ONNX models + runtime cache]
   RECOVERY[Backup / verify / restore] --> DB
   RECOVERY --> MEDIA
-  NEXT[apps/web: unchanged deployed Next.js] --> VENDOR[Clerk / Neon + pgvector / Blob / Replicate]
+  NEXT[apps/web: retired Next.js predecessor] --> VENDOR[Retained Clerk / Neon + pgvector / Blob / Replicate contracts]
 ```
 
 Each client targets one explicitly selected origin. There is no request-time
@@ -82,13 +83,15 @@ indexing before closing native sessions and the database. The Dockerfile builds 
 CGO binaries and includes FFmpeg/ffprobe; it requires persistent library and
 model-cache volumes, not PostgreSQL clients or a Prisma migration job.
 
-### apps/web (deployed Next.js predecessor)
-**Purpose**: Retain the existing deployed product and its data/deployment authority.
+### apps/web (retained Next.js predecessor)
+**Purpose**: Retain the retired product's source, provider data, and recovery
+contracts.
 
 Its Next.js routes/UI, Clerk, Prisma/Neon Postgres with pgvector, Vercel Blob,
 Replicate, Sentry, billing/limiter state, and operational tooling remain separate.
-Named Prisma migrations and the Node PRE_DEPLOY migration runner still belong
-to that deployment; they do not initialize the Go SQLite library. Existing
+Named Prisma migrations and the Node PRE_DEPLOY migration runner belong to the
+retained predecessor; they do not initialize the Go SQLite library. There is
+no active DigitalOcean Sploot app to receive automatic deployments. Existing
 predecessor CI gates remain intact.
 
 The Go route surface intentionally differs: it uses a completed owner ZIP rather
@@ -216,7 +219,8 @@ stored bytes, historical provenance, per-asset identity even when content
 matches, and one-use password claims for separate unactivated accounts.
 Unclaimed restored accounts receive new offline invitations; the server generates
 a fresh signing key at startup. Conversion never contacts old providers.
-Production cutover requires independent source/native recovery and one write authority.
+The production cutover required independent source/native recovery and one
+write authority.
 
 ## Key Decisions
 
