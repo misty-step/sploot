@@ -351,9 +351,10 @@ Two routes do enforce a real, tested limit:
 
 #### GET /api/health/live
 
-Process-liveness probe dedicated to platform routing (DigitalOcean routes the
-web service on this path). Both runtimes retain `status: "alive"` and
-`service: "sploot-web"`. It proves only that the process is responding:
+Process-liveness probe dedicated to platform routing (historically DigitalOcean
+routed the Next.js web service on this path). The Go runtime also returns
+`status: "alive"` and `service: "sploot-web"`. It proves only that the
+process is responding:
 no database, provider, Clerk, telemetry, network, or
 model dependency, and no sensitive output. It must never be used as a
 dependency oracle.
@@ -430,8 +431,9 @@ of a completed upload, inference, or external telemetry call.
   This package version is not the predecessor's latest-release lookup and
   cannot be compared with a release tag as proof of the same running artifact.
 
-Use the DigitalOcean completed deployment/source receipt for the running
-revision; `/api/version` alone cannot prove a predecessor deployment.
+For a historical Next.js revision, use its archived DigitalOcean completed
+deployment/source receipt; there is no current DigitalOcean Sploot deployment.
+`/api/version` alone cannot prove which predecessor revision was deployed.
 
 ---
 
