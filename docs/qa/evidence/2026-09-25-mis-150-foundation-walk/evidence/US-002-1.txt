@@ -1,0 +1,1 @@
+PASS New semantic queries use real local text/image vectors and render ranked results

@@ -42,9 +42,12 @@ real MV3 Chromium journey for US-001. An empty PR selection emits no story
 passes. From outside the checkout run `foundation-check receipt target/walk/walk-receipt.json --base SHA --repo /path/to/sploot`
 for a PR (replace `--base SHA` with `--all` nightly); CI keeps receipt,
 candidate HEAD/tree and artifact hashes together in one job. The files under
-ignored `target/walk/` are
-CI artifacts, not production proof; the gauntlet removes only its own disposable
-library on success. The unrelated predecessor QA procedure below remains intact.
+ignored `target/walk/` are CI artifacts, not production proof. The sanitized
+nightly receipt and eight criterion markers for MIS-150 are retained under
+`docs/qa/evidence/2026-09-25-mis-150-foundation-walk/` beyond Actions artifact
+expiry; their head/tree identify the historical master candidate, not a later
+checkout. The gauntlet removes only its own disposable library on success.
+The unrelated predecessor QA procedure below remains intact.
 
 ## Producing a predecessor packet
 

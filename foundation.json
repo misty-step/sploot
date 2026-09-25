@@ -14,11 +14,11 @@
   "dispositions": {
     "FND-CHG-001": {
       "status": "satisfied",
-      "receipt": "PR #354 run https://github.com/misty-step/sploot/actions/runs/36192352760/artifacts/10888572796 and master run https://github.com/misty-step/sploot/actions/runs/36196038604/artifacts/10890581736: isolated authorized owner capture, local search, and recovery walked US-001/002/003 with all eight criteria passed and hashed evidence."
+      "receipt": "Durable sanitized full-walk receipt and eight SHA-256-matched criteria: docs/qa/evidence/2026-09-25-mis-150-foundation-walk/walk-receipt.json, bound to master e146321649361dcc3da1ade2925ce170a7b5b14c. PR #354 affected run 36192352760, master run 36196038604 and dispatched full run 36196573320 exercised isolated authorized owner capture, local search, and recovery across US-001/002/003."
     },
     "FND-CHG-002": {
       "status": "satisfied",
-      "receipt": "PR #354 run https://github.com/misty-step/sploot/actions/runs/36192352760/artifacts/10888572796: US-001 criterion 3 rejects malformed, unsupported, oversized, and private-network submissions; US-003 criteria 2-3 accept valid recovery and refuse populated-library restore without modifying data."
+      "receipt": "Durable sanitized evidence: docs/qa/evidence/2026-09-25-mis-150-foundation-walk/walk-receipt.json and its eight hashed evidence/ files, from successful full-walk run 36196573320. US-001 criterion 3 rejects malformed, unsupported, oversized and private-network submissions; US-003 criteria 2-3 accept valid recovery and refuse populated-library restore without modifying data."
     },
     "FND-TRN-001": {
       "status": "pending",
@@ -68,7 +68,7 @@
     },
     "FND-WLK-001": {
       "status": "satisfied",
-      "receipt": "PR #354 affected walk https://github.com/misty-step/sploot/actions/runs/36192352760/artifacts/10888572796, master merge walk https://github.com/misty-step/sploot/actions/runs/36196038604/artifacts/10890581736, and dispatched nightly full walk https://github.com/misty-step/sploot/actions/runs/36196573320/artifacts/10890408140: each receipt bound its candidate head/tree, validated eight hashed criterion artifacts and passed US-001/002/003; no story was unwalked."
+      "receipt": "Durable sanitized full-walk receipt docs/qa/evidence/2026-09-25-mis-150-foundation-walk/walk-receipt.json and eight SHA-256-matched evidence/ files bind master head e146321649361dcc3da1ade2925ce170a7b5b14c and tree 20ff462ea03045a6d7a43e1e6b7742731fe0439e; PR affected walk run 36192352760, master run 36196038604 and dispatched nightly --all run 36196573320 each passed US-001/002/003; no story unwalked. GitHub artifact originals: https://github.com/misty-step/sploot/actions/runs/36196573320/artifacts/10890408140 (expires)."
     },
     "FND-WS-001": {
       "status": "pending",

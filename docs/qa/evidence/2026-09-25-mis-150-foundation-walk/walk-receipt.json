@@ -1,0 +1,121 @@
+{
+  "schema": "foundation-walk-receipt/1",
+  "check": "sploot-story-walk",
+  "run": "36196573320",
+  "head": "e146321649361dcc3da1ade2925ce170a7b5b14c",
+  "tree": "20ff462ea03045a6d7a43e1e6b7742731fe0439e",
+  "base": null,
+  "started_at": "2026-09-25T22:27:10.266Z",
+  "finished_at": "2026-09-25T22:27:37.753Z",
+  "exit": 0,
+  "stories": [
+    {
+      "id": "US-001",
+      "status": "pass",
+      "criteria": [
+        {
+          "n": 1,
+          "status": "pass",
+          "evidence": [
+            "evidence/US-001-1.txt"
+          ]
+        },
+        {
+          "n": 2,
+          "status": "pass",
+          "evidence": [
+            "evidence/US-001-2.txt"
+          ]
+        },
+        {
+          "n": 3,
+          "status": "pass",
+          "evidence": [
+            "evidence/US-001-3.txt"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "US-002",
+      "status": "pass",
+      "criteria": [
+        {
+          "n": 1,
+          "status": "pass",
+          "evidence": [
+            "evidence/US-002-1.txt"
+          ]
+        },
+        {
+          "n": 2,
+          "status": "pass",
+          "evidence": [
+            "evidence/US-002-2.txt"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "US-003",
+      "status": "pass",
+      "criteria": [
+        {
+          "n": 1,
+          "status": "pass",
+          "evidence": [
+            "evidence/US-003-1.txt"
+          ]
+        },
+        {
+          "n": 2,
+          "status": "pass",
+          "evidence": [
+            "evidence/US-003-2.txt"
+          ]
+        },
+        {
+          "n": 3,
+          "status": "pass",
+          "evidence": [
+            "evidence/US-003-3.txt"
+          ]
+        }
+      ]
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "evidence/US-001-1.txt",
+      "sha256": "fd0ac9ee4ac5a883c9771f9cfcd10c6e4b50113673b51530949d918e940acde9"
+    },
+    {
+      "path": "evidence/US-001-2.txt",
+      "sha256": "27538aef9a9838a9fe109e3fb849f3ef331af42cfc3154fdabfad5856ffb7891"
+    },
+    {
+      "path": "evidence/US-001-3.txt",
+      "sha256": "9eb84f2df914b690cfae8b62a58ff2b4d88095770cfd93dc64b011e7bf6eddb5"
+    },
+    {
+      "path": "evidence/US-002-1.txt",
+      "sha256": "0460cd642a9436b8c1ba3548aded24940dbf348d42b712ae4a085c15dfa78003"
+    },
+    {
+      "path": "evidence/US-002-2.txt",
+      "sha256": "2c8bf1f75302d2f65ea863f2bb7f250a9f74d63c8e35a296601c120c40eb97ae"
+    },
+    {
+      "path": "evidence/US-003-1.txt",
+      "sha256": "699be1062b37c09255334aa61741ff8bdd4621e5d575a14f2a8ac2242a1759ad"
+    },
+    {
+      "path": "evidence/US-003-2.txt",
+      "sha256": "bf0cfc485be2faf800024b69485fc64858c1c11ceb7c7f6cb08912ea8bd9f283"
+    },
+    {
+      "path": "evidence/US-003-3.txt",
+      "sha256": "6a4f4be15409c6ce59399026ecfc9f8825ad2f0c43d21bf1794d3bc1472e338e"
+    }
+  ]
+}
