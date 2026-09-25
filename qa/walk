@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+export PATH="$HOME/.local/share/node-22.22.0/bin:$HOME/.local/share/go-1.27.1/bin:$HOME/.local/bin:$PATH"
 exec node qa/walk.mjs "$@"

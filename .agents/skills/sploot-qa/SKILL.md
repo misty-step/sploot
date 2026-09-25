@@ -102,7 +102,7 @@ For the foundation walk, use an Ubuntu 24.04 CI runner or the existing owned pro
 
 ## Doctor
 
-Check `node --version`, `pnpm --version`, `go version`, `apps/server/build/sploot`, and `apps/extension/dist/chrome-mv3/manifest.json`. Model preparation must succeed with actual CPU CLIP. A ready HTTP endpoint alone does not prove a save, search, or restore.
+When inspecting a freshly bootstrapped workspace, prepend `"$HOME/.local/share/node-22.22.0/bin:$HOME/.local/share/go-1.27.1/bin:$HOME/.local/bin"` to PATH before checking `node --version`, `pnpm --version` and `go version`; `qa/walk` does this automatically. Confirm `apps/server/build/sploot` and `apps/extension/dist/chrome-mv3/manifest.json`. Model preparation must succeed with actual CPU CLIP. A ready HTTP endpoint alone does not prove a save, search, or restore.
 
 ## Drive
 
