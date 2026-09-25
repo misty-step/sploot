@@ -95,3 +95,23 @@ Return `PASS`, `FAIL`, or `UNVERIFIED`; exact commands; surfaces exercised;
 evidence paths and observed DOM/network/console behavior; and uncovered paths.
 Local Go acceptance is not a production cutover, Web Store release, Apple signing
 or physical iPhone proof. Report predecessor deployed smoke separately when owed.
+
+## Launch
+
+For the foundation walk, use an Ubuntu 24.04 CI runner or the existing owned project workspace, never the workstation. Provision Node 22, pnpm 10.22.0 and Go 1.27.1; run the credential-free `.exe/setup.sh` to install dependencies, media tools, Chromium, pinned local inference, the Go binary and unpacked extension. This creates no accounts or media in the ordinary `.sploot-local/library`.
+
+## Doctor
+
+Check `node --version`, `pnpm --version`, `go version`, `apps/server/build/sploot`, and `apps/extension/dist/chrome-mv3/manifest.json`. Model preparation must succeed with actual CPU CLIP. A ready HTTP endpoint alone does not prove a save, search, or restore.
+
+## Drive
+
+Run `qa/walk --stories \"US-001 US-002\"` for the affected IDs from `foundation-check affected --base SHA`, or `qa/walk --all` nightly. It reuses the isolated Go browser gauntlet and, for US-001, the real unpacked MV3 lifecycle in Chromium under `xvfb-run`. An empty PR selection generates an empty receipt without claiming any story. No local browser, Playwright, dev server, or full pnpm test suite belongs on the workstation.
+
+## Evidence
+
+Inspect `target/walk/walk-receipt.json` and its hashed per-criterion `evidence/` files. Each pass requires successful execution of the named Go or extension scenario; `foundation-check receipt target/walk/walk-receipt.json --base SHA` binds it to HEAD and affected stories, and `--all` covers the scheduled full walk. CI uploads this directory; real local acceptance does not prove hosted behavior, Web Store publication or a physical iPhone.
+
+## Cleanup
+
+The gauntlet terminates its own server/browser and removes its fresh private library on success; the runner replaces only its marker-owned `target/walk/` output. Keep failed private run directories for diagnosis and remove only identified run-owned data after retaining needed evidence. Never remove `.sploot-local/library` or an existing workspace/VM as a shortcut.

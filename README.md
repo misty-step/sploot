@@ -190,6 +190,13 @@ the ordinary library. Go integration tests use isolated SQLite state, not a
 `DATABASE_URL`. The retained Next.js database paths still require their own
 pgvector evidence and unchanged gates.
 
+Foundation PR checks use a reviewed [feature map](./features/README.md) to
+choose changed stories and run their real Go/Chromium journey with `qa/walk`.
+The [QA procedure](./docs/qa/README.md) covers isolated setup, receipts and
+nightly full coverage. The current `foundation.json` is in bootstrap ratchet
+mode: its sole remaining document gap is an incident-learning template, not a
+claim that pending Foundation Standard obligations are satisfied.
+
 #### Other surfaces
 
 Next.js development and extension development remain separate commands. Next.js

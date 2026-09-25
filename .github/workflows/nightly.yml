@@ -1,0 +1,85 @@
+name: nightly
+
+# PRs walk affected stories; nightly exercises every live Go product story and
+# keeps one owned failure issue when any setup, walk or receipt step fails.
+on:
+  schedule:
+    - cron: '43 8 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sploot-nightly
+  cancel-in-progress: false
+
+jobs:
+  full-walk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      HARNESS_SHA: "6286d1039976485a36a8a0d649c487cfee886939"
+      BUN_URL: https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64-baseline.zip
+      BUN_SHA256: c678040f14fe0440eb839d37cbd0ce4c051a32da72806ac97de6a6aab6bf728f
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: apps/server/go.sum
+      - name: Fetch pinned foundation checker and Bun
+        run: |
+          root="$RUNNER_TEMP/foundation"
+          mkdir -p "$root/checker" "$root/runtime"
+          git init --quiet --initial-branch=checker "$root/checker"
+          git -C "$root/checker" fetch --quiet --no-tags --depth=1 https://github.com/misty-step/harness.git "$HARNESS_SHA"
+          git -C "$root/checker" checkout --quiet --detach "$HARNESS_SHA"
+          test "$(git -C "$root/checker" rev-parse HEAD)" = "$HARNESS_SHA"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --retry 3 --output "$root/runtime/bun.zip" "$BUN_URL"
+          printf '%s  %s\n' "$BUN_SHA256" "$root/runtime/bun.zip" | sha256sum --check --strict
+          unzip -q "$root/runtime/bun.zip" -d "$root/runtime"
+      - name: Provision isolated product walk
+        run: bash .exe/setup.sh
+      - name: Walk every live story and validate receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun="$RUNNER_TEMP/foundation/runtime/bun-linux-x64-baseline/bun"
+          checker="$RUNNER_TEMP/foundation/checker/agent-config/bin/foundation-check.ts"
+          foundation() { (cd "$RUNNER_TEMP/foundation" && "$bun" --no-env-file --no-install "$checker" "$@" --repo "$GITHUB_WORKSPACE"); }
+          foundation check
+          qa/walk --all
+          foundation receipt target/walk/walk-receipt.json --all
+      - name: Upload full walk evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sploot-nightly-walk-${{ github.sha }}-${{ github.run_id }}
+          path: target/walk/
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Open or update nightly failure issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title='Nightly story walk failed'
+          body="The Sploot nightly full walk failed on ${GITHUB_SHA}. Step logs: ${RUN_URL}. If the walk ran, the run's sploot-nightly-walk artifact holds its criterion receipt; a setup failure leaves only step logs. Refs MIS-150."
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [[ -n "$number" ]]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi

@@ -126,8 +126,11 @@ async function fixtures() {
     await writeFile(ppm, Buffer.concat([Buffer.from('P6\n256 256\n255\n'), pixels]));
     run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', ppm, '-frames:v', '1', join(directory, `${shape}.png`)]);
   }
+  run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', join(directory, 'circle.png'), '-frames:v', '1', join(directory, 'circle.jpg')]);
+  run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', join(directory, 'circle.png'), '-frames:v', '1', join(directory, 'circle.webp')]);
   run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-loop', '1', '-i', join(directory, 'triangle.png'), '-t', '1', '-vf', 'fps=4,hue=H=2*t', join(directory, 'triangle.gif')]);
   run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-loop', '1', '-i', join(directory, 'circle.png'), '-t', '1', '-vf', 'fps=8', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', join(directory, 'circle.mp4')]);
+  run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-loop', '1', '-i', join(directory, 'circle.png'), '-t', '1', '-vf', 'fps=8', '-c:v', 'libvpx-vp9', '-pix_fmt', 'yuv420p', join(directory, 'circle.webm')]);
   return directory;
 }
 
@@ -195,12 +198,13 @@ let personalToken = '';
   });
   await story('Browser capture preserves image GIF and video originals and genuine indexing intent', async () => {
     await alice.page.getByRole('button', { name: 'Save', exact: true }).click();
-    await alice.page.locator('#upload-files').setInputFiles(['triangle.png', 'circle.png', 'square.png', 'triangle.gif', 'circle.mp4'].map(name => join(inputDirectory, name)));
+    await alice.page.locator('#upload-files').setInputFiles(['triangle.png', 'circle.png', 'square.png', 'circle.jpg', 'circle.webp', 'triangle.gif', 'circle.mp4', 'circle.webm'].map(name => join(inputDirectory, name)));
     await expect.poll(async () => {
       const response = await api(alice, application.origin, '/api/assets?limit=30');
       assets = (await response.json()).assets;
       return assets.length;
-    }, { timeout: 60_000 }).toBe(5);
+    }, { timeout: 60_000 }).toBe(8);
+    assert.deepEqual([...new Set(assets.map(asset => asset.mime))].sort(), ['image/gif', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm']);
     const triangleHash = digest(await readFile(join(inputDirectory, 'triangle.png')));
     triangle = assets.find(asset => asset.checksum === triangleHash)!;
     assert(triangle, 'Uploaded original must be identifiable by its actual checksum');
@@ -212,18 +216,20 @@ let personalToken = '';
     }
     await alice.page.getByRole('button', { name: 'Close save panel' }).click();
   });
-  await story('New semantic queries use real local text/image vectors and owner filters', async () => {
+  await story('New semantic queries use real local text/image vectors and render ranked results', async () => {
     const response = await api(alice, application.origin, '/api/search', 'POST', { query: 'a red triangle centered on a white background', threshold: 0, limit: 10 });
     assert.equal(response.status(), 200);
     const results = (await response.json()).results as Asset[];
     assert([triangle.id, assets.find(asset => asset.mime === 'image/gif')!.id].includes(results[0]!.id), 'Local CLIP must rank the matching shape above unrelated shapes');
-    assert.equal((await (await api(bob, application.origin, '/api/search', 'POST', { query: 'a red triangle centered on a white background' })).json()).results.length, 0);
-    for (const path of [`/api/assets/${triangle.id}`, `/media/${triangle.id}`, `/api/assets/${triangle.id}/embedding-status`]) assert.equal((await api(bob, application.origin, path)).status(), 404);
-    assert.equal((await publicContext.request.get(`${application.origin}/media/${triangle.id}`)).status(), 401);
     await alice.page.locator('#search-input').fill('a red triangle centered on a white background');
     await alice.page.locator('#search-input').press('Enter');
     await expect(alice.page).toHaveURL(/\/app\/search\?/);
     await expect(alice.page.locator('.media-card').first()).toBeVisible();
+  });
+  await story('Owner isolation hides foreign search results and private media', async () => {
+    assert.equal((await (await api(bob, application.origin, '/api/search', 'POST', { query: 'a red triangle centered on a white background' })).json()).results.length, 0);
+    for (const path of [`/api/assets/${triangle.id}`, `/media/${triangle.id}`, `/api/assets/${triangle.id}/embedding-status`]) assert.equal((await api(bob, application.origin, path)).status(), 404);
+    assert.equal((await publicContext.request.get(`${application.origin}/media/${triangle.id}`)).status(), 401);
   });
   await story('Browser shuffle and JSON cursors preserve the same private seeded order', async () => {
     const path = '/api/assets?sortBy=shuffle&shuffleSeed=424242&limit=2';
@@ -268,7 +274,7 @@ let personalToken = '';
     const independent = await save(bob);
     assert.equal(independent.status(), 201);
     assert.notEqual((await independent.json()).asset.id, triangle.id);
-    assert.equal((await (await api(alice, application.origin, '/api/assets')).json()).total, 5);
+    assert.equal((await (await api(alice, application.origin, '/api/assets')).json()).total, assets.length);
   });
   await story('Favorites tags and filtered search survive browser reload', async () => {
     await alice.page.goto(`${application.origin}/app`);
@@ -349,14 +355,14 @@ let personalToken = '';
     assert.equal(disconnected.status(), 204);
     assert.equal((await deviceRequest('/api/auth/session')).status(), 401);
   });
-  await story('Malformed and oversized media and private-network URLs fail safely', async () => {
-    for (const fixture of [{ name: 'not-an-image.png', mimeType: 'image/png', buffer: Buffer.from('not media') }, { name: 'oversized.png', mimeType: 'image/png', buffer: Buffer.alloc(UPLOAD.maxSize + 1) }]) {
+  await story('Malformed unsupported and oversized media and private-network URLs fail safely', async () => {
+    for (const fixture of [{ name: 'not-an-image.png', mimeType: 'image/png', buffer: Buffer.from('not media') }, { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('not media') }, { name: 'oversized.png', mimeType: 'image/png', buffer: Buffer.alloc(UPLOAD.maxSize + 1) }]) {
       const response = await alice.context.request.post(`${application.origin}/api/upload`, { headers: { Origin: application.origin, 'X-Sploot-User-ID': alice.id }, multipart: { file: fixture } });
       assert([400, 413].includes(response.status()));
     }
     const privateURL = await api(alice, application.origin, '/api/upload/url', 'POST', { url: `${application.origin}/api/health` });
     assert.equal(privateURL.status(), 400);
-    assert.equal((await (await api(alice, application.origin, '/api/assets')).json()).total, 5);
+    assert.equal((await (await api(alice, application.origin, '/api/assets')).json()).total, assets.length);
   });
   await story('Mobile browser can browse upload play and download without horizontal overflow', async () => {
     await bob.page.bringToFront();
@@ -389,7 +395,9 @@ let personalToken = '';
     assert.equal((await api(alice, application.origin, '/api/auth/session')).status(), 200);
     const persisted = (await (await api(alice, application.origin, `/api/assets/${triangle.id}`)).json()).asset;
     assert.equal(persisted.favorite, true);
-    assert.equal(digest(await (await api(alice, application.origin, `/media/${triangle.id}`)).body()), triangle.checksum);
+    for (const asset of assets) {
+      assert.equal(digest(await (await api(alice, application.origin, `/media/${asset.id}`)).body()), asset.checksum);
+    }
     const response = await api(alice, application.origin, '/api/search', 'POST', { query: 'a green square against white', threshold: 0 });
     assert.equal(response.status(), 200);
     assert.equal((await response.json()).results[0].checksum, digest(await readFile(join(inputDirectory, 'square.png'))));
@@ -426,6 +434,14 @@ let personalToken = '';
     await restoredContext.close();
     await stop(restoredApplication.child);
   });
+  await story('Restore refuses a populated library without modifying its database', async () => {
+    const database = join(runtime, 'restored', 'library.sqlite');
+    const before = digest(await readFile(database));
+    const refusal = spawnSync(binary, ['restore', '--directory', join(runtime, 'snapshot'), '--target-data-dir', join(runtime, 'restored')], { cwd: serverDirectory, encoding: 'utf8' });
+    assert.notEqual(refusal.status, 0, 'Restore must refuse a populated target');
+    assert.match(refusal.stderr, /target directory is not empty; restore never overwrites a library/);
+    assert.equal(digest(await readFile(database)), before, 'The populated target must remain unchanged');
+  });
   await story('Password changes and logout revoke old access without removing library data', async () => {
     const changedPassword = `changed-${randomUUID()}`;
     const changed = await api(alice, application.origin, '/api/auth/password', 'POST', { currentPassword: alice.password, password: changedPassword });
@@ -439,7 +455,7 @@ let personalToken = '';
     await alice.page.getByLabel('Password', { exact: true }).fill(changedPassword);
     await alice.page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(alice.page).toHaveURL(/\/app(?:\?|$)/);
-    assert.equal((await (await api(alice, application.origin, '/api/assets')).json()).total, 5);
+    assert.equal((await (await api(alice, application.origin, '/api/assets')).json()).total, assets.length);
   });
   await alice.page.bringToFront();
   await alice.page.goto(`${application.origin}/app`);
