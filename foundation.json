@@ -13,16 +13,12 @@
   ],
   "dispositions": {
     "FND-CHG-001": {
-      "status": "pending",
-      "missing": "No retained candidate-bound story walk for this adoption",
-      "owner": "phaedrus",
-      "next": "Retain green PR and master story-walk receipts with the exact candidate"
+      "status": "satisfied",
+      "receipt": "Durable sanitized full-walk receipt and eight SHA-256-matched criteria: docs/qa/evidence/2026-09-25-mis-150-foundation-walk/walk-receipt.json, bound to master e146321649361dcc3da1ade2925ce170a7b5b14c. PR #354 affected run 36192352760, master run 36196038604 and dispatched full run 36196573320 exercised isolated authorized owner capture, local search, and recovery across US-001/002/003."
     },
     "FND-CHG-002": {
-      "status": "pending",
-      "missing": "Negative media rejection and restore refusal lack a retained candidate receipt",
-      "owner": "phaedrus",
-      "next": "Retain isolated browser and recovery refusal evidence from qa/walk"
+      "status": "satisfied",
+      "receipt": "Durable sanitized evidence: docs/qa/evidence/2026-09-25-mis-150-foundation-walk/walk-receipt.json and its eight hashed evidence/ files, from successful full-walk run 36196573320. US-001 criterion 3 rejects malformed, unsupported, oversized and private-network submissions; US-003 criteria 2-3 accept valid recovery and refuse populated-library restore without modifying data."
     },
     "FND-TRN-001": {
       "status": "pending",
@@ -67,22 +63,18 @@
       "next": "Add an owned incident-learning template and remove doc:postmortems baseline before its expiry"
     },
     "FND-MAP-001": {
-      "status": "pending",
-      "missing": "Draft feature map has not yet passed the pinned check on committed source",
-      "owner": "phaedrus",
-      "next": "Validate the reviewed features/ map on PR and master"
+      "status": "satisfied",
+      "receipt": "Pinned foundation check passed on PR #354 https://github.com/misty-step/sploot/actions/runs/36192352760 and master merge e146321649361dcc3da1ade2925ce170a7b5b14c https://github.com/misty-step/sploot/actions/runs/36196038604; features/ indexes and maps all three live stories to tracked sources and drive procedures."
     },
     "FND-WLK-001": {
-      "status": "pending",
-      "missing": "Criterion receipts for all live stories have not passed on master",
-      "owner": "phaedrus",
-      "next": "Run affected PR and nightly full walks and retain receipt artifacts"
+      "status": "satisfied",
+      "receipt": "Durable sanitized full-walk receipt docs/qa/evidence/2026-09-25-mis-150-foundation-walk/walk-receipt.json and eight SHA-256-matched evidence/ files bind master head e146321649361dcc3da1ade2925ce170a7b5b14c and tree 20ff462ea03045a6d7a43e1e6b7742731fe0439e; PR affected walk run 36192352760, master run 36196038604 and dispatched nightly --all run 36196573320 each passed US-001/002/003; no story unwalked. GitHub artifact originals: https://github.com/misty-step/sploot/actions/runs/36196573320/artifacts/10890408140 (expires)."
     },
     "FND-WS-001": {
       "status": "pending",
-      "missing": "New credential-free setup has not yet passed on a fresh runner",
+      "missing": "Credential-free setup passed on fresh hosted runners, but an idempotent rerun on the existing owned exe.dev workspace has not been observed",
       "owner": "phaedrus",
-      "next": "Run .exe/setup.sh in hosted story-walk and nightly jobs"
+      "next": "Run .exe/setup.sh twice in the existing owned workspace and retain its toolchain and story-walk evidence"
     },
     "FND-DEF-SENTRY-001": {
       "status": "pending",

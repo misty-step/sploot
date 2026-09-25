@@ -39,12 +39,15 @@ extension. `qa/walk --stories "US-001 US-002"` walks the named affected stories;
 `qa/walk --all` is the nightly full walk. Each numbered criterion is tied to
 observed steps of the existing isolated `server smoke` gauntlet, including the
 real MV3 Chromium journey for US-001. An empty PR selection emits no story
-passes. Run the pinned `foundation-check receipt target/walk/walk-receipt.json
---base SHA` for a PR (or `--all` for nightly) from outside the checkout with
-`--repo` pointing back at it; CI does this in one job so receipt, candidate
-HEAD/tree and artifact hashes agree. The files under ignored `target/walk/` are
-CI artifacts, not production proof; the gauntlet removes only its own disposable
-library on success. The unrelated predecessor QA procedure below remains intact.
+passes. From outside the checkout run `foundation-check receipt target/walk/walk-receipt.json --base SHA --repo /path/to/sploot`
+for a PR (replace `--base SHA` with `--all` nightly); CI keeps receipt,
+candidate HEAD/tree and artifact hashes together in one job. The files under
+ignored `target/walk/` are CI artifacts, not production proof. The sanitized
+nightly receipt and eight criterion markers for MIS-150 are retained under
+`docs/qa/evidence/2026-09-25-mis-150-foundation-walk/` beyond Actions artifact
+expiry; their head/tree identify the historical master candidate, not a later
+checkout. The gauntlet removes only its own disposable library on success.
+The unrelated predecessor QA procedure below remains intact.
 
 ## Producing a predecessor packet
 
