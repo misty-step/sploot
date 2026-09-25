@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(repo);
 const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+// A receipt bound to HEAD cannot authenticate executable uncommitted source.
+if (git('status', '--porcelain', '--untracked-files=all')) throw Error('Commit all worktree changes before walking stories');
 const source = readFileSync('USER_STORIES.md', 'utf8');
 const sections = [...source.matchAll(/^## (US-\d{3})\b[^\n]*$/gm)];
 const live = sections.filter((match, index) => !/\b(?:Retired:|Superseded by US-\d{3})/i.test(source.slice(match.index, sections[index + 1]?.index))).map(match => match[1]);

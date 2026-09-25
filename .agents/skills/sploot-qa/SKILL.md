@@ -106,7 +106,7 @@ When inspecting a freshly bootstrapped workspace, prepend `"$HOME/.local/share/n
 
 ## Drive
 
-Run `qa/walk --stories \"US-001 US-002\"` for the affected IDs from `foundation-check affected --base SHA`, or `qa/walk --all` nightly. It reuses the isolated Go browser gauntlet and, for US-001, the real unpacked MV3 lifecycle in Chromium under `xvfb-run`. An empty PR selection generates an empty receipt without claiming any story. No local browser, Playwright, dev server, or full pnpm test suite belongs on the workstation.
+Run `qa/walk --stories "US-001 US-002"` for the affected IDs from `foundation-check affected --base SHA`, or `qa/walk --all` nightly. It reuses the isolated Go browser gauntlet and, for US-001, the real unpacked MV3 lifecycle in Chromium under `xvfb-run`. An empty PR selection generates an empty receipt without claiming any story. No local browser, Playwright, dev server, or full pnpm test suite belongs on the workstation.
 
 ## Evidence
 
