@@ -1,0 +1,9 @@
+{
+  "schema": "foundation-baseline-extension/1",
+  "reason": "Pinning Foundation 1.4.0 introduces FND-REL-001, FND-ALR-001, and FND-INC-001 for this application. The owner must assess and remediate continuous green-branch production shipment, externally monitored errors and health routed to approved agent triage, and owned incident response through a class-closing postmortem and regression check by 2026-10-26. These operational guarantees have not yet been evidenced; the postmortem README alone does not satisfy incident response. Keep all three dispositions pending until exercised proof exists.",
+  "entries": [
+    { "gap": "ops:alert", "expires": "2026-10-26" },
+    { "gap": "ops:incident", "expires": "2026-10-26" },
+    { "gap": "ops:ship", "expires": "2026-10-26" }
+  ]
+}

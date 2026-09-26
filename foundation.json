@@ -2,10 +2,10 @@
   "schema": "foundation-adoption/1",
   "standard": {
     "id": "misty-step.foundation",
-    "version": "1.1.0",
-    "catalog_sha256": "483f8779e56c969f44316bb29ec5ec698b8b89140b3ca7510c4b30e049815e86",
-    "revision": "6286d1039976485a36a8a0d649c487cfee886939",
-    "source": "https://github.com/misty-step/harness/blob/6286d1039976485a36a8a0d649c487cfee886939/agent-config/skills/foundation/foundation-standard-v1.json"
+    "version": "1.4.0",
+    "catalog_sha256": "afcc2361b01638e90a704ee194e03eba3da839fcb76aa955d53f854e42966634",
+    "revision": "5834348e2a0cd70404ca136dcf887c680dcf02ab",
+    "source": "https://github.com/misty-step/harness/blob/5834348e2a0cd70404ca136dcf887c680dcf02ab/agent-config/skills/foundation/foundation-standard-v1.json"
   },
   "capabilities": [
     "Self-contained Go/SQLite private meme library with local CPU CLIP search, media recovery and owner accounts",
@@ -85,7 +85,42 @@
       "missing": "SQLite has no reviewed versioned product-activity event contract",
       "owner": "phaedrus",
       "next": "Decide and exercise minimal owned event table and deletion policy"
+    },
+    "FND-REL-001": {
+      "status": "pending",
+      "missing": "Foundation assessment",
+      "owner": "phaedrus",
+      "next": "Assess this obligation with the foundation skill"
+    },
+    "FND-ALR-001": {
+      "status": "pending",
+      "missing": "Foundation assessment",
+      "owner": "phaedrus",
+      "next": "Assess this obligation with the foundation skill"
+    },
+    "FND-INC-001": {
+      "status": "pending",
+      "missing": "Foundation assessment",
+      "owner": "phaedrus",
+      "next": "Assess this obligation with the foundation skill"
     }
   },
-  "mode": "enforced"
+  "mode": "bootstrap",
+  "baseline": [
+    {
+      "gap": "ops:alert",
+      "owner": "phaedrus",
+      "expires": "2026-10-26"
+    },
+    {
+      "gap": "ops:incident",
+      "owner": "phaedrus",
+      "expires": "2026-10-26"
+    },
+    {
+      "gap": "ops:ship",
+      "owner": "phaedrus",
+      "expires": "2026-10-26"
+    }
+  ]
 }
