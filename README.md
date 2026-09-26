@@ -193,9 +193,9 @@ pgvector evidence and unchanged gates.
 Foundation PR checks use a reviewed [feature map](./features/README.md) to
 choose changed stories and run their real Go/Chromium journey with `qa/walk`.
 The [QA procedure](./docs/qa/README.md) covers isolated setup, receipts and
-nightly full coverage. The current `foundation.json` is in bootstrap ratchet
-mode: its sole remaining document gap is an incident-learning template, not a
-claim that pending Foundation Standard obligations are satisfied.
+nightly full coverage. The current `foundation.json` has no remaining
+project-document gap; pending Foundation Standard obligations still await
+evidence and are not claims of satisfaction.
 
 #### Other surfaces
 
