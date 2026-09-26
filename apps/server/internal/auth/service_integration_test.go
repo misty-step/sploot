@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/misty-step/sploot/apps/server/internal/database"
-	"github.com/misty-step/sploot/apps/server/internal/library"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -295,8 +294,7 @@ func TestPasswordChangeRevokesOtherCredentialsWithoutCrossingOwners(t *testing.T
 	}
 	secondPrincipal := browserPrincipal(t, s, second)
 	device := pairedDevice(t, s, owner, "Extension")
-	lib := library.New(s.db, []byte(strings.Repeat("cursor-test-key-", 3)))
-	token, err := lib.MintToken(context.Background(), browserPrincipal(t, s, owner), "Shortcut")
+	token, err := s.MintToken(context.Background(), browserPrincipal(t, s, owner), "Shortcut")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,9 +321,9 @@ func TestPasswordChangeRevokesOtherCredentialsWithoutCrossingOwners(t *testing.T
 		_, err := s.Resolve(r, true)
 		requireAPIStatus(t, err, http.StatusUnauthorized)
 	}
-	_, err = lib.MintToken(context.Background(), secondPrincipal, "Revoked browser")
+	_, err = s.MintToken(context.Background(), secondPrincipal, "Revoked browser")
 	requireAPIStatus(t, err, http.StatusUnauthorized)
-	tokens, err := lib.Tokens(context.Background(), owner.User.ID)
+	tokens, err := s.Tokens(context.Background(), owner.User.ID)
 	if err != nil || len(tokens) != 0 {
 		t.Fatalf("revoked browser retained token authority: tokens=%d error=%v", len(tokens), err)
 	}
@@ -384,8 +382,7 @@ func TestDatabasePATScopeHashOnlyStorageAndRevocation(t *testing.T) {
 	owner := registerAccount(t, s, "owner@example.com")
 	other := registerAccount(t, s, "other@example.com")
 	ctx := context.Background()
-	lib := library.New(s.db, []byte(strings.Repeat("cursor-test-key-", 3)))
-	minted, err := lib.MintToken(ctx, browserPrincipal(t, s, owner), "phone")
+	minted, err := s.MintToken(ctx, browserPrincipal(t, s, owner), "phone")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +393,7 @@ func TestDatabasePATScopeHashOnlyStorageAndRevocation(t *testing.T) {
 	if stored != secretHash(minted.Token) || stored == minted.Token {
 		t.Fatal("token was not stored as SHA-256 only")
 	}
-	listed, err := lib.Tokens(ctx, owner.User.ID)
+	listed, err := s.Tokens(ctx, owner.User.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,16 +412,16 @@ func TestDatabasePATScopeHashOnlyStorageAndRevocation(t *testing.T) {
 	if err != nil || principal.UserID != owner.User.ID || principal.Method != "upload-token" {
 		t.Fatalf("allowed PAT request: %v", err)
 	}
-	_, err = lib.MintToken(ctx, principal, "Escalated PAT")
+	_, err = s.MintToken(ctx, principal, "Escalated PAT")
 	requireAPIStatus(t, err, http.StatusForbidden)
-	if err := lib.RevokeToken(ctx, other.User.ID, minted.ID); err != nil {
+	if err := s.RevokeToken(ctx, other.User.ID, minted.ID); err != nil {
 		t.Fatal(err)
 	}
 	principal, err = s.Resolve(tokenRequest(minted.Token), true)
 	if err != nil || principal.UserID != owner.User.ID {
 		t.Fatalf("cross-owner revoke affected token: %v", err)
 	}
-	if err := lib.RevokeToken(ctx, owner.User.ID, minted.ID); err != nil {
+	if err := s.RevokeToken(ctx, owner.User.ID, minted.ID); err != nil {
 		t.Fatal(err)
 	}
 	_, err = s.Resolve(request, true)
@@ -449,7 +446,6 @@ func TestDatabaseTokenMintingRejectsForeignOrNonBrowserAuthority(t *testing.T) {
 	untyped.Method = ""
 	disguisedDevice := devicePrincipal
 	disguisedDevice.Method = "browser"
-	lib := library.New(s.db, []byte(strings.Repeat("cursor-test-key-", 3)))
 	for _, test := range []struct {
 		name      string
 		principal model.Principal
@@ -462,12 +458,12 @@ func TestDatabaseTokenMintingRejectsForeignOrNonBrowserAuthority(t *testing.T) {
 		{"device session posing as browser", disguisedDevice, http.StatusUnauthorized},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := lib.MintToken(context.Background(), test.principal, "Unauthorized token")
+			_, err := s.MintToken(context.Background(), test.principal, "Unauthorized token")
 			requireAPIStatus(t, err, test.status)
 		})
 	}
 	for _, userID := range []string{owner.User.ID, other.User.ID} {
-		tokens, err := lib.Tokens(context.Background(), userID)
+		tokens, err := s.Tokens(context.Background(), userID)
 		if err != nil || len(tokens) != 0 {
 			t.Fatalf("rejected authority issued tokens: tokens=%d error=%v", len(tokens), err)
 		}
@@ -482,10 +478,9 @@ func TestDatabaseTokenMintingRechecksBrowserExpiry(t *testing.T) {
 		time.Unix(1, 0).UTC(), principal.SessionID); err != nil {
 		t.Fatal(err)
 	}
-	lib := library.New(s.db, []byte(strings.Repeat("cursor-test-key-", 3)))
-	_, err := lib.MintToken(context.Background(), principal, "Expired browser")
+	_, err := s.MintToken(context.Background(), principal, "Expired browser")
 	requireAPIStatus(t, err, http.StatusUnauthorized)
-	tokens, err := lib.Tokens(context.Background(), owner.User.ID)
+	tokens, err := s.Tokens(context.Background(), owner.User.ID)
 	if err != nil || len(tokens) != 0 {
 		t.Fatalf("expired browser issued tokens: tokens=%d error=%v", len(tokens), err)
 	}
@@ -495,14 +490,13 @@ func TestDatabaseConcurrentTokenMintingCannotExceedActiveLimit(t *testing.T) {
 	s, _ := authDatabase(t)
 	owner := registerAccount(t, s, "owner@example.com")
 	principal := browserPrincipal(t, s, owner)
-	lib := library.New(s.db, []byte(strings.Repeat("cursor-test-key-", 3)))
 	var group sync.WaitGroup
 	results := make(chan error, 11)
 	for range 11 {
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			_, err := lib.MintToken(context.Background(), principal, "device")
+			_, err := s.MintToken(context.Background(), principal, "device")
 			results <- err
 		}()
 	}
