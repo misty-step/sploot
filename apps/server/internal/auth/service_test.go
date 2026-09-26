@@ -94,6 +94,29 @@ func TestBrowserCookiesAreHostOnlyAndExpireOnLogout(t *testing.T) {
 	}
 }
 
+func TestUploadTokenMatchesResolverSecretIdentity(t *testing.T) {
+	first, err := newUploadToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := newUploadToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !validSecret(first.Token, uploadTokenPrefix) || !validSecret(second.Token, uploadTokenPrefix) {
+		t.Fatal("minted PAT rejected by resolver grammar")
+	}
+	if first.Token == second.Token || first.Hash == second.Hash {
+		t.Fatal("successive PATs reused a secret or hash")
+	}
+	if first.Hash != secretHash(first.Token) || first.Hash == first.Token {
+		t.Fatal("stored hash is not SHA-256 of the plaintext")
+	}
+	if first.Prefix != first.Token[:len(uploadTokenPrefix)+uploadTokenVisibleChars] || !strings.HasPrefix(first.Token, first.Prefix) {
+		t.Fatal("display prefix is not the leading PAT characters")
+	}
+}
+
 func TestPasswordPolicyUsesCharactersWithoutCompositionRules(t *testing.T) {
 	for _, password := range []string{strings.Repeat("a", 12), strings.Repeat("界", 128)} {
 		if err := validatePassword(password); err != nil {

@@ -173,8 +173,8 @@ func (s *Service) ApproveDevice(ctx context.Context, principal model.Principal, 
 	}
 	defer tx.Rollback()
 	now := time.Now().UTC()
-	var active bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM auth_sessions WHERE id = ? AND user_id = ? AND kind = 'browser' AND expires_at > ?)`, principal.SessionID, principal.UserID, now).Scan(&active); err != nil {
+	active, err := activeBrowserSession(ctx, tx, principal, now)
+	if err != nil {
 		return authUnavailable()
 	}
 	if !active {

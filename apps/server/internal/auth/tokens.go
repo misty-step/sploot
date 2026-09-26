@@ -1,17 +1,16 @@
-package library
+package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/misty-step/sploot/apps/server/internal/contract"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -32,7 +31,7 @@ type MintedToken struct {
 }
 
 func (s *Service) Tokens(ctx context.Context, owner string) ([]UploadToken, error) {
-	if err := s.ready(owner); err != nil {
+	if err := s.tokenOwnerReady(owner); err != nil {
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id, name, prefix, last_used_at, created_at
@@ -59,29 +58,27 @@ func (s *Service) Tokens(ctx context.Context, owner string) ([]UploadToken, erro
 // The plaintext appears only in this return value; storage receives its hash and prefix.
 func (s *Service) MintToken(ctx context.Context, principal model.Principal, name string) (MintedToken, error) {
 	var result MintedToken
-	name = trimClientWhitespace(name)
+	name = contract.TrimClientWhitespace(name)
 	if name == "" {
-		return result, badRequest("Give your token a name")
+		return result, tokenBadRequest("Give your token a name")
 	}
-	if !utf8.ValidString(name) || strings.ContainsRune(name, 0) || utf16Length(name) > maxTokenNameLength {
-		return result, badRequest("Token name must be 64 characters or fewer")
+	if !utf8.ValidString(name) || strings.ContainsRune(name, 0) || contract.UTF16Length(name) > maxTokenNameLength {
+		return result, tokenBadRequest("Token name must be 64 characters or fewer")
 	}
-	tx, err := s.beginOwner(ctx, principal.UserID)
+	tx, err := s.beginTokenOwner(ctx, principal.UserID)
 	if err != nil {
 		return result, err
 	}
 	defer tx.Rollback()
 	if principal.Method != "browser" {
-		return result, &model.APIError{Status: http.StatusForbidden, Message: "Sign in through the browser to manage account security", Code: "browser_required"}
+		return result, browserRequired()
 	}
-	var active bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM auth_sessions
-		WHERE id = ?1 AND user_id = ?2 AND kind = 'browser' AND expires_at > ?3)`,
-		principal.SessionID, principal.UserID, time.Now().UTC()).Scan(&active); err != nil {
+	active, err := activeBrowserSession(ctx, tx, principal, time.Now().UTC())
+	if err != nil {
 		return result, fmt.Errorf("check token issuing session: %w", err)
 	}
 	if !active {
-		return result, &model.APIError{Status: http.StatusUnauthorized, Message: "Unauthorized", Code: "unauthorized"}
+		return result, unauthorized()
 	}
 	var count int
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM upload_tokens WHERE user_id = ?1 AND revoked_at IS NULL`, principal.UserID).Scan(&count); err != nil {
@@ -90,32 +87,29 @@ func (s *Service) MintToken(ctx context.Context, principal model.Principal, name
 	if count >= maxActiveTokens {
 		return result, &model.APIError{Status: http.StatusUnprocessableEntity, Code: "token_limit", Message: "You can have at most 10 active tokens; revoke one first"}
 	}
-	var random [32]byte
-	if _, err := rand.Read(random[:]); err != nil {
+	material, err := newUploadToken()
+	if err != nil {
 		return result, fmt.Errorf("generate upload token: %w", err)
 	}
-	randomPart := base64.RawURLEncoding.EncodeToString(random[:])
-	plaintext := "splt_" + randomPart
-	hash := sha256.Sum256([]byte(plaintext))
 	err = tx.QueryRowContext(ctx, `INSERT INTO upload_tokens (id, user_id, name, token_hash, prefix)
-		VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id, name, prefix, created_at`, model.NewID(), principal.UserID, name, hex.EncodeToString(hash[:]), "splt_"+randomPart[:6]).Scan(&result.ID, &result.Name, &result.Prefix, &result.CreatedAt)
+		VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id, name, prefix, created_at`, model.NewID(), principal.UserID, name, material.Hash, material.Prefix).Scan(&result.ID, &result.Name, &result.Prefix, &result.CreatedAt)
 	if err != nil {
 		return MintedToken{}, fmt.Errorf("persist upload token: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return MintedToken{}, fmt.Errorf("commit upload token: %w", err)
 	}
-	result.Token = plaintext
+	result.Token = material.Token
 	return result, nil
 }
 
 // RevokeToken preserves the existing idempotent, non-enumerating contract:
 // missing, already revoked, and foreign tokens all return the same success.
 func (s *Service) RevokeToken(ctx context.Context, owner, id string) error {
-	if err := validateID(id); err != nil {
+	if err := validateTokenID(id); err != nil {
 		return err
 	}
-	tx, err := s.beginOwner(ctx, owner)
+	tx, err := s.beginTokenOwner(ctx, owner)
 	if err != nil {
 		return err
 	}
@@ -127,4 +121,45 @@ func (s *Service) RevokeToken(ctx context.Context, owner, id string) error {
 		return fmt.Errorf("commit token revocation: %w", err)
 	}
 	return nil
+}
+
+func (s *Service) tokenOwnerReady(owner string) error {
+	if owner == "" {
+		return unauthorized()
+	}
+	if s.db == nil {
+		return &model.APIError{Status: http.StatusServiceUnavailable, Message: "Library is temporarily unavailable", Code: "library_unavailable", Retryable: true}
+	}
+	return nil
+}
+
+func (s *Service) beginTokenOwner(ctx context.Context, owner string) (*sql.Tx, error) {
+	if err := s.tokenOwnerReady(owner); err != nil {
+		return nil, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin library mutation: %w", err)
+	}
+	var id string
+	err = tx.QueryRowContext(ctx, `SELECT id FROM users WHERE id = ?1`, owner).Scan(&id)
+	if err != nil {
+		_ = tx.Rollback()
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, &model.APIError{Status: http.StatusForbidden, Message: "Account not found", Code: "account_not_found"}
+		}
+		return nil, fmt.Errorf("check library account: %w", err)
+	}
+	return tx, nil
+}
+
+func validateTokenID(id string) error {
+	if id == "" || !utf8.ValidString(id) || contract.UTF16Length(id) > contract.AssetIDMaxLength || strings.ContainsRune(id, 0) {
+		return tokenBadRequest("Invalid asset or tag id")
+	}
+	return nil
+}
+
+func tokenBadRequest(message string) *model.APIError {
+	return &model.APIError{Status: http.StatusBadRequest, Message: message, Code: "invalid_request"}
 }

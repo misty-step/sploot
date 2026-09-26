@@ -18,9 +18,11 @@ import (
 )
 
 const (
-	SessionCookie   = "sploot_session"
-	browserLifetime = 30 * 24 * time.Hour
-	deviceLifetime  = 90 * 24 * time.Hour
+	SessionCookie           = "sploot_session"
+	browserLifetime         = 30 * 24 * time.Hour
+	deviceLifetime          = 90 * 24 * time.Hour
+	uploadTokenPrefix       = "splt_"
+	uploadTokenVisibleChars = 6
 )
 
 var extensionOrigin = regexp.MustCompile(`^chrome-extension://[a-p]{32}$`)
@@ -48,6 +50,14 @@ type Session struct {
 	User      User      `json:"user"`
 	Token     string    `json:"-"`
 	ExpiresAt time.Time `json:"-"`
+}
+
+// uploadTokenMaterial is the one-time plaintext plus the values that may be
+// stored. Persistence keeps Hash, never Token.
+type uploadTokenMaterial struct {
+	Token  string
+	Prefix string
+	Hash   string
 }
 
 func New(db *sql.DB, opts Options) (*Service, error) {
@@ -132,7 +142,7 @@ func (s *Service) Resolve(r *http.Request, allowToken bool) (model.Principal, er
 		switch {
 		case strings.HasPrefix(parts[1], "spld_"):
 			principal, err = s.resolveSession(r.Context(), parts[1], "device")
-		case allowToken && strings.HasPrefix(parts[1], "splt_"):
+		case allowToken && strings.HasPrefix(parts[1], uploadTokenPrefix):
 			principal, err = s.resolveToken(r.Context(), parts[1])
 		default:
 			err = unauthorized()
@@ -203,7 +213,7 @@ func (s *Service) resolveSession(ctx context.Context, token, kind string) (model
 }
 
 func (s *Service) resolveToken(ctx context.Context, token string) (model.Principal, error) {
-	if !validSecret(token, "splt_") {
+	if !validSecret(token, uploadTokenPrefix) {
 		return model.Principal{}, unauthorized()
 	}
 	principal := model.Principal{Method: "upload-token"}
@@ -270,6 +280,30 @@ func newSecret(prefix string) (string, error) {
 func secretHash(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(hash[:])
+}
+
+// newUploadToken mints a PAT with the same secret grammar and stored hash as
+// Resolve. Persistence must not hash or prefix these values itself.
+func newUploadToken() (uploadTokenMaterial, error) {
+	token, err := newSecret(uploadTokenPrefix)
+	if err != nil {
+		return uploadTokenMaterial{}, err
+	}
+	return uploadTokenMaterial{
+		Token:  token,
+		Prefix: token[:len(uploadTokenPrefix)+uploadTokenVisibleChars],
+		Hash:   secretHash(token),
+	}, nil
+}
+
+// activeBrowserSession is the live-browser predicate used by privileged
+// mutations. It does not inspect Method; callers reject non-browser principals
+// first so a device session cannot mint tokens or pair devices.
+func activeBrowserSession(ctx context.Context, tx *sql.Tx, principal model.Principal, now time.Time) (bool, error) {
+	var active bool
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM auth_sessions WHERE id = ? AND user_id = ? AND kind = 'browser' AND expires_at > ?)`,
+		principal.SessionID, principal.UserID, now).Scan(&active)
+	return active, err
 }
 
 func safeMethod(method string) bool {
