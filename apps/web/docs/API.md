@@ -1499,6 +1499,8 @@ Perform semantic search using text queries.
   `results` array rather than low-similarity padding.
 - `favoriteOnly` (boolean, optional): Restrict results to favorited assets.
 - `tagId` (string, optional): Restrict results to assets carrying this tag.
+  The identifier uses the same stored grammar as library asset and tag ids
+  (non-empty, at most 128 characters).
 
 Semantic search is always ordered by descending vector relevance, with asset id
 as the deterministic tie-breaker. The gallery's seeded shuffle is a library
