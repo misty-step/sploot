@@ -6,10 +6,10 @@ package recovery
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"time"
+
+	"github.com/misty-step/sploot/apps/server/internal/contract"
 )
 
 const Format = "sploot-library-backup"
@@ -89,7 +89,7 @@ func safeID(id string) string {
 	}
 	return id
 }
-func digest(value []byte) string { sum := sha256.Sum256(value); return hex.EncodeToString(sum[:]) }
+func digest(value []byte) string { return contract.SHA256Hex(value) }
 func contextFailure(ctx context.Context, phase string) error {
 	if ctx.Err() != nil {
 		return failure(phase, "operation cancelled or deadline exceeded")
