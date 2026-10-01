@@ -58,6 +58,9 @@ type mcpFixture struct {
 		Threshold float64 `json:"threshold"`
 		Limit     int     `json:"limit"`
 	} `json:"searchDefaults"`
+	Identifiers struct {
+		TagIDMaxLength int `json:"tagIdMaxLength"`
+	} `json:"identifiers"`
 	URLSave struct {
 		Tags []string `json:"tags"`
 	} `json:"urlSave"`
@@ -285,8 +288,8 @@ type savedAsset struct {
 
 func TestMCPClientFixturesMatchLiveReceipts(t *testing.T) {
 	fixture := loadMCPFixture(t)
-	if fixture.SearchDefaults.Threshold != 0.12 || fixture.SearchDefaults.Limit != 30 {
-		t.Fatalf("shared search defaults drifted: %+v", fixture.SearchDefaults)
+	if fixture.SearchDefaults.Threshold != 0.12 || fixture.SearchDefaults.Limit != 30 || fixture.Identifiers.TagIDMaxLength != contract.AssetIDMaxLength {
+		t.Fatalf("shared search defaults drifted: %+v tag max %d", fixture.SearchDefaults, fixture.Identifiers.TagIDMaxLength)
 	}
 	library := startMCPLibrary(t)
 	status, body, cookie := library.do(t, http.MethodPost, "/api/auth/register", []byte(`{"email":"mcp-contract@example.invalid","password":"mcp-contract-password"}`), "", "")

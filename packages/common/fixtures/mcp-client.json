@@ -4,6 +4,9 @@
     "threshold": 0.12,
     "limit": 30
   },
+  "identifiers": {
+    "tagIdMaxLength": 128
+  },
   "urlSave": {
     "tags": ["reaction", "library"]
   },

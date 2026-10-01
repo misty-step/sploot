@@ -37,7 +37,10 @@ export const SEARCH_CURSOR_DESCRIPTION =
 
 export const SEARCH_FAVORITE_DESCRIPTION = 'When true, only favorited assets are eligible.';
 
-export const SEARCH_TAG_DESCRIPTION = 'Restrict results to assets carrying this tag id.';
+export const SEARCH_TAG_ID_MAX_LENGTH = 128;
+
+export const SEARCH_TAG_DESCRIPTION =
+  `Restrict results to assets carrying this tag id. The server accepts at most ${SEARCH_TAG_ID_MAX_LENGTH} characters.`;
 
 export const SEARCH_OFFSET_DESCRIPTION =
   'Legacy offset for the first 500 results. Do not combine it with cursor.';

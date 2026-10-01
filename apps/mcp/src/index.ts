@@ -11,6 +11,7 @@ import {
   SEARCH_LIMIT_DESCRIPTION,
   SEARCH_OFFSET_DESCRIPTION,
   SEARCH_TAG_DESCRIPTION,
+  SEARCH_TAG_ID_MAX_LENGTH,
   SEARCH_THRESHOLD_DESCRIPTION,
   SEARCH_TOOL_DESCRIPTION,
 } from './contract.js';
@@ -33,7 +34,7 @@ function buildServer(client: SplootClient): McpServer {
         threshold: z.number().min(0).max(1).optional().describe(SEARCH_THRESHOLD_DESCRIPTION),
         cursor: z.string().min(1).max(8192).optional().describe(SEARCH_CURSOR_DESCRIPTION),
         favoriteOnly: z.boolean().optional().describe(SEARCH_FAVORITE_DESCRIPTION),
-        tagId: z.string().min(1).max(200).optional().describe(SEARCH_TAG_DESCRIPTION),
+        tagId: z.string().min(1).max(SEARCH_TAG_ID_MAX_LENGTH).optional().describe(SEARCH_TAG_DESCRIPTION),
         offset: z.number().int().min(0).max(500).optional().describe(SEARCH_OFFSET_DESCRIPTION),
       },
     },

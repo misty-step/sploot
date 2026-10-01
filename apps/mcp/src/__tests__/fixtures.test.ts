@@ -7,6 +7,7 @@ import {
   PRIVATE_MEDIA_NOTE,
   SEARCH_DEFAULT_LIMIT,
   SEARCH_DEFAULT_THRESHOLD,
+  SEARCH_TAG_ID_MAX_LENGTH,
   SEARCH_TOOL_DESCRIPTION,
 } from '../contract.js';
 import { runSaveTool, runSearchTool } from '../tools.js';
@@ -23,6 +24,7 @@ interface ReceiptCase {
 
 interface McpClientFixture {
   searchDefaults: { threshold: number; limit: number };
+  identifiers: { tagIdMaxLength: number };
   searchPage: {
     query: string;
     limit: number;
@@ -46,6 +48,7 @@ describe('shared MCP client fixtures', () => {
   it('publishes the same search defaults the Go library uses', () => {
     expect(SEARCH_DEFAULT_THRESHOLD).toBe(fixture.searchDefaults.threshold);
     expect(SEARCH_DEFAULT_LIMIT).toBe(fixture.searchDefaults.limit);
+    expect(SEARCH_TAG_ID_MAX_LENGTH).toBe(fixture.identifiers.tagIdMaxLength);
     expect(SEARCH_TOOL_DESCRIPTION).toContain(`server default similarity floor is ${fixture.searchDefaults.threshold}`);
     expect(SEARCH_TOOL_DESCRIPTION).toContain(PRIVATE_MEDIA_NOTE);
   });
