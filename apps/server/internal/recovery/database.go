@@ -136,18 +136,8 @@ func sanitizeDatabase(ctx context.Context, db *sql.DB) error {
 }
 
 func verifyDatabase(ctx context.Context, db *sql.DB) error {
-	var integrity string
-	if err := db.QueryRowContext(ctx, "PRAGMA integrity_check").Scan(&integrity); err != nil || integrity != "ok" {
-		return failure("verify-database", "SQLite integrity check failed")
-	}
-	rows, err := db.QueryContext(ctx, "PRAGMA foreign_key_check")
-	if err != nil {
-		return failure("verify-database", "cannot check foreign keys")
-	}
-	invalid := rows.Next()
-	rows.Close()
-	if invalid || rows.Err() != nil {
-		return failure("verify-database", "foreign key integrity failed")
+	if err := verifySQLite(ctx, db, "verify-database"); err != nil {
+		return err
 	}
 	var credentials int64
 	if err := db.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM auth_sessions)+(SELECT count(*) FROM device_requests)+(SELECT count(*) FROM upload_tokens)+(SELECT count(*) FROM auth_attempts)`).Scan(&credentials); err != nil || credentials != 0 {
