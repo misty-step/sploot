@@ -234,9 +234,17 @@ They do not include an account quota. Go typed errors serialize `retryable`
 explicitly, including `false`; clients must not infer retries solely from 5xx.
 The predecessor's `quota_exceeded` contract remains unchanged below.
 
-One HTTP file-upload slot bounds multipart memory. `/api/upload` receives at most
-the shared file bound plus 1 MiB of multipart overhead without temporary-file
-spooling. `/share-target` processes files sequentially through storage admission,
+Byte upload, URL upload, and `/share-target` share one in-process save slot.
+Four saves may wait, for at most two seconds, and each owner may hold only one
+waiting place. When the slot frees, the earliest waiter from another owner goes
+first. A full queue or an expired wait returns 429 `upload_busy`,
+`retryable: true`, `Retry-After: 1`, before a URL fetch, media-directory lock,
+or idempotency claim. A completed idempotency receipt is returned before that
+gate, so replay does not wait on a slow fetch. A live claim still returns 409
+`UPLOAD_IN_PROGRESS`. `/api/upload` parses its multipart body only after
+admission and receives at most the shared file bound plus 1 MiB of multipart
+overhead without temporary-file spooling. `/share-target` holds that same slot
+for the request and processes files sequentially through storage admission,
 with at most 100 files, 1,000 parts and 250 MiB per request. Its redirect reports
 `shared`, `duplicates` and `failed`; already saved files survive a later failure.
 Network read deadlines are cleared after each body read; an exceeded deadline cannot be extended, including on HTTP/2.

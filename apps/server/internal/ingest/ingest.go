@@ -59,6 +59,7 @@ type Service struct {
 	storageLimitBytes   int64
 	storageReserveBytes int64
 	availableBytes      func() (int64, error)
+	admission           ingestAdmission
 }
 
 func New(db *sql.DB, opts Options) (*Service, error) {
@@ -121,18 +122,31 @@ func (s *Service) SaveURL(ctx context.Context, owner, rawURL string, input Input
 }
 
 func (s *Service) saveRequest(ctx context.Context, owner string, input Input, rawURL string) (result model.UploadResponse, err error) {
-	if !s.enabled {
-		return result, &model.APIError{Status: 503, Code: "uploads_disabled", Message: "Uploads are temporarily disabled"}
+	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
+	replay, err := s.retainedReceipt(ctx, owner, input.IdempotencyKey)
+	if err != nil {
+		return result, err
 	}
-	if owner == "" {
-		return result, &model.APIError{Status: 401, Message: "Authentication is required"}
+	if replay != nil {
+		return *replay, nil
+	}
+	// Reject an unsafe URL before it occupies the save slot. A retained receipt
+	// already returned above, including when the original URL no longer works.
+	if rawURL != "" {
+		if _, err = validateRemoteURL(rawURL, s.localImportOrigin); err != nil {
+			return result, err
+		}
+	}
+	if !admitted(ctx) {
+		var release func()
+		ctx, release, err = s.admit(ctx, owner)
+		if err != nil {
+			return result, err
+		}
+		defer release()
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(contract.UploadTimeoutMS)*time.Millisecond)
 	defer cancel()
-	input.IdempotencyKey = strings.TrimSpace(input.IdempotencyKey)
-	if input.IdempotencyKey != "" && !idempotencyPattern.MatchString(input.IdempotencyKey) {
-		return result, invalid("Invalid upload idempotency key")
-	}
 	claim, replay, err := s.claim(ctx, owner, input.IdempotencyKey)
 	if err != nil {
 		return result, err
@@ -150,13 +164,14 @@ func (s *Service) saveRequest(ctx context.Context, owner string, input Input, ra
 			}
 		}
 	}()
-	// One bounded spool at a time per library, even through separate services or
-	// processes. Always take media admission before the shared library lock.
-	admission, err := medialock.Acquire(ctx, s.store.directory, true)
+	// The in-process gate already bounded waiters. This lock still serializes
+	// other processes and permanent deletion, and it is taken before the
+	// shared library lock.
+	mediaAdmission, err := medialock.Acquire(ctx, s.store.directory, true)
 	if err != nil {
 		return result, err
 	}
-	defer admission.Close()
+	defer mediaAdmission.Close()
 	mediaLock, err := medialock.Acquire(ctx, s.store.libraryDirectory(), false)
 	if err != nil {
 		return result, err
@@ -417,18 +432,72 @@ func (s *Service) claim(ctx context.Context, owner, key string) (*uploadClaim, *
 	if status != "completed" {
 		return nil, nil, inProgress()
 	}
-	response, err := decodeReceipt(payload)
+	response, err := s.storedReceipt(ctx, owner, payload)
 	if err != nil {
 		return nil, nil, err
 	}
+	return nil, response, nil
+}
+
+// RetainedReceipt returns a completed idempotent save without fetching,
+// decoding, or taking save capacity. A nil receipt means the caller should
+// admit and continue. A live claim returns UPLOAD_IN_PROGRESS.
+func (s *Service) RetainedReceipt(ctx context.Context, owner, key string) (*model.UploadResponse, error) {
+	return s.retainedReceipt(ctx, owner, strings.TrimSpace(key))
+}
+
+func (s *Service) retainedReceipt(ctx context.Context, owner, key string) (*model.UploadResponse, error) {
+	if err := s.ready(owner); err != nil {
+		return nil, err
+	}
+	if key != "" && !idempotencyPattern.MatchString(key) {
+		return nil, invalid("Invalid upload idempotency key")
+	}
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=?)`, owner).Scan(&exists); err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, &model.APIError{Status: 403, Code: "account_unavailable", Message: "An existing account is required"}
+	}
+	if key == "" {
+		return nil, nil
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM upload_idempotency WHERE owner_user_id=? AND ((status='completed' AND retained_until<CURRENT_TIMESTAMP) OR (status='processing' AND lease_expires_at<datetime('now','-10 minutes')))`, owner); err != nil {
+		return nil, err
+	}
+	var status string
+	var payload []byte
+	var renewable int
+	err := s.db.QueryRowContext(ctx, `SELECT status, result, CASE WHEN status='processing' AND lease_expires_at<CURRENT_TIMESTAMP THEN 0 ELSE 1 END FROM upload_idempotency WHERE owner_user_id=? AND key=?`, owner, key).Scan(&status, &payload, &renewable)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if renewable == 0 {
+		return nil, nil
+	}
+	if status != "completed" {
+		return nil, inProgress()
+	}
+	return s.storedReceipt(ctx, owner, payload)
+}
+
+func (s *Service) storedReceipt(ctx context.Context, owner string, payload []byte) (*model.UploadResponse, error) {
+	response, err := decodeReceipt(payload)
+	if err != nil {
+		return nil, err
+	}
 	var purged bool
 	if err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM asset_purges WHERE owner_user_id=? AND asset_id=?)`, owner, response.Asset.ID).Scan(&purged); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if purged {
-		return nil, nil, &model.APIError{Status: http.StatusGone, Code: "asset_purged", Message: "The media saved by this request was permanently deleted; use a new idempotency key to save it again"}
+		return nil, &model.APIError{Status: http.StatusGone, Code: "asset_purged", Message: "The media saved by this request was permanently deleted; use a new idempotency key to save it again"}
 	}
-	return nil, &response, nil
+	return &response, nil
 }
 
 func decodeReceipt(payload []byte) (model.UploadResponse, error) {

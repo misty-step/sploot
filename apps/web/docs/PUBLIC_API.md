@@ -160,7 +160,8 @@ owner/content-checksum uniqueness remains the deduplication authority.
 **Errors:** `400` missing/invalid file · `401` bad or missing token ·
 `403 {"code":"quota_exceeded"}` storage quota exceeded · `413` file too large ·
 `409 {"code":"UPLOAD_IN_PROGRESS"}` retained work still processing ·
-`429` busy/rate-limited operation · `503 {"code":"uploads_disabled"}` saves
+`429 {"code":"upload_busy","retryable":true}` with `Retry-After: 1` when the
+save slot and its four-deep, two-second wait are full · `503 {"code":"uploads_disabled"}` saves
 paused or another required operation unavailable.
 
 Predecessor-only admission errors additionally include `403 enrollment_closed`
@@ -192,8 +193,11 @@ bypass for URLs on the operator's LAN.
 
 **Errors:** `400` missing/invalid/private URL · `401` bad or missing token ·
 `422` remote fetch failed or unsupported media · `403 quota_exceeded` ·
-`409 UPLOAD_IN_PROGRESS` · `503 uploads_disabled` or another required operation
-unavailable. Predecessor-only enrollment errors are the same as byte upload.
+`409 UPLOAD_IN_PROGRESS` · `429 {"code":"upload_busy","retryable":true}` with
+`Retry-After: 1` under the same save slot as byte upload · `503 uploads_disabled`
+or another required operation unavailable. A completed idempotency key still
+returns its original receipt without fetching again, including while the slot
+is busy. Predecessor-only enrollment errors are the same as byte upload.
 
 ```bash
 curl -X POST "$SPLOOT_ORIGIN/api/upload/url" \

@@ -54,14 +54,13 @@ func (s *Server) shareTarget(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	select {
-	case s.uploadSlot <- struct{}{}:
-		defer func() { <-s.uploadSlot }()
-	default:
-		w.Header().Set("Retry-After", "1")
-		s.json(w, http.StatusTooManyRequests, map[string]string{"error": "Another upload is being received. Retry shortly."})
+	ctx, release, err := s.ingest.Admit(r.Context(), principal.UserID)
+	if err != nil {
+		s.failure(w, r, err)
 		return
 	}
+	defer release()
+	r = r.WithContext(ctx)
 	r.Body = http.MaxBytesReader(w, &shareBody{ReadCloser: r.Body, controller: http.NewResponseController(w)}, 250<<20)
 	reader, err := r.MultipartReader()
 	if err != nil {
