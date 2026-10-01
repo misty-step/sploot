@@ -13,6 +13,8 @@ import (
 	"os"
 
 	_ "golang.org/x/image/webp"
+
+	"github.com/misty-step/sploot/apps/server/internal/ctxio"
 )
 
 const imageSide = 224
@@ -58,7 +60,7 @@ func (p *imageProcessor) load(ctx context.Context, path string, destination []fl
 	if !stat.Mode().IsRegular() || stat.Size() > maxImageBytes {
 		return fmt.Errorf("inference image must be a regular file no larger than %d bytes", maxImageBytes)
 	}
-	config, _, err := image.DecodeConfig(&contextReader{ctx: ctx, reader: file})
+	config, _, err := image.DecodeConfig(ctxio.Reader(ctx, file))
 	if err != nil {
 		return fmt.Errorf("read inference image dimensions: %w", err)
 	}
@@ -68,7 +70,7 @@ func (p *imageProcessor) load(ctx context.Context, path string, destination []fl
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	decoded, _, err := image.Decode(&contextReader{ctx: ctx, reader: file})
+	decoded, _, err := image.Decode(ctxio.Reader(ctx, file))
 	if err != nil {
 		return fmt.Errorf("decode inference image (JPEG/PNG/GIF/WebP poster required): %w", err)
 	}
@@ -198,16 +200,4 @@ func readRGBRow(source image.Image, y int, destination []byte) {
 		}
 		destination[x*3], destination[x*3+1], destination[x*3+2] = r, g, b
 	}
-}
-
-type contextReader struct {
-	ctx    context.Context
-	reader io.Reader
-}
-
-func (r *contextReader) Read(destination []byte) (int, error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return r.reader.Read(destination)
 }
