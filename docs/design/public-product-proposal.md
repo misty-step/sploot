@@ -19,7 +19,8 @@ This document authorizes no implementation, enrollment, payment, identity,
 provider, or production change. The approved canonical origin is
 `https://sploot.mistystep.io`; registration remains closed. Cutover acceptance
 and runtime retirement belong to the
-[runtime operations guide](../../apps/web/docs/DEPLOYMENT.md#canonical-hosted-go-instance)
+[runtime inventory](../runtime.md), the
+[operations guide](../operations.md#canonical-hosted-go-instance),
 and Linear MIS-46/MIS-47, not this proposal.
 
 ## What exists, and what this would change
@@ -465,7 +466,7 @@ Public list prices read for this review, **not account/billing readbacks**:
 The current [backup runner](../../apps/server/scripts/backup-remote.py) creates
 an entire native snapshot archive on each run, not a delta, with hourly objects
 and an additional daily copy. The
-[recorded retention policy](../../apps/web/docs/DEPLOYMENT.md#canonical-hosted-go-instance)
+[recorded retention policy](../operations.md#canonical-hosted-go-instance)
 expires hourly snapshots after four days and daily snapshots after 31 days.
 **Illustrative assumption, not measured usage:** steady successful hourly runs,
 an unchanged full library, roughly 96 hourly plus 31 daily copies, and lifecycle
@@ -579,7 +580,7 @@ privacy, payments or unit economics are ready.
 
 | Gate | Evidence required before the associated launch |
 | --- | --- |
-| Existing-user production service | Cutover acceptance is recorded in the [runtime operations guide](../../apps/web/docs/DEPLOYMENT.md#canonical-hosted-go-instance) and Linear MIS-46/MIS-47. It does not pass the consumer-design, enrollment or billing gates below. |
+| Existing-user production service | Cutover acceptance is recorded in the [runtime inventory](../runtime.md), the [operations guide](../operations.md#canonical-hosted-go-instance), and Linear MIS-46/MIS-47. It does not pass the consumer-design, enrollment or billing gates below. |
 | Consumer design adoption | Operator reviews desktop/mobile shelf, search, Save, viewer and ink-mini states at actual scale in both themes. Browser/keyboard/reduced-motion evidence includes empty, failed, processing, partial batch and changed-account states. No private media in the review packet. |
 | Capture distribution claims | Real release receipt for the marketed extension channel; actual phone/browser exercise for the claimed mobile path. Keep iOS Shortcut out of promises without signing and physical-device acceptance. |
 | Open enrollment | Reliable ownership verification and account recovery, abuse/cost admission across every client, capacity reservation, privacy/terms/support/account-deletion process, and explicit approval to open registration. Migration claims alone do not solve consumer password recovery. |
@@ -619,7 +620,7 @@ experiment.
 This is a source-and-contract review, not fresh runtime, device or economic
 acceptance. Relevant sources:
 
-- [Runtime operations](../../apps/web/docs/DEPLOYMENT.md),
+- [Runtime inventory](../runtime.md) and [operations manual](../operations.md),
   [DESIGN.md](../../DESIGN.md), and [VISION.md](../../VISION.md), distinguishing
   operating procedure, visual law and intent.
 - Go [pages](../../apps/server/internal/web/templates/pages.html),

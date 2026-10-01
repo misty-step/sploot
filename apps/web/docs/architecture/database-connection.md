@@ -1,8 +1,13 @@
 # database connection architecture
 
-Prisma reads one canonical `DATABASE_URL` at process initialization. production
-uses Neon Postgres with pgvector; local and CI use ordinary pgvector-capable
-Postgres. business logic does not know which provider serves the wire protocol.
+Retained Next.js predecessor only. The live library is SQLite on the Go
+server; see [`docs/runtime.md`](../../../../docs/runtime.md). This note does
+not authorize a Neon-backed production writer.
+
+Prisma reads one canonical `DATABASE_URL` at process initialization. The
+predecessor's production database was Neon Postgres with pgvector; local and
+CI use ordinary pgvector-capable Postgres. business logic does not know which
+provider serves the wire protocol.
 
 use a pooled URL for the long-running web process and `DATABASE_URL_DIRECT` for
 migrations when available. `scripts/migrate-deploy.mjs` owns that selection.

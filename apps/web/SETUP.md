@@ -32,5 +32,6 @@ core variables:
 - `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_DSN`, and `SENTRY_AUTH_TOKEN`: error diagnostics and build-time source-map upload.
 
 there is no secondary remote cache for this predecessor. the DigitalOcean
-Sploot runtime has been retired; see `docs/DEPLOYMENT.md` for the canonical
-hosted Go instance and retained provider history.
+Sploot runtime has been retired. The canonical hosted Go instance is recorded
+in [`docs/runtime.md`](../../docs/runtime.md); retained provider history is in
+[`docs/operations.md`](../../docs/operations.md). The Next writer stays disabled.

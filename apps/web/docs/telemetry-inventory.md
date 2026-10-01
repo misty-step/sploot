@@ -47,7 +47,7 @@ readback remain external proof; local build output cannot claim them.
 
 Predecessor QA authentication remains the signed `qa-local` contract.
 `x-forwarded-for` is not authority or a fallback. The local Go product instead
-uses real accounts and optional Sentry; see [runtime operations](./DEPLOYMENT.md).
+uses real accounts and optional Sentry; see [runtime operations](../../../docs/operations.md).
 
 ## volume and retention
 

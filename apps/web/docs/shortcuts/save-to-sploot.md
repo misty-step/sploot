@@ -32,7 +32,7 @@ the Home Screen. Shortcuts is the separate native share-sheet integration.
 A phone must be able to reach the selected instance. `127.0.0.1` on the phone
 means the phone, not the computer running `pnpm dev`. For real phone access,
 configure a reachable HTTPS origin and explicit registration policy using the
-[runtime procedure](../DEPLOYMENT.md#configuration-and-private-directory-lifetime),
+[runtime procedure](../../../../docs/operations.md#configuration-and-private-directory-lifetime),
 then download that instance's source. Do not sign a laptop-loopback workflow
 and present it as usable from a phone.
 
