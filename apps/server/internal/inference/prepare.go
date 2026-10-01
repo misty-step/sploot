@@ -19,6 +19,8 @@ import (
 	"runtime"
 	"syscall"
 	"time"
+
+	"github.com/misty-step/sploot/apps/server/internal/ctxio"
 )
 
 //go:embed bundle.json CLIP-LICENSE.txt PILLOW-LICENSE.txt
@@ -208,7 +210,7 @@ func verifiedFile(ctx context.Context, path string, item artifact) (bool, error)
 	}
 	defer file.Close()
 	digest := sha256.New()
-	count, err := io.Copy(digest, &contextReader{ctx: ctx, reader: io.LimitReader(file, item.Size+1)})
+	count, err := io.Copy(digest, ctxio.Reader(ctx, io.LimitReader(file, item.Size+1)))
 	if err != nil {
 		return false, fmt.Errorf("verify model artifact %s: %w", path, err)
 	}
@@ -255,7 +257,7 @@ func installFile(ctx context.Context, path string, item artifact, source io.Read
 	defer os.Remove(file.Name())
 	defer file.Close()
 	digest := sha256.New()
-	count, err := io.Copy(io.MultiWriter(file, digest), &contextReader{ctx: ctx, reader: io.LimitReader(source, item.Size+1)})
+	count, err := io.Copy(io.MultiWriter(file, digest), ctxio.Reader(ctx, io.LimitReader(source, item.Size+1)))
 	if err != nil {
 		return err
 	}
@@ -289,7 +291,7 @@ func extractRuntime(ctx context.Context, directory string, bundle runtimeBundle)
 		return err
 	}
 	defer file.Close()
-	compressed, err := gzip.NewReader(&contextReader{ctx: ctx, reader: file})
+	compressed, err := gzip.NewReader(ctxio.Reader(ctx, file))
 	if err != nil {
 		return err
 	}
