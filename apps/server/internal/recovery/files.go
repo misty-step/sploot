@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"github.com/misty-step/sploot/apps/server/internal/contract"
 )
 
 const maxMetadataBytes = 32 << 20
@@ -294,13 +296,7 @@ func (d *snapshotDirectory) verifyArtifact(ctx context.Context, expected Artifac
 	return nil
 }
 
-func validSHA(value string) bool {
-	if len(value) != 64 || strings.ToLower(value) != value {
-		return false
-	}
-	_, err := hex.DecodeString(value)
-	return err == nil
-}
+func validSHA(value string) bool { return contract.ValidSHA256Hex(value) }
 
 func validSnapshotID(value string) bool {
 	if len(value) != 32 || strings.ToLower(value) != value {
