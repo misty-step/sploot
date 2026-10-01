@@ -1,0 +1,224 @@
+{
+  "_comment": "Language-neutral save/search receipts shared by the MCP parser and the isolated Go library test. Checksums are lowercase SHA-256 hex, the stored Go form. A 409 is success only when it is a duplicate receipt.",
+  "searchDefaults": {
+    "threshold": 0.12,
+    "limit": 30
+  },
+  "urlSave": {
+    "tags": ["reaction", "library"]
+  },
+  "searchPage": {
+    "query": "red square",
+    "limit": 1,
+    "threshold": 0.12,
+    "favoriteOnly": true,
+    "tagName": "reaction"
+  },
+  "receipts": [
+    {
+      "name": "created",
+      "endpoint": "save",
+      "status": 201,
+      "outcome": "success",
+      "kind": "created",
+      "body": {
+        "success": true,
+        "isDuplicate": false,
+        "asset": {
+          "id": "asset-created",
+          "blobUrl": "/media/asset-created",
+          "pathname": "uploads/asset-created/meme.png",
+          "filename": "meme.png",
+          "mimeType": "image/png",
+          "size": 128,
+          "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "createdAt": "2026-10-01T00:00:00.000Z",
+          "needsEmbedding": true
+        },
+        "message": "Upload successful"
+      }
+    },
+    {
+      "name": "duplicate",
+      "endpoint": "save",
+      "status": 409,
+      "outcome": "success",
+      "kind": "duplicate",
+      "body": {
+        "success": true,
+        "isDuplicate": true,
+        "asset": {
+          "id": "asset-created",
+          "blobUrl": "/media/asset-created",
+          "pathname": "uploads/asset-created/meme.png",
+          "filename": "meme.png",
+          "mimeType": "image/png",
+          "size": 128,
+          "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "createdAt": "2026-10-01T00:00:00.000Z",
+          "needsEmbedding": false
+        },
+        "message": "This media already exists in your library"
+      }
+    },
+    {
+      "name": "upload-in-progress",
+      "endpoint": "save",
+      "status": 409,
+      "outcome": "error",
+      "body": {
+        "error": "Upload is already being processed; retry with the same idempotency key",
+        "code": "UPLOAD_IN_PROGRESS",
+        "retryable": true
+      }
+    },
+    {
+      "name": "enrollment-identity-conflict",
+      "endpoint": "search",
+      "status": 409,
+      "outcome": "error",
+      "body": {
+        "error": "Account identity needs repair before search can continue",
+        "code": "enrollment_identity_conflict",
+        "retryable": false
+      }
+    },
+    {
+      "name": "conflict-without-duplicate-receipt",
+      "endpoint": "save",
+      "status": 409,
+      "outcome": "error",
+      "body": {
+        "success": true,
+        "isDuplicate": false,
+        "error": "The save conflicted without a duplicate receipt",
+        "code": "conflict"
+      }
+    },
+    {
+      "name": "duplicate-without-asset",
+      "endpoint": "save",
+      "status": 409,
+      "outcome": "error",
+      "body": {
+        "success": true,
+        "isDuplicate": true,
+        "message": "This media already exists in your library"
+      }
+    },
+    {
+      "name": "upload-busy",
+      "endpoint": "save",
+      "status": 429,
+      "outcome": "error",
+      "body": {
+        "error": "Another upload is being received. Retry shortly.",
+        "code": "upload_busy",
+        "retryable": true
+      }
+    },
+    {
+      "name": "embedding-busy",
+      "endpoint": "search",
+      "status": 429,
+      "outcome": "error",
+      "body": {
+        "error": "Local search queue is full or its wait expired; retry shortly",
+        "code": "embedding_busy",
+        "retryable": true
+      }
+    },
+    {
+      "name": "malformed-json",
+      "endpoint": "search",
+      "status": 200,
+      "outcome": "error",
+      "raw": "{"
+    },
+    {
+      "name": "malformed-search-object",
+      "endpoint": "search",
+      "status": 200,
+      "outcome": "error",
+      "body": {
+        "ok": true
+      }
+    },
+    {
+      "name": "created-prefixed-checksum",
+      "endpoint": "save",
+      "status": 201,
+      "outcome": "error",
+      "body": {
+        "success": true,
+        "isDuplicate": false,
+        "asset": {
+          "id": "asset-created",
+          "blobUrl": "/media/asset-created",
+          "filename": "meme.png",
+          "mimeType": "image/png",
+          "size": 128,
+          "checksum": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "createdAt": "2026-10-01T00:00:00.000Z",
+          "needsEmbedding": true
+        },
+        "message": "Upload successful"
+      }
+    },
+    {
+      "name": "search-page",
+      "endpoint": "search",
+      "status": 200,
+      "outcome": "success",
+      "kind": "search",
+      "body": {
+        "results": [
+          {
+            "id": "asset-page-1",
+            "blobUrl": "/media/asset-page-1",
+            "filename": "one.png",
+            "mime": "image/png",
+            "favorite": true,
+            "similarity": 1,
+            "relevance": 100,
+            "tags": [{ "id": "tag-reaction", "name": "reaction" }]
+          }
+        ],
+        "query": "red square",
+        "total": 2,
+        "hasMore": true,
+        "nextCursor": "opaque-cursor",
+        "limit": 1,
+        "threshold": 0.12,
+        "processingTime": 4
+      }
+    },
+    {
+      "name": "search-last-page",
+      "endpoint": "search",
+      "status": 200,
+      "outcome": "success",
+      "kind": "search",
+      "body": {
+        "results": [
+          {
+            "id": "asset-page-2",
+            "blobUrl": "/media/asset-page-2",
+            "filename": "two.png",
+            "mime": "image/png",
+            "favorite": true,
+            "similarity": 1,
+            "relevance": 100,
+            "tags": [{ "id": "tag-reaction", "name": "reaction" }]
+          }
+        ],
+        "query": "red square",
+        "total": 2,
+        "hasMore": false,
+        "limit": 1,
+        "threshold": 0.12,
+        "processingTime": 3
+      }
+    }
+  ]
+}

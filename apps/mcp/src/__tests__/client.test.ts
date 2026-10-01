@@ -19,7 +19,15 @@ describe('SplootClient', () => {
   describe('search', () => {
     it('POSTs to /search with a bearer token and the query body', async () => {
       fetchMock.mockResolvedValue(
-        jsonResponse({ results: [], query: 'cat', total: 0, limit: 30, threshold: 0.2, processingTime: 5 })
+        jsonResponse({
+          results: [],
+          query: 'cat',
+          total: 0,
+          hasMore: false,
+          limit: 30,
+          threshold: 0.12,
+          processingTime: 5,
+        })
       );
       const client = new SplootClient(config, fetchMock as unknown as typeof fetch);
 
@@ -36,7 +44,7 @@ describe('SplootClient', () => {
     });
 
     it('throws SplootApiError with the server error message on 401', async () => {
-      fetchMock.mockResolvedValue(jsonResponse({ error: 'Unauthorized' }, 401));
+      fetchMock.mockImplementation(() => Promise.resolve(jsonResponse({ error: 'Unauthorized' }, 401)));
       const client = new SplootClient(config, fetchMock as unknown as typeof fetch);
 
       await expect(client.search('cat')).rejects.toMatchObject({
@@ -61,10 +69,11 @@ describe('SplootClient', () => {
     it('POSTs to /upload/url with the bearer token and url body', async () => {
       const asset = {
         id: 'a1',
-        blobUrl: 'https://blob.test/a.png',
+        blobUrl: '/media/a1',
         filename: 'a.png',
         mimeType: 'image/png',
         size: 10,
+        checksum: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         createdAt: '2026-07-07T00:00:00.000Z',
         needsEmbedding: true,
       };
@@ -73,18 +82,61 @@ describe('SplootClient', () => {
       );
       const client = new SplootClient(config, fetchMock as unknown as typeof fetch);
 
-      const result = await client.saveUrl('https://example.com/a.png');
+      const result = await client.saveUrl('https://example.com/a.png', ['reaction', 'library']);
 
       const [url, init] = fetchMock.mock.calls[0];
       expect(url).toBe('https://sploot.test/api/upload/url');
-      expect(JSON.parse(init.body)).toEqual({ url: 'https://example.com/a.png' });
+      expect(JSON.parse(init.body)).toEqual({
+        url: 'https://example.com/a.png',
+        tags: ['reaction', 'library'],
+      });
       expect(result.asset.id).toBe('a1');
     });
 
-    it('resolves (does not throw) on a 409 duplicate', async () => {
+    it('omits tags when a URL save has none', async () => {
       fetchMock.mockResolvedValue(
         jsonResponse(
-          { success: true, isDuplicate: true, asset: { id: 'a1' }, message: 'This image already exists in your library' },
+          {
+            success: true,
+            isDuplicate: false,
+            asset: {
+              id: 'a1',
+              blobUrl: '/media/a1',
+              filename: 'a.png',
+              mimeType: 'image/png',
+              size: 10,
+              checksum: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+              createdAt: '2026-07-07T00:00:00.000Z',
+              needsEmbedding: true,
+            },
+            message: 'Upload successful',
+          },
+          201
+        )
+      );
+      const client = new SplootClient(config, fetchMock as unknown as typeof fetch);
+      await client.saveUrl('https://example.com/a.png');
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ url: 'https://example.com/a.png' });
+    });
+
+    it('resolves (does not throw) on a duplicate receipt', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(
+          {
+            success: true,
+            isDuplicate: true,
+            asset: {
+              id: 'a1',
+              blobUrl: '/media/a1',
+              filename: 'a.png',
+              mimeType: 'image/png',
+              size: 10,
+              checksum: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+              createdAt: '2026-07-07T00:00:00.000Z',
+              needsEmbedding: false,
+            },
+            message: 'This media already exists in your library',
+          },
           409
         )
       );
@@ -93,13 +145,45 @@ describe('SplootClient', () => {
       const result = await client.saveUrl('https://example.com/a.png');
       expect(result.isDuplicate).toBe(true);
     });
+
+    it('rejects a 409 that is not a duplicate receipt', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse(
+          {
+            error: 'Upload is already being processed; retry with the same idempotency key',
+            code: 'UPLOAD_IN_PROGRESS',
+            retryable: true,
+          },
+          409
+        )
+      );
+      const client = new SplootClient(config, fetchMock as unknown as typeof fetch);
+      await expect(client.saveUrl('https://example.com/a.png')).rejects.toMatchObject({
+        status: 409,
+        message: 'Upload is already being processed; retry with the same idempotency key (UPLOAD_IN_PROGRESS)',
+      });
+    });
   });
 
   describe('saveBytes', () => {
     it('POSTs multipart form data to /upload with the bearer token, no Content-Type override', async () => {
       fetchMock.mockResolvedValue(
         jsonResponse(
-          { success: true, isDuplicate: false, asset: { id: 'a2' }, message: 'Upload successful' },
+          {
+            success: true,
+            isDuplicate: false,
+            asset: {
+              id: 'a2',
+              blobUrl: '/media/a2',
+              filename: 'meme.png',
+              mimeType: 'image/png',
+              size: 3,
+              checksum: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+              createdAt: '2026-07-07T00:00:00.000Z',
+              needsEmbedding: true,
+            },
+            message: 'Upload successful',
+          },
           201
         )
       );

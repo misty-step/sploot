@@ -1,4 +1,5 @@
-import { SplootApiError, type SplootClient } from './client.js';
+import { PRIVATE_MEDIA_NOTE } from './contract.js';
+import { SplootApiError, type SearchOptions, type SplootClient } from './client.js';
 
 /**
  * Tool handlers, factored out of index.ts so they can be unit-tested without
@@ -19,6 +20,10 @@ export interface SearchToolArgs {
   query: string;
   limit?: number;
   threshold?: number;
+  cursor?: string;
+  favoriteOnly?: boolean;
+  tagId?: string;
+  offset?: number;
 }
 
 export interface SaveToolArgs {
@@ -43,8 +48,37 @@ export function errorResult(error: unknown): McpToolTextResult {
   return { content: [{ type: 'text', text }], isError: true };
 }
 
+function mentionsPrivateMedia(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(mentionsPrivateMedia);
+  if (!value || typeof value !== 'object') return false;
+  for (const [key, nested] of Object.entries(value)) {
+    if (key === 'blobUrl' && typeof nested === 'string' && nested.startsWith('/media/')) return true;
+    if (mentionsPrivateMedia(nested)) return true;
+  }
+  return false;
+}
+
 function jsonResult(value: unknown): McpToolTextResult {
-  return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
+  const text = JSON.stringify(value, null, 2);
+  if (typeof text !== 'string') {
+    return errorResult(new Error('Sploot API returned an unreadable response'));
+  }
+  const content: McpToolTextResult['content'] = [{ type: 'text', text }];
+  if (mentionsPrivateMedia(value)) {
+    content.push({ type: 'text', text: PRIVATE_MEDIA_NOTE });
+  }
+  return { content };
+}
+
+function searchOptions(args: SearchToolArgs): SearchOptions {
+  const options: SearchOptions = {};
+  if (args.limit !== undefined) options.limit = args.limit;
+  if (args.threshold !== undefined) options.threshold = args.threshold;
+  if (args.cursor) options.cursor = args.cursor;
+  if (args.favoriteOnly !== undefined) options.favoriteOnly = args.favoriteOnly;
+  if (args.tagId) options.tagId = args.tagId;
+  if (args.offset !== undefined) options.offset = args.offset;
+  return options;
 }
 
 export async function runSearchTool(
@@ -52,10 +86,7 @@ export async function runSearchTool(
   args: SearchToolArgs
 ): Promise<McpToolTextResult> {
   try {
-    const result = await client.search(args.query, {
-      limit: args.limit,
-      threshold: args.threshold,
-    });
+    const result = await client.search(args.query, searchOptions(args));
     return jsonResult(result);
   } catch (error) {
     return errorResult(error);
@@ -75,7 +106,7 @@ export async function runSaveTool(
     }
 
     const result = args.url
-      ? await client.saveUrl(args.url)
+      ? await client.saveUrl(args.url, args.tags)
       : await client.saveBytes(
           Buffer.from(args.bytesBase64 as string, 'base64'),
           args.filename ?? DEFAULT_SAVE_FILENAME,

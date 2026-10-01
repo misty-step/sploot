@@ -22,7 +22,7 @@ describe('runSearchTool', () => {
     expect(result.isError).toBeUndefined();
     expect(result.content[0].type).toBe('text');
     expect(JSON.parse(result.content[0].text)).toMatchObject({ total: 1 });
-    expect(client.search).toHaveBeenCalledWith('cat', { limit: undefined, threshold: undefined });
+    expect(client.search).toHaveBeenCalledWith('cat', {});
   });
 
   it('passes limit and threshold through to the client', async () => {
@@ -31,6 +31,27 @@ describe('runSearchTool', () => {
     await runSearchTool(client, { query: 'cat', limit: 5, threshold: 0.5 });
 
     expect(client.search).toHaveBeenCalledWith('cat', { limit: 5, threshold: 0.5 });
+  });
+
+  it('forwards cursor and the existing search filters together', async () => {
+    const client = fakeClient({ search: vi.fn().mockResolvedValue({ results: [], hasMore: false }) });
+
+    await runSearchTool(client, {
+      query: 'cat',
+      limit: 1,
+      threshold: 0.12,
+      cursor: 'opaque',
+      favoriteOnly: true,
+      tagId: 'tag-1',
+    });
+
+    expect(client.search).toHaveBeenCalledWith('cat', {
+      limit: 1,
+      threshold: 0.12,
+      cursor: 'opaque',
+      favoriteOnly: true,
+      tagId: 'tag-1',
+    });
   });
 
   it('returns an error result when the client throws SplootApiError', async () => {
@@ -54,9 +75,25 @@ describe('runSaveTool', () => {
 
     const result = await runSaveTool(client, { url: 'https://example.com/a.png' });
 
-    expect(client.saveUrl).toHaveBeenCalledWith('https://example.com/a.png');
+    expect(client.saveUrl).toHaveBeenCalledWith('https://example.com/a.png', undefined);
     expect(client.saveBytes).not.toHaveBeenCalled();
     expect(result.isError).toBeUndefined();
+  });
+
+  it('forwards tags on a URL save and marks a private media reference', async () => {
+    const client = fakeClient({
+      saveUrl: vi.fn().mockResolvedValue({
+        success: true,
+        isDuplicate: false,
+        asset: { id: 'a1', blobUrl: '/media/a1' },
+      }),
+    });
+
+    const result = await runSaveTool(client, { url: 'https://example.com/a.png', tags: ['reaction'] });
+
+    expect(client.saveUrl).toHaveBeenCalledWith('https://example.com/a.png', ['reaction']);
+    expect(result.isError).toBeUndefined();
+    expect(result.content[1]?.text).toMatch(/personal access token cannot download/);
   });
 
   it('calls saveBytes with decoded bytes when bytesBase64 is provided', async () => {

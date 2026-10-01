@@ -6,6 +6,30 @@ import (
 	"testing"
 )
 
+func TestLocalImportOriginIsStoredUntilIngestValidatesIt(t *testing.T) {
+	for _, key := range []string{
+		"SPLOOT_LISTEN_ADDR", "SPLOOT_BASE_URL", "SPLOOT_REDIRECT_HOSTS", "SPLOOT_DEPLOYMENT_ENV",
+		"SPLOOT_DEPLOYMENT_COMMIT", "SPLOOT_DATA_DIR", "SPLOOT_MODEL_DIR", "SENTRY_DSN",
+		"SPLOOT_UPLOADS_ENABLED", "SPLOOT_EMBEDDINGS_ENABLED", "SPLOOT_REGISTRATION_OPEN", "PORT",
+		"SPLOOT_LOCAL_IMPORT_ORIGIN",
+	} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("SPLOOT_DATA_DIR", t.TempDir())
+	t.Setenv("SPLOOT_MODEL_DIR", t.TempDir())
+	t.Setenv("SPLOOT_STORAGE_LIMIT_BYTES", "0")
+	t.Setenv("SPLOOT_STORAGE_RESERVE_BYTES", "0")
+	cfg, err := Load("")
+	if err != nil || cfg.LocalImportOrigin != "" {
+		t.Fatalf("unset local import origin = %q (%v)", cfg.LocalImportOrigin, err)
+	}
+	t.Setenv("SPLOOT_LOCAL_IMPORT_ORIGIN", " http://127.0.0.1:9 ")
+	cfg, err = Load("")
+	if err != nil || cfg.LocalImportOrigin != "http://127.0.0.1:9" {
+		t.Fatalf("local import origin = %q (%v)", cfg.LocalImportOrigin, err)
+	}
+}
+
 func TestRegistrationPolicyRequiresExplicitHostedEnrollment(t *testing.T) {
 	for _, key := range []string{
 		"SPLOOT_LISTEN_ADDR", "SPLOOT_BASE_URL", "SPLOOT_REDIRECT_HOSTS", "SPLOOT_DEPLOYMENT_ENV",
