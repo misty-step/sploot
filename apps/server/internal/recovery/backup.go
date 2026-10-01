@@ -160,10 +160,8 @@ func verifyCore(ctx context.Context, dir *snapshotDirectory, manifest Manifest) 
 	}
 	// A portable snapshot cannot depend on sidecars accidentally left alongside
 	// the database. Only a standalone sealed database can be verified or restored.
-	for _, name := range []string{"library.sqlite-wal", "library.sqlite-journal"} {
-		if info, err := dir.root.Lstat(name); err == nil && info.Size() > 0 {
-			return failure("verify-database", "portable database has an unexpected live journal")
-		}
+	if err := rejectLiveJournal(dir, "verify-database", "portable database has an unexpected live journal"); err != nil {
+		return err
 	}
 	db, err := openDatabase(ctx, dir, true)
 	if err != nil {
