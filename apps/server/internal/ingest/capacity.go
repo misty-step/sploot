@@ -4,10 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"math"
 	"net/http"
-	"syscall"
 
+	"github.com/misty-step/sploot/apps/server/internal/contract"
+	"github.com/misty-step/sploot/apps/server/internal/diskreserve"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -36,32 +36,87 @@ func (s *Service) admitStorage(ctx context.Context, tx *sql.Tx, incoming int64) 
 	return nil
 }
 
-func (s *Service) checkReserve(incoming int64) error {
-	available, err := s.availableBytes()
+// SaveStagingBytes is the worst-case save footprint on the media filesystem:
+// the spooled original, its durable copy, the poster, and the scratch directory
+// can exist together, each rounded to an allocation block.
+func SaveStagingBytes(mediaDir string) (int64, error) {
+	block, err := diskreserve.BlockSize(mediaDir)
 	if err != nil {
-		return &model.APIError{Status: http.StatusServiceUnavailable, Code: "storage_unavailable", Message: "The available disk space could not be checked"}
+		return 0, err
 	}
-	if incoming < 0 || available < incoming || available-incoming < s.storageReserveBytes {
+	original, err := diskreserve.RoundUp(int64(contract.UploadMaxBytes), block)
+	if err != nil {
+		return 0, err
+	}
+	poster, err := diskreserve.RoundUp(maxPosterBytes, block)
+	if err != nil {
+		return 0, err
+	}
+	total, err := diskreserve.Add(original, original)
+	if err != nil {
+		return 0, err
+	}
+	total, err = diskreserve.Add(total, poster)
+	if err != nil {
+		return 0, err
+	}
+	return diskreserve.Add(total, block)
+}
+
+func (s *Service) admitDisk(ctx context.Context, bytes int64) (*diskreserve.Hold, error) {
+	if s.ledger == nil {
+		return nil, diskError(diskreserve.ErrSpaceUnknown)
+	}
+	hold, err := s.ledger.Reserve(ctx, s.store.directory, bytes)
+	if err != nil {
+		return nil, diskError(err)
+	}
+	return hold, nil
+}
+
+func (s *Service) tightenDisk(ctx context.Context, hold *diskreserve.Hold, original, poster int64) error {
+	if original < 0 || poster < 0 {
+		return diskError(diskreserve.ErrSpaceUnknown)
+	}
+	block, err := diskreserve.BlockSize(s.store.directory)
+	if err != nil {
+		return diskError(err)
+	}
+	originalAlloc, err := diskreserve.RoundUp(original, block)
+	if err != nil {
+		return diskError(err)
+	}
+	posterAlloc, err := diskreserve.RoundUp(poster, block)
+	if err != nil {
+		return diskError(err)
+	}
+	remaining, err := diskreserve.Add(originalAlloc, posterAlloc)
+	if err != nil {
+		return diskError(err)
+	}
+	return diskError(hold.Adjust(ctx, remaining))
+}
+
+func diskError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if errors.Is(err, diskreserve.ErrInsufficientSpace) {
 		return &model.APIError{Status: http.StatusInsufficientStorage, Code: "storage_reserve_exceeded", Message: "This instance needs more free disk space to safely save media; free disk space or ask the operator to adjust its reserve"}
 	}
-	return nil
+	if errors.Is(err, diskreserve.ErrSpaceUnknown) {
+		return &model.APIError{Status: http.StatusServiceUnavailable, Code: "storage_unavailable", Message: "The available disk space could not be checked"}
+	}
+	return err
 }
 
 func (s *objectStore) availableBytes() (int64, error) {
-	file, err := s.root.Open(".")
+	_, available, err := diskreserve.Stat(s.directory)
 	if err != nil {
 		return 0, err
 	}
-	defer file.Close()
-	var stat syscall.Statfs_t
-	if err := syscall.Fstatfs(int(file.Fd()), &stat); err != nil {
-		return 0, err
-	}
-	if stat.Bsize <= 0 {
-		return 0, errors.New("invalid media filesystem block size")
-	}
-	if uint64(stat.Bavail) > uint64(math.MaxInt64)/uint64(stat.Bsize) {
-		return math.MaxInt64, nil
-	}
-	return int64(stat.Bavail) * int64(stat.Bsize), nil
+	return available, nil
 }

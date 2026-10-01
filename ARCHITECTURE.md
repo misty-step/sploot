@@ -196,7 +196,10 @@ hash-verifies the frozen database's referenced originals/posters. It never
 copies a live SQLite/WAL file as an ad hoc backup. Resume reuses the frozen
 snapshot; restore stages a complete library and atomically publishes only to an
 explicit separate absent/empty target. Per-owner web ZIP export is not this
-full-library recovery format.
+full-library recovery format. Save, that ZIP's scratch files, and scheduled
+backup staging (snapshot, tar, and age together) admit one shared byte
+reservation on the target filesystem and keep the configured free-disk reserve.
+The reservation ends when the write finishes or the holding process exits.
 Backups hold a shared library-directory lock through snapshot and media copying.
 Permanent deletion commits an owner-fenced intent before unlinking bytes under
 the exclusive lock; interrupted deletion resumes at startup. Completed tombstones

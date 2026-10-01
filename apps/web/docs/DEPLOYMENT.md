@@ -269,7 +269,7 @@ apps/server/build/sploot serve \
 | `SPLOOT_UPLOADS_ENABLED` | `true` by default; `false` pauses saves, not metadata edits, deletion, downloads, or export. |
 | `SPLOOT_EMBEDDINGS_ENABLED` | `true` by default; `false` disables new local indexing/query embeddings. It is an explicit operational pause, not the ordinary startup mode. |
 | `SPLOOT_STORAGE_LIMIT_BYTES` | Nonnegative instance-wide retained-media ceiling; `0` (default) means no artificial limit. Includes originals, previews, trash and unfinished reclamation. |
-| `SPLOOT_STORAGE_RESERVE_BYTES` | Nonnegative minimum free disk after a worst-case save reservation; default `1073741824` (1 GiB). `0` removes the extra reserve, not the incoming-write space check. |
+| `SPLOOT_STORAGE_RESERVE_BYTES` | Nonnegative operating reserve shared by save, library-export, and backup staging on the target filesystem; default `1073741824` (1 GiB). Admission refuses a write that would leave less than this reserve after other Sploot claims. `0` removes the extra reserve, not the incoming-write check. Writes from unrelated host software are outside the reservation. |
 | `SPLOOT_DEPLOYMENT_ENV` | `development` by default; accepts `development`, `test`, `staging`, or `production`. It controls exposure policy, not vendor selection. |
 | `SPLOOT_DEPLOYMENT_COMMIT` | Optional immutable revision for diagnostics; otherwise the executable derives available build revision metadata. |
 | `SENTRY_DSN` | Optional diagnostics. No telemetry credential is required. |
@@ -290,12 +290,17 @@ while ignoring its WAL; use the recovery commands below.
 
 ### Storage admission and permanent trash reclamation
 
-These settings are operator policy, not user plans. Saves serialize their
-worst-case spool/publication reservation across processes sharing the library,
-check filesystem availability before reading media, then enforce the instance
-ceiling transactionally. Unknown free space fails closed. Disk reserve includes
-space consumed outside the media ledger, such as SQLite, models and other files.
-An instance limit is not a disk-size limit or a backup-retention policy.
+These settings are operator policy, not user plans. Saves, library export, and
+scheduled backup staging share one reservation ledger on the filesystem that
+will receive the write. A save reserves its worst-case spool, durable copy, and
+poster before reading media. Export reserves the staged ZIP and catalog before
+creating either file. The backup runner reserves the snapshot, tar, and age
+ciphertext together before creating the snapshot directory. Admission is
+serialized across processes. Unknown free space fails closed. The sampled free
+space includes bytes consumed outside Sploot, such as SQLite, models, and other
+files, but a reservation cannot stop an unrelated host process from filling the
+disk afterward. An instance limit is not a disk-size limit or a backup-retention
+policy.
 
 Settings reports only the signed-in owner's retained bytes, including trash;
 it does not disclose another account's usage or invent a remaining allowance.
@@ -796,6 +801,15 @@ commands, encrypts the complete snapshot with an age public recipient, uploads
 to private R2, and checks remote size/SHA-256 metadata before recording success.
 It requires Python3, boto3, age, tar and the built `library-backup`.
 The decryption identity belongs in separate operator custody, never on the VM.
+
+Before creating a snapshot, tar, or age ciphertext, the runner estimates that
+three-artifact peak and reserves it through `library-backup reserve` on the work
+directory's filesystem, leaving `SPLOOT_STORAGE_RESERVE_BYTES` free. Refusal
+writes the `.failure` receipt and does not replace the last successful status.
+The archive remains a complete tar followed by a separate age ciphertext.
+`library-backup backup` itself writes only the snapshot directory; the runner
+owns the three-artifact reservation. A dead runner drops the claim because the
+reservation process exits with it.
 
 The `apps/server/deploy/sploot-backup.service` and `.timer` templates run one
 hourly scheduler as the `sploot` user. Install the runner at

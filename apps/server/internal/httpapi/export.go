@@ -19,6 +19,7 @@ import (
 	"database/sql"
 
 	"github.com/misty-step/sploot/apps/server/internal/ctxio"
+	"github.com/misty-step/sploot/apps/server/internal/diskreserve"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -111,7 +112,16 @@ func (s *Server) exportLibrary(w http.ResponseWriter, r *http.Request, principal
 		return
 	}
 
-	file, err := os.CreateTemp("", "sploot-library-export-*.zip")
+	// The ZIP and its catalog are staged in full before any byte is sent.
+	// Admit that footprint, including the operating reserve, before creating either file.
+	hold, err := s.reserveLibraryExport(ctx, principal.UserID)
+	if err != nil {
+		s.failure(w, r, err)
+		return
+	}
+	defer hold.Release()
+
+	file, err := os.CreateTemp(s.exportDir, "sploot-library-export-*.zip")
 	if err != nil {
 		s.failure(w, r, fmt.Errorf("create private library archive: %w", err))
 		return
@@ -165,6 +175,114 @@ func (s *Server) exportLibrary(w http.ResponseWriter, r *http.Request, principal
 	}
 }
 
+func (s *Server) reserveLibraryExport(ctx context.Context, owner string) (*diskreserve.Hold, error) {
+	if s.ledger == nil || s.exportDir == "" {
+		return nil, exportDiskError(diskreserve.ErrSpaceUnknown)
+	}
+	estimate, err := libraryExportStagingBytes(ctx, s.db, owner, s.exportDir)
+	if err != nil {
+		return nil, err
+	}
+	hold, err := s.ledger.Reserve(ctx, s.exportDir, estimate)
+	if err != nil {
+		return nil, exportDiskError(err)
+	}
+	return hold, nil
+}
+
+// libraryExportStagingBytes bounds the staged ZIP plus the private catalog.
+// Media is stored uncompressed. Metadata is bounded per asset without relying
+// on ZIP deflate, and the catalog is a second file holding those records again.
+func libraryExportStagingBytes(ctx context.Context, db *sql.DB, owner, directory string) (int64, error) {
+	var assets, media, posters, postersPresent int64
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*),
+		COALESCE(SUM(COALESCE(storage_size, size)), 0),
+		COALESCE(SUM(CASE WHEN thumbnail_path IS NOT NULL AND thumbnail_path != '' THEN COALESCE(thumbnail_storage_size, 0) ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN thumbnail_path IS NOT NULL AND thumbnail_path != '' THEN 1 ELSE 0 END), 0)
+		FROM assets WHERE owner_user_id=?`, owner).Scan(&assets, &media, &posters, &postersPresent)
+	if err != nil {
+		return 0, err
+	}
+	var tagBytes int64
+	if err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(LENGTH(name) + LENGTH(id) + 64), 0) FROM tags WHERE owner_user_id=?`, owner).Scan(&tagBytes); err != nil {
+		return 0, err
+	}
+	if assets < 0 || media < 0 || posters < 0 || postersPresent < 0 || tagBytes < 0 {
+		return 0, diskreserve.ErrSpaceUnknown
+	}
+	const recordBound = 48 << 10
+	const slop = 1 << 20
+	objects, err := diskreserve.Add(assets, postersPresent)
+	if err != nil {
+		return 0, err
+	}
+	frameCount, err := diskreserve.Add(objects, assets)
+	if err != nil {
+		return 0, err
+	}
+	frameCount, err = diskreserve.Add(frameCount, 2)
+	if err != nil {
+		return 0, err
+	}
+	framing, err := diskreserve.Mul(frameCount, 1024)
+	if err != nil {
+		return 0, err
+	}
+	records, err := diskreserve.Mul(assets, recordBound)
+	if err != nil {
+		return 0, err
+	}
+	metadata, err := diskreserve.Add(records, tagBytes)
+	if err != nil {
+		return 0, err
+	}
+	metadata, err = diskreserve.Add(metadata, slop)
+	if err != nil {
+		return 0, err
+	}
+	zipLogical, err := diskreserve.Add(media, posters)
+	if err != nil {
+		return 0, err
+	}
+	zipLogical, err = diskreserve.Add(zipLogical, framing)
+	if err != nil {
+		return 0, err
+	}
+	zipLogical, err = diskreserve.Add(zipLogical, metadata)
+	if err != nil {
+		return 0, err
+	}
+	block, err := diskreserve.BlockSize(directory)
+	if err != nil {
+		return 0, err
+	}
+	zipAlloc, err := diskreserve.RoundUp(zipLogical, block)
+	if err != nil {
+		return 0, err
+	}
+	catalogAlloc, err := diskreserve.RoundUp(metadata, block)
+	if err != nil {
+		return 0, err
+	}
+	return diskreserve.Add(zipAlloc, catalogAlloc)
+}
+
+func exportDiskError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if errors.Is(err, diskreserve.ErrInsufficientSpace) {
+		return &model.APIError{Status: http.StatusInsufficientStorage, Code: "storage_reserve_exceeded", Message: "This instance needs more free disk space to prepare a library download; free disk space or ask the operator to adjust its reserve"}
+	}
+	if errors.Is(err, diskreserve.ErrSpaceUnknown) {
+		return &model.APIError{Status: http.StatusServiceUnavailable, Code: "storage_unavailable", Message: "The available disk space could not be checked"}
+	}
+	return err
+}
+
 func (s *Server) buildLibraryExport(ctx context.Context, owner string, file *os.File, buffer []byte) (libraryExportManifest, error) {
 	manifest := libraryExportManifest{
 		Format: "sploot-owned-library", Version: 2, OwnerID: owner,
@@ -174,7 +292,7 @@ func (s *Server) buildLibraryExport(ctx context.Context, owner string, file *os.
 		Integrity:        "Every media entry must match its stored byte count and SHA-256. ZIP CRCs protect metadata and media in transit.",
 		Scope:            "All owner assets in one read-only SQLite snapshot, including trash, originals, referenced posters, indexing metadata and tags. Account credentials and other owners are excluded. This is not a database backup.",
 	}
-	catalog, err := os.CreateTemp("", "sploot-library-catalog-*.ndjson")
+	catalog, err := os.CreateTemp(s.exportDir, "sploot-library-catalog-*.ndjson")
 	if err != nil {
 		return manifest, fmt.Errorf("create private library catalog: %w", err)
 	}

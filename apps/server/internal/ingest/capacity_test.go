@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/misty-step/sploot/apps/server/internal/contract"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -30,10 +29,13 @@ func TestDiskReserveRejectsBeforeReadingAndAllowsExactReservation(t *testing.T) 
 	original := animatedFixture(t, 90)
 	reader := &countedReader{reader: bytes.NewReader(original)}
 	s.storageReserveBytes = 4096
-	reservation := 2*int64(contract.UploadMaxBytes) + maxPosterBytes + 1
+	reservation, err := SaveStagingBytes(filepath.Join(directory, "media"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	available := reservation + s.storageReserveBytes - 1
 	s.availableBytes = func() (int64, error) { return available, nil }
-	_, err := s.Save(context.Background(), owner, Input{Reader: reader, MIME: "image/gif", IdempotencyKey: "reserve-retry"})
+	_, err = s.Save(context.Background(), owner, Input{Reader: reader, MIME: "image/gif", IdempotencyKey: "reserve-retry"})
 	var apiError *model.APIError
 	if !errors.As(err, &apiError) || apiError.Status != 507 || apiError.Code != "storage_reserve_exceeded" || reader.reads != 0 {
 		t.Fatalf("reserve failure consumed upload bytes: reads=%d error=%v", reader.reads, err)
