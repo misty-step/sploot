@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+
+	"github.com/misty-step/sploot/apps/server/internal/ctxio"
 )
 
 // Verify reads the portable database and every referenced byte without touching
@@ -38,7 +40,7 @@ func verifyMedia(ctx context.Context, dir *snapshotDirectory, manifest Manifest)
 		return err
 	}
 	defer file.Close()
-	scanner := bufio.NewScanner(recoveryReader{ctx, file})
+	scanner := bufio.NewScanner(ctxio.Reader(ctx, file))
 	scanner.Buffer(make([]byte, 64<<10), maxRecordBytes)
 	db, err := openDatabase(ctx, dir, true)
 	if err != nil {
