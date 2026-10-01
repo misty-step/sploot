@@ -185,7 +185,7 @@ func (s *Server) boundary(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.EqualFold(r.Host, base.Host) {
 			incomingHost, incomingPort, _ := net.SplitHostPort(r.Host)
-			if (r.Method == http.MethodGet || r.Method == http.MethodHead) && incomingPort == basePort && isLoopbackHost(incomingHost) && isLoopbackHost(baseHost) {
+			if (r.Method == http.MethodGet || r.Method == http.MethodHead) && incomingPort == basePort && config.IsLoopbackHost(incomingHost) && config.IsLoopbackHost(baseHost) {
 				http.Redirect(w, r, s.config.BaseURL+r.URL.RequestURI(), http.StatusTemporaryRedirect)
 				return
 			}
@@ -258,14 +258,6 @@ func (s *Server) boundary(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func isLoopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) json(w http.ResponseWriter, status int, value any) {
