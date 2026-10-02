@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/misty-step/sploot/apps/server/internal/contract"
+	"github.com/misty-step/sploot/apps/server/internal/ctxio"
 	"golang.org/x/sys/unix"
 )
 
@@ -229,7 +230,7 @@ func copyObject(ctx context.Context, source, target *os.Root, sourcePath, target
 	if err != nil || info.Size() != size {
 		return errors.New("captured object size differs from its receipt")
 	}
-	n, sum, err := writePrivate(target, targetPath, io.LimitReader(contextReader{ctx, file}, size+1))
+	n, sum, err := writePrivate(target, targetPath, io.LimitReader(ctxio.Reader(ctx, file), size+1))
 	if err != nil {
 		return err
 	}
@@ -239,6 +240,8 @@ func copyObject(ctx context.Context, source, target *os.Root, sourcePath, target
 	return nil
 }
 
+// contextReader is the cancel-before-read wrapper still constructed by
+// predecessor import hashing. Other predecessor copies go through ctxio.Reader.
 type contextReader struct {
 	ctx    context.Context
 	reader io.Reader

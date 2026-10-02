@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/misty-step/sploot/apps/server/internal/contract"
+	"github.com/misty-step/sploot/apps/server/internal/ctxio"
 )
 
 const maxMetadataBytes = 32 << 20
@@ -268,7 +269,7 @@ func (d *snapshotDirectory) hashFile(ctx context.Context, path string) (Artifact
 		return Artifact{}, failure("verify", "artifact exceeds supported size")
 	}
 	hash := sha256.New()
-	bytes, err := io.Copy(hash, io.LimitReader(recoveryReader{ctx, file}, info.Size()+1))
+	bytes, err := io.Copy(hash, io.LimitReader(ctxio.Reader(ctx, file), info.Size()+1))
 	if err != nil || bytes != info.Size() {
 		return Artifact{}, failure("verify", "cannot read complete unchanged artifact")
 	}
@@ -289,7 +290,7 @@ func (d *snapshotDirectory) verifyArtifact(ctx context.Context, expected Artifac
 		return failure("verify", "artifact size differs from its frozen receipt")
 	}
 	hash := sha256.New()
-	count, err := io.Copy(hash, io.LimitReader(recoveryReader{ctx, file}, expected.Bytes+1))
+	count, err := io.Copy(hash, io.LimitReader(ctxio.Reader(ctx, file), expected.Bytes+1))
 	if err != nil || count != expected.Bytes || hex.EncodeToString(hash.Sum(nil)) != expected.SHA256 {
 		return failure("verify", "artifact size or SHA-256 mismatch")
 	}
