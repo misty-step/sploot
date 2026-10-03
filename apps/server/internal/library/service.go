@@ -41,6 +41,10 @@ const assetColumns = `a.id, a.owner_user_id, a.blob_url, a.thumbnail_url,
 		FROM (SELECT t.id, t.name, t.color FROM asset_tags at JOIN tags t ON t.id = at.tag_id
 		WHERE at.asset_id = a.id AND t.owner_user_id = a.owner_user_id ORDER BY t.name, t.id) t), '[]')`
 
+// Live owned assets are one identity: owner, id, and not in trash. Get, PATCH,
+// and restore all re-read that same row through scanAsset.
+const liveAssetByID = `SELECT ` + assetColumns + ` FROM assets a WHERE a.owner_user_id = ?1 AND a.id = ?2 AND a.deleted_at IS NULL`
+
 func scanAsset(row interface{ Scan(...any) error }, extra ...any) (model.Asset, error) {
 	var asset model.Asset
 	var tags []byte
@@ -116,7 +120,7 @@ func (s *Service) Get(ctx context.Context, owner, id string) (model.Asset, error
 	if err := validateID(id); err != nil {
 		return model.Asset{}, err
 	}
-	asset, err := scanAsset(s.db.QueryRowContext(ctx, `SELECT `+assetColumns+` FROM assets a WHERE a.owner_user_id = ?1 AND a.id = ?2 AND a.deleted_at IS NULL`, owner, id))
+	asset, err := scanAsset(s.db.QueryRowContext(ctx, liveAssetByID, owner, id))
 	return asset, assetError("get asset", err)
 }
 
@@ -177,7 +181,7 @@ func (s *Service) Update(ctx context.Context, owner, id string, update AssetUpda
 			return model.Asset{}, err
 		}
 	}
-	asset, err := scanAsset(tx.QueryRowContext(ctx, `SELECT `+assetColumns+` FROM assets a WHERE a.owner_user_id = ?1 AND a.id = ?2 AND a.deleted_at IS NULL`, owner, id))
+	asset, err := scanAsset(tx.QueryRowContext(ctx, liveAssetByID, owner, id))
 	if err != nil {
 		return model.Asset{}, assetError("read updated asset", err)
 	}
@@ -224,7 +228,7 @@ func (s *Service) Restore(ctx context.Context, owner, id string) (model.Asset, e
 	if _, err := tx.ExecContext(ctx, `UPDATE assets SET share_slug = CASE WHEN deleted_at IS NOT NULL THEN NULL ELSE share_slug END, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE owner_user_id = ?1 AND id = ?2`, owner, id); err != nil {
 		return model.Asset{}, fmt.Errorf("restore asset: %w", err)
 	}
-	asset, err := scanAsset(tx.QueryRowContext(ctx, `SELECT `+assetColumns+` FROM assets a WHERE a.owner_user_id = ?1 AND a.id = ?2 AND a.deleted_at IS NULL`, owner, id))
+	asset, err := scanAsset(tx.QueryRowContext(ctx, liveAssetByID, owner, id))
 	if err != nil {
 		return model.Asset{}, assetError("read restored asset", err)
 	}
