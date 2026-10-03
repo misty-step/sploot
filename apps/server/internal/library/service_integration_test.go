@@ -43,6 +43,20 @@ func seedLibraryAsset(t *testing.T, s *Service, owner, suffix string, shuffleKey
 	return id
 }
 
+func seedChecksumAsset(t *testing.T, s *Service, id, owner, checksum, createdAt string, deleted bool) {
+	t.Helper()
+	var deletedAt any
+	if deleted {
+		deletedAt = createdAt
+	}
+	_, err := s.db.ExecContext(context.Background(), `INSERT INTO assets (id, owner_user_id, blob_url, pathname, mime, size, storage_size, thumbnail_storage_size, checksum_sha256, created_at, updated_at, deleted_at)
+		VALUES (?1, ?2, ?3, ?4, 'image/gif', 100, 120, 8, ?5, ?6, ?6, ?7)`,
+		id, owner, "/media/"+id, id+".gif", checksum, createdAt, deletedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func libraryStatus(t *testing.T, err error, status int) {
 	t.Helper()
 	var apiError *model.APIError
@@ -294,6 +308,59 @@ func assetIDs(assets []model.Asset) []string {
 	return ids
 }
 
+func TestLiveByChecksumReturnsOldestLiveAssetAndIgnoresTrash(t *testing.T) {
+	s, owner, other := libraryDatabase(t)
+	ctx := context.Background()
+	checksum := strings.Repeat("ab", 32)
+	older := owner + "-older"
+	newer := owner + "-newer"
+	trashed := owner + "-trashed"
+	foreign := other + "-foreign"
+	seedChecksumAsset(t, s, trashed, owner, checksum, "2024-12-31 00:00:00", true)
+	seedChecksumAsset(t, s, older, owner, checksum, "2025-01-01 00:00:00", false)
+	seedChecksumAsset(t, s, newer, owner, checksum, "2025-01-02 00:00:00", false)
+	seedChecksumAsset(t, s, foreign, other, checksum, "2024-01-01 00:00:00", false)
+	if _, err := s.AddTags(ctx, owner, older, nil, []string{"reaction"}); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := s.LiveByChecksum(ctx, owner, checksum)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(ctx, owner, older)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == nil || !reflect.DeepEqual(*found, got) {
+		t.Fatalf("live checksum lookup diverged from Get: %#v vs %#v", found, got)
+	}
+
+	foreignFound, err := s.LiveByChecksum(ctx, other, checksum)
+	if err != nil || foreignFound == nil || foreignFound.ID != foreign {
+		t.Fatalf("foreign checksum lookup: %#v %v", foreignFound, err)
+	}
+	missing, err := s.LiveByChecksum(ctx, owner, strings.Repeat("cd", 32))
+	if err != nil || missing != nil {
+		t.Fatalf("unknown checksum: %#v %v", missing, err)
+	}
+
+	if err := s.Delete(ctx, owner, older); err != nil {
+		t.Fatal(err)
+	}
+	found, err = s.LiveByChecksum(ctx, owner, checksum)
+	if err != nil || found == nil || found.ID != newer {
+		t.Fatalf("did not skip trash for the next live asset: %#v %v", found, err)
+	}
+	if err := s.Delete(ctx, owner, newer); err != nil {
+		t.Fatal(err)
+	}
+	found, err = s.LiveByChecksum(ctx, owner, checksum)
+	if err != nil || found != nil {
+		t.Fatalf("trashed checksum still matched: %#v %v", found, err)
+	}
+}
+
 func TestStorageStatsKeepPendingPurgeChargesOwnerScoped(t *testing.T) {
 	s, owner, other := libraryDatabase(t)
 	seedLibraryAsset(t, s, owner, "active", 1)
@@ -307,5 +374,49 @@ func TestStorageStatsKeepPendingPurgeChargesOwnerScoped(t *testing.T) {
 	}
 	if stats.ActiveStorageBytes != 128 || stats.TrashStorageBytes != 10 || stats.StorageBytes != 138 {
 		t.Fatalf("pending purge charge leaked across owners or was released early: %+v", stats)
+	}
+}
+
+func TestTagAssetCountIsTheSameAfterUpdateAndList(t *testing.T) {
+	s, owner, other := libraryDatabase(t)
+	ctx := context.Background()
+	live := seedLibraryAsset(t, s, owner, "live", 1)
+	trashed := seedLibraryAsset(t, s, owner, "trashed", 2)
+	foreign := seedLibraryAsset(t, s, other, "foreign", 3)
+	tag, err := s.CreateTag(ctx, owner, "reaction", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tag.AssetCount != 0 {
+		t.Fatalf("new tag counted assets: %#v", tag)
+	}
+	if _, err := s.AddTags(ctx, owner, live, []string{tag.ID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddTags(ctx, owner, trashed, []string{tag.ID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddTags(ctx, other, foreign, nil, []string{"reaction"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, owner, trashed); err != nil {
+		t.Fatal(err)
+	}
+
+	listed, err := s.TagDetails(ctx, owner)
+	if err != nil || len(listed) != 1 || listed[0].ID != tag.ID || listed[0].AssetCount != 2 {
+		t.Fatalf("list tag count drifted from owner-owned live+trash assets: %#v %v", listed, err)
+	}
+	color := "#ff00aa"
+	updated, err := s.UpdateTag(ctx, owner, tag.ID, TagUpdate{Color: &color, ColorSet: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.AssetCount != listed[0].AssetCount || updated.Name != "reaction" || updated.Color == nil || *updated.Color != color {
+		t.Fatalf("PATCH tag count used a different predicate than GET: list=%#v patch=%#v", listed[0], updated)
+	}
+	listed, err = s.TagDetails(ctx, owner)
+	if err != nil || len(listed) != 1 || listed[0].AssetCount != updated.AssetCount {
+		t.Fatalf("list tag count changed after a color-only PATCH: %#v %v", listed, err)
 	}
 }

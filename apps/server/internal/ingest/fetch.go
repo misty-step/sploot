@@ -35,7 +35,7 @@ func (s *Service) Fetch(ctx context.Context, rawURL string) (io.ReadCloser, stri
 		_ = response.Body.Close()
 		return nil, "", "", err
 	}
-	contentType := normalizeMIME(response.Header.Get("Content-Type"))
+	contentType := contract.NormalizeMIME(response.Header.Get("Content-Type"))
 	if !contract.IsAllowedMIME(contentType) {
 		return fail(invalid("The URL does not serve supported image or video media"))
 	}
