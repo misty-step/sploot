@@ -1,0 +1,93 @@
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit or branch to build for deploy
+        required: false
+        default: master
+        type: string
+      action:
+        description: What to run
+        required: true
+        type: choice
+        options:
+          - deploy
+          - rollback
+          - status
+          - query
+        default: status
+      sql:
+        description: One read-only SELECT when action is query
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check out deploy ref
+        if: inputs.action == 'deploy'
+        env:
+          DEPLOY_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          cp deploy/deploy.sh "$RUNNER_TEMP/deploy.sh"
+          chmod +x "$RUNNER_TEMP/deploy.sh"
+          git fetch --depth=1 origin "$DEPLOY_REF"
+          git checkout --detach FETCH_HEAD
+
+      - uses: pnpm/action-setup@v6
+        if: inputs.action == 'deploy'
+
+      - uses: actions/setup-node@v6
+        if: inputs.action == 'deploy'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-go@v6
+        if: inputs.action == 'deploy'
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: apps/server/go.sum
+
+      - name: Install the same build dependencies CI uses
+        if: inputs.action == 'deploy'
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y libsqlite3-dev ffmpeg
+          pnpm install --frozen-lockfile
+
+      - name: Run deploy script
+        env:
+          SPLOOT_DEPLOY_KEY: ${{ secrets.SPLOOT_DEPLOY_KEY }}
+          SPLOOT_KNOWN_HOSTS: ${{ secrets.SPLOOT_KNOWN_HOSTS }}
+          ACTION: ${{ inputs.action }}
+          SQL: ${{ inputs.sql }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          umask 077
+          printf '%s\n' "$SPLOOT_DEPLOY_KEY" > "$HOME/.ssh/sploot_deploy"
+          printf '%s\n' "$SPLOOT_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          unset SPLOOT_DEPLOY_KEY SPLOOT_KNOWN_HOSTS
+          export SPLOOT_SSH_IDENTITY="$HOME/.ssh/sploot_deploy"
+          export SPLOOT_KNOWN_HOSTS_FILE="$HOME/.ssh/known_hosts"
+          script=deploy/deploy.sh
+          if [[ ! -f $script ]]; then
+            script="$RUNNER_TEMP/deploy.sh"
+          fi
+          "$script" "$ACTION" "$SQL"
