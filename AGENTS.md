@@ -65,4 +65,5 @@ Canonical shared helpers (reuse, don't copy):
 Path rules: `.omp/rules/prisma-db.mdc`, `common-contract.mdc`, `extension.mdc`.
 Skills: `.agents/skills/misty-sploot/` (token-scoped MCP) and `.agents/skills/sploot-qa/` (real-surface QA).
 Go configuration, acceptance and recovery: `apps/web/docs/DEPLOYMENT.md`.
+Production deploy and rollback: `deploy/deploy.sh`, invoked by `.github/workflows/deploy.yml`. Procedure: `apps/web/docs/DEPLOYMENT.md#deploy-and-rollback`.
 Predecessor provider/runtime boundary: `apps/web/docs/adr/010-digitalocean-runtime-controls.md`.

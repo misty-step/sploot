@@ -52,6 +52,33 @@ tar/encryption overhead **plus** the configured 1 GiB save reserve. Do not
 lower the reserve or assume this 10 GiB host can accommodate arbitrary growth.
 A successful backup's remote metadata receipt is not independent restore proof.
 
+### Deploy and rollback
+
+`deploy/deploy.sh` is the production deploy path. GitHub Actions workflow
+`.github/workflows/deploy.yml` runs it (`workflow_dispatch`, concurrency group
+`production`). Do not point `/opt/sploot/current` at a release by hand.
+
+The job only runs when dispatched on `master`. `deploy` builds that commit with
+`pnpm --filter server build`, the same build CI uses. It copies `sploot` and
+`library-backup` to `/opt/sploot/releases/<full sha>/`, requires at least 1 GiB
+free under `/var/lib/sploot`, and starts `sploot-backup.service`. The switch
+waits for a new `status: ok` receipt in `/var/lib/sploot/recovery-status.json`.
+It then records the previous release, points `/opt/sploot/current` at the new
+directory, sets `SPLOOT_DEPLOYMENT_COMMIT` in `/etc/sploot/production.env`, and
+restarts `sploot.service`.
+
+The release check polls `https://sploot.mistystep.io` for three minutes:
+`/api/version` must report the new sha, `/api/health` must be `ok`, anonymous
+`/api/assets` must return 401, and `/` must return 303 to `/sign-in`. If that
+fails, the script points `current` and `SPLOOT_DEPLOYMENT_COMMIT` back at the
+previous release, restarts, and the job fails.
+
+`rollback` switches to that saved previous release and runs the same check.
+`status` prints the current and previous release paths and `/api/version`.
+`query` runs one read-only statement that starts with `SELECT`, via
+`sqlite3 -readonly -safe`, against `library.sqlite` in the production data directory.
+The workflow connects as `exedev` at `sploot-pilot.exe.xyz` and uses sudo.
+
 The extension selects `https://sploot.mistystep.io` explicitly; its development
 default remains loopback. Repository-built MCP defaults to
 `https://sploot.mistystep.io/api` as of merged
