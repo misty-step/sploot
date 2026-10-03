@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/misty-step/sploot/apps/server/internal/contract"
 	"github.com/misty-step/sploot/apps/server/internal/database"
 	"github.com/misty-step/sploot/apps/server/internal/inference"
 	"github.com/misty-step/sploot/apps/server/internal/library"
@@ -618,4 +619,40 @@ func TestSQLiteQueuedSearchRunsBeforeNextIndexClaim(t *testing.T) {
 	if kind := nextExecution(); kind != "image" {
 		t.Fatalf("indexing did not resume after interactive work: %s", kind)
 	}
+}
+
+func TestRetryAndStatusUseStoredAssetIDGrammar(t *testing.T) {
+	service, _, _ := embeddingDatabase(t)
+	ctx := context.Background()
+	present := insertTestAsset(t, service, "owner-a", "indexed")
+	missing := model.NewID()
+	if _, err := service.Status(ctx, "owner-a", present); err != nil {
+		t.Fatalf("live asset status rejected: %v", err)
+	}
+	if err := service.Retry(ctx, "owner-a", missing); !embeddingStatus(t, err, 404, "not_found") {
+		t.Fatalf("well-formed missing id: %v", err)
+	}
+	if _, err := service.Status(ctx, "owner-a", missing); !embeddingStatus(t, err, 404, "not_found") {
+		t.Fatalf("well-formed missing id: %v", err)
+	}
+	if _, err := service.Status(ctx, "owner-a", strings.Repeat("a", contract.AssetIDMaxLength)); !embeddingStatus(t, err, 404, "not_found") {
+		t.Fatalf("max-length stored id: %v", err)
+	}
+	for _, id := range []string{"", "asset\x00id", "asset\xffid", strings.Repeat("a", contract.AssetIDMaxLength+1)} {
+		if err := service.Retry(ctx, "owner-a", id); !embeddingStatus(t, err, 400, "invalid_request") {
+			t.Fatalf("Retry(%q)=%v", id, err)
+		}
+		if _, err := service.Status(ctx, "owner-a", id); !embeddingStatus(t, err, 400, "invalid_request") {
+			t.Fatalf("Status(%q)=%v", id, err)
+		}
+	}
+	if err := service.Retry(ctx, "", present); !embeddingStatus(t, err, 401, "unauthorized") {
+		t.Fatalf("empty owner: %v", err)
+	}
+}
+
+func embeddingStatus(t *testing.T, err error, status int, code string) bool {
+	t.Helper()
+	var api *model.APIError
+	return errors.As(err, &api) && api.Status == status && api.Code == code
 }

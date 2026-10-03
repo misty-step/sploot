@@ -35,6 +35,10 @@ do not own the Go API.
 | Private media | `GET`/`HEAD /media/{id}` | Owner browser or paired device, never a personal token |
 | Personal token management | `GET`, `POST /api/upload-tokens`; `DELETE /api/upload-tokens/{id}` | Browser only |
 
+Owner library reads and indexing status/retry use the same stored identifier
+grammar. A malformed `{id}` is `400 invalid_request` before a row lookup; a
+well-formed unknown id remains `404`.
+
 Local `GET /api/assets` uses `sortBy=shuffle&shuffleSeed=<0..1000000>`
 for deterministic owner-scoped shuffle. Preserve the seed, filters and limit
 when following `nextCursor`. The HTML `/app` and `/app/feed` URLs instead use
