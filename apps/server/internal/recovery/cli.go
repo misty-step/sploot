@@ -39,6 +39,11 @@ Options:
 
 verify --target-data-dir checks exact parity before starting the restored server.
 Once that server accepts new writes it is intentionally no longer a snapshot.
+
+backup-remote.py admits snapshot, tar, and age staging before it writes them:
+  staging-bytes --data-dir LIVE --target WORK_DIR
+  reserve --ledger LEDGER --target WORK_DIR --bytes N --reserve-bytes N
+Those commands do not create a snapshot. reserve holds the claim until stdin closes.
 `
 
 // RunCLI is shared by library-backup and the primary sploot executable. It never
@@ -49,8 +54,14 @@ func RunCLI(ctx context.Context, args []string, output, diagnostic io.Writer) in
 		return 0
 	}
 	command := args[0]
+	switch command {
+	case "staging-bytes":
+		return runStagingBytes(args[1:], output, diagnostic)
+	case "reserve":
+		return runReserve(ctx, args[1:], output, diagnostic)
+	}
 	if command != "backup" && command != "resume" && command != "verify" && command != "restore" {
-		fmt.Fprintln(diagnostic, "Choose backup, resume, verify or restore. Use --help for usage.")
+		fmt.Fprintln(diagnostic, "Choose backup, resume, verify, restore, staging-bytes or reserve. Use --help for usage.")
 		return 2
 	}
 	flags := flag.NewFlagSet("library-backup", flag.ContinueOnError)

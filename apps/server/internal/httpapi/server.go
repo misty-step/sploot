@@ -11,7 +11,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/misty-step/sploot/apps/server/internal/auth"
 	"github.com/misty-step/sploot/apps/server/internal/config"
 	"github.com/misty-step/sploot/apps/server/internal/contract"
+	"github.com/misty-step/sploot/apps/server/internal/diskreserve"
 	"github.com/misty-step/sploot/apps/server/internal/embedding"
 	"github.com/misty-step/sploot/apps/server/internal/ingest"
 	"github.com/misty-step/sploot/apps/server/internal/library"
@@ -36,6 +39,8 @@ type Server struct {
 	embedding  *embedding.Service
 	web        *web.Renderer
 	logger     *slog.Logger
+	ledger     *diskreserve.Ledger
+	exportDir  string
 	exportSlot chan struct{}
 	uploadSlot chan struct{}
 	handler    http.Handler
@@ -48,10 +53,23 @@ func New(cfg config.Config, db *sql.DB, logger *slog.Logger, engine embedding.En
 	if err != nil {
 		return nil, fmt.Errorf("authentication configuration: %w", err)
 	}
+	reserve := cfg.StorageReserveBytes
+	ledger, err := diskreserve.Open(filepath.Join(cfg.DataDirectory, diskreserve.DirectoryName), func() int64 { return reserve }, nil)
+	if err != nil {
+		return nil, fmt.Errorf("disk reservation ledger: %w", err)
+	}
+	exportDir := filepath.Join(cfg.DataDirectory, "export-tmp")
+	if err := os.MkdirAll(exportDir, 0700); err != nil {
+		return nil, fmt.Errorf("export staging directory: %w", err)
+	}
+	if err := os.Chmod(exportDir, 0700); err != nil {
+		return nil, fmt.Errorf("export staging directory: %w", err)
+	}
 	capture, err := ingest.New(db, ingest.Options{
 		MediaDirectory: cfg.MediaDirectory, Environment: cfg.Environment,
 		UploadsEnabled: cfg.UploadsEnabled, Logger: logger,
 		StorageLimitBytes: cfg.StorageLimitBytes, StorageReserveBytes: cfg.StorageReserveBytes,
+		Ledger: ledger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("capture configuration: %w", err)
@@ -67,7 +85,7 @@ func New(cfg config.Config, db *sql.DB, logger *slog.Logger, engine embedding.En
 	if err != nil {
 		return nil, fmt.Errorf("load interface: %w", err)
 	}
-	s := &Server{config: cfg, db: db, auth: authentication, library: library.New(db, cfg.CursorSecret), ingest: capture, embedding: index, web: renderer, logger: logger}
+	s := &Server{config: cfg, db: db, auth: authentication, library: library.New(db, cfg.CursorSecret), ingest: capture, embedding: index, web: renderer, logger: logger, ledger: ledger, exportDir: exportDir}
 	s.exportSlot = make(chan struct{}, 1)
 	s.uploadSlot = make(chan struct{}, 1)
 	mux := http.NewServeMux()

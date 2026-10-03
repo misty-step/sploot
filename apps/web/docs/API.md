@@ -208,6 +208,13 @@ per-user quota. `SPLOOT_STORAGE_LIMIT_BYTES=0` removes the artificial ceiling;
 nonnegative byte counts. Originals, previews and trash consume retained capacity;
 unfinished physical reclamation remains charged until bytes are removed.
 
+That free-disk reserve is one shared admission for saves, `GET /api/library/export`
+staging, and scheduled backup staging on the filesystem that will receive the
+write. Each consumer estimates its upcoming bytes and holds the claim until the
+write finishes or the process exits. A refusal is returned before those scratch
+files are created. The reserve does not cover writes from software other than
+these Sploot consumers.
+
 `GET /api/stats` returns owner-only `assetCount`, `favoriteCount`, `trashCount`,
 `storageBytes`, `activeStorageBytes`, `trashStorageBytes` and `lastUploadAt`.
 There is no local `storageLimitBytes`, remaining allowance, usage percentage,
@@ -1117,8 +1124,12 @@ attachment containing owner metadata/vectors/tags and currently stored
 source/thumbnail bytes, including soft-deleted asset records. It does not create the old export
 session or serve its subroutes. It has one active export slot per process
 (`429`, `code: "export_busy"`, `Retry-After: 30`) and a 15-minute deadline.
-The archive is completed before success headers; transfer truncation is a
-transport failure, not a completed download. This owner export is not the
+Before creating the ZIP or its catalog, the handler reserves a conservative
+bound of both files on the library filesystem and leaves
+`SPLOOT_STORAGE_RESERVE_BYTES` free after other Sploot reservations. Low space
+returns 507 `storage_reserve_exceeded`; unknown free space returns 503
+`storage_unavailable`. The archive is completed before success headers; transfer
+truncation is a transport failure, not a completed download. This owner export is not the
 operator [full-database backup/restore](./DEPLOYMENT.md#library-backup-and-isolated-restore).
 
 #### Retained predecessor export lifecycle

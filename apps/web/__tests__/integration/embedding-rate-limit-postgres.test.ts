@@ -126,11 +126,11 @@ describeWithDatabase('Postgres embedding limiter', () => {
     const first = await acquireEmbeddingRateLimit('crashed-user', TEST_WINDOW_MS);
     expect(first.allowed).toBe(true);
 
-    await prisma.$executeRaw`
-      UPDATE "embedding_rate_leases"
-      SET "expires_at" = NOW() - INTERVAL '1 second'
-      WHERE "user_id" = 'crashed-user'
-    `;
+    // Admission compares expires_at with the injected clock, not SQL NOW().
+    await prisma.embeddingRateLease.updateMany({
+      where: { userId: 'crashed-user' },
+      data: { expiresAt: new Date(TEST_WINDOW_MS - 1000) },
+    });
 
     const replacement = await acquireEmbeddingRateLimit('crashed-user', TEST_WINDOW_MS);
     expect(replacement.allowed).toBe(true);

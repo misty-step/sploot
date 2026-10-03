@@ -16,11 +16,13 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/misty-step/sploot/apps/server/internal/contract"
+	"github.com/misty-step/sploot/apps/server/internal/diskreserve"
 	"github.com/misty-step/sploot/apps/server/internal/medialock"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
@@ -37,6 +39,9 @@ type Options struct {
 	LocalImportOrigin   string
 	StorageLimitBytes   int64
 	StorageReserveBytes int64
+	// Ledger is the process-wide staging admission shared with export and backup.
+	// Nil opens a ledger in the library directory for this service alone.
+	Ledger *diskreserve.Ledger
 }
 
 type Input struct {
@@ -59,6 +64,7 @@ type Service struct {
 	storageLimitBytes   int64
 	storageReserveBytes int64
 	availableBytes      func() (int64, error)
+	ledger              *diskreserve.Ledger
 }
 
 func New(db *sql.DB, opts Options) (*Service, error) {
@@ -81,7 +87,25 @@ func New(db *sql.DB, opts Options) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{db: db, store: store, logger: opts.Logger, enabled: opts.UploadsEnabled, localImportOrigin: origin, fetchClient: newFetchClient(origin),
-		storageLimitBytes: opts.StorageLimitBytes, storageReserveBytes: opts.StorageReserveBytes, availableBytes: store.availableBytes}
+		storageLimitBytes: opts.StorageLimitBytes, storageReserveBytes: opts.StorageReserveBytes, availableBytes: store.availableBytes, ledger: opts.Ledger}
+	if s.ledger == nil {
+		ledger, ledgerErr := diskreserve.Open(filepath.Join(store.libraryDirectory(), diskreserve.DirectoryName), func() int64 { return s.storageReserveBytes }, func(target string) (uint64, int64, error) {
+			available, err := s.availableBytes()
+			if err != nil {
+				return 0, 0, err
+			}
+			device, err := diskreserve.Device(target)
+			if err != nil {
+				return 0, 0, err
+			}
+			return device, available, nil
+		})
+		if ledgerErr != nil {
+			_ = store.root.Close()
+			return nil, fmt.Errorf("open disk reservation ledger: %w", ledgerErr)
+		}
+		s.ledger = ledger
+	}
 	recoveryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := s.resumePurges(recoveryCtx); err != nil {
@@ -169,9 +193,15 @@ func (s *Service) saveRequest(ctx context.Context, owner string, input Input, ra
 	}
 	// Temp originals live on the media filesystem. Reserve the worst-case spool,
 	// its durable copy and poster before reading any upload or fetching a URL.
-	if err := s.checkReserve(2*int64(contract.UploadMaxBytes) + maxPosterBytes + 1); err != nil {
+	stagingBytes, err := SaveStagingBytes(s.store.directory)
+	if err != nil {
+		return result, diskError(err)
+	}
+	hold, err := s.admitDisk(ctx, stagingBytes)
+	if err != nil {
 		return result, err
 	}
+	defer hold.Release()
 	if rawURL != "" {
 		body, filename, mediaType, fetchErr := s.Fetch(ctx, rawURL)
 		if fetchErr != nil {
@@ -230,7 +260,9 @@ func (s *Service) saveRequest(ctx context.Context, owner string, input Input, ra
 		return result, err
 	}
 	incoming := original.size + int64(len(prepared.poster))
-	if err := s.checkReserve(incoming); err != nil {
+	// The spool is already on disk. Keep a claim only for the durable original
+	// and poster that are still unwritten, and refuse if the reserve is gone.
+	if err := s.tightenDisk(ctx, hold, original.size, int64(len(prepared.poster))); err != nil {
 		return result, err
 	}
 	// Reject capacity before publishing any files. The final writer transaction
@@ -258,7 +290,7 @@ func (s *Service) saveRequest(ctx context.Context, owner string, input Input, ra
 	if err != nil {
 		return result, err
 	}
-	if err := s.checkReserve(0); err != nil {
+	if err := s.tightenDisk(ctx, hold, 0, 0); err != nil {
 		return result, err
 	}
 	tx, err = s.db.BeginTx(ctx, nil)

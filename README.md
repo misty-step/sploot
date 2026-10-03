@@ -151,7 +151,8 @@ pnpm dev:local --data-dir "$HOME/.local/share/sploot/library" --port 3002
 Relative command-line paths are resolved by the server process, whose pnpm
 launcher runs in `apps/server`; use absolute paths for overrides.
 Storage admission is instance-wide, not a per-account plan: the default has no
-artificial capacity ceiling and preserves 1 GiB of free disk. Operators can set
+artificial capacity ceiling and preserves 1 GiB of free disk for saves, library
+downloads, and backup staging together. Operators can set
 `SPLOOT_STORAGE_LIMIT_BYTES` and `SPLOOT_STORAGE_RESERVE_BYTES`. Settings shows
 your retained bytes and lets you explicitly delete unwanted trash permanently;
 ordinary trash still occupies disk.
