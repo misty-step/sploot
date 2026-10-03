@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/misty-step/sploot/apps/server/internal/contract"
 	"github.com/misty-step/sploot/apps/server/internal/inference"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
@@ -251,11 +252,21 @@ func (s *Service) fail(ctx context.Context, job claim, cause error) error {
 	return err
 }
 
+func requireOwnerAsset(owner, assetID string) error {
+	if owner == "" {
+		return apiError(401, "Authentication required", "unauthorized", 0)
+	}
+	if !contract.ValidAssetID(assetID) {
+		return apiError(400, "Invalid asset or tag id", "invalid_request", 0)
+	}
+	return nil
+}
+
 // Retry rearms durable state only. Automatic work is finite; an explicit owner
 // retry starts a new bounded cycle without spawning a second executor.
 func (s *Service) Retry(ctx context.Context, owner, assetID string) error {
-	if owner == "" {
-		return apiError(401, "Authentication required", "unauthorized", 0)
+	if err := requireOwnerAsset(owner, assetID); err != nil {
+		return err
 	}
 	if err := s.available(); err != nil {
 		return err
@@ -322,8 +333,8 @@ type Status struct {
 }
 
 func (s *Service) Status(ctx context.Context, owner, assetID string) (Status, error) {
-	if owner == "" {
-		return Status{}, apiError(401, "Authentication required", "unauthorized", 0)
+	if err := requireOwnerAsset(owner, assetID); err != nil {
+		return Status{}, err
 	}
 	var status Status
 	var updated *time.Time
