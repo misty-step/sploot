@@ -37,7 +37,6 @@ type Server struct {
 	web        *web.Renderer
 	logger     *slog.Logger
 	exportSlot chan struct{}
-	uploadSlot chan struct{}
 	handler    http.Handler
 }
 
@@ -69,7 +68,6 @@ func New(cfg config.Config, db *sql.DB, logger *slog.Logger, engine embedding.En
 	}
 	s := &Server{config: cfg, db: db, auth: authentication, library: library.New(db, cfg.CursorSecret), ingest: capture, embedding: index, web: renderer, logger: logger}
 	s.exportSlot = make(chan struct{}, 1)
-	s.uploadSlot = make(chan struct{}, 1)
 	mux := http.NewServeMux()
 	s.registerAuthRoutes(mux)
 	mux.HandleFunc("GET /{$}", s.home)
@@ -359,18 +357,32 @@ func (s *Server) searchAPI(w http.ResponseWriter, r *http.Request, principal mod
 }
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request, principal model.Principal) {
-	select {
-	case s.uploadSlot <- struct{}{}:
-		defer func() { <-s.uploadSlot }()
-	default:
-		s.failure(w, r, &model.APIError{Status: http.StatusTooManyRequests, Code: "upload_busy", Message: "Another upload is being received. Retry shortly.", Retryable: true, RetryAfter: 1})
+	// Replay and rejection happen before the body is parsed, so a saturated
+	// save slot never spools another multipart file.
+	if receipt, err := s.ingest.RetainedReceipt(r.Context(), principal.UserID, r.Header.Get("Idempotency-Key")); receipt != nil || err != nil {
+		if err != nil {
+			s.failure(w, r, err)
+			return
+		}
+		status := http.StatusCreated
+		if receipt.IsDuplicate {
+			status = http.StatusConflict
+		}
+		s.json(w, status, receipt)
 		return
 	}
+	ctx, release, err := s.ingest.Admit(r.Context(), principal.UserID)
+	if err != nil {
+		s.failure(w, r, err)
+		return
+	}
+	defer release()
+	r = r.WithContext(ctx)
 	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(time.Duration(contract.UploadTimeoutMS) * time.Millisecond))
 	bodyLimit := int64(contract.UploadMaxBytes) + (1 << 20)
 	r.Body = http.MaxBytesReader(w, r.Body, bodyLimit)
 	// Preserve fields after the file without spooling outside the library's
-	// storage admission boundary. The shared upload slot bounds this memory.
+	// storage admission boundary. Save admission bounds this memory.
 	if err := r.ParseMultipartForm(bodyLimit); err != nil {
 		var oversized *http.MaxBytesError
 		status := 400

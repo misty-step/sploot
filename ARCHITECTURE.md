@@ -150,6 +150,11 @@ separate from local web/Chromium proof.
    deduplicates within the owner, and admits physical originals plus posters
    against an operator-configured instance limit and free-disk reserve. Trash
    still occupies storage; no per-account quota or fabricated allowance is exposed.
+   Byte and URL saves share one in-process slot. Four saves may wait for at most
+   two seconds, with one waiting place per owner; a different owner is preferred
+   when the slot frees. A full queue or expired wait returns 429 `upload_busy`
+   with `Retry-After: 1` before a fetch, media lock, or idempotency claim. A
+   completed receipt is replayed before that gate.
 3. Immutable originals and posters live under private `media/`; SQLite records
    assets, tags, optional idempotent receipts, and durable indexing intent.
    Saving does not wait for inference. GIF/video originals remain playback and
