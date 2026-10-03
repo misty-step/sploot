@@ -9,9 +9,9 @@ hosted deployment, and a device/store release are not interchangeable.
 
 | Face | Status | Evidence |
 |---|---|---|
-| **UI** | Persistent local product; deployed predecessor separate | `apps/server` is the runnable Go HTML/HTMX library with local accounts and real CPU inference. Desktop/mobile-browser and real-backend Chromium extension paths have local proof; `apps/web` remains the unchanged production app. The device-paired WXT extension is not a Web Store publication. The [iPhone Shortcut](../apps/web/docs/shortcuts/save-to-sploot.md) is unsigned source, not an accepted installable release. |
-| **API** | Published save/search contract; local and deployed implementations | [`PUBLIC_API.md`](../apps/web/docs/PUBLIC_API.md) owns token-scoped save bytes, save by URL, and search (published 2026-07-07, sploot-071). [`API.md`](../apps/web/docs/API.md) separates Go account/device/private-media authority from the predecessor's Clerk-backed API; not every legacy route is retained. |
-| **MCP** | Shipped client; instance-scoped save/search | `apps/mcp` (`@sploot/mcp`, bin `sploot-mcp`) exposes `sploot_search` and `sploot_save` over the published API. Select the intended origin and that instance's personal token. The sploot-071 completion record is historical shipping evidence, not a new production migration receipt. |
+| **UI** | Live Go library; Next predecessor retained and not serving | `apps/server` is the production HTML/HTMX library at `https://sploot.mistystep.io` and the local product. Public probes on 2026-10-01 reported Go commit `e975904b`. `apps/web` retains the Next.js predecessor; its writer stays disabled. Desktop/mobile-browser and real-backend Chromium extension paths have local proof. Chrome Web Store publication is unverified. Physical iPhone and Shortcut acceptance are unverified. The [iPhone Shortcut](../apps/web/docs/shortcuts/save-to-sploot.md) is unsigned source. |
+| **API** | Published save/search contract; Go is the live implementation | [`PUBLIC_API.md`](../apps/web/docs/PUBLIC_API.md) owns token-scoped save bytes, save by URL, and search (published 2026-07-07, sploot-071). [`API.md`](../apps/web/docs/API.md) separates Go account/device/private-media authority from the predecessor's Clerk-backed API; not every legacy route is retained. |
+| **MCP** | In-repo client; instance-scoped save/search | `apps/mcp` (`@sploot/mcp`, bin `sploot-mcp`) exposes `sploot_search` and `sploot_save` over the published API. Select the intended origin and that instance's personal token. npm publication is unverified. The sploot-071 completion record is historical in-repo shipping evidence, not a production migration receipt. |
 | **Skill** | Shipped record, 2026-07-07 | `.agents/skills/misty-sploot/SKILL.md` teaches save/search, setup, and failure modes with the MCP server. A local runtime change does not imply a new skill release. |
 | **CLI** | **Waived** (see below) | `sploot serve/doctor/backup/resume/verify/restore` and `library-backup` are operator commands, not a standalone consumer save/search face. |
 
@@ -29,19 +29,25 @@ listing, private media download, export, deletion, or account/token management.
 Private media references in receipts/results are not public download grants.
 The Go owner ZIP route differs from the predecessor's multipart export lifecycle.
 
-The [runtime/deployment/recovery procedure](../apps/web/docs/DEPLOYMENT.md) owns
-operating commands. Its SQLite backup/restore format preserves local accounts
-and media but removes portable session/device/PAT credentials. It is not an
-importer or backup of the unchanged production Postgres/Blob library.
-Existing Next.js source, migrations, gates, deployment, and old real library
-are unchanged; local acceptance is not a production cutover.
+[`docs/runtime.md`](./runtime.md) is the serving and retirement record.
+[`docs/operations.md`](./operations.md) owns operating commands. The old
+`apps/web/docs/DEPLOYMENT.md` path is only a pointer; `apps/web` is not the
+serving authority. SQLite backup/restore preserves accounts and password
+material and deliberately invalidates portable session, device, and personal-token
+credentials. It is not an importer of the retained predecessor Postgres/Blob
+archive. The predecessor source, named migrations, required gates, and old
+library stay retained. The Next writer stays disabled. Local acceptance is
+separate from the 2026-09-10 cutover; it does not undo that cutover or
+authorize restarting Next. Restoring old DNS is not rollback: predecessor
+Postgres cannot absorb later native saves.
 
-Mobile-viewport browsing, upload, playback, and download are browser proof,
-not physical iPhone or native share-sheet acceptance. The
-[Shortcut procedure](../apps/web/docs/shortcuts/save-to-sploot.md) still requires
-Apple signing and real-device saved/duplicate/failure verification; no verified
-iCloud install link is claimed. Real-backend Chromium device pairing/capture
-is likewise separate from fixture-only tests and Chrome Web Store publication.
+Mobile-viewport browsing, upload, playback, and download are browser proof.
+Physical iPhone acceptance and native share-sheet acceptance are unverified.
+The [Shortcut procedure](../apps/web/docs/shortcuts/save-to-sploot.md) still
+requires Apple signing and real-device saved/duplicate/failure verification;
+no verified iCloud install link is claimed. Real-backend Chromium device
+pairing and capture are separate from fixture-only tests. Chrome Web Store
+publication is unverified.
 
 ## CLI waiver
 
@@ -70,6 +76,10 @@ without an MCP-capable agent harness present.
 
 ## Changelog
 
+- **2026-10-01:** The production UI is the hosted Go library. The Next.js
+  predecessor stays retained source with its writer disabled. Chrome Web
+  Store publication, npm publication, and physical iPhone/Shortcut acceptance
+  are unverified. The runtime inventory is [`docs/runtime.md`](./runtime.md).
 - **2026-07-07 (sploot-071):** API published as a real external contract;
-  MCP + skill shipped; CLI waiver recorded. Closes the "no implicit gaps"
+  MCP + skill shipped in-repo; CLI waiver recorded. Closes the "no implicit gaps"
   requirement — every face above has an explicit status, not silence.

@@ -2,7 +2,7 @@
 
 Retained Next.js predecessor only. There is no live DigitalOcean Sploot app;
 the legacy `www.sploot.app` API now returns `410`. Diagnose the current Go
-service with [native runtime operations](../DEPLOYMENT.md#canonical-hosted-go-instance),
+service with [native runtime operations](../../../../docs/operations.md#canonical-hosted-go-instance),
 not this Postgres runbook.
 
 ## detect

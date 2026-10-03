@@ -2,7 +2,7 @@
 
 Retained Next.js predecessor only. The DigitalOcean Sploot runtime is retired;
 the legacy `www.sploot.app` API returns `410`. For current Go operations use
-[native runtime operations](../DEPLOYMENT.md#canonical-hosted-go-instance).
+[native runtime operations](../../../../docs/operations.md#canonical-hosted-go-instance).
 
 ## detect
 

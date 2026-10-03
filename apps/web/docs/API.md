@@ -10,7 +10,8 @@ contract. Two independent runtimes implement that contract:
   browser sessions, and paired-device credentials.
 - **Retained Next.js predecessor — `apps/web`**: Clerk, Postgres/pgvector,
   Blob, and Replicate behavior. Its recipes below are not native production
-  authority; the explicit offline conversion is documented in DEPLOYMENT.md.
+  authority; the explicit offline conversion is documented in
+  [`docs/operations.md`](../../../docs/operations.md).
 
 The Go API does not claim every legacy route. Its inventory and auth boundary
 below are authoritative for local clients; unless explicitly marked otherwise,
@@ -57,7 +58,7 @@ An unshared asset's `/media/{id}` URL remains private even when its ID is known.
 predecessor's multipart export-session lifecycle. The old export subroutes,
 SSE, piles/taste, advanced search, cache diagnostics, direct embedding endpoints,
 and consumer billing routes are not Go APIs. Runtime and migration boundaries
-remain in [DEPLOYMENT.md](./DEPLOYMENT.md).
+remain in [docs/operations.md](../../../docs/operations.md).
 
 ## Base URL
 
@@ -76,7 +77,8 @@ Hosted registration is closed. Extension clients select the canonical HTTPS
 instance explicitly; MCP defaults to its `/api` origin. A local development
 default is not a second production authority. Legacy-origin redirects and
 retirement are operational routing, not API compatibility proxies; see
-[current production operations](./DEPLOYMENT.md#canonical-hosted-go-instance).
+[current production operations](../../../docs/operations.md#canonical-hosted-go-instance).
+The serving record is [docs/runtime.md](../../../docs/runtime.md).
 
 ## Authentication
 
@@ -171,13 +173,13 @@ link, but cannot use this flow to reset an already activated account.
 
 There is no public invitation-issuance endpoint, automatic email, email-based
 account merging, or general password-reset service. See the
-[offline importer and invitation commands](./DEPLOYMENT.md#offline-predecessor-conversion).
+[offline importer and invitation commands](../../../docs/operations.md#offline-predecessor-conversion).
 
 Backup/restore deliberately removes portable session/device/pairing/PAT and
 invitation credentials while preserving password accounts. A restored user must
 sign in, mint personal tokens, and pair devices again; an unclaimed account needs
 a newly issued operator invitation. See
-[recovery credential lifetime](./DEPLOYMENT.md#snapshot-contents-and-credential-lifetime).
+[recovery credential lifetime](../../../docs/operations.md#snapshot-contents-and-credential-lifetime).
 
 ### Local private media and published save/search
 
@@ -371,8 +373,12 @@ dependency oracle.
 ```
 
 Local Go adds `commit` from configured/build revision metadata. The retained
-predecessor does not expose a commit here. This extra local field is not
-evidence that Go is serving production.
+predecessor does not expose a commit here. A local response does not identify
+the hosted runtime. The canonical origin does: on 2026-10-01, public
+`GET /api/version` and `GET /api/health` reported `runtime: "go"` and commit
+`e975904b76f777147b7f2cd0c5831ba1644cf440`. See the
+[runtime inventory](../../../docs/runtime.md). `service: "sploot-web"` on
+liveness is the Go process label.
 
 #### GET /api/health
 
@@ -466,7 +472,7 @@ embedding endpoints cannot bypass it.
 ```
 
 The response is `403`. Production configuration is fail-closed; see
-[`DEPLOYMENT.md`](./DEPLOYMENT.md) for the capped mode, authenticated operator
+[`docs/operations.md`](../../../docs/operations.md) for the capped mode, authenticated operator
 readback, and the explicit `SPLOOT_ENROLLMENT_MODE=ga` lift action. Existing
 users retain read, download/export, and delete behavior because they are not
 re-admitted on each request.
@@ -1119,7 +1125,7 @@ session or serve its subroutes. It has one active export slot per process
 (`429`, `code: "export_busy"`, `Retry-After: 30`) and a 15-minute deadline.
 The archive is completed before success headers; transfer truncation is a
 transport failure, not a completed download. This owner export is not the
-operator [full-database backup/restore](./DEPLOYMENT.md#library-backup-and-isolated-restore).
+operator [full-database backup/restore](../../../docs/operations.md#library-backup-and-isolated-restore).
 
 #### Retained predecessor export lifecycle
 
@@ -1781,11 +1787,13 @@ No seeded account, cached-only query, QA login, Postgres, or vendor credential
 is required.
 
 The [quick start](../../../README.md#quick-start) and
-[runtime/recovery procedure](./DEPLOYMENT.md#self-contained-go-runtime) own
+[runtime/recovery procedure](../../../docs/operations.md#self-contained-go-runtime) own
 startup, doctor, model preparation, build, and private backup/restore commands.
-Local web/Chromium acceptance does not alter the separate hosted library or
-prove production cutover. It also does not establish physical iPhone, Apple
-signing, or Web Store acceptance.
+Local web/Chromium acceptance does not alter the separate hosted library.
+The hosted cutover is recorded in the
+[runtime inventory](../../../docs/runtime.md); local acceptance is not that
+record. Physical iPhone acceptance, Apple signing, and Chrome Web Store
+publication are unverified.
 
 ## Client integration
 

@@ -11,7 +11,8 @@ retired Next.js predecessor source and its vendor services and data.
 Starting Go does not connect to or alter the predecessor's identities or data.
 The explicit offline converter consumes a complete private capture and an
 operator-supplied owner map, publishing a new native library and separate source
-archive. Local acceptance alone is not evidence of a production cutover.
+archive. The hosted cutover is recorded in [`docs/runtime.md`](./docs/runtime.md).
+Local acceptance alone is not that record. The Next writer stays disabled.
 Chrome capture uses TypeScript/WXT device pairing; MCP and the unsigned iPhone
 Shortcut source use the published token-scoped save/search contract.
 
@@ -50,7 +51,9 @@ graph TB
 Each client targets one explicitly selected origin. There is no request-time
 dual write, implicit identity mapping, or vendor fallback. See
 [API ownership](./apps/web/docs/API.md) and
-[runtime operations](./apps/web/docs/DEPLOYMENT.md) for the executable boundary.
+[runtime inventory](./docs/runtime.md) and
+[operations manual](./docs/operations.md) for the executable boundary.
+`apps/web/docs/DEPLOYMENT.md` is a pointer, not the serving authority.
 
 ## Components
 
@@ -211,7 +214,7 @@ authentication attempts, and the signing key. Restored users sign in with their 
 mint new personal tokens, and pair devices again; this does not revoke
 credentials on the untouched source.
 
-[Deployment and recovery](./apps/web/docs/DEPLOYMENT.md#library-backup-and-isolated-restore)
+[Deployment and recovery](./docs/operations.md#library-backup-and-isolated-restore)
 owns commands, directory privacy, and exact parity-before-start requirements.
 Native snapshots do not replace the complete predecessor archive.
 `internal/predecessor` owns offline conversion: explicit owner mapping, exact
@@ -242,6 +245,9 @@ write authority.
 
 The route inventory is hand-maintained and runtime-specific. Procedures live
 beside their owning surface; current priorities and run conclusions live in
-Linear/session records, not a second repository backlog. Local browser and
-Chromium evidence does not establish current production migration, old-library
-recovery, Apple signing/physical-device behavior, or store publication.
+Linear/session records, not a second repository backlog. The serving record is
+[`docs/runtime.md`](./docs/runtime.md). Local browser and Chromium evidence
+does not replace that serving record, and it does not establish old-library
+recovery, Apple signing, physical-device behavior, or store publication.
+Chrome Web Store publication, npm publication, and physical iPhone/Shortcut
+acceptance are unverified.

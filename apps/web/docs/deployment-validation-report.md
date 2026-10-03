@@ -1,5 +1,9 @@
 # Deployment Validation Report
 
+Historical predecessor report from 2026-05-18 for `https://www.sploot.app`.
+It is not the live runtime. The serving record is
+[`docs/runtime.md`](../../../docs/runtime.md). The Next writer stays disabled.
+
 **Date**: 2026-05-18
 **Deployment**: https://www.sploot.app
 **Status**: Passing

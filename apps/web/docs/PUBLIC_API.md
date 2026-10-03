@@ -96,7 +96,7 @@ SPLOOT_ORIGIN=https://sploot.mistystep.io
 ```
 
 For a local library, use `SPLOOT_ORIGIN=http://127.0.0.1:3001` instead.
-[Startup and recovery](./DEPLOYMENT.md#self-contained-go-runtime) owns the local
+[Startup and recovery](../../../docs/operations.md#self-contained-go-runtime) owns the local
 account/data/cache setup.
 
 ### Private media references

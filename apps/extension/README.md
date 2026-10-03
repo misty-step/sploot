@@ -11,7 +11,7 @@ pnpm install --frozen-lockfile
 pnpm dev:local
 ```
 
-Leave the real Go app running at `http://127.0.0.1:3001`. Its first preparation downloads and verifies the pinned local inference artifacts; no hosted identity, storage, database, or inference API keys are required. Create a real account at `/sign-up`. The default library is repository `.sploot-local/library`; the model cache is separate. Ctrl-C never deletes accounts or saved media. [Runtime operations and recovery](../web/docs/DEPLOYMENT.md#self-contained-go-runtime) owns host prerequisites, model preparation, doctor, build, and backup/restore.
+Leave the real Go app running at `http://127.0.0.1:3001`. Its first preparation downloads and verifies the pinned local inference artifacts; no hosted identity, storage, database, or inference API keys are required. Create a real account at `/sign-up`. The default library is repository `.sploot-local/library`; the model cache is separate. Ctrl-C never deletes accounts or saved media. [Runtime operations and recovery](../../docs/operations.md#self-contained-go-runtime) owns host prerequisites, model preparation, doctor, build, and backup/restore.
 
 In another terminal:
 

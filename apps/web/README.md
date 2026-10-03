@@ -75,5 +75,7 @@ pnpm test:ui        # Open Test UI
 
 The DigitalOcean App Platform Sploot app was retired on 2026-09-10; pushes to
 `master` no longer deploy this predecessor. The current hosted Go instance is
-`https://sploot.mistystep.io`. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+`https://sploot.mistystep.io`. See [`docs/runtime.md`](../../docs/runtime.md)
+for the serving record and [`docs/operations.md`](../../docs/operations.md)
 for native operations and retained predecessor build/migration history.
+The Next writer stays disabled.

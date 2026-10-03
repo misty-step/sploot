@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADRs)
 
-This directory contains architecture decision records for Sploot, a DigitalOcean-hosted meme library with text→image semantic search. ADRs document important architectural decisions that have long-term impact on the system.
+This directory contains architecture decision records for the retained Next.js predecessor (Clerk, Neon/pgvector, Blob, Replicate, and the DigitalOcean app retired on 2026-09-10). They are not the current serving authority. The live library is the Go runtime recorded in [`docs/runtime.md`](../../../../docs/runtime.md). Present-tense provider statements inside an ADR describe that predecessor decision, not the live writer. The Next writer stays disabled.
 
 ## ADR Index
 

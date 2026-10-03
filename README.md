@@ -45,7 +45,8 @@ to the Next.js predecessor, not the local Go route surface.
 media, and pinned local inference. Starting it does not alter an existing
 predecessor deployment. The explicit offline converter preserves captured stored
 bytes, historical metadata and separate owners; it is not a Go-on-Postgres
-deployment. See [runtime operations, migration and recovery](./apps/web/docs/DEPLOYMENT.md).
+deployment. See the [runtime inventory](./docs/runtime.md) and
+[operations manual](./docs/operations.md).
 
 Responsive mobile-browser capture, playback, and download have been exercised;
 that is not physical iPhone or Apple Shortcuts acceptance. The
@@ -66,9 +67,9 @@ Its development default remains loopback; instance selection is stored in that
 browser profile. MCP's hosted default is `https://sploot.mistystep.io/api`;
 an explicit override still selects a separate local or self-hosted instance.
 
-An unpacked Chromium build and local pairing/capture proof are not a Chrome Web
-Store release. No current submission, live listing, or publication receipt is
-claimed.
+An unpacked Chromium build and local pairing/capture proof are separate from
+store publication. Chrome Web Store publication is unverified. npm publication
+of `@sploot/mcp` is unverified.
 
 ## For developers
 
@@ -113,7 +114,7 @@ management. The operator `sploot` binary is not a consumer save/search CLI
   Alpine/musl and Windows are not supported by the current model bundle.
 - Internet access for the first model/runtime download; no SaaS credentials,
   GPU, external inference daemon, Docker, Postgres, or Prisma setup is required
-  for the host runtime. A [container alternative](./apps/web/docs/DEPLOYMENT.md#container-runtime)
+  for the host runtime. A [container alternative](./docs/operations.md#container-runtime)
   supplies the Go build and media prerequisites.
 
 #### Start a real local library
@@ -180,7 +181,7 @@ apps/server/build/sploot serve --data-dir "$PWD/.sploot-local/library"
 Stop the earlier instance before starting the binary on the same port. The
 build emits `apps/server/build/sploot` and `apps/server/build/library-backup`.
 The binary embeds the UI and initializes/migrates its SQLite schema itself.
-Use [runtime configuration and backup/verify/restore](./apps/web/docs/DEPLOYMENT.md#self-contained-go-runtime)
+Use [runtime configuration and backup/verify/restore](./docs/operations.md#self-contained-go-runtime)
 for private-directory requirements, custom model caches, container persistence,
 and recovery credential invalidation.
 
@@ -227,14 +228,14 @@ We use **Turborepo** to orchestrate tasks.
   - Hosted Go: [`https://sploot.mistystep.io`](https://sploot.mistystep.io), separate from local libraries.
   - Local Go: persistent data directory and separate reusable model cache.
   - Retained Next.js predecessor: historical DigitalOcean App Platform runtime retired on 2026-09-10; source and provider contracts remain retained, not current serving authority.
-  - Extension: Manual submission to Chrome Web Store.
+  - Extension: unpacked Chromium build. Chrome Web Store publication is unverified.
 - **Details**: See [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ### Configuration
 
 Each app has its own env setup:
 - Web app: see [`apps/web/README.md`](./apps/web/README.md)
-- Self-contained Go: [runtime, deployment, and recovery](./apps/web/docs/DEPLOYMENT.md)
+- Self-contained Go: [runtime inventory](./docs/runtime.md) and [operations manual](./docs/operations.md)
 - Extension: see [`apps/extension/README.md`](./apps/extension/README.md)
 
 ### Documentation
@@ -253,5 +254,6 @@ their native authority; historical files are not an automatic intake queue.
 - [Contributor instructions](./AGENTS.md) - Repository guidance for agents and developers.
 - [Web App Docs](./apps/web/README.md)
 - [Extension Docs](./apps/extension/README.md)
+- [Runtime and retirement inventory](./docs/runtime.md)
 - [Architecture](./ARCHITECTURE.md)
 - [ADRs](./docs/adr)

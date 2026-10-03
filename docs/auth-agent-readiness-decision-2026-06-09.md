@@ -3,9 +3,11 @@
 Historical Powder card: `sploot-018` (Powder is retired).
 
 Accepted rationale for the recorded boundary slice, not a current replacement
-roadmap. Alternative-provider verdicts below are unselected proposals; consult
-[AUTH.md](../apps/web/docs/AUTH.md) for supported behavior and Linear for any
-selected unresolved work.
+roadmap. Clerk was the predecessor identity provider. The live Go library uses
+local passwords; see [`docs/runtime.md`](./runtime.md). This decision does not
+re-enable the Next writer. Alternative-provider verdicts below are unselected
+proposals; consult [AUTH.md](../apps/web/docs/AUTH.md) for supported behavior
+and Linear for any selected unresolved work.
 
 ## Decision
 

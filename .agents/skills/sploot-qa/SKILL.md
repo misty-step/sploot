@@ -49,12 +49,13 @@ pnpm --filter server smoke --keep --binary build/sploot
 
 It allocates a private temporary library, registers actual accounts and indexes
 new media with pinned local CLIP. Host prerequisites and real extension
-acceptance are maintained in `apps/web/docs/DEPLOYMENT.md#acceptance-gates`. There is no Go QA-auth
+acceptance are maintained in `docs/operations.md#acceptance-gates`. There is no Go QA-auth
 door or mandatory Clerk/Neon/Blob/Replicate credential.
 
 The retained Next application remains separately available through
 `pnpm dev:web`; its provider/pgvector/QA-auth procedure is in
-`apps/web/docs/DEPLOYMENT.md`. Do not run both applications on the same port.
+`docs/operations.md`. It is not the serving authority, and its writer stays
+disabled. Do not run both applications on the same port.
 
 ## Evidence
 
@@ -93,8 +94,10 @@ Do not hardcode a port chosen by a harness.
 
 Return `PASS`, `FAIL`, or `UNVERIFIED`; exact commands; surfaces exercised;
 evidence paths and observed DOM/network/console behavior; and uncovered paths.
-Local Go acceptance is not a production cutover, Web Store release, Apple signing
-or physical iPhone proof. Report predecessor deployed smoke separately when owed.
+Hosted production is the Go service recorded in `docs/runtime.md`. Local Go
+acceptance is not that cutover. Chrome Web Store publication, Apple signing,
+and physical iPhone acceptance are unverified. Report predecessor deployed
+smoke separately when owed.
 
 ## Launch
 
