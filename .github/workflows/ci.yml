@@ -36,6 +36,32 @@ jobs:
             range="HEAD~1..HEAD"
           fi
           pnpm secrets:check -- --git-range "$range"
+      - name: Advisory PR size signals
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        shell: bash
+        run: |
+          {
+            base="${{ github.event.pull_request.base.sha }}"
+            git cat-file -e "$base^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "$base" || true
+            range="$base...HEAD"
+            echo "### Advisory PR size"
+            git diff --shortstat "$range" || true
+            read -r added removed <<<"$(git diff --numstat "$range" | awk '{if ($1+0==$1) a+=$1; if ($2+0==$2) d+=$2} END {print a+0, d+0}')" || true
+            echo "Lines added: ${added:-0}  removed: ${removed:-0}"
+            echo "#### New files"
+            git diff --diff-filter=A --name-only "$range" || true
+            echo "#### New Go packages under apps/server"
+            git diff --diff-filter=A --name-only "$range" | grep -E '^apps/server/.+\.go$' | sed 's|/[^/]*$||' | sort -u | while read -r d; do git cat-file -e "$base:$d" 2>/dev/null || echo "$d"; done || true
+            echo "#### New exported Go funcs"
+            git diff -U0 --no-color "$range" -- . | awk '/^\+\+\+ b\// {go=($0 ~ /\.go$/)} go && /^\+func (\([^)]*\) )?[A-Z]/ {print}' || true
+            echo "#### Test files"
+            git diff --name-only "$range" | awk '/_test\.go$/{print "go-test",$0} /integration_test\.go$/{print "go-integration",$0} /\.test\.mjs$/{print "mjs-test",$0} /\.e2e\.test\.ts$/{print "ts-e2e",$0} /\.test\.ts$/{print "ts-test",$0}' || true
+            added=${added:-0}; removed=${removed:-0}
+            if (( added > 400 || (added > 100 && added > removed * 3) )); then echo "Consider a reduction pass: what can be deleted, reused or not built? (advisory)"; fi
+            false || true
+          } >> "$GITHUB_STEP_SUMMARY" || true
+          exit 0
 
   lint:
     name: Lint
