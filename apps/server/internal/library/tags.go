@@ -82,8 +82,8 @@ func scanTagDetail(row interface{ Scan(...any) error }) (TagDetail, error) {
 	return tag, nil
 }
 
-func loadTagDetail(ctx context.Context, q rowQuery, owner, id string) (TagDetail, error) {
-	tag, err := scanTagDetail(q.QueryRowContext(ctx, tagDetailSQL+` WHERE t.owner_user_id = ?1 AND t.id = ?2`, owner, id))
+func loadTagDetail(ctx context.Context, tx *sql.Tx, owner, id string) (TagDetail, error) {
+	tag, err := scanTagDetail(tx.QueryRowContext(ctx, tagDetailSQL+` WHERE t.owner_user_id = ?1 AND t.id = ?2`, owner, id))
 	if err != nil {
 		return tag, fmt.Errorf("read tag metadata: %w", err)
 	}

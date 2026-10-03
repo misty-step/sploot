@@ -46,14 +46,6 @@ const assetColumns = `a.id, a.owner_user_id, a.blob_url, a.thumbnail_url,
 // and restore all re-read that same row through scanAsset.
 const liveAssetByID = `SELECT ` + assetColumns + ` FROM assets a WHERE a.owner_user_id = ?1 AND a.id = ?2 AND a.deleted_at IS NULL`
 
-type rowQuery interface {
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
-func getLiveAsset(ctx context.Context, q rowQuery, owner, id string) (model.Asset, error) {
-	return scanAsset(q.QueryRowContext(ctx, liveAssetByID, owner, id))
-}
-
 func scanAsset(row interface{ Scan(...any) error }, extra ...any) (model.Asset, error) {
 	var asset model.Asset
 	var tags []byte
@@ -129,7 +121,7 @@ func (s *Service) Get(ctx context.Context, owner, id string) (model.Asset, error
 	if err := validateID(id); err != nil {
 		return model.Asset{}, err
 	}
-	asset, err := getLiveAsset(ctx, s.db, owner, id)
+	asset, err := scanAsset(s.db.QueryRowContext(ctx, liveAssetByID, owner, id))
 	return asset, assetError("get asset", err)
 }
 
@@ -173,7 +165,7 @@ func (s *Service) Update(ctx context.Context, owner, id string, update AssetUpda
 			return model.Asset{}, err
 		}
 	}
-	asset, err := getLiveAsset(ctx, tx, owner, id)
+	asset, err := scanAsset(tx.QueryRowContext(ctx, liveAssetByID, owner, id))
 	if err != nil {
 		return model.Asset{}, assetError("read updated asset", err)
 	}
@@ -220,7 +212,7 @@ func (s *Service) Restore(ctx context.Context, owner, id string) (model.Asset, e
 	if _, err := tx.ExecContext(ctx, `UPDATE assets SET share_slug = CASE WHEN deleted_at IS NOT NULL THEN NULL ELSE share_slug END, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE owner_user_id = ?1 AND id = ?2`, owner, id); err != nil {
 		return model.Asset{}, fmt.Errorf("restore asset: %w", err)
 	}
-	asset, err := getLiveAsset(ctx, tx, owner, id)
+	asset, err := scanAsset(tx.QueryRowContext(ctx, liveAssetByID, owner, id))
 	if err != nil {
 		return model.Asset{}, assetError("read restored asset", err)
 	}
