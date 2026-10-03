@@ -30,6 +30,25 @@ Retained Go runs contain test databases, account hashes and media as well as
 screenshots. Share selected sanitized evidence, not the entire private directory.
 They do not establish production or physical-device acceptance.
 
+## Foundation story walk
+
+On an Ubuntu 24.04 GitHub runner or the existing owned workspace (not the
+workstation), `.exe/setup.sh` installs the credential-free Go/Node/pnpm toolchain,
+real Chromium and pinned inference and builds the Go app plus unpacked
+extension. `qa/walk --stories "US-001 US-002"` walks the named affected stories;
+`qa/walk --all` is the nightly full walk. Each numbered criterion is tied to
+observed steps of the existing isolated `server smoke` gauntlet, including the
+real MV3 Chromium journey for US-001. An empty PR selection emits no story
+passes. From outside the checkout run `foundation-check receipt target/walk/walk-receipt.json --base SHA --repo /path/to/sploot`
+for a PR (replace `--base SHA` with `--all` nightly); CI keeps receipt,
+candidate HEAD/tree and artifact hashes together in one job. The files under
+ignored `target/walk/` are CI artifacts, not production proof. The sanitized
+nightly receipt and eight criterion markers for MIS-150 are retained under
+`docs/qa/evidence/2026-09-25-mis-150-foundation-walk/` beyond Actions artifact
+expiry; their head/tree identify the historical master candidate, not a later
+checkout. The gauntlet removes only its own disposable library on success.
+The unrelated predecessor QA procedure below remains intact.
+
 ## Producing a predecessor packet
 
 From `apps/web`, with the local pgvector container running

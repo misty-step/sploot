@@ -1,0 +1,2 @@
+PASS Browser capture preserves image GIF and video originals and genuine indexing intent
+PASS Process restart retains accounts sessions media favorites and local search

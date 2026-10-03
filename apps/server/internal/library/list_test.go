@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/misty-step/sploot/apps/server/internal/contract"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -52,5 +53,14 @@ func TestPaginationCursorBindsOwnerViewAndPageSize(t *testing.T) {
 	}
 	if _, err := s.decodeCursor(token, binding, now.Add(cursorLifetime)); err == nil {
 		t.Fatal("expired cursor accepted")
+	}
+}
+
+func TestNormalizeListUsesStoredTagIDGrammar(t *testing.T) {
+	if _, err := normalizeList("owner-a", model.ListOptions{TagID: strings.Repeat("a", contract.AssetIDMaxLength)}); err != nil {
+		t.Fatalf("valid stored tag id rejected: %v", err)
+	}
+	if _, err := normalizeList("owner-a", model.ListOptions{TagID: strings.Repeat("a", contract.AssetIDMaxLength+1)}); err == nil {
+		t.Fatal("oversize tag id accepted")
 	}
 }
