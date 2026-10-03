@@ -1,0 +1,48 @@
+# Foundation review gate (ADR-003 Review authority, US-027).
+# pull_request_target runs this file from the base branch; PR commits are checked
+# out only as data, never executed. A review needs a label change to re-run it.
+name: foundation-review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  foundation-review:
+    runs-on: ubuntu-24.04
+    env:
+      HARNESS_SHA: "6286d1039976485a36a8a0d649c487cfee886939"
+      BUN_URL: https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64-baseline.zip
+      BUN_SHA256: c678040f14fe0440eb839d37cbd0ce4c051a32da72806ac97de6a6aab6bf728f
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch pinned foundation checker and Bun
+        run: |
+          root="$RUNNER_TEMP/foundation"
+          mkdir -p "$root/checker" "$root/runtime"
+          git init --quiet --initial-branch=checker "$root/checker"
+          git -C "$root/checker" fetch --quiet --no-tags --depth=1 https://github.com/misty-step/harness.git "$HARNESS_SHA"
+          git -C "$root/checker" checkout --quiet --detach "$HARNESS_SHA"
+          test "$(git -C "$root/checker" rev-parse HEAD)" = "$HARNESS_SHA"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --retry 3 --output "$root/runtime/bun.zip" "$BUN_URL"
+          printf '%s  %s\n' "$BUN_SHA256" "$root/runtime/bun.zip" | sha256sum --check --strict
+          unzip -q "$root/runtime/bun.zip" -d "$root/runtime"
+      - name: Require designated reviewer where a PR needs one
+        # Bun loads bunfig.toml from cwd: never start it inside the PR checkout.
+        working-directory: ${{ runner.temp }}/foundation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          "$RUNNER_TEMP/foundation/runtime/bun-linux-x64-baseline/bun" \
+            --no-env-file --no-install "$RUNNER_TEMP/foundation/checker/agent-config/bin/foundation-check.ts" \
+            review --repo "$GITHUB_WORKSPACE" --pr "$PR_NUMBER"

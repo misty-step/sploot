@@ -1,0 +1,1 @@
+PASS Restore refuses a populated library without modifying its database

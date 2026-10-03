@@ -87,3 +87,4 @@ next-env.d.ts
 # Persistent local library + private QA evidence
 .sploot-local/
 .env*.local
+/target/walk/
