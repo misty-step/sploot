@@ -271,7 +271,7 @@ func (s *Service) decodeCursor(value, owner string, expected searchContext) (*se
 	return &cursor, nil
 }
 
-// Eligible hits use the same owner-fenced tag predicate as library list.
+// Eligible hits use the same owner-fenced tag predicate and projection as library list.
 var searchPageSQL = `WITH eligible AS MATERIALIZED (
 		SELECT a.id, vec_distance_cosine(e.image_embedding, ?2) AS distance
 		FROM asset_embeddings e JOIN assets a ON a.id = e.asset_id AND a.owner_user_id = e.owner_user_id
@@ -284,9 +284,7 @@ var searchPageSQL = `WITH eligible AS MATERIALIZED (
 	total AS (SELECT count(*) AS count FROM matched)
 	SELECT total.count, a.id, a.owner_user_id, a.blob_url, a.thumbnail_url, a.pathname, a.mime, a.size, a.width, a.height, a.checksum_sha256, a.favorite,
 		a.created_at, a.updated_at, a.share_slug, page.distance,
-		COALESCE((SELECT json_group_array(json_object('id', t.id, 'name', t.name, 'color', t.color))
-			FROM (SELECT t.id, t.name, t.color FROM asset_tags at JOIN tags t ON t.id = at.tag_id
-			WHERE at.asset_id = a.id AND t.owner_user_id = ?1 ORDER BY t.name, t.id) t), '[]')
+		` + library.OwnedAssetTagsJSON + `
 	FROM total LEFT JOIN page ON true LEFT JOIN assets a ON a.id = page.id AND a.owner_user_id = ?1 AND a.deleted_at IS NULL
 	ORDER BY page.distance, page.id`
 

@@ -161,6 +161,14 @@ func TestSQLiteSearchFreshIndexOwnerModelFiltersAndCursor(t *testing.T) {
 	if err != nil || page.Total != 1 || len(page.Results) != 1 || page.Results[0].ID != asset || len(page.Results[0].Tags) != 1 {
 		t.Fatalf("live tag/favorite changes hidden: %+v %v", page, err)
 	}
+	execTestSQL(t, service.db, `INSERT INTO tags(id,owner_user_id,name) VALUES ('foreign-tag','owner-b','foreign-retrieval')`)
+	execTestSQL(t, service.db, `INSERT INTO asset_tags(asset_id,tag_id) VALUES (?1,'foreign-tag')`, foreign)
+	foreignTag := "foreign-tag"
+	foreignSearch := model.SearchRequest{Query: request.Query, Limit: request.Limit, TagID: &foreignTag}
+	page, err = service.Search(ctx, "owner-a", foreignSearch)
+	if err != nil || page.Total != 0 || len(page.Results) != 0 {
+		t.Fatalf("foreign tag matched owner search: %+v %v", page, err)
+	}
 	execTestSQL(t, service.db, `UPDATE assets SET deleted_at = CURRENT_TIMESTAMP WHERE owner_user_id = 'owner-a' AND id IN (?1,?2)`, asset, second)
 	page, err = service.Search(ctx, "owner-a", request)
 	if err != nil || page.Total != 0 || len(page.Results) != 0 {
