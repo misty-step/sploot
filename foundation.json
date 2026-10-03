@@ -57,10 +57,8 @@
       "next": "Record owners, freshness windows and recovery queries; drill one failure"
     },
     "FND-DOC-001": {
-      "status": "pending",
-      "missing": "docs/postmortems/ has no README or incident template",
-      "owner": "phaedrus",
-      "next": "Add an owned incident-learning template and remove doc:postmortems baseline before its expiry"
+      "status": "satisfied",
+      "receipt": "docs/postmortems/README.md explains incident records, naming, shared harness pokayoke template, required Pokayoke and Follow-up headings, and the structural class-closing change and regression check required before closing an incident ticket."
     },
     "FND-MAP-001": {
       "status": "satisfied",
@@ -89,12 +87,5 @@
       "next": "Decide and exercise minimal owned event table and deletion policy"
     }
   },
-  "mode": "bootstrap",
-  "baseline": [
-    {
-      "gap": "doc:postmortems",
-      "owner": "phaedrus",
-      "expires": "2026-10-25"
-    }
-  ]
+  "mode": "enforced"
 }

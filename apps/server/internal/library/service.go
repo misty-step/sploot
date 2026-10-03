@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"path"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/mattn/go-sqlite3"
 	"github.com/misty-step/sploot/apps/server/internal/contract"
@@ -73,7 +72,7 @@ func (s *Service) ready(owner string) error {
 }
 
 func validateID(id string) error {
-	if id == "" || !utf8.ValidString(id) || utf16Length(id) > contract.AssetIDMaxLength || strings.ContainsRune(id, 0) {
+	if !contract.ValidAssetID(id) {
 		return badRequest("Invalid asset or tag id")
 	}
 	return nil

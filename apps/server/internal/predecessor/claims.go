@@ -5,28 +5,25 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/misty-step/sploot/apps/server/internal/auth"
+	"github.com/misty-step/sploot/apps/server/internal/config"
 	"github.com/misty-step/sploot/apps/server/internal/database"
 )
 
 func claimOrigin(value string) (*url.URL, error) {
-	uri, err := url.Parse(value)
-	if err != nil || uri.Host == "" || uri.User != nil || uri.Path != "" || uri.RawQuery != "" || uri.Fragment != "" || uri.Scheme != "https" && uri.Scheme != "http" {
+	origin, err := config.ParseOrigin(value)
+	if errors.Is(err, config.ErrOriginRequiresHTTPS) {
+		return nil, reject("claim_origin_requires_https")
+	}
+	if err != nil {
 		return nil, reject("claim_origin")
 	}
-	if uri.Scheme == "http" {
-		ip := net.ParseIP(uri.Hostname())
-		if uri.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback()) {
-			return nil, reject("claim_origin_requires_https")
-		}
-	}
-	return uri, nil
+	return origin, nil
 }
 
 func writeClaims(baseURL, filename string, invitations []auth.Invitation) error {

@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"database/sql"
+
+	"github.com/misty-step/sploot/apps/server/internal/ctxio"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -153,7 +155,7 @@ func (s *Server) exportLibrary(w http.ResponseWriter, r *http.Request, principal
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.WriteHeader(http.StatusOK)
-	n, err := io.CopyBuffer(libraryExportWriter{ctx: ctx, writer: w}, libraryExportReader{ctx: ctx, reader: file}, buffer)
+	n, err := io.CopyBuffer(ctxio.Writer(ctx, w), ctxio.Reader(ctx, file), buffer)
 	if err != nil || n != info.Size() {
 		s.logger.Warn("library export download interrupted", "operation", "library_export_download", "bytes_sent", n)
 		// Headers cannot be retracted once transmission begins. Aborting, with
@@ -177,7 +179,7 @@ func (s *Server) buildLibraryExport(ctx context.Context, owner string, file *os.
 		return manifest, fmt.Errorf("create private library catalog: %w", err)
 	}
 	defer removeLibraryExportFile(catalog)
-	archive := zip.NewWriter(libraryExportWriter{ctx: ctx, writer: file})
+	archive := zip.NewWriter(ctxio.Writer(ctx, file))
 	closed := false
 	defer func() {
 		if !closed {
@@ -191,7 +193,7 @@ func (s *Server) buildLibraryExport(ctx context.Context, owner string, file *os.
 	if _, err := catalog.Seek(0, io.SeekStart); err != nil {
 		return manifest, fmt.Errorf("rewind private library catalog: %w", err)
 	}
-	decoder := json.NewDecoder(libraryExportReader{ctx: ctx, reader: catalog})
+	decoder := json.NewDecoder(ctxio.Reader(ctx, catalog))
 	var records int64
 	for {
 		var record libraryExportRecord
@@ -330,7 +332,7 @@ func (s *Server) captureLibraryExport(ctx context.Context, owner string, archive
 	if err != nil {
 		return err
 	}
-	encoder := json.NewEncoder(libraryExportWriter{ctx: ctx, writer: catalog})
+	encoder := json.NewEncoder(ctxio.Writer(ctx, catalog))
 	values := make([]any, len(columns))
 	pointers := make([]any, len(values))
 	for index := range values {
@@ -441,7 +443,7 @@ func (s *Server) writeLibraryExportMedia(ctx context.Context, archive *zip.Write
 		return receipt, err
 	}
 	hash := sha256.New()
-	var reader io.Reader = libraryExportReader{ctx: ctx, reader: source.Body}
+	var reader io.Reader = ctxio.Reader(ctx, source.Body)
 	if expected.bytes != nil {
 		reader = io.LimitReader(reader, *expected.bytes+1)
 	}
@@ -523,28 +525,4 @@ func libraryExportInvalid(message string) error {
 func removeLibraryExportFile(file *os.File) {
 	_ = file.Close()
 	_ = os.Remove(file.Name())
-}
-
-type libraryExportReader struct {
-	ctx    context.Context
-	reader io.Reader
-}
-
-func (r libraryExportReader) Read(buffer []byte) (int, error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return r.reader.Read(buffer)
-}
-
-type libraryExportWriter struct {
-	ctx    context.Context
-	writer io.Writer
-}
-
-func (w libraryExportWriter) Write(buffer []byte) (int, error) {
-	if err := w.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return w.writer.Write(buffer)
 }
