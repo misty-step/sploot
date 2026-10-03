@@ -34,6 +34,32 @@ Product-facing copy follows `DESIGN.md` (deadpan, one slang term, functional lab
 - `.github/workflows/release.yml` must prove the configured GitHub token path without weakening permissions.
 - `apps/web/docs/API.md` is hand-maintained and can drift from routes.
 
+## How to build here
+
+Agents over-build. Ship the smallest change that solves the core user story. Question requirements. Keep the product focused. Say no to speculative knobs, queues, layers, and flags.
+
+Deep modules, simple interfaces (Ousterhout): no shallow pass-through wrappers, no single-use constant modules, no config knobs that push complexity onto callers, no test seams in production config.
+
+Good taste (Torvalds): remove special cases. Reuse existing helpers. When you add a new path, delete the old one in the same PR. Don't break existing users or API contracts (status codes, receipts, stored data). If a data identity changes, ship the data step with it.
+
+Prefer end-to-end, integration, and user-story tests: `pnpm --filter server test:integration`, the go-server smoke `pnpm --filter server smoke --binary build/sploot`, and `sploot doctor --url … --json`. No tautological unit tests (for example, asserting a SQL string contains a fragment). Fix flaky tests in their own PR, not inside a feature PR.
+
+Before starting, check open PRs and branches that touch the same files or area, and sequence your work after them rather than racing. Keep PRs small and readable. Every PR description includes "What I deleted / didn't build".
+
+Canonical shared helpers (reuse, don't copy):
+
+- Stored id grammar: `contract.ValidAssetID`, `apps/server/internal/contract/ids.go`
+- SHA-256 hex grammar: `contract.ValidSHA256Hex`, `apps/server/internal/contract/checksum.go`
+- MIME allowlist: `contract.IsAllowedMIME`, `apps/server/internal/contract/generated.go` (generated from `@sploot/common`; normalization moving to contract in pending #352, today `normalizeMIME` in `apps/server/internal/ingest/media.go`)
+- UTF-16 length: `utf16Length`, `apps/server/internal/library/service.go` (moving to contract in pending #356; don't add another copy)
+- ECMAScript trim: `trimClientWhitespace`, `apps/server/internal/library/tags.go` (same note, pending #356)
+- Tag-name identity: `normalizeTagName`/`normalizeTagNames`, `apps/server/internal/library/tags.go` (exported for upload in pending #345)
+- Owner/ready checks: `(*Service).ready`, `(*Service).beginOwner`, `validateID`, `badRequest`, `apps/server/internal/library/service.go`
+- Owner media path: `ingest.OwnerMediaPrefix`, pending #349. Today the layout is inlined; also see `validMediaPath` in `apps/server/internal/ingest/storage.go`
+- Cancel-aware I/O: `ctxio.Reader`/`ctxio.Writer`, `apps/server/internal/ctxio/ctxio.go`
+- Cross-process media/library lock: `medialock.Acquire`, `apps/server/internal/medialock/lock.go`
+- Idempotent save receipts: `(*Service).claim`, `apps/server/internal/ingest/ingest.go`. It is the single receipt lookup; don't add a second query.
+
 ## On-demand
 
 Path rules: `.omp/rules/prisma-db.mdc`, `common-contract.mdc`, `extension.mdc`.
