@@ -17,6 +17,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/misty-step/sploot/apps/server/internal/contract"
 	"github.com/misty-step/sploot/apps/server/internal/inference"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
@@ -115,7 +116,7 @@ func validateSearch(request model.SearchRequest) (searchContext, error) {
 	var tag *string
 	if request.TagID != nil {
 		value := strings.TrimSpace(*request.TagID)
-		if value == "" || len(value) > 200 || strings.ContainsRune(value, 0) || !utf8.ValidString(value) {
+		if !contract.ValidAssetID(value) {
 			return searchContext{}, apiError(400, "Invalid tag filter", "invalid_search_tag", 0)
 		}
 		tag = &value
@@ -256,7 +257,7 @@ func (s *Service) decodeCursor(value, owner string, expected searchContext) (*se
 		return nil, invalid
 	}
 	var cursor searchCursor
-	if json.Unmarshal(data, &cursor) != nil || cursor.Version != 5 || cursor.UserID != owner || cursor.Order != "relevance" || cursor.ID == "" || len(cursor.ID) > 200 || !distancePattern.MatchString(cursor.RawDistance) {
+	if json.Unmarshal(data, &cursor) != nil || cursor.Version != 5 || cursor.UserID != owner || cursor.Order != "relevance" || !contract.ValidAssetID(cursor.ID) || !distancePattern.MatchString(cursor.RawDistance) {
 		return nil, invalid
 	}
 	distance, err := strconv.ParseFloat(cursor.RawDistance, 64)

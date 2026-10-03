@@ -190,6 +190,13 @@ the ordinary library. Go integration tests use isolated SQLite state, not a
 `DATABASE_URL`. The retained Next.js database paths still require their own
 pgvector evidence and unchanged gates.
 
+Foundation PR checks use a reviewed [feature map](./features/README.md) to
+choose changed stories and run their real Go/Chromium journey with `qa/walk`.
+The [QA procedure](./docs/qa/README.md) covers isolated setup, receipts and
+nightly full coverage. The current `foundation.json` has no remaining
+project-document gap; pending Foundation Standard obligations still await
+evidence and are not claims of satisfaction.
+
 #### Other surfaces
 
 Next.js development and extension development remain separate commands. Next.js
@@ -216,7 +223,8 @@ We use **Turborepo** to orchestrate tasks.
 - **Monorepo Tooling**: Turborepo + pnpm workspaces.
 - **Shared Code**: `@sploot/common` owns upload/MIME/API contracts; Go generates its bounds from common and takes model identity from its local inference bundle.
 - **CI/CD**: GitHub Actions (Lint, Test, Type-check).
-- **Deployment**: 
+- **Deployment**:
+  - Hosted Go: [`https://sploot.mistystep.io`](https://sploot.mistystep.io), separate from local libraries.
   - Local Go: persistent data directory and separate reusable model cache.
   - Retained Next.js predecessor: historical DigitalOcean App Platform runtime retired on 2026-09-10; source and provider contracts remain retained, not current serving authority.
   - Extension: Manual submission to Chrome Web Store.

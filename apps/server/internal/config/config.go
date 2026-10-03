@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -68,26 +67,27 @@ func Load(envFile string) (Config, error) {
 	if number, err := strconv.Atoi(port); err != nil || number < 1 || number > 65535 {
 		return c, errors.New("listen port must be between 1 and 65535")
 	}
-	local := loopback(host)
+	local := IsLoopbackHost(host)
 	if c.BaseURL == "" && local {
 		c.BaseURL = "http://" + c.Address
 	}
-	base, err := url.Parse(c.BaseURL)
-	if err != nil || base.Host == "" || base.User != nil || base.RawQuery != "" || base.Fragment != "" || (base.Path != "" && base.Path != "/") || (base.Scheme != "http" && base.Scheme != "https") {
+	base, err := ParseOrigin(c.BaseURL)
+	if err != nil {
+		if errors.Is(err, ErrOriginRequiresHTTPS) {
+			return c, errors.New("non-loopback access requires an explicit HTTPS SPLOOT_BASE_URL")
+		}
 		return c, errors.New("SPLOOT_BASE_URL must be an HTTP(S) origin without credentials, path or query")
 	}
-	if base.Scheme != "https" && (!local || !loopback(base.Hostname())) {
+	if base.Scheme != "https" && !local {
 		return c, errors.New("non-loopback access requires an explicit HTTPS SPLOOT_BASE_URL")
 	}
 	if (c.Environment == "production" || c.Environment == "staging") && base.Scheme != "https" {
 		return c, errors.New("hosted SPLOOT_BASE_URL requires HTTPS")
 	}
-	localRegistration := local && loopback(base.Hostname()) && (c.Environment == "development" || c.Environment == "test")
+	localRegistration := local && IsLoopbackHost(base.Hostname()) && (c.Environment == "development" || c.Environment == "test")
 	if !localRegistration && os.Getenv("SPLOOT_REGISTRATION_OPEN") == "" {
 		return c, errors.New("hosted access requires an explicit SPLOOT_REGISTRATION_OPEN=true or false")
 	}
-	base.Host = strings.ToLower(base.Host)
-	base.Path = ""
 	c.BaseURL = base.String()
 	c.RedirectHosts, err = parseRedirectHosts(os.Getenv("SPLOOT_REDIRECT_HOSTS"))
 	if err != nil {
@@ -187,14 +187,6 @@ func parseRedirectHosts(value string) ([]string, error) {
 		hosts[i] = strings.ToLower(host)
 	}
 	return hosts, nil
-}
-
-func loopback(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 func persistentSecret(path string) ([]byte, error) {

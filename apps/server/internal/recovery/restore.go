@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/misty-step/sploot/apps/server/internal/ctxio"
 )
 
 type restoreReceipt struct {
@@ -156,7 +158,7 @@ func copyArtifact(ctx context.Context, source, target *snapshotDirectory, expect
 	}
 	defer file.Close()
 	actual, err := target.writeFile(expected.Path, func(writer io.Writer) error {
-		_, err := io.CopyBuffer(writer, io.LimitReader(recoveryReader{ctx, file}, expected.Bytes+1), buffer)
+		_, err := io.CopyBuffer(writer, io.LimitReader(ctxio.Reader(ctx, file), expected.Bytes+1), buffer)
 		return err
 	})
 	if err != nil {

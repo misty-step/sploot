@@ -14,20 +14,15 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/misty-step/sploot/apps/server/internal/contract"
 	"golang.org/x/sys/unix"
 )
 
 const maxCaptureBytes = 256 << 20
 
-func digest(value []byte) string {
-	sum := sha256.Sum256(value)
-	return hex.EncodeToString(sum[:])
-}
+func digest(value []byte) string { return contract.SHA256Hex(value) }
 
-func validSHA(value string) bool {
-	decoded, err := hex.DecodeString(value)
-	return err == nil && len(decoded) == sha256.Size && strings.ToLower(value) == value
-}
+func validSHA(value string) bool { return contract.ValidSHA256Hex(value) }
 
 func validPath(path string) bool {
 	return path != "" && filepath.IsLocal(path) && filepath.ToSlash(filepath.Clean(path)) == path && !strings.ContainsAny(path, "\\\x00")
