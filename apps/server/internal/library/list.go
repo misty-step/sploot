@@ -177,7 +177,7 @@ func listFilter(binding listContext, snapshot time.Time) (string, []any) {
 	}
 	if binding.TagID != "" {
 		args = append(args, binding.TagID)
-		where += fmt.Sprintf(` AND EXISTS(SELECT 1 FROM asset_tags at JOIN tags t ON t.id = at.tag_id WHERE at.asset_id = a.id AND t.owner_user_id = a.owner_user_id AND t.id = ?%d)`, len(args))
+		where += ` AND ` + OwnedAssetHasTag(fmt.Sprintf(`?%d`, len(args)))
 	}
 	return where, args
 }
