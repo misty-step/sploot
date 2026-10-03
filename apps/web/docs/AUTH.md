@@ -1,7 +1,8 @@
 # Auth Modes
 
-Sploot production auth remains Clerk-backed. Product routes should depend on
-`lib/auth/with-authenticated-api` and `AuthenticatedPrincipal`, not Clerk
+The retained Next.js predecessor uses Clerk. The current hosted Go library
+uses its own password accounts, not Clerk. Next.js product routes should depend
+on `lib/auth/with-authenticated-api` and `AuthenticatedPrincipal`, not Clerk
 request APIs directly.
 
 ## Modes
@@ -92,13 +93,15 @@ hard-refused in production like the rest of the harness.
 
 ## One-Command Local Boot
 
-`pnpm dev:local` (repo root) composes all of the above: provisions a local
-pgvector Postgres in Docker, applies migrations, runs `qa:seed`, boots the dev
-server with qa-local auth enabled, and finishes with a doctor pass that writes
-an evidence packet (health, signed-in `/app`, seeded grid readback, search
-response, and a grid screenshot when the `agent-browser` CLI is available) to
-`.sploot-local/doctor/`. `pnpm dev:local:down` removes the database container
-and generated files.
+`pnpm --filter web dev:local` (from the repo root) composes all of the
+predecessor's QA setup: provisions a local pgvector Postgres in Docker,
+applies migrations, runs `qa:seed`, boots the dev server with qa-local auth
+enabled, and finishes with a doctor pass that writes an evidence packet
+(health, signed-in `/app`, seeded grid readback, search response, and a grid
+screenshot when the `agent-browser` CLI is available) to
+`.sploot-local/doctor/`. Root `pnpm dev:local` starts the persistent Go
+library instead. Do not run the web `dev:local:down` script as routine
+cleanup: it removes the shared `.sploot-local/` directory, including Go data.
 
 ## Evidence Packets
 

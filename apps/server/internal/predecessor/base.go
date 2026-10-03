@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/misty-step/sploot/apps/server/internal/ctxio"
 )
 
 func requireOfflineDatabase(base *os.Root) error {
@@ -81,7 +83,7 @@ func walkBase(ctx context.Context, source, target *os.Root, directory string) er
 		if err != nil {
 			return err
 		}
-		written, checksum, err := writePrivate(target, name, contextReader{ctx, input})
+		written, checksum, err := writePrivate(target, name, ctxio.Reader(ctx, input))
 		input.Close()
 		if err != nil || written != info.Size() {
 			return reject("base_copy")
@@ -90,7 +92,7 @@ func walkBase(ctx context.Context, source, target *os.Root, directory string) er
 		if err != nil {
 			return err
 		}
-		verified, err := hashReader(contextReader{ctx, input})
+		verified, err := hashReader(ctxio.Reader(ctx, input))
 		input.Close()
 		if err != nil || verified != checksum {
 			return reject("base_changed_during_copy")

@@ -1,11 +1,24 @@
 package embedding
 
 import (
+	"errors"
+	"math"
+	"strings"
+	"testing"
+
+	"github.com/misty-step/sploot/apps/server/internal/contract"
 	"github.com/misty-step/sploot/apps/server/internal/inference"
 	"github.com/misty-step/sploot/apps/server/internal/model"
-	"math"
-	"testing"
 )
+
+func searchAPIError(t *testing.T, err error) *model.APIError {
+	t.Helper()
+	var api *model.APIError
+	if !errors.As(err, &api) {
+		t.Fatalf("error %v is not an APIError", err)
+	}
+	return api
+}
 
 func TestSearchCursorRejectsDifferentOwnerAndContext(t *testing.T) {
 	service := &Service{opts: Options{CursorSecret: []byte("cursor-context-regression-secret")}}
@@ -55,6 +68,64 @@ func TestSearchCursorRejectsDifferentOwnerAndContext(t *testing.T) {
 	if _, err = service.decodeCursor(tampered, "owner-one", original); err == nil {
 		t.Fatal("tampered signature accepted")
 	}
+}
+
+func TestValidateSearchUsesStoredTagIDGrammar(t *testing.T) {
+	latin1 := strings.Repeat("é", contract.AssetIDMaxLength)
+	if !contract.ValidAssetID(latin1) {
+		t.Fatal("128 latin-1 characters must be a valid stored id")
+	}
+	accepted := latin1
+	if _, err := validateSearch(model.SearchRequest{Query: "cat", Limit: 1, TagID: &accepted}); err != nil {
+		t.Fatalf("valid stored tag id rejected: %v", err)
+	}
+	cases := map[string]string{
+		"empty":           "   ",
+		"nul":             "tag\x00id",
+		"129 ascii units": strings.Repeat("a", contract.AssetIDMaxLength+1),
+	}
+	for name, tag := range cases {
+		t.Run(name, func(t *testing.T) {
+			value := tag
+			_, err := validateSearch(model.SearchRequest{Query: "cat", Limit: 1, TagID: &value})
+			api := searchAPIError(t, err)
+			if api.Status != 400 || api.Code != "invalid_search_tag" {
+				t.Fatalf("status=%d code=%q, want 400 invalid_search_tag", api.Status, api.Code)
+			}
+		})
+	}
+}
+
+func TestSearchCursorUsesStoredAssetIDGrammar(t *testing.T) {
+	service := &Service{opts: Options{CursorSecret: []byte("cursor-id-grammar-regression-secret")}}
+	binding, err := validateSearch(model.SearchRequest{Query: "cat", Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := service.encodeCursor(searchCursor{UserID: "owner-one", Order: "relevance", ID: strings.Repeat("a", contract.AssetIDMaxLength), RawDistance: "0.2", Context: binding})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.decodeCursor(valid, "owner-one", binding); err != nil {
+		t.Fatalf("valid stored cursor id rejected: %v", err)
+	}
+	oversize, err := service.encodeCursor(searchCursor{UserID: "owner-one", Order: "relevance", ID: strings.Repeat("a", contract.AssetIDMaxLength+1), RawDistance: "0.2", Context: binding})
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := searchAPIError(t, mustDecodeCursorError(t, service, oversize, binding))
+	if api.Status != 400 || api.Code != "invalid_search_cursor" {
+		t.Fatalf("status=%d code=%q, want 400 invalid_search_cursor", api.Status, api.Code)
+	}
+}
+
+func mustDecodeCursorError(t *testing.T, service *Service, token string, binding searchContext) error {
+	t.Helper()
+	_, err := service.decodeCursor(token, "owner-one", binding)
+	if err == nil {
+		t.Fatal("expected cursor rejection")
+	}
+	return err
 }
 
 func TestVectorBoundaryRejectsInvalidModelOutput(t *testing.T) {

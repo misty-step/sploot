@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"path"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/mattn/go-sqlite3"
 	"github.com/misty-step/sploot/apps/server/internal/contract"
@@ -77,7 +76,7 @@ func (s *Service) ready(owner string) error {
 }
 
 func validateID(id string) error {
-	if id == "" || !utf8.ValidString(id) || utf16Length(id) > contract.AssetIDMaxLength || strings.ContainsRune(id, 0) {
+	if !contract.ValidAssetID(id) {
 		return badRequest("Invalid asset or tag id")
 	}
 	return nil
@@ -123,6 +122,23 @@ func (s *Service) Get(ctx context.Context, owner, id string) (model.Asset, error
 	}
 	asset, err := scanAsset(s.db.QueryRowContext(ctx, liveAssetByID, owner, id))
 	return asset, assetError("get asset", err)
+}
+
+// LiveByChecksum returns the oldest live asset with this SHA-256. Absence is
+// not an error: upload preflight treats a miss as safe to save. Trash is
+// ignored here; save-time duplicate handling is a different contract.
+func (s *Service) LiveByChecksum(ctx context.Context, owner, checksum string) (*model.Asset, error) {
+	if err := s.ready(owner); err != nil {
+		return nil, err
+	}
+	asset, err := scanAsset(s.db.QueryRowContext(ctx, `SELECT `+assetColumns+` FROM assets a WHERE a.owner_user_id = ?1 AND a.checksum_sha256 = ?2 AND a.deleted_at IS NULL ORDER BY a.created_at, a.id LIMIT 1`, owner, checksum))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get live asset by checksum: %w", err)
+	}
+	return &asset, nil
 }
 
 func (s *Service) UpdateFavorite(ctx context.Context, owner, id string, favorite bool) (model.Asset, error) {
