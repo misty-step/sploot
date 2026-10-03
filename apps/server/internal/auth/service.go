@@ -52,14 +52,6 @@ type Session struct {
 	ExpiresAt time.Time `json:"-"`
 }
 
-// uploadTokenMaterial is the one-time plaintext plus the values that may be
-// stored. Persistence keeps Hash, never Token.
-type uploadTokenMaterial struct {
-	Token  string
-	Prefix string
-	Hash   string
-}
-
 func New(db *sql.DB, opts Options) (*Service, error) {
 	if db == nil {
 		return nil, errors.New("authentication requires a persistent database")
@@ -284,16 +276,12 @@ func secretHash(token string) string {
 
 // newUploadToken mints a PAT with the same secret grammar and stored hash as
 // Resolve. Persistence must not hash or prefix these values itself.
-func newUploadToken() (uploadTokenMaterial, error) {
-	token, err := newSecret(uploadTokenPrefix)
+func newUploadToken() (token, prefix, hash string, err error) {
+	token, err = newSecret(uploadTokenPrefix)
 	if err != nil {
-		return uploadTokenMaterial{}, err
+		return "", "", "", err
 	}
-	return uploadTokenMaterial{
-		Token:  token,
-		Prefix: token[:len(uploadTokenPrefix)+uploadTokenVisibleChars],
-		Hash:   secretHash(token),
-	}, nil
+	return token, token[:len(uploadTokenPrefix)+uploadTokenVisibleChars], secretHash(token), nil
 }
 
 // activeBrowserSession is the live-browser predicate used by privileged

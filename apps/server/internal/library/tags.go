@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/misty-step/sploot/apps/server/internal/contract"
@@ -372,22 +371,17 @@ func checkTagLimit(ctx context.Context, tx *sql.Tx, owner string) error {
 }
 
 func normalizeTagName(name string) (string, error) {
-	name = trimClientWhitespace(name)
-	if name == "" || !utf8.ValidString(name) || strings.ContainsRune(name, 0) || utf16Length(name) > contract.TagMaxNameLength {
+	name = contract.TrimClientWhitespace(name)
+	if name == "" || !utf8.ValidString(name) || strings.ContainsRune(name, 0) || contract.UTF16Length(name) > contract.TagMaxNameLength {
 		return "", badRequest("Tag name is invalid or too long")
 	}
 	// JavaScript toLowerCase uses full, context-sensitive Unicode casing;
 	// simple rune casing would create new IDs for existing Greek/Turkish tags.
 	name = cases.Lower(language.Und).String(name)
-	if utf16Length(name) > contract.TagMaxNameLength {
+	if contract.UTF16Length(name) > contract.TagMaxNameLength {
 		return "", badRequest("Tag name is too long after normalization")
 	}
 	return name, nil
-}
-
-func trimClientWhitespace(value string) string {
-	// ECMAScript trim includes BOM but excludes Unicode NEXT LINE.
-	return strings.TrimFunc(value, func(r rune) bool { return r == '\ufeff' || (r != '\u0085' && unicode.IsSpace(r)) })
 }
 
 func normalizeTagNames(names []string, limit int) ([]string, error) {
@@ -422,7 +416,7 @@ func validateTagIDs(ids []string) error {
 }
 
 func validateTagColor(color *string) error {
-	if color != nil && (!utf8.ValidString(*color) || strings.ContainsRune(*color, 0) || utf16Length(*color) > contract.TagMaxColorLength) {
+	if color != nil && (!utf8.ValidString(*color) || strings.ContainsRune(*color, 0) || contract.UTF16Length(*color) > contract.TagMaxColorLength) {
 		return badRequest("Tag color is invalid or too long")
 	}
 	return nil

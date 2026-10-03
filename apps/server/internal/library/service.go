@@ -78,17 +78,6 @@ func validateID(id string) error {
 	return nil
 }
 
-func utf16Length(value string) int {
-	count := 0
-	for _, r := range value {
-		count++
-		if r > 0xffff {
-			count++
-		}
-	}
-	return count
-}
-
 func (s *Service) beginOwner(ctx context.Context, owner string) (*sql.Tx, error) {
 	if err := s.ready(owner); err != nil {
 		return nil, err

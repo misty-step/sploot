@@ -95,24 +95,24 @@ func TestBrowserCookiesAreHostOnlyAndExpireOnLogout(t *testing.T) {
 }
 
 func TestUploadTokenMatchesResolverSecretIdentity(t *testing.T) {
-	first, err := newUploadToken()
+	firstToken, firstPrefix, firstHash, err := newUploadToken()
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := newUploadToken()
+	secondToken, _, secondHash, err := newUploadToken()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !validSecret(first.Token, uploadTokenPrefix) || !validSecret(second.Token, uploadTokenPrefix) {
+	if !validSecret(firstToken, uploadTokenPrefix) || !validSecret(secondToken, uploadTokenPrefix) {
 		t.Fatal("minted PAT rejected by resolver grammar")
 	}
-	if first.Token == second.Token || first.Hash == second.Hash {
+	if firstToken == secondToken || firstHash == secondHash {
 		t.Fatal("successive PATs reused a secret or hash")
 	}
-	if first.Hash != secretHash(first.Token) || first.Hash == first.Token {
+	if firstHash != secretHash(firstToken) || firstHash == firstToken {
 		t.Fatal("stored hash is not SHA-256 of the plaintext")
 	}
-	if first.Prefix != first.Token[:len(uploadTokenPrefix)+uploadTokenVisibleChars] || !strings.HasPrefix(first.Token, first.Prefix) {
+	if firstPrefix != firstToken[:len(uploadTokenPrefix)+uploadTokenVisibleChars] || !strings.HasPrefix(firstToken, firstPrefix) {
 		t.Fatal("display prefix is not the leading PAT characters")
 	}
 }

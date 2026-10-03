@@ -31,8 +31,11 @@ type MintedToken struct {
 }
 
 func (s *Service) Tokens(ctx context.Context, owner string) ([]UploadToken, error) {
-	if err := s.tokenOwnerReady(owner); err != nil {
-		return nil, err
+	if owner == "" {
+		return nil, unauthorized()
+	}
+	if s.db == nil {
+		return nil, &model.APIError{Status: http.StatusServiceUnavailable, Message: "Library is temporarily unavailable", Code: "library_unavailable", Retryable: true}
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT id, name, prefix, last_used_at, created_at
 		FROM upload_tokens WHERE user_id = ?1 AND revoked_at IS NULL ORDER BY created_at DESC, id DESC`, owner)
@@ -60,10 +63,10 @@ func (s *Service) MintToken(ctx context.Context, principal model.Principal, name
 	var result MintedToken
 	name = contract.TrimClientWhitespace(name)
 	if name == "" {
-		return result, tokenBadRequest("Give your token a name")
+		return result, &model.APIError{Status: http.StatusBadRequest, Message: "Give your token a name", Code: "invalid_request"}
 	}
 	if !utf8.ValidString(name) || strings.ContainsRune(name, 0) || contract.UTF16Length(name) > maxTokenNameLength {
-		return result, tokenBadRequest("Token name must be 64 characters or fewer")
+		return result, &model.APIError{Status: http.StatusBadRequest, Message: "Token name must be 64 characters or fewer", Code: "invalid_request"}
 	}
 	tx, err := s.beginTokenOwner(ctx, principal.UserID)
 	if err != nil {
@@ -87,27 +90,27 @@ func (s *Service) MintToken(ctx context.Context, principal model.Principal, name
 	if count >= maxActiveTokens {
 		return result, &model.APIError{Status: http.StatusUnprocessableEntity, Code: "token_limit", Message: "You can have at most 10 active tokens; revoke one first"}
 	}
-	material, err := newUploadToken()
+	plaintext, prefix, hash, err := newUploadToken()
 	if err != nil {
 		return result, fmt.Errorf("generate upload token: %w", err)
 	}
 	err = tx.QueryRowContext(ctx, `INSERT INTO upload_tokens (id, user_id, name, token_hash, prefix)
-		VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id, name, prefix, created_at`, model.NewID(), principal.UserID, name, material.Hash, material.Prefix).Scan(&result.ID, &result.Name, &result.Prefix, &result.CreatedAt)
+		VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id, name, prefix, created_at`, model.NewID(), principal.UserID, name, hash, prefix).Scan(&result.ID, &result.Name, &result.Prefix, &result.CreatedAt)
 	if err != nil {
 		return MintedToken{}, fmt.Errorf("persist upload token: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return MintedToken{}, fmt.Errorf("commit upload token: %w", err)
 	}
-	result.Token = material.Token
+	result.Token = plaintext
 	return result, nil
 }
 
 // RevokeToken preserves the existing idempotent, non-enumerating contract:
 // missing, already revoked, and foreign tokens all return the same success.
 func (s *Service) RevokeToken(ctx context.Context, owner, id string) error {
-	if err := validateTokenID(id); err != nil {
-		return err
+	if !contract.ValidAssetID(id) {
+		return &model.APIError{Status: http.StatusBadRequest, Message: "Invalid asset or tag id", Code: "invalid_request"}
 	}
 	tx, err := s.beginTokenOwner(ctx, owner)
 	if err != nil {
@@ -123,19 +126,12 @@ func (s *Service) RevokeToken(ctx context.Context, owner, id string) error {
 	return nil
 }
 
-func (s *Service) tokenOwnerReady(owner string) error {
+func (s *Service) beginTokenOwner(ctx context.Context, owner string) (*sql.Tx, error) {
 	if owner == "" {
-		return unauthorized()
+		return nil, unauthorized()
 	}
 	if s.db == nil {
-		return &model.APIError{Status: http.StatusServiceUnavailable, Message: "Library is temporarily unavailable", Code: "library_unavailable", Retryable: true}
-	}
-	return nil
-}
-
-func (s *Service) beginTokenOwner(ctx context.Context, owner string) (*sql.Tx, error) {
-	if err := s.tokenOwnerReady(owner); err != nil {
-		return nil, err
+		return nil, &model.APIError{Status: http.StatusServiceUnavailable, Message: "Library is temporarily unavailable", Code: "library_unavailable", Retryable: true}
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -151,15 +147,4 @@ func (s *Service) beginTokenOwner(ctx context.Context, owner string) (*sql.Tx, e
 		return nil, fmt.Errorf("check library account: %w", err)
 	}
 	return tx, nil
-}
-
-func validateTokenID(id string) error {
-	if id == "" || !utf8.ValidString(id) || contract.UTF16Length(id) > contract.AssetIDMaxLength || strings.ContainsRune(id, 0) {
-		return tokenBadRequest("Invalid asset or tag id")
-	}
-	return nil
-}
-
-func tokenBadRequest(message string) *model.APIError {
-	return &model.APIError{Status: http.StatusBadRequest, Message: message, Code: "invalid_request"}
 }
