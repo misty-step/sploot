@@ -318,7 +318,8 @@ host_query() {
   [[ -f "$db" ]] || { printf 'library database missing\n' >&2; exit 1; }
   command -v sqlite3 >/dev/null || { printf 'sqlite3 is not installed\n' >&2; exit 1; }
   # Run as the library owner so a read-only open cannot leave a root-owned WAL index.
-  runuser -u sploot -- sqlite3 -readonly -cmd '.timeout 5000' -batch "$db" "$query"
+  # -safe blocks writefile(), readfile(), load_extension() and ATTACH.
+  runuser -u sploot -- sqlite3 -readonly -safe -cmd '.timeout 5000' -batch "$db" "$query"
 }
 
 on_host() {

@@ -3,11 +3,6 @@ name: deploy
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: Commit or branch to build for deploy
-        required: false
-        default: master
-        type: string
       action:
         description: What to run
         required: true
@@ -33,21 +28,12 @@ permissions:
 
 jobs:
   production:
+    # Production secrets and deploys only from master; deploy builds the dispatched master commit.
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
-
-      - name: Check out deploy ref
-        if: inputs.action == 'deploy'
-        env:
-          DEPLOY_REF: ${{ inputs.ref }}
-        run: |
-          set -euo pipefail
-          cp deploy/deploy.sh "$RUNNER_TEMP/deploy.sh"
-          chmod +x "$RUNNER_TEMP/deploy.sh"
-          git fetch --depth=1 origin "$DEPLOY_REF"
-          git checkout --detach FETCH_HEAD
 
       - uses: pnpm/action-setup@v6
         if: inputs.action == 'deploy'
@@ -86,8 +72,4 @@ jobs:
           unset SPLOOT_DEPLOY_KEY SPLOOT_KNOWN_HOSTS
           export SPLOOT_SSH_IDENTITY="$HOME/.ssh/sploot_deploy"
           export SPLOOT_KNOWN_HOSTS_FILE="$HOME/.ssh/known_hosts"
-          script=deploy/deploy.sh
-          if [[ ! -f $script ]]; then
-            script="$RUNNER_TEMP/deploy.sh"
-          fi
-          "$script" "$ACTION" "$SQL"
+          deploy/deploy.sh "$ACTION" "$SQL"

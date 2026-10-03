@@ -58,7 +58,7 @@ A successful backup's remote metadata receipt is not independent restore proof.
 `.github/workflows/deploy.yml` runs it (`workflow_dispatch`, concurrency group
 `production`). Do not point `/opt/sploot/current` at a release by hand.
 
-`deploy` checks out the `ref` input (default `master`) and runs
+The job only runs when dispatched on `master`. `deploy` builds that commit with
 `pnpm --filter server build`, the same build CI uses. It copies `sploot` and
 `library-backup` to `/opt/sploot/releases/<full sha>/`, requires at least 1 GiB
 free under `/var/lib/sploot`, and starts `sploot-backup.service`. The switch
@@ -76,7 +76,7 @@ previous release, restarts, and the job fails.
 `rollback` switches to that saved previous release and runs the same check.
 `status` prints the current and previous release paths and `/api/version`.
 `query` runs one read-only statement that starts with `SELECT`, via
-`sqlite3 -readonly`, against `library.sqlite` in the production data directory.
+`sqlite3 -readonly -safe`, against `library.sqlite` in the production data directory.
 The workflow connects as `exedev` at `sploot-pilot.exe.xyz` and uses sudo.
 
 The extension selects `https://sploot.mistystep.io` explicitly; its development
