@@ -65,17 +65,3 @@ func copyMediaObject(ctx context.Context, source, target *snapshotDirectory, ent
 	}
 	return contextFailure(ctx, "media")
 }
-
-// recoveryReader is the cancel-before-read wrapper still constructed by
-// snapshot hashing. Other recovery copies go through ctxio.Reader.
-type recoveryReader struct {
-	ctx    context.Context
-	reader io.Reader
-}
-
-func (r recoveryReader) Read(value []byte) (int, error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return r.reader.Read(value)
-}
