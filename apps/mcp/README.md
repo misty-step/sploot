@@ -13,13 +13,18 @@ the verbs; this package is the runtime that implements them.
 
 | Tool | Purpose |
 |---|---|
-| `sploot_search` | Semantic text→image search. `{ query, limit?, threshold? }` |
-| `sploot_save` | Save an image by `url` or `bytesBase64` (+ optional `filename`, `mimeType`, `tags`) |
+| `sploot_search` | Semantic text→image search. `{ query, limit?, threshold?, cursor?, favoriteOnly?, tagId?, offset? }`. The server default threshold is 0.12 and the default page size is 30. Pass `nextCursor` back as `cursor` with the same query and filters. |
+| `sploot_save` | Save an image by `url` or `bytesBase64` (+ optional `filename`, `mimeType`, `tags`). Tags are sent for URL saves and byte saves. |
 
 Both return the underlying API's JSON response as text content on success,
 and `{ isError: true, content: [...] }` with a human-readable message on
 failure (bad/missing token, quota exceeded, embedding service unavailable,
-etc.) — see `PUBLIC_API.md` for the exact response shapes and error codes.
+a busy response, or a conflict that is not a duplicate receipt). A `409` is
+success only when the body is a duplicate receipt (`success: true`,
+`isDuplicate: true`, and a complete asset). Unreadable JSON is an error.
+A `blobUrl` that starts with `/media/` is a private reference on that
+instance; the personal token cannot download it. See `PUBLIC_API.md` for the
+response shapes.
 
 ## Setup
 
@@ -75,6 +80,7 @@ pnpm --filter @sploot/mcp dev          # run from source with tsx
 pnpm --filter @sploot/mcp type-check
 pnpm --filter @sploot/mcp test         # vitest, mocks fetch — no live instance needed
 pnpm --filter @sploot/mcp build        # tsc -> dist/
+pnpm --filter @sploot/mcp test:stdio   # built dist against an isolated local Go library
 ```
 
 `src/client.ts` is the HTTP layer (unit-tested against a mocked `fetch`);

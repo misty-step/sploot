@@ -52,6 +52,7 @@ func New(cfg config.Config, db *sql.DB, logger *slog.Logger, engine embedding.En
 		MediaDirectory: cfg.MediaDirectory, Environment: cfg.Environment,
 		UploadsEnabled: cfg.UploadsEnabled, Logger: logger,
 		StorageLimitBytes: cfg.StorageLimitBytes, StorageReserveBytes: cfg.StorageReserveBytes,
+		LocalImportOrigin: cfg.LocalImportOrigin,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("capture configuration: %w", err)

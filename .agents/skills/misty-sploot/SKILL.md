@@ -10,9 +10,11 @@ Invoke the `misty-sploot` skill. The `sploot-mcp` server (`apps/mcp`) exposes th
 token-scoped contract in `apps/web/docs/PUBLIC_API.md`:
 
 - `sploot_search({ query })` finds images by plain-language visual description,
-  not tags or filenames.
-- `sploot_save({ url })` lets Sploot fetch a public image URL server-side.
-  Use `bytesBase64` plus `filename` when only local or screenshot bytes exist.
+  not tags or filenames. Pass `nextCursor` as `cursor` and repeat the same
+  query, limit, threshold, favoriteOnly, and tagId to read the next page.
+- `sploot_save({ url, tags })` lets Sploot fetch a public image URL server-side
+  and store optional tag names. Use `bytesBase64` plus `filename` when only
+  local or screenshot bytes exist. Tags apply to both kinds of save.
 
 No other library operation is agent-callable. Keep full-library reads, tags,
 deletes, and token management in the session; do not bypass MCP with raw HTTP.
@@ -21,8 +23,11 @@ deletes, and token management in the session; do not bypass MCP with raw HTTP.
 
 - An empty `results` array is a real search miss. Report it; do not lower a
   threshold or reformulate the query unless the user asks.
-- `409` or `isDuplicate: true` means the exact image already exists and the
-  save succeeded.
+- A duplicate receipt with `isDuplicate: true` means the exact image already
+  exists and the save succeeded. Any other conflict, busy response, or
+  unreadable body is `isError: true`.
+- A `blobUrl` that starts with `/media/` is a private reference. A personal
+  access token cannot download it.
 - `401` means the token is missing, revoked, or for the wrong environment.
   `503` means the embedding service is unavailable, not that the query is bad.
 - Tool failures return `isError: true` with a plain-text explanation. Treat it

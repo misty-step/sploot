@@ -28,6 +28,10 @@ type Config struct {
 	RegistrationOpen    bool
 	StorageLimitBytes   int64
 	StorageReserveBytes int64
+	// LocalImportOrigin admits one explicit loopback HTTP origin so a
+	// nonproduction test can save a fixture URL. Empty disables it. Ingest
+	// rejects the value in production and staging.
+	LocalImportOrigin string
 }
 
 func Load(envFile string) (Config, error) {
@@ -37,13 +41,14 @@ func Load(envFile string) (Config, error) {
 		}
 	}
 	c := Config{
-		Address:        os.Getenv("SPLOOT_LISTEN_ADDR"),
-		BaseURL:        os.Getenv("SPLOOT_BASE_URL"),
-		Environment:    os.Getenv("SPLOOT_DEPLOYMENT_ENV"),
-		Revision:       os.Getenv("SPLOOT_DEPLOYMENT_COMMIT"),
-		DataDirectory:  os.Getenv("SPLOOT_DATA_DIR"),
-		ModelDirectory: os.Getenv("SPLOOT_MODEL_DIR"),
-		SentryDSN:      os.Getenv("SENTRY_DSN"),
+		Address:           os.Getenv("SPLOOT_LISTEN_ADDR"),
+		BaseURL:           os.Getenv("SPLOOT_BASE_URL"),
+		Environment:       os.Getenv("SPLOOT_DEPLOYMENT_ENV"),
+		Revision:          os.Getenv("SPLOOT_DEPLOYMENT_COMMIT"),
+		DataDirectory:     os.Getenv("SPLOOT_DATA_DIR"),
+		ModelDirectory:    os.Getenv("SPLOOT_MODEL_DIR"),
+		SentryDSN:         os.Getenv("SENTRY_DSN"),
+		LocalImportOrigin: strings.TrimSpace(os.Getenv("SPLOOT_LOCAL_IMPORT_ORIGIN")),
 	}
 	if c.Environment == "" {
 		c.Environment = "development"

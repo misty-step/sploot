@@ -8,6 +8,22 @@ vi.mock('@/lib/analytics', () => ({
   trackTiming: vi.fn(),
 }));
 
+function recordDuration(
+  monitor: ReturnType<typeof getPerformanceMonitor>,
+  operation: string,
+  duration: number
+): void {
+  let now = 1_000_000;
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+  try {
+    monitor.startTiming(operation);
+    now += duration;
+    monitor.endTiming(operation);
+  } finally {
+    clock.mockRestore();
+  }
+}
+
 describe('Performance Monitor', () => {
   let consoleWarnSpy: ReturnType<typeof vi.spyOn>;
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -188,11 +204,7 @@ describe('Performance Monitor', () => {
 
       // Manually inject samples: [10, 20, 30, 40, 50]
       for (const duration of [10, 20, 30, 40, 50]) {
-        monitor.startTiming('p50_odd');
-        // Mock the duration by manipulating time
-        const startTime = Date.now() - duration;
-        (monitor as any).startTimes.set('p50_odd', startTime);
-        monitor.endTiming('p50_odd');
+        recordDuration(monitor, 'p50_odd', duration);
       }
 
       const summary = monitor.getSummary('p50_odd');
@@ -205,10 +217,7 @@ describe('Performance Monitor', () => {
 
       // Manually inject samples: [10, 20, 30, 40]
       for (const duration of [10, 20, 30, 40]) {
-        monitor.startTiming('p50_even');
-        const startTime = Date.now() - duration;
-        (monitor as any).startTimes.set('p50_even', startTime);
-        monitor.endTiming('p50_even');
+        recordDuration(monitor, 'p50_even', duration);
       }
 
       const summary = monitor.getSummary('p50_even');
@@ -221,10 +230,7 @@ describe('Performance Monitor', () => {
 
       // Add 100 samples from 1-100
       for (let i = 1; i <= 100; i++) {
-        monitor.startTiming('p95_test');
-        const startTime = Date.now() - i;
-        (monitor as any).startTimes.set('p95_test', startTime);
-        monitor.endTiming('p95_test');
+        recordDuration(monitor, 'p95_test', i);
       }
 
       const summary = monitor.getSummary('p95_test');
@@ -238,10 +244,7 @@ describe('Performance Monitor', () => {
 
       // Add 100 samples from 1-100
       for (let i = 1; i <= 100; i++) {
-        monitor.startTiming('p99_test');
-        const startTime = Date.now() - i;
-        (monitor as any).startTimes.set('p99_test', startTime);
-        monitor.endTiming('p99_test');
+        recordDuration(monitor, 'p99_test', i);
       }
 
       const summary = monitor.getSummary('p99_test');
@@ -289,10 +292,7 @@ describe('Performance Monitor', () => {
 
       // Add samples: [5, 15, 10, 20, 3]
       for (const duration of [5, 15, 10, 20, 3]) {
-        monitor.startTiming('minmax_test');
-        const startTime = Date.now() - duration;
-        (monitor as any).startTimes.set('minmax_test', startTime);
-        monitor.endTiming('minmax_test');
+        recordDuration(monitor, 'minmax_test', duration);
       }
 
       const summary = monitor.getSummary('minmax_test');

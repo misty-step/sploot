@@ -146,13 +146,15 @@ owner/content-checksum uniqueness remains the deduplication authority.
     "filename": "funny-meme.jpg",
     "mimeType": "image/jpeg",
     "size": 2048576,
-    "checksum": "sha256:abc123...",
+    "checksum": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     "createdAt": "2026-07-07T12:00:00.000Z",
     "needsEmbedding": true
   },
   "message": "Upload successful"
 }
 ```
+
+`checksum` is lowercase SHA-256 hex.
 
 **`409` (duplicate):** same shape with `isDuplicate: true` and
 `needsEmbedding: false`.
@@ -185,8 +187,12 @@ bypass for URLs on the operator's LAN.
 **Request:**
 
 ```json
-{ "url": "https://example.com/meme.png" }
+{ "url": "https://example.com/meme.png", "tags": ["reaction"] }
 ```
+
+- `url` (string, required) — direct media URL.
+- `tags` (array of strings, optional) — tag names to store with the saved
+  asset. This is the same tag list byte upload accepts as a JSON form field.
 
 **Response contract:** identical `201`/`409` asset shape as bytes upload above.
 
@@ -305,6 +311,8 @@ than presenting them as saved/search-success states. See the full
 
 ## Changelog
 
+- **2026-10-01:** `POST /api/upload/url` documents optional `tags`. Stored
+  checksums in save receipts are lowercase SHA-256 hex.
 - **2026-07-24 (sploot-share-revoke-minimum):** Corrected the rate-limits
   section — the previously documented 10/30 requests-per-minute figures were
   never implemented; replaced with the honest ADR-006 residual.

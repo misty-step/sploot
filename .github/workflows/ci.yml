@@ -679,18 +679,45 @@ jobs:
       - name: Build deployable self-contained Go image
         run: docker build --tag sploot-go-ci apps/server
 
+  mcp:
+    name: MCP client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: apps/server/go.sum
+      - name: Install SQLite development headers and media tools
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev ffmpeg
+      - run: pnpm install --frozen-lockfile
+      - name: Test the MCP receipt parser and tool contract
+        run: pnpm --filter @sploot/mcp test
+      - name: Build the stdio MCP server
+        run: pnpm --filter @sploot/mcp build
+      - name: Match live Go receipts to the shared MCP fixtures
+        working-directory: apps/server
+        run: go test -count=1 -timeout 180s -run '^TestMCPClientFixturesMatchLiveReceipts$' ./internal/httpapi
+      - name: Exercise the built stdio server against an isolated Go library
+        run: pnpm --filter @sploot/mcp test:stdio
+
   merge-gate:
     name: merge-gate
     if: always()
-    needs: [secrets, lint, type-check, web-build, design, economics, test, extension, verify-extension-dist, auth-browser, queue-browser, public-truth, public-truth-production-guard, db-authority, gallery-browser, go-server]
+    needs: [secrets, lint, type-check, web-build, design, economics, test, extension, verify-extension-dist, auth-browser, queue-browser, public-truth, public-truth-production-guard, db-authority, gallery-browser, go-server, mcp]
     runs-on: ubuntu-latest
     steps:
       - name: Check all jobs
         run: |
-          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.economics.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.verify-extension-dist.result }}" "${{ needs.auth-browser.result }}" "${{ needs.queue-browser.result }}" "${{ needs.public-truth.result }}" "${{ needs.public-truth-production-guard.result }}" "${{ needs.db-authority.result }}" "${{ needs.gallery-browser.result }}" "${{ needs.go-server.result }}")
+          results=("${{ needs.secrets.result }}" "${{ needs.lint.result }}" "${{ needs.type-check.result }}" "${{ needs.web-build.result }}" "${{ needs.design.result }}" "${{ needs.economics.result }}" "${{ needs.test.result }}" "${{ needs.extension.result }}" "${{ needs.verify-extension-dist.result }}" "${{ needs.auth-browser.result }}" "${{ needs.queue-browser.result }}" "${{ needs.public-truth.result }}" "${{ needs.public-truth-production-guard.result }}" "${{ needs.db-authority.result }}" "${{ needs.gallery-browser.result }}" "${{ needs.go-server.result }}" "${{ needs.mcp.result }}")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" ]]; then
-              echo "One or more required jobs failed. Go integration: ${{ needs.go-server.result }}. See each required job above for its failure evidence."
+              echo "One or more required jobs failed. Go integration: ${{ needs.go-server.result }}. MCP client: ${{ needs.mcp.result }}. See each required job above for its failure evidence."
               exit 1
             fi
           done
