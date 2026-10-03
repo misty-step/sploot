@@ -104,7 +104,7 @@ func (s *Server) embeddingStatus(w http.ResponseWriter, r *http.Request, p model
 }
 
 func (s *Server) listTokens(w http.ResponseWriter, r *http.Request, p model.Principal) {
-	tokens, err := s.library.Tokens(r.Context(), p.UserID)
+	tokens, err := s.auth.Tokens(r.Context(), p.UserID)
 	if err != nil {
 		s.failure(w, r, err)
 		return
@@ -120,7 +120,7 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request, p model.Pri
 		s.failure(w, r, err)
 		return
 	}
-	token, err := s.library.MintToken(r.Context(), p, request.Name)
+	token, err := s.auth.MintToken(r.Context(), p, request.Name)
 	if err != nil {
 		s.failure(w, r, err)
 		return
@@ -129,7 +129,7 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request, p model.Pri
 }
 
 func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request, p model.Principal) {
-	if err := s.library.RevokeToken(r.Context(), p.UserID, r.PathValue("id")); err != nil {
+	if err := s.auth.RevokeToken(r.Context(), p.UserID, r.PathValue("id")); err != nil {
 		s.failure(w, r, err)
 		return
 	}
