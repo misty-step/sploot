@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/misty-step/sploot/apps/server/internal/contract"
+	"github.com/misty-step/sploot/apps/server/internal/ingest"
 )
 
 // walkMedia streams one frozen asset at a time; trash is deliberately included.
@@ -58,7 +59,7 @@ func walkMedia(ctx context.Context, db *sql.DB, visit func(MediaEntry) error) (i
 }
 
 func validateMedia(entry MediaEntry) error {
-	ownerPrefix := "media/uploads/" + digest([]byte(entry.OwnerID))[:32] + "/" + entry.AssetID + "/"
+	ownerPrefix := "media/" + ingest.OwnerMediaPrefix(entry.OwnerID, entry.AssetID)
 	byteLimit := int64(contract.UploadMaxBytes)
 	if entry.Rendition == "thumbnail" {
 		byteLimit = 2 * 1024 * 1024
