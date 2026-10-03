@@ -4,6 +4,17 @@ on:
   schedule:
     - cron: '17 6 * * *'
   workflow_dispatch:
+    inputs:
+      sploot_probe:
+        description: Temporary read-only production probe (status or query). Leave empty.
+        required: false
+        default: ""
+        type: string
+      sploot_sql:
+        description: SELECT for sploot_probe=query
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -23,3 +34,29 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm economics:freshness
+
+  # Removed before review. GitHub will not dispatch deploy.yml until it is on master.
+  production-probe:
+    if: github.event_name == 'workflow_dispatch' && (inputs.sploot_probe == 'status' || inputs.sploot_probe == 'query')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run read-only production probe
+        env:
+          SPLOOT_DEPLOY_KEY: ${{ secrets.SPLOOT_DEPLOY_KEY }}
+          SPLOOT_KNOWN_HOSTS: ${{ secrets.SPLOOT_KNOWN_HOSTS }}
+          ACTION: ${{ inputs.sploot_probe }}
+          SQL: ${{ inputs.sploot_sql }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          umask 077
+          printf '%s\n' "$SPLOOT_DEPLOY_KEY" > "$HOME/.ssh/sploot_deploy"
+          printf '%s\n' "$SPLOOT_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          unset SPLOOT_DEPLOY_KEY SPLOOT_KNOWN_HOSTS
+          export SPLOOT_SSH_IDENTITY="$HOME/.ssh/sploot_deploy"
+          export SPLOOT_KNOWN_HOSTS_FILE="$HOME/.ssh/known_hosts"
+          deploy/deploy.sh "$ACTION" "$SQL"
