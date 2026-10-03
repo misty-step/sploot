@@ -1,8 +1,6 @@
 package httpapi
 
 import (
-	"database/sql"
-	"errors"
 	"net/http"
 
 	"github.com/misty-step/sploot/apps/server/internal/library"
@@ -173,19 +171,13 @@ func (s *Server) checkUpload(w http.ResponseWriter, r *http.Request, p model.Pri
 		s.failure(w, r, &model.APIError{Status: 400, Message: "A SHA-256 checksum is required"})
 		return
 	}
-	var id string
-	err := s.db.QueryRowContext(r.Context(), `SELECT id FROM assets WHERE owner_user_id=? AND checksum_sha256=? AND deleted_at IS NULL ORDER BY created_at,id LIMIT 1`, p.UserID, checksum).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
+	asset, err := s.library.LiveByChecksum(r.Context(), p.UserID, checksum)
+	if err != nil {
+		s.failure(w, r, err)
+		return
+	}
+	if asset == nil {
 		s.json(w, 200, map[string]bool{"exists": false, "isDuplicate": false})
-		return
-	}
-	if err != nil {
-		s.failure(w, r, err)
-		return
-	}
-	asset, err := s.library.Get(r.Context(), p.UserID, id)
-	if err != nil {
-		s.failure(w, r, err)
 		return
 	}
 	s.json(w, 200, map[string]any{"exists": true, "isDuplicate": true, "asset": asset})
