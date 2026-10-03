@@ -37,9 +37,11 @@ const assetColumns = `a.id, a.owner_user_id, a.blob_url, a.thumbnail_url,
 	a.pathname, a.mime, a.size, a.width, a.height, a.checksum_sha256,
 	a.favorite, a.created_at, a.updated_at, a.deleted_at, a.share_slug,
 	COALESCE((SELECT e.status FROM asset_embeddings e WHERE e.asset_id = a.id AND e.owner_user_id = a.owner_user_id), 'pending'),
-	COALESCE((SELECT json_group_array(json_object('id', t.id, 'name', t.name, 'color', t.color))
-		FROM (SELECT t.id, t.name, t.color FROM asset_tags at JOIN tags t ON t.id = at.tag_id
-		WHERE at.asset_id = a.id AND t.owner_user_id = a.owner_user_id ORDER BY t.name, t.id) t), '[]')`
+	` + OwnedAssetTagsJSON
+
+// Live owned assets are one identity: owner, id, and not in trash. Get, PATCH,
+// and restore all re-read that same row through scanAsset.
+const liveAssetByID = `SELECT ` + assetColumns + ` FROM assets a WHERE a.owner_user_id = ?1 AND a.id = ?2 AND a.deleted_at IS NULL`
 
 func scanAsset(row interface{ Scan(...any) error }, extra ...any) (model.Asset, error) {
 	var asset model.Asset
@@ -105,8 +107,25 @@ func (s *Service) Get(ctx context.Context, owner, id string) (model.Asset, error
 	if err := validateID(id); err != nil {
 		return model.Asset{}, err
 	}
-	asset, err := scanAsset(s.db.QueryRowContext(ctx, `SELECT `+assetColumns+` FROM assets a WHERE a.owner_user_id = ?1 AND a.id = ?2 AND a.deleted_at IS NULL`, owner, id))
+	asset, err := scanAsset(s.db.QueryRowContext(ctx, liveAssetByID, owner, id))
 	return asset, assetError("get asset", err)
+}
+
+// LiveByChecksum returns the oldest live asset with this SHA-256. Absence is
+// not an error: upload preflight treats a miss as safe to save. Trash is
+// ignored here; save-time duplicate handling is a different contract.
+func (s *Service) LiveByChecksum(ctx context.Context, owner, checksum string) (*model.Asset, error) {
+	if err := s.ready(owner); err != nil {
+		return nil, err
+	}
+	asset, err := scanAsset(s.db.QueryRowContext(ctx, `SELECT `+assetColumns+` FROM assets a WHERE a.owner_user_id = ?1 AND a.checksum_sha256 = ?2 AND a.deleted_at IS NULL ORDER BY a.created_at, a.id LIMIT 1`, owner, checksum))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get live asset by checksum: %w", err)
+	}
+	return &asset, nil
 }
 
 func (s *Service) UpdateFavorite(ctx context.Context, owner, id string, favorite bool) (model.Asset, error) {
@@ -149,7 +168,7 @@ func (s *Service) Update(ctx context.Context, owner, id string, update AssetUpda
 			return model.Asset{}, err
 		}
 	}
-	asset, err := scanAsset(tx.QueryRowContext(ctx, `SELECT `+assetColumns+` FROM assets a WHERE a.owner_user_id = ?1 AND a.id = ?2 AND a.deleted_at IS NULL`, owner, id))
+	asset, err := scanAsset(tx.QueryRowContext(ctx, liveAssetByID, owner, id))
 	if err != nil {
 		return model.Asset{}, assetError("read updated asset", err)
 	}
@@ -196,7 +215,7 @@ func (s *Service) Restore(ctx context.Context, owner, id string) (model.Asset, e
 	if _, err := tx.ExecContext(ctx, `UPDATE assets SET share_slug = CASE WHEN deleted_at IS NOT NULL THEN NULL ELSE share_slug END, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE owner_user_id = ?1 AND id = ?2`, owner, id); err != nil {
 		return model.Asset{}, fmt.Errorf("restore asset: %w", err)
 	}
-	asset, err := scanAsset(tx.QueryRowContext(ctx, `SELECT `+assetColumns+` FROM assets a WHERE a.owner_user_id = ?1 AND a.id = ?2 AND a.deleted_at IS NULL`, owner, id))
+	asset, err := scanAsset(tx.QueryRowContext(ctx, liveAssetByID, owner, id))
 	if err != nil {
 		return model.Asset{}, assetError("read restored asset", err)
 	}

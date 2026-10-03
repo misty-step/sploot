@@ -4,9 +4,7 @@ package ingest
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -180,7 +178,7 @@ func (s *Service) saveRequest(ctx context.Context, owner string, input Input, ra
 		defer body.Close()
 		input.Reader, input.Filename, input.MIME = body, filename, mediaType
 	}
-	input.MIME = normalizeMIME(input.MIME)
+	input.MIME = contract.NormalizeMIME(input.MIME)
 	if !contract.IsAllowedMIME(input.MIME) {
 		return result, invalid("Use JPEG, PNG, WebP, GIF, MP4, or WebM media")
 	}
@@ -246,14 +244,13 @@ func (s *Service) saveRequest(ctx context.Context, owner string, input Input, ra
 	}
 	assetID := model.NewID()
 	filename := safeFilename(input.Filename, input.MIME)
-	ownerHash := sha256.Sum256([]byte(owner))
-	prefix := "uploads/" + hex.EncodeToString(ownerHash[:16]) + "/" + assetID
-	originalObject, err := s.store.putFile(ctx, prefix+"/"+filename, original)
+	prefix := OwnerMediaPrefix(owner, assetID)
+	originalObject, err := s.store.putFile(ctx, prefix+filename, original)
 	state.track(originalObject)
 	if err != nil {
 		return result, err
 	}
-	posterObject, err := s.store.putBytes(ctx, prefix+"/poster/preview.jpg", prepared.poster, prepared.posterChecksum)
+	posterObject, err := s.store.putBytes(ctx, prefix+"poster/preview.jpg", prepared.poster, prepared.posterChecksum)
 	state.track(posterObject)
 	if err != nil {
 		return result, err
