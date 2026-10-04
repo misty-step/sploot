@@ -1,0 +1,16 @@
+{
+  "name": "sploot-rs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "worker-build --release",
+    "test": "node test/run.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.1",
+    "wrangler": "4.147.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "workerd"]
+  }
+}

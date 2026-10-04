@@ -1,0 +1,45 @@
+{
+  // Production config. Nothing in this repo deploys it.
+  // Preview resource creation waits on recorded P3 approval.
+  "name": "sploot-rs",
+  "main": "build/index.js",
+  "compatibility_date": "2026-10-04",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "ACCESS_ISSUER": "https://YOUR_TEAM.cloudflareaccess.com",
+    "ACCESS_AUD": "YOUR_PROD_AUD",
+    "APP_ORIGIN": "https://sploot.mistystep.io",
+    "APP_ENV": "prod",
+    "GIT_SHA": "dev"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sploot-rs",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "env": {
+    "preview": {
+      "name": "sploot-rs-preview",
+      "workers_dev": false,
+      "vars": {
+        "ACCESS_ISSUER": "https://YOUR_TEAM.cloudflareaccess.com",
+        "ACCESS_AUD": "YOUR_PREVIEW_AUD",
+        "APP_ORIGIN": "https://sploot-preview.mistystep.io",
+        "APP_ENV": "preview",
+        "GIT_SHA": "dev"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "sploot-rs-preview",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
+}
