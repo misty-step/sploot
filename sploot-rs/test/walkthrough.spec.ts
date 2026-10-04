@@ -56,7 +56,7 @@ test("installed shell", async ({ browser }) => {
   try {
     const absent = await page.goto(`${issuer}/`);
     expect(chain(absent)).toHaveLength(2);
-    expect(page.url()).toContain("127.0.0.1:8789");
+    expect(page.url()).toContain("/cdn-cgi/access/login");
     expect(absent?.status()).toBe(200);
     await shot("install / sign-in", "absent session prompts once", "s0-01-signed-out-login.png");
 
@@ -71,7 +71,7 @@ test("installed shell", async ({ browser }) => {
     await context.addCookies([{ name: "CF_Authorization", value: mint("demo@sploot.test", 3600), url: issuer, httpOnly: true, sameSite: "Lax" }]);
     let sawLogin = false;
     const watch = (url: string) => {
-      if (url.startsWith(login)) sawLogin = true;
+      if (url.startsWith(login) || url.includes("/cdn-cgi/access/login")) sawLogin = true;
     };
     page.on("request", (request) => watch(request.url()));
     await page.goto(`${issuer}/`);
@@ -101,9 +101,9 @@ test("installed shell", async ({ browser }) => {
     await expect(page.locator("#denied")).toBeHidden();
     await shot("expiry", "banner offers sign in", "s0-04-expired.png");
     await page.locator("#sign-in").click();
-    await page.waitForURL(/127\.0\.0\.1:8789/);
+    await page.waitForURL(/\/cdn-cgi\/access\/login/);
     await page.waitForTimeout(1000);
-    expect(page.url()).toContain("127.0.0.1:8789");
+    expect(page.url()).toContain("/cdn-cgi/access/login");
     await page.getByRole("link", { name: "demo@sploot.test" }).click();
     await page.waitForURL(/127\.0\.0\.1:8787\/?$/);
 
@@ -120,19 +120,19 @@ test("installed shell", async ({ browser }) => {
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await expect(page.locator("#denied")).toBeVisible();
     await expect(page.locator("#expired")).toBeHidden();
-    expect(page.url()).not.toContain("8789");
+    expect(page.url()).not.toContain("/cdn-cgi/access/login");
     await page.waitForTimeout(1000);
-    expect(page.url()).not.toContain("8789");
+    expect(page.url()).not.toContain("/cdn-cgi/access/login");
 
     const forbidden = await page.goto(`${issuer}/`);
     expect(forbidden?.status()).toBe(403);
     expect(await page.locator("script").count()).toBe(0);
     await expect(page.getByText("This account isn't on the allowlist.")).toBeVisible();
     await page.waitForTimeout(1500);
-    expect(page.url()).not.toContain("8789");
+    expect(page.url()).not.toContain("/cdn-cgi/access/login");
     await shot("allowlist", "403 page does not return to login", "s0-05-forbidden.png");
     await page.getByRole("link", { name: "[ sign out ]" }).click();
-    await page.waitForURL(/127\.0\.0\.1:8789/);
+    await page.waitForURL(/\/cdn-cgi\/access\/login/);
 
     await page.getByRole("link", { name: "demo@sploot.test" }).click();
     await page.waitForURL(/127\.0\.0\.1:8787\/?$/);
@@ -142,7 +142,7 @@ test("installed shell", async ({ browser }) => {
     await expect(page.getByText("signed in as demo@sploot.test")).toBeVisible();
     await shot("csrf", "cross-site logout leaves the session", "s0-06-still-signed-in.png");
     await page.getByRole("button", { name: "[ sign out ]" }).click();
-    await page.waitForURL(/127\.0\.0\.1:8789/);
+    await page.waitForURL(/\/cdn-cgi\/access\/login/);
     await shot("sign out", "login after sign out", "s0-06-signed-out.png");
     await page.getByRole("link", { name: "demo@sploot.test" }).click();
     await page.waitForURL(/127\.0\.0\.1:8787\/?$/);
@@ -172,7 +172,7 @@ test("installed shell", async ({ browser }) => {
       "",
       "## Friction",
       "",
-      "- The login list is the local stub, not Cloudflare Access.",
+      "- The login list is the local stub on the app origin, so sign-out can redirect without leaving `form-action`. Port 8789 only hosts the cross-site form.",
       "- An inherited session is a CF_Authorization cookie set before navigation. A real iPhone can copy Safari's cookie into the installed app, so the first standalone launch must not be assumed to prompt.",
       "- Expiry uses a 15 second stub session, then one reload into the login page.",
       "- The allowlist page signs out with the Access logout link. It does not reload into login.",

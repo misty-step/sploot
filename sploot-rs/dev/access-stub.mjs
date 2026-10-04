@@ -54,20 +54,26 @@ function proxy(req, res, token) {
   req.pipe(up);
 }
 
+const loginPath = "/cdn-cgi/access/login";
+
 function loginLink(email, redirect) {
   return `${issuer}/cdn-cgi/access/authorized?email=${encodeURIComponent(email)}&redirect=${encodeURIComponent(redirect)}`;
 }
 
+function sendLogin(res, redirect) {
+  const page = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in</title><style>body{margin:0;background:#121212;color:#bebebe;font:16px ui-monospace,SFMono-Regular,Menlo,monospace;padding:24px}a{display:flex;align-items:center;min-height:44px;color:#e68e0d}p.dim{color:#8a8a8d}</style><p>SPLOOT</p><p class="dim">Sign in</p><p><a href="${loginLink("demo@sploot.test", redirect)}">demo@sploot.test</a></p><p><a href="${loginLink("unmapped@sploot.test", redirect)}">unmapped@sploot.test</a></p>`;
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+  res.end(page);
+}
+
 const login = createServer((req, res) => {
-  const url = new URL(req.url, `http://127.0.0.1:${loginPort}`);
-  if (url.pathname === "/evil") {
+  if (new URL(req.url, `http://127.0.0.1:${loginPort}`).pathname === "/evil") {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     res.end(`<!doctype html><meta charset="utf-8"><title>evil</title><form id="f" method="post" action="${issuer}/logout"><input name="csrf" value="nope"></form><script>document.getElementById("f").submit()</script>`);
     return;
   }
-  const redirect = url.searchParams.get("redirect") || `${issuer}/`;
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-  res.end(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in</title><style>body{margin:0;background:#121212;color:#bebebe;font:16px ui-monospace,SFMono-Regular,Menlo,monospace;padding:24px}a{display:flex;align-items:center;min-height:44px;color:#e68e0d}p.dim{color:#8a8a8d}</style><p>SPLOOT</p><p class="dim">Sign in</p><p><a href="${loginLink("demo@sploot.test", redirect)}">demo@sploot.test</a></p><p><a href="${loginLink("unmapped@sploot.test", redirect)}">unmapped@sploot.test</a></p>`);
+  res.writeHead(200, { "content-type": "text/plain" });
+  res.end("other origin");
 });
 
 const app = createServer((req, res) => {
@@ -79,8 +85,12 @@ const app = createServer((req, res) => {
     res.end(JSON.stringify({ keys: [jwk] }));
     return;
   }
+  if (url.pathname === loginPath) {
+    sendLogin(res, url.searchParams.get("redirect") || `${issuer}/`);
+    return;
+  }
   if (url.pathname === "/cdn-cgi/access/logout") {
-    res.writeHead(302, { location: `${issuer}/`, "set-cookie": "CF_Authorization=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" });
+    res.writeHead(302, { location: `${issuer}${loginPath}`, "set-cookie": "CF_Authorization=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0" });
     res.end();
     return;
   }
@@ -99,13 +109,12 @@ const app = createServer((req, res) => {
   const token = cookie(req, "CF_Authorization");
   if (!token || expired(token)) {
     const here = issuer + url.pathname + url.search;
-    res.writeHead(302, { location: `http://127.0.0.1:${loginPort}/?redirect=${encodeURIComponent(here)}` });
+    res.writeHead(302, { location: `${issuer}${loginPath}?redirect=${encodeURIComponent(here)}` });
     res.end();
     return;
   }
   proxy(req, res, token);
 });
-
 login.listen(loginPort, "127.0.0.1");
 app.listen(appPort, "127.0.0.1");
 console.log(`access stub ${issuer}`);

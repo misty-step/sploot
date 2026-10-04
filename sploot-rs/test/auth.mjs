@@ -131,7 +131,7 @@ const icon = await fetch(`${worker}/icons/icon-512.png`);
 check("icon is public png", icon.status === 200 && icon.headers.get("content-type") === "image/png" && (icon.headers.get("cache-control") || "").includes("public"));
 
 const signedOut = await follow(`${issuer}/`);
-check("absent session redirects once", signedOut.hops === 1 && signedOut.status === 200 && signedOut.url.startsWith("http://127.0.0.1:8789/") && signedOut.text.includes("Sign in"), `${signedOut.hops} ${signedOut.status} ${signedOut.url}`);
+check("absent session redirects once", signedOut.hops === 1 && signedOut.status === 200 && signedOut.url.startsWith(`${issuer}/cdn-cgi/access/login`) && signedOut.text.includes("Sign in"), `${signedOut.hops} ${signedOut.status} ${signedOut.url}`);
 const loginAgain = await fetch(signedOut.url, { redirect: "manual" });
 check("login page does not bounce", loginAgain.status === 200 && !loginAgain.headers.get("location"));
 
