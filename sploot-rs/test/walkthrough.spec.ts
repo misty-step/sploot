@@ -176,7 +176,7 @@ test("installed shell", async ({ browser }) => {
       "- An inherited session is a CF_Authorization cookie set before navigation. A real iPhone can copy Safari's cookie into the installed app, so the first standalone launch must not be assumed to prompt.",
       "- Expiry uses a 15 second stub session, then one reload into the login page.",
       "- The allowlist page signs out with the Access logout link. It does not reload into login.",
-      "- The cross-site form is on the stub login origin. SameSite=Lax keeps the cookie off that POST.",
+      "- The other-origin form is on port 8789. That POST is same-site, so the cookie is sent, and the worker rejects it. Returning to the shell still shows the owner.",
       "- Home Screen install, safe areas on a real notch, and a 15 minute Access session are Phaedrus's check.",
       "",
       `${passed} recorded steps.`,

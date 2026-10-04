@@ -100,10 +100,11 @@ try {
   await run("node", ["test/auth.mjs"]);
   await run("pnpm", ["exec", "playwright", "install", "webkit"]);
   await run("pnpm", ["exec", "playwright", "test"]);
-  const webm = fs.readdirSync("evidence-out").find((name) => name.endsWith(".webm") && name !== "walkthrough.webm");
-  const source = webm ? path.join("evidence-out", webm) : "evidence-out/walkthrough.webm";
-  if (fs.existsSync(source)) {
-    await run("ffmpeg", ["-y", "-i", source, "-an", "evidence-out/walkthrough.mp4"]).catch((error) => {
+  for (const name of fs.readdirSync("evidence-out")) {
+    if (name.endsWith(".webm") && name !== "walkthrough.webm") fs.rmSync(path.join("evidence-out", name));
+  }
+  if (fs.existsSync("evidence-out/walkthrough.webm")) {
+    await run("ffmpeg", ["-y", "-i", "evidence-out/walkthrough.webm", "-an", "-vf", "fps=30", "evidence-out/walkthrough.mp4"]).catch((error) => {
       console.error(String(error));
     });
   }
