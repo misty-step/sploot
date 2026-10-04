@@ -1,0 +1,45 @@
+# Preview deploy is refused until Phaedrus records P3.
+# This workflow does not create Cloudflare resources and does not run wrangler deploy.
+
+name: sploot-rs
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.91.1
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: system packages
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
+      - name: worker-build
+        run: cargo install worker-build --version 0.8.7 --locked
+      - run: pnpm install --ignore-workspace --frozen-lockfile
+      - run: cargo fmt --check
+      - run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
+      - run: pnpm exec playwright install --with-deps webkit
+      - run: pnpm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sploot-rs-s0-evidence
+          path: evidence-out/
+          if-no-files-found: ignore
