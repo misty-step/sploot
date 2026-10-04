@@ -148,7 +148,9 @@ fn logout(env: &Env) -> Result<Response> {
     let origin = var(env, "APP_ORIGIN")?;
     let target = format!("{}/cdn-cgi/access/logout", origin.trim_end_matches('/'));
     let url = Url::parse(&target)?;
-    let response = Response::redirect_with_status(url, 303)?;
+    let headers = Headers::new();
+    headers.set("location", url.as_str())?;
+    let response = Response::empty()?.with_status(303).with_headers(headers);
     seal(&response)?;
     Ok(response)
 }
