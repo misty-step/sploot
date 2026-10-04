@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/misty-step/sploot/apps/server/internal/contract"
+	"github.com/misty-step/sploot/apps/server/internal/ctxio"
 	"github.com/misty-step/sploot/apps/server/internal/medialock"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
@@ -125,7 +126,7 @@ func (s *objectStore) put(ctx context.Context, key string, body io.Reader, size 
 	}
 	defer func() { _ = file.Close(); _ = s.root.Remove(temporary) }()
 	hash := sha256.New()
-	n, err := io.Copy(io.MultiWriter(file, hash), io.LimitReader(contextReader{ctx, body}, size+1))
+	n, err := io.Copy(io.MultiWriter(file, hash), io.LimitReader(ctxio.Reader(ctx, body), size+1))
 	if err != nil {
 		return storedObject{}, err
 	}

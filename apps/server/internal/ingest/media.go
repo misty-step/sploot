@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/misty-step/sploot/apps/server/internal/contract"
+	"github.com/misty-step/sploot/apps/server/internal/ctxio"
 )
 
 const maxPosterBytes = 2 * 1024 * 1024
@@ -107,7 +108,7 @@ func spool(ctx context.Context, directory string, reader io.Reader, mime string)
 		defer stop()
 	}
 	hash := sha256.New()
-	n, err := io.Copy(io.MultiWriter(file, hash), io.LimitReader(contextReader{ctx, reader}, int64(contract.UploadMaxBytes)+1))
+	n, err := io.Copy(io.MultiWriter(file, hash), io.LimitReader(ctxio.Reader(ctx, reader), int64(contract.UploadMaxBytes)+1))
 	if err != nil {
 		return mediaFile{}, err
 	}
@@ -129,18 +130,6 @@ func spool(ctx context.Context, directory string, reader io.Reader, mime string)
 		return mediaFile{}, invalid("The file bytes do not match a supported media type")
 	}
 	return mediaFile{path: file.Name(), size: n, checksum: hex.EncodeToString(hash.Sum(nil)), mime: mime}, nil
-}
-
-type contextReader struct {
-	ctx    context.Context
-	reader io.Reader
-}
-
-func (r contextReader) Read(buffer []byte) (int, error) {
-	if err := r.ctx.Err(); err != nil {
-		return 0, err
-	}
-	return r.reader.Read(buffer)
 }
 
 // FFmpeg is forced to a media demuxer, never a playlist or a network protocol.
