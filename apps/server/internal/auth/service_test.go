@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/misty-step/sploot/apps/server/internal/config"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -17,6 +19,41 @@ func requireAPIStatus(t *testing.T, err error, status int) {
 	var apiError *model.APIError
 	if !errors.As(err, &apiError) || apiError.Status != status {
 		t.Fatalf("wanted API status %d, got %v", status, err)
+	}
+}
+
+func TestNewUsesCanonicalApplicationOrigin(t *testing.T) {
+	db := &sql.DB{}
+	service, err := New(db, Options{BaseURL: "https://Library.EXAMPLE/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !service.AllowedOrigin("https://library.example") {
+		t.Fatal("mixed-case base URL did not become the canonical origin")
+	}
+	if service.AllowedOrigin("https://Library.EXAMPLE") {
+		t.Fatal("pre-canonical origin still authorized after lowercase")
+	}
+
+	_, err = New(db, Options{BaseURL: "http://127.0.0.1:3001"})
+	if err != nil {
+		t.Fatalf("loopback HTTP origin rejected: %v", err)
+	}
+	for _, test := range []struct {
+		name    string
+		baseURL string
+		wantErr error
+	}{
+		{name: "public http", baseURL: "http://library.example", wantErr: config.ErrOriginRequiresHTTPS},
+		{name: "path", baseURL: "https://library.example/app", wantErr: config.ErrOrigin},
+		{name: "query", baseURL: "https://library.example?next=/app", wantErr: config.ErrOrigin},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := New(db, Options{BaseURL: test.baseURL})
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("New(%q)=%v; want %v", test.baseURL, err, test.wantErr)
+			}
+		})
 	}
 }
 

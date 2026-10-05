@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/misty-step/sploot/apps/server/internal/config"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
 
@@ -56,11 +57,10 @@ func New(db *sql.DB, opts Options) (*Service, error) {
 	if db == nil {
 		return nil, errors.New("authentication requires a persistent database")
 	}
-	base, err := url.Parse(opts.BaseURL)
-	if err != nil || base == nil || (base.Scheme != "http" && base.Scheme != "https") || base.Hostname() == "" || base.User != nil || base.Opaque != "" || base.RawQuery != "" || base.ForceQuery || base.Fragment != "" || base.RawFragment != "" || base.RawPath != "" || (base.Path != "" && base.Path != "/") {
-		return nil, errors.New("authentication base URL must be an HTTP(S) origin")
+	base, err := config.ParseOrigin(opts.BaseURL)
+	if err != nil {
+		return nil, err
 	}
-	base.Path = ""
 	return &Service{db: db, baseURL: base, registrationOpen: opts.RegistrationOpen, passwordSlots: make(chan struct{}, 2)}, nil
 }
 
