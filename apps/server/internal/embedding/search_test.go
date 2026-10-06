@@ -70,6 +70,32 @@ func TestSearchCursorRejectsDifferentOwnerAndContext(t *testing.T) {
 	}
 }
 
+func TestValidateSearchUsesUTF16QueryLength(t *testing.T) {
+	accepted := strings.Repeat("𐐷", 250)
+	if contract.UTF16Length(accepted) != 500 {
+		t.Fatal("250 supplementary characters must be 500 UTF-16 units")
+	}
+	if _, err := validateSearch(model.SearchRequest{Query: accepted, Limit: 1}); err != nil {
+		t.Fatalf("500 UTF-16 units rejected: %v", err)
+	}
+	if _, err := validateSearch(model.SearchRequest{Query: strings.Repeat("a", 500), Limit: 1}); err != nil {
+		t.Fatalf("500 BMP units rejected: %v", err)
+	}
+	cases := map[string]string{
+		"501 bmp units":           strings.Repeat("a", 501),
+		"251 supplementary units": strings.Repeat("𐐷", 251),
+	}
+	for name, query := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := validateSearch(model.SearchRequest{Query: query, Limit: 1})
+			api := searchAPIError(t, err)
+			if api.Status != 400 || api.Code != "invalid_search_query" {
+				t.Fatalf("status=%d code=%q, want 400 invalid_search_query", api.Status, api.Code)
+			}
+		})
+	}
+}
+
 func TestValidateSearchUsesStoredTagIDGrammar(t *testing.T) {
 	latin1 := strings.Repeat("é", contract.AssetIDMaxLength)
 	if !contract.ValidAssetID(latin1) {

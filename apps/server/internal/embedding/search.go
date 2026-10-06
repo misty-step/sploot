@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/misty-step/sploot/apps/server/internal/contract"
@@ -94,11 +93,7 @@ func (s *Service) Search(ctx context.Context, owner string, request model.Search
 
 func validateSearch(request model.SearchRequest) (searchContext, error) {
 	query := normalizeQuery(request.Query)
-	length := 0
-	for _, r := range request.Query {
-		length += utf16.RuneLen(r)
-	}
-	if query == "" || length > 500 || !utf8.ValidString(request.Query) || strings.ContainsRune(query, 0) {
+	if query == "" || contract.UTF16Length(request.Query) > 500 || !utf8.ValidString(request.Query) || strings.ContainsRune(query, 0) {
 		return searchContext{}, apiError(400, "Search query must contain 1 to 500 characters", "invalid_search_query", 0)
 	}
 	if request.Limit < 1 || request.Limit > searchMaxLimit {
