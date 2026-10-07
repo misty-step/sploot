@@ -15,7 +15,6 @@ import (
 )
 
 var safeID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
-var safeShare = regexp.MustCompile(`^[A-Za-z0-9_-]{10,128}$`)
 
 func validateCapture(c Capture) error {
 	if c.Schema != CaptureSchema || c.CapturedAt.IsZero() || c.SourceRevision == "" || !c.Completeness.Database || !c.Completeness.Clerk || !c.Completeness.Objects || !c.Completeness.Verified {
@@ -149,7 +148,7 @@ func buildPlan(ctx context.Context, db *sql.DB, c Capture, mapping Mapping, repo
 	historical := map[string][]string{}
 	resolutions := map[string]ShareResolution{}
 	for _, resolution := range mapping.Shares {
-		if resolutions[resolution.AssetID].AssetID != "" || resolution.Reason == "" || resolution.Action != "revoke" && resolution.Action != "replace" || resolution.Action == "revoke" && resolution.Slug != "" || resolution.Action == "replace" && !safeShare.MatchString(resolution.Slug) {
+		if resolutions[resolution.AssetID].AssetID != "" || resolution.Reason == "" || resolution.Action != "revoke" && resolution.Action != "replace" || resolution.Action == "revoke" && resolution.Slug != "" || resolution.Action == "replace" && !contract.ValidShareSlug(resolution.Slug) {
 			return p, reject("share_resolution")
 		}
 		resolutions[resolution.AssetID] = resolution
@@ -228,7 +227,7 @@ func buildPlan(ctx context.Context, db *sql.DB, c Capture, mapping Mapping, repo
 			delete(resolutions, asset.ID)
 		}
 		if slug != nil {
-			if !safeShare.MatchString(*slug) || asset.DeletedAt != nil || usedSlugs[*slug] {
+			if !contract.ValidShareSlug(*slug) || asset.DeletedAt != nil || usedSlugs[*slug] {
 				issue("share_requires_explicit_resolution", asset.ID)
 			}
 			usedSlugs[*slug] = true

@@ -28,3 +28,26 @@ func TestValidAssetIDMatchesStoredIdentifierGrammar(t *testing.T) {
 		}
 	}
 }
+
+func TestValidShareSlugMatchesStoredShareGrammar(t *testing.T) {
+	cases := []struct {
+		name  string
+		slug  string
+		valid bool
+	}{
+		{name: "predecessor nanoid", slug: "abcdefghij", valid: true},
+		{name: "generated alphabet", slug: "Abc_def-0123456789XYZabcde", valid: true},
+		{name: "empty", slug: "", valid: false},
+		{name: "nine chars", slug: "abcdefghi", valid: false},
+		{name: "129 chars", slug: strings.Repeat("a", 129), valid: false},
+		{name: "128 chars", slug: strings.Repeat("a", 128), valid: true},
+		{name: "space", slug: "abcdefghij k", valid: false},
+		{name: "slash", slug: "abcdefghi/j", valid: false},
+		{name: "plus", slug: "abcdefghij+", valid: false},
+	}
+	for _, test := range cases {
+		if got := ValidShareSlug(test.slug); got != test.valid {
+			t.Fatalf("%s: ValidShareSlug(%q)=%v, want %v", test.name, test.slug, got, test.valid)
+		}
+	}
+}

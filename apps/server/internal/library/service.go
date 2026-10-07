@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"path"
-	"strings"
 
 	"github.com/mattn/go-sqlite3"
 	"github.com/misty-step/sploot/apps/server/internal/contract"
@@ -291,7 +290,7 @@ func (s *Service) Shared(ctx context.Context, slug string) (model.Asset, error) 
 	if s.db == nil {
 		return model.Asset{}, &model.APIError{Status: http.StatusServiceUnavailable, Message: "Library is temporarily unavailable", Retryable: true}
 	}
-	if len(slug) < 10 || len(slug) > 128 || strings.Trim(slug, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") != "" {
+	if !contract.ValidShareSlug(slug) {
 		return model.Asset{}, assetNotFound()
 	}
 	asset, err := scanAsset(s.db.QueryRowContext(ctx, `SELECT `+assetColumns+` FROM assets a WHERE a.share_slug = ?1 AND a.deleted_at IS NULL`, slug))
