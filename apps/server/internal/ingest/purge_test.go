@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/misty-step/sploot/apps/server/internal/contract"
 	"github.com/misty-step/sploot/apps/server/internal/database"
 	"github.com/misty-step/sploot/apps/server/internal/library"
 	"github.com/misty-step/sploot/apps/server/internal/model"
@@ -20,6 +21,14 @@ func requirePurgeStatus(t *testing.T, err error, status int) {
 	var apiError *model.APIError
 	if !errors.As(err, &apiError) || apiError.Status != status {
 		t.Fatalf("status=%d required, got %v", status, err)
+	}
+}
+
+func requirePurgeCode(t *testing.T, err error, status int, code string) {
+	t.Helper()
+	var apiError *model.APIError
+	if !errors.As(err, &apiError) || apiError.Status != status || apiError.Code != code {
+		t.Fatalf("status=%d code=%s required, got %v", status, code, err)
 	}
 }
 
@@ -290,4 +299,17 @@ func TestRejectedPurgeCommitNeverUnlinksRetainedMedia(t *testing.T) {
 		t.Fatalf("recovery removed a restored asset after commit rejection: %v", err)
 	}
 	file.Close()
+}
+
+func TestPurgeUsesStoredAssetIDGrammar(t *testing.T) {
+	db, owner, directory := ingestionDatabase(t)
+	s := localIngestion(t, db, directory)
+	ctx := context.Background()
+	missing := model.NewID()
+	requirePurgeCode(t, s.Purge(ctx, owner, missing), 404, "asset_not_found")
+	requirePurgeCode(t, s.Purge(ctx, owner, strings.Repeat("a", contract.AssetIDMaxLength)), 404, "asset_not_found")
+	for _, id := range []string{"", "asset\x00id", "asset\xffid", strings.Repeat("a", contract.AssetIDMaxLength+1)} {
+		requirePurgeCode(t, s.Purge(ctx, owner, id), 400, "invalid_request")
+	}
+	requirePurgeCode(t, s.Purge(ctx, "", missing), 401, "unauthorized")
 }

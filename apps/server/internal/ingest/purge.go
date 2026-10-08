@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/misty-step/sploot/apps/server/internal/contract"
 	"github.com/misty-step/sploot/apps/server/internal/medialock"
 	"github.com/misty-step/sploot/apps/server/internal/model"
 )
@@ -28,6 +29,9 @@ type purgeIntent struct {
 func (s *Service) Purge(ctx context.Context, owner, assetID string) error {
 	if owner == "" {
 		return &model.APIError{Status: http.StatusUnauthorized, Code: "unauthorized", Message: "Authentication is required"}
+	}
+	if !contract.ValidAssetID(assetID) {
+		return &model.APIError{Status: http.StatusBadRequest, Code: "invalid_request", Message: "Invalid asset or tag id"}
 	}
 	admission, err := medialock.Acquire(ctx, s.store.directory, true)
 	if err != nil {
