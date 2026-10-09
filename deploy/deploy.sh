@@ -191,11 +191,18 @@ host_switch() {
   [[ "$path" =~ ^/opt/sploot/releases/[0-9a-fA-F]+$ ]] || return 1
   [[ "$commit" =~ ^[0-9a-fA-F]+$ ]] || return 1
   [[ -x "$path/sploot" && -x "$path/library-backup" ]] || return 1
-  # Keep the existing production hardening/env bindings; replace only the
-  # historical fixed executable with the release link this script owns.
+  # Keep production hardening/env bindings; own the executable and its
+  # execve startup handshake so MainPID cannot still be systemd-executor.
   [[ -f "$unit" ]] || { printf 'production service binding is missing\n' >&2; return 1; }
   tmp=$(mktemp "${unit}.XXXXXX") || return 1
   if ! awk '
+    /^\[Service\]$/ {
+      print
+      print "Type=exec"
+      service = 1
+      next
+    }
+    /^Type=/ { next }
     /^ExecStart=/ {
       if (!replaced) {
         print "ExecStart="
@@ -205,7 +212,7 @@ host_switch() {
       next
     }
     { print }
-    END { if (!replaced) exit 1 }
+    END { if (!replaced || !service) exit 1 }
   ' "$unit" >"$tmp" \
     || ! chmod --reference="$unit" "$tmp" \
     || ! chown --reference="$unit" "$tmp" \
@@ -217,6 +224,10 @@ host_switch() {
   set_commit "$commit" || return 1
   ln -sfn "$path" /opt/sploot/current || return 1
   systemctl daemon-reload || return 1
+  [[ "$(systemctl show --property=Type --value sploot.service)" == exec ]] || {
+    printf 'production service must use Type=exec before executable verification\n' >&2
+    return 1
+  }
   restart_sploot || return 1
   pid=$(systemctl show --property=MainPID --value sploot.service) || return 1
   executable=$(readlink -f "/proc/$pid/exe") || return 1

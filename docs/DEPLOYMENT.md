@@ -76,10 +76,14 @@ not a potentially stale `current` link or environment-bound revision. It points
 `/opt/sploot/current` at the new
 directory, sets `SPLOOT_DEPLOYMENT_COMMIT` in `/etc/sploot/production.env`, and
 binds the existing production service's `ExecStart` to `/opt/sploot/current/sploot`
-without changing its environment or hardening settings. After restart, the script
-requires `/proc/<MainPID>/exe` to resolve to the selected release and prints its
-SHA-256. An old fixed executable cannot pass by reporting a new environment-bound
-commit.
+and its startup contract to `Type=exec`, without changing environment or
+hardening settings. The script checks the effective type after `daemon-reload`;
+a later drop-in cannot silently restore `Type=simple`. `Type=exec` makes restart
+wait for the release's `execve`, not merely systemd's fork. Application readiness
+is still checked separately below.
+After restart, the script requires `/proc/<MainPID>/exe` to resolve to the selected
+release and prints its SHA-256. An old fixed executable cannot pass by reporting
+a new environment-bound commit.
 
 The release check polls `https://sploot.mistystep.io` for three minutes:
 `/api/version` must report the new sha, `/api/health` must be `ok`, anonymous
