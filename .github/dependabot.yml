@@ -2,6 +2,7 @@ version: 2
 updates:
   # The root pnpm workspace lock owns extension, MCP, common and Go tooling.
   # Do not recreate per-app lockfiles or configure duplicate npm update roots.
+  # Keep the full lock resolvable under the updater's publication-age quarantine.
   - package-ecosystem: npm
     directory: /
     schedule:
