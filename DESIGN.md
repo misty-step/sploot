@@ -243,28 +243,21 @@ surface and every future design pass:
    they move with the card on hover, never anchored outside it.
 5. Light and dark are both first-class on every surface.
 
-### Implemented Wrappers
+### Implementation Ownership
 
-Implemented product wrappers live in `apps/web/components/sploot`:
+The Go product composes server templates in `apps/server/internal/web/templates`
+and styles them in `apps/server/internal/web/static/app.css`. The extension owns
+its popup components and tokens in `apps/extension/entrypoints/popup/`.
 
-- `SearchField` — the search console; the landing and app centerpiece.
-- `MemeCell` — one toy card in the pile with its reveal states.
-- `IconButton` — the ink-mini compact control; `TileActionRail` composes it
-  into the cell's heart / share / trash row.
-- `StatBlock` — the library readout (mono key over display value).
-- `StatusBar` — the machinery row (index / scorer / mode / route / status).
-- `StickerTab`, `ClusterPile`, `PileMark` — pill chips,
-  pile previews, brand mark, landing hero.
-- `BangerStamp` is legacy: the heart in `TileActionRail` is the only banger
-  marker going forward.
-
-New product surfaces should compose these wrappers before creating one-off
-console, cell, chip, pile, banger, or stat treatments.
+The predecessor's React wrappers were retired with Next.js. Their historical
+implementation is preserved at commit `4c1eb5f1313a578347bc3f4b95fb2a3c10cd6e8f`;
+they are not a current component library. Retirement does not redesign either
+surviving surface.
 
 ### Motion
 
-Motion tokens live in `apps/web/app/globals.css` and are the only sanctioned
-timing values:
+The extension's motion tokens live in
+`apps/extension/entrypoints/popup/style.css`. The design vocabulary remains:
 
 | Token | Value | Use |
 |---|---|---|
@@ -349,11 +342,10 @@ as the brand.
 
 ## 8. Accessibility and Responsiveness
 
-- All focus states must be visible: a 4px `--sploot-focus` outline at 3px
-  offset (0 offset on inputs to avoid double borders). Global rules in
-  `apps/web/app/globals.css` own this; do not restyle focus per component.
-- Interactive targets must be at least 44px on mobile
-  (`--sploot-touch-target`).
+- Focus must remain visible. The extension's `--sploot-focus` and the native
+  stylesheet's `--focus` own their respective global focus rules; do not restyle
+  focus per component. Native controls remain unchanged by predecessor retirement.
+- Interactive targets must be at least 44px on mobile.
 - Color cannot be the only indicator for favorite, selected, failed, or active
   states. The heart uses fill, the match state uses a badge plus the ring.
 - Status and count values should use tabular numerals when compared.
@@ -375,7 +367,9 @@ Current design direction is based on:
   locked AFD-3 toybox; round 4 (2026-07-10) locked AFD-8 "ink minis" as the
   compact-control grammar, with AFD-9's candy-chip treatment adopted for the
   44px mobile dock only.
-- Live tokens and physics utilities in `apps/web/app/globals.css`.
+- Surviving styles in `apps/server/internal/web/static/app.css` and
+  `apps/extension/entrypoints/popup/style.css`; historical toybox tokens at commit
+  `4c1eb5f1313a578347bc3f4b95fb2a3c10cd6e8f`.
 
 Governance rules:
 
@@ -385,11 +379,10 @@ Governance rules:
 - Record source/provenance changes in `design-contract.md`.
 - Run `pnpm lint:design` before shipping visual-system changes. The lint must
   require both the contract artifacts and at least one concrete product-surface
-  adoption point. It also enforces extension popup parity because saving from
-  Chrome is part of the product surface: every `--sploot-*` value in
-  `apps/extension/entrypoints/popup/style.css` must equal the web globals in
-  BOTH themes, the popup must ship dark mode and reduced-motion support, and
-  built artifacts must carry no debug affordances (sploot-045).
+  adoption point. It protects the native and extension surfaces independently:
+  the popup must ship dark mode and reduced-motion support, and built artifacts
+  must carry no debug affordances (sploot-045). No parity check may depend on the
+  retired Next.js stylesheet.
 - Exploratory design catalogs stay on branches or local artifacts until
   production movement is explicitly approved.
 

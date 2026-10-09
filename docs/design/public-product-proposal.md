@@ -19,7 +19,7 @@ This document authorizes no implementation, enrollment, payment, identity,
 provider, or production change. The approved canonical origin is
 `https://sploot.mistystep.io`; registration remains closed. Cutover acceptance
 and runtime retirement belong to the
-[runtime operations guide](../../apps/web/docs/DEPLOYMENT.md#canonical-hosted-go-instance)
+[runtime operations guide](../DEPLOYMENT.md#canonical-hosted-go-instance)
 and Linear MIS-46/MIS-47, not this proposal.
 
 ## What exists, and what this would change
@@ -434,14 +434,13 @@ offer export/manage storage, not an unpriced custom-storage promise.
 
 ### What the evidence can and cannot support
 
-The checked-in [economics report](../../economics/REPORT.md),
-[workloads](../../economics/workloads.json) and
-[rates](../../economics/rates.json) model the predecessor's
-Blob/Replicate/Neon/Clerk/platform cost structure. Their $13/10 GB Collector and
-$49/100 GB Archive are modeled candidates, not live offers. The report explicitly
-lacks fully loaded margin evidence and verified provider hard caps. Do not use
-its direct-variable margins or its aggregate historical usage as native-Go cost,
-market demand, conversion, or a “typical meme size” estimate.
+The historical predecessor economics report, workloads and rates remain in
+[immutable source history](https://github.com/misty-step/sploot/tree/4c1eb5f1313a578347bc3f4b95fb2a3c10cd6e8f/economics),
+not a current runtime policy. They modeled Blob/Replicate/Neon/Clerk/platform
+costs; their $13/10 GB Collector and $49/100 GB Archive were candidates, not live
+offers. The report lacked fully loaded margin evidence and verified provider
+hard caps. Its direct-variable margins and aggregate historical usage are not
+native-Go cost, market demand, conversion, or a “typical meme size” estimate.
 
 The native service replaces per-run inference charges with CPU contention,
 filesystem capacity and host/network costs; it does not make them free. Current
@@ -465,7 +464,7 @@ Public list prices read for this review, **not account/billing readbacks**:
 The current [backup runner](../../apps/server/scripts/backup-remote.py) creates
 an entire native snapshot archive on each run, not a delta, with hourly objects
 and an additional daily copy. The
-[recorded retention policy](../../apps/web/docs/DEPLOYMENT.md#canonical-hosted-go-instance)
+[recorded retention policy](../DEPLOYMENT.md#canonical-hosted-go-instance)
 expires hourly snapshots after four days and daily snapshots after 31 days.
 **Illustrative assumption, not measured usage:** steady successful hourly runs,
 an unchanged full library, roughly 96 hourly plus 31 daily copies, and lifecycle
@@ -579,7 +578,7 @@ privacy, payments or unit economics are ready.
 
 | Gate | Evidence required before the associated launch |
 | --- | --- |
-| Existing-user production service | Cutover acceptance is recorded in the [runtime operations guide](../../apps/web/docs/DEPLOYMENT.md#canonical-hosted-go-instance) and Linear MIS-46/MIS-47. It does not pass the consumer-design, enrollment or billing gates below. |
+| Existing-user production service | Cutover acceptance is recorded in the [runtime operations guide](../DEPLOYMENT.md#canonical-hosted-go-instance) and Linear MIS-46/MIS-47. It does not pass the consumer-design, enrollment or billing gates below. |
 | Consumer design adoption | Operator reviews desktop/mobile shelf, search, Save, viewer and ink-mini states at actual scale in both themes. Browser/keyboard/reduced-motion evidence includes empty, failed, processing, partial batch and changed-account states. No private media in the review packet. |
 | Capture distribution claims | Real release receipt for the marketed extension channel; actual phone/browser exercise for the claimed mobile path. Keep iOS Shortcut out of promises without signing and physical-device acceptance. |
 | Open enrollment | Reliable ownership verification and account recovery, abuse/cost admission across every client, capacity reservation, privacy/terms/support/account-deletion process, and explicit approval to open registration. Migration claims alone do not solve consumer password recovery. |
@@ -619,7 +618,7 @@ experiment.
 This is a source-and-contract review, not fresh runtime, device or economic
 acceptance. Relevant sources:
 
-- [Runtime operations](../../apps/web/docs/DEPLOYMENT.md),
+- [Runtime operations](../DEPLOYMENT.md),
   [DESIGN.md](../../DESIGN.md), and [VISION.md](../../VISION.md), distinguishing
   operating procedure, visual law and intent.
 - Go [pages](../../apps/server/internal/web/templates/pages.html),
@@ -627,12 +626,12 @@ acceptance. Relevant sources:
   [media cards](../../apps/server/internal/web/templates/media.html),
   [client state](../../apps/server/internal/web/static/app.js), and
   [current CSS](../../apps/server/internal/web/static/app.css).
-- [Go route/auth/storage contract](../../apps/web/docs/API.md#local-go-route-ownership)
-  and [published save/search scope](../../apps/web/docs/PUBLIC_API.md).
+- [Go route/auth/storage contract](../API.md#local-go-route-ownership)
+  and [published save/search scope](../PUBLIC_API.md).
 - [Shared media limits](../../packages/common/src/constants.ts),
   [extension pairing/receipt UI](../../apps/extension/entrypoints/popup/App.tsx),
   and [MCP handlers](../../apps/mcp/src/tools.ts).
-- [Economic report](../../economics/REPORT.md),
+- [Historical economic report](https://github.com/misty-step/sploot/blob/4c1eb5f1313a578347bc3f4b95fb2a3c10cd6e8f/economics/REPORT.md),
   [snapshot runner](../../apps/server/scripts/backup-remote.py), and the public
   Stripe/R2 price pages linked above, read on 2026-09-10. Public list prices are
   assumptions, not operator account receipts or a rerun native economic model.

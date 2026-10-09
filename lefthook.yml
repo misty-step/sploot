@@ -12,10 +12,6 @@ pre-commit:
       run: pnpm secrets:check
       # Repo-specific scanner for Neon/Postgres URLs and service tokens
 
-    lint-web:
-      glob: "apps/web/**/*.{js,ts,jsx,tsx}"
-      run: pnpm --filter web lint
-
     lint-extension:
       glob: "apps/extension/**/*.{js,ts,jsx,tsx}"
       run: pnpm --filter extension lint
@@ -43,6 +39,3 @@ pre-push:
         gitleaks git --redact=100 --config .gitleaks.toml --log-opts "$range" .
     typecheck:
       run: pnpm turbo run type-check
-    # Note: Tests require postgres database - run via CI or manually
-    # test:
-    #   run: pnpm turbo run test

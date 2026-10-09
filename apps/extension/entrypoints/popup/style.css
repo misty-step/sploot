@@ -1,12 +1,11 @@
 /* Sploot extension popup — TOYBOX grammar (lab-034, AFD-8 "ink minis").
  *
- * Token VALUES are copied verbatim from apps/web/app/globals.css (the token
- * home) so saving from Chrome looks like the same product: toy ink shells,
- * candy fills, hard drop-height elevation, both themes. pnpm lint:design
- * asserts value parity between this file and the web globals — when the web
- * palette moves, move these with it. */
+ * Token VALUES follow DESIGN.md so saving from Chrome keeps the toy ink
+ * shells, candy fills, hard drop-height elevation and both themes.
+ * pnpm lint:design checks this file against the design-law color table;
+ * palette changes require the same reviewed contract change here. */
 
-/* ── Design tokens: light / default (mirrors globals.css :root) ── */
+/* ── Design tokens: light / default ── */
 :root {
   --sploot-ink: #1c1547;            /* deep toy ink — text, shells, outlines */
   --sploot-paper: #cfe7ff;          /* the shelf — resting dotted background */
@@ -36,7 +35,7 @@
   --sploot-grid-line: rgba(28, 21, 71, 0.05);
 }
 
-/* ── Design tokens: dark / night shelf (mirrors globals.css .dark) ── */
+/* ── Design tokens: dark / night shelf (DESIGN.md palette) ── */
 @media (prefers-color-scheme: dark) {
   :root {
     --sploot-ink: #fff3dc;          /* warm cream ink */
@@ -68,7 +67,7 @@
   }
 }
 
-/* ── Structural tokens (theme-independent, mirrors globals.css) ── */
+/* ── Structural tokens (theme-independent, DESIGN.md grammar) ── */
 :root {
   --sploot-border: 3px solid var(--sploot-ink);
   --sploot-border-thin: 2px solid var(--sploot-ink);

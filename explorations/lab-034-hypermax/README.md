@@ -23,7 +23,7 @@ leon-soft-skill, `brut` leon-brutalist-skill, `hall` nutlope-hallmark,
 ## Run it
 
 ```bash
-# from the REPO ROOT (image paths resolve against apps/web/public)
+# from the REPO ROOT (image paths resolve against docs/design-labs/media)
 python3 explorations/lab-034-hypermax/serve.py 4034
 # → http://localhost:4034/explorations/lab-034-hypermax/index.html
 ```
@@ -32,15 +32,6 @@ Arrow keys ←/→ step options. Viewport presets + custom sizes in the top bar;
 selection persists in localStorage. Every option page has a fixed ◐ toggle
 (bottom-left) that flips that system's light/dark theme live.
 
-## Verify a round
-
-```bash
-node explorations/lab-034-hypermax/sweep.mjs   # server must be up on :4034
-```
-
-Asserts every option renders, zero console errors, no phone-width horizontal
-scroll, theme toggle present; drops light/dark/390px screenshots in
-`evidence/`.
 
 ## Round mechanics
 

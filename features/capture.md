@@ -17,4 +17,4 @@ In an isolated library, upload a PNG, GIF, and video and compare each downloaded
 
 ## Gotchas
 
-`apps/web` is a retired predecessor, not the Go save path. A device session is narrower than browser account authority. Do not upload into or remove the persistent `.sploot-local/library`; the walk allocates disposable accounts and directories. A MIME label alone does not prove a supported original.
+The retired predecessor is not the Go save path. A device session is narrower than browser account authority. Do not upload into or remove the persistent `.sploot-local/library`; the walk allocates disposable accounts and directories. A MIME label alone does not prove a supported original.

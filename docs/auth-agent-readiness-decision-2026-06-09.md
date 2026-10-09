@@ -2,10 +2,10 @@
 
 Historical Powder card: `sploot-018` (Powder is retired).
 
-Accepted rationale for the recorded boundary slice, not a current replacement
-roadmap. Alternative-provider verdicts below are unselected proposals; consult
-[AUTH.md](../apps/web/docs/AUTH.md) for supported behavior and Linear for any
-selected unresolved work.
+Historical accepted rationale for the retired predecessor boundary slice, not
+a current replacement roadmap or runnable auth recipe. Current Go credential
+scopes belong in [API.md](./API.md#authentication); Linear owns selected work.
+The predecessor source remains in immutable `4c1eb5f` history, not `apps/web`.
 
 ## Decision
 

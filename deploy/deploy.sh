@@ -187,13 +187,45 @@ restart_sploot() {
 }
 
 host_switch() {
-  local path=$1 commit=$2
+  local path=$1 commit=$2 unit=/etc/systemd/system/sploot.service.d/production.conf tmp pid executable
   [[ "$path" =~ ^/opt/sploot/releases/[0-9a-fA-F]+$ ]] || return 1
   [[ "$commit" =~ ^[0-9a-fA-F]+$ ]] || return 1
   [[ -x "$path/sploot" && -x "$path/library-backup" ]] || return 1
+  # Keep the existing production hardening/env bindings; replace only the
+  # historical fixed executable with the release link this script owns.
+  [[ -f "$unit" ]] || { printf 'production service binding is missing\n' >&2; return 1; }
+  tmp=$(mktemp "${unit}.XXXXXX") || return 1
+  if ! awk '
+    /^ExecStart=/ {
+      if (!replaced) {
+        print "ExecStart="
+        print "ExecStart=/opt/sploot/current/sploot serve"
+        replaced = 1
+      }
+      next
+    }
+    { print }
+    END { if (!replaced) exit 1 }
+  ' "$unit" >"$tmp" \
+    || ! chmod --reference="$unit" "$tmp" \
+    || ! chown --reference="$unit" "$tmp" \
+    || ! mv -f "$tmp" "$unit"; then
+    rm -f "$tmp"
+    printf 'production executable binding update failed\n' >&2
+    return 1
+  fi
   set_commit "$commit" || return 1
   ln -sfn "$path" /opt/sploot/current || return 1
+  systemctl daemon-reload || return 1
   restart_sploot || return 1
+  pid=$(systemctl show --property=MainPID --value sploot.service) || return 1
+  executable=$(readlink -f "/proc/$pid/exe") || return 1
+  [[ "$executable" == "$path/sploot" ]] || {
+    printf 'wrong running executable: expected=%s actual=%s\n' "$path/sploot" "$executable" >&2
+    return 1
+  }
+  printf 'process executable verified pid=%s path=%s\n' "$pid" "$executable"
+  sha256sum "/proc/$pid/exe"
 }
 
 backup_is_fresh() {
@@ -254,7 +286,7 @@ host_backup() {
 }
 
 host_activate() {
-  local sha=$1 dest prev prev_commit
+  local sha=$1 dest prev prev_commit prev_pid prev_executable
   [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || exit 1
   dest="/opt/sploot/releases/$sha"
   mkdir -p "$dest"
@@ -265,11 +297,12 @@ host_activate() {
   fi
   rm -f "/tmp/sploot-$sha" "/tmp/library-backup-$sha"
   host_backup
-  prev=$(readlink -f /opt/sploot/current)
-  prev_commit=$(awk -F= '$1=="SPLOOT_DEPLOYMENT_COMMIT" { print $2; exit }' /etc/sploot/production.env)
-  prev_commit=${prev_commit//$'\r'/}
-  [[ "$prev" =~ ^/opt/sploot/releases/[0-9a-fA-F]+$ ]]
-  [[ "$prev_commit" =~ ^[0-9a-fA-F]+$ ]]
+  # A stale current link or diagnostic binding is not the rollback authority.
+  prev_pid=$(systemctl show --property=MainPID --value sploot.service)
+  prev_executable=$(readlink -f "/proc/$prev_pid/exe")
+  [[ "$prev_executable" =~ ^/opt/sploot/releases/[0-9a-fA-F]+/sploot$ ]]
+  prev=${prev_executable%/sploot}
+  prev_commit=${prev##*/}
   ln -sfn "$prev" /opt/sploot/previous
   printf '%s\n' "$prev_commit" > /opt/sploot/previous.commit
   chmod 644 /opt/sploot/previous.commit

@@ -2,11 +2,11 @@
 
 ## Overview
 
-Sploot has two separate web runtimes. `apps/server` is the self-contained
-product, hosted at `https://sploot.mistystep.io` and also runnable locally:
+Sploot has one web runtime. `apps/server` is the self-contained product,
+hosted at `https://sploot.mistystep.io` and also runnable locally:
 Go HTTP, server-rendered HTML/HTMX, local accounts, SQLite/sqlite-vec,
-private filesystem media, and CPU CLIP inference. `apps/web` retains the
-retired Next.js predecessor source and its vendor services and data.
+private filesystem media, and CPU CLIP inference. The Next.js predecessor
+workspace is retired; its providers and complete private archive remain retained.
 
 Starting Go does not connect to or alter the predecessor's identities or data.
 The explicit offline converter consumes a complete private capture and an
@@ -44,13 +44,14 @@ graph TB
   CPU --> CACHE[Pinned ONNX models + runtime cache]
   RECOVERY[Backup / verify / restore] --> DB
   RECOVERY --> MEDIA
-  NEXT[apps/web: retired Next.js predecessor] --> VENDOR[Retained Clerk / Neon + pgvector / Blob / Replicate contracts]
+  ARCHIVE[Indefinite private predecessor archive] --> IMPORT[Offline conversion + explicit owner map]
+  IMPORT --> DB
 ```
 
 Each client targets one explicitly selected origin. There is no request-time
 dual write, implicit identity mapping, or vendor fallback. See
-[API ownership](./apps/web/docs/API.md) and
-[runtime operations](./apps/web/docs/DEPLOYMENT.md) for the executable boundary.
+[API ownership](./docs/API.md) and
+[runtime operations](./docs/DEPLOYMENT.md) for the executable boundary.
 
 ## Components
 
@@ -83,21 +84,20 @@ indexing before closing native sessions and the database. The Dockerfile builds 
 CGO binaries and includes FFmpeg/ffprobe; it requires persistent library and
 model-cache volumes, not PostgreSQL clients or a Prisma migration job.
 
-### apps/web (retained Next.js predecessor)
-**Purpose**: Retain the retired product's source, provider data, and recovery
-contracts.
+### Predecessor recovery boundary
 
-Its Next.js routes/UI, Clerk, Prisma/Neon Postgres with pgvector, Vercel Blob,
-Replicate, Sentry, billing/limiter state, and operational tooling remain separate.
-Named Prisma migrations and the Node PRE_DEPLOY migration runner belong to the
-retained predecessor; they do not initialize the Go SQLite library. There is
-no active DigitalOcean Sploot app to receive automatic deployments. Existing
-predecessor CI gates remain intact.
+The retired Next.js workspace is not a runnable package or a deployment target.
+Its complete source and named Prisma migrations remain in immutable Git history
+at `4c1eb5f1313a578347bc3f4b95fb2a3c10cd6e8f`. The protected source capture,
+schema, Clerk identities, PostgreSQL rows and media remain separate from native
+snapshots and are retained indefinitely. Source retirement does not delete
+providers, archives or library data, and the predecessor must never resume writes
+after native saves.
 
 The Go route surface intentionally differs: it uses a completed owner ZIP rather
 than the predecessor's multipart export lifecycle, and does not register piles,
-taste, advanced search, SSE, or consumer billing routes. Historical predecessor
-ADRs and curated fixtures are not the local model or schema authority.
+taste, advanced search, SSE, or consumer billing routes. Historical source is not
+the local model or schema authority.
 
 ### apps/extension (WXT + React)
 **Purpose**: Capture originals and screenshots into a selected Sploot instance.
@@ -136,10 +136,9 @@ and credential lifecycles.
 tokens permit those verbs only, not library listing, private media, export,
 deletion, or account/token management. A matching result contains private media
 references, not a public download grant. The
-[Shortcut procedure](./apps/web/docs/shortcuts/save-to-sploot.md) distinguishes
-instance-specific source from the predecessor's static packaging source.
-Apple signing, physical iPhone acceptance, and Web Store publication are
-separate from local web/Chromium proof.
+[Shortcut procedure](./docs/shortcuts/save-to-sploot.md) owns instance-configured
+unsigned source, Apple signing, and physical iPhone acceptance. Web Store
+publication is also separate from local web/Chromium proof.
 
 ## Data Flow
 
@@ -211,7 +210,7 @@ authentication attempts, and the signing key. Restored users sign in with their 
 mint new personal tokens, and pair devices again; this does not revoke
 credentials on the untouched source.
 
-[Deployment and recovery](./apps/web/docs/DEPLOYMENT.md#library-backup-and-isolated-restore)
+[Deployment and recovery](./docs/DEPLOYMENT.md#library-backup-and-isolated-restore)
 owns commands, directory privacy, and exact parity-before-start requirements.
 Native snapshots do not replace the complete predecessor archive.
 `internal/predecessor` owns offline conversion: explicit owner mapping, exact
@@ -225,8 +224,7 @@ write authority.
 ## Key Decisions
 
 - Root ADRs: `docs/adr/0001-*.md`, `docs/adr/0002-*.md`
-- Web ADRs: `apps/web/docs/adr/00*-*.md` (embeddings, vector storage, caching, PWA)
-- Predecessor-only database connection rules: `apps/web/docs/architecture/database-connection.md`
+- Historical predecessor decisions and migration history: [immutable source archive](https://github.com/misty-step/sploot/tree/4c1eb5f1313a578347bc3f4b95fb2a3c10cd6e8f/apps/web)
 
 ## Module Boundaries (Depth Check)
 

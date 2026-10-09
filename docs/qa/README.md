@@ -4,11 +4,6 @@ QA packets are per-run output: `packet.md` (scope, checks, verdict, residual
 risk), authenticated screenshots, and full command transcripts. They are not
 fixtures and are **not committed by default**.
 
-`qa:evidence` writes a fresh directory under the gitignored
-`.sploot-local/qa-evidence/<date>-<slug>-<unique>/`. `--out-dir <path>` chooses an
-exact new packet directory instead; relative paths resolve from `apps/web`.
-An existing output directory is an error, even if its prior run was incomplete.
-Packet filenames and relative links are unchanged.
 
 The historical `docs/qa/evidence/` collection remains in place. A selected
 screenshot consumed by README or a shipped demo is a public product asset,
@@ -23,7 +18,7 @@ the server to exercise a fresh private temporary library with real accounts,
 media and pinned local inference. The command prints per-story results and
 the retained desktop/mobile screenshot directory. Without `--keep`, a successful
 run removes only its own newly allocated directory; failed runs retain diagnostics.
-See [the acceptance gates](../../apps/web/docs/DEPLOYMENT.md#acceptance-gates) for prerequisites and
+See [the acceptance gates](../DEPLOYMENT.md#acceptance-gates) for prerequisites and
 real unpacked-extension acceptance.
 
 Retained Go runs contain test databases, account hashes and media as well as
@@ -47,58 +42,6 @@ nightly receipt and eight criterion markers for MIS-150 are retained under
 `docs/qa/evidence/2026-09-25-mis-150-foundation-walk/` beyond Actions artifact
 expiry; their head/tree identify the historical master candidate, not a later
 checkout. The gauntlet removes only its own disposable library on success.
-The unrelated predecessor QA procedure below remains intact.
-
-## Producing a predecessor packet
-
-From `apps/web`, with the local pgvector container running
-(`sploot-test-postgres` on 5432; `DATABASE_URL` defaults to
-`postgresql://test:test@localhost:5432/sploot_test`):
-
-```bash
-pnpm qa:evidence \
-  --slug share-target \
-  --intent "share-target POST saves an image into the library" \
-  --routes /app \
-  --tests __tests__/api/share-target.test.ts \
-  --risk "real-device share sheet not exercised"
-```
-
-The runner seeds deterministic fixtures (`qa:seed`), boots a dev server with
-the qa-local auth harness enabled, mints a signed token for `qa-design-user`,
-walks each route at each viewport with agent-browser (waiting for visible
-images to decode), captures console/page errors, runs any named test paths,
-and writes the packet. Exit code is non-zero when the verdict is FAIL (a
-check failed or a page error was captured). Console errors never silently
-pass: they are listed per walk and flagged next to the verdict.
-
-Useful flags: `--gates` adds lint + type-check as checks; `--base-url` reuses
-a running server; `--no-seed` skips seeding; `--seed-count 60` seeds above a
-feature threshold; `--expect-piles --piles-min-assets 50` records and validates
-the authenticated `/api/piles` response; `--exercise-pile-filter` opens `/app`,
-clicks a pile filter, verifies selected/all states plus a non-empty gallery, and
-captures `pile-filter-selected-1440x900.png`; `--expect-taste` records and
-validates that taste-ranked assets differ from seeded shuffle and that
-`/api/taste/profile` is ready; `--viewports 1440x900,390x844` is the default.
-
-Use `--out-dir` when an approved retained artifact location is available:
-
-```bash
-pnpm qa:evidence \
-  --slug share-target \
-  --intent "share-target POST saves an image into the library" \
-  --out-dir /approved-artifacts/new-share-target-run \
-  --routes /app \
-  --risk "real-device share sheet not exercised"
-```
-
-Replace that illustrative path with an authorized, new directory. The runner
-only writes local files: it does not upload, redact, set access controls, or
-guarantee retention. Keep new raw output outside tracked source directories.
-Local ignored output is not durable evidence until retained appropriately.
-The retired `dev:local:down` command is not a cleanup procedure. Never delete
-`.sploot-local/` to remove a packet: it now also contains the persistent local
-library. Retain needed evidence, then remove only the exact run-owned directory.
 
 ## Reading a packet
 
@@ -110,26 +53,25 @@ library. Retain needed evidence, then remove only the exact run-owned directory.
 
 ## Ownership and safe handling
 
-- **Repository inputs and product assets:** the QA harness, deterministic seed
-  data, curated evaluation fixtures (including intentionally precomputed
-  embeddings), portable procedures, and selected sanitized public/demo/PWA
-  screenshots with their required publishing manifests.
+- **Repository inputs and product assets:** the QA harness, curated fixtures,
+  portable procedures, and selected sanitized public/demo/PWA screenshots with
+  their required publishing manifests. Historical predecessor packets retain
+  their original scope; they do not claim current Go verification.
 - **Linear:** the current work's intent, a concise result and residual risk,
   source revision, exercised environment/surface, and a link to retained
   evidence. A packet's PASS is not proof of deployment or unexercised devices.
 - **Approved retained artifact storage:** full packets, screenshots, traces,
   and transcripts, with access and retention appropriate to their contents.
-  Existing CI artifact consumers keep their own output paths; the gallery
-  workflow uses `apps/web/test-results/` and its `.next` provenance, not this
-  packet directory.
+  Existing CI artifact consumers keep their own output paths; the Go story walk
+  owns `target/walk/`, not a committed packet directory.
 
-Default seeding is a useful safety boundary, not a sanitization guarantee.
-`--no-seed` and `--base-url` may expose existing authenticated library data.
-Inspect/redact output before sharing; never publish credentials, private memes,
-request headers, or unrestricted raw transcripts to a public PR or Linear item.
-Use a sanitized conclusion and permission-appropriate link instead.
+Isolated accounts are a useful safety boundary, not a sanitization guarantee.
+Existing authenticated libraries may expose private data. Inspect/redact output
+before sharing; never publish credentials, private memes, request headers, or
+unrestricted raw transcripts to a public PR or Linear item. Use a sanitized
+conclusion and permission-appropriate link instead.
 
 Do not relocate or delete historical packets as part of a new run. Preserve
 README/demo consumers and their provenance; promoting a new selected asset
 requires deliberate content/privacy review, not wholesale packet commitment.
-Auth/seeding internals are documented in `apps/web/docs/AUTH.md`.
+Current credential scopes are documented in [API.md](../API.md#authentication).

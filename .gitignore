@@ -15,8 +15,6 @@ node_modules/
 dist/
 .output/
 .wxt/
-.next/
-.next-*/
 out/
 build/
 coverage/
@@ -58,20 +56,6 @@ Thumbs.db
 .vscode/
 tmp/
 temp/
-
-# Next.js
-next-env.d.ts
-
-# PWA
-/apps/web/public/sw.js
-/apps/web/public/sw.js.map
-/apps/web/public/workbox-*.js
-
-# Prisma
-/apps/web/lib/generated/prisma
-
-# Clerk
-.clerk/
 
 # Local verification worktrees — preserve separately from repository source
 .worktrees/

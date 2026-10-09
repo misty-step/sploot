@@ -38,7 +38,7 @@ const SECTIONS = [
     id: 'FEED',
     title: 'gallery / feed layout',
     status: 'LOCKED · AFD-FEED-1 — masonry + pile chips, zero cropping',
-    note: 'Operator lock (2026-07-10): masonry with pile chips above the wall; every meme rendered full, never cropped. Converges into apps/web after round 2 closes. Pile chips ship when piles exist.',
+    note: 'Operator lock (2026-07-10): masonry with pile chips above the wall; every meme rendered full, never cropped. Historical convergence targeted the retired Next predecessor, not the current Go implementation. Pile chips require real piles.',
     options: [
       { id: 'BASE-FEED', label: 'shipped feed', baseline: true },
       { id: 'AFD-FEED-1', label: 'LOCKED WINNER · masonry + pile chips above the wall' },

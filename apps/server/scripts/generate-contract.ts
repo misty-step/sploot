@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { ASSET, TAG, UPLOAD, normalizeMimeType } from '@sploot/common';
 
-const root = new URL('../../../', import.meta.url);
 const destination = new URL('../internal/contract/generated.go', import.meta.url);
 const constants = {
   UploadMaxBytes: UPLOAD.maxSize,
@@ -65,10 +64,6 @@ const outputs = [
   [destination, formatted.stdout],
   [vendorDestination, await readFile(vendorSource, 'utf8')],
   [vendorLicenseDestination, await readFile(vendorLicenseSource, 'utf8')],
-  ...await Promise.all([192, 512].map(async size => [
-    new URL(`../internal/web/static/icon-${size}.png`, import.meta.url),
-    await readFile(new URL(`apps/web/public/icons/icon-${size}x${size}.png`, root)),
-  ] as const)),
 ] as const;
 for (const [path, content] of outputs) {
   if (process.argv.includes('--check')) {

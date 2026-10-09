@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # The root pnpm workspace lock owns extension, MCP, common and Go tooling.
+  # Do not recreate per-app lockfiles or configure duplicate npm update roots.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+  - package-ecosystem: gomod
+    directory: /apps/server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10

@@ -3,7 +3,7 @@
 Use this for `apps/server` runtime changes or establishing a fresh verification
 capability. The existing `smoke` command exercises the real product, not a mock
 backend. For a small UI change, exercise its journey in an isolated library;
-do not claim every journey was tested. The [deployment manual](../../../apps/web/docs/DEPLOYMENT.md#acceptance-gates)
+do not claim every journey was tested. The [deployment manual](../../../docs/DEPLOYMENT.md#acceptance-gates)
 owns prerequisites and shipping gates; `apps/server/scripts/local-gauntlet.ts`
 owns executable stories. Do not replace these with another wrapper.
 

@@ -5,25 +5,6 @@ import { execFileSync } from 'node:child_process';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-export const TELEMETRY_PRODUCER_INVENTORY = [
-  ['apps/web/hooks/use-upload-queue.ts', 'track(', 'browser product events', 'first-party:/api/telemetry'],
-  ['apps/web/hooks/use-assets.ts', 'track(', 'browser product events', 'first-party:/api/telemetry'],
-  ['apps/web/app/app/page.tsx', 'track(', 'browser product events', 'first-party:/api/telemetry'],
-  ['apps/web/components/error-boundary.tsx', 'sendClientErrorTelemetry', 'browser error signal', 'first-party:/api/telemetry'],
-  ['apps/web/components/share/share-page-error-boundary.tsx', 'sendClientErrorTelemetry', 'browser error signal', 'first-party:/api/telemetry'],
-  ['apps/web/components/library/image-tile-error-boundary.tsx', 'sendClientErrorTelemetry', 'browser error signal', 'first-party:/api/telemetry'],
-  ['apps/web/app/error.tsx', 'sendClientErrorTelemetry', 'browser error signal', 'first-party:/api/telemetry'],
-  ['apps/web/app/global-error.tsx', 'sendClientErrorTelemetry', 'browser error signal', 'first-party:/api/telemetry'],
-  ['apps/web/app/app/error.tsx', 'sendClientErrorTelemetry', 'browser error signal', 'first-party:/api/telemetry'],
-  ['apps/web/components/library/image-tile.tsx', 'postBlobLoadFailure', 'browser storage health signal', 'first-party:/api/telemetry'],
-  ['apps/web/lib/performance-metrics.ts', 'postPerformanceMetric', 'browser performance metrics', 'first-party:/api/telemetry'],
-  ['apps/web/lib/performance-monitor.ts', 'trackTiming', 'browser/server timing metrics', 'structured logger'],
-  ['apps/web/app/api/telemetry/route.ts', "logger.logInfo('analytics:event'", 'server telemetry sink', 'structured logger'],
-  ['apps/web/app/api/search/route.ts', 'logSearch(', 'search observability', 'Postgres searchLog (intentional)'],
-  ['apps/web/app/api/search/advanced/route.ts', 'logSearch(', 'search observability', 'Postgres searchLog (intentional)'],
-  ['apps/web/app/api/analytics/usage/route.ts', 'prisma.asset.count', 'usage reporting', 'authenticated Postgres query (intentional)'],
-];
-
 const RETIRED_PACKAGE_SCOPE = '@' + 'vercel/';
 const FORBIDDEN_ADAPTERS = [
   new RegExp(`${RETIRED_PACKAGE_SCOPE}analytics`, 'i'),
@@ -37,17 +18,6 @@ const POLICY_FILES = new Set([
   'scripts/check-telemetry-inventory.test.mjs',
 ]);
 
-// The retained Next predecessor still embeds Clerk and must disable its
-// collector. The paired-device extension has no Clerk dependency or SDK.
-export const CLERK_TELEMETRY_MARKERS = [
-  ['apps/web/lib/auth/client.tsx', 'telemetry={{ disabled: true }}'],
-];
-
-// How the literal telemetry={{ disabled: true }} provider prop survives
-// minification in compiled Next.js artifacts: property may be quoted and true
-// may become !0.
-const COMPILED_CLERK_DISABLED_MARKER = /["']?telemetry["']?\s*:\s*\{\s*["']?disabled["']?\s*:\s*(?:true|!0)\b/;
-
 export function findTelemetryInventoryViolations(files) {
   const violations = [];
   for (const { path, content } of files) {
@@ -59,36 +29,11 @@ export function findTelemetryInventoryViolations(files) {
     }
   }
 
-  const webPackage = files.find(({ path }) => path === 'apps/web/package.json');
-  if (webPackage) {
-    for (const dependency of [
-      `${RETIRED_PACKAGE_SCOPE}analytics`,
-      `${RETIRED_PACKAGE_SCOPE}speed-insights`,
-    ]) {
-      if (new RegExp(`['"]${dependency.replace('/', '\\/')}['"]`).test(webPackage.content)) {
-        violations.push({ path: webPackage.path, line: 1, rule: `retired dependency ${dependency}` });
-      }
-    }
-  }
   const extensionPackage = files.find(({ path }) => path === 'apps/extension/package.json');
   if (extensionPackage && /"@clerk\/[^"]+"\s*:/.test(extensionPackage.content)) {
     violations.push({ path: extensionPackage.path, line: 1, rule: 'device-paired extension must not depend on Clerk' });
   }
   return violations;
-}
-
-export function findInventoryDocumentationGaps(files) {
-  const byPath = new Map(files.map((file) => [file.path, file.content]));
-  return TELEMETRY_PRODUCER_INVENTORY
-    .filter(([path, marker]) => !byPath.has(path) || !byPath.get(path).includes(marker))
-    .map(([path, marker]) => ({ path, line: 1, rule: `missing inventory marker ${marker}` }));
-}
-
-export function findClerkTelemetryMarkerGaps(files) {
-  const byPath = new Map(files.map((file) => [file.path, file.content]));
-  return CLERK_TELEMETRY_MARKERS
-    .filter(([path, marker]) => !byPath.has(path) || !byPath.get(path).includes(marker))
-    .map(([path, marker]) => ({ path, line: 1, rule: `missing Clerk telemetry marker ${marker}` }));
 }
 
 export function bundleFiles(directory) {
@@ -115,31 +60,8 @@ function collectBundleFiles(directory, files) {
   }
 }
 
-export function findBundleClerkTelemetryViolations(contents) {
-  if (COMPILED_CLERK_DISABLED_MARKER.test(contents)) return [];
-  return [{ rule: 'compiled Clerk telemetry disabled marker missing' }];
-}
-
 export function findBundleTelemetryViolations(contents) {
   return findTelemetryInventoryViolations([{ path: 'bundle.js', content: contents }]);
-}
-
-export function findBundleTelemetryConfigurationViolations(
-  contents,
-  { endpoint, enabled }
-) {
-  const violations = [];
-  if (!contents.includes(endpoint)) {
-    violations.push({ rule: `compiled telemetry endpoint missing: ${endpoint}` });
-  }
-
-  const enabledPattern = enabled
-    ? /enabled\s*:\s*(?:true|!0)|NEXT_PUBLIC_TELEMETRY_ENABLED\s*:\s*["']true["']/
-    : /enabled\s*:\s*(?:false|!1)|NEXT_PUBLIC_TELEMETRY_ENABLED\s*:\s*["']false["']/;
-  if (!enabledPattern.test(contents)) {
-    violations.push({ rule: `compiled telemetry enabled flag missing: ${enabled}` });
-  }
-  return violations;
 }
 
 function repositoryFiles() {
@@ -164,29 +86,11 @@ function parseBundleDirectories(args) {
 
 function main() {
   const bundleDirs = parseBundleDirectories(process.argv.slice(2));
-  const endpointIndex = process.argv.indexOf('--expect-endpoint');
-  const expectedEndpoint = endpointIndex === -1 ? undefined : process.argv[endpointIndex + 1];
-  const enabledIndex = process.argv.indexOf('--expect-enabled');
-  const expectedEnabled = enabledIndex === -1 ? undefined : process.argv[enabledIndex + 1] !== 'false';
-  const expectClerkDisabled = process.argv.includes('--expect-clerk-disabled');
   const files = repositoryFiles();
   const bundles = bundleDirs.flatMap((dir) => bundleFiles(dir));
-  const combinedBundle = bundles.map(({ content }) => content).join('\n');
-  const bundleLabel = bundleDirs.join(',');
   const violations = [
     ...findTelemetryInventoryViolations(files),
-    ...findInventoryDocumentationGaps(files),
-    ...findClerkTelemetryMarkerGaps(files),
     ...bundles.flatMap(({ path, content }) => findBundleTelemetryViolations(content).map((violation) => ({ ...violation, path }))),
-    ...(expectedEndpoint && expectedEnabled !== undefined
-      ? findBundleTelemetryConfigurationViolations(
-        combinedBundle,
-        { endpoint: expectedEndpoint, enabled: expectedEnabled },
-      ).map((violation) => ({ ...violation, path: bundleLabel }))
-      : []),
-    ...(expectClerkDisabled
-      ? findBundleClerkTelemetryViolations(combinedBundle).map((violation) => ({ ...violation, path: bundleLabel }))
-      : []),
   ];
   if (violations.length) {
     console.error('telemetry inventory check failed:');
@@ -194,7 +98,7 @@ function main() {
     process.exitCode = 1;
     return;
   }
-  console.log(`telemetry inventory check passed (${TELEMETRY_PRODUCER_INVENTORY.length} classified producers)`);
+  console.log('telemetry inventory check passed (source and requested bundles omit retired adapters)');
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

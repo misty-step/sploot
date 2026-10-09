@@ -20,10 +20,6 @@ const HISTORICAL_PATHS = [
   /^\.spellbook\/tailor\/audit\//,
   /^apps\/extension\/ARCHITECTURE\.md$/,
   /^apps\/extension\/STORE_LISTING\.md$/,
-  /^apps\/web\/docs\/adr\//,
-  /^apps\/web\/docs\/NEON_BRANCH_CLEANUP_SUMMARY\.md$/,
-  /^apps\/web\/docs\/deployed-smoke-report\.json$/,
-  /^apps\/web\/public\/screenshots\/capture-manifest\.json$/,
 ];
 
 const FORBIDDEN_PATHS = [

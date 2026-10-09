@@ -1,9 +1,9 @@
 # Sploot Design Tokens
 
 This file translates `DESIGN.md` into implementation-facing token guidance.
-The live CSS variables live in `apps/web/app/globals.css`. The values below
-are the TOYBOX system (lab-034, AFD-8 "ink minis", locked 2026-07-10). Token
-NAMES are stable across the migration; only values moved.
+The values below are the TOYBOX system (lab-034, AFD-8 "ink minis", locked
+2026-07-10). The retired Next token implementation remains historical source
+at `4c1eb5f`; the extension palette is checked against `DESIGN.md`.
 
 ## Token Layers
 
@@ -104,15 +104,14 @@ Historical utility names such as `electric-lime`, `hot-pink`, and `cyber-blue`
 may remain in migration exceptions only. New product code must use `sploot-*`
 tokens.
 
-The Chrome extension cannot import the Next app Tailwind theme directly. Its
-popup stylesheet mirrors the required semantic token names in
-`apps/extension/entrypoints/popup/style.css`; design lint treats that file as
-part of the system.
+The extension's `apps/extension/entrypoints/popup/style.css` owns its required
+semantic tokens; design lint compares the palette to `DESIGN.md`. The retired
+Next Tailwind theme is historical, not another live token dependency.
 
 ## Type
 
-The `next/font` variable slots are stable; only the families behind them
-moved (wired in `apps/web/app/layout.tsx`):
+The retired Next implementation used these `next/font` slots, recorded here as
+historical typography provenance rather than a current Go font claim:
 
 - `--font-sans` (slot `--font-geist-sans`): Baloo 2 for default UI and copy.
 - `--font-mono` (slot `--font-jetbrains-mono`): Space Mono for machine

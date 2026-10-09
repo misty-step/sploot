@@ -9,6 +9,10 @@ claims, an active work queue, or a reusable capture inventory. The July 10 toybo
 decision supersedes the older square/neo-brutalist and Swiss-substrate recipes.
 Linear owns current priorities and selected unresolved work.
 
+The Next.js source paths below refer to historical implementation at commit
+`4c1eb5f1313a578347bc3f4b95fb2a3c10cd6e8f`. That app was retired by the approved
+security-only deletion; the Go and extension styles were not redesigned.
+
 | Source | Fact | Provenance | Confidence | Use | Evidence / Notes |
 |---|---|---|---|---|---|
 | `VISION.md` | Sploot is a personal meme library for semantic search, shuffle, bangers, related items, and future taste-based generation. | observed | high | keep | Optional product context names the core jobs and target user; generation is not a shipped claim. |

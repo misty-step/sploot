@@ -1,7 +1,7 @@
 # @misty-step/aesthetic adoption — token mapping & declared deviations
 
 **Superseded design recipe.** The current toybox contract in
-[DESIGN.md](../../DESIGN.md) and tokens in `apps/web/app/globals.css` supersede
+[DESIGN.md](../../DESIGN.md) supersedes
 this earlier Swiss-chrome/neo-brutalist mapping. The card, pin, deviations, and
 verification description below are retained historical provenance, not current
 upgrade instructions or permission to reskin Sploot. Component-system adoption

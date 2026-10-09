@@ -16,7 +16,7 @@ function flashBadge(text: string, color: string): void {
   }, BADGE_CLEAR_MS);
 }
 
-// Toybox palette (apps/web/app/globals.css): the badge API needs concrete
+// Toybox palette (DESIGN.md): the badge API needs concrete
 // colors, so these are the light-theme --sploot-lime / --sploot-red values.
 const SPLOOT_LIME = '#138a50';
 const SPLOOT_RED = '#e52347';

@@ -9,8 +9,8 @@ hosted deployment, and a device/store release are not interchangeable.
 
 | Face | Status | Evidence |
 |---|---|---|
-| **UI** | Persistent local product; deployed predecessor separate | `apps/server` is the runnable Go HTML/HTMX library with local accounts and real CPU inference. Desktop/mobile-browser and real-backend Chromium extension paths have local proof; `apps/web` remains the unchanged production app. The device-paired WXT extension is not a Web Store publication. The [iPhone Shortcut](../apps/web/docs/shortcuts/save-to-sploot.md) is unsigned source, not an accepted installable release. |
-| **API** | Published save/search contract; local and deployed implementations | [`PUBLIC_API.md`](../apps/web/docs/PUBLIC_API.md) owns token-scoped save bytes, save by URL, and search (published 2026-07-07, sploot-071). [`API.md`](../apps/web/docs/API.md) separates Go account/device/private-media authority from the predecessor's Clerk-backed API; not every legacy route is retained. |
+| **UI** | Hosted and local Go product | `apps/server` owns the runnable Go HTML/HTMX library at `https://sploot.mistystep.io` and independent local instances. Desktop/mobile-browser and real-backend Chromium extension paths have proof within their recorded scope. The device-paired WXT extension is not a Web Store publication. The [iPhone Shortcut](./shortcuts/save-to-sploot.md) is unsigned source, not an accepted installable release. |
+| **API** | Published save/search contract; native implementation | [`PUBLIC_API.md`](./PUBLIC_API.md) owns token-scoped save bytes, save by URL, and search (published 2026-07-07, sploot-071). [`API.md`](./API.md) owns Go account/device/private-media authority; unsupported predecessor routes are not compatibility aliases. |
 | **MCP** | Shipped client; instance-scoped save/search | `apps/mcp` (`@sploot/mcp`, bin `sploot-mcp`) exposes `sploot_search` and `sploot_save` over the published API. Select the intended origin and that instance's personal token. The sploot-071 completion record is historical shipping evidence, not a new production migration receipt. |
 | **Skill** | Shipped record, 2026-07-07 | `.agents/skills/misty-sploot/SKILL.md` teaches save/search, setup, and failure modes with the MCP server. A local runtime change does not imply a new skill release. |
 | **CLI** | **Waived** (see below) | `sploot serve/doctor/backup/resume/verify/restore` and `library-backup` are operator commands, not a standalone consumer save/search face. |
@@ -29,16 +29,16 @@ listing, private media download, export, deletion, or account/token management.
 Private media references in receipts/results are not public download grants.
 The Go owner ZIP route differs from the predecessor's multipart export lifecycle.
 
-The [runtime/deployment/recovery procedure](../apps/web/docs/DEPLOYMENT.md) owns
-operating commands. Its SQLite backup/restore format preserves local accounts
-and media but removes portable session/device/PAT credentials. It is not an
-importer or backup of the unchanged production Postgres/Blob library.
-Existing Next.js source, migrations, gates, deployment, and old real library
-are unchanged; local acceptance is not a production cutover.
+The [runtime/deployment/recovery procedure](./DEPLOYMENT.md) owns operating
+commands. Its SQLite backup/restore format preserves accounts and media but
+removes portable session/device/PAT credentials. It does not include the
+separate complete predecessor archive. The Next workspace is retired after
+verified Go cutover; source providers and that private archive remain retained
+indefinitely. Local acceptance alone is not production deployment evidence.
 
 Mobile-viewport browsing, upload, playback, and download are browser proof,
 not physical iPhone or native share-sheet acceptance. The
-[Shortcut procedure](../apps/web/docs/shortcuts/save-to-sploot.md) still requires
+[Shortcut procedure](./shortcuts/save-to-sploot.md) still requires
 Apple signing and real-device saved/duplicate/failure verification; no verified
 iCloud install link is claimed. Real-backend Chromium device pairing/capture
 is likewise separate from fixture-only tests and Chrome Web Store publication.

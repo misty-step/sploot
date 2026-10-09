@@ -9,7 +9,7 @@
   },
   "capabilities": [
     "Self-contained Go/SQLite private meme library with local CPU CLIP search, media recovery and owner accounts",
-    "Device-paired WXT capture and token-scoped MCP save/search; retired Next.js predecessor retained separately"
+    "Device-paired WXT capture and token-scoped MCP save/search; predecessor recovery retained in private archives"
   ],
   "dispositions": {
     "FND-CHG-001": {
