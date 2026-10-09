@@ -43,7 +43,7 @@ const PILES = [
 const LIB = { total: 1482, embedded: 1479, queued: 3, model: 'siglip-base', dim: 768, latency: 212 };
 
 function memeImg(m) {
-  return `<img src="../../apps/web/public/starter-pile/${m.img}" alt="${esc(m.cap)}" loading="eager">`;
+  return `<img src="../../docs/design-labs/media/${m.img}" alt="${esc(m.cap)}" loading="eager">`;
 }
 
 /* ---------- the SHIPPED toybox kit (compose, never restyle) ---------- */

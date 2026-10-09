@@ -1,9 +1,9 @@
-/* lanes/base.js · BASE-0 — the shipped /app gallery, round-1 baseline.
-   Honest reproduction of apps/web/app/app/page.tsx on origin/master:
+/* lanes/base.js · BASE-0 — historical predecessor /app gallery baseline.
+   Reproduces the retired Next gallery from that recorded source revision:
    top command bar (search + upload/shuffle), pile filter rail, 4-column
-   masonry, mobile bottom command dock, and the CURRENT lightbox: a
-   black/80 backdrop-blur overlay with floating circular buttons — kept
-   as shipped, even though backdrop-blur is a DESIGN.md anti-pattern.
+   masonry, mobile bottom command dock, and its then-current lightbox:
+   a black/80 backdrop-blur overlay with floating circular buttons — kept
+   as recorded, even though backdrop-blur is a DESIGN.md anti-pattern.
    The baseline never counts toward the Design Labs Law. */
 
 const CSS = `

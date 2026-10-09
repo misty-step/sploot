@@ -187,13 +187,45 @@ restart_sploot() {
 }
 
 host_switch() {
-  local path=$1 commit=$2
+  local path=$1 commit=$2 unit=/etc/systemd/system/sploot.service.d/production.conf tmp pid executable
   [[ "$path" =~ ^/opt/sploot/releases/[0-9a-fA-F]+$ ]] || return 1
   [[ "$commit" =~ ^[0-9a-fA-F]+$ ]] || return 1
   [[ -x "$path/sploot" && -x "$path/library-backup" ]] || return 1
+  # Keep the existing production hardening/env bindings; replace only the
+  # historical fixed executable with the release link this script owns.
+  [[ -f "$unit" ]] || { printf 'production service binding is missing\n' >&2; return 1; }
+  tmp=$(mktemp "${unit}.XXXXXX") || return 1
+  if ! awk '
+    /^ExecStart=/ {
+      if (!replaced) {
+        print "ExecStart="
+        print "ExecStart=/opt/sploot/current/sploot serve"
+        replaced = 1
+      }
+      next
+    }
+    { print }
+    END { if (!replaced) exit 1 }
+  ' "$unit" >"$tmp" \
+    || ! chmod --reference="$unit" "$tmp" \
+    || ! chown --reference="$unit" "$tmp" \
+    || ! mv -f "$tmp" "$unit"; then
+    rm -f "$tmp"
+    printf 'production executable binding update failed\n' >&2
+    return 1
+  fi
   set_commit "$commit" || return 1
   ln -sfn "$path" /opt/sploot/current || return 1
+  systemctl daemon-reload || return 1
   restart_sploot || return 1
+  pid=$(systemctl show --property=MainPID --value sploot.service) || return 1
+  executable=$(readlink -f "/proc/$pid/exe") || return 1
+  [[ "$executable" == "$path/sploot" ]] || {
+    printf 'wrong running executable: expected=%s actual=%s\n' "$path/sploot" "$executable" >&2
+    return 1
+  }
+  printf 'process executable verified pid=%s path=%s\n' "$pid" "$executable"
+  sha256sum "/proc/$pid/exe"
 }
 
 backup_is_fresh() {
@@ -254,32 +286,45 @@ host_backup() {
 }
 
 host_activate() {
-  local sha=$1 dest prev prev_commit
+  local sha=$1 dest prev prev_commit prev_pid prev_executable
   [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || exit 1
   dest="/opt/sploot/releases/$sha"
-  mkdir -p "$dest"
-  if ! install -m 0755 "/tmp/sploot-$sha" "$dest/sploot" \
-    || ! install -m 0755 "/tmp/library-backup-$sha" "$dest/library-backup"; then
-    rm -f "/tmp/sploot-$sha" "/tmp/library-backup-$sha"
+  # A stale current link or diagnostic binding is not the rollback authority.
+  prev_pid=$(systemctl show --property=MainPID --value sploot.service)
+  [[ "$prev_pid" =~ ^[1-9][0-9]*$ ]] || {
+    printf 'sploot.service has no running process; cannot identify rollback release\n' >&2
     exit 1
+  }
+  prev_executable=$(readlink -f "/proc/$prev_pid/exe")
+  [[ "$prev_executable" =~ ^/opt/sploot/releases/[0-9a-fA-F]+/sploot$ ]] || {
+    printf 'unexpected running executable: %s\n' "$prev_executable" >&2
+    exit 1
+  }
+  prev=${prev_executable%/sploot}
+  [[ -x "$prev/sploot" && -x "$prev/library-backup" ]] || {
+    printf 'rollback release %s is incomplete\n' "$prev" >&2
+    exit 1
+  }
+  prev_commit=${prev##*/}
+  # Rebinding the same immutable release must not unlink its running binary.
+  if [[ "$dest" != "$prev" ]]; then
+    mkdir -p "$dest"
+    if ! install -m 0755 "/tmp/sploot-$sha" "$dest/sploot" \
+      || ! install -m 0755 "/tmp/library-backup-$sha" "$dest/library-backup"; then
+      rm -f "/tmp/sploot-$sha" "/tmp/library-backup-$sha"
+      exit 1
+    fi
   fi
   rm -f "/tmp/sploot-$sha" "/tmp/library-backup-$sha"
   host_backup
-  prev=$(readlink -f /opt/sploot/current)
-  prev_commit=$(awk -F= '$1=="SPLOOT_DEPLOYMENT_COMMIT" { print $2; exit }' /etc/sploot/production.env)
-  prev_commit=${prev_commit//$'\r'/}
-  [[ "$prev" =~ ^/opt/sploot/releases/[0-9a-fA-F]+$ ]]
-  [[ "$prev_commit" =~ ^[0-9a-fA-F]+$ ]]
-  ln -sfn "$prev" /opt/sploot/previous
-  printf '%s\n' "$prev_commit" > /opt/sploot/previous.commit
-  chmod 644 /opt/sploot/previous.commit
+  if [[ "$dest" != "$prev" ]]; then
+    ln -sfn "$prev" /opt/sploot/previous
+    printf '%s\n' "$prev_commit" > /opt/sploot/previous.commit
+    chmod 644 /opt/sploot/previous.commit
+  fi
   if ! host_switch "$dest" "$sha"; then
-    if [[ "$(readlink -f /opt/sploot/current)" == "$dest" ]]; then
-      printf 'DEPLOY FAILED during restart; restoring %s\n' "$prev" >&2
-      host_switch "$prev" "$prev_commit" || printf 'ROLLBACK FAILED\n' >&2
-    else
-      printf 'DEPLOY FAILED before switching current\n' >&2
-    fi
+    printf 'DEPLOY FAILED during release switch; restoring %s\n' "$prev" >&2
+    host_switch "$prev" "$prev_commit" || printf 'ROLLBACK FAILED\n' >&2
     exit 1
   fi
 }

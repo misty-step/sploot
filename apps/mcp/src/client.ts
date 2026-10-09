@@ -2,7 +2,7 @@ import type { SplootConfig } from './config.js';
 
 /**
  * Thin HTTP client over Sploot's published, token-scoped public contract
- * (apps/web/docs/PUBLIC_API.md): save (bytes or URL) and search. No business
+ * (docs/PUBLIC_API.md): save (bytes or URL) and search. No business
  * logic lives here — every rule (dedupe, quota, embedding, similarity
  * threshold) lives server-side; this client only shapes requests/responses.
  */

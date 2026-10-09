@@ -3,7 +3,7 @@
 Historical research and proposed sequence from 2026-06-05, retained rather than
 used as a current task queue or code map. The selected boundary rationale is in
 [the 2026-06-09 decision](auth-agent-readiness-decision-2026-06-09.md); current
-supported auth and QA behavior belongs in [AUTH.md](../apps/web/docs/AUTH.md).
+supported auth belongs in [API.md](./API.md#authentication), and current QA in [the QA procedure](./qa/README.md).
 Powder references below identify the retired work record, not live routing.
 Linear owns any selected unresolved follow-on work.
 

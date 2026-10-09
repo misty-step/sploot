@@ -11,8 +11,9 @@ alwaysApply: false
   `isValidMimeType`), and shared API response types such as
   `SplootApiUploadResponse`.
 - Add shared code there, export it from `packages/common/src/index.ts`, and
-  import it via `@sploot/common`. Both web and extension consume this package.
-- A changed constant or type is a contract change: update both consumers and
-  keep `apps/web/docs/API.md` synchronized when routes change.
-- The extension resolves the package through its WXT alias; web resolves it
-  through the workspace. Preserve both paths.
+  import it via `@sploot/common`. The Go generator and TypeScript clients consume
+  this contract.
+- A changed constant or type is a contract change: update affected consumers and
+  keep `docs/API.md` synchronized when routes change.
+- The extension resolves the package through its WXT alias; MCP uses the
+  workspace package and Go generates bounds/types. Preserve those boundaries.

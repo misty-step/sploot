@@ -7,7 +7,7 @@
 export interface SplootConfig {
   /** Sploot API base URL, no trailing slash, e.g. https://sploot.mistystep.io/api */
   baseUrl: string;
-  /** Personal API token (`splt_…`) — see apps/web/docs/PUBLIC_API.md. */
+  /** Personal API token (`splt_…`) — see docs/PUBLIC_API.md. */
   token: string;
 }
 
@@ -19,7 +19,7 @@ export class MissingTokenError extends Error {
       'SPLOOT_API_TOKEN is required. Sign in to your Sploot instance in the ' +
         'browser and mint a personal API token in Settings → Personal access ' +
         'tokens, then set SPLOOT_API_TOKEN in the environment running this ' +
-        'MCP server. See apps/web/docs/PUBLIC_API.md.'
+        'MCP server. See docs/PUBLIC_API.md.'
     );
     this.name = 'MissingTokenError';
   }

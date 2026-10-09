@@ -2,7 +2,7 @@
 
 MCP server exposing Sploot's two agent-facing verbs — **save** and
 **search** — as tools, over the published, token-scoped external contract in
-[`apps/web/docs/PUBLIC_API.md`](../web/docs/PUBLIC_API.md). It is a thin HTTP
+[`docs/PUBLIC_API.md`](../../docs/PUBLIC_API.md). It is a thin HTTP
 client: no business logic (dedupe, quota, embeddings, similarity ranking)
 lives here; the native Go server in `apps/server` owns it.
 
@@ -87,7 +87,7 @@ transport or a live Sploot instance.
 
 1. From the repository root, run `pnpm dev` to start the persistent native Go
    library at `http://127.0.0.1:3001`. See
-   [startup and recovery](../web/docs/DEPLOYMENT.md#self-contained-go-runtime)
+   [startup and recovery](../../docs/DEPLOYMENT.md#self-contained-go-runtime)
    for prerequisites. There is no QA login or seeded account.
 2. Sign in in that instance's browser UI (or register if registration is open),
    then mint a token in **Settings → Personal access tokens**. Load it into

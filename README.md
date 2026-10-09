@@ -11,8 +11,9 @@ runtime's startup or acceptance path:
 
 ![Stranger to aha: landing → starter pile → plain-words search locks the right meme](./docs/demo/stranger-to-aha.gif)
 
-This monorepo contains the self-contained Go product, the retained Next.js
-predecessor source, the WXT Chrome extension, MCP server, and shared contracts.
+This monorepo contains the self-contained Go product, the WXT Chrome extension,
+MCP server, and shared contracts. The Next.js predecessor workspace is retired;
+its private archive and immutable source history remain recovery material.
 The canonical hosted Go instance is separate from local development libraries.
 
 Sploot is a personal meme library with text→image semantic search: save a
@@ -38,18 +39,17 @@ records the original exercise.*
 - **Keep your data**: accounts, media, and indexing state survive shutdown and
   restart; an operator backup/verify/restore tool covers the full local library.
 
-Sploot does not learn your taste or generate new memes. Automatic piles belong
-to the Next.js predecessor, not the local Go route surface.
+Sploot does not learn your taste, generate new memes, or expose automatic piles.
 
 [`apps/server`](./apps/server) owns local accounts, SQLite, private filesystem
-media, and pinned local inference. Starting it does not alter an existing
-predecessor deployment. The explicit offline converter preserves captured stored
-bytes, historical metadata and separate owners; it is not a Go-on-Postgres
-deployment. See [runtime operations, migration and recovery](./apps/web/docs/DEPLOYMENT.md).
+media, and pinned local inference. Starting it does not alter retained
+predecessor provider data. The explicit offline converter preserves captured
+stored bytes, historical metadata and separate owners; it is not a Go-on-Postgres
+deployment. See [runtime operations, migration and recovery](./docs/DEPLOYMENT.md).
 
 Responsive mobile-browser capture, playback, and download have been exercised;
 that is not physical iPhone or Apple Shortcuts acceptance. The
-[iPhone Shortcut procedure](./apps/web/docs/shortcuts/save-to-sploot.md) explains
+[iPhone Shortcut procedure](./docs/shortcuts/save-to-sploot.md) explains
 instance-specific unsigned source, reachable HTTPS origins, and the separate
 Apple signing/device requirements. There is no verified install link.
 [VISION.md](./VISION.md) is optional product intent, not a delivery roadmap.
@@ -72,15 +72,13 @@ claimed.
 
 ## For developers
 
-This is a Turborepo/pnpm workspace with a persistent Go runtime and retained
-TypeScript clients and predecessor.
+This is a Turborepo/pnpm workspace with a persistent Go runtime and TypeScript clients.
 
 | Workspace | Path | Description |
 |-----------|------|-------------|
 | **Go Server** | [`apps/server`](./apps/server) | Persistent Go HTTP + HTML/HTMX, local accounts, SQLite/sqlite-vec, private media, CPU CLIP. |
-| **Web Predecessor** | [`apps/web`](./apps/web) | Retained Next.js source and provider data; Prisma/pgvector and predecessor gates remain separate from native serving. |
 | **Extension** | [`apps/extension`](./apps/extension) | Chrome Extension (WXT) for one-click saving. |
-| **MCP Server** | [`apps/mcp`](./apps/mcp) | `sploot-mcp` — save + search as agent tools over the [published API](./apps/web/docs/PUBLIC_API.md). |
+| **MCP Server** | [`apps/mcp`](./apps/mcp) | `sploot-mcp` — save + search as agent tools over the [published API](./docs/PUBLIC_API.md). |
 | **Common** | [`packages/common`](./packages/common) | Shared constants, types, and utilities. |
 
 ## Agent access
@@ -89,7 +87,7 @@ Agents (and the operator's agent fleet) save and search Sploot without a
 browser: the **sploot MCP server** (`apps/mcp`) exposes `sploot_search` and
 `sploot_save` as tools over a personal API token, and the
 **`misty-sploot`** skill teaches the verbs. See
-[`apps/web/docs/PUBLIC_API.md`](./apps/web/docs/PUBLIC_API.md) for the
+[`docs/PUBLIC_API.md`](./docs/PUBLIC_API.md) for the
 published contract and [`docs/five-faces.md`](./docs/five-faces.md) for
 Sploot's surface boundaries. Local clients must target the selected instance
 origin; personal `splt_` tokens permit save/search, not private media or account
@@ -97,7 +95,6 @@ management. The operator `sploot` binary is not a consumer save/search CLI
 (that face remains waived).
 
 ![Sploot Architecture](https://img.shields.io/badge/Architecture-Monorepo-black?style=flat-square&logo=turborepo)
-![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)
 ![WXT](https://img.shields.io/badge/Extension-WXT-blue?style=flat-square&logo=googlechrome)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square&logo=typescript)
 
@@ -113,7 +110,7 @@ management. The operator `sploot` binary is not a consumer save/search CLI
   Alpine/musl and Windows are not supported by the current model bundle.
 - Internet access for the first model/runtime download; no SaaS credentials,
   GPU, external inference daemon, Docker, Postgres, or Prisma setup is required
-  for the host runtime. A [container alternative](./apps/web/docs/DEPLOYMENT.md#container-runtime)
+  for the host runtime. A [container alternative](./docs/DEPLOYMENT.md#container-runtime)
   supplies the Go build and media prerequisites.
 
 #### Start a real local library
@@ -180,15 +177,14 @@ apps/server/build/sploot serve --data-dir "$PWD/.sploot-local/library"
 Stop the earlier instance before starting the binary on the same port. The
 build emits `apps/server/build/sploot` and `apps/server/build/library-backup`.
 The binary embeds the UI and initializes/migrates its SQLite schema itself.
-Use [runtime configuration and backup/verify/restore](./apps/web/docs/DEPLOYMENT.md#self-contained-go-runtime)
+Use [runtime configuration and backup/verify/restore](./docs/DEPLOYMENT.md#self-contained-go-runtime)
 for private-directory requirements, custom model caches, container persistence,
 and recovery credential invalidation.
 
 The finite `pnpm --filter server smoke` command owns a separate temporary
 acceptance library and exercises the real app in Chromium; it does not reset
 the ordinary library. Go integration tests use isolated SQLite state, not a
-`DATABASE_URL`. The retained Next.js database paths still require their own
-pgvector evidence and unchanged gates.
+`DATABASE_URL`. The retired predecessor's database and runtime are not acceptance dependencies.
 
 Foundation PR checks use a reviewed [feature map](./features/README.md) to
 choose changed stories and run their real Go/Chromium journey with `qa/walk`.
@@ -199,12 +195,9 @@ evidence and are not claims of satisfaction.
 
 #### Other surfaces
 
-Next.js development and extension development remain separate commands. Next.js
-still needs its existing service configuration; it is not the default local
-product. Do not bind it and Go to the same port:
+Extension development remains a separate command:
 
 ```sh
-pnpm dev:web
 pnpm dev:extension
 ```
 
@@ -226,15 +219,14 @@ We use **Turborepo** to orchestrate tasks.
 - **Deployment**:
   - Hosted Go: [`https://sploot.mistystep.io`](https://sploot.mistystep.io), separate from local libraries.
   - Local Go: persistent data directory and separate reusable model cache.
-  - Retained Next.js predecessor: historical DigitalOcean App Platform runtime retired on 2026-09-10; source and provider contracts remain retained, not current serving authority.
+  - Predecessor recovery: the historical DigitalOcean runtime and Next workspace are retired; source providers and the complete private archive remain retained indefinitely.
   - Extension: Manual submission to Chrome Web Store.
 - **Details**: See [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ### Configuration
 
 Each app has its own env setup:
-- Web app: see [`apps/web/README.md`](./apps/web/README.md)
-- Self-contained Go: [runtime, deployment, and recovery](./apps/web/docs/DEPLOYMENT.md)
+- Self-contained Go: [runtime, deployment, and recovery](./docs/DEPLOYMENT.md)
 - Extension: see [`apps/extension/README.md`](./apps/extension/README.md)
 
 ### Documentation
@@ -251,7 +243,7 @@ their native authority; historical files are not an automatic intake queue.
 - [Public product design and pricing proposal](./docs/design/public-product-proposal.md) — for review, not an approved offer or implemented consumer UI.
 
 - [Contributor instructions](./AGENTS.md) - Repository guidance for agents and developers.
-- [Web App Docs](./apps/web/README.md)
+- [Go API](./docs/API.md) and [published save/search contract](./docs/PUBLIC_API.md)
 - [Extension Docs](./apps/extension/README.md)
 - [Architecture](./ARCHITECTURE.md)
 - [ADRs](./docs/adr)

@@ -10,7 +10,7 @@ import {
 
 test('permits the explicit Vercel Blob data-plane exception', () => {
   const violations = findProviderRetirementViolations([{
-    path: 'apps/web/lib/blob.ts',
+    path: 'apps/server/scripts/import.mjs',
     content: "import { put } from '@vercel/blob';\nconst token = process.env.BLOB_READ_WRITE_TOKEN;\nhttps://x.public.blob.vercel-storage.com/a.png",
   }]);
 
@@ -19,7 +19,7 @@ test('permits the explicit Vercel Blob data-plane exception', () => {
 
 test('rejects non-Blob runtime packages, environment, CLI, and URLs', () => {
   const violations = findProviderRetirementViolations([{
-    path: 'apps/web/lib/runtime.ts',
+    path: 'apps/extension/shared/runtime.ts',
     content: "import { kv } from '@vercel/kv';\nprocess.env.VERCEL_ENV;\nvercel deploy\nhttps://old.vercel.app",
   }]);
 
@@ -36,7 +36,7 @@ test('rejects non-Blob runtime packages, environment, CLI, and URLs', () => {
 
 test('allows only the exact Vercel Blob package name', () => {
   const violations = findProviderRetirementViolations([{
-    path: 'apps/web/lib/runtime.ts',
+    path: 'apps/extension/shared/runtime.ts',
     content: [
       "import { put } from '@vercel/blob';",
       "import danger from '@vercel/blob-foo';",
@@ -80,7 +80,7 @@ test('rejects every supported spelling of the Vercel compute CLI', () => {
 
 test('rejects compute manifests even when empty', () => {
   const violations = findProviderRetirementViolations([{
-    path: 'apps/web/vercel.json',
+    path: 'apps/server/vercel.json',
     content: '{}',
   }]);
 
@@ -89,7 +89,6 @@ test('rejects compute manifests even when empty', () => {
 
 test('keeps dated evidence and architectural records readable', () => {
   assert.equal(isHistoricalPath('docs/qa/evidence/2026-06-23-fly-spike/fly.toml'), true);
-  assert.equal(isHistoricalPath('apps/web/docs/adr/009-stack-sovereignty-spike-leave-vercel-keep-neon.md'), true);
   assert.deepEqual(findProviderRetirementViolations([{
     path: 'CHANGELOG.md',
     content: "removed @vercel/kv after migration",
@@ -114,7 +113,7 @@ test('rejects retired Canary paths and runtime markers', () => {
       content: '{}',
     },
     {
-      path: 'apps/web/lib/legacy-observability.ts',
+      path: 'apps/extension/shared/legacy-observability.ts',
       content: [
         'process.env.CANARY_API_KEY;',
         "import './canary-reporter';",
@@ -136,24 +135,15 @@ test('rejects retired Canary paths and runtime markers', () => {
   );
 });
 
-test('keeps immutable screenshot capture provenance readable', () => {
-  const violations = findProviderRetirementViolations([{
-    path: 'apps/web/public/screenshots/capture-manifest.json',
-    content: 'apps/web/lib/canary-reporter.ts',
-  }]);
-
-  assert.deepEqual(violations, []);
-});
-
 test('reports retired Canary env names without exposing values', () => {
   const sensitiveValue = 'another-sensitive-value';
   const violations = findIgnoredEnvironmentViolations([{
-    path: 'apps/web/.env.local',
+    path: 'apps/server/.env.local',
     content: `SAFE=value\nCANARY_API_KEY=${sensitiveValue}\n`,
   }]);
 
   assert.deepEqual(violations, [{
-    path: 'apps/web/.env.local',
+    path: 'apps/server/.env.local',
     line: 2,
     rule: 'retired Canary environment',
     identifier: 'CANARY_API_KEY',
@@ -164,12 +154,12 @@ test('reports retired Canary env names without exposing values', () => {
 test('reports forbidden identifiers in ignored environment files without values', () => {
   const sensitiveValue = 'sensitive-value-that-must-never-appear';
   const violations = findIgnoredEnvironmentViolations([{
-    path: 'apps/web/.env.local',
+    path: 'apps/server/.env.local',
     content: `SAFE=value\nVERCEL_OIDC_TOKEN=${sensitiveValue}\n`,
   }]);
 
   assert.deepEqual(violations, [{
-    path: 'apps/web/.env.local',
+    path: 'apps/server/.env.local',
     line: 2,
     rule: 'Vercel runtime environment',
     identifier: 'VERCEL_OIDC_TOKEN',
@@ -179,7 +169,7 @@ test('reports forbidden identifiers in ignored environment files without values'
   const message = formatProviderRetirementViolation(violations[0]);
   assert.equal(
     message,
-    '- apps/web/.env.local:2 Vercel runtime environment (VERCEL_OIDC_TOKEN)',
+    '- apps/server/.env.local:2 Vercel runtime environment (VERCEL_OIDC_TOKEN)',
   );
   assert.doesNotMatch(message, new RegExp(sensitiveValue));
 });

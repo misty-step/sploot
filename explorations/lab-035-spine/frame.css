@@ -1,7 +1,7 @@
-/* lab 035 frame — the SHIPPED sploot TOYBOX system, verbatim token values
-   from apps/web/app/globals.css (lab-034 AFD-8, merged 45ca50b). The system
-   is FIXED in this lab: lanes vary content, layout, structure, hierarchy —
-   never tokens, type, shape, elevation, physics, or component grammar. */
+/* lab 035 frame — historical predecessor TOYBOX token values
+   (lab-034 AFD-8, merged 45ca50b; retained in immutable source history).
+   The system is FIXED in this lab: lanes vary content, layout, structure,
+   hierarchy — never tokens, type, shape, elevation, physics, or grammar. */
 
 :root {
   --ink: #1c1547;

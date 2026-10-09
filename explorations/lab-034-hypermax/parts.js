@@ -51,7 +51,7 @@ const LIB = { total: 1482, embedded: 1479, queued: 3, model: 'siglip-base', dim:
 
 /* the one sanctioned way to render a meme: complete media, never cropped */
 function memeImg(m) {
-  return `<img class="meme-media" src="../../apps/web/public/starter-pile/${m.img}" alt="${esc(m.cap)}" loading="eager">`;
+  return `<img class="meme-media" src="../../docs/design-labs/media/${m.img}" alt="${esc(m.cap)}" loading="eager">`;
 }
 
 /* labeled palette swatch strip for foundations sections */

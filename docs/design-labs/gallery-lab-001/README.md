@@ -35,8 +35,8 @@ node docs/design-labs/gallery-lab-001/qa-sweep.mjs --out /tmp/lab001-evidence
 
 ## The fence
 
-- FIXED: the toybox token system (`--sploot-*` from `apps/web/app/globals.css`,
-  ported verbatim into `frame.css`), radius scale 18/10/9/pill, 3px ink shells,
+- FIXED: the toybox token system recorded in `DESIGN.md` and copied into
+  `frame.css` from the historical predecessor, radius scale 18/10/9/pill, 3px ink shells,
   straight-down hard drops, the hover-physics law, ink-mini controls, heart =
   the only banger marker, 44px touch floor, light + dark first-class, sploot
   voice, DESIGN.md anti-patterns (no gradients / glass / blur / tints).

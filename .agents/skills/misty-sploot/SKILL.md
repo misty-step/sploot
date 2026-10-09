@@ -7,7 +7,7 @@ argument-hint: "[save <url-or-path> | search <description>]"
 # Sploot MCP
 
 Invoke the `misty-sploot` skill. The `sploot-mcp` server (`apps/mcp`) exposes the published
-token-scoped contract in `apps/web/docs/PUBLIC_API.md`:
+token-scoped contract in `docs/PUBLIC_API.md`:
 
 - `sploot_search({ query })` finds images by plain-language visual description,
   not tags or filenames.
@@ -30,7 +30,7 @@ deletes, and token management in the session; do not bypass MCP with raw HTTP.
 
 ## Setup
 
-Mint a token in Sploot Settings → Upload tokens (or the signed-in
+Mint a token in Sploot Settings → Personal access tokens (or the signed-in
 `POST /api/upload-tokens` flow). The plaintext appears once: store it only in
 the environment or secret manager that registers MCP, never in chat or a repo
 file. Register `SPLOOT_API_TOKEN`; set `SPLOOT_API_BASE_URL` only for a
@@ -40,5 +40,5 @@ non-production target. Build once from the repo root with:
 pnpm --filter @sploot/mcp build
 ```
 
-`apps/web/docs/PUBLIC_API.md` and `apps/mcp/README.md` own the contract and
+`docs/PUBLIC_API.md` and `apps/mcp/README.md` own the contract and
 server configuration. They override this usage guide if they disagree.

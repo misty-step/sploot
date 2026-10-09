@@ -1,6 +1,6 @@
-/* lab 034 · lane BASE — the SHIPPED sploot system (neo-brutalist zine),
-   verbatim token values from apps/web/app/globals.css, rendered through the
-   round-1 gallery contract. This is the baseline, not a candidate. */
+/* lab 034 · lane BASE — historical predecessor system (neo-brutalist zine),
+   recorded token values rendered through the round-1 gallery contract.
+   This is the retained baseline, not a candidate or current Go UI. */
 'use strict';
 
 (() => {

@@ -22,7 +22,7 @@ Device authentication permits only HTTPS remote instances and loopback HTTP. The
 
 The instance grants `spld_` device sessions owner-library/save/search/media/export authority, but approval, password changes, and credential management require the browser's `sploot_session`. Personal `splt_` tokens opt in only to the published save/search routes and cannot be substituted for a device session. These scope checks live in the Go auth boundary, not in popup visibility or a claimed user ID.
 
-The app's persistent `.sploot-local/library` survives ordinary shutdown independently of Chrome storage. Its portable backup preserves passwords/library data but scrubs browser/device/PAT credentials and pending pairing requests. A restored instance requires sign-in and fresh pairing; it does not inherit a usable device secret from the snapshot. [Runtime recovery](../web/docs/DEPLOYMENT.md#library-backup-and-isolated-restore) owns that lifecycle.
+The app's persistent `.sploot-local/library` survives ordinary shutdown independently of Chrome storage. Its portable backup preserves passwords/library data but scrubs browser/device/PAT credentials and pending pairing requests. A restored instance requires sign-in and fresh pairing; it does not inherit a usable device secret from the snapshot. [Runtime recovery](../../docs/DEPLOYMENT.md#library-backup-and-isolated-restore) owns that lifecycle.
 
 ## Evidence and releases
 

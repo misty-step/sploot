@@ -1,7 +1,7 @@
 /* gallery-lab-001 · shared frame styles
-   The sploot TOYBOX token layer, ported verbatim from apps/web/app/globals.css
-   (lab-034 AFD-8, locked 2026-07-10). Token VALUES are the live system and are
-   FIXED for this lab; lanes vary structure only.
+   Historical TOYBOX token layer (lab-034 AFD-8, locked 2026-07-10).
+   Its predecessor source remains in immutable 4c1eb5f history; this copy is
+   FIXED for the retained lab, not an import from the live Go product.
    Theme contract (viewer ruling 2026-07-10): system preference by default;
    a manual toggle stamps data-theme="light|dark" on <html> and wins. */
 

@@ -1,6 +1,6 @@
-/* lab 033 frame base — the SHIPPED sploot system, verbatim values from
-   apps/web/app/globals.css. sections that stay in-system compose these
-   classes; DNA candidates ship their own <style> blocks. */
+/* lab 033 frame base — historical neo-brutalist predecessor values.
+   The source remains in immutable 4c1eb5f history; these retained classes
+   are lab provenance, not the current Go system. */
 
 :root {
   --ink: #0a0a0a;

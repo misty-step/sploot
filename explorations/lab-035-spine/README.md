@@ -29,7 +29,8 @@ python3 explorations/lab-035-spine/serve.py 4035
 Per section: winner / kills / mutations / seeds. Round mechanics as lab-034
 (update app.js SECTIONS, edit originating lanes/<alias>.js under NEW ids,
 bump FRAME_V + ?v=). Kin annotations mark cross-lane convergences (count
-once toward the Law). Winners converge into apps/web per view.
+once toward the Law). Historical convergence targeted the retired Next views,
+not the current Go implementation.
 
 ### Round 1 (operator, 2026-07-10)
 

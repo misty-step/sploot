@@ -1,12 +1,13 @@
 # Sploot Component Library
 
-This is the component grammar for the TOYBOX direction (lab-034, AFD-8 "ink
-minis"). It describes product wrappers that sit on top of shadcn/Radix
-primitives. It is not a separate package yet.
+This records the component grammar for the TOYBOX direction (lab-034, AFD-8
+"ink minis"). The shadcn/Radix wrapper inventory below describes the retired
+Next.js implementation, preserved in immutable `4c1eb5f` source history; it is
+not a current Go component import map. Design law remains in `DESIGN.md`.
 
 ## Product Grammar
 
-| Family | Product Role | Current Source | Rule |
+| Family | Product Role | Historical predecessor source | Rule |
 |---|---|---|---|
 | Search console | Signed-out and app search centerpiece | `apps/web/components/sploot/search-field.tsx` | 18px panel toy, ink machine titlebar, dashed machine footer, pill input, 9px hero drop |
 | Meme cell (toy card) | Atomic saved object or demo stand-in | `apps/web/components/sploot/meme-cell.tsx` | 18px shell, candy filename tab, 10px inner media frame, caption row, action rail; seven states |
@@ -218,11 +219,11 @@ Do not create:
 - Signed-out stats that imply a real production corpus, measured latency, or
   shipped model path that the surface is not exercising.
 
-## Implemented Wrappers
+## Historical Predecessor Wrappers
 
-These wrappers are canonical starting points for new product surfaces:
+These wrappers record the retired implementation at `4c1eb5f`:
 
-| Component | Source | Status | Use |
+| Component | Historical source | Status at retirement | Use |
 |---|---|---|---|
 | `SearchField` | `apps/web/components/sploot/search-field.tsx` | implemented | Search console and live match demo |
 | `MemeCell` | `apps/web/components/sploot/meme-cell.tsx` | implemented | Toy card with reveal states |
@@ -236,6 +237,6 @@ These wrappers are canonical starting points for new product surfaces:
 | `PileMark` | `apps/web/components/sploot/pile-mark.tsx` | implemented | Compact brand mark for navigation and tight chrome |
 | `BangerStamp` | `apps/web/components/sploot/banger-stamp.tsx` | legacy | Superseded by the heart in `TileActionRail`; migration surfaces only |
 
-New product code should import these wrappers from `apps/web/components/sploot`
-before inventing local console, cell, chip, pile, banger, stat, or status
-treatments.
+These source paths are historical provenance, not imports for new product code.
+The current Go UI lives in `apps/server/internal/web`; the extension remains in
+`apps/extension`. Source retirement does not authorize a design change.

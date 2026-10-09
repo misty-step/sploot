@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 const repoRoot = process.cwd();
 
@@ -29,87 +29,11 @@ function assertIncludes(path, needle, reason) {
 }
 
 assertFile('DESIGN.md');
-assertFile('apps/web/components/sploot/sticker-tab.tsx');
-assertFile('apps/web/components/sploot/banger-stamp.tsx');
-assertFile('apps/web/components/sploot/cluster-pile.tsx');
-assertFile('apps/web/components/sploot/pile-mark.tsx');
 assertFile('apps/extension/entrypoints/popup/App.tsx');
 assertFile('apps/extension/entrypoints/popup/style.css');
-
-const cssPath = 'apps/web/app/globals.css';
-for (const token of [
-  '--sploot-ink',
-  '--sploot-paper',
-  '--sploot-paper-warm',
-  '--sploot-void',
-  '--sploot-cyan',
-  '--sploot-coral',
-  '--sploot-violet',
-  '--sploot-lime',
-  // neo-brutalist structural tokens
-  '--sploot-blue',
-  '--sploot-magenta',
-  '--sploot-yellow',
-  '--sploot-orange',
-  '--sploot-border',
-  '--sploot-shadow',
-  '--sploot-shadow-lg',
-  '--sploot-match-ring',
-  '--sploot-grid-line',
-  '--sploot-sticker-shadow',
-  '--sploot-active-border-width',
-  '--sploot-touch-target',
-  '--color-sploot-ink',
-  '--color-sploot-cyan',
-]) {
-  assertIncludes(cssPath, token, 'Sploot semantic token');
-}
-
-for (const token of [
-  '--sploot-motion-fast',
-  '--sploot-motion-base',
-  '--sploot-motion-panel',
-  '--sploot-motion-cluster',
-  '--sploot-ease-out',
-  '--sploot-ease-snap',
-  'animate-sploot-stamp',
-  'animate-sploot-pop',
-  'animate-sploot-slide-up',
-  'prefers-reduced-motion: reduce',
-]) {
-  assertIncludes(cssPath, token, 'Sploot motion system');
-}
+assertFile('apps/server/internal/web/static/app.css');
 
 for (const [path, phrases] of Object.entries({
-  'apps/web/components/sploot/sticker-tab.tsx': ['sploot-sticker-shadow', 'rounded-[var(--sploot-radius-pill)]'],
-  'apps/web/components/sploot/banger-stamp.tsx': ['fill-sploot-magenta', 'sploot-tabular'],
-  'apps/web/components/sploot/cluster-pile.tsx': ['bg-sploot-pile-surface', 'StickerTab', 'src?: string'],
-  'apps/web/components/sploot/search-field.tsx': ['role="search"', 'MemeCell'],
-  'apps/web/components/sploot/meme-cell.tsx': ['outline-sploot-lime', 'MemeCellState'],
-  'apps/web/components/sploot/stat-block.tsx': ['font-display', 'border-sploot-ink'],
-  'apps/web/components/sploot/status-bar.tsx': ['bg-sploot-void', 'system status'],
-  'apps/web/app/styleguide/page.tsx': ['MemeCell', 'StatBlock', 'StatusBar', 'FilterChips', 'SortDropdown'],
-  'apps/web/components/ui/button.tsx': ['controlBaseClasses', '--sploot-control-height', 'focus-visible:outline-sploot-focus', 'sploot-press'],
-  'apps/web/components/ui/toggle.tsx': ['controlBaseClasses', 'data-[state=on]:bg-sploot-yellow', 'sploot-press-sm'],
-  'apps/web/components/ui/toggle-group.tsx': ['data-[spacing=0]:border-[3px]', 'ToggleGroupItem'],
-  'apps/web/components/sploot/icon-button.tsx': ['controlFocusClasses', '--sploot-control-height-sm', 'aria-label={label}'],
-  'apps/web/components/chrome/filter-chips.tsx': ['ToggleGroup', 'ToggleGroupItem', 'variant="segmented"', 'data-[state=on]:bg-sploot-cyan', 'data-[state=on]:bg-sploot-magenta'],
-  'apps/web/components/chrome/sort-dropdown.tsx': ['SortDropdown', 'size="sm"', 'IconButton'],
-  'apps/web/components/chrome/mobile-command-dock.tsx': ['IconButton', '--sploot-touch-target'],
-  'apps/web/components/library/image-tile.tsx': ['TileActionRail', 'border-sploot-violet', 'text-sploot-cyan'],
-  'apps/web/components/library/image-grid.tsx': ['role="alert"', 'grid-cols-2'],
-  'apps/web/components/sploot/gallery-pipeline.tsx': ['retrieval pipeline', 'aria-live="polite"'],
-  'apps/web/components/sploot/gallery-spine.tsx': ['gallery index spine', 'GalleryPipeline'],
-  'apps/web/components/sploot/gallery-mobile-statusline.tsx': ['gallery status', 'aria-live="polite"'],
-  'apps/web/components/sploot/query-token-highlight.tsx': ['query tokens', 'bg-sploot-yellow'],
-  'apps/web/app/app/page.tsx': ['GallerySpine', 'GalleryMobileStatusline', 'overlayClassName="bg-sploot-void/90"'],
-  // sploot-074: the first-use empty state is the capture rig — demo pile of
-  // MemeCells + sticker-labeled capture-surface activation, never a generic
-  // Card/icon illustration (DESIGN.md §6 empty-state rule).
-  'apps/web/components/library/empty-state.tsx': ['MemeCell', 'StickerTab', 'lab-074-capture-activation'],
-  // The popup adopts tokens through its stylesheet: App.tsx must import the
-  // token-driven style.css, use its semantic panel classes, and render the
-  // persistent last-save strip (sploot-045: unmissable save feedback).
   'apps/extension/entrypoints/popup/App.tsx': ["import './style.css'", 'auth-panel', 'LastSaveStrip'],
   'apps/extension/entrypoints/popup/style.css': [
     '--sploot-blue',
@@ -117,93 +41,16 @@ for (const [path, phrases] of Object.entries({
     'prefers-color-scheme: dark',
     'prefers-reduced-motion: reduce',
   ],
-  'apps/web/app/page.tsx': ['LandingHero'],
 })) {
   for (const phrase of phrases) {
     assertIncludes(path, phrase, 'implemented Sploot design-system adoption');
   }
 }
 
-if (read('apps/web/app/app/page.tsx').includes('/app/upload')) {
-  fail('apps/web/app/app/page.tsx: gallery upload commands must open the in-place upload panel');
-}
 
-// sploot-032: auth door stays on the substrate console (no violet glassmorphism).
-// The @misty-step/aesthetic base import remains, but the TOYBOX lock
-// (lab-034, AFD-8) supersedes the ADR-0005 --ae-* semantic steering: the
-// shadcn slots now resolve to --sploot-* tokens (see the "TOYBOX semantic
-// mapping" block in globals.css), so the old --ae-accent / --ae-surface
-// wiring is intentionally gone. Only the base-layer import is still guaranteed.
-for (const phrase of ['@import "@misty-step/aesthetic" layer(base)']) {
-  assertIncludes(cssPath, phrase, 'aesthetic substrate base import');
-}
-assertIncludes(cssPath, 'TOYBOX semantic mapping', 'toybox semantic mapping block');
-for (const [doorPath, phrases] of Object.entries({
-  'apps/web/components/auth/console-door.tsx': ['auth.console', 'consoleDoorAppearance'],
-  'apps/web/app/sign-in/[[...sign-in]]/page.tsx': ['ConsoleDoor'],
-  'apps/web/app/sign-up/[[...sign-up]]/page.tsx': ['ConsoleDoor'],
-})) {
-  for (const phrase of phrases) {
-    assertIncludes(doorPath, phrase, 'substrate console auth door');
-  }
-}
-for (const doorPath of [
-  'apps/web/app/sign-in/[[...sign-in]]/page.tsx',
-  'apps/web/app/sign-up/[[...sign-up]]/page.tsx',
-]) {
-  const content = read(doorPath);
-  for (const forbidden of ['violet', 'backdrop-blur', 'bg-gradient-']) {
-    if (content.includes(forbidden)) {
-      fail(`${doorPath}: auth door must stay on the substrate console — found ${forbidden} (DESIGN.md bans glassmorphism)`);
-    }
-  }
-}
-
-const landingSystemFiles = [
-  'apps/web/app/page.tsx',
-  'apps/web/app/styleguide/page.tsx',
-  'apps/web/components/sploot/search-field.tsx',
-  'apps/web/components/sploot/meme-cell.tsx',
-  'apps/web/components/sploot/stat-block.tsx',
-  'apps/web/components/sploot/status-bar.tsx',
-  'apps/web/components/sploot/sticker-tab.tsx',
-  'apps/web/components/sploot/banger-stamp.tsx',
-  'apps/web/components/sploot/cluster-pile.tsx',
-  'apps/web/components/ui/button.tsx',
-  // sploot-074: the capture-rig empty state is a product design-system surface.
-  'apps/web/components/library/empty-state.tsx',
-];
-
-for (const file of landingSystemFiles) {
-  const content = read(file);
-  for (const phrase of ['MEME SEARCH. INSTANT.', 'AI POWERED', 'START FOR FREE']) {
-    if (content.includes(phrase)) {
-      fail(`${file}: legacy SaaS hero phrase remains (${phrase})`);
-    }
-  }
-  for (const tokenName of ['electric-lime', 'hot-pink', 'cyber-blue']) {
-    if (content.includes(tokenName)) {
-      fail(`${file}: new landing design-system code must use sploot-* tokens, not ${tokenName}`);
-    }
-  }
-  // TOYBOX DNA (lab-034, AFD-8): surfaces are ROUNDED toys. Radius grammar is
-  // enforced product-wide by the token-radius ratchet below (rounded-none and
-  // arbitrary px radii are banned; rounded-[var(--sploot-radius*)] / rounded-full
-  // / token-driven ui defaults are the sanctioned forms).
-  const nonZeroTracking = (content.match(/tracking-(?!normal\b)[a-z0-9[\]./-]+/g) || []);
-  if (nonZeroTracking.length > 0) {
-    fail(`${file}: letter spacing must stay at 0 — remove ${nonZeroTracking[0]}`);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// Extension popup ↔ web token parity (sploot-045)
-//
-// Saving from Chrome is part of the product surface, so the popup must be
-// the SAME toybox system, not a fork: every --sploot-* color it defines must
-// carry the exact value the web globals define, in BOTH themes, and its raw
-// hex usage is limited to that shared palette.
-// ═══════════════════════════════════════════════════════════════════
+// The extension retains its existing toybox palette and structure. DESIGN.md
+// owns those values after predecessor retirement; the native Go stylesheet
+// has its own grammar and is not asserted to have the extension's palette.
 const extensionCssPath = 'apps/extension/entrypoints/popup/style.css';
 const extensionUiFiles = ['apps/extension/entrypoints/popup/App.tsx', extensionCssPath];
 
@@ -213,18 +60,24 @@ function tokenValue(cssSlice, token) {
 }
 
 {
-  const webCss = read(cssPath);
+  const design = read('DESIGN.md');
+  const documentedColors = new Map(
+    [...design.matchAll(/^\| [^|]+ \| `(--sploot-[a-z-]+)` \| `([^`]+)` \| `([^`]+)` \|/gm)]
+      .map(([, token, light, dark]) => [token, [light.toLowerCase(), dark.toLowerCase()]])
+  );
+  // Foreground contrast and the two legacy aliases were checked against the
+  // old globals but are not separate rows in DESIGN.md's palette table.
+  const auxiliaryColors = new Map([
+    ['--sploot-on-blue', ['#ffffff', '#10203a']],
+    ['--sploot-on-red', ['#ffffff', '#3a0d14']],
+    ['--sploot-coral', ['var(--sploot-magenta)', 'var(--sploot-magenta)']],
+    ['--sploot-violet', ['var(--sploot-purple)', 'var(--sploot-purple)']],
+  ]);
   const extCss = read(extensionCssPath);
-
-  // Theme scopes: web = :root … .dark { … }; extension = :root … @media dark.
-  const webDarkStart = webCss.indexOf('.dark {');
-  const webLight = webCss.slice(0, webDarkStart);
-  const webDark = webCss.slice(webDarkStart);
   const extDarkStart = extCss.indexOf('@media (prefers-color-scheme: dark)');
   const extLight = extCss.slice(0, extDarkStart);
   const extDark = extCss.slice(extDarkStart);
 
-  if (webDarkStart === -1) fail(`${cssPath}: missing .dark theme block`);
   if (extDarkStart === -1) fail(`${extensionCssPath}: missing prefers-color-scheme dark theme block`);
 
   const themedTokens = [
@@ -249,52 +102,49 @@ function tokenValue(cssSlice, token) {
     '--sploot-shadow-color',
   ];
   const sharedPalette = new Set(['#1c1547']);
-  for (const [theme, webSlice, extSlice] of [
-    ['light', webLight, extLight],
-    ['dark', webDark, extDark],
+  for (const [theme, themeIndex, extSlice] of [
+    ['light', 0, extLight],
+    ['dark', 1, extDark],
   ]) {
     for (const token of themedTokens) {
-      const webValue = tokenValue(webSlice, token);
+      const expectedValue = (documentedColors.get(token) ?? auxiliaryColors.get(token))?.[themeIndex];
       const extValue = tokenValue(extSlice, token);
-      if (webValue) sharedPalette.add(webValue);
-      if (!webValue) {
-        fail(`${cssPath}: ${token} missing from the ${theme} theme block`);
-      } else if (extValue !== webValue) {
+      if (expectedValue) sharedPalette.add(expectedValue);
+      if (!expectedValue) {
+        fail(`DESIGN.md: ${token} missing from the ${theme} palette`);
+      } else if (extValue !== expectedValue) {
         fail(
-          `${extensionCssPath}: ${token} (${theme}) diverges from web globals — expected "${webValue}", found "${extValue ?? 'missing'}"`
+          `${extensionCssPath}: ${token} (${theme}) diverges from the design contract — expected "${expectedValue}", found "${extValue ?? 'missing'}"`
         );
       }
     }
   }
 
-  // Structural grammar must match too: shells, rounding, drop-height physics.
-  for (const token of [
-    '--sploot-border',
-    '--sploot-radius',
-    '--sploot-radius-pill',
-    '--sploot-shadow',
-    '--sploot-shadow-hover',
-    '--sploot-shadow-press',
-    '--sploot-touch-target',
-    '--sploot-ease-snap',
-  ]) {
-    const webValue = tokenValue(webLight, token);
-    const extValue = tokenValue(extCss, token);
-    if (webValue && extValue !== webValue) {
+  for (const [token, expectedValue] of Object.entries({
+    '--sploot-border': '3px solid var(--sploot-ink)',
+    '--sploot-radius': '18px',
+    '--sploot-radius-pill': '999px',
+    '--sploot-shadow': '0 5px 0 var(--sploot-shadow-color)',
+    '--sploot-shadow-hover': '2px 7px 0 var(--sploot-shadow-color)',
+    '--sploot-shadow-press': '0 1px 0 var(--sploot-shadow-color)',
+    '--sploot-touch-target': '44px',
+    '--sploot-ease-snap': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+  })) {
+    const actualValue = tokenValue(extCss, token);
+    if (actualValue !== expectedValue) {
       fail(
-        `${extensionCssPath}: structural token ${token} diverges from web globals — expected "${webValue}", found "${extValue ?? 'missing'}"`
+        `${extensionCssPath}: structural token ${token} diverges from the design contract — expected "${expectedValue}", found "${actualValue ?? 'missing'}"`
       );
     }
   }
 
-  // Any raw hex in extension UI/feedback code must be a value from the shared
-  // web palette (the popup css is the extension's token home; badge colors
-  // must be toybox candy, not ad-hoc greens/reds).
+  // Raw hex in extension UI and feedback code must belong to its documented
+  // palette. The badge API requires concrete values rather than CSS vars.
   for (const file of [...extensionUiFiles, 'apps/extension/entrypoints/background/badge.ts']) {
     const content = read(file);
     for (const hex of content.match(/#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g) ?? []) {
       if (!sharedPalette.has(hex.toLowerCase())) {
-        fail(`${file}: hex ${hex} is not a web --sploot-* token value — use the shared toybox palette`);
+        fail(`${file}: hex ${hex} is not a documented --sploot-* token value — use the shared toybox palette`);
       }
     }
   }
@@ -314,291 +164,29 @@ function tokenValue(cssSlice, token) {
   // flag spelling or a removed popup button cannot prove artifact safety.
 }
 
-const trackedUiFiles = execSync(
-  "git ls-files 'apps/web/app/**/*.tsx' 'apps/web/components/**/*.tsx' 'apps/web/components/**/*.ts'",
-  { cwd: repoRoot, encoding: 'utf8' }
-)
-  .split('\n')
-  .filter(Boolean);
-
-const galleryUiFiles = [
-  'apps/web/components/sploot/gallery-pipeline.tsx',
-  'apps/web/components/sploot/gallery-spine.tsx',
-  'apps/web/components/sploot/gallery-mobile-statusline.tsx',
-].filter((file) => existsSync(join(repoRoot, file)));
-
-const migrationExceptions = new Map([
-  ['apps/web/app/not-found.tsx', ['bg-clip-text']],
-  // sploot-032 ratchet: the auth door (sign-in/sign-up) and the navbar lost
-  // their gradient/blur exceptions when they moved onto the aesthetic
-  // substrate — do not re-add them. app/page.tsx + image-tile blur is the
-  // lightbox scrim (content overlay), not chrome glassmorphism.
-  ['apps/web/components/library/image-skeleton.tsx', ['bg-gradient-']],
-  ['apps/web/components/ui/delete-confirmation-modal.tsx', ['bg-gradient-']],
-  ['apps/web/components/library/image-tile.tsx', ['backdrop-blur']],
-]);
-
-for (const file of migrationExceptions.keys()) {
-  if (!existsSync(join(repoRoot, file))) {
-    fail(`${file}: stale design migration exception points at a missing file`);
-  }
-}
-
-const bannedPatterns = [
-  { label: 'gradient text', pattern: 'bg-clip-text' },
-  { label: 'decorative background gradient', pattern: 'bg-gradient-' },
-  { label: 'decorative glass blur', pattern: 'backdrop-blur' },
+const nativeCssPath = 'apps/server/internal/web/static/app.css';
+const nativeUiFiles = [
+  nativeCssPath,
+  ...execFileSync('git', ['ls-files', '--', 'apps/server/internal/web/templates/*.html'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  }).split('\n').filter(Boolean),
 ];
-
-for (const file of trackedUiFiles) {
-  if (file.startsWith('apps/web/components/ui/')) {
-    continue;
-  }
-
+for (const file of [...nativeUiFiles, ...extensionUiFiles]) {
   const content = read(file);
-  const allowed = migrationExceptions.get(file) ?? [];
-
-  for (const { label, pattern } of bannedPatterns) {
-    if (content.includes(pattern) && !allowed.includes(pattern)) {
-      fail(`${file}: ${label} (${pattern}) requires DESIGN.md exception`);
+  for (const forbidden of ['bg-clip-text', 'bg-gradient-', 'backdrop-filter', 'backdrop-blur', 'linear-gradient(', '--radius-square']) {
+    if (content.includes(forbidden)) {
+      fail(`${file}: decorative gradient/glass/square grammar is forbidden by DESIGN.md (${forbidden})`);
     }
   }
-
+  for (const pattern of [/electric-lime|hot-pink|cyber-blue|#f3efe4|#0a0a0a|8px 8px 0/gi, /MEME SEARCH\. INSTANT\.|AI POWERED|START FOR FREE/g]) {
+    for (const match of content.matchAll(pattern)) {
+      fail(`${file}: retired design token or generic hero phrase remains (${match[0]})`);
+    }
+  }
   for (const phrase of ['if published', 'future layer', 'metric to confirm', 'public-safe']) {
     if (content.toLowerCase().includes(phrase)) {
       fail(`${file}: visible UI must not contain process/meta-copy phrase "${phrase}"`);
-    }
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// TOYBOX drift ratchet (lab-034, AFD-8)
-//
-// Deterministic bans that keep the whole product tree on the toybox token
-// grammar: no raw hex, no blur/raw shadows, no raw radii, no hand-rolled
-// hover lifts, no off-grammar tile actions, no retired legacy names. Every
-// hit reports RULE + FILE + LINE.
-//
-// Because the tree is mid-migration, current occurrences are PINNED in
-// scripts/design-ratchet-baseline.json as per-file counts. Ratchet
-// semantics: a file may only ever hold FEWER violations than its pinned
-// count — any excess, or any violation in a file absent from the baseline,
-// fails the gate. New drift can never be introduced; legacy debt can only
-// shrink. Re-pin (shrink) the baseline after a conversion lane lands with:
-//
-//   node scripts/check-design-system.mjs --update-baseline
-//
-// The integrator drives that toward an empty baseline as the lanes finish.
-// ═══════════════════════════════════════════════════════════════════
-const UPDATE_BASELINE = process.argv.includes('--update-baseline');
-const baselinePath = 'scripts/design-ratchet-baseline.json';
-const baseline =
-  existsSync(join(repoRoot, baselinePath)) && !UPDATE_BASELINE
-    ? JSON.parse(read(baselinePath))
-    : {};
-
-const cssFiles = execSync("git ls-files 'apps/web/**/*.css'", {
-  cwd: repoRoot,
-  encoding: 'utf8',
-})
-  .split('\n')
-  .filter(Boolean)
-  // globals.css is the token HOME: it defines the hex values, the shadow
-  // tokens, and the legacy back-compat utility classes. It is exempt.
-  .filter((f) => f !== 'apps/web/app/globals.css');
-
-const productTsx = [...new Set([...trackedUiFiles, ...galleryUiFiles])];
-
-// The one sanctioned hex literal: ink-on-candy text/foreground.
-const ALLOWED_HEX = new Set(['#1c1547']);
-
-// Collect {line, match} for every occurrence of `regex` in `content`,
-// optionally filtered by (match, lineText) => keep.
-function linesOf(content, regex, keep) {
-  const out = [];
-  content.split('\n').forEach((text, i) => {
-    const matches = text.match(regex);
-    if (!matches) return;
-    for (const m of matches) {
-      if (keep && !keep(m, text)) continue;
-      out.push({ line: i + 1, match: m });
-    }
-  });
-  return out;
-}
-
-const ratchetRules = [
-  {
-    id: 'rawHex',
-    label: 'raw hex color literal — use --sploot-* tokens',
-    files: [...productTsx, ...cssFiles],
-    scan: (content) =>
-      linesOf(
-        content,
-        /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g,
-        (m) => !ALLOWED_HEX.has(m.toLowerCase())
-      ),
-  },
-  {
-    id: 'rawShadow',
-    label: 'raw/blur shadow — use sploot-shadow* classes/vars or the physics utilities',
-    files: productTsx,
-    scan: (content) => [
-      // tailwind blur scales, incl. the bare `shadow` class
-      // (sploot-shadow* is excluded by the lookbehind)
-      ...linesOf(
-        content,
-        /(?<![\w-])shadow(?:-(?:sm|md|lg|xl|2xl|inner))?(?![\w[-])/g
-      ),
-      // arbitrary shadow values that don't reference a sploot var
-      ...linesOf(
-        content,
-        /(?<![\w-])shadow-\[[^\]]*\]/g,
-        (m) => !m.includes('var(--sploot')
-      ),
-      // tailwind drop-shadow blur (drop-shadow-none stays allowed)
-      ...linesOf(content, /(?<![\w-])drop-shadow(?:-(?:sm|md|lg|xl|2xl))?(?![\w-])/g),
-      // inline box-shadow literals that don't reference a sploot var
-      ...linesOf(
-        content,
-        /box-shadow\s*:|boxShadow\s*:/g,
-        (_m, text) => !text.includes('var(--sploot')
-      ),
-    ],
-  },
-  {
-    id: 'rawRadius',
-    label:
-      'raw radius — use rounded-[var(--sploot-radius*)], rounded-full, or the token ui defaults',
-    files: productTsx,
-    scan: (content) => [
-      ...linesOf(content, /(?<![\w-])rounded-none(?![\w-])/g),
-      // arbitrary bracket radius with a numeric literal and no CSS var
-      ...linesOf(
-        content,
-        /(?<![\w-])rounded-\[[^\]]*\]/g,
-        (m) => /\d/.test(m) && !m.includes('var(')
-      ),
-    ],
-  },
-  {
-    id: 'handRolledLift',
-    label:
-      'hand-rolled hover lift — compose .sploot-press / .sploot-press-sm / .sploot-ctl instead',
-    files: productTsx,
-    scan: (content) =>
-      linesOf(
-        content,
-        /hover:-?translate(?:-[xy])?-/g,
-        (_m, text) =>
-          !text.includes('sploot-press') &&
-          !text.includes('sploot-ctl') &&
-          // a token-anchored extended hover shadow on the same line is a
-          // law-compliant scoped variant (e.g. the meme-cell card lift)
-          !/hover:shadow-\[[^\]]*var\(--sploot/.test(text)
-      ),
-  },
-  {
-    id: 'bangerStampOutsideSploot',
-    label:
-      'BangerStamp used outside components/sploot/ — tile banger grammar is the TileActionRail heart',
-    files: productTsx.filter((f) => !f.startsWith('apps/web/components/sploot/')),
-    scan: (content) => linesOf(content, /\bBangerStamp\b/g),
-  },
-  {
-    id: 'tileActionGrammar',
-    label:
-      'raw lucide Heart/Trash2/Share2 in a tile surface — route actions through TileActionRail / IconButton',
-    files: productTsx.filter(
-      (f) =>
-        (f.startsWith('apps/web/components/library/') ||
-          f.startsWith('apps/web/app/app/')) &&
-        // deliberate exemption: the error boundary's delete is a labeled
-        // destructive Button (icon + text), not an icon-only tile action
-        f !== 'apps/web/components/library/image-tile-error-boundary.tsx'
-    ),
-    scan: (content) => {
-      if (/\b(?:IconButton|TileActionRail)\b/.test(content)) return [];
-      if (
-        !/import\s+[^;]*\b(?:Heart|Trash2|Share2)\b[^;]*from\s+['"]lucide-react['"]/.test(
-          content
-        )
-      ) {
-        return [];
-      }
-      return linesOf(content, /\b(?:Heart|Trash2|Share2)\b/g);
-    },
-  },
-  {
-    id: 'legacyNames',
-    label: 'retired legacy design token/literal (electric-lime/hot-pink/cyber-blue/brutalist hex/shadow)',
-    files: [...productTsx, ...cssFiles],
-    scan: (content) =>
-      linesOf(content, /electric-lime|hot-pink|cyber-blue|#f3efe4|#0a0a0a|8px 8px 0/gi),
-  },
-];
-
-const currentCounts = {};
-const currentDetail = {};
-for (const rule of ratchetRules) {
-  currentCounts[rule.id] = {};
-  currentDetail[rule.id] = {};
-  for (const file of rule.files) {
-    const hits = rule.scan(read(file));
-    if (hits.length > 0) {
-      currentCounts[rule.id][file] = hits.length;
-      currentDetail[rule.id][file] = hits;
-    }
-  }
-}
-
-if (UPDATE_BASELINE) {
-  const pinned = {};
-  for (const rule of ratchetRules) {
-    pinned[rule.id] = {};
-    for (const file of Object.keys(currentCounts[rule.id]).sort()) {
-      pinned[rule.id][file] = currentCounts[rule.id][file];
-    }
-  }
-  writeFileSync(
-    join(repoRoot, baselinePath),
-    `${JSON.stringify(pinned, null, 2)}\n`
-  );
-  const total = ratchetRules.reduce(
-    (sum, rule) =>
-      sum +
-      Object.values(currentCounts[rule.id]).reduce((a, b) => a + b, 0),
-    0
-  );
-  console.log(
-    `design ratchet baseline written to ${baselinePath} (${total} pinned occurrences)`
-  );
-  process.exit(0);
-}
-
-for (const rule of ratchetRules) {
-  const pinned = baseline[rule.id] ?? {};
-  for (const file of Object.keys(currentCounts[rule.id])) {
-    const found = currentCounts[rule.id][file];
-    const allowed = pinned[file] ?? 0;
-    if (found > allowed) {
-      // Report the occurrences beyond the pinned budget (the new drift).
-      for (const { line, match } of currentDetail[rule.id][file].slice(allowed)) {
-        fail(
-          `${file}:${line}: [${rule.id}] ${rule.label} — "${match.trim()}" (baseline ${allowed}, found ${found})`
-        );
-      }
-    }
-  }
-  // Exactness guard: a pinned count above what's actually found means the
-  // baseline is stale (or padded to smuggle budget for future drift). Force
-  // a shrink so files never carry slack that could absorb new violations.
-  for (const [file, allowed] of Object.entries(pinned)) {
-    const found = currentCounts[rule.id][file] ?? 0;
-    if (found < allowed) {
-      fail(
-        `${file}: [${rule.id}] baseline is stale (pinned ${allowed}, found ${found}) — run \`node scripts/check-design-system.mjs --update-baseline\` to ratchet down`
-      );
     }
   }
 }
