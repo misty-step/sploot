@@ -289,14 +289,6 @@ host_activate() {
   local sha=$1 dest prev prev_commit prev_pid prev_executable
   [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || exit 1
   dest="/opt/sploot/releases/$sha"
-  mkdir -p "$dest"
-  if ! install -m 0755 "/tmp/sploot-$sha" "$dest/sploot" \
-    || ! install -m 0755 "/tmp/library-backup-$sha" "$dest/library-backup"; then
-    rm -f "/tmp/sploot-$sha" "/tmp/library-backup-$sha"
-    exit 1
-  fi
-  rm -f "/tmp/sploot-$sha" "/tmp/library-backup-$sha"
-  host_backup
   # A stale current link or diagnostic binding is not the rollback authority.
   prev_pid=$(systemctl show --property=MainPID --value sploot.service)
   [[ "$prev_pid" =~ ^[1-9][0-9]*$ ]] || {
@@ -314,9 +306,22 @@ host_activate() {
     exit 1
   }
   prev_commit=${prev##*/}
-  ln -sfn "$prev" /opt/sploot/previous
-  printf '%s\n' "$prev_commit" > /opt/sploot/previous.commit
-  chmod 644 /opt/sploot/previous.commit
+  # Rebinding the same immutable release must not unlink its running binary.
+  if [[ "$dest" != "$prev" ]]; then
+    mkdir -p "$dest"
+    if ! install -m 0755 "/tmp/sploot-$sha" "$dest/sploot" \
+      || ! install -m 0755 "/tmp/library-backup-$sha" "$dest/library-backup"; then
+      rm -f "/tmp/sploot-$sha" "/tmp/library-backup-$sha"
+      exit 1
+    fi
+  fi
+  rm -f "/tmp/sploot-$sha" "/tmp/library-backup-$sha"
+  host_backup
+  if [[ "$dest" != "$prev" ]]; then
+    ln -sfn "$prev" /opt/sploot/previous
+    printf '%s\n' "$prev_commit" > /opt/sploot/previous.commit
+    chmod 644 /opt/sploot/previous.commit
+  fi
   if ! host_switch "$dest" "$sha"; then
     printf 'DEPLOY FAILED during release switch; restoring %s\n' "$prev" >&2
     host_switch "$prev" "$prev_commit" || printf 'ROLLBACK FAILED\n' >&2
