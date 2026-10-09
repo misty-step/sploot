@@ -299,20 +299,27 @@ host_activate() {
   host_backup
   # A stale current link or diagnostic binding is not the rollback authority.
   prev_pid=$(systemctl show --property=MainPID --value sploot.service)
+  [[ "$prev_pid" =~ ^[1-9][0-9]*$ ]] || {
+    printf 'sploot.service has no running process; cannot identify rollback release\n' >&2
+    exit 1
+  }
   prev_executable=$(readlink -f "/proc/$prev_pid/exe")
-  [[ "$prev_executable" =~ ^/opt/sploot/releases/[0-9a-fA-F]+/sploot$ ]]
+  [[ "$prev_executable" =~ ^/opt/sploot/releases/[0-9a-fA-F]+/sploot$ ]] || {
+    printf 'unexpected running executable: %s\n' "$prev_executable" >&2
+    exit 1
+  }
   prev=${prev_executable%/sploot}
+  [[ -x "$prev/sploot" && -x "$prev/library-backup" ]] || {
+    printf 'rollback release %s is incomplete\n' "$prev" >&2
+    exit 1
+  }
   prev_commit=${prev##*/}
   ln -sfn "$prev" /opt/sploot/previous
   printf '%s\n' "$prev_commit" > /opt/sploot/previous.commit
   chmod 644 /opt/sploot/previous.commit
   if ! host_switch "$dest" "$sha"; then
-    if [[ "$(readlink -f /opt/sploot/current)" == "$dest" ]]; then
-      printf 'DEPLOY FAILED during restart; restoring %s\n' "$prev" >&2
-      host_switch "$prev" "$prev_commit" || printf 'ROLLBACK FAILED\n' >&2
-    else
-      printf 'DEPLOY FAILED before switching current\n' >&2
-    fi
+    printf 'DEPLOY FAILED during release switch; restoring %s\n' "$prev" >&2
+    host_switch "$prev" "$prev_commit" || printf 'ROLLBACK FAILED\n' >&2
     exit 1
   fi
 }
