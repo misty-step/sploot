@@ -15,7 +15,7 @@ jobs:
   foundation-review:
     runs-on: ubuntu-24.04
     env:
-      HARNESS_SHA: "6286d1039976485a36a8a0d649c487cfee886939"
+      HARNESS_SHA: "5834348e2a0cd70404ca136dcf887c680dcf02ab"
       BUN_URL: https://github.com/oven-sh/bun/releases/download/bun-v1.4.2/bun-linux-x64-baseline.zip
       BUN_SHA256: c678040f14fe0440eb839d37cbd0ce4c051a32da72806ac97de6a6aab6bf728f
     steps:
