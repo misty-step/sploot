@@ -1,0 +1,16 @@
+{
+  "name": "sploot-rebuild",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "worker-build --release",
+    "dev": "wrangler dev --local --ip 127.0.0.1 --port 8791",
+    "test": "node test/run.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.147.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "workerd"]
+  }
+}
