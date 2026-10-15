@@ -1,11 +1,11 @@
 # Find
 
 Stories: US-002
-Source: apps/server/cmd/sploot/**, apps/server/internal/embedding/**, apps/server/internal/inference/**, apps/server/internal/library/**, apps/server/internal/httpapi/**, apps/server/internal/database/**, apps/server/internal/web/**, apps/mcp/src/**, apps/server/scripts/local-gauntlet.ts, qa/walk*, .exe/setup.sh
+Source: SPEC.md, apps/server/cmd/sploot/**, apps/server/internal/embedding/**, apps/server/internal/inference/**, apps/server/internal/library/**, apps/server/internal/httpapi/**, apps/server/internal/database/**, apps/server/internal/web/**, apps/mcp/src/**, apps/server/scripts/local-gauntlet.ts, qa/walk*, .exe/setup.sh
 
 ## Sub-features
 
-Pinned local CPU CLIP encodes new originals and text queries; SQLite vector retrieval ranks results within the account. Browser search and token-scoped MCP search use the same owned server boundary.
+Behavior: [US-002](../SPEC.md#us-002-find-a-saved-image-by-describing-it). This map locates implementation and evidence; it does not define behavior.
 
 ## How to get to it (user POV)
 

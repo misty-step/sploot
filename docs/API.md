@@ -1,5 +1,8 @@
 # Sploot API Documentation
 
+[SPEC.md](../SPEC.md) is the current behavior authority. This document is the
+wire-level route, credential and error reference for implementing that behavior.
+
 ## Overview
 
 Sploot's [published token API](./PUBLIC_API.md) owns the external **save/search**

@@ -1,11 +1,11 @@
 # Capture
 
 Stories: US-001
-Source: apps/server/cmd/sploot/**, apps/server/internal/ingest/**, apps/server/internal/httpapi/**, apps/server/internal/auth/**, apps/server/internal/database/**, apps/server/internal/web/**, apps/extension/entrypoints/**, apps/extension/shared/**, apps/extension/wxt.config.ts, packages/common/src/**, apps/server/scripts/local-gauntlet.ts, apps/extension/playwright/mv3-lifecycle.e2e.ts, qa/walk*, .exe/setup.sh
+Source: SPEC.md, apps/server/cmd/sploot/**, apps/server/internal/ingest/**, apps/server/internal/httpapi/**, apps/server/internal/auth/**, apps/server/internal/database/**, apps/server/internal/web/**, apps/extension/entrypoints/**, apps/extension/shared/**, apps/extension/wxt.config.ts, packages/common/src/**, apps/mcp/src/**, apps/server/scripts/local-gauntlet.ts, apps/extension/playwright/mv3-lifecycle.e2e.ts, qa/walk*, .exe/setup.sh
 
 ## Sub-features
 
-The Go save boundary validates and deduplicates originals, retains owner-scoped bytes on disk, and queues local indexing. The WXT extension pairs a device to a browser-approved account, then captures a right-click original or visible tab without a password or browser cookie.
+Behavior: [US-001](../SPEC.md#us-001-save-a-meme-from-the-current-surface), including the extension and MCP programs. This map locates implementation and evidence; it does not define behavior.
 
 ## How to get to it (user POV)
 
