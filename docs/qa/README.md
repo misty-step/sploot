@@ -27,14 +27,14 @@ They do not establish production or physical-device acceptance.
 
 ## Foundation story walk
 
-[SPEC.md](../../SPEC.md) is the only behavior authority. `qa/walk.mjs` reads it
-directly. `USER_STORIES.md` is only a relative symlink to that same file for the
-unchanged, SHA-pinned foundation checker (including its shell story validator).
-It contains no separate stories or synchronized copy. All feature maps include
-`SPEC.md` as a source: a spec-only change selects every story, so the legacy
-checker's path-specific diff logic cannot miss canonical changes. Do not replace
-the symlink with a regular file or remove the canonical source from the maps.
-No foundation catalog, baseline, review identity or workflow pin is changed.
+[SPEC.md](../../SPEC.md) is the only behavior authority. The product walk and
+repo-owned `qa/spec-check.mjs` use the same parser, `qa/spec-stories.mjs`.
+Current SPEC must be a regular file; historical Git revisions without SPEC
+may read their regular `USER_STORIES.md`. Malformed SPEC never falls back.
+All feature maps include SPEC as a source, so a spec-only change selects every
+story. `node --test qa/spec-check.test.mjs` exercises format, map, receipt,
+baseline ratchet and designated-review refusals with explicitly synthetic
+fixtures, not product-walk evidence. The migration decision is [ADR-0006](../adr/0006-repo-owned-spec-gate.md).
 
 On an Ubuntu 24.04 GitHub runner or the existing owned workspace (not the
 workstation), `.exe/setup.sh` installs the credential-free Go/Node/pnpm toolchain,
@@ -43,7 +43,7 @@ extension. `qa/walk --stories "US-001 US-002"` walks the named affected stories;
 `qa/walk --all` is the nightly full walk. Each numbered criterion is tied to
 observed steps of the existing isolated `server smoke` gauntlet, including the
 real MV3 Chromium journey for US-001. An empty PR selection emits no story
-passes. From outside the checkout run `foundation-check receipt target/walk/walk-receipt.json --base SHA --repo /path/to/sploot`
+passes. Run `node qa/spec-check.mjs receipt target/walk/walk-receipt.json --base SHA`
 for a PR (replace `--base SHA` with `--all` nightly); CI keeps receipt,
 candidate HEAD/tree and artifact hashes together in one job. The files under
 ignored `target/walk/` are CI artifacts, not production proof. The sanitized
