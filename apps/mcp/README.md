@@ -11,15 +11,9 @@ the verbs; this package is the runtime that implements them.
 
 ## Tools
 
-| Tool | Purpose |
-|---|---|
-| `sploot_search` | Semantic text→image search. `{ query, limit?, threshold? }` |
-| `sploot_save` | Save an image by `url` or `bytesBase64` (+ optional `filename`, `mimeType`, `tags`) |
-
-Both return the underlying API's JSON response as text content on success,
-and `{ isError: true, content: [...] }` with a human-readable message on
-failure (bad/missing token, quota exceeded, embedding service unavailable,
-etc.) — see `PUBLIC_API.md` for the exact response shapes and error codes.
+The [current specification](../../SPEC.md#mcp-program) owns the two tools,
+their behavior and authority. [PUBLIC_API.md](../../docs/PUBLIC_API.md) retains
+wire response shapes and error codes; this README owns setup and verification.
 
 ## Setup
 

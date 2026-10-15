@@ -1,6 +1,6 @@
 # Sploot browser extension
 
-Save original images, GIFs and direct MP4/WebM videos to your own Sploot instance. The popup connects a revocable device, opens your library for local semantic search, captures the visible tab, and shows durable saved/duplicate/failure receipts. Streaming-player downloads are not supported.
+The [current specification](../../SPEC.md#browser-extension-program) owns capture, pairing, retained work and disconnect behavior. This document owns setup and verification procedures, not a second behavior contract.
 
 ## Run and load locally
 
@@ -31,19 +31,12 @@ pnpm --filter extension build
 
 ## Disconnect, switch instances, and recover
 
-**Disconnect** calls the current instance to revoke this device session before forgetting it locally. If that request fails, the UI reports failure and keeps the credential so you can retry revocation; it does not claim success. Once disconnected, select another instance or reconnect using a different account. This does not log the browser out of its separate web session.
-
-Device credentials stay in trusted extension-local storage, never sync storage, messages, diagnostics, or logs. API calls omit browser cookies and reject redirects. Every request captures its destination before obtaining a credential for that exact origin. Queued ownership is the stable **instance + user** identity; a new device session for the same account can resume retained work, but another account or instance cannot list, retry, discard, or upload it. An unpaired capture records its target instance before approval.
-
-Device `spld_` credentials grant owner-library operations, not password changes, device approval, or personal-token management. Those security actions require the instance's browser session. A personal `splt_` token is narrower: save/search only, not extension pairing or private media access. Account credentials from the retired Next.js predecessor do not pair this local extension.
-
-Save/search receipts retain the shared response shape, but local `blobUrl`/thumbnail references are private relative `/media/{id}` paths. Resolve them against the selected instance and authenticate media fetches with its device bearer; do not treat them as public Blob URLs or put credentials into URLs. A bare image/notification URL cannot provide bearer authority. Browser library links use the browser's separately authenticated session.
-
-Captures retain original bytes, SHA-256, and an idempotency key. The queue remains bounded to 50 jobs and 8 MiB encoded source bytes, with finite request deadlines, attempts, retry backoff, and seven-day retention. Larger originals cannot be retained and are rejected visibly rather than compressed or silently dropped. Terminal inactive-owner entries can be reclaimed without exposing or uploading them. Chrome storage removal or uninstall deletes retained extension captures, but never removes the app's already-saved library.
-
-Pairing expires after at most ten minutes and 300 polls. A responsive timer runs while the worker is awake; a persisted Chrome alarm resumes polling after suspension. Chrome can delay alarms to its minimum interval. Offline failures preserve the pending request until expiry and never create a fake signed-in state.
-
-Restoring a local library preserves its account passwords and saved media but removes portable browser/device sessions, pairing requests, and personal tokens. Sign in and pair again against the restored instance. Restore does not revoke the source instance's credentials or migrate an extension's retained queue to a different origin.
+Choose **Disconnect** before switching the popup's instance or account. See the
+[extension behavior](../../SPEC.md#browser-extension-program) for failure and
+queue ownership, [account authority](../../SPEC.md#accounts-and-authority) for
+credential scopes, and [recovery behavior](../../SPEC.md#sharing-removal-and-recovery)
+before pairing against a restored instance. Wire-level media references and
+credential formats remain in [the API](../../docs/API.md#authentication).
 
 ## Verification boundaries
 

@@ -29,17 +29,10 @@ records the original exercise.*
 
 ## What it does today
 
-- **Capture originals**: upload JPEG, PNG, WebP, GIF, MP4, or WebM from a desktop
-  or mobile browser; use the device-paired Chrome extension for right-click
-  capture and visible-tab screenshots.
-- **Find by description**: new captures and new queries use real local CPU
-  CLIP inference and SQLite vector retrieval, not a seeded-only search cache.
-- **Keep a private library**: real accounts, favorites, tags, shuffle, trash and
-  restore, original downloads, explicit revocable sharing, and owner ZIP export.
-- **Keep your data**: accounts, media, and indexing state survive shutdown and
-  restart; an operator backup/verify/restore tool covers the full local library.
-
-Sploot does not learn your taste, generate new memes, or expose automatic piles.
+The [current specification](./SPEC.md) owns capture, retrieval, accounts,
+private-library management and recovery behavior, including the bounded
+browser-extension and MCP programs. QA verifies its three stories and eight
+numbered criteria plus the supporting behavior, not a second feature list here.
 
 [`apps/server`](./apps/server) owns local accounts, SQLite, private filesystem
 media, and pinned local inference. Starting it does not alter retained
@@ -83,9 +76,8 @@ This is a Turborepo/pnpm workspace with a persistent Go runtime and TypeScript c
 
 ## Agent access
 
-Agents (and the operator's agent fleet) save and search Sploot without a
-browser: the **sploot MCP server** (`apps/mcp`) exposes `sploot_search` and
-`sploot_save` as tools over a personal API token, and the
+The [MCP setup](./apps/mcp/README.md) configures agent access to the
+[specified tools and authority](./SPEC.md#mcp-program); the
 **`misty-sploot`** skill teaches the verbs. See
 [`docs/PUBLIC_API.md`](./docs/PUBLIC_API.md) for the
 published contract and [`docs/five-faces.md`](./docs/five-faces.md) for
@@ -238,6 +230,7 @@ run output belongs in approved retained artifact storage, with a sanitized
 revision/scope/verdict link in the work item. Runtime and release ledgers retain
 their native authority; historical files are not an automatic intake queue.
 
+- [Current behavior specification](./SPEC.md)
 - [QA procedure and evidence ownership](./docs/qa/README.md)
 - [Design contract](./DESIGN.md)
 - [Public product design and pricing proposal](./docs/design/public-product-proposal.md) — for review, not an approved offer or implemented consumer UI.

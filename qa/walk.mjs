@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { workingStories } from './spec-stories.mjs';
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(repo);
 const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
 // A receipt bound to HEAD cannot authenticate executable uncommitted source.
 if (git('status', '--porcelain', '--untracked-files=all')) throw Error('Commit all worktree changes before walking stories');
-const source = readFileSync('USER_STORIES.md', 'utf8');
-const sections = [...source.matchAll(/^## (US-\d{3})\b[^\n]*$/gm)];
-const live = sections.filter((match, index) => !/\b(?:Retired:|Superseded by US-\d{3})/i.test(source.slice(match.index, sections[index + 1]?.index))).map(match => match[1]);
+const stories = workingStories(repo);
+const live = stories.filter(story => story.live).map(story => story.id);
 const observations = {
   'US-001': [
     ['Browser capture preserves image GIF and video originals and genuine indexing intent', 'Process restart retains accounts sessions media favorites and local search'],
@@ -37,13 +37,12 @@ if (args.length === 1 && args[0] === '--all') selected = live;
 else if (args.length === 2 && args[0] === '--stories') selected = [...new Set(args[1].trim().split(/\s+/).filter(Boolean))];
 else throw Error('usage: qa/walk --all | --stories "US-001 US-002"');
 for (const id of selected) if (!live.includes(id)) throw Error(`Not a live story: ${id}`);
-for (const [index, match] of sections.entries()) {
-  if (!live.includes(match[1])) continue;
-  const body = source.slice(match.index, sections[index + 1]?.index);
-  const numbered = [...body.matchAll(/^(\d+)\. /gm)].map(item => Number(item[1]));
-  const expected = observations[match[1]];
+for (const story of stories) {
+  if (!story.live) continue;
+  const numbered = story.criteria.map(item => item.n);
+  const expected = observations[story.id];
   if (!expected || numbered.join(',') !== expected.map((_, n) => n + 1).join(',')) {
-    throw Error(`${match[1]}: walk observations do not match every numbered story criterion`);
+    throw Error(`${story.id}: walk observations do not match every numbered story criterion`);
   }
 }
 const output = join(repo, 'target/walk');

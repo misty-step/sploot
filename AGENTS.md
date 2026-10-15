@@ -10,7 +10,7 @@ Sploot is a personal meme library: save images, find them with semantic text sea
 - `apps/mcp` owns `@sploot/mcp` / `sploot-mcp`.
 - `packages/common` owns shared upload limits, MIME validation and API types. Add shared code in `packages/common/src/`, export it from `index.ts`, and import it as `@sploot/common`.
 
-`README.md` is current product scope, `DESIGN.md` is design law, `ARCHITECTURE.md` plus each app architecture file are boundaries, and `docs/five-faces.md` is the surface ledger. `VISION.md` is optional intent, not a workflow or work gate. Linear owns current work. Historical issues are context, not a queue.
+`SPEC.md` is the sole current behavior authority; QA runs against it. `README.md` is setup/navigation, `DESIGN.md` is design law, `ARCHITECTURE.md` plus each app architecture file are technical boundaries, and `docs/five-faces.md` is the surface ledger. `VISION.md` is optional intent, not a workflow or work gate. Linear owns current work. Historical issues are context, not a queue.
 
 Product-facing copy follows `DESIGN.md` (deadpan, one slang term, functional labels). Operational and engineering prose stays factual.
 

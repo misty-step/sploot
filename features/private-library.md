@@ -1,11 +1,11 @@
 # Private library
 
 Stories: US-003
-Source: apps/server/cmd/sploot/**, apps/server/internal/library/**, apps/server/internal/recovery/**, apps/server/internal/httpapi/**, apps/server/internal/auth/**, apps/server/internal/database/**, apps/server/internal/web/**, apps/server/scripts/local-gauntlet.ts, qa/walk*, .exe/setup.sh
+Source: SPEC.md, apps/server/cmd/sploot/**, apps/server/internal/library/**, apps/server/internal/recovery/**, apps/server/internal/httpapi/**, apps/server/internal/auth/**, apps/server/internal/database/**, apps/server/internal/web/**, apps/server/scripts/local-gauntlet.ts, qa/walk*, .exe/setup.sh
 
 ## Sub-features
 
-The live grid excludes trashed originals until owner restore or permanent purge. An owner ZIP contains that account's originals. A separate full-library backup verifies and restores into an unused target, never into a live library.
+Behavior: [US-003](../SPEC.md#us-003-keep-the-library-mine), including accounts, credential scopes, sharing and recovery. This map locates implementation and evidence; it does not define behavior.
 
 ## How to get to it (user POV)
 

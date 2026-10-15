@@ -27,6 +27,15 @@ They do not establish production or physical-device acceptance.
 
 ## Foundation story walk
 
+[SPEC.md](../../SPEC.md) is the only behavior authority. The product walk and
+repo-owned `qa/spec-check.mjs` use the same parser, `qa/spec-stories.mjs`.
+Current SPEC must be a regular file; historical Git revisions without SPEC
+may read their regular `USER_STORIES.md`. Malformed SPEC never falls back.
+All feature maps include SPEC as a source, so a spec-only change selects every
+story. `node --test qa/spec-check.test.mjs` exercises format, map, receipt,
+baseline ratchet and designated-review refusals with explicitly synthetic
+fixtures, not product-walk evidence. The migration decision is [ADR-0006](../adr/0006-repo-owned-spec-gate.md).
+
 On an Ubuntu 24.04 GitHub runner or the existing owned workspace (not the
 workstation), `.exe/setup.sh` installs the credential-free Go/Node/pnpm toolchain,
 real Chromium and pinned inference and builds the Go app plus unpacked
@@ -34,7 +43,7 @@ extension. `qa/walk --stories "US-001 US-002"` walks the named affected stories;
 `qa/walk --all` is the nightly full walk. Each numbered criterion is tied to
 observed steps of the existing isolated `server smoke` gauntlet, including the
 real MV3 Chromium journey for US-001. An empty PR selection emits no story
-passes. From outside the checkout run `foundation-check receipt target/walk/walk-receipt.json --base SHA --repo /path/to/sploot`
+passes. Run `node qa/spec-check.mjs receipt target/walk/walk-receipt.json --base SHA`
 for a PR (replace `--base SHA` with `--all` nightly); CI keeps receipt,
 candidate HEAD/tree and artifact hashes together in one job. The files under
 ignored `target/walk/` are CI artifacts, not production proof. The sanitized
@@ -42,6 +51,22 @@ nightly receipt and eight criterion markers for MIS-150 are retained under
 `docs/qa/evidence/2026-09-25-mis-150-foundation-walk/` beyond Actions artifact
 expiry; their head/tree identify the historical master candidate, not a later
 checkout. The gauntlet removes only its own disposable library on success.
+
+### Supporting behavior and evidence
+
+The eight criterion receipts are not a claim that each supporting behavior has
+its own numbered receipt. The same real gauntlet also exercises the additional
+documented library behavior; unit/integration and client checks cover the rest.
+Keep the actual scope and any unexercised surfaces explicit in the run packet.
+
+| Specification section | Existing exercise |
+| --- | --- |
+| US-001 library capture | `apps/server/scripts/local-gauntlet.ts`: original hashes for all six MIME families, duplicate/replay, invalid/oversize/private-network refusal, mobile upload; Go ingest integration tests cover admission and share-target bounds |
+| US-001 browser extension | Real `server smoke --extension`: native Chromium context-menu capture, screenshot, pairing across worker restart, duplicate, search, revoke and owner isolation; extension unit/fixture suites cover bounded retained work and failures |
+| US-001 MCP | `pnpm --filter @sploot/mcp test` covers tool/client errors and responses with controlled fetches; it is not proof of a published package or a real MCP transport journey |
+| US-002 retrieval and browsing | Real `server smoke`: CPU CLIP ranking, owner-empty search, shuffle/cursor traversal, favorite/tag reload and filtered search, byte-exact desktop/mobile downloads, playback and restart; Go embedding/library tests cover unavailable search and tag operations |
+| US-003 accounts and authority | Real `server smoke`: registration/login failures and origin rejection, browser-approved devices, personal-token scope/revocation, password change/logout; Go auth/HTTP integration tests cover invitation claims and credential invalidation |
+| US-003 sharing, removal and recovery | Real `server smoke`: explicit public share/revoke, trash/restore, owner ZIP/hash checks, backup/verify/restore and populated-target refusal; Go library/recovery integration tests cover permanent purge and portable-credential removal |
 
 ## Reading a packet
 
