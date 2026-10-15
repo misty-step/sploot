@@ -2,9 +2,7 @@
 
 This file is historical as of 2026-05-18. The release workflow now publishes
 GitHub Releases and generated release notes without committing changelog updates
-back to protected branches. When `GEMINI_API_KEY` is configured, the release
-workflow may synthesize the GitHub Release notes after semantic-release
-publishes them; GitHub Releases remain the authoritative changelog.
+back to protected branches. GitHub Releases remain the authoritative changelog.
 
 ## Version reset: v1.23.2 → v0.23.2 (2026-07-08)
 
