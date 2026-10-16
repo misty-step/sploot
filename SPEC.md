@@ -203,3 +203,11 @@ Criteria:
   People sign in, mint tokens and pair again; unclaimed accounts need new
   invitations. Source-instance credentials are not revoked by restoring a copy,
   and an extension queue is not moved to a different origin.
+
+### Private operational diagnostics
+
+- Hosted runtime failures reach the owned operations intake with the environment
+  and immutable release, without account identifiers, credentials, request content
+  or saved media. Unavailable telemetry does not block library access or recovery.
+- External health monitoring checks the canonical library's database and search
+  readiness, not a legacy-domain redirect or the presence of a sign-in page.
