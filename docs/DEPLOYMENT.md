@@ -320,6 +320,23 @@ authority, and the optional environment-file parser rejects unsupported keys.
 `DATABASE_URL`, Clerk keys, Blob tokens, and Replicate tokens are historical
 predecessor settings, not configuration for the current runtime.
 
+Hosted diagnostics use the existing `misty-step/sploot` Sentry project's public
+ingestion DSN, not an administrative API token. Set `SENTRY_DSN` in the existing
+host environment while preserving `SPLOOT_DEPLOYMENT_ENV=production` and the
+running executable's `SPLOOT_DEPLOYMENT_COMMIT`. Local installations may leave
+it unset. The existing SDK strips request/user content and reports typed causes;
+capture is asynchronous and shutdown flush is bounded to two seconds.
+
+Reuse the project's native Sentry uptime monitor on the canonical `/api/health`
+endpoint: require HTTP 200 and JSON `status` equal to `ok`, because search failure
+can be degraded with HTTP 200. Set its production environment and owning team;
+disable response capture and tracing. Sentry configuration is authoritative.
+The existing owned alert intake receives native Sentry issues; do not install
+another watcher or router. Rehearse errors only in an isolated synthetic library
+using the exact deployed binary, then retrieve the event and intake record with
+matching release/environment. Exercise canaries, sink outage and repaired-model
+recovery before enabling production capture. Never induce a live failure for QA.
+
 Keep the live data directory current-user-owned and mode `0700`, including when
 supplying a pre-existing path. `library.sqlite`, its WAL/SHM companions, `media/`,
 and the generated private 32-byte `signing.key` form the library. The key is a
