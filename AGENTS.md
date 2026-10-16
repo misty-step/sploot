@@ -1,5 +1,7 @@
 # Sploot
 
+Shared standard: [Constitution](https://foundations.mistystep.io/) and [Way of working](https://foundations.mistystep.io/way-of-working).
+
 Sploot is a personal meme library: save images, find them with semantic text search, and feed the library from the browser extension or MCP server.
 
 ## Surfaces
@@ -33,15 +35,7 @@ Product-facing copy follows `DESIGN.md` (deadpan, one slang term, functional lab
 
 ## How to build here
 
-Agents over-build. Ship the smallest change that solves the core user story. Question requirements. Keep the product focused. Say no to speculative knobs, queues, layers, and flags.
-
-Deep modules, simple interfaces (Ousterhout): no shallow pass-through wrappers, no single-use constant modules, no config knobs that push complexity onto callers, no test seams in production config.
-
-Good taste (Torvalds): remove special cases. Reuse existing helpers. When you add a new path, delete the old one in the same PR. Don't break existing users or API contracts (status codes, receipts, stored data). If a data identity changes, ship the data step with it.
-
-Prefer end-to-end, integration, and user-story tests: `pnpm --filter server test:integration`, the go-server smoke `pnpm --filter server smoke --binary build/sploot`, and `sploot doctor --url … --json`. No tautological unit tests (for example, asserting a SQL string contains a fragment). Fix flaky tests in their own PR, not inside a feature PR.
-
-Before starting, check open PRs and branches that touch the same files or area, and sequence your work after them rather than racing. Keep PRs small and readable. Every PR description includes "What I deleted / didn't build".
+Local integration commands: `pnpm --filter server test:integration`, the go-server smoke `pnpm --filter server smoke --binary build/sploot`, and `sploot doctor --url … --json`.
 
 Canonical shared helpers (reuse, don't copy):
 
