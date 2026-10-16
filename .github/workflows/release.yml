@@ -38,33 +38,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: pnpm release
-
-  synthesize-notes:
-    name: Synthesize Release Notes
-    runs-on: ubuntu-latest
-    needs: [release]
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
-    permissions:
-      contents: write
-      issues: write
-      pull-requests: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-
-      - name: Synthesize user-friendly release notes
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          if [ -n "$GEMINI_API_KEY" ]; then
-            node scripts/synthesize-release-notes.mjs
-          else
-            echo "GEMINI_API_KEY not set, skipping LLM synthesis"
-          fi
