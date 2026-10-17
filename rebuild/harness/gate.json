@@ -1,0 +1,92 @@
+{
+  "milestone": "M0",
+  "library": "synthetic",
+  "library_note": "No real Sploot library was on this machine. The golden set is 15 text phrases, 15 visual descriptions, 10 template pairs, and 10 note-backed placeholders. Pixels were not generated.",
+  "credentials": {
+    "cloudflare": false,
+    "workers_ai_reached": false,
+    "vectorize_reached": false,
+    "vectorize_backend": "local-stand-in"
+  },
+  "gates": {
+    "1_search_quality": {
+      "result": "not-yet-measurable",
+      "buckets": [
+        {
+          "bucket": "text-heavy",
+          "set": 15,
+          "threshold": "target in top 3 >= 90%",
+          "result": "not-yet-measurable",
+          "reason": "No candidate embedded this set. Workers AI was not reached, and these rows are phrases, not library images."
+        },
+        {
+          "bucket": "visual-only",
+          "set": 15,
+          "threshold": "target in top 5 >= 70% and >= CLIP baseline",
+          "result": "not-yet-measurable",
+          "reason": "No visual embeddings and no CLIP baseline were produced."
+        },
+        {
+          "bucket": "similar-templates",
+          "set": 10,
+          "threshold": "correct one ranked above its sibling >= 80%",
+          "result": "not-yet-measurable",
+          "reason": "Template pairs were not embedded."
+        },
+        {
+          "bucket": "refused-or-failed",
+          "set": 10,
+          "threshold": "100% stored and listed; 0 silent drops; findable by note/FTS; refusal rate reported; search degrades to FTS with a notice",
+          "stored_and_listed": "pass",
+          "silent_drops": 0,
+          "fts_notice": "pass",
+          "model_refusal_rate": "not-yet-measurable",
+          "result": "not-yet-measurable",
+          "reason": "Injected AI failure stored every refused-bucket row and found it by note with a text-only notice. No vision model ran, so the refusal rate is unknown. The rows are gray placeholders, not edgy images."
+        }
+      ],
+      "candidates": {
+        "A": {
+          "model": "@cf/google/gemma-4-26b-a4b-it",
+          "result": "not-yet-measurable",
+          "error": "Error: workers_ai_unavailable: local-stand-in refused @cf/google/gemma-4-26b-a4b-it"
+        },
+        "B": {
+          "result": "not-yet-measurable",
+          "reason": "No OpenRouter or Voyage credential, and no multimodal client was built."
+        },
+        "qwen3-vl": {
+          "model": "@cf/qwen/qwen3-vl-embedding-2b",
+          "result": "not-yet-measurable",
+          "error": "Error: workers_ai_unavailable: local-stand-in refused @cf/qwen/qwen3-vl-embedding-2b"
+        },
+        "clip": {
+          "result": "not-yet-measurable",
+          "reason": "No local CLIP bundle was on this machine, and the CLIP runner was not built."
+        }
+      }
+    },
+    "2_capture_across_expired_login": {
+      "result": "not-yet-measurable",
+      "reason": "Not built. Gate 2 needs a signed-out browser and a capture client."
+    },
+    "3_lossless_rollback": {
+      "result": "not-yet-measurable",
+      "reason": "Not built. Gate 3 needs a restored library snapshot and a rehearsed route reversal."
+    }
+  },
+  "machinery": {
+    "scorer_self_check": "pass",
+    "access_jwt": "pass",
+    "r2_roundtrip": "pass",
+    "d1_owner_fence": "pass",
+    "vectorize_bridge_local_stand_in": "pass",
+    "vectorize_cloudflare_errors": "not-yet-measurable",
+    "injected_failure": "pass",
+    "vectorize_errors_seen": {
+      "bad_dimensions": "VECTOR_DIMENSION_MISMATCH: expected 32, got 3",
+      "oversized_metadata": "METADATA_TOO_LARGE",
+      "missing_binding": "vectorize binding VECTORIZE_ABSENT is missing"
+    }
+  }
+}
