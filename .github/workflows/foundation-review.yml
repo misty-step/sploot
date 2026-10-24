@@ -26,7 +26,7 @@ jobs:
           path: candidate
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Require designated reviewer where a PR needs one
