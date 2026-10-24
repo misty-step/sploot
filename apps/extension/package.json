@@ -38,7 +38,7 @@
   "license": "MIT",
   "packageManager": "pnpm@10.22.0",
   "devDependencies": {
-    "@types/chrome": "^0.1.42",
+    "@types/chrome": "^0.3.4",
     "@playwright/test": "^1.60.0",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
