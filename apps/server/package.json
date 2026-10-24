@@ -20,7 +20,7 @@
     "smoke": "tsx scripts/local-gauntlet.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "^1.63.0",
     "@sploot/common": "workspace:*",
     "@types/node": "^22.20.0",
     "fflate": "^0.8.3",
