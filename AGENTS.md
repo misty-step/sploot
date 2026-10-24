@@ -58,7 +58,7 @@ Skills: `.agents/skills/misty-sploot/` (token-scoped MCP) and `.agents/skills/sp
 Go configuration, acceptance and recovery: `docs/DEPLOYMENT.md`.
 Production deploy and rollback: `deploy/deploy.sh`, invoked by `.github/workflows/deploy.yml`. Procedure: `docs/DEPLOYMENT.md#deploy-and-rollback`.
 Predecessor archive and offline import boundary: `docs/DEPLOYMENT.md#production-migration-boundary`.
-Run `upkeep where <task-kind>` before dispatching.
+Run `sitrep where <task-kind>` before dispatching.
 
 ## No fallbacks
 
