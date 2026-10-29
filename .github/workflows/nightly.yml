@@ -17,10 +17,12 @@ concurrency:
 
 jobs:
   full-walk:
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     timeout-minutes: 40
 
     steps:
+      - name: Install GitHub CLI
+        run: sudo apt-get update && sudo apt-get install -y gh
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0

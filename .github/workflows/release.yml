@@ -7,7 +7,7 @@ on:
 jobs:
   release:
     name: Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     permissions:
       contents: write
       issues: write
