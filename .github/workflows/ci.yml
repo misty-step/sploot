@@ -12,7 +12,7 @@ concurrency:
 jobs:
   secrets:
     name: Secrets
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -65,7 +65,7 @@ jobs:
 
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v6
@@ -90,7 +90,7 @@ jobs:
 
   type-check:
     name: Type Check
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v6
@@ -109,7 +109,7 @@ jobs:
 
   design:
     name: Design
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v6
@@ -124,7 +124,7 @@ jobs:
 
   test:
     name: Test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v6
@@ -140,7 +140,7 @@ jobs:
 
   extension:
     name: Extension
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v6
@@ -203,6 +203,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev ffmpeg
       - name: Prepare real local inference and service
         run: pnpm --filter server build && pnpm --filter server models:prepare
+      - name: Install browser system dependencies and virtual display
+        run: |
+          pnpm --filter extension exec playwright install-deps chromium
+          sudo apt-get update && sudo apt-get install -y xvfb xauth
       - name: Install real Chromium for MV3 acceptance
         run: pnpm --filter extension exec playwright install chromium
       - name: Exercise real popup owner isolation in Chromium
@@ -227,7 +231,7 @@ jobs:
   verify-extension-dist:
     name: Verify uploaded extension artifact
     needs: extension
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: pnpm/action-setup@v6
@@ -248,7 +252,7 @@ jobs:
 
   go-server:
     name: Go library integration
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     env:
       SPLOOT_DEPLOYMENT_ENV: test
       CI: 'true'
@@ -281,7 +285,7 @@ jobs:
     name: merge-gate
     if: always()
     needs: [secrets, lint, type-check, design, test, extension, verify-extension-dist, go-server, foundation, story-walk]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     steps:
       - name: Check all jobs
         run: |
@@ -296,7 +300,7 @@ jobs:
 
   foundation:
     name: foundation
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     env:
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
     steps:
@@ -320,7 +324,7 @@ jobs:
   story-walk:
     name: story-walk
     needs: foundation
-    runs-on: ubuntu-24.04
+    runs-on: [self-hosted, hetzner-ci, sploot-ci]
     timeout-minutes: 40
     env:
       BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
