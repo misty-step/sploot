@@ -8,14 +8,16 @@ wire-level route, credential and error reference for implementing that behavior.
 Sploot's [published token API](./PUBLIC_API.md) owns the external **save/search**
 contract. The self-contained Go runtime implements that contract:
 
-- **Go product — `apps/server`**: canonical hosted and local SQLite/sqlite-vec,
+- **Local Go product — `apps/server`**: SQLite/sqlite-vec,
   private filesystem media, local CPU CLIP inference, real password accounts,
   browser sessions, and paired-device credentials.
+The hosted library runs the separately maintained Rust application on Cloudflare;
+see [hosted deployment](./DEPLOYMENT.md#hosted-deployment).
 The Next.js predecessor is retired. Its source and provider data remain
 historical recovery material, not another runnable workspace or API authority.
 The explicit offline conversion is documented in [DEPLOYMENT.md](./DEPLOYMENT.md).
-The route inventory and authentication boundary below own hosted and local Go
-clients; unsupported predecessor routes are not compatibility aliases.
+The route inventory and authentication boundary below own local Go clients;
+unsupported predecessor routes are not compatibility aliases.
 
 ### Local Go route ownership
 
@@ -61,7 +63,7 @@ remain in [DEPLOYMENT.md](./DEPLOYMENT.md).
 ## Base URL
 
 ```text
-Canonical hosted Go: https://sploot.mistystep.io/api
+Canonical hosted Rust: https://sploot.mistystep.io/api
 Local Go: http://127.0.0.1:3001/api
 ```
 
@@ -73,7 +75,7 @@ Hosted registration is closed. Extension clients select the canonical HTTPS
 instance explicitly; MCP defaults to its `/api` origin. A local development
 default is not a second production authority. Legacy-origin redirects and
 retirement are operational routing, not API compatibility proxies; see
-[current production operations](./DEPLOYMENT.md#canonical-hosted-go-instance).
+[current production operations](./DEPLOYMENT.md#hosted-deployment).
 
 ## Authentication
 
