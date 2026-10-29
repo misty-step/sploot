@@ -474,8 +474,8 @@ separate authorization, source access, an identity/data conversion contract,
 verified original-media recovery, acceptance on the intended origin, and a
 rollback strategy that preserves writes. A local SQLite backup or a green
 browser smoke is not evidence for any of those source-library obligations.
-The current deploy/rollback path is the native procedure above; no Next
-deployment command remains supported.
+The current deploy/rollback path belongs to the replacement application's
+[hosted deployment](#hosted-deployment); no Next deployment command remains supported.
 
 ### Offline predecessor conversion
 
