@@ -6,7 +6,7 @@ Sploot is a personal meme library: save images, find them with semantic text sea
 
 ## Surfaces
 
-- `apps/server` owns the persistent Go/HTML/HTMX product: SQLite, private filesystem media, local CLIP, built-in accounts and extension device pairing. No SaaS credentials are required. Runtime/recovery: `docs/DEPLOYMENT.md`. Routes: `docs/API.md`. The canonical hosted origin is `https://sploot.mistystep.io`; separate local instances do not migrate identities/data.
+- `apps/server` owns the persistent local Go/HTML/HTMX product: SQLite, private filesystem media, local CLIP, built-in accounts and extension device pairing. No SaaS credentials are required. Runtime/recovery: `docs/DEPLOYMENT.md`. Routes: `docs/API.md`. Hosted deployment belongs to the separately maintained Rust application; see `docs/DEPLOYMENT.md#hosted-deployment`. Separate local instances do not migrate identities/data.
 - The Next.js predecessor workspace is retired. Its source/migrations remain in immutable `4c1eb5f1313a578347bc3f4b95fb2a3c10cd6e8f` history; private source archives and providers remain retained indefinitely. Source deletion does not authorize provider/archive destruction or another writer.
 - `apps/extension` owns WXT capture, instance selection, device-paired bearer auth, store listing and the Chrome Web Store packet. Unpacked output is `apps/extension/dist/chrome-mv3`.
 - `apps/mcp` owns `@sploot/mcp` / `sploot-mcp`.
@@ -56,5 +56,5 @@ Canonical shared helpers (reuse, don't copy):
 Path rules: `.omp/rules/common-contract.mdc`, `extension.mdc`.
 Skills: `.agents/skills/misty-sploot/` (token-scoped MCP) and `.agents/skills/sploot-qa/` (real-surface QA).
 Go configuration, acceptance and recovery: `docs/DEPLOYMENT.md`.
-Production deploy and rollback: `deploy/deploy.sh`, invoked by `.github/workflows/deploy.yml`. Procedure: `docs/DEPLOYMENT.md#deploy-and-rollback`.
+Hosted deployment ownership and retained Go cutover evidence: `docs/DEPLOYMENT.md#hosted-deployment`. This repository has no hosted deployment workflow.
 Predecessor archive and offline import boundary: `docs/DEPLOYMENT.md#production-migration-boundary`.
