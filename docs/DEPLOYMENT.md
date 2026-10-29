@@ -1,24 +1,48 @@
 # Runtime operations, recovery, and deployment
 
-`apps/server` is the self-contained persistent Sploot product, used by the
-canonical hosted library and separate local installations. The Next.js
-predecessor workspace is retired; its complete private archive and immutable
-source history remain recovery material, not a second runtime.
+`apps/server` is the self-contained persistent Go product for separate local
+installations and retained recovery. The hosted library now uses the separately
+maintained Rust application on Cloudflare. The Next.js predecessor workspace is
+retired; its complete private archive and immutable source history remain
+recovery material, not a second runtime.
 Starting Go does **not** migrate or back up predecessor data. Do not apply
 predecessor database/provider settings to Go or replace a deployed service as
 part of a local startup. The offline conversion procedure does not itself
 authorize provider writes, deletion, DNS changes, or another production cutover.
 
-## Canonical hosted Go instance
+## Hosted deployment
 
-The canonical hosted library is `https://sploot.mistystep.io`. Local
-`pnpm dev` libraries remain independent. The observed API deployment binding for
-the MIS-47 source-retirement decision was
-`4c1eb5f1313a578347bc3f4b95fb2a3c10cd6e8f`; health was `ok` and search ready.
-That configured revision is not executable identity. Verify the service's
-actual running executable, immutable artifact hash and release target alongside
-`/api/version` before operating; a health response or `current` symlink alone
-does not prove which artifact systemd started.
+The canonical hosted library remains `https://sploot.mistystep.io`. On
+2026-10-29, its public [`/api/version`](https://sploot.mistystep.io/api/version)
+reported `runtime: rust`, version `0.1.0`, and commit
+`f2c6a7d382aefe1ea3e21790a274d61ac22dd04a`.
+[`/api/health`](https://sploot.mistystep.io/api/health) reported `status: ok`,
+`database: d1`, and `storage: r2`; it reported `searchReady: false`, so this
+readback does not establish search acceptance.
+
+Deployment and compatible rollback belong to the replacement application's
+[deployment contract](https://github.com/misty-step/sploot-rs/blob/main/docs/DEPLOY_CONFIG.md)
+and its
+[CI workflow](https://github.com/misty-step/sploot-rs/blob/main/.github/workflows/ci.yml).
+Those operator links require repository access. This repository no longer
+deploys or operates the hosted service: its SSH deployment script and manual
+workflow targeted a deleted VM and have been removed. Do not use the retained Go
+service configuration to replace the hosted Rust runtime.
+
+The repository homepage's `https://www.sploot.app` returned a `308` redirect to
+the canonical origin on 2026-10-29. The `Preview` and `Production` GitHub
+environments in this repository are historical: the latest recorded Vercel
+production deployment is marked inactive. The last manual Go deployment run was
+[2026-10-09](https://github.com/misty-step/sploot/actions/runs/37877426528);
+it is not the current deployment path.
+
+Local `pnpm dev` libraries remain independent of the hosted library. Starting a
+local instance does not migrate hosted identities or data.
+
+## Historical Go deployment (retired)
+
+The dated bindings and cutover evidence below describe the retired Go host, not
+a current service or deployment procedure.
 
 The historical cutover Go binary recorded on 2026-09-10 was pinned
 at `/opt/sploot/releases/e975904b/sploot`, with deployment revision binding
@@ -59,43 +83,6 @@ Account for current SQLite/WAL pages, rounded media files, directories and
 tar/encryption overhead **plus** the configured 1 GiB save reserve. Do not
 lower the reserve or assume this 10 GiB host can accommodate arbitrary growth.
 A successful backup's remote metadata receipt is not independent restore proof.
-
-### Deploy and rollback
-
-`deploy/deploy.sh` is the production deploy path. GitHub Actions workflow
-`.github/workflows/deploy.yml` runs it (`workflow_dispatch`, concurrency group
-`production`). Do not point `/opt/sploot/current` at a release by hand.
-
-The job only runs when dispatched on `master`. `deploy` builds that commit with
-`pnpm --filter server build`, the same build CI uses. It copies `sploot` and
-`library-backup` to `/opt/sploot/releases/<full sha>/`, requires at least 1 GiB
-free under `/var/lib/sploot`, and starts `sploot-backup.service`. The switch
-waits for a new `status: ok` receipt in `/var/lib/sploot/recovery-status.json`.
-It records the previous **running executable's** release directory for rollback,
-not a potentially stale `current` link or environment-bound revision. It points
-`/opt/sploot/current` at the new
-directory, sets `SPLOOT_DEPLOYMENT_COMMIT` in `/etc/sploot/production.env`, and
-binds the existing production service's `ExecStart` to `/opt/sploot/current/sploot`
-and its startup contract to `Type=exec`, without changing environment or
-hardening settings. The script checks the effective type after `daemon-reload`;
-a later drop-in cannot silently restore `Type=simple`. `Type=exec` makes restart
-wait for the release's `execve`, not merely systemd's fork. Application readiness
-is still checked separately below.
-After restart, the script requires `/proc/<MainPID>/exe` to resolve to the selected
-release and prints its SHA-256. An old fixed executable cannot pass by reporting
-a new environment-bound commit.
-
-The release check polls `https://sploot.mistystep.io` for three minutes:
-`/api/version` must report the new sha, `/api/health` must be `ok`, anonymous
-`/api/assets` must return 401, and `/` must return 303 to `/sign-in`. If that
-fails, the script points `current` and `SPLOOT_DEPLOYMENT_COMMIT` back at the
-previous release, restarts, and the job fails.
-
-`rollback` switches to that saved previous release and runs the same check.
-`status` prints the current and previous release paths and `/api/version`.
-`query` runs one read-only statement that starts with `SELECT`, via
-`sqlite3 -readonly -safe`, against `library.sqlite` in the production data directory.
-The workflow connects as `exedev` at `sploot-pilot.exe.xyz` and uses sudo.
 
 The extension selects `https://sploot.mistystep.io` explicitly; its development
 default remains loopback. Repository-built MCP defaults to

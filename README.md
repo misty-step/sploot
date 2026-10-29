@@ -14,7 +14,8 @@ runtime's startup or acceptance path:
 This monorepo contains the self-contained Go product, the WXT Chrome extension,
 MCP server, and shared contracts. The Next.js predecessor workspace is retired;
 its private archive and immutable source history remain recovery material.
-The canonical hosted Go instance is separate from local development libraries.
+The hosted library now runs the separately maintained Rust application on Cloudflare;
+this repository retains the Go runtime for independent local libraries and recovery.
 
 Sploot is a personal meme library with text→image semantic search: save a
 meme once and later find it by describing what's in it — no remembering
@@ -209,7 +210,7 @@ We use **Turborepo** to orchestrate tasks.
 - **Shared Code**: `@sploot/common` owns upload/MIME/API contracts; Go generates its bounds from common and takes model identity from its local inference bundle.
 - **CI/CD**: GitHub Actions (Lint, Test, Type-check).
 - **Deployment**:
-  - Hosted Go: [`https://sploot.mistystep.io`](https://sploot.mistystep.io), separate from local libraries.
+  - Hosted Rust: [`https://sploot.mistystep.io`](https://sploot.mistystep.io); deployment belongs to the [replacement application](./docs/DEPLOYMENT.md#hosted-deployment), not this repository.
   - Local Go: persistent data directory and separate reusable model cache.
   - Predecessor recovery: the historical DigitalOcean runtime and Next workspace are retired; source providers and the complete private archive remain retained indefinitely.
   - Extension: Manual submission to Chrome Web Store.

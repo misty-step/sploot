@@ -279,8 +279,9 @@ auth, validation, storage admission, unavailable, and retryable conditions.
   `{status:"ok",mode:"open"|"closed",configuration:"valid"}`. It exposes
   registration policy, not an account-creation or authentication bypass.
 - `GET /api/version` returns `{version:"0.1.0",commit:"…",runtime:"go"}`.
-  The package version alone does not identify the deployed artifact; use its
-  bound commit and the [deploy procedure](./DEPLOYMENT.md#deploy-and-rollback).
+  The package version alone does not identify the running artifact; use its
+  bound commit. These are Go runtime contracts; [hosted deployment ownership](./DEPLOYMENT.md#hosted-deployment)
+  now belongs to the replacement Rust application.
 
 
 ### Personal Upload Tokens
